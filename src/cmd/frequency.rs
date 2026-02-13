@@ -175,6 +175,26 @@ frequency options:
                             an index. Note that a file handle is opened for each job.
                             When not set, defaults to the number of CPUs detected.
 
+                            FREQUENCY CACHE OPTIONS:
+    --frequency-jsonl       Write the complete frequency distribution as a JSONL
+                            cache file (FILESTEM.freq.csv.data.jsonl).
+                            Requires a non-stdin input file. The cache contains
+                            one JSON object per column with its full frequency data.
+                            ALL_UNIQUE columns (rowcount == cardinality) get a single
+                            ALL_UNIQUE sentinel. HIGH_CARDINALITY columns (cardinality
+                            exceeds the smaller of --high-card-threshold/--high-card-pct
+                            of rowcount) get a single HIGH_CARDINALITY sentinel.
+    --high-card-threshold <arg>  Absolute cardinality threshold for HIGH_CARDINALITY
+                            classification in the frequency cache.
+                            Can also be set with QSV_FREQ_HIGH_CARD_THRESHOLD env var.
+                            Only used with --frequency-jsonl.
+                            [default: 1000]
+    --high-card-pct <arg>   Percentage of rowcount threshold for HIGH_CARDINALITY
+                            classification in the frequency cache.
+                            Can also be set with QSV_FREQ_HIGH_CARD_PCT env var.
+                            Only used with --frequency-jsonl.
+                            [default: 90]
+
                             JSON OUTPUT OPTIONS:
     --json                  Output frequency table as nested JSON instead of CSV.
                             The JSON output includes additional metadata: row count, field count,
@@ -205,7 +225,7 @@ Common options:
                            CSV into memory using CONSERVATIVE heuristics.
 "#;
 
-use std::{fs, io, str::FromStr, sync::OnceLock};
+use std::{fs, io, io::Write as IoWrite, str::FromStr, sync::OnceLock};
 
 use crossbeam_channel;
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
@@ -283,6 +303,9 @@ pub struct Args {
     pub flag_delimiter:       Option<Delimiter>,
     pub flag_memcheck:        bool,
     pub flag_vis_whitespace:  bool,
+    pub flag_frequency_jsonl: bool,
+    pub flag_high_card_threshold: usize,
+    pub flag_high_card_pct:  u8,
     pub flag_json:            bool,
     pub flag_pretty_json:     bool,
     pub flag_toon:            bool,
@@ -303,6 +326,21 @@ static FLOAT_COLUMNS_TO_SKIP: OnceLock<Vec<usize>> = OnceLock::new();
 static STATS_FILTER_COLUMNS_TO_SKIP: OnceLock<Vec<usize>> = OnceLock::new();
 static EMPTY_VEC: Vec<(String, u64)> = Vec::new();
 static ALL_UNIQUE_TEXT: OnceLock<Vec<u8>> = OnceLock::new();
+// FrequencyCacheEntry and FrequencyCacheValue are structs for --frequency-jsonl output
+#[derive(Serialize)]
+struct FrequencyCacheEntry {
+    field:       String,
+    cardinality: u64,
+    frequencies: Vec<FrequencyCacheValue>,
+}
+
+#[derive(Serialize)]
+struct FrequencyCacheValue {
+    value:      String,
+    count:      u64,
+    percentage: f64,
+}
+
 // FrequencyEntry, FrequencyField and FrequencyOutput are
 // structs for JSON output
 #[derive(Serialize)]
@@ -620,7 +658,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    // Create NULL_VAL & ALL_UNIQUE_TEXT once at the start to avoid
+    // Create NULL_VAL, ALL_UNIQUE_TEXT & HIGH_CARDINALITY_TEXT once at the start to avoid
     // repeated string & vec allocations in hot loops.
     // safety: we're initializing the OnceLocks at the start of the program
     NULL_VAL
@@ -631,6 +669,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .set(args.flag_all_unique_text.as_bytes().to_vec())
         .unwrap();
 
+    if args.flag_frequency_jsonl {
+        // Override high-card thresholds from env vars when CLI defaults are used
+        if args.flag_high_card_threshold == 1000
+            && let Ok(val) = std::env::var("QSV_FREQ_HIGH_CARD_THRESHOLD")
+            && let Ok(parsed) = val.parse::<usize>()
+        {
+            args.flag_high_card_threshold = parsed;
+        }
+        if args.flag_high_card_pct == 90
+            && let Ok(val) = std::env::var("QSV_FREQ_HIGH_CARD_PCT")
+            && let Ok(parsed) = val.parse::<u8>()
+        {
+            args.flag_high_card_pct = parsed;
+        }
+    }
+
     let (headers, tables, weighted_tables) = if let Some(idx) = indexed_result
         && util::njobs(args.flag_jobs) > 1
     {
@@ -638,6 +692,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else {
         args.sequential_ftables()
     }?;
+
+    // Write frequency cache if --frequency-jsonl is set
+    if args.flag_frequency_jsonl {
+        if is_stdin {
+            return fail_clierror!("--frequency-jsonl requires a file input, not stdin.");
+        }
+        args.write_frequency_jsonl(&headers, &tables, &rconfig)?;
+    }
 
     if is_json {
         return args.output_json(
@@ -1261,6 +1323,125 @@ impl Args {
             .delimiter(self.flag_delimiter)
             .no_headers_flag(self.flag_no_headers)
             .select(self.flag_select.clone())
+    }
+
+    /// Write the complete frequency distribution as a JSONL cache file.
+    /// Each line is a JSON object with field name, cardinality, and frequency data.
+    /// ALL_UNIQUE columns get a single `<ALL_UNIQUE>` sentinel entry.
+    /// HIGH_CARDINALITY columns get a single `<HIGH_CARDINALITY>` sentinel entry.
+    /// Normal columns get complete frequency data (all values, counts, percentages).
+    #[allow(clippy::cast_precision_loss)]
+    fn write_frequency_jsonl(
+        &self,
+        headers: &Headers,
+        tables: &FTables,
+        rconfig: &Config,
+    ) -> CliResult<()> {
+        let path = rconfig.path.as_ref().ok_or_else(|| {
+            crate::CliError::Other(
+                "--frequency-jsonl requires a file input, not stdin".to_string(),
+            )
+        })?;
+
+        // Build cache path: <FILESTEM>.freq.csv.data.jsonl
+        let freq_jsonl_path = path.with_extension("freq.csv.data.jsonl");
+
+        // safety: these OnceLocks are set in sel_headers -> get_unique_headers
+        let unique_headers = UNIQUE_COLUMNS_VEC.get().unwrap();
+        let row_count = *FREQ_ROW_COUNT.get().unwrap_or(&0);
+        let col_cardinality = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
+
+        // Compute HIGH_CARDINALITY effective threshold
+        #[allow(clippy::cast_precision_loss)]
+        let high_card_pct_limit =
+            (row_count as f64 * self.flag_high_card_pct as f64 / 100.0) as u64;
+        let effective_threshold = (self.flag_high_card_threshold as u64).min(high_card_pct_limit);
+
+        let output = fs::File::create(&freq_jsonl_path)?;
+        let mut writer = io::BufWriter::new(output);
+
+        for (i, header) in headers.iter().enumerate() {
+            let field_name = if rconfig.no_headers {
+                (i + 1).to_string()
+            } else {
+                String::from_utf8_lossy(header).to_string()
+            };
+
+            let cardinality = col_cardinality
+                .iter()
+                .find(|(name, _)| name == &field_name)
+                .map_or(0, |(_, card)| *card);
+
+            let is_high_cardinality =
+                !unique_headers.contains(&i) && cardinality > effective_threshold;
+
+            let entry = if unique_headers.contains(&i) {
+                // ALL_UNIQUE: single sentinel entry
+                FrequencyCacheEntry {
+                    field:       field_name,
+                    cardinality,
+                    frequencies: vec![FrequencyCacheValue {
+                        value:      "<ALL_UNIQUE>".to_string(),
+                        count:      row_count,
+                        percentage: 100.0,
+                    }],
+                }
+            } else if is_high_cardinality {
+                // HIGH_CARDINALITY: single sentinel entry
+                FrequencyCacheEntry {
+                    field:       field_name,
+                    cardinality,
+                    frequencies: vec![FrequencyCacheValue {
+                        value:      "<HIGH_CARDINALITY>".to_string(),
+                        count:      row_count,
+                        percentage: 100.0,
+                    }],
+                }
+            } else if i < tables.len() {
+                // Normal column: complete frequency data from FTable
+                let ftab = &tables[i];
+                let (counts_ref, total_count) = ftab.par_frequent(false); // descending
+                let pct_factor = if total_count > 0 {
+                    100.0 / total_count as f64
+                } else {
+                    0.0
+                };
+
+                let frequencies: Vec<FrequencyCacheValue> = counts_ref
+                    .into_iter()
+                    .map(|(value, count)| {
+                        let val_str = if value.is_empty() {
+                            String::from_utf8_lossy(
+                                NULL_VAL.get().unwrap_or(&EMPTY_BYTE_VEC),
+                            )
+                            .to_string()
+                        } else {
+                            String::from_utf8_lossy(value).to_string()
+                        };
+                        FrequencyCacheValue {
+                            value:      val_str,
+                            count,
+                            percentage: count as f64 * pct_factor,
+                        }
+                    })
+                    .collect();
+
+                FrequencyCacheEntry {
+                    field: field_name,
+                    cardinality,
+                    frequencies,
+                }
+            } else {
+                continue;
+            };
+
+            // Write JSONL line (one JSON object per line)
+            serde_json::to_writer(&mut writer, &entry)?;
+            writeln!(writer)?;
+        }
+
+        writer.flush()?;
+        Ok(())
     }
 
     /// Helper to move "Other" category to end if not sorted

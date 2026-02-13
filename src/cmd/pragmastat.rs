@@ -5,10 +5,10 @@ Compute robust, median-of-pairwise statistics from the Pragmastat library.
 Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
 
 Input handling
-  - Only finite numeric values are used; non-numeric/NaN/Inf are ignored.
-  - Each column is treated as its own sample (two-sample compares columns, not rows).
-  - Non-numeric columns appear with n=0 and empty estimator cells.
-  - NOTE: This command loads all numeric values into memory.
+  * Only finite numeric values are used; non-numeric/NaN/Inf are ignored.
+  * Each column is treated as its own sample (two-sample compares columns, not rows).
+  * Non-numeric columns appear with n=0 and empty estimator cells.
+  * NOTE: This command loads all numeric values into memory.
 
 ONE-SAMPLE OUTPUT (default, per selected column)
   field, n, center, spread, rel_spread, center_lower, center_upper
@@ -41,10 +41,10 @@ TWO-SAMPLE OUTPUT (--twosample, per unordered column pair)
                If bounds exclude 0 (shift) or 1 (ratio), the difference is reliable.
 
 When values are blank
-  - Column has no numeric data (n=0).
-  - Positivity required: rel_spread, ratio, ratio_* need all values > 0.
-  - Sparity required: spread/avg_spread/disparity need real variability (not tie-dominant).
-  - Bounds require enough data for requested misrate; try higher misrate or more data.
+  * Column has no numeric data (n=0).
+  * Positivity required: rel_spread, ratio, ratio_* need all values > 0.
+  * Sparity required: spread/avg_spread/disparity need real variability (not tie-dominant).
+  * Bounds require enough data for requested misrate; try higher misrate or more data.
 
 MISRATE PARAMETER
   misrate is the probability that bounds miss the true value (lower => wider bounds).

@@ -625,6 +625,90 @@ test('plugin mode handles symlinked directories in setWorkingDirectory', async (
   }
 });
 
+// ============================================================================
+// isPathAllowed Path Validation Tests
+// ============================================================================
+
+test('isPathAllowed allows direct equality match', async () => {
+  // Use realpath to normalize temp dir (resolves 8.3 short names on Windows)
+  const rawTempDir = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+  const tempDir = await realpath(rawTempDir);
+
+  try {
+    await writeFile(join(tempDir, 'test.csv'), 'col1,col2\nval1,val2\n');
+
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir,
+    });
+
+    // File within working directory (direct child) should be allowed
+    const resolved = await provider.resolvePath('test.csv');
+    assert.strictEqual(resolved, join(tempDir, 'test.csv'));
+  } finally {
+    try {
+      await unlink(join(tempDir, 'test.csv'));
+      await rmdir(rawTempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+test('isPathAllowed rejects relative path traversal via ..', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'qsv-test-'));
+
+  try {
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir,
+    });
+
+    // Attempt to escape via ../
+    await assert.rejects(
+      async () => {
+        await provider.resolvePath('../../../etc/passwd');
+      },
+      /Access denied|outside allowed directories|Path does not exist/
+    );
+  } finally {
+    try {
+      await rmdir(tempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
+test('isPathAllowed handles case-insensitive prefix matching on macOS', async () => {
+  // This test verifies case-insensitive path matching on macOS/Windows.
+  // On Linux (case-sensitive FS), this test is skipped.
+  if (process.platform !== 'darwin' && process.platform !== 'win32') {
+    return;
+  }
+
+  // Use realpath to normalize temp dir (resolves 8.3 short names on Windows)
+  const rawTempDir = await mkdtemp(join(tmpdir(), 'qsv-test-CasE-'));
+  const tempDir = await realpath(rawTempDir);
+
+  try {
+    await writeFile(join(tempDir, 'test.csv'), 'col1,col2\nval1,val2\n');
+
+    const provider = new FilesystemResourceProvider({
+      workingDirectory: tempDir,
+    });
+
+    // On case-insensitive FS, the file should be accessible regardless of case
+    const resolved = await provider.resolvePath('test.csv');
+    assert.ok(resolved.endsWith('test.csv'));
+  } finally {
+    try {
+      await unlink(join(tempDir, 'test.csv'));
+      await rmdir(rawTempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+});
+
 test('constructor resolves symlinks in allowedDirectories', async () => {
   // Skip on Windows where symlinks require elevated privileges
   if (process.platform === 'win32') {

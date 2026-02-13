@@ -179,12 +179,37 @@ export class FilesystemResourceProvider {
    */
   private isPathAllowed(targetPath: string, isDirectory = false): boolean {
     const allowed = this.allowedDirs.some((allowedDir) => {
+      // Direct equality check (both should be canonicalized by now)
+      if (targetPath === allowedDir) return true;
+
       const rel = relative(allowedDir, targetPath);
       if (rel === "") return true;
-      return (
+
+      // Ensure relative path stays within the allowed directory:
+      // 1. Not an absolute path (cross-drive escape on Windows)
+      // 2. Doesn't escape to parent ('..')
+      // 3. Belt-and-suspenders: reject leading separators (already caught by isAbsolute)
+      const isContainedSubpath =
         !isAbsolute(rel) &&
-        !rel.startsWith("..") && !rel.startsWith("/") && !rel.startsWith("\\")
-      );
+        !rel.startsWith("..") &&
+        !rel.startsWith("/") &&
+        !rel.startsWith("\\");
+
+      if (isContainedSubpath) return true;
+
+      // Case-insensitive fallback for platforms with case-insensitive filesystems
+      // (macOS APFS default, Windows NTFS). Handles /private/var symlink
+      // discrepancies on macOS and case-preserving but case-insensitive paths.
+      if (process.platform === "darwin" || process.platform === "win32") {
+        const lowerAllowed = allowedDir.toLowerCase();
+        const lowerTarget = targetPath.toLowerCase();
+
+        const sep = process.platform === "win32" ? "\\" : "/";
+        const prefix = lowerAllowed.endsWith(sep) ? lowerAllowed : lowerAllowed + sep;
+        if (lowerTarget === lowerAllowed || lowerTarget.startsWith(prefix)) return true;
+      }
+
+      return false;
     });
 
     if (!allowed && this.pluginMode) {

@@ -4,7 +4,6 @@
   "description": "Modify headers of a CSV to only have \"safe\" names - guaranteed \"database-ready\"/\"CKAN-ready\" names.",
   "category": "validation",
   "command": {
-    "binary": "qsv",
     "subcommand": "safenames",
     "args": [
       {

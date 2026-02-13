@@ -4,7 +4,6 @@
   "description": "Reverse order of rows in a CSV. Unlike the `sort --reverse` command, it preserves the order of rows with the same key. If an index is present, it works with constant memory. Otherwise, it will load all the data into memory.",
   "category": "transformation",
   "command": {
-    "binary": "qsv",
     "subcommand": "reverse",
     "args": [
       {

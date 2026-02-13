@@ -4,7 +4,6 @@
   "description": "Convert CSV files to PostgreSQL, SQLite, Excel (XLSX), LibreOffice Calc (ODS) and Data Package.",
   "category": "conversion",
   "command": {
-    "binary": "qsv",
     "subcommand": "to",
     "args": [
       {

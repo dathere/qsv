@@ -4,7 +4,6 @@
   "description": "Inner, outer, right, cross, anti & semi joins. Automatically creates a simple, in-memory hash index to make it fast.",
   "category": "joining",
   "command": {
-    "binary": "qsv",
     "subcommand": "join",
     "args": [
       {

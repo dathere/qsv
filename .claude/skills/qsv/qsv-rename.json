@@ -4,7 +4,6 @@
   "description": "Rename the columns of a CSV efficiently.",
   "category": "transformation",
   "command": {
-    "binary": "qsv",
     "subcommand": "rename",
     "args": [
       {

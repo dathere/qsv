@@ -4,7 +4,6 @@
   "description": "Concatenate CSV files by row or by column.",
   "category": "utility",
   "command": {
-    "binary": "qsv",
     "subcommand": "cat",
     "args": [
       {

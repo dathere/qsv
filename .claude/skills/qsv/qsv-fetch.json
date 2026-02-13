@@ -4,7 +4,6 @@
   "description": "Send/Fetch data to/from web services for every row using **HTTP Get**. Comes with HTTP/2 adaptive flow control, jaq JSON query language support, dynamic throttling (RateLimit) & caching with available persistent caching using Redis or a disk-cache.",
   "category": "utility",
   "command": {
-    "binary": "qsv",
     "subcommand": "fetch",
     "args": [
       {

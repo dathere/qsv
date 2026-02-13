@@ -20,7 +20,6 @@ const countSkill: QsvSkill = {
   description: 'Count records in CSV',
   category: 'utility',
   command: {
-    binary: 'qsv',
     subcommand: 'count',
     args: [
       { name: 'input', type: 'file', required: true, description: 'Input CSV file' }
@@ -42,7 +41,6 @@ const catSkill: QsvSkill = {
   description: 'Concatenate CSV files',
   category: 'transformation',
   command: {
-    binary: 'qsv',
     subcommand: 'cat',
     args: [
       { name: 'subcommand', type: 'string', required: true, description: 'Subcommand', enum: ['rows', 'rowskey', 'columns'] },
@@ -64,7 +62,6 @@ const statsSkill: QsvSkill = {
   description: 'Compute statistics',
   category: 'aggregation',
   command: {
-    binary: 'qsv',
     subcommand: 'stats',
     args: [
       { name: 'input', type: 'file', required: true, description: 'Input CSV file' }
@@ -86,7 +83,6 @@ const snappySkill: QsvSkill = {
   description: 'Snappy compression',
   category: 'utility',
   command: {
-    binary: 'qsv',
     subcommand: 'snappy',
     args: [
       { name: 'subcommand', type: 'string', required: false, description: 'Subcommand', enum: ['compress', 'decompress', 'check', 'validate'] },
@@ -106,7 +102,6 @@ const selectSkill: QsvSkill = {
   description: 'Select columns',
   category: 'selection',
   command: {
-    binary: 'qsv',
     subcommand: 'select',
     args: [
       { name: 'selection', type: 'string', required: true, description: 'Column selection' },

@@ -4,7 +4,6 @@
   "description": "Convert JSON array to CSV.",
   "category": "conversion",
   "command": {
-    "binary": "qsv",
     "subcommand": "json",
     "args": [
       {

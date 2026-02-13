@@ -22,7 +22,6 @@ function createMockSkill(
     description,
     category,
     command: {
-      binary: "qsv",
       subcommand: name,
       args: [],
       options: [],

@@ -4,7 +4,6 @@
   "description": "Renders a template using CSV data with the Mini Jinja template engine (Example).",
   "category": "utility",
   "command": {
-    "binary": "qsv",
     "subcommand": "template",
     "args": [
       {

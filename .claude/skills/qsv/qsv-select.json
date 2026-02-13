@@ -4,7 +4,6 @@
   "description": "Select, re-order, reverse, duplicate or drop columns.",
   "category": "selection",
   "command": {
-    "binary": "qsv",
     "subcommand": "select",
     "args": [
       {

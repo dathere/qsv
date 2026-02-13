@@ -4,7 +4,6 @@
   "description": "Run a regex over a CSV. Applies the regex to selected fields & shows only matching rows.",
   "category": "filtering",
   "command": {
-    "binary": "qsv",
     "subcommand": "search",
     "args": [
       {

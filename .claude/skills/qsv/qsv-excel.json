@@ -4,7 +4,6 @@
   "description": "Exports a specified Excel/ODS sheet to a CSV file.",
   "category": "conversion",
   "command": {
-    "binary": "qsv",
     "subcommand": "excel",
     "args": [
       {

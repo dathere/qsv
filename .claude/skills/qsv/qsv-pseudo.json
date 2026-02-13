@@ -4,7 +4,6 @@
   "description": "Pseudonymise the value of the given column by replacing them with an incremental identifier.",
   "category": "utility",
   "command": {
-    "binary": "qsv",
     "subcommand": "pseudo",
     "args": [
       {

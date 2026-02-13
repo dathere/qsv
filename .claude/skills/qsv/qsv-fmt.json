@@ -4,7 +4,6 @@
   "description": "Reformat a CSV with different delimiters, record terminators or quoting rules. (Supports ASCII delimited data.)",
   "category": "formatting",
   "command": {
-    "binary": "qsv",
     "subcommand": "fmt",
     "args": [
       {

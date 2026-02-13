@@ -4,7 +4,6 @@
   "description": "Convert newline-delimited JSON (JSONL/NDJSON) to CSV. See `tojsonl` command to convert CSV to JSONL.",
   "category": "conversion",
   "command": {
-    "binary": "qsv",
     "subcommand": "jsonl",
     "args": [
       {

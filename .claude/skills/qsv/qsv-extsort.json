@@ -4,7 +4,6 @@
   "description": "Sort an arbitrarily large CSV/text file using a multithreaded external merge sort algorithm.",
   "category": "utility",
   "command": {
-    "binary": "qsv",
     "subcommand": "extsort",
     "args": [
       {

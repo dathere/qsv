@@ -4,7 +4,6 @@
   "description": "Fill empty values.",
   "category": "utility",
   "command": {
-    "binary": "qsv",
     "subcommand": "fill",
     "args": [
       {

@@ -4,7 +4,6 @@
   "description": "Partition a CSV based on a column value.",
   "category": "utility",
   "command": {
-    "binary": "qsv",
     "subcommand": "partition",
     "args": [
       {

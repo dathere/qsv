@@ -4,7 +4,6 @@
   "description": "Compute pragmatic statistics using the Pragmastat library.",
   "category": "aggregation",
   "command": {
-    "binary": "qsv",
     "subcommand": "pragmastat",
     "args": [
       {

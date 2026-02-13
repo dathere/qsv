@@ -4,7 +4,6 @@
   "description": "Formats recognized date fields (19 formats recognized) to a specified date format using strftime date format specifiers.",
   "category": "transformation",
   "command": {
-    "binary": "qsv",
     "subcommand": "datefmt",
     "args": [
       {

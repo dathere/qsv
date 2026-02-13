@@ -1,10 +1,8 @@
 # py
 
-📇🔣
-
 > Create a new computed column or filter rows by evaluating a Python expression on every row of a CSV file. Python's f-strings is particularly useful for extended formatting, with the ability to evaluate Python expressions as well. Requires Python 3.8 or greater.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/python.rs](https://github.com/dathere/qsv/blob/master/src/cmd/python.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/python.rs](https://github.com/dathere/qsv/blob/master/src/cmd/python.rs)** | 📇🔣
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Py Options](#py-options) | [Common Options](#common-options)

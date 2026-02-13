@@ -1,10 +1,8 @@
 # geoconvert
 
-🌎
-
 > Convert between various spatial formats and CSV/SVG including GeoJSON, SHP, and more.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/geoconvert.rs](https://github.com/dathere/qsv/blob/master/src/cmd/geoconvert.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/geoconvert.rs](https://github.com/dathere/qsv/blob/master/src/cmd/geoconvert.rs)** | 🌎
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Geoconvert Options](#geoconvert-options) | [Common Options](#common-options)

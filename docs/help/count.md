@@ -1,10 +1,8 @@
 # count
 
-📇🏎️🐻‍❄️
-
 > Count the rows and optionally compile record width statistics of a CSV file. (11.87 seconds for a 15gb, 27m row NYC 311 dataset without an index. Instantaneous with an index.) If the `polars` feature is enabled, uses Polars' multithreaded, mem-mapped CSV reader for fast counts even without an index
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/count.rs](https://github.com/dathere/qsv/blob/master/src/cmd/count.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/count.rs](https://github.com/dathere/qsv/blob/master/src/cmd/count.rs)** | 📇🏎️🐻‍❄️
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Count Options](#count-options) | [Width Options](#width-options) | [When The Polars Feature Is Enabled Options](#when-the-polars-feature-is-enabled-options) | [Common Options](#common-options)

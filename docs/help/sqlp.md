@@ -1,10 +1,8 @@
 # sqlp
 
-📇🚀🐻‍❄️🗄️🪄
-
 > Run Polars SQL (a PostgreSQL dialect) queries against several CSVs, Parquet, JSONL and Arrow files - converting queries to blazing-fast Polars LazyFrame expressions, processing larger than memory CSV files. Query results can be saved in CSV, JSON, JSONL, Parquet, Apache Arrow IPC and Apache Avro formats.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sqlp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sqlp.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sqlp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sqlp.rs)** | 📇🚀🐻‍❄️🗄️🪄
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Sqlp Options](#sqlp-options) | [Polars Csv Input Parsing Options](#polars-csv-input-parsing-options) | [Csv Output Format Only Options](#csv-output-format-only-options) | [Parquet Output Format Only Options](#parquet-output-format-only-options) | [Common Options](#common-options)

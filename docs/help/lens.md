@@ -1,10 +1,8 @@
 # lens
 
-🐻‍❄️🖥️
-
 > Interactively view, search & filter tabular data files using the csvlens engine. Apart from CSV and its dialects, Arrow, Avro/IPC, Parquet, JSON array & JSONL formats are supported with the "polars" feature.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/lens.rs](https://github.com/dathere/qsv/blob/master/src/cmd/lens.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/lens.rs](https://github.com/dathere/qsv/blob/master/src/cmd/lens.rs)** | 🐻‍❄️🖥️
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Lens Options](#lens-options) | [Common Options](#common-options)

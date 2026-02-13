@@ -1,10 +1,8 @@
 # sort
 
-🚀🤯👆
-
 > Sorts CSV data in lexicographical, natural, numerical, reverse, unique or random (with optional seed) order (Also see `extsort` & `sortcheck` commands).
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sort.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sort.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sort.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sort.rs)** | 🚀🤯👆
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Sort Options](#sort-options) | [Random Sorting Options](#random-sorting-options) | [Common Options](#common-options)

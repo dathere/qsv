@@ -1,10 +1,8 @@
 # pivotp
 
-🚀🐻‍❄️🪄
-
 > Pivot CSV data. Features "smart" aggregation auto-selection based on data type & stats.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pivotp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pivotp.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pivotp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pivotp.rs)** | 🚀🐻‍❄️🪄
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Pivotp Options](#pivotp-options) | [Common Options](#common-options)

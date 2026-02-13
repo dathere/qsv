@@ -1,10 +1,8 @@
 # clipboard
 
-🖥️
-
 > Provide input from the clipboard or save output to the clipboard.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/clipboard.rs](https://github.com/dathere/qsv/blob/master/src/cmd/clipboard.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/clipboard.rs](https://github.com/dathere/qsv/blob/master/src/cmd/clipboard.rs)** | 🖥️
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Clip Options](#clip-options) | [Common Options](#common-options)

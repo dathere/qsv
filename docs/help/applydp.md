@@ -1,10 +1,8 @@
 # applydp
 
-📇🚀🔣👆 ![CKAN](../images/ckan.png)
-
 > applydp is a slimmed-down version of `apply` with only Datapusher+ relevant subcommands/operations (`qsvdp` binary variant only).
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/applydp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/applydp.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/applydp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/applydp.rs)** | 📇🚀🔣👆 ![CKAN](../images/ckan.png)
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Applydp Options](#applydp-options) | [Operations Options](#operations-options) | [Common Options](#common-options)

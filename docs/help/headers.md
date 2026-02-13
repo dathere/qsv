@@ -1,10 +1,8 @@
 # headers
 
-🗄️
-
 > Show the headers of a CSV. Or show the intersection of all headers between many CSV files.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/headers.rs](https://github.com/dathere/qsv/blob/master/src/cmd/headers.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/headers.rs](https://github.com/dathere/qsv/blob/master/src/cmd/headers.rs)** | 🗄️
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Headers Options](#headers-options) | [Common Options](#common-options)

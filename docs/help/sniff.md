@@ -1,10 +1,8 @@
 # sniff
 
-📇🌐🤖 ![CKAN](../images/ckan.png)
-
 > Quickly sniff & infer CSV metadata (delimiter, header row, preamble rows, quote character, flexible, is_utf8, average record length, number of records, content length & estimated number of records if sniffing a CSV on a URL, number of fields, field names & data types). It is also a general mime type detector.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sniff.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sniff.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sniff.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sniff.rs)** | 📇🌐🤖 ![CKAN](../images/ckan.png)
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sniff Options](#sniff-options) | [Common Options](#common-options)

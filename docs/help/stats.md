@@ -1,10 +1,8 @@
 # stats
 
-📇🤯🏎️👆🪄
-
 > Compute summary statistics (sum, min/max/range, sort order/sortiness, min/max/sum/avg length, mean, standard error of the mean (SEM), geometric/harmonic means, stddev, variance, Coefficient of Variation (CV), nullcount, max precision, sparsity, quartiles, Interquartile Range (IQR), lower/upper fences, skewness, median, mode/s, antimode/s, cardinality & uniqueness ratio) & make GUARANTEED data type inferences (Null, String, Float, Integer, Date, DateTime, Boolean) for each column in a CSV (Example - more info). Uses multithreading to go faster if an index is present (with an index, can compile "streaming" stats on NYC's 311 data (15gb, 28m rows) in less than 7.3 seconds!).
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/stats.rs](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/stats.rs](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs)** | 📇🤯🏎️👆🪄
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Stats Options](#stats-options) | [Boolean Inferencing Options](#boolean-inferencing-options) | [Date Inferencing Options](#date-inferencing-options) | [Common Options](#common-options)

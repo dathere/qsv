@@ -1,10 +1,8 @@
 # sample
 
-📇🌐🏎️
-
 > Randomly draw rows (with optional seed) from a CSV using seven different sampling methods - reservoir (default), indexed, bernoulli, systematic, stratified, weighted & cluster sampling. Supports sampling from CSVs on remote URLs.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sample.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sample.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sample.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sample.rs)** | 📇🌐🏎️
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sample Options](#sample-options) | [Sampling Methods Options](#sampling-methods-options) | [Time-series Sampling Options](#time-series-sampling-options) | [Common Options](#common-options)

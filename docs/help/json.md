@@ -1,10 +1,8 @@
 # json
 
-👆
-
 > Convert JSON array to CSV.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/json.rs](https://github.com/dathere/qsv/blob/master/src/cmd/json.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/json.rs](https://github.com/dathere/qsv/blob/master/src/cmd/json.rs)** | 👆
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Json Options](#json-options) | [Common Options](#common-options)

@@ -1,10 +1,8 @@
 # fetch
 
-📇🧠🌐
-
 > Send/Fetch data to/from web services for every row using **HTTP Get**. Comes with HTTP/2 adaptive flow control, jaq JSON query language support, dynamic throttling (RateLimit) & caching with available persistent caching using Redis or a disk-cache.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetch.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetch.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetch.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetch.rs)** | 📇🧠🌐
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Fetch Options](#fetch-options) | [Caching Options](#caching-options) | [Common Options](#common-options)

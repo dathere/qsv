@@ -1,10 +1,8 @@
 # fetchpost
 
-📇🧠🌐⛩️
-
 > Similar to `fetch`, but uses **HTTP Post** (HTTP GET vs POST methods). Supports HTML form (application/x-www-form-urlencoded), JSON (application/json) and custom content types - with the ability to render payloads using CSV data using the Mini Jinja template engine.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetchpost.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetchpost.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetchpost.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetchpost.rs)** | 📇🧠🌐⛩️
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Fetchpost Options](#fetchpost-options) | [Caching Options](#caching-options) | [Common Options](#common-options)

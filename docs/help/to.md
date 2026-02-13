@@ -1,10 +1,8 @@
 # to
 
-🚀🗄️
-
 > Convert CSV files to PostgreSQL, SQLite, Excel (XLSX), LibreOffice Calc (ODS) and Data Package.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/to.rs](https://github.com/dathere/qsv/blob/master/src/cmd/to.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/to.rs](https://github.com/dathere/qsv/blob/master/src/cmd/to.rs)** | 🚀🗄️
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [To Options](#to-options) | [Common Options](#common-options)

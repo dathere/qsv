@@ -1,10 +1,8 @@
 # luau
 
-📇🌐🔣📚 ![CKAN](../images/ckan.png)
-
 > Create multiple new computed columns, filter rows, compute aggregations and build complex data pipelines by executing a Luau 0.708 expression/script for every row of a CSV file (sequential mode), or using random access with an index (random access mode). Can process a single Luau expression or full-fledged data-wrangling scripts using lookup tables with discrete BEGIN, MAIN and END sections. It is not just another qsv command, it is qsv's Domain-specific Language (DSL) with numerous qsv-specific helper functions to build production data pipelines.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/luau.rs](https://github.com/dathere/qsv/blob/master/src/cmd/luau.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/luau.rs](https://github.com/dathere/qsv/blob/master/src/cmd/luau.rs)** | 📇🌐🔣📚 ![CKAN](../images/ckan.png)
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Luau Options](#luau-options) | [Common Options](#common-options)

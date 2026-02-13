@@ -1,10 +1,8 @@
 # apply
 
-📇🚀🧠🤖🔣👆
-
 > Apply series of string, date, math & currency transformations to given CSV column/s. It also has some basic NLP functions (similarity, sentiment analysis, profanity, eudex, language & name gender) detection.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/apply.rs](https://github.com/dathere/qsv/blob/master/src/cmd/apply.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/apply.rs](https://github.com/dathere/qsv/blob/master/src/cmd/apply.rs)** | 📇🚀🧠🤖🔣👆
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Apply Options](#apply-options) | [Operations Options](#operations-options) | [Common Options](#common-options)

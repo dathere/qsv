@@ -1,10 +1,8 @@
 # snappy
 
-🚀🌐
-
 > Does streaming compression/decompression of the input using Google's Snappy framing format (more info).
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/snappy.rs](https://github.com/dathere/qsv/blob/master/src/cmd/snappy.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/snappy.rs](https://github.com/dathere/qsv/blob/master/src/cmd/snappy.rs)** | 🚀🌐
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Snappy Options](#snappy-options) | [Common Options](#common-options)

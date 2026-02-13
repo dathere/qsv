@@ -1,10 +1,8 @@
 # joinp
 
-🚀🐻‍❄️🪄
-
 > Inner, outer, right, cross, anti, semi, non-equi & asof joins using the Pola.rs engine. Unlike the `join` command, `joinp` can process files larger than RAM, is multithreaded, has join key validation, a maintain row order option, pre and post-join filtering, join keys unicode normalization, supports "special" non-equi joins and asof joins (which is particularly useful for time series data) & its output columns can be coalesced.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/joinp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/joinp.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/joinp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/joinp.rs)** | 🚀🐻‍❄️🪄
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Joinp Options](#joinp-options) | [Join Options](#join-options) | [Polars Csv Parsing Options](#polars-csv-parsing-options) | [Asof Join Options](#asof-join-options) | [Output Format Options](#output-format-options) | [Join Key Transformation Options](#join-key-transformation-options) | [Common Options](#common-options)

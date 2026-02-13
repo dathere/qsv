@@ -233,23 +233,23 @@ fn generate_command_markdown(
     // Title
     let _ = write!(md, "# {}\n\n", cmd_info.invocation_name);
 
-    // Emoji markers from README table
-    if !cmd_info.emoji_markers.is_empty() {
-        // Rewrite image paths for the docs/help/ location
-        let markers = cmd_info.emoji_markers.replace("docs/images/", "../images/");
-        let _ = write!(md, "{markers}\n\n");
-    }
-
     // Short description from README
     if !cmd_info.description.is_empty() {
         let _ = write!(md, "> {}\n\n", cmd_info.description);
     }
 
-    // Navigation
+    // Navigation with emoji markers
+    let emoji_suffix = if cmd_info.emoji_markers.is_empty() {
+        String::new()
+    } else {
+        // Rewrite image paths for the docs/help/ location
+        let markers = cmd_info.emoji_markers.replace("docs/images/", "../images/");
+        format!(" | {markers}")
+    };
     let _ = write!(
         md,
         "**[Table of Contents](TableOfContents.md)** | **Source: \
-         [{source_path}]({source_url})**\n\n"
+         [{source_path}]({source_url})**{emoji_suffix}\n\n"
     );
 
     // Parse the USAGE text into sections

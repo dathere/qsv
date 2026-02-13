@@ -1,10 +1,8 @@
 # cat
 
-🗄️
-
 > Concatenate CSV files by row or by column.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/cat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/cat.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/cat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/cat.rs)** | 🗄️
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Columns Option](#columns-option) | [Rows Option](#rows-option) | [Rowskey Options](#rowskey-options) | [Common Options](#common-options)

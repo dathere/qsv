@@ -1,10 +1,8 @@
 # join
 
-😣👆
-
 > Inner, outer, right, cross, anti & semi joins. Automatically creates a simple, in-memory hash index to make it fast.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/join.rs](https://github.com/dathere/qsv/blob/master/src/cmd/join.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/join.rs](https://github.com/dathere/qsv/blob/master/src/cmd/join.rs)** | 😣👆
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Join Options](#join-options) | [Join Key Transformation Options](#join-key-transformation-options) | [Common Options](#common-options)

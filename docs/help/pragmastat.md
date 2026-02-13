@@ -1,10 +1,8 @@
 # pragmastat
 
-🤯
-
 > Compute pragmatic statistics using the Pragmastat library.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pragmastat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pragmastat.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pragmastat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pragmastat.rs)** | 🤯
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Pragmastat Options](#pragmastat-options) | [Common Options](#common-options)

@@ -1,10 +1,8 @@
 # reverse
 
-📇🤯
-
 > Reverse order of rows in a CSV. Unlike the `sort --reverse` command, it preserves the order of rows with the same key. If an index is present, it works with constant memory. Otherwise, it will load all the data into memory.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/reverse.rs](https://github.com/dathere/qsv/blob/master/src/cmd/reverse.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/reverse.rs](https://github.com/dathere/qsv/blob/master/src/cmd/reverse.rs)** | 📇🤯
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Common Options](#common-options)

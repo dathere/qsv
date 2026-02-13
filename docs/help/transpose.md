@@ -1,10 +1,8 @@
 # transpose
 
-🤯👆
-
 > Transpose rows/columns of a CSV.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/transpose.rs](https://github.com/dathere/qsv/blob/master/src/cmd/transpose.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/transpose.rs](https://github.com/dathere/qsv/blob/master/src/cmd/transpose.rs)** | 🤯👆
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Transpose Options](#transpose-options) | [Common Options](#common-options)

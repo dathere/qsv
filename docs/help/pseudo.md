@@ -1,10 +1,8 @@
 # pseudo
 
-🔣👆
-
 > Pseudonymise the value of the given column by replacing them with an incremental identifier.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pseudo.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pseudo.rs)**
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pseudo.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pseudo.rs)** | 🔣👆
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Common Options](#common-options)

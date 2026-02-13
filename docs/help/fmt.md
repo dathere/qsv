@@ -37,7 +37,7 @@ qsv fmt --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-t, --out-delimiter` | string | The field delimiter for writing CSV data. Must be a single character. If set to "T", uses tab as the delimiter. | `,` |
+| `-t,`<br>`--out-delimiter` | string | The field delimiter for writing CSV data. Must be a single character. If set to "T", uses tab as the delimiter. | `,` |
 | `--crlf` | flag | Use '\r\n' line endings in the output. |  |
 | `--ascii` | flag | Use ASCII field and record separators. Use Substitute (U+00A1) as the quote character. |  |
 | `--quote` | string | The quote character to use. | `"` |
@@ -52,9 +52,9 @@ qsv fmt --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/fmt.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/fmt.rs)

@@ -244,10 +244,10 @@ qsv sample --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will be considered as part of the population to sample from. (When not set, the first row is the header row and will always appear in the output.) |  |
-| `-d, --delimiter` | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will be considered as part of the population to sample from. (When not set, the first row is the header row and will always appear in the output.) |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/sample.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/sample.rs)

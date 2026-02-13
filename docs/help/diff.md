@@ -121,10 +121,10 @@ qsv diff --help
 | `--delimiter-left` | string | The field delimiter for reading CSV data on the left. Must be a single character. (default: ,) |  |
 | `--delimiter-right` | string | The field delimiter for reading CSV data on the right. Must be a single character. (default: ,) |  |
 | `--delimiter-output` | string | The field delimiter for writing the CSV diff result. Must be a single character. (default: ,) |  |
-| `-k, --key` | string | The column indices that uniquely identify a record as a comma separated list of 0-based indices, e.g. 0,1,2 or column names, e.g. name,age. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. (default: 0) |  |
+| `-k,`<br>`--key` | string | The column indices that uniquely identify a record as a comma separated list of 0-based indices, e.g. 0,1,2 or column names, e.g. name,age. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. (default: 0) |  |
 | `--sort-columns` | string | The column indices by which the diff result should be sorted as a comma separated list of indices, e.g. 0,1,2 or column names, e.g. name,age. Records in the diff result that are marked as "modified" ("delete" and "add" records that have the same key, but have different content) will always be kept together in the sorted diff result and so won't be sorted independently from each other. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. |  |
 | `--drop-equal-fields` | flag | Drop values of equal fields in modified rows of the CSV diff result (and replace them with the empty string). Key field values will not be dropped. |  |
-| `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 
 <a name="common-options"></a>
 
@@ -132,9 +132,9 @@ qsv diff --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-d, --delimiter` | string | Set ALL delimiters to this character. Overrides --delimiter-right, --delimiter-left and --delimiter-output. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-d,`<br>`--delimiter` | string | Set ALL delimiters to this character. Overrides --delimiter-right, --delimiter-left and --delimiter-output. |  |
 
 ---
 **Source:** [`src/cmd/diff.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/diff.rs)

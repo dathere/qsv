@@ -66,8 +66,8 @@ qsv foreach --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-u, --unify` | flag | If the output of the executed command is a CSV, unify the result by skipping headers on each subsequent command. Does not work when --dry-run is true. |  |
-| `-c, --new-column` | string | If unifying, add a new column with given name and copying the value of the current input file line. |  |
+| `-u,`<br>`--unify` | flag | If the output of the executed command is a CSV, unify the result by skipping headers on each subsequent command. Does not work when --dry-run is true. |  |
+| `-c,`<br>`--new-column` | string | If unifying, add a new column with given name and copying the value of the current input file line. |  |
 | `--dry-run` | string | If set to true (the default for safety reasons), the commands are sent to stdout instead of executing them. If set to a file, the commands will be written to the specified text file instead of executing them. Only if set to false will the commands be actually executed. | `true` |
 
 <a name="common-options"></a>
@@ -76,10 +76,10 @@ qsv foreach --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-n, --no-headers` | flag | When set, the file will be considered to have no headers. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-p, --progressbar` | flag | Show progress bars. Not valid for stdin. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-n,`<br>`--no-headers` | flag | When set, the file will be considered to have no headers. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-p,`<br>`--progressbar` | flag | Show progress bars. Not valid for stdin. |  |
 
 ---
 **Source:** [`src/cmd/foreach.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/foreach.rs)

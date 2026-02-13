@@ -179,16 +179,16 @@ qsv fetchpost --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-t, --payload-tpl` | string | Instead of <column-list>, use a MiniJinja template file to render a JSON payload in the HTTP Post body. You can also use --payload-tpl to render a non-JSON payload, but --content-type will have to be set manually. If a rendered JSON is invalid, `fetchpost` will abort and return an error. |  |
+| `-t,`<br>`--payload-tpl` | string | Instead of <column-list>, use a MiniJinja template file to render a JSON payload in the HTTP Post body. You can also use --payload-tpl to render a non-JSON payload, but --content-type will have to be set manually. If a rendered JSON is invalid, `fetchpost` will abort and return an error. |  |
 | `--content-type` | string | Overrides automatic content types for `<column-list>` (`application/x-www-form-urlencoded`) and `--payload-tpl` (`application/json`). Typical alternative values are `multipart/form-data` and `text/plain`. It is the responsibility of the user to format the payload accordingly when using --payload-tpl. |  |
-| `-j, --globals-json` | string | A JSON file containing global variables. When posting as an HTML Form, this file is added to the Form data. When constructing a payload using a MiniJinja template, the JSON properties can be accessed in templates using the "qsv_g" namespace (e.g. {{qsv_g.api_key}}, {{qsv_g.base_url}}). |  |
-| `-c, --new-column` | string | Put the fetched values in a new column. Specifying this option results in a CSV. Otherwise, the output is in JSONL format. |  |
+| `-j,`<br>`--globals-json` | string | A JSON file containing global variables. When posting as an HTML Form, this file is added to the Form data. When constructing a payload using a MiniJinja template, the JSON properties can be accessed in templates using the "qsv_g" namespace (e.g. {{qsv_g.api_key}}, {{qsv_g.base_url}}). |  |
+| `-c,`<br>`--new-column` | string | Put the fetched values in a new column. Specifying this option results in a CSV. Otherwise, the output is in JSONL format. |  |
 | `--jaq` | string | Apply jaq selector to API returned JSON response. Mutually exclusive with --jaqfile. |  |
 | `--jaqfile` | string | Load jaq selector from file instead. Mutually exclusive with --jaq. |  |
 | `--pretty` | flag | Prettify JSON responses. Otherwise, they're minified. If the response is not in JSON format, it's passed through unchanged. Note that --pretty requires the --new-column option. |  |
 | `--rate-limit` | string | Rate Limit in Queries Per Second (max: 1000). Note that fetch dynamically throttles as well based on rate-limit and retry-after response headers. Set to 0 to go as fast as possible, automatically throttling as required. CAUTION: Only use zero for APIs that use RateLimit and/or Retry-After headers, otherwise your fetchpost job may look like a Denial Of Service attack. Even though zero is the default, this is mitigated by --max-errors having a default of 10. | `0` |
 | `--timeout` | string | Timeout for each URL request. | `30` |
-| `-H, --http-header` | string | Append custom header(s) to the HTTP header. Pass multiple key-value pairs by adding this option multiple times, once for each pair. The key and value should be separated by a colon. |  |
+| `-H,`<br>`--http-header` | string | Append custom header(s) to the HTTP header. Pass multiple key-value pairs by adding this option multiple times, once for each pair. The key and value should be separated by a colon. |  |
 | `--compress` | flag | Compress the HTTP request body using gzip. Note that most servers do not support compressed request bodies unless they are specifically configured to do so. This should only be enabled for trusted scenarios where "zip bombs" are not a concern. see <https://github.com/postmanlabs/httpbin/issues/577#issuecomment-875814469> for more info. |  |
 | `--max-retries` | string | Maximum number of retries per record before an error is raised. | `5` |
 | `--max-errors` | string | Maximum number of errors before aborting. Set to zero (0) to continue despite errors. | `10` |
@@ -217,11 +217,11 @@ qsv fetchpost --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-p, --progressbar` | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-p,`<br>`--progressbar` | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |
 
 ---
 **Source:** [`src/cmd/fetchpost.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/fetchpost.rs)

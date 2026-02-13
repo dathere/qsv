@@ -44,9 +44,9 @@ qsv color --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-C, --color` | flag | Force color on, even in situations where colors would normally be disabled. |  |
-| `-n, --row-numbers` | flag | Show row numbers. |  |
-| `-t, --title` | string | Add a title row above the headers. |  |
+| `-C,`<br>`--color` | flag | Force color on, even in situations where colors would normally be disabled. |  |
+| `-n,`<br>`--row-numbers` | flag | Show row numbers. |  |
+| `-t,`<br>`--title` | string | Add a title row above the headers. |  |
 
 <a name="common-options"></a>
 
@@ -54,9 +54,9 @@ qsv color --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | `--memcheck` | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
 
 ---

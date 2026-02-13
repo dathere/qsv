@@ -35,12 +35,12 @@ qsv sort --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-s, --select` | string | Select a subset of columns to sort. See 'qsv select --help' for the format details. |  |
-| `-N, --numeric` | flag | Compare according to string numerical value |  |
+| `-s,`<br>`--select` | string | Select a subset of columns to sort. See 'qsv select --help' for the format details. |  |
+| `-N,`<br>`--numeric` | flag | Compare according to string numerical value |  |
 | `--natural` | flag | Compare strings using natural sort order (treats numbers within strings as actual numbers, e.g. "data1.txt", "data2.txt", "data10.txt", as opposed to "data1.txt", "data10.txt", "data2.txt" when sorting lexicographically) <https://en.wikipedia.org/wiki/Natural_sort_order> |  |
-| `-R, --reverse` | flag | Reverse order |  |
-| `-i, --ignore-case` | flag | Compare strings disregarding case |  |
-| `-u, --unique` | flag | When set, identical consecutive lines will be dropped to keep only one line per sorted value. |  |
+| `-R,`<br>`--reverse` | flag | Reverse order |  |
+| `-i,`<br>`--ignore-case` | flag | Compare strings disregarding case |  |
+| `-u,`<br>`--unique` | flag | When set, identical consecutive lines will be dropped to keep only one line per sorted value. |  |
 
 <a name="random-sorting-options"></a>
 
@@ -51,7 +51,7 @@ qsv sort --help
 | `--random` | flag | Randomize (scramble) the data by row |  |
 | `--seed` | string | Random Number Generator (RNG) seed to use if --random is set |  |
 | `--rng` | string | The RNG algorithm to use if --random is set. | `standard` |
-| `-j, --jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | `--faster` | flag | When set, the sort will be faster. This is done by using a faster sorting algorithm that is not "stable" (i.e. the order of identical values is not guaranteed to be preserved). It has the added side benefit that the sort will also be in-place (i.e. does not allocate), which is useful for sorting large files that will otherwise NOT fit in memory using the default allocating stable sort. |  |
 
 <a name="common-options"></a>
@@ -60,10 +60,10 @@ qsv sort --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | `--memcheck` | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. Ignored if --random or --faster is set. |  |
 
 ---

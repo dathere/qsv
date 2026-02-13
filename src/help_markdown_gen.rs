@@ -354,19 +354,19 @@ fn generate_command_markdown(
         md.push_str("| Option | Type | Description | Default |\n");
         md.push_str("|--------|------|-------------|--------|\n");
         for opt in options {
-            let short_str = opt
-                .short
-                .as_ref()
-                .map_or(String::new(), |s| format!("{s}, "));
+            let option_display = if let Some(short) = &opt.short {
+                format!("`{short},`<br>`{}`", opt.flag)
+            } else {
+                format!("`{}`", opt.flag)
+            };
             let default_str = opt
                 .default
                 .as_ref()
                 .map_or(String::new(), |d| format!("`{d}`"));
             let _ = writeln!(
                 md,
-                "| `{}{}` | {} | {} | {} |",
-                short_str,
-                opt.flag,
+                "| {} | {} | {} | {} |",
+                option_display,
                 opt.option_type,
                 escape_table_cell(&linkify_bare_urls(&opt.description)),
                 default_str
@@ -529,7 +529,12 @@ fn parse_usage_sections(usage_text: &str) -> UsageSections {
                 && trimmed.len() > 3
                 && trimmed[..trimmed.len() - 1]
                     .chars()
-                    .all(|c| c.is_uppercase() || c.is_whitespace() || c == '_' || c == '-')
+                    .all(|c| c.is_uppercase()
+                        || c.is_whitespace()
+                        || c == '_'
+                        || c == '-'
+                        || c == '/'
+                        || c == '&')
             {
                 // Finalize previous option group
                 if !current_option_lines.is_empty() {
@@ -725,19 +730,42 @@ fn format_description(lines: &[String]) -> String {
     md
 }
 
-/// Convert ALL-CAPS heading to title case
+/// Known acronyms that should be preserved as all-uppercase in title-cased headings
+const ACRONYMS: &[&str] = &[
+    "API", "CKAN", "CSV", "CV", "HTTP", "HTTPS", "ID", "IP", "IPC", "IQR", "JSON", "JSONL",
+    "LLM", "NLP", "ODS", "RAG", "SEM", "SQL", "SSV", "TOML", "TOON", "TSV", "URL", "UUID",
+    "XLSX",
+];
+
+/// Title-case a single part (word fragment), preserving known acronyms
+fn titlecase_part(part: &str) -> String {
+    let upper = part.to_uppercase();
+    if ACRONYMS.contains(&upper.as_str()) {
+        return upper;
+    }
+    let lower = part.to_lowercase();
+    let mut chars = lower.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
+/// Convert ALL-CAPS heading to title case, preserving known acronyms
+/// and handling `/`-separated parts (e.g. "ANALYSIS/INFERENCING" → "Analysis/Inferencing")
 fn titlecase_heading(s: &str) -> String {
-    // Remove trailing parenthetical like "(multi-column capable)"
     let s = s.trim();
     let words: Vec<&str> = s.split_whitespace().collect();
     words
         .iter()
         .map(|w| {
-            let lower = w.to_lowercase();
-            let mut chars = lower.chars();
-            match chars.next() {
-                None => String::new(),
-                Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+            if w.contains('/') {
+                w.split('/')
+                    .map(titlecase_part)
+                    .collect::<Vec<_>>()
+                    .join("/")
+            } else {
+                titlecase_part(w)
             }
         })
         .collect::<Vec<_>>()

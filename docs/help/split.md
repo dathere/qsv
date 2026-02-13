@@ -137,10 +137,10 @@ qsv split --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-s, --size` | string | The number of records to write into each chunk. | `500` |
-| `-c, --chunks` | string | The number of chunks to split the data into. This option is mutually exclusive with --size. The number of rows in each chunk is determined by the number of records in the CSV data and the number of desired chunks. If the number of records is not evenly divisible by the number of chunks, the last chunk will have fewer records. |  |
-| `-k, --kb-size` | string | The size of each chunk in kilobytes. The number of rows in each chunk may vary, but the size of each chunk will not exceed the desired size. This option is mutually exclusive with --size and --chunks. |  |
-| `-j, --jobs` | string | The number of splitting jobs to run in parallel. This only works when the given CSV data has an index already created. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| `-s,`<br>`--size` | string | The number of records to write into each chunk. | `500` |
+| `-c,`<br>`--chunks` | string | The number of chunks to split the data into. This option is mutually exclusive with --size. The number of rows in each chunk is determined by the number of records in the CSV data and the number of desired chunks. If the number of records is not evenly divisible by the number of chunks, the last chunk will have fewer records. |  |
+| `-k,`<br>`--kb-size` | string | The size of each chunk in kilobytes. The number of rows in each chunk may vary, but the size of each chunk will not exceed the desired size. This option is mutually exclusive with --size and --chunks. |  |
+| `-j,`<br>`--jobs` | string | The number of splitting jobs to run in parallel. This only works when the given CSV data has an index already created. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | `--filename` | string | A filename template to use when constructing the names of the output files.  The string '{}' will be replaced by the zero-based row number of the first row in the chunk. | `{}.csv` |
 | `--pad` | string | The zero padding width that is used in the generated filename. | `0` |
 
@@ -160,10 +160,10 @@ qsv split --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-n, --no-headers` | flag | When set, the first row will NOT be interpreted as column names. Otherwise, the first row will appear in all chunks as the header row. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-q, --quiet` | flag | Do not display an output summary to stderr. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will NOT be interpreted as column names. Otherwise, the first row will appear in all chunks as the header row. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-q,`<br>`--quiet` | flag | Do not display an output summary to stderr. |  |
 
 ---
 **Source:** [`src/cmd/split.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/split.rs)

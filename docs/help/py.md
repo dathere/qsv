@@ -150,8 +150,8 @@ qsv py --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-f, --helper` | string | File containing Python code that's loaded into the qsv_uh Python module. Functions with a return statement in the file can be called with the prefix "qsv_uh". The returned value is used in the map or filter operation. |  |
-| `-b, --batch` | string | The number of rows per batch to process before releasing memory and acquiring a new GILpool. Set to 0 to process the entire file in one batch. | `50000` |
+| `-f,`<br>`--helper` | string | File containing Python code that's loaded into the qsv_uh Python module. Functions with a return statement in the file can be called with the prefix "qsv_uh". The returned value is used in the map or filter operation. |  |
+| `-b,`<br>`--batch` | string | The number of rows per batch to process before releasing memory and acquiring a new GILpool. Set to 0 to process the entire file in one batch. | `50000` |
 
 <a name="common-options"></a>
 
@@ -159,11 +159,11 @@ qsv py --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-p, --progressbar` | flag | Show progress bars. Not valid for stdin. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-p,`<br>`--progressbar` | flag | Show progress bars. Not valid for stdin. |  |
 
 ---
 **Source:** [`src/cmd/python.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/python.rs)

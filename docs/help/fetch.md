@@ -78,7 +78,7 @@ construct URLs for each CSV record with the --url-template option (see Examples 
 EXAMPLES USING THE URL-COLUMN ARGUMENT:
 
 data.csv
-### Url
+### URL
 
 <https://api.zippopotam.us/us/90210>
 <https://api.zippopotam.us/us/94105>
@@ -184,13 +184,13 @@ qsv fetch --help
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--url-template` | string | URL template to use. Use column names enclosed with curly braces to insert the CSV data for a record. Mutually exclusive with url-column. |  |
-| `-c, --new-column` | string | Put the fetched values in a new column. Specifying this option results in a CSV. Otherwise, the output is in JSONL format. |  |
+| `-c,`<br>`--new-column` | string | Put the fetched values in a new column. Specifying this option results in a CSV. Otherwise, the output is in JSONL format. |  |
 | `--jaq` | string | Apply jaq selector to API returned JSON value. Mutually exclusive with --jaqfile, |  |
 | `--jaqfile` | string | Load jaq selector from file instead. Mutually exclusive with --jaq. |  |
 | `--pretty` | flag | Prettify JSON responses. Otherwise, they're minified. If the response is not in JSON format, it's passed through. Note that --pretty requires the --new-column option. |  |
 | `--rate-limit` | string | Rate Limit in Queries Per Second (max: 1000). Note that fetch dynamically throttles as well based on rate-limit and retry-after response headers. Set to 0 to go as fast as possible, automatically throttling as required. CAUTION: Only use zero for APIs that use RateLimit and/or Retry-After headers, otherwise your fetch job may look like a Denial Of Service attack. Even though zero is the default, this is mitigated by --max-errors having a default of 10. | `0` |
 | `--timeout` | string | Timeout for each URL request. | `30` |
-| `-H, --http-header` | string | Append custom header(s) to the HTTP header. Pass multiple key-value pairs by adding this option multiple times, once for each pair. The key and value should be separated by a colon. |  |
+| `-H,`<br>`--http-header` | string | Append custom header(s) to the HTTP header. Pass multiple key-value pairs by adding this option multiple times, once for each pair. The key and value should be separated by a colon. |  |
 | `--max-retries` | string | Maximum number of retries per record before an error is raised. | `5` |
 | `--max-errors` | string | Maximum number of errors before aborting. Set to zero (0) to continue despite errors. | `10` |
 | `--store-error` | flag | On error, store error code/message instead of blank value. |  |
@@ -218,11 +218,11 @@ qsv fetch --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-p, --progressbar` | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-p,`<br>`--progressbar` | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |
 
 ---
 **Source:** [`src/cmd/fetch.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/fetch.rs)

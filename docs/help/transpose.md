@@ -77,8 +77,8 @@ qsv transpose --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-m, --multipass` | flag | Process the transpose by making multiple passes over the dataset. Consumes memory relative to the number of rows. Note that in general it is faster to process the transpose in memory. Useful for really big datasets as the default is to read the entire dataset into memory. |  |
-| `-s, --select` | string | Select a subset of columns to transpose. When used with --long, this filters which columns become attribute rows (the field columns are unaffected). See 'qsv select --help' for the full selection syntax. |  |
+| `-m,`<br>`--multipass` | flag | Process the transpose by making multiple passes over the dataset. Consumes memory relative to the number of rows. Note that in general it is faster to process the transpose in memory. Useful for really big datasets as the default is to read the entire dataset into memory. |  |
+| `-s,`<br>`--select` | string | Select a subset of columns to transpose. When used with --long, this filters which columns become attribute rows (the field columns are unaffected). See 'qsv select --help' for the full selection syntax. |  |
 | `--long` | string | Convert wide-format CSV to "long" format. |  |
 
 <a name="common-options"></a>
@@ -87,9 +87,9 @@ qsv transpose --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | `--memcheck` | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. Ignored when --multipass or --long option is enabled. |  |
 
 ---

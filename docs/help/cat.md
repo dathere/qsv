@@ -97,7 +97,7 @@ qsv cat --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-p, --pad` | flag | When concatenating columns, this flag will cause all records to appear. It will pad each row if other CSV data isn't long enough. |  |
+| `-p,`<br>`--pad` | flag | When concatenating columns, this flag will cause all records to appear. It will pad each row if other CSV data isn't long enough. |  |
 
 <a name="rows-option"></a>
 
@@ -113,8 +113,8 @@ qsv cat --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-g, --group` | string | When concatenating with rowskey, you can specify a grouping value which will be used as the first column in the output. This is useful when you want to know which file a row came from. Valid values are 'fullpath', 'parentdirfname', 'parentdirfstem', 'fname', 'fstem' and 'none'. A new column will be added to the beginning of each row using --group-name. If 'none' is specified, no grouping column will be added. | `none` |
-| `-N, --group-name` | string | When concatenating with rowskey, this flag provides the name for the new grouping column. | `file` |
+| `-g,`<br>`--group` | string | When concatenating with rowskey, you can specify a grouping value which will be used as the first column in the output. This is useful when you want to know which file a row came from. Valid values are 'fullpath', 'parentdirfname', 'parentdirfstem', 'fname', 'fstem' and 'none'. A new column will be added to the beginning of each row using --group-name. If 'none' is specified, no grouping column will be added. | `none` |
+| `-N,`<br>`--group-name` | string | When concatenating with rowskey, this flag provides the name for the new grouping column. | `file` |
 
 <a name="common-options"></a>
 
@@ -122,10 +122,10 @@ qsv cat --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will NOT be interpreted as column names. Note that this has no effect when concatenating columns. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will NOT be interpreted as column names. Note that this has no effect when concatenating columns. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/cat.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/cat.rs)

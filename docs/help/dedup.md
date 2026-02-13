@@ -83,13 +83,13 @@ qsv dedup --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-s, --select` | string | Select a subset of columns to dedup. Note that the outputs will remain at the full width of the CSV. See 'qsv select --help' for the format details. |  |
-| `-N, --numeric` | flag | Compare according to string numerical value |  |
-| `-i, --ignore-case` | flag | Compare strings disregarding case. |  |
+| `-s,`<br>`--select` | string | Select a subset of columns to dedup. Note that the outputs will remain at the full width of the CSV. See 'qsv select --help' for the format details. |  |
+| `-N,`<br>`--numeric` | flag | Compare according to string numerical value |  |
+| `-i,`<br>`--ignore-case` | flag | Compare strings disregarding case. |  |
 | `--sorted` | flag | The input is already sorted. Do not load the CSV into memory to sort it first. Meant to be used in tandem and after an extsort. |  |
-| `-D, --dupes-output` | string | Write duplicates to <file>. |  |
-| `-H, --human-readable` | flag | Comma separate duplicate count. |  |
-| `-j, --jobs` | string | The number of jobs to run in parallel when sorting an unsorted CSV, before deduping. When not set, the number of jobs is set to the number of CPUs detected. Does not work with --sorted option as its not multithreaded. |  |
+| `-D,`<br>`--dupes-output` | string | Write duplicates to <file>. |  |
+| `-H,`<br>`--human-readable` | flag | Comma separate duplicate count. |  |
+| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel when sorting an unsorted CSV, before deduping. When not set, the number of jobs is set to the number of CPUs detected. Does not work with --sorted option as its not multithreaded. |  |
 
 <a name="common-options"></a>
 
@@ -97,11 +97,11 @@ qsv dedup --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-n, --no-headers` | flag | When set, the first row will not be interpreted as headers. That is, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
-| `-d, --delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-q, --quiet` | flag | Do not print duplicate count to stderr. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. That is, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| `-q,`<br>`--quiet` | flag | Do not print duplicate count to stderr. |  |
 | `--memcheck` | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
 
 ---

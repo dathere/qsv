@@ -40,7 +40,7 @@ qsv index --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-o, --output` | string | Write index to <file> instead of <input>.idx. Generally, this is not currently useful because the only way to use an index is if it is specially named <input>.idx. |  |
+| `-o,`<br>`--output` | string | Write index to <file> instead of <input>.idx. Generally, this is not currently useful because the only way to use an index is if it is specially named <input>.idx. |  |
 
 <a name="common-options"></a>
 
@@ -48,7 +48,7 @@ qsv index --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
 
 ---
 **Source:** [`src/cmd/index.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/index.rs)

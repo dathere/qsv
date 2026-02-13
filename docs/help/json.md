@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/json.rs](https://github.com/dathere/qsv/blob/master/src/cmd/json.rs)** | 👆
 
 <a name="nav"></a>
-[Description](#description) | [Usage](#usage) | [Json Options](#json-options) | [Common Options](#common-options)
+[Description](#description) | [Usage](#usage) | [JSON Options](#json-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -158,12 +158,12 @@ qsv json --help
 
 <a name="json-options"></a>
 
-## Json Options [↩](#nav)
+## JSON Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
 | `--jaq` | string | Filter JSON data using jaq syntax (<https://github.com/01mf02/jaq>), which is identical to the popular JSON command-line tool - jq. <https://jqlang.github.io/jq/> Note that the filter is applied BEFORE converting JSON to CSV |  |
-| `-s, --select` | string | Select, reorder or drop columns for output. Otherwise, all the columns will be output in the same order as the first object's keys in the JSON data. See 'qsv select --help' for the full syntax. Note however that <cols> NEED to be a comma-delimited list of column NAMES and NOT column INDICES. | `1-` |
+| `-s,`<br>`--select` | string | Select, reorder or drop columns for output. Otherwise, all the columns will be output in the same order as the first object's keys in the JSON data. See 'qsv select --help' for the full syntax. Note however that <cols> NEED to be a comma-delimited list of column NAMES and NOT column INDICES. | `1-` |
 
 <a name="common-options"></a>
 
@@ -171,8 +171,8 @@ qsv json --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
 
 ---
 **Source:** [`src/cmd/json.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/json.rs)

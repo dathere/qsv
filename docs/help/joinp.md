@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/joinp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/joinp.rs)** | 🚀🐻‍❄️🪄
 
 <a name="nav"></a>
-[Description](#description) | [Usage](#usage) | [Joinp Options](#joinp-options) | [Join Options](#join-options) | [Polars Csv Parsing Options](#polars-csv-parsing-options) | [Asof Join Options](#asof-join-options) | [Output Format Options](#output-format-options) | [Join Key Transformation Options](#join-key-transformation-options) | [Common Options](#common-options)
+[Description](#description) | [Usage](#usage) | [Joinp Options](#joinp-options) | [Join Options](#join-options) | [Polars CSV Parsing Options](#polars-csv-parsing-options) | [Asof Join Options](#asof-join-options) | [Output Format Options](#output-format-options) | [Join Key Transformation Options](#join-key-transformation-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -68,7 +68,7 @@ qsv joinp --help
 
 <a name="polars-csv-parsing-options"></a>
 
-## Polars Csv Parsing Options [↩](#nav)
+## Polars CSV Parsing Options [↩](#nav)
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
@@ -92,7 +92,7 @@ qsv joinp --help
 | `--right_by` | string | Do an 'asof_by' join. This specifies the column/s for the right CSV. |  |
 | `--strategy` | string | The strategy to use for the asof join: backward - For each row in the first CSV data set, we find the last row in the second data set whose key is less than or equal to the key in the first data set. forward -  For each row in the first CSV data set, we find the first row in the second data set whose key is greater than or equal to the key in the first data set. nearest -  selects the last row in the second data set whose value is nearest to the value in the first data set. | `backward` |
 | `--tolerance` | string | The tolerance for the nearest asof join. This is only used when the nearest strategy is used. The tolerance is a positive integer that specifies the maximum number of rows to search for a match. |  |
-| `-X, --allow-exact-matches` | flag | When set, the asof join will allow exact matches. (i.e. less-than-or-equal-to or greater-than-or-equal-to) Otherwise, the asof join will only allow nearest matches (strictly less-than or greater-than) by default. |  |
+| `-X,`<br>`--allow-exact-matches` | flag | When set, the asof join will allow exact matches. (i.e. less-than-or-equal-to or greater-than-or-equal-to) Otherwise, the asof join will only allow nearest matches (strictly less-than or greater-than) by default. |  |
 
 <a name="output-format-options"></a>
 
@@ -113,9 +113,9 @@ qsv joinp --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-i, --ignore-case` | flag | When set, joins are done case insensitively. |  |
-| `-z, --ignore-leading-zeros` | flag | When set, joins are done ignoring leading zeros. Note that this is only applied to the join keys for both numeric and string columns. Also note that Polars will automatically remove leading zeros from numeric columns when it infers the schema. To force the schema to be all String types, set --cache-schema to -1 or -2. |  |
-| `-N, --norm-unicode` | string | When set, join keys are Unicode normalized. | `none` |
+| `-i,`<br>`--ignore-case` | flag | When set, joins are done case insensitively. |  |
+| `-z,`<br>`--ignore-leading-zeros` | flag | When set, joins are done ignoring leading zeros. Note that this is only applied to the join keys for both numeric and string columns. Also note that Polars will automatically remove leading zeros from numeric columns when it infers the schema. To force the schema to be all String types, set --cache-schema to -1 or -2. |  |
+| `-N,`<br>`--norm-unicode` | string | When set, join keys are Unicode normalized. | `none` |
 
 <a name="common-options"></a>
 
@@ -123,10 +123,10 @@ qsv joinp --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h, --help` | flag | Display this message |  |
-| `-o, --output` | string | Write output to <file> instead of stdout. |  |
-| `-d, --delimiter` | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
-| `-q, --quiet` | flag | Do not return join shape to stderr. |  |
+| `-h,`<br>`--help` | flag | Display this message |  |
+| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| `-d,`<br>`--delimiter` | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
+| `-q,`<br>`--quiet` | flag | Do not return join shape to stderr. |  |
 
 ---
 **Source:** [`src/cmd/joinp.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/joinp.rs)

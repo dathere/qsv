@@ -51,5 +51,23 @@
   "hints": {
     "streamable": false,
     "memory": "full"
-  }
+  },
+  "examples": [
+    {
+      "description": "Basic one-sample statistics",
+      "command": "qsv pragmastat data.csv"
+    },
+    {
+      "description": "One-sample statistics with selected columns",
+      "command": "qsv pragmastat --select latency_ms,price data.csv"
+    },
+    {
+      "description": "Two-sample statistics with selected columns",
+      "command": "qsv pragmastat --twosample --select latency_ms,price data.csv"
+    },
+    {
+      "description": "One-sample statistics with very tight bounds (lower misrate)",
+      "command": "qsv pragmastat --misrate 1e-6 data.csv"
+    }
+  ]
 }

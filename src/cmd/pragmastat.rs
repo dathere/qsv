@@ -52,10 +52,17 @@ MISRATE PARAMETER
     1e-6    Critical decisions
 
 Examples:
-    qsv pragmastat data.csv
-    qsv pragmastat --select latency_ms,price data.csv
-    qsv pragmastat --twosample --select latency_ms,price data.csv
-    qsv pragmastat --misrate 1e-6 data.csv
+  # Basic one-sample statistics
+  qsv pragmastat data.csv
+
+  # One-sample statistics with selected columns
+  qsv pragmastat --select latency_ms,price data.csv
+
+  # Two-sample statistics with selected columns
+  qsv pragmastat --twosample --select latency_ms,price data.csv
+
+  # One-sample statistics with very tight bounds (lower misrate)
+  qsv pragmastat --misrate 1e-6 data.csv
 
 Full Pragmastat manual:
 https://github.com/AndreyAkinshin/pragmastat/releases/download/v8.0.0/pragmastat-v8.0.0.pdf

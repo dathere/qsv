@@ -69,17 +69,25 @@ misrate is the probability that bounds miss the true value (lower => wider bound
 
 ## Examples [↩](#nav)
 
+> Basic one-sample statistics
+
 ```console
 qsv pragmastat data.csv
 ```
+
+> One-sample statistics with selected columns
 
 ```console
 qsv pragmastat --select latency_ms,price data.csv
 ```
 
+> Two-sample statistics with selected columns
+
 ```console
 qsv pragmastat --twosample --select latency_ms,price data.csv
 ```
+
+> One-sample statistics with very tight bounds (lower misrate)
 
 ```console
 qsv pragmastat --misrate 1e-6 data.csv

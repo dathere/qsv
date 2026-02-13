@@ -10,7 +10,7 @@ extern crate stats;
 use std::{env, fmt, mem::transmute, ops};
 
 use quickcheck::{Arbitrary, Gen, QuickCheck, Testable};
-use rand::Rng;
+use rand::RngExt;
 // use assert_eq;
 
 macro_rules! svec[

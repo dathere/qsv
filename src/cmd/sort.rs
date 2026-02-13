@@ -70,7 +70,7 @@ Common options:
 use std::{cmp, str::FromStr};
 
 // use fastrand; //DevSkim: ignore DS148264
-use rand::{Rng, SeedableRng, rngs::StdRng, seq::SliceRandom};
+use rand::{RngExt, SeedableRng, rngs::StdRng, seq::SliceRandom};
 use rand_hc::Hc128Rng;
 use rand_xoshiro::Xoshiro256Plus;
 use rayon::slice::ParallelSliceMut;
@@ -180,7 +180,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 },
                 RngKind::Faster => {
                     let mut rng = match args.flag_seed {
-                        None => Xoshiro256Plus::from_os_rng(),
+                        None => rand::make_rng::<Xoshiro256Plus>(),
                         Some(sd) => Xoshiro256Plus::seed_from_u64(sd), // DevSkim: ignore DS148264
                     };
                     SliceRandom::shuffle(&mut *all, &mut rng); //DevSkim: ignore DS148264
@@ -196,7 +196,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         },
                     };
                     let mut rng: Hc128Rng = match args.flag_seed {
-                        None => Hc128Rng::from_os_rng(),
+                        None => rand::make_rng::<Hc128Rng>(),
                         Some(_) => Hc128Rng::from_seed(seed_32),
                     };
                     SliceRandom::shuffle(&mut *all, &mut rng);

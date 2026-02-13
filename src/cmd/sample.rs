@@ -235,7 +235,7 @@ use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use futures_util::StreamExt;
 use qsv_dateparser::parse_with_preference_and_timezone;
 use rand::{
-    Rng, SeedableRng,
+    Rng, RngExt, SeedableRng,
     distr::{Bernoulli, Distribution},
     prelude::IndexedRandom,
     rngs::StdRng,
@@ -381,7 +381,7 @@ trait RngProvider: Sized {
         if let Some(seed) = seed {
             Self::RngType::seed_from_u64(seed) // DevSkim: ignore DS148264
         } else {
-            Self::RngType::from_os_rng()
+            rand::make_rng::<Self::RngType>()
         }
     }
 }
@@ -1922,21 +1922,21 @@ fn sample_cluster<R: io::Read, W: io::Write>(
         RngKind::Standard => {
             let mut rng = StandardRng::create(seed);
             all_clusters
-                .choose_multiple(&mut rng, requested_clusters.min(all_clusters.len()))
+                .sample(&mut rng, requested_clusters.min(all_clusters.len()))
                 .cloned()
                 .collect()
         },
         RngKind::Faster => {
             let mut rng = FasterRng::create(seed);
             all_clusters
-                .choose_multiple(&mut rng, requested_clusters.min(all_clusters.len()))
+                .sample(&mut rng, requested_clusters.min(all_clusters.len()))
                 .cloned()
                 .collect()
         },
         RngKind::Cryptosecure => {
             let mut rng = CryptoRng::create(seed);
             all_clusters
-                .choose_multiple(&mut rng, requested_clusters.min(all_clusters.len()))
+                .sample(&mut rng, requested_clusters.min(all_clusters.len()))
                 .cloned()
                 .collect()
         },

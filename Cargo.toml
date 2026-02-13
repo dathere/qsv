@@ -227,9 +227,9 @@ qsv-stats = "0.45"
 qsv_currency = "0.7"
 qsv-tabwriter = "2"
 qsv_vader_sentiment_analysis = { version = "0.2", optional = true }
-rand = "0.9"
-rand_hc = "0.4"
-rand_xoshiro = "0.7"
+rand = "0.10"
+rand_hc = "0.5"
+rand_xoshiro = "0.8"
 rayon = "1.11"
 redis = { version = "1", features = ["ahash"], default-features = false }
 regex = "1"
@@ -433,7 +433,6 @@ feature_capable = []
 nightly = [
     "crc32fast/nightly",
     "pyo3/nightly",
-    "rand/nightly",
     "rand/simd_support",
     "simd-json/hints",
     "foldhash/nightly",

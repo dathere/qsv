@@ -65,8 +65,8 @@ function getSubcommand(skill: QsvSkill, params: SkillParams): string | null {
  * Normalize an option key by stripping leading dashes
  */
 function normalizeOptionKey(key: string): string {
-  if (key.startsWith("--")) return key.substring(2);
-  if (key.startsWith("-")) return key.substring(1);
+  if (key.startsWith("--") && key.length > 2) return key.substring(2);
+  if (key.startsWith("-") && key.length > 1) return key.substring(1);
   return key;
 }
 
@@ -142,7 +142,13 @@ export async function runQsvSimple(
     if (captureStdout) {
       proc.stdout!.on("data", (chunk) => { stdout += chunk.toString(); });
     }
-    proc.stderr!.on("data", (chunk) => { stderr += chunk.toString(); });
+    const MAX_STDERR_SIZE = 50 * 1024 * 1024; // 50MB limit
+    proc.stderr!.on("data", (chunk) => {
+      const data = chunk.toString();
+      if (stderr.length + data.length <= MAX_STDERR_SIZE) {
+        stderr += data;
+      }
+    });
 
     proc.on("close", (code) => {
       finalize(undefined, code);
@@ -218,7 +224,9 @@ export class SkillExecutor {
   }
 
   /**
-   * Build command string for shell scripts (skips input validation)
+   * Build command string for display/logging only (NOT shell-safe).
+   * Args are joined with spaces without quoting or escaping.
+   * For actual execution, use execute() which passes args as an array to spawn().
    */
   buildCommand(skill: QsvSkill, params: SkillParams): string {
     const args = this.buildArgs(skill, params, true);
@@ -355,7 +363,7 @@ export class SkillExecutor {
       let processExited = false;
       let timer: ReturnType<typeof setTimeout> | null = null;
       let killTimer: ReturnType<typeof setTimeout> | null = null;
-      const MAX_STDOUT_SIZE = 50 * 1024 * 1024; // 50MB limit to prevent memory issues
+      const MAX_OUTPUT_SIZE = 50 * 1024 * 1024; // 50MB limit to prevent memory issues (stdout and stderr)
 
       // Cleanup helper to clear both timers and mark process as exited
       const clearTimers = () => {
@@ -404,11 +412,11 @@ export class SkillExecutor {
         const chunkStr = chunk.toString();
 
         // Check if adding this chunk would exceed the limit
-        if (stdout.length + chunkStr.length > MAX_STDOUT_SIZE) {
+        if (stdout.length + chunkStr.length > MAX_OUTPUT_SIZE) {
           if (!stdoutTruncated) {
             stdoutTruncated = true;
             console.error(
-              `[Executor] WARNING: stdout exceeded ${MAX_STDOUT_SIZE / 1024 / 1024}MB limit, truncating output. Consider using --output to write to a file instead.`,
+              `[Executor] WARNING: stdout exceeded ${MAX_OUTPUT_SIZE / 1024 / 1024}MB limit, truncating output. Consider using --output to write to a file instead.`,
             );
             stdout +=
               "\n\n[OUTPUT TRUNCATED - Result too large for display. Use --output option to write to a file.]\n";
@@ -420,8 +428,20 @@ export class SkillExecutor {
         stdout += chunkStr;
       });
 
+      let stderrTruncated = false;
       proc.stderr.on("data", (chunk) => {
         const data = chunk.toString();
+        if (stderr.length + data.length > MAX_OUTPUT_SIZE) {
+          if (!stderrTruncated) {
+            stderrTruncated = true;
+            console.error(
+              `[Executor] WARNING: stderr exceeded ${MAX_OUTPUT_SIZE / 1024 / 1024}MB limit, truncating.`,
+            );
+            stderr +=
+              "\n\n[STDERR TRUNCATED - Too much diagnostic output.]\n";
+          }
+          return;
+        }
         stderr += data;
         console.error(`[Executor] stderr: ${data}`);
       });

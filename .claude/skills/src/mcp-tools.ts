@@ -16,6 +16,7 @@ import type {
   McpToolDefinition,
   McpToolProperty,
   FilesystemProviderExtended,
+  SkillCategory,
 } from "./types.js";
 import { runQsvSimple } from "./executor.js";
 import type { SkillExecutor } from "./executor.js";
@@ -1415,6 +1416,113 @@ Common commands via this tool: join, sort, dedup, apply, rename, validate, sampl
 }
 
 /**
+ * Create qsv_list_files tool definition
+ */
+export function createListFilesTool(): McpToolDefinition {
+  return {
+    name: "qsv_list_files",
+    description: `List tabular data files in a directory for browsing and discovery.
+
+💡 USE WHEN:
+- User asks "what files do I have?" or "what's in my Downloads folder?"
+- Starting a session and need to discover available datasets
+- User mentions a directory but not a specific file
+- Verifying files exist before processing
+
+🔍 SHOWS: File name, size, format type, last modified date.
+
+📂 SUPPORTED FORMATS:
+- **Native CSV**: .csv, .tsv, .tab, .ssv (and .sz snappy-compressed)
+- **Excel** (auto-converts): .xls, .xlsx, .xlsm, .xlsb, .ods
+- **JSONL** (auto-converts): .jsonl, .ndjson
+
+🚀 WORKFLOW: Always list files first when user mentions a directory. This helps you:
+1. See what files are available
+2. Get exact file names (avoid typos)
+3. Check file sizes (prepare for large files)
+4. Identify file formats (know if conversion needed)
+
+💡 TIP: Use non-recursive (default) for faster listing, recursive when searching subdirectories.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        directory: {
+          type: "string",
+          description:
+            "Directory path (absolute or relative to working directory). Omit to use current working directory.",
+        },
+        recursive: {
+          type: "boolean",
+          description:
+            "Scan subdirectories recursively (default: false). Enable for deep directory searches. May be slow for large directory trees.",
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Create qsv_set_working_dir tool definition
+ */
+export function createSetWorkingDirTool(): McpToolDefinition {
+  return {
+    name: "qsv_set_working_dir",
+    description: `Change the working directory for all subsequent file operations.
+
+💡 USE WHEN:
+- User says "work with files in my Downloads folder"
+- Switching between different data directories
+- User provides directory path without specific file
+- Setting up environment for multiple file operations
+
+⚙️  BEHAVIOR:
+- All relative file paths resolved from this directory
+- Affects: qsv_list_files, all qsv commands with input_file
+- Persists for entire session (until changed again)
+- Validates directory exists and is accessible
+
+🔒 SECURITY: Only allowed directories can be set (configured in server settings).
+
+💡 TIP: Set working directory once at session start, then use simple filenames like "data.csv" instead of full paths.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        directory: {
+          type: "string",
+          description:
+            "New working directory path (absolute or relative). Must be within allowed directories for security.",
+        },
+      },
+      required: ["directory"],
+    },
+  };
+}
+
+/**
+ * Create qsv_get_working_dir tool definition
+ */
+export function createGetWorkingDirTool(): McpToolDefinition {
+  return {
+    name: "qsv_get_working_dir",
+    description: `Get the current working directory path.
+
+💡 USE WHEN:
+- Confirming where files will be read from/written to
+- User asks "where am I working?" or "what's my current directory?"
+- Debugging file path issues
+- Verifying working directory before operations
+
+📍 RETURNS: Absolute path to current working directory.
+
+💡 TIP: Call this after qsv_set_working_dir to confirm the change succeeded.`,
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  };
+}
+
+/**
  * Create qsv_config tool definition
  */
 export function createConfigTool(): McpToolDefinition {
@@ -1726,7 +1834,7 @@ export async function handleSearchToolsCall(
 
   if (matchedCategory && !category) {
     // Add skills from matching category that weren't already found
-    const categorySkills = loader.getByCategory(matchedCategory as any);
+    const categorySkills = loader.getByCategory(matchedCategory as SkillCategory);
     const existingNames = new Set(results.map((r) => r.name));
     for (const skill of categorySkills) {
       if (!existingNames.has(skill.name)) {
@@ -1757,7 +1865,6 @@ export async function handleSearchToolsCall(
 
   // Sort by relevance (exact name match first, then description match)
   results.sort((a, b) => {
-    const queryLower = query.toLowerCase();
     const aNameMatch = a.name.toLowerCase().includes(queryLower) ? 1 : 0;
     const bNameMatch = b.name.toLowerCase().includes(queryLower) ? 1 : 0;
     const aCommandMatch = a.command.subcommand

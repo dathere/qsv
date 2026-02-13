@@ -94,7 +94,7 @@ test('ConvertedFileManager getValidConvertedFile returns path for valid file', a
 
     // Create both files (converted file created after source)
     await createTestFile(testDir, 'source.xlsx', 100);
-    await new Promise(resolve => setTimeout(resolve, 10)); // Small delay
+    await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
     await createTestFile(testDir, 'source.converted.abc123.csv', 50);
 
     const result = await manager.getValidConvertedFile(sourcePath, convertedPath);
@@ -237,7 +237,7 @@ test('ConvertedFileManager touchConvertedFile updates timestamp', async () => {
     const initialTimestamp = cache.entries[0].createdAt;
 
     // Wait a bit and touch the file
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise(resolve => setTimeout(resolve, 100));
     await manager.touchConvertedFile(sourcePath);
 
     // Verify timestamp was updated

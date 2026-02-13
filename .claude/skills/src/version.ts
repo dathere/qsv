@@ -27,8 +27,12 @@ function getVersion(): string {
       packageJsonPath = testPath;
     }
 
-    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
-    return packageJson.version || "0.0.0";
+    const parsed: unknown = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+    if (typeof parsed === "object" && parsed !== null && "version" in parsed) {
+      const { version } = parsed as { version: unknown };
+      if (typeof version === "string" && version.length > 0) return version;
+    }
+    return "0.0.0";
   } catch (error) {
     console.error("[Version] Failed to read version from package.json:", error);
     return "0.0.0";

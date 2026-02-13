@@ -12,6 +12,7 @@
     "build": "tsc",
     "build:test": "tsc -p tsconfig.test.json",
     "test": "npm run build:test && node scripts/run-tests.js",
+    "test:coverage": "npm run build:test && c8 --reporter=text node scripts/run-tests.js",
     "test:watch": "node --test --watch dist/tests/*.test.js",
     "test:examples": "node examples/basic.js",
     "test-pipeline": "node examples/pipeline.js",
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "archiver": "^7.0.0",
+    "c8": "^10.0.0",
     "typescript": "^5.0.0"
   },
   "dependencies": {

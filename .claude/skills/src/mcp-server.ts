@@ -30,6 +30,9 @@ import {
   createConfigTool,
   createSearchToolsTool,
   createToParquetTool,
+  createListFilesTool,
+  createSetWorkingDirTool,
+  createGetWorkingDirTool,
   handleConfigTool,
   handleSearchToolsCall,
   handleToParquetCall,
@@ -87,11 +90,17 @@ class QsvMcpServer {
   private filesystemProvider: FilesystemResourceProvider;
   private updateChecker: UpdateChecker;
   private loggedToolMode: boolean = false;
+  private toolsListedOnce: boolean = false;
 
   /**
-   * Track which tools have been loaded via search (for deferred loading)
+   * Track which tools have been loaded via search (for deferred loading).
    * Tools are added here when discovered via qsv_search_tools
-   * and will be included in subsequent ListTools responses
+   * and will be included in subsequent ListTools responses.
+   *
+   * Concurrency note: JavaScript's single-threaded event loop guarantees that
+   * Set operations (add/has/iteration) are atomic per tick. No synchronization
+   * is needed. A ListTools call may not immediately reflect tools from an
+   * in-flight search—this is eventual consistency by design.
    */
   private loadedTools: Set<string> = new Set();
 
@@ -336,10 +345,6 @@ class QsvMcpServer {
           // Load all skills (cached after first call)
           if (!this.loader.isAllLoaded()) {
             console.error("[Server] First request - loading all skills...");
-          } else {
-            console.error(
-              "[Server] Expose all tools mode - using cached skills",
-            );
           }
 
           const allSkills = await this.loader.loadAll();
@@ -466,27 +471,16 @@ class QsvMcpServer {
         console.error("[Server] Adding generic command tool...");
         try {
           const genericTool = createGenericToolDefinition(this.loader);
-          console.error(
-            "[Server] Generic tool created:",
-            JSON.stringify(genericTool).substring(0, 200),
-          );
           tools.push(genericTool);
-          console.error("[Server] Generic tool added successfully");
         } catch (error) {
           console.error("[Server] Error creating generic tool:", error);
           throw error;
         }
 
         // Add pipeline tool
-        console.error("[Server] Adding pipeline tool...");
         try {
           const pipelineTool = createPipelineToolDefinition();
-          console.error(
-            "[Server] Pipeline tool created:",
-            JSON.stringify(pipelineTool).substring(0, 200),
-          );
           tools.push(pipelineTool);
-          console.error("[Server] Pipeline tool added successfully");
         } catch (error) {
           console.error("[Server] Error creating pipeline tool:", error);
           throw error;
@@ -505,108 +499,19 @@ class QsvMcpServer {
         }
 
         // Add filesystem tools
-        console.error("[Server] Adding filesystem tools...");
-        tools.push({
-          name: "qsv_list_files",
-          description: `List tabular data files in a directory for browsing and discovery.
-
-💡 USE WHEN:
-- User asks "what files do I have?" or "what's in my Downloads folder?"
-- Starting a session and need to discover available datasets
-- User mentions a directory but not a specific file
-- Verifying files exist before processing
-
-🔍 SHOWS: File name, size, format type, last modified date.
-
-📂 SUPPORTED FORMATS:
-- **Native CSV**: .csv, .tsv, .tab, .ssv (and .sz snappy-compressed)
-- **Excel** (auto-converts): .xls, .xlsx, .xlsm, .xlsb, .ods
-- **JSONL** (auto-converts): .jsonl, .ndjson
-
-🚀 WORKFLOW: Always list files first when user mentions a directory. This helps you:
-1. See what files are available
-2. Get exact file names (avoid typos)
-3. Check file sizes (prepare for large files)
-4. Identify file formats (know if conversion needed)
-
-💡 TIP: Use non-recursive (default) for faster listing, recursive when searching subdirectories.`,
-          inputSchema: {
-            type: "object",
-            properties: {
-              directory: {
-                type: "string",
-                description:
-                  "Directory path (absolute or relative to working directory). Omit to use current working directory.",
-              },
-              recursive: {
-                type: "boolean",
-                description:
-                  "Scan subdirectories recursively (default: false). Enable for deep directory searches. May be slow for large directory trees.",
-              },
-            },
-          },
-        });
-
-        tools.push({
-          name: "qsv_set_working_dir",
-          description: `Change the working directory for all subsequent file operations.
-
-💡 USE WHEN:
-- User says "work with files in my Downloads folder"
-- Switching between different data directories
-- User provides directory path without specific file
-- Setting up environment for multiple file operations
-
-⚙️  BEHAVIOR:
-- All relative file paths resolved from this directory
-- Affects: qsv_list_files, all qsv commands with input_file
-- Persists for entire session (until changed again)
-- Validates directory exists and is accessible
-
-🔒 SECURITY: Only allowed directories can be set (configured in server settings).
-
-💡 TIP: Set working directory once at session start, then use simple filenames like "data.csv" instead of full paths.`,
-          inputSchema: {
-            type: "object",
-            properties: {
-              directory: {
-                type: "string",
-                description:
-                  "New working directory path (absolute or relative). Must be within allowed directories for security.",
-              },
-            },
-            required: ["directory"],
-          },
-        });
-
-        tools.push({
-          name: "qsv_get_working_dir",
-          description: `Get the current working directory path.
-
-💡 USE WHEN:
-- Confirming where files will be read from/written to
-- User asks "where am I working?" or "what's my current directory?"
-- Debugging file path issues
-- Verifying working directory before operations
-
-📍 RETURNS: Absolute path to current working directory.
-
-💡 TIP: Call this after qsv_set_working_dir to confirm the change succeeded.`,
-          inputSchema: {
-            type: "object",
-            properties: {},
-          },
-        });
+        tools.push(createListFilesTool());
+        tools.push(createSetWorkingDirTool());
+        tools.push(createGetWorkingDirTool());
 
         console.error(`[Server] Registered ${tools.length} tools`);
-        console.error(
-          `[Server] Tool names: ${tools.map((t) => t.name).join(", ")}`,
-        );
+        if (!this.toolsListedOnce) {
+          console.error(
+            `[Server] Tool names: ${tools.map((t) => t.name).join(", ")}`,
+          );
+          this.toolsListedOnce = true;
+        }
 
         const response = { tools };
-        console.error(
-          `[Server] Returning ${response.tools.length} tools to client`,
-        );
 
         return response;
       });
@@ -623,6 +528,12 @@ class QsvMcpServer {
       console.error(`Tool called: ${name}`);
 
       try {
+        // Tool dispatch chain: ordered from most specific to most general.
+        // Each handler has a different signature/dependency set, so a handler map
+        // would require a uniform interface wrapper with no real benefit.
+        // Order: filesystem → pipeline → generic command → config → search →
+        //        to_parquet → skill-based (qsv_*) → unknown tool error.
+
         // Handle filesystem tools
         if (name === "qsv_list_files") {
           const directory = typeof args?.directory === "string" ? args.directory : undefined;
@@ -789,7 +700,7 @@ class QsvMcpServer {
 
         console.error(`Reading resource: ${uri}`);
 
-        throw new Error(`Resource not found: ${uri}`);
+        throw new Error(`Resource not found: ${uri}. Use qsv_list_files tool to browse available files.`);
       },
     );
   }

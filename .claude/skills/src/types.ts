@@ -54,6 +54,17 @@ export interface SkillParams {
   timeoutMs?: number;
 }
 
+/**
+ * Result of executing a qsv skill.
+ *
+ * - `success`: true when the qsv process exited with code 0.
+ * - `output`: stdout content (may be truncated if it exceeds the 50 MB limit).
+ * - `stderr`: stderr content (diagnostic messages, progress info).
+ * - `metadata.command`: the full command string for logging/display.
+ * - `metadata.duration`: wall-clock milliseconds from spawn to exit.
+ * - `metadata.rowsProcessed`: row count extracted from stderr, if present.
+ * - `metadata.exitCode`: process exit code (0 = success, 124 = timeout).
+ */
 export interface SkillResult {
   success: boolean;
   output: string;

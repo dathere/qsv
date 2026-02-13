@@ -3,9 +3,10 @@
  */
 
 /**
- * Compare two semantic version strings
+ * Compare two semantic version strings.
  * Strips pre-release (-alpha.1) and build metadata (+build.123) before comparing.
- * Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
+ * Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2.
+ * Returns NaN if either version string is unparseable.
  */
 export function compareVersions(v1: string, v2: string): number {
   // Strip pre-release and build metadata (e.g., "1.2.3-alpha.1+build" -> "1.2.3")
@@ -16,9 +17,9 @@ export function compareVersions(v1: string, v2: string): number {
   // Validate that all parts are valid numbers
   if (parts1.some(isNaN) || parts2.some(isNaN)) {
     console.warn(
-      `[Utils] Invalid version format: "${v1}" or "${v2}" - comparison may be incorrect`,
+      `[Utils] Invalid version format: "${v1}" or "${v2}" - returning NaN`,
     );
-    return 0;
+    return NaN;
   }
 
   for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {

@@ -249,6 +249,9 @@ export class UpdateChecker {
       currentQsvVersion !== "unknown";
 
     if (skillsOutdated) {
+      // Note: compareVersions returns NaN for unparseable versions.
+      // NaN > 0 and NaN < 0 are both false, so unparseable versions
+      // are safely ignored (no recommendations emitted).
       const comparison = compareVersions(currentQsvVersion, skillsVersion);
       if (comparison > 0) {
         recommendations.push(

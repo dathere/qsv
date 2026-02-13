@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { formatBytes } from '../src/utils.js';
+import { formatBytes, compareVersions } from '../src/utils.js';
 
 test('formatBytes formats bytes correctly', () => {
   assert.strictEqual(formatBytes(0), '0 Bytes');
@@ -19,4 +19,34 @@ test('formatBytes handles edge cases', () => {
   assert.strictEqual(formatBytes(-1), '0 Bytes');
   assert.strictEqual(formatBytes(1), '1 Bytes');
   assert.strictEqual(formatBytes(999), '999 Bytes');
+});
+
+// ============================================================================
+// compareVersions Tests
+// ============================================================================
+
+test('compareVersions returns correct order for valid versions', () => {
+  assert.strictEqual(compareVersions('1.0.0', '1.0.0'), 0);
+  assert.strictEqual(compareVersions('1.0.0', '2.0.0'), -1);
+  assert.strictEqual(compareVersions('2.0.0', '1.0.0'), 1);
+  assert.strictEqual(compareVersions('1.2.3', '1.2.4'), -1);
+  assert.strictEqual(compareVersions('1.3.0', '1.2.99'), 1);
+});
+
+test('compareVersions strips pre-release and build metadata', () => {
+  assert.strictEqual(compareVersions('1.2.3-alpha.1', '1.2.3'), 0);
+  assert.strictEqual(compareVersions('1.2.3+build.123', '1.2.3'), 0);
+  assert.strictEqual(compareVersions('1.2.3-alpha.1+build', '1.2.3'), 0);
+});
+
+test('compareVersions returns NaN for invalid version strings', () => {
+  assert.ok(Number.isNaN(compareVersions('abc', '1.2.3')));
+  assert.ok(Number.isNaN(compareVersions('1.2.3', 'xyz')));
+  assert.ok(Number.isNaN(compareVersions('not.a.version', 'also.not')));
+});
+
+test('compareVersions handles different-length versions', () => {
+  assert.strictEqual(compareVersions('1.0', '1.0.0'), 0);
+  assert.strictEqual(compareVersions('1.0.0.0', '1.0.0'), 0);
+  assert.strictEqual(compareVersions('1.0', '1.0.1'), -1);
 });

@@ -438,7 +438,16 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
       };
     }
 
-    if (compareVersions(version, MINIMUM_QSV_VERSION) < 0) {
+    const versionComparison = compareVersions(version, MINIMUM_QSV_VERSION);
+    if (Number.isNaN(versionComparison)) {
+      return {
+        valid: false,
+        version,
+        path: binPath,
+        error: `Could not parse version "${version}" for comparison`,
+      };
+    }
+    if (versionComparison < 0) {
       return {
         valid: false,
         version,
@@ -459,8 +468,9 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
         timeout: QSV_VALIDATION_TIMEOUT_MS,
       });
       commandInfo = parseQsvCommandList(listResult);
-    } catch {
-      // --list failed, but binary is still valid - commands info just won't be available
+    } catch (listError: unknown) {
+      console.error("[Config] qsv --list failed (non-critical):",
+        listError instanceof Error ? listError.message : String(listError));
     }
 
     return {

@@ -59,7 +59,7 @@ test('resolvePath prevents directory traversal', async () => {
       async () => {
         await provider.resolvePath('../../etc/passwd');
       },
-      /Access denied|outside allowed directories|Path does not exist/
+      /outside allowed directories|Path does not exist/
     );
 
     // Should reject absolute paths outside allowed directories
@@ -67,7 +67,7 @@ test('resolvePath prevents directory traversal', async () => {
       async () => {
         await provider.resolvePath('/etc/passwd');
       },
-      /Access denied|outside allowed directories|Path does not exist/
+      /outside allowed directories|Path does not exist/
     );
   } finally {
     try {
@@ -417,7 +417,7 @@ test('resolvePath prevents cross-drive access on Windows', async () => {
       async () => {
         await provider.resolvePath(outsidePath);
       },
-      /Access denied|outside allowed directories|Path does not exist/
+      /outside allowed directories|Path does not exist/
     );
   } finally {
     try {
@@ -573,7 +573,7 @@ test('non-plugin mode rejects path outside allowedDirs in resolvePath', async ()
       async () => {
         await provider.resolvePath(join(tempDir2, 'test.csv'));
       },
-      /Access denied|outside allowed directories/
+      /outside allowed directories/
     );
   } finally {
     try {
@@ -667,7 +667,7 @@ test('isPathAllowed rejects relative path traversal via ..', async () => {
       async () => {
         await provider.resolvePath('../../../etc/passwd');
       },
-      /Access denied|outside allowed directories|Path does not exist/
+      /outside allowed directories|Path does not exist/
     );
   } finally {
     try {

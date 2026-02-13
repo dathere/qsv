@@ -4430,3 +4430,250 @@ fn frequency_pct_nulls_with_limit() {
     ];
     assert_eq!(got, expected);
 }
+
+// ============================================================
+// --frequency-jsonl tests
+// ============================================================
+
+#[test]
+fn frequency_jsonl_basic() {
+    let wrk = Workdir::new("frequency_jsonl_basic");
+    let rows = vec![
+        svec!["name", "color"],
+        svec!["Alice", "red"],
+        svec!["Bob", "blue"],
+        svec!["Alice", "red"],
+        svec!["Charlie", "red"],
+        svec!["Bob", "green"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache first (required for cardinality info)
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").arg("--frequency-jsonl");
+
+    wrk.assert_success(&mut cmd);
+
+    // Verify JSONL cache file was created
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(jsonl_path.exists(), "JSONL cache file should exist");
+
+    // Parse and validate the JSONL contents
+    let contents = std::fs::read_to_string(&jsonl_path).unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+    assert_eq!(lines.len(), 2, "Should have one line per column");
+
+    // Parse first line (name column)
+    let name_entry: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(name_entry["field"], "name");
+    assert_eq!(name_entry["cardinality"], 3);
+    let freqs = name_entry["frequencies"].as_array().unwrap();
+    assert_eq!(freqs.len(), 3); // Alice(2), Bob(2), Charlie(1)
+
+    // Parse second line (color column)
+    let color_entry: Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(color_entry["field"], "color");
+    assert_eq!(color_entry["cardinality"], 3);
+    let freqs = color_entry["frequencies"].as_array().unwrap();
+    assert_eq!(freqs.len(), 3); // red(3), blue(1), green(1)
+
+    // Check that red has the highest count
+    assert_eq!(freqs[0]["value"], "red");
+    assert_eq!(freqs[0]["count"], 3);
+    assert!((freqs[0]["percentage"].as_f64().unwrap() - 60.0).abs() < 0.01);
+}
+
+#[test]
+fn frequency_jsonl_all_unique() {
+    let wrk = Workdir::new("frequency_jsonl_all_unique");
+    let rows = vec![
+        svec!["id", "value"],
+        svec!["1", "a"],
+        svec!["2", "b"],
+        svec!["3", "c"],
+        svec!["4", "d"],
+        svec!["5", "e"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").arg("--frequency-jsonl");
+
+    wrk.assert_success(&mut cmd);
+
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    let contents = std::fs::read_to_string(&jsonl_path).unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+
+    // Parse first line (id column - all unique)
+    let id_entry: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(id_entry["field"], "id");
+    assert_eq!(id_entry["cardinality"], 5);
+    let freqs = id_entry["frequencies"].as_array().unwrap();
+    assert_eq!(freqs.len(), 1, "ALL_UNIQUE should have single sentinel entry");
+    assert_eq!(freqs[0]["value"], "<ALL_UNIQUE>");
+    assert_eq!(freqs[0]["count"], 5);
+    assert_eq!(freqs[0]["percentage"], 100.0);
+
+    // value column is also all unique
+    let val_entry: Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(val_entry["field"], "value");
+    let freqs = val_entry["frequencies"].as_array().unwrap();
+    assert_eq!(freqs.len(), 1);
+    assert_eq!(freqs[0]["value"], "<ALL_UNIQUE>");
+}
+
+#[test]
+fn frequency_jsonl_high_cardinality() {
+    let wrk = Workdir::new("frequency_jsonl_high_cardinality");
+
+    // Create dataset with 20 rows where one column has 19 unique values (95% of rowcount)
+    let mut rows = vec![svec!["id", "category"]];
+    for i in 1..=20 {
+        rows.push(vec![format!("item_{i}"), format!("cat_{}", if i <= 19 { i } else { 1 })]);
+    }
+    wrk.create("in.csv", rows);
+
+    // Create stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Use a low threshold to trigger HIGH_CARDINALITY
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .args(["--high-card-threshold", "10"])
+        .args(["--high-card-pct", "50"]);
+
+    wrk.assert_success(&mut cmd);
+
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    let contents = std::fs::read_to_string(&jsonl_path).unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+
+    // id column (cardinality=20 == rowcount) should be ALL_UNIQUE
+    let id_entry: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(id_entry["field"], "id");
+    let freqs = id_entry["frequencies"].as_array().unwrap();
+    assert_eq!(freqs[0]["value"], "<ALL_UNIQUE>");
+
+    // category column (cardinality=19 > min(10, 50%*20=10) = 10) should be HIGH_CARDINALITY
+    let cat_entry: Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(cat_entry["field"], "category");
+    assert_eq!(cat_entry["cardinality"], 19);
+    let freqs = cat_entry["frequencies"].as_array().unwrap();
+    assert_eq!(
+        freqs.len(),
+        1,
+        "HIGH_CARDINALITY should have single sentinel entry"
+    );
+    assert_eq!(freqs[0]["value"], "<HIGH_CARDINALITY>");
+    assert_eq!(freqs[0]["count"], 20);
+    assert_eq!(freqs[0]["percentage"], 100.0);
+}
+
+#[test]
+fn frequency_jsonl_custom_thresholds() {
+    let wrk = Workdir::new("frequency_jsonl_custom_thresholds");
+
+    // Create dataset: 10 rows, category has cardinality 8
+    let mut rows = vec![svec!["id", "category"]];
+    for i in 1..=10 {
+        rows.push(vec![
+            format!("{i}"),
+            format!("cat_{}", if i <= 8 { i } else { 1 }),
+        ]);
+    }
+    wrk.create("in.csv", rows);
+
+    // Create stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // With high thresholds (default), category should NOT be HIGH_CARDINALITY
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").arg("--frequency-jsonl");
+    wrk.assert_success(&mut cmd);
+
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    let contents = std::fs::read_to_string(&jsonl_path).unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+
+    let cat_entry: Value = serde_json::from_str(lines[1]).unwrap();
+    let freqs = cat_entry["frequencies"].as_array().unwrap();
+    assert!(
+        freqs.len() > 1,
+        "With default thresholds, category should have full frequency data"
+    );
+
+    // With low threshold (5), category (cardinality=8 > 5) should be HIGH_CARDINALITY
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .args(["--high-card-threshold", "5"]);
+    wrk.assert_success(&mut cmd2);
+
+    let contents2 = std::fs::read_to_string(&jsonl_path).unwrap();
+    let lines2: Vec<&str> = contents2.lines().collect();
+
+    let cat_entry2: Value = serde_json::from_str(lines2[1]).unwrap();
+    let freqs2 = cat_entry2["frequencies"].as_array().unwrap();
+    assert_eq!(freqs2.len(), 1, "With low threshold, should be HIGH_CARDINALITY");
+    assert_eq!(freqs2[0]["value"], "<HIGH_CARDINALITY>");
+}
+
+#[test]
+fn frequency_jsonl_normal_output_unchanged() {
+    // Verify that stdout output is the same whether or not --frequency-jsonl is set
+    let wrk = Workdir::new("frequency_jsonl_normal_output_unchanged");
+    let rows = vec![
+        svec!["h1", "h2"],
+        svec!["a", "x"],
+        svec!["b", "y"],
+        svec!["a", "x"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run without --frequency-jsonl
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv");
+    let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
+
+    // Run with --frequency-jsonl
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv").arg("--frequency-jsonl");
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+
+    assert_eq!(got1, got2, "stdout output should be identical with or without --frequency-jsonl");
+}

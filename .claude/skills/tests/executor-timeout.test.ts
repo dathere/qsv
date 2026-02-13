@@ -20,7 +20,6 @@ const countSkill: QsvSkill = {
   description: 'Count records',
   category: 'utility',
   command: {
-    binary: 'qsv',
     subcommand: 'count',
     args: [
       { name: 'input', type: 'file', required: true, description: 'Input CSV file' }
@@ -141,7 +140,6 @@ test('executor clamps timeout to minimum of 1000ms', { skip: !QSV_AVAILABLE }, a
     description: 'Count records',
     category: 'utility',
     command: {
-      binary: 'qsv',
       subcommand: 'count',
       args: [],
       options: [

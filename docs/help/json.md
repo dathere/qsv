@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/json.rs](https://github.com/dathere/qsv/blob/master/src/cmd/json.rs)**
 
+[Description](#description) | [Usage](#usage) | [Json Options](#json-options) | [Common Options](#common-options)
+
 ## Description
 
 Convert JSON to CSV.

@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/explode.rs](https://github.com/dathere/qsv/blob/master/src/cmd/explode.rs)**
 
+[Description](#description) | [Usage](#usage) | [Explode Options](#explode-options) | [Common Options](#common-options)
+
 ## Description
 
 Explodes a row into multiple ones by splitting a column value based on the

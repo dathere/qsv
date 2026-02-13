@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/enumerate.rs](https://github.com/dathere/qsv/blob/master/src/cmd/enumerate.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Enum Options](#enum-options) | [Common Options](#common-options)
+
 ## Description
 
 Add a new column enumerating the lines of a CSV file. This can be useful to keep

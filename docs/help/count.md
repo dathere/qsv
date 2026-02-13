@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/count.rs](https://github.com/dathere/qsv/blob/master/src/cmd/count.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Count Options](#count-options) | [Width Options](#width-options) | [When The Polars Feature Is Enabled Options](#when-the-polars-feature-is-enabled-options) | [Common Options](#common-options)
+
 ## Description
 
 Returns a count of the number of records in the CSV data.

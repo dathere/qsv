@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/foreach.rs](https://github.com/dathere/qsv/blob/master/src/cmd/foreach.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Foreach Options](#foreach-options) | [Common Options](#common-options)
+
 ## Description
 
 Execute a shell command once per record in a given CSV file.

@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/snappy.rs](https://github.com/dathere/qsv/blob/master/src/cmd/snappy.rs)**
 
+[Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Snappy Options](#snappy-options) | [Common Options](#common-options)
+
 ## Description
 
 Does streaming compression/decompression of the input using the Snappy framing format.

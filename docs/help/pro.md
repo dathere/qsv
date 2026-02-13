@@ -4,6 +4,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pro.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pro.rs)**
 
+[Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Common Options](#common-options)
+
 ## Description
 
 Interact with qsv pro API. Learn more about qsv pro at: <https://qsvpro.dathere.com>.

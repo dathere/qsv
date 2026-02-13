@@ -4,6 +4,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/behead.rs](https://github.com/dathere/qsv/blob/master/src/cmd/behead.rs)**
 
+[Description](#description) | [Usage](#usage) | [Common Options](#common-options)
+
 ## Description
 
 Drop a CSV file's header.

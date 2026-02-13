@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sqlp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sqlp.rs)**
 
+[Description](#description) | [Usage](#usage) | [Sqlp Options](#sqlp-options) | [Polars Csv Input Parsing Options](#polars-csv-input-parsing-options) | [Csv Output Format Only Options](#csv-output-format-only-options) | [Parquet Output Format Only Options](#parquet-output-format-only-options) | [Common Options](#common-options)
+
 ## Description
 
 Run blazing-fast Polars SQL queries against several CSVs - replete with joins, aggregations,

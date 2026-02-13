@@ -214,6 +214,11 @@ struct ParsedArgument {
     description: String,
 }
 
+/// Convert a heading string to a GitHub-style markdown anchor slug
+fn heading_to_anchor(heading: &str) -> String {
+    heading.to_lowercase().replace(' ', "-")
+}
+
 /// Parse USAGE text and generate a Markdown help file.
 fn generate_command_markdown(
     usage_text: &str,
@@ -250,6 +255,41 @@ fn generate_command_markdown(
     // Parse the USAGE text into sections
     let sections = parse_usage_sections(usage_text);
 
+    // Parse arguments and options early so we can collect all heading names
+    let parsed_args = parse_arguments_section(&sections.arguments_text);
+    let options_sections =
+        parse_options_with_docopt(usage_text, &sections, &cmd_info.invocation_name);
+
+    // Collect heading names in appearance order for the heading links bar
+    let mut headings: Vec<String> = Vec::new();
+    if !sections.description.is_empty() {
+        headings.push("Description".to_string());
+    }
+    if !sections.examples.is_empty() {
+        headings.push("Examples".to_string());
+    }
+    if !sections.usage_patterns.is_empty() {
+        headings.push("Usage".to_string());
+    }
+    if !parsed_args.is_empty() {
+        headings.push("Arguments".to_string());
+    }
+    for (section_title, options) in &options_sections {
+        if !options.is_empty() {
+            headings.push(section_title.clone());
+        }
+    }
+
+    // Write heading links bar
+    if headings.len() > 1 {
+        let links: Vec<String> = headings
+            .iter()
+            .map(|h| format!("[{h}](#{})", heading_to_anchor(h)))
+            .collect();
+        md.push_str(&links.join(" | "));
+        md.push_str("\n\n");
+    }
+
     // Description section
     if !sections.description.is_empty() {
         md.push_str("## Description\n\n");
@@ -275,27 +315,22 @@ fn generate_command_markdown(
     }
 
     // Arguments section
-    if !sections.arguments_text.is_empty() {
-        let parsed_args = parse_arguments_section(&sections.arguments_text);
-        if !parsed_args.is_empty() {
-            md.push_str("## Arguments\n\n");
-            md.push_str("| Argument | Description |\n");
-            md.push_str("|----------|-------------|\n");
-            for arg in &parsed_args {
-                let _ = writeln!(
-                    md,
-                    "| `{}` | {} |",
-                    arg.name,
-                    escape_table_cell(&linkify_bare_urls(&arg.description))
-                );
-            }
-            md.push('\n');
+    if !parsed_args.is_empty() {
+        md.push_str("## Arguments\n\n");
+        md.push_str("| Argument | Description |\n");
+        md.push_str("|----------|-------------|\n");
+        for arg in &parsed_args {
+            let _ = writeln!(
+                md,
+                "| `{}` | {} |",
+                arg.name,
+                escape_table_cell(&linkify_bare_urls(&arg.description))
+            );
         }
+        md.push('\n');
     }
 
-    // Options sections - use docopt for structured parsing, manual for descriptions
-    let options_sections =
-        parse_options_with_docopt(usage_text, &sections, &cmd_info.invocation_name);
+    // Options sections
     for (section_title, options) in &options_sections {
         if options.is_empty() {
             continue;

@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/stats.rs](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Stats Options](#stats-options) | [Boolean Inferencing Options](#boolean-inferencing-options) | [Date Inferencing Options](#date-inferencing-options) | [Common Options](#common-options)
+
 ## Description
 
 Compute summary statistics & infers data types for each column in a CSV.

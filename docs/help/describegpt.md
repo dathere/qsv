@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/describegpt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/describegpt.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Describegpt Options](#describegpt-options) | [Dictionary Options](#dictionary-options) | [Tag Options](#tag-options) | [Custom Prompt Options](#custom-prompt-options) | [Llm Api Options](#llm-api-options) | [Caching Options](#caching-options) | [Common Options](#common-options)
+
 ## Description
 
 Create a "neuro-procedural" Data Dictionary and/or infer Description & Tags about a Dataset

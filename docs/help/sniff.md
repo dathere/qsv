@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sniff.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sniff.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sniff Options](#sniff-options) | [Common Options](#common-options)
+
 ## Description
 
 Quickly sniff the first n rows and infer CSV metadata (delimiter, header row, number of

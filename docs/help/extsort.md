@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/extsort.rs](https://github.com/dathere/qsv/blob/master/src/cmd/extsort.rs)**
 
+[Description](#description) | [Usage](#usage) | [External Sort Option](#external-sort-option) | [Csv Mode Only Options](#csv-mode-only-options)
+
 ## Description
 
 Sort an arbitrarily large CSV/text file using a multithreaded external sort algorithm.

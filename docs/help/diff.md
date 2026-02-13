@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/diff.rs](https://github.com/dathere/qsv/blob/master/src/cmd/diff.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Diff Options](#diff-options) | [Common Options](#common-options)
+
 ## Description
 
 Find the difference between two CSVs with ludicrous speed.

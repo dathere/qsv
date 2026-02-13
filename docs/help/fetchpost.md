@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetchpost.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetchpost.rs)**
 
+[Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Fetchpost Options](#fetchpost-options) | [Caching Options](#caching-options) | [Common Options](#common-options)
+
 ## Description
 
 Fetchpost sends/fetches data to/from web services for every row using HTTP Post.

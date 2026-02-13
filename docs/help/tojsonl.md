@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/tojsonl.rs](https://github.com/dathere/qsv/blob/master/src/cmd/tojsonl.rs)**
 
+[Description](#description) | [Usage](#usage) | [Tojsonl Options](#tojsonl-options) | [Common Options](#common-options)
+
 ## Description
 
 Smartly converts CSV to a newline-delimited JSON (JSONL/NDJSON).

@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/python.rs](https://github.com/dathere/qsv/blob/master/src/cmd/python.rs)**
 
+[Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Py Options](#py-options) | [Common Options](#common-options)
+
 ## Description
 
 Create a new computed column or filter rows by evaluating a Python expression on

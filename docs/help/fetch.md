@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetch.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetch.rs)**
 
+[Description](#description) | [Usage](#usage) | [Fetch Options](#fetch-options) | [Caching Options](#caching-options) | [Common Options](#common-options)
+
 ## Description
 
 Send/Fetch data to/from web services for every row using HTTP Get.

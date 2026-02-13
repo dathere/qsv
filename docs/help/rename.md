@@ -4,6 +4,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/rename.rs](https://github.com/dathere/qsv/blob/master/src/cmd/rename.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Common Options](#common-options)
+
 ## Description
 
 Rename the columns of a CSV efficiently. It has two modes of operation:

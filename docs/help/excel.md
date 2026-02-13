@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/excel.rs](https://github.com/dathere/qsv/blob/master/src/cmd/excel.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Excel Options](#excel-options) | [Common Options](#common-options)
+
 ## Description
 
 Exports a specified Excel/ODS sheet to a CSV file.

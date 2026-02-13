@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/table.rs](https://github.com/dathere/qsv/blob/master/src/cmd/table.rs)**
 
+[Description](#description) | [Usage](#usage) | [Table Options](#table-options) | [Common Options](#common-options)
+
 ## Description
 
 Outputs CSV data as a table with columns in alignment.

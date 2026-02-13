@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/partition.rs](https://github.com/dathere/qsv/blob/master/src/cmd/partition.rs)**
 
+[Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Partition Options](#partition-options) | [Common Options](#common-options)
+
 ## Description
 
 Partitions the given CSV data into chunks based on the value of a column.

@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/dedup.rs](https://github.com/dathere/qsv/blob/master/src/cmd/dedup.rs)**
 
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Dedup Options](#dedup-options) | [Common Options](#common-options)
+
 ## Description
 
 Deduplicates CSV rows.

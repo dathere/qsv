@@ -6,6 +6,8 @@
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/searchset.rs](https://github.com/dathere/qsv/blob/master/src/cmd/searchset.rs)**
 
+[Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Searchset Options](#searchset-options) | [Common Options](#common-options)
+
 ## Description
 
 Filters CSV data by whether the given regex set matches a row.

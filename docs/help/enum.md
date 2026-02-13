@@ -174,14 +174,14 @@ qsv enum --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-c,`<br>`--new-column` | string | Name of the column to create. Will default to "index". |  |
-| `--start` | string | The value to start the enumeration from. Only applies in Increment mode. (default: 0) |  |
-| `--increment` | string | The value to increment the enumeration by. Only applies in Increment mode. (default: 1) |  |
-| `--constant` | string | Fill a new column with the given value. Changes the default column name to "constant" unless overridden by --new-column. To specify a null value, pass the literal "<NULL>". |  |
-| `--copy` | string | Name of a column to copy. Changes the default column name to "{column}_copy" unless overridden by --new-column. |  |
-| `--uuid4` | flag | When set, the column will be populated with uuids (v4) instead of the incremental identifier. Changes the default column name to "uuid4" unless overridden by --new-column. |  |
-| `--uuid7` | flag | When set, the column will be populated with uuids (v7) instead of the incremental identifier. uuid v7 is a time-based uuid and is monotonically increasing. See <https://buildkite.com/blog/goodbye-integers-hello-uuids> Changes the default column name to "uuid7" unless overridden by --new-column. |  |
-| `--hash` | string | Create a new column filled with the hash of the given column/s. Use "1-" to hash all columns. Changes the default column name to "hash" unless overridden by --new-column. Will remove an existing "hash" column if it exists. |  |
+| &nbsp;`-c,`<br>`--new-column`&nbsp; | string | Name of the column to create. Will default to "index". |  |
+| &nbsp;`--start`&nbsp; | string | The value to start the enumeration from. Only applies in Increment mode. (default: 0) |  |
+| &nbsp;`--increment`&nbsp; | string | The value to increment the enumeration by. Only applies in Increment mode. (default: 1) |  |
+| &nbsp;`--constant`&nbsp; | string | Fill a new column with the given value. Changes the default column name to "constant" unless overridden by --new-column. To specify a null value, pass the literal "<NULL>". |  |
+| &nbsp;`--copy`&nbsp; | string | Name of a column to copy. Changes the default column name to "{column}_copy" unless overridden by --new-column. |  |
+| &nbsp;`--uuid4`&nbsp; | flag | When set, the column will be populated with uuids (v4) instead of the incremental identifier. Changes the default column name to "uuid4" unless overridden by --new-column. |  |
+| &nbsp;`--uuid7`&nbsp; | flag | When set, the column will be populated with uuids (v7) instead of the incremental identifier. uuid v7 is a time-based uuid and is monotonically increasing. See <https://buildkite.com/blog/goodbye-integers-hello-uuids> Changes the default column name to "uuid7" unless overridden by --new-column. |  |
+| &nbsp;`--hash`&nbsp; | string | Create a new column filled with the hash of the given column/s. Use "1-" to hash all columns. Changes the default column name to "hash" unless overridden by --new-column. Will remove an existing "hash" column if it exists. |  |
 
 <a name="common-options"></a>
 
@@ -189,10 +189,10 @@ qsv enum --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/enumerate.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/enumerate.rs)

@@ -104,9 +104,9 @@ qsv pragmastat --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-t,`<br>`--twosample` | flag | Compute two-sample estimators for all column pairs. |  |
-| `-s,`<br>`--select` | string | Select columns for analysis. Uses qsv's column selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed. |  |
-| `-m,`<br>`--misrate` | string | Probability that bounds fail to contain the true parameter. Lower values produce wider bounds. Must be achievable for the given sample size. | `0.001` |
+| &nbsp;`-t,`<br>`--twosample`&nbsp; | flag | Compute two-sample estimators for all column pairs. |  |
+| &nbsp;`-s,`<br>`--select`&nbsp; | string | Select columns for analysis. Uses qsv's column selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed. |  |
+| &nbsp;`-m,`<br>`--misrate`&nbsp; | string | Probability that bounds fail to contain the true parameter. Lower values produce wider bounds. Must be achievable for the given sample size. | `0.001` |
 
 <a name="common-options"></a>
 
@@ -114,10 +114,10 @@ qsv pragmastat --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be treated as headers. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be treated as headers. |  |
 
 ---
 **Source:** [`src/cmd/pragmastat.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/pragmastat.rs)

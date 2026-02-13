@@ -250,7 +250,7 @@ qsv luau --help
 
 | Argument | Description |
 |----------|-------------|
-| `<new-columns>` | is a comma-separated list of new computed columns to add to the CSV when using "luau map". The new columns are added to the CSV after the existing columns, unless the --remap option is used. |
+| &nbsp;`<new-columns>`&nbsp; | is a comma-separated list of new computed columns to add to the CSV when using "luau map". The new columns are added to the CSV after the existing columns, unless the --remap option is used. |
 
 <a name="luau-options"></a>
 
@@ -258,16 +258,16 @@ qsv luau --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-g,`<br>`--no-globals` | flag | Don't create Luau global variables for each column, only `col`. Useful when some column names mask standard Luau globals and to increase PERFORMANCE. Note: access to Luau globals thru _G remains even with -g. |  |
-| `--colindex` | flag | Create a 1-based column index. Useful when some column names mask standard Luau globals. Automatically enabled with --no-headers. |  |
-| `-r,`<br>`--remap` | flag | Only the listed new columns are written to the output CSV. Only applies to "map" subcommand. |  |
-| `-B,`<br>`--begin` | string | Luau script/file to execute in the BEGINning, before processing the CSV with the main-script. Typically used to initialize global variables. Takes precedence over an embedded BEGIN script. If <script> begins with "file:" or ends with ".luau/.lua", it's interpreted as a filepath from which to load the script. |  |
-| `-E,`<br>`--end` | string | Luau script/file to execute at the END, after processing the CSV with the main-script. Typically used for aggregations. The output of the END script is sent to stderr. Takes precedence over an embedded END script. If <script> begins with "file:" or ends with ".luau/.lua", it's interpreted as a filepath from which to load the script. |  |
-| `--max-errors` | string | The maximum number of errors to tolerate before aborting. Set to zero to disable error limit. | `10` |
-| `--timeout` | string | Timeout for downloading lookup_tables using the qsv_register_lookup() helper function. | `60` |
-| `--ckan-api` | string | The URL of the CKAN API to use for downloading lookup_table resources using the qsv_register_lookup() helper function with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. | `https://data.dathere.com/api/3/action` |
-| `--ckan-token` | string | The CKAN API token to use. Only required if downloading private resources. If the QSV_CKAN_TOKEN envvar is set, it will be used instead. |  |
-| `--cache-dir` | string | The directory to use for caching downloaded lookup_table resources using the qsv_register_lookup() helper function. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
+| &nbsp;`-g,`<br>`--no-globals`&nbsp; | flag | Don't create Luau global variables for each column, only `col`. Useful when some column names mask standard Luau globals and to increase PERFORMANCE. Note: access to Luau globals thru _G remains even with -g. |  |
+| &nbsp;`--colindex`&nbsp; | flag | Create a 1-based column index. Useful when some column names mask standard Luau globals. Automatically enabled with --no-headers. |  |
+| &nbsp;`-r,`<br>`--remap`&nbsp; | flag | Only the listed new columns are written to the output CSV. Only applies to "map" subcommand. |  |
+| &nbsp;`-B,`<br>`--begin`&nbsp; | string | Luau script/file to execute in the BEGINning, before processing the CSV with the main-script. Typically used to initialize global variables. Takes precedence over an embedded BEGIN script. If <script> begins with "file:" or ends with ".luau/.lua", it's interpreted as a filepath from which to load the script. |  |
+| &nbsp;`-E,`<br>`--end`&nbsp; | string | Luau script/file to execute at the END, after processing the CSV with the main-script. Typically used for aggregations. The output of the END script is sent to stderr. Takes precedence over an embedded END script. If <script> begins with "file:" or ends with ".luau/.lua", it's interpreted as a filepath from which to load the script. |  |
+| &nbsp;`--max-errors`&nbsp; | string | The maximum number of errors to tolerate before aborting. Set to zero to disable error limit. | `10` |
+| &nbsp;`--timeout`&nbsp; | string | Timeout for downloading lookup_tables using the qsv_register_lookup() helper function. | `60` |
+| &nbsp;`--ckan-api`&nbsp; | string | The URL of the CKAN API to use for downloading lookup_table resources using the qsv_register_lookup() helper function with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. | `https://data.dathere.com/api/3/action` |
+| &nbsp;`--ckan-token`&nbsp; | string | The CKAN API token to use. Only required if downloading private resources. If the QSV_CKAN_TOKEN envvar is set, it will be used instead. |  |
+| &nbsp;`--cache-dir`&nbsp; | string | The directory to use for caching downloaded lookup_table resources using the qsv_register_lookup() helper function. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
 
 <a name="common-options"></a>
 
@@ -275,11 +275,11 @@ qsv luau --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. Automatically enables --colindex option. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-p,`<br>`--progressbar` | flag | Show progress bars. Not valid for stdin. Ignored in qsvdp. In SEQUENTIAL MODE, the progress bar will show the number of rows processed. In RANDOM ACCESS MODE, the progress bar will show the position of the current row being processed. Enabling this option will also suppress stderr output from the END script. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Automatically enables --colindex option. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-p,`<br>`--progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. Ignored in qsvdp. In SEQUENTIAL MODE, the progress bar will show the number of rows processed. In RANDOM ACCESS MODE, the progress bar will show the position of the current row being processed. Enabling this option will also suppress stderr output from the END script. |  |
 
 ---
 **Source:** [`src/cmd/luau.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/luau.rs)

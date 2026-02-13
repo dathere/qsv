@@ -37,14 +37,14 @@ qsv fmt --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-t,`<br>`--out-delimiter` | string | The field delimiter for writing CSV data. Must be a single character. If set to "T", uses tab as the delimiter. | `,` |
-| `--crlf` | flag | Use '\r\n' line endings in the output. |  |
-| `--ascii` | flag | Use ASCII field and record separators. Use Substitute (U+00A1) as the quote character. |  |
-| `--quote` | string | The quote character to use. | `"` |
-| `--quote-always` | flag | Put quotes around every value. |  |
-| `--quote-never` | flag | Never put quotes around any value. |  |
-| `--escape` | string | The escape character to use. When not specified, quotes are escaped by doubling them. |  |
-| `--no-final-newline` | flag | Do not write a newline at the end of the output. This makes it easier to paste the output into Excel. |  |
+| &nbsp;`-t,`<br>`--out-delimiter`&nbsp; | string | The field delimiter for writing CSV data. Must be a single character. If set to "T", uses tab as the delimiter. | `,` |
+| &nbsp;`--crlf`&nbsp; | flag | Use '\r\n' line endings in the output. |  |
+| &nbsp;`--ascii`&nbsp; | flag | Use ASCII field and record separators. Use Substitute (U+00A1) as the quote character. |  |
+| &nbsp;`--quote`&nbsp; | string | The quote character to use. | `"` |
+| &nbsp;`--quote-always`&nbsp; | flag | Put quotes around every value. |  |
+| &nbsp;`--quote-never`&nbsp; | flag | Never put quotes around any value. |  |
+| &nbsp;`--escape`&nbsp; | string | The escape character to use. When not specified, quotes are escaped by doubling them. |  |
+| &nbsp;`--no-final-newline`&nbsp; | flag | Do not write a newline at the end of the output. This makes it easier to paste the output into Excel. |  |
 
 <a name="common-options"></a>
 
@@ -52,9 +52,9 @@ qsv fmt --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/fmt.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/fmt.rs)

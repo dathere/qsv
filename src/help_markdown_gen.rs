@@ -337,7 +337,7 @@ fn generate_command_markdown(
         for arg in &parsed_args {
             let _ = writeln!(
                 md,
-                "| `{}` | {} |",
+                "| &nbsp;`{}`&nbsp; | {} |",
                 arg.name,
                 escape_table_cell(&linkify_bare_urls(&arg.description))
             );
@@ -355,9 +355,9 @@ fn generate_command_markdown(
         md.push_str("|--------|------|-------------|--------|\n");
         for opt in options {
             let option_display = if let Some(short) = &opt.short {
-                format!("`{short},`<br>`{}`", opt.flag)
+                format!("&nbsp;`{short},`<br>`{}`&nbsp;", opt.flag)
             } else {
-                format!("`{}`", opt.flag)
+                format!("&nbsp;`{}`&nbsp;", opt.flag)
             };
             let default_str = opt
                 .default

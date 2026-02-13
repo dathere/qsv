@@ -85,8 +85,8 @@ qsv template --help
 
 | Argument | Description |
 |----------|-------------|
-| `<input>` | The CSV file to read. If not given, input is read from STDIN. |
-| `<outdir>` | The directory where the output files will be written. If it does not exist, it will be created. If not set, output will be sent to stdout or the specified --output. When writing to <outdir>, files are organized into subdirectories of --outsubdir-size (default: 1000) files each to avoid filesystem navigation & performance issues. |
+| &nbsp;`<input>`&nbsp; | The CSV file to read. If not given, input is read from STDIN. |
+| &nbsp;`<outdir>`&nbsp; | The directory where the output files will be written. If it does not exist, it will be created. If not set, output will be sent to stdout or the specified --output. When writing to <outdir>, files are organized into subdirectories of --outsubdir-size (default: 1000) files each to avoid filesystem navigation & performance issues. |
 
 <a name="template-options"></a>
 
@@ -94,18 +94,18 @@ qsv template --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--template` | string | MiniJinja template string to use (alternative to --template-file) |  |
-| `-t,`<br>`--template-file` | string | MiniJinja template file to use |  |
-| `-j,`<br>`--globals-json` | string | A JSON file containing global variables to make available in templates. The JSON properties can be accessed in templates using the "qsv_g" namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}). This allows sharing common values across all template renders. |  |
-| `--outfilename` | string | MiniJinja template string to use to create the filename of the output files to write to <outdir>. If set to just QSV_ROWNO, the filestem is set to the current rowno of the record, padded with leading zeroes, with the ".txt" extension (e.g. 001.txt, 002.txt, etc.) Note that all the fields, including QSV_ROWNO, are available when defining the filename template. | `QSV_ROWNO` |
-| `--outsubdir-size` | string | The number of files per subdirectory in <outdir>. | `1000` |
-| `--customfilter-error` | string | The value to return when a custom filter returns an error. Use "<empty string>" to return an empty string. | `<FILTER_ERROR>` |
-| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `-b,`<br>`--batch` | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
-| `--timeout` | string | Timeout for downloading lookups on URLs. | `30` |
-| `--cache-dir` | string | The directory to use for caching downloaded lookup resources. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
-| `--ckan-api` | string | The URL of the CKAN API to use for downloading lookup resources with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. | `https://data.dathere.com/api/3/action` |
-| `--ckan-token` | string | The CKAN API token to use. Only required if downloading private resources. If the QSV_CKAN_TOKEN envvar is set, it will be used instead. |  |
+| &nbsp;`--template`&nbsp; | string | MiniJinja template string to use (alternative to --template-file) |  |
+| &nbsp;`-t,`<br>`--template-file`&nbsp; | string | MiniJinja template file to use |  |
+| &nbsp;`-j,`<br>`--globals-json`&nbsp; | string | A JSON file containing global variables to make available in templates. The JSON properties can be accessed in templates using the "qsv_g" namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}). This allows sharing common values across all template renders. |  |
+| &nbsp;`--outfilename`&nbsp; | string | MiniJinja template string to use to create the filename of the output files to write to <outdir>. If set to just QSV_ROWNO, the filestem is set to the current rowno of the record, padded with leading zeroes, with the ".txt" extension (e.g. 001.txt, 002.txt, etc.) Note that all the fields, including QSV_ROWNO, are available when defining the filename template. | `QSV_ROWNO` |
+| &nbsp;`--outsubdir-size`&nbsp; | string | The number of files per subdirectory in <outdir>. | `1000` |
+| &nbsp;`--customfilter-error`&nbsp; | string | The value to return when a custom filter returns an error. Use "<empty string>" to return an empty string. | `<FILTER_ERROR>` |
+| &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`-b,`<br>`--batch`&nbsp; | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
+| &nbsp;`--timeout`&nbsp; | string | Timeout for downloading lookups on URLs. | `30` |
+| &nbsp;`--cache-dir`&nbsp; | string | The directory to use for caching downloaded lookup resources. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
+| &nbsp;`--ckan-api`&nbsp; | string | The URL of the CKAN API to use for downloading lookup resources with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. | `https://data.dathere.com/api/3/action` |
+| &nbsp;`--ckan-token`&nbsp; | string | The CKAN API token to use. Only required if downloading private resources. If the QSV_CKAN_TOKEN envvar is set, it will be used instead. |  |
 
 <a name="common-options"></a>
 
@@ -113,11 +113,11 @@ qsv template --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. Templates must use numeric 1-based indices with the "_c" prefix.(e.g. col1: {{_c1}} col2: {{_c2}}) |  |
-| `--delimiter` | string | Field separator for reading CSV | `,` |
-| `-p,`<br>`--progressbar` | flag | Show progress bars. Not valid for stdin. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Templates must use numeric 1-based indices with the "_c" prefix.(e.g. col1: {{_c1}} col2: {{_c2}}) |  |
+| &nbsp;`--delimiter`&nbsp; | string | Field separator for reading CSV | `,` |
+| &nbsp;`-p,`<br>`--progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |
 
 ---
 **Source:** [`src/cmd/template.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/template.rs)

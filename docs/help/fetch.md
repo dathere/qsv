@@ -183,20 +183,20 @@ qsv fetch --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--url-template` | string | URL template to use. Use column names enclosed with curly braces to insert the CSV data for a record. Mutually exclusive with url-column. |  |
-| `-c,`<br>`--new-column` | string | Put the fetched values in a new column. Specifying this option results in a CSV. Otherwise, the output is in JSONL format. |  |
-| `--jaq` | string | Apply jaq selector to API returned JSON value. Mutually exclusive with --jaqfile, |  |
-| `--jaqfile` | string | Load jaq selector from file instead. Mutually exclusive with --jaq. |  |
-| `--pretty` | flag | Prettify JSON responses. Otherwise, they're minified. If the response is not in JSON format, it's passed through. Note that --pretty requires the --new-column option. |  |
-| `--rate-limit` | string | Rate Limit in Queries Per Second (max: 1000). Note that fetch dynamically throttles as well based on rate-limit and retry-after response headers. Set to 0 to go as fast as possible, automatically throttling as required. CAUTION: Only use zero for APIs that use RateLimit and/or Retry-After headers, otherwise your fetch job may look like a Denial Of Service attack. Even though zero is the default, this is mitigated by --max-errors having a default of 10. | `0` |
-| `--timeout` | string | Timeout for each URL request. | `30` |
-| `-H,`<br>`--http-header` | string | Append custom header(s) to the HTTP header. Pass multiple key-value pairs by adding this option multiple times, once for each pair. The key and value should be separated by a colon. |  |
-| `--max-retries` | string | Maximum number of retries per record before an error is raised. | `5` |
-| `--max-errors` | string | Maximum number of errors before aborting. Set to zero (0) to continue despite errors. | `10` |
-| `--store-error` | flag | On error, store error code/message instead of blank value. |  |
-| `--cookies` | flag | Allow cookies. |  |
-| `--user-agent` | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
-| `--report` | string | Creates a report of the fetch job. The report has the same name as the input file with the ".fetch-report" suffix. There are two kinds of report - d for "detailed" & s for "short". The detailed report has the same columns as the input CSV with six additional columns - qsv_fetch_url, qsv_fetch_status, qsv_fetch_cache_hit, qsv_fetch_retries, qsv_fetch_elapsed_ms & qsv_fetch_response. The short report only has the six columns without the "qsv_fetch_" prefix. | `none` |
+| &nbsp;`--url-template`&nbsp; | string | URL template to use. Use column names enclosed with curly braces to insert the CSV data for a record. Mutually exclusive with url-column. |  |
+| &nbsp;`-c,`<br>`--new-column`&nbsp; | string | Put the fetched values in a new column. Specifying this option results in a CSV. Otherwise, the output is in JSONL format. |  |
+| &nbsp;`--jaq`&nbsp; | string | Apply jaq selector to API returned JSON value. Mutually exclusive with --jaqfile, |  |
+| &nbsp;`--jaqfile`&nbsp; | string | Load jaq selector from file instead. Mutually exclusive with --jaq. |  |
+| &nbsp;`--pretty`&nbsp; | flag | Prettify JSON responses. Otherwise, they're minified. If the response is not in JSON format, it's passed through. Note that --pretty requires the --new-column option. |  |
+| &nbsp;`--rate-limit`&nbsp; | string | Rate Limit in Queries Per Second (max: 1000). Note that fetch dynamically throttles as well based on rate-limit and retry-after response headers. Set to 0 to go as fast as possible, automatically throttling as required. CAUTION: Only use zero for APIs that use RateLimit and/or Retry-After headers, otherwise your fetch job may look like a Denial Of Service attack. Even though zero is the default, this is mitigated by --max-errors having a default of 10. | `0` |
+| &nbsp;`--timeout`&nbsp; | string | Timeout for each URL request. | `30` |
+| &nbsp;`-H,`<br>`--http-header`&nbsp; | string | Append custom header(s) to the HTTP header. Pass multiple key-value pairs by adding this option multiple times, once for each pair. The key and value should be separated by a colon. |  |
+| &nbsp;`--max-retries`&nbsp; | string | Maximum number of retries per record before an error is raised. | `5` |
+| &nbsp;`--max-errors`&nbsp; | string | Maximum number of errors before aborting. Set to zero (0) to continue despite errors. | `10` |
+| &nbsp;`--store-error`&nbsp; | flag | On error, store error code/message instead of blank value. |  |
+| &nbsp;`--cookies`&nbsp; | flag | Allow cookies. |  |
+| &nbsp;`--user-agent`&nbsp; | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
+| &nbsp;`--report`&nbsp; | string | Creates a report of the fetch job. The report has the same name as the input file with the ".fetch-report" suffix. There are two kinds of report - d for "detailed" & s for "short". The detailed report has the same columns as the input CSV with six additional columns - qsv_fetch_url, qsv_fetch_status, qsv_fetch_cache_hit, qsv_fetch_retries, qsv_fetch_elapsed_ms & qsv_fetch_response. The short report only has the six columns without the "qsv_fetch_" prefix. | `none` |
 
 <a name="caching-options"></a>
 
@@ -204,13 +204,13 @@ qsv fetch --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--no-cache` | flag | Do not cache responses. |  |
-| `--mem-cache-size` | string | Maximum number of entries in the in-memory LRU cache. | `2000000` |
-| `--disk-cache` | flag | Use a persistent disk cache for responses. The cache is stored in the directory specified by --disk-cache-dir. If the directory does not exist, it will be created. If the directory exists, it will be used as is. It has a default Time To Live (TTL)/lifespan of 28 days and cache hits do not refresh the TTL of cached values. Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars to change DiskCache settings. |  |
-| `--disk-cache-dir` | string | The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different fetch jobs (e.g. one for geocoding, another for weather, etc.) | `~/.qsv/cache/fetch` |
-| `--redis-cache` | flag | Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/1" with a connection pool size of 20, with a TTL of 28 days, and a cache hit NOT renewing an entry's TTL. Adjust the QSV_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS & QSV_REDIS_TTL_REFRESH env vars respectively to change Redis settings. This option is ignored if the --disk-cache option is enabled. |  |
-| `--cache-error` | flag | Cache error responses even if a request fails. If an identical URL is requested, the cached error is returned. Otherwise, the fetch is attempted again for --max-retries. |  |
-| `--flush-cache` | flag | Flush all the keys in the current cache on startup. This only applies to Disk and Redis caches. |  |
+| &nbsp;`--no-cache`&nbsp; | flag | Do not cache responses. |  |
+| &nbsp;`--mem-cache-size`&nbsp; | string | Maximum number of entries in the in-memory LRU cache. | `2000000` |
+| &nbsp;`--disk-cache`&nbsp; | flag | Use a persistent disk cache for responses. The cache is stored in the directory specified by --disk-cache-dir. If the directory does not exist, it will be created. If the directory exists, it will be used as is. It has a default Time To Live (TTL)/lifespan of 28 days and cache hits do not refresh the TTL of cached values. Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars to change DiskCache settings. |  |
+| &nbsp;`--disk-cache-dir`&nbsp; | string | The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different fetch jobs (e.g. one for geocoding, another for weather, etc.) | `~/.qsv/cache/fetch` |
+| &nbsp;`--redis-cache`&nbsp; | flag | Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/1" with a connection pool size of 20, with a TTL of 28 days, and a cache hit NOT renewing an entry's TTL. Adjust the QSV_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS & QSV_REDIS_TTL_REFRESH env vars respectively to change Redis settings. This option is ignored if the --disk-cache option is enabled. |  |
+| &nbsp;`--cache-error`&nbsp; | flag | Cache error responses even if a request fails. If an identical URL is requested, the cached error is returned. Otherwise, the fetch is attempted again for --max-retries. |  |
+| &nbsp;`--flush-cache`&nbsp; | flag | Flush all the keys in the current cache on startup. This only applies to Disk and Redis caches. |  |
 
 <a name="common-options"></a>
 
@@ -218,11 +218,11 @@ qsv fetch --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-p,`<br>`--progressbar` | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-p,`<br>`--progressbar`&nbsp; | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |
 
 ---
 **Source:** [`src/cmd/fetch.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/fetch.rs)

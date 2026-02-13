@@ -43,7 +43,7 @@ qsv explode --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-r,`<br>`--rename` | string | New name for the exploded column. |  |
+| &nbsp;`-r,`<br>`--rename`&nbsp; | string | New name for the exploded column. |  |
 
 <a name="common-options"></a>
 
@@ -51,10 +51,10 @@ qsv explode --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/explode.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/explode.rs)

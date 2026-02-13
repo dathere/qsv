@@ -53,17 +53,17 @@ qsv input --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--quote` | string | The quote character to use. | `"` |
-| `--escape` | string | The escape character to use. When not specified, quotes are escaped by doubling them. |  |
-| `--no-quoting` | flag | Disable quoting completely when reading CSV data. |  |
-| `--quote-style` | string | The quoting style to use when writing CSV data. Possible values: all, necessary, nonnumeric and never. All: Quotes all fields. Necessary: Quotes fields only when necessary - when fields contain a quote, delimiter or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field). NonNumeric: Quotes all fields that are non-numeric. Never: Never write quotes. Even if it produces invalid CSV. | `necessary` |
-| `--skip-lines` | string | The number of preamble lines to skip. |  |
-| `--auto-skip` | flag | Sniffs a CSV for preamble lines and automatically skips them. Takes precedence over --skip-lines option. Does not work with <stdin>. |  |
-| `--skip-lastlines` | string | The number of epilogue lines to skip. |  |
-| `--trim-headers` | flag | Trim leading & trailing whitespace & quotes from header values. |  |
-| `--trim-fields` | flag | Trim leading & trailing whitespace from field values. |  |
-| `--comment` | string | The comment character to use. When set, lines starting with this character will be skipped. |  |
-| `--encoding-errors` | string | How to handle UTF-8 encoding errors. Possible values: replace, skip, strict. replace: Replace invalid UTF-8 sequences with �. skip: Fields with encoding errors are "<SKIPPED>". strict: Fail on any encoding errors. | `replace` |
+| &nbsp;`--quote`&nbsp; | string | The quote character to use. | `"` |
+| &nbsp;`--escape`&nbsp; | string | The escape character to use. When not specified, quotes are escaped by doubling them. |  |
+| &nbsp;`--no-quoting`&nbsp; | flag | Disable quoting completely when reading CSV data. |  |
+| &nbsp;`--quote-style`&nbsp; | string | The quoting style to use when writing CSV data. Possible values: all, necessary, nonnumeric and never. All: Quotes all fields. Necessary: Quotes fields only when necessary - when fields contain a quote, delimiter or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field). NonNumeric: Quotes all fields that are non-numeric. Never: Never write quotes. Even if it produces invalid CSV. | `necessary` |
+| &nbsp;`--skip-lines`&nbsp; | string | The number of preamble lines to skip. |  |
+| &nbsp;`--auto-skip`&nbsp; | flag | Sniffs a CSV for preamble lines and automatically skips them. Takes precedence over --skip-lines option. Does not work with <stdin>. |  |
+| &nbsp;`--skip-lastlines`&nbsp; | string | The number of epilogue lines to skip. |  |
+| &nbsp;`--trim-headers`&nbsp; | flag | Trim leading & trailing whitespace & quotes from header values. |  |
+| &nbsp;`--trim-fields`&nbsp; | flag | Trim leading & trailing whitespace from field values. |  |
+| &nbsp;`--comment`&nbsp; | string | The comment character to use. When set, lines starting with this character will be skipped. |  |
+| &nbsp;`--encoding-errors`&nbsp; | string | How to handle UTF-8 encoding errors. Possible values: replace, skip, strict. replace: Replace invalid UTF-8 sequences with �. skip: Fields with encoding errors are "<SKIPPED>". strict: Fail on any encoding errors. | `replace` |
 
 <a name="common-options"></a>
 
@@ -71,9 +71,9 @@ qsv input --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/input.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/input.rs)

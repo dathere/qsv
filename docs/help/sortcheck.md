@@ -50,11 +50,11 @@ qsv sortcheck --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-s,`<br>`--select` | string | Select a subset of columns to check for sort. See 'qsv select --help' for the format details. |  |
-| `-i,`<br>`--ignore-case` | flag | Compare strings disregarding case |  |
-| `--all` | flag | Check all records. Do not stop/short-circuit the check on the first unsorted record. |  |
-| `--json` | flag | Return results in JSON format, scanning --all records. The JSON result has the following properties - sorted (boolean), record_count (number), unsorted_breaks (number) & dupe_count (number). Unsorted breaks count the number of times two consecutive rows are unsorted (i.e. n row > n+1 row). Dupe count is the number of times two consecutive rows are equal. Note that dupe count does not apply if the file is not sorted and is set to -1. |  |
-| `--pretty-json` | flag | Same as --json but in pretty JSON format. |  |
+| &nbsp;`-s,`<br>`--select`&nbsp; | string | Select a subset of columns to check for sort. See 'qsv select --help' for the format details. |  |
+| &nbsp;`-i,`<br>`--ignore-case`&nbsp; | flag | Compare strings disregarding case |  |
+| &nbsp;`--all`&nbsp; | flag | Check all records. Do not stop/short-circuit the check on the first unsorted record. |  |
+| &nbsp;`--json`&nbsp; | flag | Return results in JSON format, scanning --all records. The JSON result has the following properties - sorted (boolean), record_count (number), unsorted_breaks (number) & dupe_count (number). Unsorted breaks count the number of times two consecutive rows are unsorted (i.e. n row > n+1 row). Dupe count is the number of times two consecutive rows are equal. Note that dupe count does not apply if the file is not sorted and is set to -1. |  |
+| &nbsp;`--pretty-json`&nbsp; | flag | Same as --json but in pretty JSON format. |  |
 
 <a name="common-options"></a>
 
@@ -62,10 +62,10 @@ qsv sortcheck --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will not be interpreted as headers. That is, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-p,`<br>`--progressbar` | flag | Show progress bars. Not valid for stdin. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. That is, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-p,`<br>`--progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |
 
 ---
 **Source:** [`src/cmd/sortcheck.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/sortcheck.rs)

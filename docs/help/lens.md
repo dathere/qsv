@@ -137,21 +137,21 @@ qsv lens --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-d,`<br>`--delimiter` | string | Delimiter character (comma by default) "auto" to auto-detect the delimiter |  |
-| `-t,`<br>`--tab-separated` | flag | Use tab separation. Shortcut for -d '\t' |  |
-| `--no-headers` | flag | Do not interpret the first row as headers |  |
-| `--columns` | string | Use this regex to select columns to display by default. Example: "col1\|col2\|col3" to select columns "col1", "col2" and "col3" and also columns like "col1_1", "col22" and "col3-more". |  |
-| `--filter` | string | Use this regex to filter rows to display by default. The regex is matched against each cell in every column. Example: "val1\|val2" filters rows with any cells containing "val1", "val2" or text like "my_val1" or "val234". |  |
-| `--find` | string | Use this regex to find and highlight matches by default. Automatically sets --monochrome to true so the matches are easier to see. The regex is matched against each cell in every column. Example: "val1\|val2" highlights text containing "val1", "val2" or longer text like "val1_ok" or "val2_error". |  |
-| `-i,`<br>`--ignore-case` | flag | Searches ignore case. Ignored if any uppercase letters are present in the search string |  |
-| `-f,`<br>`--freeze-columns` | string | Freeze the first N columns | `1` |
-| `-m,`<br>`--monochrome` | flag | Disable color output |  |
-| `-W,`<br>`--wrap-mode` | string | Set the wrap mode for the output. | `disabled` |
-| `-A,`<br>`--auto-reload` | flag | Automatically reload the data when the file changes. |  |
-| `-S,`<br>`--streaming-stdin` | flag | Enable streaming stdin (load input as it's being piped in) NOTE: This option only applies to stdin input. |  |
-| `-P,`<br>`--prompt` | string | Set a custom prompt in the status bar. Normally paired w/ --echo-column: qsv lens --prompt 'Select City:' --echo-column 'City' Supports ANSI escape codes for colored or styled text. When using escape codes, ensure it's properly escaped. For example, in bash/zsh, the $'...' syntax is used to do so: qsv lens --prompt $'\033[1;5;31mBlinking red, bold text\033[0m' see <https://en.wikipedia.org/wiki/ANSI_escape_code#Colors> or <https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797> for more info on ANSI escape codes. Typing a complicated prompt on the command line can be tricky. If the prompt starts with "file:", it's interpreted as a filepath from which to load the prompt, e.g. qsv lens --prompt "file:prompt.txt" |  |
-| `--echo-column` | string | Print the value of this column to stdout for the selected row |  |
-| `--debug` | flag | Show stats for debugging |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | Delimiter character (comma by default) "auto" to auto-detect the delimiter |  |
+| &nbsp;`-t,`<br>`--tab-separated`&nbsp; | flag | Use tab separation. Shortcut for -d '\t' |  |
+| &nbsp;`--no-headers`&nbsp; | flag | Do not interpret the first row as headers |  |
+| &nbsp;`--columns`&nbsp; | string | Use this regex to select columns to display by default. Example: "col1\|col2\|col3" to select columns "col1", "col2" and "col3" and also columns like "col1_1", "col22" and "col3-more". |  |
+| &nbsp;`--filter`&nbsp; | string | Use this regex to filter rows to display by default. The regex is matched against each cell in every column. Example: "val1\|val2" filters rows with any cells containing "val1", "val2" or text like "my_val1" or "val234". |  |
+| &nbsp;`--find`&nbsp; | string | Use this regex to find and highlight matches by default. Automatically sets --monochrome to true so the matches are easier to see. The regex is matched against each cell in every column. Example: "val1\|val2" highlights text containing "val1", "val2" or longer text like "val1_ok" or "val2_error". |  |
+| &nbsp;`-i,`<br>`--ignore-case`&nbsp; | flag | Searches ignore case. Ignored if any uppercase letters are present in the search string |  |
+| &nbsp;`-f,`<br>`--freeze-columns`&nbsp; | string | Freeze the first N columns | `1` |
+| &nbsp;`-m,`<br>`--monochrome`&nbsp; | flag | Disable color output |  |
+| &nbsp;`-W,`<br>`--wrap-mode`&nbsp; | string | Set the wrap mode for the output. | `disabled` |
+| &nbsp;`-A,`<br>`--auto-reload`&nbsp; | flag | Automatically reload the data when the file changes. |  |
+| &nbsp;`-S,`<br>`--streaming-stdin`&nbsp; | flag | Enable streaming stdin (load input as it's being piped in) NOTE: This option only applies to stdin input. |  |
+| &nbsp;`-P,`<br>`--prompt`&nbsp; | string | Set a custom prompt in the status bar. Normally paired w/ --echo-column: qsv lens --prompt 'Select City:' --echo-column 'City' Supports ANSI escape codes for colored or styled text. When using escape codes, ensure it's properly escaped. For example, in bash/zsh, the $'...' syntax is used to do so: qsv lens --prompt $'\033[1;5;31mBlinking red, bold text\033[0m' see <https://en.wikipedia.org/wiki/ANSI_escape_code#Colors> or <https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797> for more info on ANSI escape codes. Typing a complicated prompt on the command line can be tricky. If the prompt starts with "file:", it's interpreted as a filepath from which to load the prompt, e.g. qsv lens --prompt "file:prompt.txt" |  |
+| &nbsp;`--echo-column`&nbsp; | string | Print the value of this column to stdout for the selected row |  |
+| &nbsp;`--debug`&nbsp; | flag | Show stats for debugging |  |
 
 <a name="common-options"></a>
 
@@ -159,7 +159,7 @@ qsv lens --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
 
 ---
 **Source:** [`src/cmd/lens.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/lens.rs)

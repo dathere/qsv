@@ -128,8 +128,8 @@ qsv split --help
 
 | Argument | Description |
 |----------|-------------|
-| `<outdir>` | The directory where the output files will be written. If it does not exist, it will be created. |
-| `<input>` | The CSV file to read. If not given, input is read from STDIN. |
+| &nbsp;`<outdir>`&nbsp; | The directory where the output files will be written. If it does not exist, it will be created. |
+| &nbsp;`<input>`&nbsp; | The CSV file to read. If not given, input is read from STDIN. |
 
 <a name="split-options"></a>
 
@@ -137,12 +137,12 @@ qsv split --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-s,`<br>`--size` | string | The number of records to write into each chunk. | `500` |
-| `-c,`<br>`--chunks` | string | The number of chunks to split the data into. This option is mutually exclusive with --size. The number of rows in each chunk is determined by the number of records in the CSV data and the number of desired chunks. If the number of records is not evenly divisible by the number of chunks, the last chunk will have fewer records. |  |
-| `-k,`<br>`--kb-size` | string | The size of each chunk in kilobytes. The number of rows in each chunk may vary, but the size of each chunk will not exceed the desired size. This option is mutually exclusive with --size and --chunks. |  |
-| `-j,`<br>`--jobs` | string | The number of splitting jobs to run in parallel. This only works when the given CSV data has an index already created. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `--filename` | string | A filename template to use when constructing the names of the output files.  The string '{}' will be replaced by the zero-based row number of the first row in the chunk. | `{}.csv` |
-| `--pad` | string | The zero padding width that is used in the generated filename. | `0` |
+| &nbsp;`-s,`<br>`--size`&nbsp; | string | The number of records to write into each chunk. | `500` |
+| &nbsp;`-c,`<br>`--chunks`&nbsp; | string | The number of chunks to split the data into. This option is mutually exclusive with --size. The number of rows in each chunk is determined by the number of records in the CSV data and the number of desired chunks. If the number of records is not evenly divisible by the number of chunks, the last chunk will have fewer records. |  |
+| &nbsp;`-k,`<br>`--kb-size`&nbsp; | string | The size of each chunk in kilobytes. The number of rows in each chunk may vary, but the size of each chunk will not exceed the desired size. This option is mutually exclusive with --size and --chunks. |  |
+| &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of splitting jobs to run in parallel. This only works when the given CSV data has an index already created. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`--filename`&nbsp; | string | A filename template to use when constructing the names of the output files.  The string '{}' will be replaced by the zero-based row number of the first row in the chunk. | `{}.csv` |
+| &nbsp;`--pad`&nbsp; | string | The zero padding width that is used in the generated filename. | `0` |
 
 <a name="filter-options"></a>
 
@@ -150,9 +150,9 @@ qsv split --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--filter` | string | Run the specified command on each chunk after it is written. The command should use the FILE environment variable ($FILE on Linux/macOS, %FILE% on Windows), which is set to the path of the output file for each chunk. The string '{}' in the command will be replaced by the zero-based row number of the first row in the chunk. |  |
-| `--filter-cleanup` | flag | Cleanup the original output filename AFTER the filter command is run successfully for EACH chunk. If the filter command is not successful, the original filename is not removed. Only valid when --filter is used. |  |
-| `--filter-ignore-errors` | flag | Ignore errors when running the filter command. Only valid when --filter is used. |  |
+| &nbsp;`--filter`&nbsp; | string | Run the specified command on each chunk after it is written. The command should use the FILE environment variable ($FILE on Linux/macOS, %FILE% on Windows), which is set to the path of the output file for each chunk. The string '{}' in the command will be replaced by the zero-based row number of the first row in the chunk. |  |
+| &nbsp;`--filter-cleanup`&nbsp; | flag | Cleanup the original output filename AFTER the filter command is run successfully for EACH chunk. If the filter command is not successful, the original filename is not removed. Only valid when --filter is used. |  |
+| &nbsp;`--filter-ignore-errors`&nbsp; | flag | Ignore errors when running the filter command. Only valid when --filter is used. |  |
 
 <a name="common-options"></a>
 
@@ -160,10 +160,10 @@ qsv split --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-n,`<br>`--no-headers` | flag | When set, the first row will NOT be interpreted as column names. Otherwise, the first row will appear in all chunks as the header row. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-q,`<br>`--quiet` | flag | Do not display an output summary to stderr. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will NOT be interpreted as column names. Otherwise, the first row will appear in all chunks as the header row. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-q,`<br>`--quiet`&nbsp; | flag | Do not display an output summary to stderr. |  |
 
 ---
 **Source:** [`src/cmd/split.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/split.rs)

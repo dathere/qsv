@@ -29,9 +29,9 @@ qsv behead --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-f,`<br>`--flexible` | flag | Do not validate if the CSV has different number of fields per record, increasing performance. |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-f,`<br>`--flexible`&nbsp; | flag | Do not validate if the CSV has different number of fields per record, increasing performance. |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
 
 ---
 **Source:** [`src/cmd/behead.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/behead.rs)

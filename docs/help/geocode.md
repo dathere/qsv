@@ -352,10 +352,10 @@ qsv geocode --help
 
 | Argument | Description |
 |----------|-------------|
-| `<input>` | The input file to read from. If not specified, reads from stdin. |
-| `<column>` | The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in "lat, long" or "(lat, long)" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information. |
-| `<location>` | The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL. |
-| `<index-file>` | The alternate geonames index file to use. It must be a .rkyv file. For convenience, if this is set to 500, 1000, 5000 or 15000, it will download the corresponding English-only Geonames index rkyv file from the qsv GitHub repo for the current qsv version and use it. Only used by the index-load subcommand. |
+| &nbsp;`<input>`&nbsp; | The input file to read from. If not specified, reads from stdin. |
+| &nbsp;`<column>`&nbsp; | The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in "lat, long" or "(lat, long)" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information. |
+| &nbsp;`<location>`&nbsp; | The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL. |
+| &nbsp;`<index-file>`&nbsp; | The alternate geonames index file to use. It must be a .rkyv file. For convenience, if this is set to 500, 1000, 5000 or 15000, it will download the corresponding English-only Geonames index rkyv file from the qsv GitHub repo for the current qsv version and use it. Only used by the index-load subcommand. |
 
 <a name="geocode-options"></a>
 
@@ -363,9 +363,9 @@ qsv geocode --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-c,`<br>`--new-column` | string | Put the transformed values in a new column instead. Not valid when using the '%dyncols:' --formatstr option. |  |
-| `-r,`<br>`--rename` | string | New name for the transformed column. |  |
-| `--country` | string | The comma-delimited, case-insensitive list of countries to filter for. Country is specified as a ISO 3166-1 alpha-2 (two-letter) country code. <https://en.wikipedia.org/wiki/ISO_3166-2> |  |
+| &nbsp;`-c,`<br>`--new-column`&nbsp; | string | Put the transformed values in a new column instead. Not valid when using the '%dyncols:' --formatstr option. |  |
+| &nbsp;`-r,`<br>`--rename`&nbsp; | string | New name for the transformed column. |  |
+| &nbsp;`--country`&nbsp; | string | The comma-delimited, case-insensitive list of countries to filter for. Country is specified as a ISO 3166-1 alpha-2 (two-letter) country code. <https://en.wikipedia.org/wiki/ISO_3166-2> |  |
 
 <a name="suggest-only-options"></a>
 
@@ -373,8 +373,8 @@ qsv geocode --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--min-score` | string | The minimum Jaro-Winkler distance score. | `0.8` |
-| `--admin1` | string | The comma-delimited, case-insensitive list of admin1s to filter for. |  |
+| &nbsp;`--min-score`&nbsp; | string | The minimum Jaro-Winkler distance score. | `0.8` |
+| &nbsp;`--admin1`&nbsp; | string | The comma-delimited, case-insensitive list of admin1s to filter for. |  |
 
 <a name="reverse-only-option"></a>
 
@@ -382,7 +382,7 @@ qsv geocode --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-k,`<br>`--k_weight` | string | Use population-weighted distance for reverse subcommand. (i.e. nearest.distance - k * city.population) Larger values will favor more populated cities. If not set (default), the population is not used and the nearest city is returned. |  |
+| &nbsp;`-k,`<br>`--k_weight`&nbsp; | string | Use population-weighted distance for reverse subcommand. (i.e. nearest.distance - k * city.population) Larger values will favor more populated cities. If not set (default), the population is not used and the nearest city is returned. |  |
 
 <a name="dynamic-formatting-options"></a>
 
@@ -390,12 +390,12 @@ qsv geocode --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-l,`<br>`--language` | string | The language to use when geocoding. The language is specified as a ISO 639-1 code. Note that the Geonames index must have been built with the specified language using the `index-update` subcommand with the --languages option. If the language is not available, the first language in the index is used. | `en` |
-| `--invalid-result` | string | The string to return when the geocode result is empty/invalid. If not set, the original value is used. |  |
-| `-j,`<br>`--jobs` | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| `-b,`<br>`--batch` | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
-| `--timeout` | string | Timeout for downloading Geonames cities index. | `120` |
-| `--cache-dir` | string | The directory to use for caching the Geonames cities index. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
+| &nbsp;`-l,`<br>`--language`&nbsp; | string | The language to use when geocoding. The language is specified as a ISO 639-1 code. Note that the Geonames index must have been built with the specified language using the `index-update` subcommand with the --languages option. If the language is not available, the first language in the index is used. | `en` |
+| &nbsp;`--invalid-result`&nbsp; | string | The string to return when the geocode result is empty/invalid. If not set, the original value is used. |  |
+| &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`-b,`<br>`--batch`&nbsp; | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
+| &nbsp;`--timeout`&nbsp; | string | Timeout for downloading Geonames cities index. | `120` |
+| &nbsp;`--cache-dir`&nbsp; | string | The directory to use for caching the Geonames cities index. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
 
 <a name="index-update-only-options"></a>
 
@@ -403,9 +403,9 @@ qsv geocode --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `--languages` | string | The comma-delimited, case-insensitive list of languages to use when building the Geonames cities index. The languages are specified as a comma-separated list of ISO 639-2 codes. See <https://download.geonames.org/export/dump/iso-languagecodes.txt> to look up codes and <https://download.geonames.org/export/dump/alternatenames/> for the supported language files. 253 languages are currently supported. | `en` |
-| `--cities-url` | string | The URL to download the Geonames cities file from. There are several available at <https://download.geonames.org/export/dump/>. cities500.zip   - cities with populations > 500; ~200k cities, 56mb cities1000.zip  - population > 1000; ~140k cities, 44mb cities5000.zip  - population > 5000; ~53k cities, 21mb cities15000.zip - population > 15000; ~26k cities, 13mb Note that the more cities are included, the larger the local index file will be, lookup times will be slower, and the search results will be different. For convenience, if this is set to 500, 1000, 5000 or 15000, it will be converted to a geonames cities URL. | `https://download.geonames.org/export/dump/cities15000.zip` |
-| `--force` | flag | Force update the Geonames cities index. If not set, qsv will check if there are updates available at Geonames.org before updating the index. |  |
+| &nbsp;`--languages`&nbsp; | string | The comma-delimited, case-insensitive list of languages to use when building the Geonames cities index. The languages are specified as a comma-separated list of ISO 639-2 codes. See <https://download.geonames.org/export/dump/iso-languagecodes.txt> to look up codes and <https://download.geonames.org/export/dump/alternatenames/> for the supported language files. 253 languages are currently supported. | `en` |
+| &nbsp;`--cities-url`&nbsp; | string | The URL to download the Geonames cities file from. There are several available at <https://download.geonames.org/export/dump/>. cities500.zip   - cities with populations > 500; ~200k cities, 56mb cities1000.zip  - population > 1000; ~140k cities, 44mb cities5000.zip  - population > 5000; ~53k cities, 21mb cities15000.zip - population > 15000; ~26k cities, 13mb Note that the more cities are included, the larger the local index file will be, lookup times will be slower, and the search results will be different. For convenience, if this is set to 500, 1000, 5000 or 15000, it will be converted to a geonames cities URL. | `https://download.geonames.org/export/dump/cities15000.zip` |
+| &nbsp;`--force`&nbsp; | flag | Force update the Geonames cities index. If not set, qsv will check if there are updates available at Geonames.org before updating the index. |  |
 
 <a name="common-options"></a>
 
@@ -413,10 +413,10 @@ qsv geocode --help
 
 | Option | Type | Description | Default |
 |--------|------|-------------|--------|
-| `-h,`<br>`--help` | flag | Display this message |  |
-| `-o,`<br>`--output` | string | Write output to <file> instead of stdout. |  |
-| `-d,`<br>`--delimiter` | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| `-p,`<br>`--progressbar` | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |
+| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`-p,`<br>`--progressbar`&nbsp; | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |
 
 ---
 **Source:** [`src/cmd/geocode.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/geocode.rs)

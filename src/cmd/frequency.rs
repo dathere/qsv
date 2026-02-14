@@ -176,10 +176,10 @@ frequency options:
                             When not set, defaults to the number of CPUs detected.
 
                             FREQUENCY CACHE OPTIONS:
-    --frequency-toon       Write the complete frequency distribution as a compact
-                            TOON cache file (FILESTEM.freq.csv.data.toon).
+    --frequency-jsonl       Write the complete frequency distribution as a
+                            JSONL cache file (FILESTEM.freq.csv.data.jsonl).
                             Requires a non-stdin input file. The cache contains
-                            metadata and per-column frequency data in TOON format.
+                            metadata and per-column frequency data.
                             ALL_UNIQUE columns (rowcount == cardinality) get a single
                             ALL_UNIQUE sentinel. HIGH_CARDINALITY columns (cardinality
                             exceeds the smaller of --high-card-threshold/--high-card-pct
@@ -193,16 +193,16 @@ frequency options:
                             classification in the frequency cache.
                             Can also be set with QSV_FREQ_HIGH_CARD_THRESHOLD env var
                             (env var takes precedence when CLI value equals the default).
-                            Only used with --frequency-toon.
+                            Only used with --frequency-jsonl.
                             [default: 1000]
     --high-card-pct <arg>   Percentage of rowcount threshold for HIGH_CARDINALITY
                             classification in the frequency cache. Must be between 1 and 100.
                             Can also be set with QSV_FREQ_HIGH_CARD_PCT env var
                             (env var takes precedence when CLI value equals the default).
-                            Only used with --frequency-toon.
+                            Only used with --frequency-jsonl.
                             [default: 90]
     --force                 Force recomputation and cache regeneration even when a
-                            valid frequency cache exists. Use with --frequency-toon
+                            valid frequency cache exists. Use with --frequency-jsonl
                             to regenerate the cache.
 
                             JSON OUTPUT OPTIONS:
@@ -245,7 +245,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use stats::{Frequencies, merge_all};
 use threadpool::ThreadPool;
-use toon_format::{DecodeOptions, EncodeOptions, decode, encode};
+use toon_format::{EncodeOptions, encode};
 
 use crate::{
     CliResult,
@@ -313,7 +313,7 @@ pub struct Args {
     pub flag_delimiter:           Option<Delimiter>,
     pub flag_memcheck:            bool,
     pub flag_vis_whitespace:      bool,
-    pub flag_frequency_toon:      bool,
+    pub flag_frequency_jsonl:     bool,
     pub flag_high_card_threshold: usize,
     pub flag_high_card_pct:       u8,
     pub flag_force:               bool,
@@ -343,7 +343,7 @@ static ALL_UNIQUE_TEXT: OnceLock<Vec<u8>> = OnceLock::new();
 // and FREQ_CACHE_FTABLES holds their pre-built FTables for merging after computation.
 static FREQ_CACHE_SKIP: OnceLock<Vec<bool>> = OnceLock::new();
 static FREQ_CACHE_FTABLES: OnceLock<FTables> = OnceLock::new();
-// FrequencyCacheEntry and FrequencyCacheValue are structs for --frequency-toon cache
+// FrequencyCacheEntry and FrequencyCacheValue are structs for --frequency-jsonl cache
 #[derive(Serialize, Deserialize)]
 struct FrequencyCacheEntry {
     field:       String,
@@ -359,7 +359,7 @@ struct FrequencyCacheValue {
 }
 
 // FrequencyCache combines metadata (how the cache was generated) and per-column
-// frequency data into a single TOON file (.freq.csv.data.toon).
+// frequency data into a single JSONL file (.freq.csv.data.jsonl).
 // Similar to StatsArgs in stats.rs, the metadata fields enable cache validation.
 #[derive(Serialize, Deserialize)]
 struct FrequencyCache {
@@ -618,9 +618,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let is_stdin = rconfig.is_stdin();
 
-    // Validate --frequency-toon early, before any computation
-    if args.flag_frequency_toon && is_stdin {
-        return fail_clierror!("--frequency-toon requires a file input, not stdin.");
+    // Validate --frequency-jsonl early, before any computation
+    if args.flag_frequency_jsonl && is_stdin {
+        return fail_clierror!("--frequency-jsonl requires a file input, not stdin.");
     }
 
     // if stdin and args.flag_json is true, save stdin to tempfile
@@ -709,20 +709,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .set(args.flag_all_unique_text.as_bytes().to_vec())
         .unwrap();
 
-    if args.flag_frequency_toon {
-        // Guard: --frequency-toon is incompatible with computation-changing flags
+    if args.flag_frequency_jsonl {
+        // Guard: --frequency-jsonl is incompatible with computation-changing flags
         if args.flag_ignore_case {
             return fail_incorrectusage_clierror!(
-                "--frequency-toon cannot be used with --ignore-case."
+                "--frequency-jsonl cannot be used with --ignore-case."
             );
         }
         if args.flag_no_trim {
             return fail_incorrectusage_clierror!(
-                "--frequency-toon cannot be used with --no-trim."
+                "--frequency-jsonl cannot be used with --no-trim."
             );
         }
         if args.flag_weight.is_some() {
-            return fail_incorrectusage_clierror!("--frequency-toon cannot be used with --weight.");
+            return fail_incorrectusage_clierror!(
+                "--frequency-jsonl cannot be used with --weight."
+            );
         }
 
         // Override high-card thresholds from env vars when CLI defaults are used
@@ -760,7 +762,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let can_use_freq_cache = !is_stdin
         && !is_json
         && !args.flag_force
-        && !args.flag_frequency_toon
+        && !args.flag_frequency_jsonl
         && !args.flag_ignore_case
         && !args.flag_no_trim
         && args.flag_weight.is_none()
@@ -806,11 +808,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    // Write frequency cache if --frequency-toon is set.
+    // Write frequency cache if --frequency-jsonl is set.
     // Always write when explicitly requested — the user may be regenerating
     // with different thresholds or after data changes.
-    if args.flag_frequency_toon {
-        args.write_frequency_toon(&headers, &tables, &rconfig)?;
+    if args.flag_frequency_jsonl {
+        args.write_frequency_jsonl(&headers, &tables, &rconfig)?;
     }
 
     if is_json {
@@ -1437,28 +1439,29 @@ impl Args {
             .select(self.flag_select.clone())
     }
 
-    /// Write the complete frequency distribution as a TOON cache file.
+    /// Write the complete frequency distribution as a JSON cache file.
     /// The cache combines metadata (args, thresholds) and per-column data
-    /// in a single `.freq.csv.data.toon` file.
+    /// in a single `.freq.csv.data.jsonl` file.
     /// ALL_UNIQUE columns get a single `<ALL_UNIQUE>` sentinel entry.
     /// HIGH_CARDINALITY columns get a single `<HIGH_CARDINALITY>` sentinel entry.
     /// Normal columns get complete frequency data (all values, counts, percentages).
     #[allow(clippy::cast_precision_loss)]
-    fn write_frequency_toon(
+    fn write_frequency_jsonl(
         &self,
         headers: &Headers,
         tables: &FTables,
         rconfig: &Config,
     ) -> CliResult<()> {
         let path = rconfig.path.as_ref().ok_or_else(|| {
-            crate::CliError::Other("--frequency-toon requires a file input, not stdin".to_string())
+            crate::CliError::Other("--frequency-jsonl requires a file input, not stdin".to_string())
         })?;
 
         let unique_headers = UNIQUE_COLUMNS_VEC.get().unwrap_or(&EMPTY_USIZE_VEC);
         let row_count = *FREQ_ROW_COUNT.get().unwrap_or(&0);
         if row_count == 0 {
-            log::warn!(
-                "--frequency-toon: row count is 0, skipping frequency cache (no data to cache)"
+            wwarn!(
+                "--frequency-jsonl: row count is 0, skipping frequency cache (no data to cache). \
+                 Run 'qsv stats --cardinality --stats-jsonl' first."
             );
             return Ok(());
         }
@@ -1566,65 +1569,62 @@ impl Args {
             qsv_version:              env!("CARGO_PKG_VERSION").to_string(),
             fields:                   entries,
         };
+        let num_cache_columns = cache.fields.len();
 
-        // Serialize to JSON, then encode to compact TOON format
-        let json_value = serde_json::to_value(&cache)?;
-        let opts = EncodeOptions::new();
-        let toon = encode(&json_value, &opts).map_err(|e| {
-            crate::CliError::Other(format!("Failed to encode frequency cache to TOON: {e}"))
-        })?;
+        // Serialize to JSON
+        let json = serde_json::to_string(&cache)?;
 
-        let toon_path = path.with_extension("freq.csv.data.toon");
-        fs::write(&toon_path, toon)?;
+        let cache_path = path.with_extension("freq.csv.data.jsonl");
+        let cache_len = json.len();
+        fs::write(&cache_path, json)?;
+
+        winfo!(
+            "Frequency cache written: {} ({} bytes, {} columns, {} rows).",
+            cache_path.display(),
+            cache_len,
+            num_cache_columns,
+            row_count
+        );
 
         // Clean up old-format files from previous versions
-        let _ = fs::remove_file(path.with_extension("freq.csv.data.jsonl"));
-        let _ = fs::remove_file(path.with_extension("freq.csv.json"));
+        let _ = fs::remove_file(path.with_extension("freq.csv.data.json"));
+        let _ = fs::remove_file(path.with_extension("freq.csv.data.toon"));
 
         Ok(())
     }
 
-    /// Read and validate the frequency TOON cache file.
+    /// Read and validate the frequency JSON cache file.
     /// Returns None if cache doesn't exist, is stale, or is incompatible.
     fn read_frequency_cache(&self, rconfig: &Config) -> Option<Vec<FrequencyCacheEntry>> {
         use filetime::FileTime;
 
         let path = rconfig.path.as_ref()?;
-        let toon_path = path.with_extension("freq.csv.data.toon");
+        let cache_path = path.with_extension("freq.csv.data.jsonl");
 
-        if !toon_path.exists() {
+        if !cache_path.exists() {
+            log::info!("Frequency cache not found: {}", cache_path.display());
             return None;
         }
 
         // Compare mtime: cache must be newer than source CSV
         let csv_metadata = fs::metadata(path).ok()?;
-        let cache_metadata = fs::metadata(&toon_path).ok()?;
+        let cache_metadata = fs::metadata(&cache_path).ok()?;
         let csv_mtime = FileTime::from_last_modification_time(&csv_metadata);
         let cache_mtime = FileTime::from_last_modification_time(&cache_metadata);
 
         if cache_mtime <= csv_mtime {
-            log::info!("Frequency cache is stale (older than source CSV)");
+            winfo!(
+                "Frequency cache is stale (older than source CSV). Recomputing. Use \
+                 --frequency-jsonl to regenerate."
+            );
             return None;
         }
 
-        // Read and decode TOON cache
-        let toon_content = fs::read_to_string(&toon_path).ok()?;
-        let json_value = decode(
-            &toon_content,
-            &DecodeOptions {
-                strict: false,
-                ..Default::default()
-            },
-        )
-        .map_err(|e| {
-            log::warn!("Failed to decode frequency cache TOON: {e}");
-            e
-        })
-        .ok()?;
-
-        let cache: FrequencyCache = serde_json::from_value(json_value)
+        // Read and deserialize JSON cache
+        let json_content = fs::read_to_string(&cache_path).ok()?;
+        let cache: FrequencyCache = serde_json::from_str(&json_content)
             .map_err(|e| {
-                log::warn!("Failed to deserialize frequency cache: {e}");
+                wwarn!("Failed to deserialize frequency cache: {e}");
                 e
             })
             .ok()?;
@@ -1633,8 +1633,9 @@ impl Args {
         // flag_no_nulls affects what's stored in the FTable — mismatch means
         // cache has wrong null counts
         if cache.flag_no_nulls != self.flag_no_nulls {
-            log::info!(
-                "Frequency cache incompatible: --no-nulls differs (cache={}, current={})",
+            winfo!(
+                "Frequency cache incompatible: --no-nulls differs (cache={}, current={}). \
+                 Recomputing.",
                 cache.flag_no_nulls,
                 self.flag_no_nulls
             );
@@ -1642,8 +1643,9 @@ impl Args {
         }
         // flag_no_headers affects column naming in the cache
         if cache.flag_no_headers != self.flag_no_headers {
-            log::info!(
-                "Frequency cache incompatible: --no-headers differs (cache={}, current={})",
+            winfo!(
+                "Frequency cache incompatible: --no-headers differs (cache={}, current={}). \
+                 Recomputing.",
                 cache.flag_no_headers,
                 self.flag_no_headers
             );
@@ -1656,8 +1658,9 @@ impl Args {
             .as_ref()
             .map_or_else(|| ",".to_string(), |d| (d.as_byte() as char).to_string());
         if cache.flag_delimiter != current_delimiter {
-            log::info!(
-                "Frequency cache incompatible: --delimiter differs (cache={:?}, current={:?})",
+            winfo!(
+                "Frequency cache incompatible: --delimiter differs (cache={:?}, current={:?}). \
+                 Recomputing.",
                 cache.flag_delimiter,
                 current_delimiter
             );
@@ -1809,8 +1812,9 @@ impl Args {
             }
 
             let cached_count = skip_vec.iter().filter(|&&s| s).count();
-            log::info!(
-                "Partial frequency cache: {cached_count}/{} columns cached, {} need computation",
+            winfo!(
+                "Partial frequency cache hit: {cached_count}/{} columns from cache, {} need \
+                 computation.",
                 skip_vec.len(),
                 skip_vec.len() - cached_count,
             );
@@ -1954,7 +1958,7 @@ impl Args {
         }
         wtr.flush()?;
 
-        log::info!("Output produced from frequency cache");
+        winfo!("Frequency cache hit: output produced from cache.");
         Ok(true)
     }
 

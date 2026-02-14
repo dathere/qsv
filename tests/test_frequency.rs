@@ -4,48 +4,33 @@ use foldhash::{HashMap, HashMapExt, HashSet};
 use serde::Deserialize;
 use serde_json::Value;
 use stats::Frequencies;
-use toon_format;
 
 use crate::{Csv, CsvData, qcheck_sized, workdir::Workdir};
 
-/// Decode a TOON cache file and return the `fields` array entries.
-fn decode_toon_fields(path: &std::path::Path) -> Vec<Value> {
+/// Decode a JSON cache file and return the `fields` array entries.
+fn decode_cache_fields(path: &std::path::Path) -> Vec<Value> {
     let contents = std::fs::read_to_string(path).unwrap();
-    let value: Value = toon_format::decode(
-        &contents,
-        &toon_format::DecodeOptions {
-            strict: false,
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    let value: Value = serde_json::from_str(&contents).unwrap();
     value["fields"]
         .as_array()
-        .expect("TOON cache should contain 'fields' array")
+        .expect("Cache should contain 'fields' array")
         .clone()
 }
 
-/// Tamper with a TOON cache file by replacing the first occurrence of `old_count`
+/// Tamper with a JSON cache file by replacing the first occurrence of `old_count`
 /// with `new_count` in the frequency entries. Used to prove cache reads.
-fn tamper_toon_cache(path: &std::path::Path, old_count: u64, new_count: u64) {
-    let contents =
-        std::fs::read_to_string(path).expect("tamper_toon_cache: failed to read TOON cache file");
-    let mut value: Value = toon_format::decode(
-        &contents,
-        &toon_format::DecodeOptions {
-            strict: false,
-            ..Default::default()
-        },
-    )
-    .expect("tamper_toon_cache: failed to decode TOON content");
+fn tamper_cache(path: &std::path::Path, old_count: u64, new_count: u64) {
+    let contents = std::fs::read_to_string(path).expect("tamper_cache: failed to read cache file");
+    let mut value: Value =
+        serde_json::from_str(&contents).expect("tamper_cache: failed to parse JSON content");
     let fields = value["fields"]
         .as_array_mut()
-        .expect("tamper_toon_cache: 'fields' key missing or not an array in TOON cache");
+        .expect("tamper_cache: 'fields' key missing or not an array in cache");
     let mut found = false;
     'outer: for field in fields.iter_mut() {
         for freq in field["frequencies"]
             .as_array_mut()
-            .expect("tamper_toon_cache: 'frequencies' key missing or not an array in field entry")
+            .expect("tamper_cache: 'frequencies' key missing or not an array in field entry")
         {
             if freq["count"].as_u64() == Some(old_count) {
                 freq["count"] = Value::from(new_count);
@@ -58,9 +43,9 @@ fn tamper_toon_cache(path: &std::path::Path, old_count: u64, new_count: u64) {
         found,
         "Could not find count {old_count} in cache to tamper with"
     );
-    let toon = toon_format::encode(&value, &toon_format::EncodeOptions::new())
-        .expect("tamper_toon_cache: failed to re-encode TOON content");
-    std::fs::write(path, toon).expect("tamper_toon_cache: failed to write tampered TOON cache");
+    let json =
+        serde_json::to_string(&value).expect("tamper_cache: failed to re-encode JSON content");
+    std::fs::write(path, json).expect("tamper_cache: failed to write tampered cache");
 }
 
 fn setup(name: &str) -> (Workdir, process::Command) {
@@ -4487,12 +4472,12 @@ fn frequency_pct_nulls_with_limit() {
 }
 
 // ============================================================
-// --frequency-toon tests
+// --frequency-jsonl tests
 // ============================================================
 
 #[test]
-fn frequency_toon_basic() {
-    let wrk = Workdir::new("frequency_toon_basic");
+fn frequency_jsonl_basic() {
+    let wrk = Workdir::new("frequency_jsonl_basic");
     let rows = vec![
         svec!["name", "color"],
         svec!["Alice", "red"],
@@ -4512,16 +4497,16 @@ fn frequency_toon_basic() {
     wrk.assert_success(&mut stats_cmd);
 
     let mut cmd = wrk.command("frequency");
-    cmd.arg("in.csv").arg("--frequency-toon");
+    cmd.arg("in.csv").arg("--frequency-jsonl");
 
     wrk.assert_success(&mut cmd);
 
-    // Verify TOON cache file was created
-    let toon_path = wrk.path("in.freq.csv.data.toon");
-    assert!(toon_path.exists(), "TOON cache file should exist");
+    // Verify frequency cache file was created
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(cache_path.exists(), "Frequency cache file should exist");
 
-    // Parse and validate the TOON cache contents
-    let fields = decode_toon_fields(&toon_path);
+    // Parse and validate the frequency cache contents
+    let fields = decode_cache_fields(&cache_path);
     assert_eq!(fields.len(), 2, "Should have one entry per column");
 
     // First entry (name column)
@@ -4543,8 +4528,8 @@ fn frequency_toon_basic() {
 }
 
 #[test]
-fn frequency_toon_cache_all_unique() {
-    let wrk = Workdir::new("frequency_toon_cache_all_unique");
+fn frequency_jsonl_cache_all_unique() {
+    let wrk = Workdir::new("frequency_jsonl_cache_all_unique");
     let rows = vec![
         svec!["id", "value"],
         svec!["1", "a"],
@@ -4564,12 +4549,12 @@ fn frequency_toon_cache_all_unique() {
     wrk.assert_success(&mut stats_cmd);
 
     let mut cmd = wrk.command("frequency");
-    cmd.arg("in.csv").arg("--frequency-toon");
+    cmd.arg("in.csv").arg("--frequency-jsonl");
 
     wrk.assert_success(&mut cmd);
 
-    let toon_path = wrk.path("in.freq.csv.data.toon");
-    let fields = decode_toon_fields(&toon_path);
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let fields = decode_cache_fields(&cache_path);
 
     // First entry (id column - all unique)
     assert_eq!(fields[0]["field"], "id");
@@ -4592,8 +4577,8 @@ fn frequency_toon_cache_all_unique() {
 }
 
 #[test]
-fn frequency_toon_high_cardinality() {
-    let wrk = Workdir::new("frequency_toon_high_cardinality");
+fn frequency_jsonl_high_cardinality() {
+    let wrk = Workdir::new("frequency_jsonl_high_cardinality");
 
     // Create dataset with 20 rows where one column has 19 unique values (95% of rowcount)
     let mut rows = vec![svec!["id", "category"]];
@@ -4616,14 +4601,14 @@ fn frequency_toon_high_cardinality() {
     // Use a low threshold to trigger HIGH_CARDINALITY
     let mut cmd = wrk.command("frequency");
     cmd.arg("in.csv")
-        .arg("--frequency-toon")
+        .arg("--frequency-jsonl")
         .args(["--high-card-threshold", "10"])
         .args(["--high-card-pct", "50"]);
 
     wrk.assert_success(&mut cmd);
 
-    let toon_path = wrk.path("in.freq.csv.data.toon");
-    let fields = decode_toon_fields(&toon_path);
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let fields = decode_cache_fields(&cache_path);
 
     // id column (cardinality=20 == rowcount) should be ALL_UNIQUE
     assert_eq!(fields[0]["field"], "id");
@@ -4646,8 +4631,8 @@ fn frequency_toon_high_cardinality() {
 }
 
 #[test]
-fn frequency_toon_custom_thresholds() {
-    let wrk = Workdir::new("frequency_toon_custom_thresholds");
+fn frequency_jsonl_custom_thresholds() {
+    let wrk = Workdir::new("frequency_jsonl_custom_thresholds");
 
     // Create dataset: 10 rows, category has cardinality 8
     let mut rows = vec![svec!["id", "category"]];
@@ -4669,11 +4654,11 @@ fn frequency_toon_custom_thresholds() {
 
     // With high thresholds (default), category should NOT be HIGH_CARDINALITY
     let mut cmd = wrk.command("frequency");
-    cmd.arg("in.csv").arg("--frequency-toon");
+    cmd.arg("in.csv").arg("--frequency-jsonl");
     wrk.assert_success(&mut cmd);
 
-    let toon_path = wrk.path("in.freq.csv.data.toon");
-    let fields = decode_toon_fields(&toon_path);
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let fields = decode_cache_fields(&cache_path);
 
     let freqs = fields[1]["frequencies"].as_array().unwrap();
     assert!(
@@ -4684,11 +4669,11 @@ fn frequency_toon_custom_thresholds() {
     // With low threshold (5), category (cardinality=8 > 5) should be HIGH_CARDINALITY
     let mut cmd2 = wrk.command("frequency");
     cmd2.arg("in.csv")
-        .arg("--frequency-toon")
+        .arg("--frequency-jsonl")
         .args(["--high-card-threshold", "5"]);
     wrk.assert_success(&mut cmd2);
 
-    let fields2 = decode_toon_fields(&toon_path);
+    let fields2 = decode_cache_fields(&cache_path);
 
     let freqs2 = fields2[1]["frequencies"].as_array().unwrap();
     assert_eq!(
@@ -4700,9 +4685,9 @@ fn frequency_toon_custom_thresholds() {
 }
 
 #[test]
-fn frequency_toon_normal_output_unchanged() {
-    // Verify that stdout output is the same whether or not --frequency-toon is set
-    let wrk = Workdir::new("frequency_toon_normal_output_unchanged");
+fn frequency_jsonl_normal_output_unchanged() {
+    // Verify that stdout output is the same whether or not --frequency-jsonl is set
+    let wrk = Workdir::new("frequency_jsonl_normal_output_unchanged");
     let rows = vec![
         svec!["h1", "h2"],
         svec!["a", "x"],
@@ -4719,25 +4704,25 @@ fn frequency_toon_normal_output_unchanged() {
         .arg("--stats-jsonl");
     wrk.assert_success(&mut stats_cmd);
 
-    // Run without --frequency-toon
+    // Run without --frequency-jsonl
     let mut cmd1 = wrk.command("frequency");
     cmd1.arg("in.csv");
     let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
 
-    // Run with --frequency-toon
+    // Run with --frequency-jsonl
     let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv").arg("--frequency-toon");
+    cmd2.arg("in.csv").arg("--frequency-jsonl");
     let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
 
     assert_eq!(
         got1, got2,
-        "stdout output should be identical with or without --frequency-toon"
+        "stdout output should be identical with or without --frequency-jsonl"
     );
 }
 
 #[test]
-fn frequency_toon_cache_write_no_headers() {
-    let wrk = Workdir::new("frequency_toon_cache_write_no_headers");
+fn frequency_jsonl_cache_write_no_headers() {
+    let wrk = Workdir::new("frequency_jsonl_cache_write_no_headers");
     let rows = vec![
         svec!["Alice", "red"],
         svec!["Bob", "blue"],
@@ -4756,16 +4741,16 @@ fn frequency_toon_cache_write_no_headers() {
 
     let mut cmd = wrk.command("frequency");
     cmd.arg("in.csv")
-        .arg("--frequency-toon")
+        .arg("--frequency-jsonl")
         .arg("--no-headers");
 
     wrk.assert_success(&mut cmd);
 
-    // Verify TOON cache file was created
-    let toon_path = wrk.path("in.freq.csv.data.toon");
-    assert!(toon_path.exists(), "TOON cache file should exist");
+    // Verify frequency cache file was created
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(cache_path.exists(), "Frequency cache file should exist");
 
-    let fields = decode_toon_fields(&toon_path);
+    let fields = decode_cache_fields(&cache_path);
     assert_eq!(fields.len(), 2, "Should have one entry per column");
 
     // With --no-headers, field names should be 1-based indices
@@ -4774,8 +4759,8 @@ fn frequency_toon_cache_write_no_headers() {
 }
 
 #[test]
-fn frequency_toon_empty_file() {
-    let wrk = Workdir::new("frequency_toon_empty_file");
+fn frequency_jsonl_empty_file() {
+    let wrk = Workdir::new("frequency_jsonl_empty_file");
     // Create a file with only headers, no data rows
     let rows = vec![svec!["h1", "h2"]];
     wrk.create("in.csv", rows);
@@ -4789,52 +4774,52 @@ fn frequency_toon_empty_file() {
     wrk.assert_success(&mut stats_cmd);
 
     let mut cmd = wrk.command("frequency");
-    cmd.arg("in.csv").arg("--frequency-toon");
+    cmd.arg("in.csv").arg("--frequency-jsonl");
 
     wrk.assert_success(&mut cmd);
 
-    // Verify that no TOON cache file was created for empty data
-    let toon_path = wrk.path("in.freq.csv.data.toon");
+    // Verify that no cache file was created for empty data
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
     assert!(
-        !toon_path.exists(),
-        "TOON cache file should not be created when row count is 0"
+        !cache_path.exists(),
+        "Frequency cache file should not be created when row count is 0"
     );
 }
 
 #[test]
-fn frequency_toon_high_card_pct_invalid() {
+fn frequency_jsonl_high_card_pct_invalid() {
     // --high-card-pct of 0 should error
-    let wrk = Workdir::new("frequency_toon_high_card_pct_zero");
+    let wrk = Workdir::new("frequency_jsonl_high_card_pct_zero");
     let rows = vec![svec!["h1"], svec!["a"], svec!["b"]];
     wrk.create("in.csv", rows);
 
     let mut cmd = wrk.command("frequency");
     cmd.arg("in.csv")
-        .arg("--frequency-toon")
+        .arg("--frequency-jsonl")
         .args(["--high-card-pct", "0"]);
 
     wrk.assert_err(&mut cmd);
 }
 
 #[test]
-fn frequency_toon_high_card_pct_over_100() {
+fn frequency_jsonl_high_card_pct_over_100() {
     // --high-card-pct > 100 should error
-    let wrk = Workdir::new("frequency_toon_high_card_pct_over_100");
+    let wrk = Workdir::new("frequency_jsonl_high_card_pct_over_100");
     let rows = vec![svec!["h1"], svec!["a"], svec!["b"]];
     wrk.create("in.csv", rows);
 
     let mut cmd = wrk.command("frequency");
     cmd.arg("in.csv")
-        .arg("--frequency-toon")
+        .arg("--frequency-jsonl")
         .args(["--high-card-pct", "101"]);
 
     wrk.assert_err(&mut cmd);
 }
 
 #[test]
-fn frequency_toon_high_card_at_threshold() {
+fn frequency_jsonl_high_card_at_threshold() {
     // Test cardinality exactly at the threshold boundary
-    let wrk = Workdir::new("frequency_toon_high_card_at_threshold");
+    let wrk = Workdir::new("frequency_jsonl_high_card_at_threshold");
 
     // Create dataset: 10 rows, category has cardinality exactly 5
     let mut rows = vec![svec!["id", "category"]];
@@ -4858,12 +4843,12 @@ fn frequency_toon_high_card_at_threshold() {
     // because the condition is cardinality > threshold (strictly greater)
     let mut cmd = wrk.command("frequency");
     cmd.arg("in.csv")
-        .arg("--frequency-toon")
+        .arg("--frequency-jsonl")
         .args(["--high-card-threshold", "5"]);
     wrk.assert_success(&mut cmd);
 
-    let toon_path = wrk.path("in.freq.csv.data.toon");
-    let fields = decode_toon_fields(&toon_path);
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let fields = decode_cache_fields(&cache_path);
 
     assert_eq!(fields[1]["field"], "category");
     let freqs = fields[1]["frequencies"].as_array().unwrap();
@@ -4876,11 +4861,11 @@ fn frequency_toon_high_card_at_threshold() {
     // Set threshold to 4 - cardinality 5 > 4, so should be HIGH_CARDINALITY
     let mut cmd2 = wrk.command("frequency");
     cmd2.arg("in.csv")
-        .arg("--frequency-toon")
+        .arg("--frequency-jsonl")
         .args(["--high-card-threshold", "4"]);
     wrk.assert_success(&mut cmd2);
 
-    let fields2 = decode_toon_fields(&toon_path);
+    let fields2 = decode_cache_fields(&cache_path);
 
     let freqs2 = fields2[1]["frequencies"].as_array().unwrap();
     assert_eq!(
@@ -4892,11 +4877,11 @@ fn frequency_toon_high_card_at_threshold() {
 }
 
 #[test]
-fn frequency_toon_no_stats_cache() {
+fn frequency_jsonl_no_stats_cache() {
     // When QSV_STATSCACHE_MODE=none, the stats cache is completely bypassed.
     // Without cardinality info, FREQ_ROW_COUNT is never set (defaults to 0),
-    // so write_frequency_toon skips writing the cache file entirely.
-    let wrk = Workdir::new("frequency_toon_no_stats_cache");
+    // so write_frequency_jsonl skips writing the cache file entirely.
+    let wrk = Workdir::new("frequency_jsonl_no_stats_cache");
     let rows = vec![
         svec!["id", "color"],
         svec!["1", "red"],
@@ -4908,21 +4893,21 @@ fn frequency_toon_no_stats_cache() {
     // Deliberately do NOT create a stats cache; disable auto mode
     let mut cmd = wrk.command("frequency");
     cmd.env("QSV_STATSCACHE_MODE", "none");
-    cmd.arg("in.csv").arg("--frequency-toon");
+    cmd.arg("in.csv").arg("--frequency-jsonl");
     wrk.assert_success(&mut cmd);
 
-    // With no stats cache, the TOON cache is NOT created (row_count=0 → skip)
-    let toon_path = wrk.path("in.freq.csv.data.toon");
+    // With no stats cache, the frequency cache is NOT created (row_count=0 → skip)
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
     assert!(
-        !toon_path.exists(),
-        "TOON cache should not be created without stats cache"
+        !cache_path.exists(),
+        "Frequency cache should not be created without stats cache"
     );
 }
 
 #[test]
-fn frequency_toon_limit_does_not_affect_cache() {
-    // The TOON cache should contain ALL frequency data regardless of --limit
-    let wrk = Workdir::new("frequency_toon_limit_does_not_affect_cache");
+fn frequency_jsonl_limit_does_not_affect_cache() {
+    // The frequency cache should contain ALL frequency data regardless of --limit
+    let wrk = Workdir::new("frequency_jsonl_limit_does_not_affect_cache");
     let rows = vec![
         svec!["color"],
         svec!["red"],
@@ -4945,7 +4930,7 @@ fn frequency_toon_limit_does_not_affect_cache() {
 
     // Run with --limit 2 (stdout shows only top 2 values)
     let mut cmd = wrk.command("frequency");
-    cmd.arg("in.csv").arg("--frequency-toon").args(["-l", "2"]);
+    cmd.arg("in.csv").arg("--frequency-jsonl").args(["-l", "2"]);
 
     // Verify stdout output IS limited to 2 entries (+ header + "Other" summary row).
     // read_stdout implicitly validates command success: it parses CSV from stdout
@@ -4966,9 +4951,9 @@ fn frequency_toon_limit_does_not_affect_cache() {
         got[3]
     );
 
-    // Verify the TOON cache contains ALL frequency values regardless of --limit
-    let toon_path = wrk.path("in.freq.csv.data.toon");
-    let fields = decode_toon_fields(&toon_path);
+    // Verify the frequency cache contains ALL frequency values regardless of --limit
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let fields = decode_cache_fields(&cache_path);
 
     assert_eq!(fields[0]["field"], "color");
     let freqs = fields[0]["frequencies"].as_array().unwrap();
@@ -4976,23 +4961,23 @@ fn frequency_toon_limit_does_not_affect_cache() {
     assert_eq!(
         freqs.len(),
         5,
-        "TOON cache should contain all frequency values regardless of --limit"
+        "Frequency cache should contain all frequency values regardless of --limit"
     );
 }
 
 #[test]
-fn frequency_toon_stdin_error() {
-    // --frequency-toon requires a file input, not stdin.
+fn frequency_jsonl_stdin_error() {
+    // --frequency-jsonl requires a file input, not stdin.
     // We use raw spawn() + wait_with_output() instead of wrk.command()/wrk.assert_err()
     // because we need to pipe CSV data via stdin, which the Workdir harness doesn't support.
     use std::io::Write;
 
-    let wrk = Workdir::new("frequency_toon_stdin_error");
+    let wrk = Workdir::new("frequency_jsonl_stdin_error");
 
     let csv_content = "h1,h2\na,b\nc,d\n";
 
     let mut cmd = wrk.command("frequency");
-    cmd.arg("--frequency-toon")
+    cmd.arg("--frequency-jsonl")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -5006,11 +4991,11 @@ fn frequency_toon_stdin_error() {
     let output = child.wait_with_output().unwrap();
     assert!(
         !output.status.success(),
-        "--frequency-toon with stdin should fail"
+        "--frequency-jsonl with stdin should fail"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("--frequency-toon requires a file input, not stdin"),
+        stderr.contains("--frequency-jsonl requires a file input, not stdin"),
         "Error message should mention that stdin is not supported, got: {stderr}"
     );
 }
@@ -5018,10 +5003,10 @@ fn frequency_toon_stdin_error() {
 // === Frequency cache READ PATH tests ===
 
 #[test]
-fn frequency_toon_cache_reuse() {
-    // Create cache, then run again without --frequency-toon. Output should
+fn frequency_jsonl_cache_reuse() {
+    // Create cache, then run again without --frequency-jsonl. Output should
     // come from cache and be identical to a fresh computation.
-    let wrk = Workdir::new("frequency_toon_cache_reuse");
+    let wrk = Workdir::new("frequency_jsonl_cache_reuse");
     let rows = vec![
         svec!["name", "color"],
         svec!["Alice", "red"],
@@ -5040,16 +5025,16 @@ fn frequency_toon_cache_reuse() {
         .arg("--stats-jsonl");
     wrk.assert_success(&mut stats_cmd);
 
-    // Run with --frequency-toon to create cache and capture output
+    // Run with --frequency-jsonl to create cache and capture output
     let mut cmd1 = wrk.command("frequency");
-    cmd1.arg("in.csv").arg("--frequency-toon");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
     let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
 
     // Verify cache was created
-    let toon_path = wrk.path("in.freq.csv.data.toon");
-    assert!(toon_path.exists(), "TOON cache file should exist");
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(cache_path.exists(), "Frequency cache file should exist");
 
-    // Run again without --frequency-toon (should use cache)
+    // Run again without --frequency-jsonl (should use cache)
     let mut cmd2 = wrk.command("frequency");
     cmd2.arg("in.csv");
     let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
@@ -5061,9 +5046,9 @@ fn frequency_toon_cache_reuse() {
 }
 
 #[test]
-fn frequency_toon_stale_cache() {
+fn frequency_jsonl_stale_cache() {
     // Create cache, modify source CSV, verify new data is used.
-    let wrk = Workdir::new("frequency_toon_stale_cache");
+    let wrk = Workdir::new("frequency_jsonl_stale_cache");
     let rows = vec![
         svec!["name", "color"],
         svec!["Alice", "red"],
@@ -5080,7 +5065,7 @@ fn frequency_toon_stale_cache() {
     wrk.assert_success(&mut stats_cmd);
 
     let mut cmd1 = wrk.command("frequency");
-    cmd1.arg("in.csv").arg("--frequency-toon");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
     wrk.assert_success(&mut cmd1);
 
     // Sleep briefly and modify the source CSV (make it newer than cache)
@@ -5104,7 +5089,7 @@ fn frequency_toon_stale_cache() {
         .arg("--stats-jsonl");
     wrk.assert_success(&mut stats_cmd2);
 
-    // Run without --frequency-toon — cache should be stale, so full computation
+    // Run without --frequency-jsonl — cache should be stale, so full computation
     let mut cmd2 = wrk.command("frequency");
     cmd2.arg("in.csv");
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
@@ -5126,9 +5111,9 @@ fn frequency_toon_stale_cache() {
 }
 
 #[test]
-fn frequency_toon_cache_with_select() {
+fn frequency_jsonl_cache_with_select() {
     // Cache all columns, then read with --select on a subset.
-    let wrk = Workdir::new("frequency_toon_cache_with_select");
+    let wrk = Workdir::new("frequency_jsonl_cache_with_select");
     let rows = vec![
         svec!["name", "color", "size"],
         svec!["Alice", "red", "small"],
@@ -5146,7 +5131,7 @@ fn frequency_toon_cache_with_select() {
     wrk.assert_success(&mut stats_cmd);
 
     let mut cmd1 = wrk.command("frequency");
-    cmd1.arg("in.csv").arg("--frequency-toon");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
     wrk.assert_success(&mut cmd1);
 
     // Run with --select on just "color" (should use cache)
@@ -5166,10 +5151,10 @@ fn frequency_toon_cache_with_select() {
 }
 
 #[test]
-fn frequency_toon_cache_skip_ignore_case() {
+fn frequency_jsonl_cache_skip_ignore_case() {
     // Cache should NOT be used when --ignore-case is active.
-    // --frequency-toon with --ignore-case should error.
-    let wrk = Workdir::new("frequency_toon_cache_skip_ignore_case");
+    // --frequency-jsonl with --ignore-case should error.
+    let wrk = Workdir::new("frequency_jsonl_cache_skip_ignore_case");
     let rows = vec![
         svec!["name", "color"],
         svec!["Alice", "Red"],
@@ -5186,11 +5171,11 @@ fn frequency_toon_cache_skip_ignore_case() {
     wrk.assert_success(&mut stats_cmd);
 
     let mut cmd1 = wrk.command("frequency");
-    cmd1.arg("in.csv").arg("--frequency-toon");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
     wrk.assert_success(&mut cmd1);
 
     // Run with --ignore-case — should compute fresh (not use cache)
-    // and should NOT error since --frequency-toon is not passed
+    // and should NOT error since --frequency-jsonl is not passed
     let mut cmd2 = wrk.command("frequency");
     cmd2.arg("in.csv").arg("--ignore-case");
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
@@ -5206,11 +5191,11 @@ fn frequency_toon_cache_skip_ignore_case() {
 }
 
 #[test]
-fn frequency_toon_cache_high_card_fallback() {
+fn frequency_jsonl_cache_high_card_fallback() {
     // HIGH_CARDINALITY sentinel should cause fallback to full computation.
     // We need a column with high cardinality but NOT all-unique
     // (cardinality != rowcount) so it gets HIGH_CARDINALITY instead of ALL_UNIQUE.
-    let wrk = Workdir::new("frequency_toon_cache_high_card_fallback");
+    let wrk = Workdir::new("frequency_jsonl_cache_high_card_fallback");
     // "code" has 4 unique values out of 5 rows (not all-unique)
     let rows = vec![
         svec!["code", "color"],
@@ -5234,7 +5219,7 @@ fn frequency_toon_cache_high_card_fallback() {
     // HIGH_CARDINALITY (cardinality 4 > threshold 2) and "color" gets normal entries
     let mut cmd1 = wrk.command("frequency");
     cmd1.arg("in.csv")
-        .arg("--frequency-toon")
+        .arg("--frequency-jsonl")
         .arg("--high-card-threshold")
         .arg("2")
         .arg("--high-card-pct")
@@ -5242,8 +5227,8 @@ fn frequency_toon_cache_high_card_fallback() {
     wrk.assert_success(&mut cmd1);
 
     // Verify cache has HIGH_CARDINALITY for "code"
-    let toon_path = wrk.path("in.freq.csv.data.toon");
-    let fields = decode_toon_fields(&toon_path);
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let fields = decode_cache_fields(&cache_path);
     let code_entry = fields
         .iter()
         .find(|entry| entry["field"] == "code")
@@ -5273,11 +5258,11 @@ fn frequency_toon_cache_high_card_fallback() {
 }
 
 #[test]
-fn frequency_toon_cache_high_card_fallback_full() {
+fn frequency_jsonl_cache_high_card_fallback_full() {
     // When HIGH_CARDINALITY columns exist in the selection, the cache falls back
     // to full parallel computation (never slower than fresh). Output should be
     // identical whether the cache exists or not.
-    let wrk = Workdir::new("frequency_toon_cache_high_card_fallback_full");
+    let wrk = Workdir::new("frequency_jsonl_cache_high_card_fallback_full");
     // "code" has 4 unique values out of 5 rows (will be HIGH_CARDINALITY with low threshold)
     // "color" has 3 unique values (will be cached normally)
     let rows = vec![
@@ -5301,14 +5286,14 @@ fn frequency_toon_cache_high_card_fallback_full() {
     // Create frequency cache with low threshold: "code" → HIGH_CARDINALITY, "color" → cached
     let mut cmd1 = wrk.command("frequency");
     cmd1.arg("in.csv")
-        .arg("--frequency-toon")
+        .arg("--frequency-jsonl")
         .arg("--high-card-threshold")
         .arg("2")
         .arg("--high-card-pct")
         .arg("1");
     let got_fresh: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
 
-    // Run without --frequency-toon selecting ALL columns (includes HIGH_CARDINALITY "code")
+    // Run without --frequency-jsonl selecting ALL columns (includes HIGH_CARDINALITY "code")
     // Should fall back to full parallel computation, NOT use cache
     let mut cmd2 = wrk.command("frequency");
     cmd2.arg("in.csv");
@@ -5339,11 +5324,11 @@ fn frequency_toon_cache_high_card_fallback_full() {
 }
 
 #[test]
-fn frequency_toon_cache_partial_hit() {
+fn frequency_jsonl_cache_partial_hit() {
     // When some columns are HIGH_CARDINALITY and some are cached, the partial cache
     // path should pre-load cached FTables and only compute HIGH_CARDINALITY columns
     // via parallel computation. Output should match fresh computation exactly.
-    let wrk = Workdir::new("frequency_toon_cache_partial_hit");
+    let wrk = Workdir::new("frequency_jsonl_cache_partial_hit");
     // "code" has 4 unique values in 5 rows → HIGH_CARDINALITY with threshold 3
     // "color" has 2 unique values in 5 rows → cached normally (below threshold)
     let rows = vec![
@@ -5368,12 +5353,12 @@ fn frequency_toon_cache_partial_hit() {
     // "color" (2 unique) → cached with full data
     let mut cmd1 = wrk.command("frequency");
     cmd1.arg("in.csv")
-        .arg("--frequency-toon")
+        .arg("--frequency-jsonl")
         .arg("--high-card-threshold")
         .arg("3");
     let got_fresh: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
 
-    // Run without --frequency-toon (triggers partial cache path):
+    // Run without --frequency-jsonl (triggers partial cache path):
     // "color" from cache, "code" computed fresh via parallel computation
     let mut cmd2 = wrk.command("frequency");
     cmd2.arg("in.csv");
@@ -5387,10 +5372,10 @@ fn frequency_toon_cache_partial_hit() {
 }
 
 #[test]
-fn frequency_toon_cache_no_nulls_incompatible() {
+fn frequency_jsonl_cache_no_nulls_incompatible() {
     // Cache generated without --no-nulls should NOT be used when --no-nulls is set
     // (and vice versa), because the null counts in the FTable differ.
-    let wrk = Workdir::new("frequency_toon_cache_no_nulls_incompatible");
+    let wrk = Workdir::new("frequency_jsonl_cache_no_nulls_incompatible");
     // Need duplicates (not ALL_UNIQUE) and nulls so the difference is visible
     let rows = vec![
         svec!["name", "color"],
@@ -5411,7 +5396,7 @@ fn frequency_toon_cache_no_nulls_incompatible() {
 
     // Create frequency cache WITHOUT --no-nulls (nulls are counted)
     let mut cmd1 = wrk.command("frequency");
-    cmd1.arg("in.csv").arg("--frequency-toon");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
     let got_with_nulls: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
 
     // Run with --no-nulls — cache should be skipped (incompatible),
@@ -5436,10 +5421,10 @@ fn frequency_toon_cache_no_nulls_incompatible() {
 }
 
 #[test]
-fn frequency_toon_cache_delimiter_incompatible() {
+fn frequency_jsonl_cache_delimiter_incompatible() {
     // Cache generated with one delimiter should NOT be used when a different delimiter is set.
     // The cached values would contain unintended delimiter characters otherwise.
-    let wrk = Workdir::new("frequency_toon_cache_delimiter_incompatible");
+    let wrk = Workdir::new("frequency_jsonl_cache_delimiter_incompatible");
     let rows = vec![
         svec!["name", "color"],
         svec!["Alice", "red"],
@@ -5458,13 +5443,13 @@ fn frequency_toon_cache_delimiter_incompatible() {
 
     // Create frequency cache with default (comma) delimiter
     let mut cmd1 = wrk.command("frequency");
-    cmd1.arg("in.csv").arg("--frequency-toon");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
     wrk.assert_success(&mut cmd1);
 
     // Tamper cache to prove cache reads: change a count
-    let cache_path = wrk.path("in.freq.csv.data.toon");
-    assert!(cache_path.exists(), "Cache TOON file should exist");
-    tamper_toon_cache(&cache_path, 2, 999);
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(cache_path.exists(), "Frequency cache file should exist");
+    tamper_cache(&cache_path, 2, 999);
 
     // Run with same (default) delimiter — tampered count should appear (cache hit)
     let mut cmd2 = wrk.command("frequency");
@@ -5498,9 +5483,9 @@ fn frequency_toon_cache_delimiter_incompatible() {
 }
 
 #[test]
-fn frequency_toon_cache_metadata_written() {
-    // Verify that the unified .freq.csv.data.toon cache contains metadata + data
-    let wrk = Workdir::new("frequency_toon_cache_metadata_written");
+fn frequency_jsonl_cache_metadata_written() {
+    // Verify that the unified .freq.csv.data.jsonl cache contains metadata + data
+    let wrk = Workdir::new("frequency_jsonl_cache_metadata_written");
     let rows = vec![
         svec!["name", "color"],
         svec!["Alice", "red"],
@@ -5518,41 +5503,41 @@ fn frequency_toon_cache_metadata_written() {
 
     // Create frequency cache
     let mut cmd = wrk.command("frequency");
-    cmd.arg("in.csv").arg("--frequency-toon");
+    cmd.arg("in.csv").arg("--frequency-jsonl");
     wrk.assert_success(&mut cmd);
 
-    // Single TOON cache file should exist (no separate metadata file)
-    let cache_path = wrk.path("in.freq.csv.data.toon");
-    assert!(cache_path.exists(), "Cache TOON file should exist");
+    // Single JSON cache file should exist (no separate metadata file)
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(cache_path.exists(), "Frequency cache file should exist");
     assert!(
         !wrk.path("in.freq.csv.json").exists(),
         "Old metadata file should not exist"
     );
     assert!(
-        !wrk.path("in.freq.csv.data.jsonl").exists(),
-        "Old JSONL cache file should not exist"
+        !wrk.path("in.freq.csv.data.toon").exists(),
+        "Old TOON cache file should not exist"
     );
 
-    // TOON file should contain both metadata fields and frequency data
-    let toon_content = std::fs::read_to_string(&cache_path).unwrap();
+    // Cache file should contain both metadata fields and frequency data
+    let cache_content = std::fs::read_to_string(&cache_path).unwrap();
     assert!(
-        toon_content.contains("flag_high_card_threshold"),
-        "TOON cache should contain threshold metadata"
+        cache_content.contains("flag_high_card_threshold"),
+        "Frequency cache should contain threshold metadata"
     );
     assert!(
-        toon_content.contains("qsv_version"),
-        "TOON cache should contain version metadata"
+        cache_content.contains("qsv_version"),
+        "Frequency cache should contain version metadata"
     );
     assert!(
-        toon_content.contains("fields"),
-        "TOON cache should contain frequency data"
+        cache_content.contains("fields"),
+        "Frequency cache should contain frequency data"
     );
 }
 
 #[test]
-fn frequency_toon_force() {
+fn frequency_jsonl_force() {
     // --force should regenerate cache even when valid.
-    let wrk = Workdir::new("frequency_toon_force");
+    let wrk = Workdir::new("frequency_jsonl_force");
     let rows = vec![
         svec!["name", "color"],
         svec!["Alice", "red"],
@@ -5569,26 +5554,26 @@ fn frequency_toon_force() {
     wrk.assert_success(&mut stats_cmd);
 
     let mut cmd1 = wrk.command("frequency");
-    cmd1.arg("in.csv").arg("--frequency-toon");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
     wrk.assert_success(&mut cmd1);
 
-    let toon_path = wrk.path("in.freq.csv.data.toon");
-    assert!(toon_path.exists(), "TOON cache file should exist");
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(cache_path.exists(), "Frequency cache file should exist");
 
     // Get the original mtime
-    let orig_metadata = std::fs::metadata(&toon_path).unwrap();
+    let orig_metadata = std::fs::metadata(&cache_path).unwrap();
     let orig_mtime = orig_metadata.modified().unwrap();
 
     // Sleep briefly so mtime can differ
     std::thread::sleep(std::time::Duration::from_millis(1100));
 
-    // Run with --force --frequency-toon — should rewrite cache
+    // Run with --force --frequency-jsonl — should rewrite cache
     let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv").arg("--frequency-toon").arg("--force");
+    cmd2.arg("in.csv").arg("--frequency-jsonl").arg("--force");
     wrk.assert_success(&mut cmd2);
 
     // Cache should be rewritten (newer mtime)
-    let new_metadata = std::fs::metadata(&toon_path).unwrap();
+    let new_metadata = std::fs::metadata(&cache_path).unwrap();
     let new_mtime = new_metadata.modified().unwrap();
     assert!(
         new_mtime > orig_mtime,
@@ -5597,51 +5582,51 @@ fn frequency_toon_force() {
 }
 
 #[test]
-fn frequency_toon_ignore_case_error() {
-    // --frequency-toon with --ignore-case should error
-    let wrk = Workdir::new("frequency_toon_ignore_case_error");
+fn frequency_jsonl_ignore_case_error() {
+    // --frequency-jsonl with --ignore-case should error
+    let wrk = Workdir::new("frequency_jsonl_ignore_case_error");
     let rows = vec![svec!["name", "color"], svec!["Alice", "red"]];
     wrk.create("in.csv", rows);
 
     let mut cmd = wrk.command("frequency");
     cmd.arg("in.csv")
-        .arg("--frequency-toon")
+        .arg("--frequency-jsonl")
         .arg("--ignore-case");
     wrk.assert_err(&mut cmd);
 }
 
 #[test]
-fn frequency_toon_no_trim_error() {
-    // --frequency-toon with --no-trim should error
-    let wrk = Workdir::new("frequency_toon_no_trim_error");
+fn frequency_jsonl_no_trim_error() {
+    // --frequency-jsonl with --no-trim should error
+    let wrk = Workdir::new("frequency_jsonl_no_trim_error");
     let rows = vec![svec!["name", "color"], svec!["Alice", "red"]];
     wrk.create("in.csv", rows);
 
     let mut cmd = wrk.command("frequency");
-    cmd.arg("in.csv").arg("--frequency-toon").arg("--no-trim");
+    cmd.arg("in.csv").arg("--frequency-jsonl").arg("--no-trim");
     wrk.assert_err(&mut cmd);
 }
 
 #[test]
-fn frequency_toon_weight_error() {
-    // --frequency-toon with --weight should error
-    let wrk = Workdir::new("frequency_toon_weight_error");
+fn frequency_jsonl_weight_error() {
+    // --frequency-jsonl with --weight should error
+    let wrk = Workdir::new("frequency_jsonl_weight_error");
     let rows = vec![svec!["name", "color", "weight"], svec!["Alice", "red", "2"]];
     wrk.create("in.csv", rows);
 
     let mut cmd = wrk.command("frequency");
     cmd.arg("in.csv")
-        .arg("--frequency-toon")
+        .arg("--frequency-jsonl")
         .arg("--weight")
         .arg("weight");
     wrk.assert_err(&mut cmd);
 }
 
 #[test]
-fn frequency_toon_cache_no_headers() {
+fn frequency_jsonl_cache_no_headers() {
     // Verify the cache read path works correctly with --no-headers,
     // where column names are 1-based numeric indices.
-    let wrk = Workdir::new("frequency_toon_cache_no_headers");
+    let wrk = Workdir::new("frequency_jsonl_cache_no_headers");
     let rows = vec![
         svec!["Alice", "red"],
         svec!["Bob", "blue"],
@@ -5661,19 +5646,19 @@ fn frequency_toon_cache_no_headers() {
     // Create frequency cache with --no-headers
     let mut cmd1 = wrk.command("frequency");
     cmd1.arg("in.csv")
-        .arg("--frequency-toon")
+        .arg("--frequency-jsonl")
         .arg("--no-headers");
     wrk.assert_success(&mut cmd1);
 
     // Verify cache exists
-    let toon_path = wrk.path("in.freq.csv.data.toon");
-    assert!(toon_path.exists(), "TOON cache file should exist");
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(cache_path.exists(), "Frequency cache file should exist");
 
     // Tamper with the cache to prove the second run actually reads it:
     // change a count to 999, which can't occur from recomputation.
-    tamper_toon_cache(&toon_path, 2, 999);
+    tamper_cache(&cache_path, 2, 999);
 
-    // Run again without --frequency-toon (should read from tampered cache)
+    // Run again without --frequency-jsonl (should read from tampered cache)
     let mut cmd2 = wrk.command("frequency");
     cmd2.arg("in.csv").arg("--no-headers");
     let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
@@ -5694,10 +5679,10 @@ fn frequency_toon_cache_no_headers() {
 }
 
 #[test]
-fn frequency_toon_cache_null_roundtrip() {
+fn frequency_jsonl_cache_null_roundtrip() {
     // Verify that null/empty values survive the cache round-trip:
     // FTable vec![] → cache "" → read vec![]
-    let wrk = Workdir::new("frequency_toon_cache_null_roundtrip");
+    let wrk = Workdir::new("frequency_jsonl_cache_null_roundtrip");
     let rows = vec![
         svec!["name", "color"],
         svec!["Alice", "red"],
@@ -5718,15 +5703,15 @@ fn frequency_toon_cache_null_roundtrip() {
 
     // Create frequency cache
     let mut cmd1 = wrk.command("frequency");
-    cmd1.arg("in.csv").arg("--frequency-toon");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
     wrk.assert_success(&mut cmd1);
 
     // Verify cache exists
-    let toon_path = wrk.path("in.freq.csv.data.toon");
-    assert!(toon_path.exists(), "TOON cache file should exist");
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(cache_path.exists(), "Frequency cache file should exist");
 
     // Verify cache contains empty string entries for null values
-    let fields = decode_toon_fields(&toon_path);
+    let fields = decode_cache_fields(&cache_path);
     let has_empty_value = fields.iter().any(|entry| {
         entry["frequencies"]
             .as_array()
@@ -5739,9 +5724,9 @@ fn frequency_toon_cache_null_roundtrip() {
 
     // Tamper with the cache to prove the second run actually reads it:
     // change a count to 888, which can't occur from recomputation.
-    tamper_toon_cache(&toon_path, 2, 888);
+    tamper_cache(&cache_path, 2, 888);
 
-    // Run again without --frequency-toon (should read from tampered cache)
+    // Run again without --frequency-jsonl (should read from tampered cache)
     let mut cmd2 = wrk.command("frequency");
     cmd2.arg("in.csv");
     let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);

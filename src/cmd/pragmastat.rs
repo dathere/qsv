@@ -170,8 +170,8 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers);
 
-    if let Some(path) = rconfig.path.clone() {
-        util::mem_file_check(&path, false, args.flag_memcheck)?;
+    if let Some(ref path) = rconfig.path {
+        util::mem_file_check(path, false, args.flag_memcheck)?;
     }
 
     let mut rdr = rconfig.reader()?;
@@ -249,7 +249,7 @@ fn write_twosample_results(
     write_twosample_header(wtr)?;
 
     let k = col_names.len();
-    let num_pairs = k * (k - 1) / 2;
+    let num_pairs = k.saturating_mul(k - 1) / 2;
     if num_pairs > 100 {
         winfo!(
             "computing {num_pairs} column pairs from {k} columns. Use --select to limit columns \
@@ -301,11 +301,10 @@ fn collect_numeric_values(
 
     let mut col_values: Vec<Vec<f64>> = vec![Vec::new(); selected.len()];
 
-    let progress = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(5));
+    let progress = ProgressBar::with_draw_target(None, ProgressDrawTarget::hidden());
     if show_progress {
         util::prep_progress(&progress, util::count_rows(rconfig)?);
-    } else {
-        progress.set_draw_target(ProgressDrawTarget::hidden());
+        progress.set_draw_target(ProgressDrawTarget::stderr_with_hz(5));
     }
 
     for result in rdr.byte_records() {

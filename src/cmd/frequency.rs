@@ -286,42 +286,42 @@ impl FromStr for RankStrategy {
 #[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Deserialize)]
 pub struct Args {
-    pub arg_input:            Option<String>,
-    pub flag_select:          SelectColumns,
-    pub flag_limit:           isize,
-    pub flag_unq_limit:       usize,
-    pub flag_lmt_threshold:   usize,
-    pub flag_rank_strategy:   RankStrategy,
-    pub flag_pct_dec_places:  isize,
-    pub flag_other_sorted:    bool,
-    pub flag_other_text:      String,
-    pub flag_no_other:        bool,
-    pub flag_null_sorted:     bool,
-    pub flag_asc:             bool,
-    pub flag_no_trim:         bool,
-    pub flag_null_text:       String,
-    pub flag_no_nulls:        bool,
-    pub flag_pct_nulls:       bool,
-    pub flag_ignore_case:     bool,
-    pub flag_no_float:        Option<String>,
+    pub arg_input:                Option<String>,
+    pub flag_select:              SelectColumns,
+    pub flag_limit:               isize,
+    pub flag_unq_limit:           usize,
+    pub flag_lmt_threshold:       usize,
+    pub flag_rank_strategy:       RankStrategy,
+    pub flag_pct_dec_places:      isize,
+    pub flag_other_sorted:        bool,
+    pub flag_other_text:          String,
+    pub flag_no_other:            bool,
+    pub flag_null_sorted:         bool,
+    pub flag_asc:                 bool,
+    pub flag_no_trim:             bool,
+    pub flag_null_text:           String,
+    pub flag_no_nulls:            bool,
+    pub flag_pct_nulls:           bool,
+    pub flag_ignore_case:         bool,
+    pub flag_no_float:            Option<String>,
     #[cfg(feature = "luau")]
-    pub flag_stats_filter:    Option<String>,
-    pub flag_all_unique_text: String,
-    pub flag_jobs:            Option<usize>,
-    pub flag_output:          Option<String>,
-    pub flag_no_headers:      bool,
-    pub flag_delimiter:       Option<Delimiter>,
-    pub flag_memcheck:        bool,
-    pub flag_vis_whitespace:  bool,
-    pub flag_frequency_toon: bool,
+    pub flag_stats_filter:        Option<String>,
+    pub flag_all_unique_text:     String,
+    pub flag_jobs:                Option<usize>,
+    pub flag_output:              Option<String>,
+    pub flag_no_headers:          bool,
+    pub flag_delimiter:           Option<Delimiter>,
+    pub flag_memcheck:            bool,
+    pub flag_vis_whitespace:      bool,
+    pub flag_frequency_toon:      bool,
     pub flag_high_card_threshold: usize,
-    pub flag_high_card_pct:  u8,
-    pub flag_force:           bool,
-    pub flag_json:            bool,
-    pub flag_pretty_json:     bool,
-    pub flag_toon:            bool,
-    pub flag_no_stats:        bool,
-    pub flag_weight:          Option<String>,
+    pub flag_high_card_pct:       u8,
+    pub flag_force:               bool,
+    pub flag_json:                bool,
+    pub flag_pretty_json:         bool,
+    pub flag_toon:                bool,
+    pub flag_no_stats:            bool,
+    pub flag_weight:              Option<String>,
 }
 
 const NON_UTF8_ERR: &str = "<Non-UTF8 ERROR>";
@@ -722,9 +722,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             );
         }
         if args.flag_weight.is_some() {
-            return fail_incorrectusage_clierror!(
-                "--frequency-toon cannot be used with --weight."
-            );
+            return fail_incorrectusage_clierror!("--frequency-toon cannot be used with --weight.");
         }
 
         // Override high-card thresholds from env vars when CLI defaults are used
@@ -787,6 +785,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if let (Some(cache_skip), Some(cached_ftables)) =
         (FREQ_CACHE_SKIP.get(), FREQ_CACHE_FTABLES.get())
     {
+        debug_assert_eq!(
+            cache_skip.len(),
+            tables.len(),
+            "FREQ_CACHE_SKIP length ({}) != tables length ({})",
+            cache_skip.len(),
+            tables.len()
+        );
+        debug_assert_eq!(
+            cached_ftables.len(),
+            tables.len(),
+            "FREQ_CACHE_FTABLES length ({}) != tables length ({})",
+            cached_ftables.len(),
+            tables.len()
+        );
         for (i, &is_cached) in cache_skip.iter().enumerate() {
             if is_cached && i < tables.len() && i < cached_ftables.len() {
                 tables[i] = cached_ftables[i].clone();
@@ -1439,9 +1451,7 @@ impl Args {
         rconfig: &Config,
     ) -> CliResult<()> {
         let path = rconfig.path.as_ref().ok_or_else(|| {
-            crate::CliError::Other(
-                "--frequency-toon requires a file input, not stdin".to_string(),
-            )
+            crate::CliError::Other("--frequency-toon requires a file input, not stdin".to_string())
         })?;
 
         let unique_headers = UNIQUE_COLUMNS_VEC.get().unwrap_or(&EMPTY_USIZE_VEC);
@@ -1480,7 +1490,7 @@ impl Args {
             let entry = if unique_headers.contains(&i) {
                 // ALL_UNIQUE: single sentinel entry
                 FrequencyCacheEntry {
-                    field:       field_name,
+                    field: field_name,
                     cardinality,
                     frequencies: vec![FrequencyCacheValue {
                         value:      "<ALL_UNIQUE>".to_string(),
@@ -1491,7 +1501,7 @@ impl Args {
             } else if is_high_cardinality {
                 // HIGH_CARDINALITY: single sentinel entry
                 FrequencyCacheEntry {
-                    field:       field_name,
+                    field: field_name,
                     cardinality,
                     frequencies: vec![FrequencyCacheValue {
                         value:      "<HIGH_CARDINALITY>".to_string(),
@@ -1520,7 +1530,7 @@ impl Args {
                             String::from_utf8_lossy(value).to_string()
                         };
                         FrequencyCacheValue {
-                            value:      val_str,
+                            value: val_str,
                             count,
                             percentage: count as f64 * pct_factor,
                         }
@@ -1577,10 +1587,7 @@ impl Args {
 
     /// Read and validate the frequency TOON cache file.
     /// Returns None if cache doesn't exist, is stale, or is incompatible.
-    fn read_frequency_cache(
-        &self,
-        rconfig: &Config,
-    ) -> Option<Vec<FrequencyCacheEntry>> {
+    fn read_frequency_cache(&self, rconfig: &Config) -> Option<Vec<FrequencyCacheEntry>> {
         use filetime::FileTime;
 
         let path = rconfig.path.as_ref()?;
@@ -1643,8 +1650,31 @@ impl Args {
             );
             return None;
         }
-        // Threshold differences don't invalidate — partial cache handles
-        // HIGH_CARDINALITY columns. Log for debugging.
+        // flag_delimiter affects how values are parsed — mismatch means
+        // cache has values split on different boundaries
+        let current_delimiter = self
+            .flag_delimiter
+            .as_ref()
+            .map(|d| (d.as_byte() as char).to_string())
+            .unwrap_or_default();
+        if cache.flag_delimiter != current_delimiter {
+            log::info!(
+                "Frequency cache incompatible: --delimiter differs (cache={:?}, current={:?})",
+                cache.flag_delimiter,
+                current_delimiter
+            );
+            return None;
+        }
+        // Threshold differences don't invalidate the cache — the partial cache
+        // mechanism handles the mismatch gracefully:
+        //   - If the current threshold is MORE lenient (higher) than the cache, columns cached as
+        //     HIGH_CARDINALITY will be recomputed via parallel computation.
+        //   - If the current threshold is STRICTER (lower) than the cache, columns cached with full
+        //     data will still be served from cache even though they would now be classified as
+        //     HIGH_CARDINALITY. This is intentional: the cached data is correct and complete, just
+        //     more detailed than the current threshold would produce on a fresh run. The threshold
+        //     only controls which columns get full data vs a sentinel during cache *generation*,
+        //     not reads.
         if cache.flag_high_card_threshold != self.flag_high_card_threshold
             || cache.flag_high_card_pct != self.flag_high_card_pct
         {
@@ -1679,11 +1709,7 @@ impl Args {
     /// pattern as ALL_UNIQUE skip). After computation, `run()` merges the cached
     /// FTables back into the result.
     #[allow(clippy::cast_precision_loss)]
-    fn try_output_from_cache(
-        &mut self,
-        rconfig: &Config,
-        is_json: bool,
-    ) -> CliResult<bool> {
+    fn try_output_from_cache(&mut self, rconfig: &Config, is_json: bool) -> CliResult<bool> {
         // Read and validate the cache
         let cache_entries = match self.read_frequency_cache(rconfig) {
             Some(entries) => entries,
@@ -1798,8 +1824,12 @@ impl Args {
                 skip_vec.len() - cached_count,
             );
 
-            let _ = FREQ_CACHE_SKIP.set(skip_vec);
-            let _ = FREQ_CACHE_FTABLES.set(cached_ftables);
+            if FREQ_CACHE_SKIP.set(skip_vec).is_err() {
+                log::warn!("FREQ_CACHE_SKIP already set — stale partial cache may be used");
+            }
+            if FREQ_CACHE_FTABLES.set(cached_ftables).is_err() {
+                log::warn!("FREQ_CACHE_FTABLES already set — stale partial cache may be used");
+            }
             return Ok(false);
         }
 
@@ -1808,9 +1838,7 @@ impl Args {
         let row_count = selected_entries
             .iter()
             .find_map(|entry| {
-                if entry.frequencies.len() == 1
-                    && entry.frequencies[0].value == "<ALL_UNIQUE>"
-                {
+                if entry.frequencies.len() == 1 && entry.frequencies[0].value == "<ALL_UNIQUE>" {
                     Some(entry.cardinality)
                 } else {
                     let total: u64 = entry.frequencies.iter().map(|f| f.count).sum();
@@ -1828,26 +1856,27 @@ impl Args {
             .get()
             .expect("NULL_VAL should already be set in run()");
 
-        let _ = FREQ_ROW_COUNT.set(row_count);
+        if FREQ_ROW_COUNT.set(row_count).is_err() {
+            log::warn!("FREQ_ROW_COUNT already set — stale row count may be used");
+        }
 
         // Build unique columns vec: columns where cache has ALL_UNIQUE sentinel
         let unique_columns: Vec<usize> = selected_entries
             .iter()
             .enumerate()
             .filter(|(_, entry)| {
-                entry.frequencies.len() == 1
-                    && entry.frequencies[0].value == "<ALL_UNIQUE>"
+                entry.frequencies.len() == 1 && entry.frequencies[0].value == "<ALL_UNIQUE>"
             })
             .map(|(i, _)| i)
             .collect();
-        let _ = UNIQUE_COLUMNS_VEC.set(unique_columns);
+        if UNIQUE_COLUMNS_VEC.set(unique_columns).is_err() {
+            log::warn!("UNIQUE_COLUMNS_VEC already set — stale unique columns may be used");
+        }
 
         // Reconstruct FTables from cache using increment_by
         let mut tables: FTables = Vec::with_capacity(selected_entries.len());
         for entry in &selected_entries {
-            if entry.frequencies.len() == 1
-                && entry.frequencies[0].value == "<ALL_UNIQUE>"
-            {
+            if entry.frequencies.len() == 1 && entry.frequencies[0].value == "<ALL_UNIQUE>" {
                 // ALL_UNIQUE: push empty FTable, process_frequencies handles the sentinel
                 tables.push(Frequencies::with_capacity(1));
                 continue;
@@ -1908,20 +1937,18 @@ impl Args {
                 rank_buffer.clear();
                 if processed_freq.rank >= 0.0 {
                     if processed_freq.rank.fract() == 0.0 {
-                        rank_buffer
-                            .push_str(itoa_buffer.format(processed_freq.rank as u64));
+                        rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
                     } else {
-                        rank_buffer
-                            .push_str(zmij_buffer.format(processed_freq.rank));
+                        rank_buffer.push_str(zmij_buffer.format(processed_freq.rank));
                     }
                 }
 
                 row = vec![
                     &*header_vec,
                     if vis_whitespace {
-                        value_str = util::visualize_whitespace(
-                            &String::from_utf8_lossy(&processed_freq.value),
-                        );
+                        value_str = util::visualize_whitespace(&String::from_utf8_lossy(
+                            &processed_freq.value,
+                        ));
                         value_str.as_bytes()
                     } else {
                         &processed_freq.value
@@ -3016,8 +3043,9 @@ impl Args {
         // Compute Float columns to skip if --no-float is specified
         if self.flag_no_float.is_some() {
             let float_columns_to_skip = self.compute_float_columns_to_skip(headers, &col_type_map);
-            // safety: we only set this once per invocation
-            let _ = FLOAT_COLUMNS_TO_SKIP.set(float_columns_to_skip);
+            if FLOAT_COLUMNS_TO_SKIP.set(float_columns_to_skip).is_err() {
+                log::warn!("FLOAT_COLUMNS_TO_SKIP already set — stale float columns may be used");
+            }
         }
 
         // Compute stats filter columns to skip if --stats-filter is specified
@@ -3034,8 +3062,15 @@ impl Args {
                     &stats_records_hashmap,
                     filter_expression,
                 )?;
-                // safety: we only set this once per invocation
-                let _ = STATS_FILTER_COLUMNS_TO_SKIP.set(stats_filter_columns_to_skip);
+                if STATS_FILTER_COLUMNS_TO_SKIP
+                    .set(stats_filter_columns_to_skip)
+                    .is_err()
+                {
+                    log::warn!(
+                        "STATS_FILTER_COLUMNS_TO_SKIP already set — stale filter columns may be \
+                         used"
+                    );
+                }
             }
         }
 

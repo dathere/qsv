@@ -11,8 +11,14 @@ use crate::{Csv, CsvData, qcheck_sized, workdir::Workdir};
 /// Decode a TOON cache file and return the `fields` array entries.
 fn decode_toon_fields(path: &std::path::Path) -> Vec<Value> {
     let contents = std::fs::read_to_string(path).unwrap();
-    let value: Value =
-        toon_format::decode(&contents, &toon_format::DecodeOptions { strict: false, ..Default::default() }).unwrap();
+    let value: Value = toon_format::decode(
+        &contents,
+        &toon_format::DecodeOptions {
+            strict: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
     value["fields"]
         .as_array()
         .expect("TOON cache should contain 'fields' array")
@@ -22,13 +28,25 @@ fn decode_toon_fields(path: &std::path::Path) -> Vec<Value> {
 /// Tamper with a TOON cache file by replacing the first occurrence of `old_count`
 /// with `new_count` in the frequency entries. Used to prove cache reads.
 fn tamper_toon_cache(path: &std::path::Path, old_count: u64, new_count: u64) {
-    let contents = std::fs::read_to_string(path).unwrap();
-    let mut value: Value =
-        toon_format::decode(&contents, &toon_format::DecodeOptions { strict: false, ..Default::default() }).unwrap();
-    let fields = value["fields"].as_array_mut().unwrap();
+    let contents =
+        std::fs::read_to_string(path).expect("tamper_toon_cache: failed to read TOON cache file");
+    let mut value: Value = toon_format::decode(
+        &contents,
+        &toon_format::DecodeOptions {
+            strict: false,
+            ..Default::default()
+        },
+    )
+    .expect("tamper_toon_cache: failed to decode TOON content");
+    let fields = value["fields"]
+        .as_array_mut()
+        .expect("tamper_toon_cache: 'fields' key missing or not an array in TOON cache");
     let mut found = false;
     'outer: for field in fields.iter_mut() {
-        for freq in field["frequencies"].as_array_mut().unwrap() {
+        for freq in field["frequencies"]
+            .as_array_mut()
+            .expect("tamper_toon_cache: 'frequencies' key missing or not an array in field entry")
+        {
             if freq["count"].as_u64() == Some(old_count) {
                 freq["count"] = Value::from(new_count);
                 found = true;
@@ -40,8 +58,9 @@ fn tamper_toon_cache(path: &std::path::Path, old_count: u64, new_count: u64) {
         found,
         "Could not find count {old_count} in cache to tamper with"
     );
-    let toon = toon_format::encode(&value, &toon_format::EncodeOptions::new()).unwrap();
-    std::fs::write(path, toon).unwrap();
+    let toon = toon_format::encode(&value, &toon_format::EncodeOptions::new())
+        .expect("tamper_toon_cache: failed to re-encode TOON content");
+    std::fs::write(path, toon).expect("tamper_toon_cache: failed to write tampered TOON cache");
 }
 
 fn setup(name: &str) -> (Workdir, process::Command) {
@@ -4556,7 +4575,11 @@ fn frequency_toon_cache_all_unique() {
     assert_eq!(fields[0]["field"], "id");
     assert_eq!(fields[0]["cardinality"], 5);
     let freqs = fields[0]["frequencies"].as_array().unwrap();
-    assert_eq!(freqs.len(), 1, "ALL_UNIQUE should have single sentinel entry");
+    assert_eq!(
+        freqs.len(),
+        1,
+        "ALL_UNIQUE should have single sentinel entry"
+    );
     assert_eq!(freqs[0]["value"], "<ALL_UNIQUE>");
     assert_eq!(freqs[0]["count"], 5);
     assert_eq!(freqs[0]["percentage"], 100.0);
@@ -4575,7 +4598,10 @@ fn frequency_toon_high_cardinality() {
     // Create dataset with 20 rows where one column has 19 unique values (95% of rowcount)
     let mut rows = vec![svec!["id", "category"]];
     for i in 1..=20 {
-        rows.push(vec![format!("item_{i}"), format!("cat_{}", if i <= 19 { i } else { 1 })]);
+        rows.push(vec![
+            format!("item_{i}"),
+            format!("cat_{}", if i <= 19 { i } else { 1 }),
+        ]);
     }
     wrk.create("in.csv", rows);
 
@@ -4604,7 +4630,8 @@ fn frequency_toon_high_cardinality() {
     let freqs = fields[0]["frequencies"].as_array().unwrap();
     assert_eq!(freqs[0]["value"], "<ALL_UNIQUE>");
 
-    // category column (cardinality=19 > effective_threshold=min(10, 50%*20=10)=10) → HIGH_CARDINALITY
+    // category column (cardinality=19 > effective_threshold=min(10, 50%*20=10)=10) →
+    // HIGH_CARDINALITY
     assert_eq!(fields[1]["field"], "category");
     assert_eq!(fields[1]["cardinality"], 19);
     let freqs = fields[1]["frequencies"].as_array().unwrap();
@@ -4664,7 +4691,11 @@ fn frequency_toon_custom_thresholds() {
     let fields2 = decode_toon_fields(&toon_path);
 
     let freqs2 = fields2[1]["frequencies"].as_array().unwrap();
-    assert_eq!(freqs2.len(), 1, "With low threshold, should be HIGH_CARDINALITY");
+    assert_eq!(
+        freqs2.len(),
+        1,
+        "With low threshold, should be HIGH_CARDINALITY"
+    );
     assert_eq!(freqs2[0]["value"], "<HIGH_CARDINALITY>");
 }
 
@@ -4698,7 +4729,10 @@ fn frequency_toon_normal_output_unchanged() {
     cmd2.arg("in.csv").arg("--frequency-toon");
     let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
 
-    assert_eq!(got1, got2, "stdout output should be identical with or without --frequency-toon");
+    assert_eq!(
+        got1, got2,
+        "stdout output should be identical with or without --frequency-toon"
+    );
 }
 
 #[test]
@@ -4849,7 +4883,11 @@ fn frequency_toon_high_card_at_threshold() {
     let fields2 = decode_toon_fields(&toon_path);
 
     let freqs2 = fields2[1]["frequencies"].as_array().unwrap();
-    assert_eq!(freqs2.len(), 1, "Cardinality above threshold should be HIGH_CARDINALITY");
+    assert_eq!(
+        freqs2.len(),
+        1,
+        "Cardinality above threshold should be HIGH_CARDINALITY"
+    );
     assert_eq!(freqs2[0]["value"], "<HIGH_CARDINALITY>");
 }
 
@@ -4907,9 +4945,7 @@ fn frequency_toon_limit_does_not_affect_cache() {
 
     // Run with --limit 2 (stdout shows only top 2 values)
     let mut cmd = wrk.command("frequency");
-    cmd.arg("in.csv")
-        .arg("--frequency-toon")
-        .args(["-l", "2"]);
+    cmd.arg("in.csv").arg("--frequency-toon").args(["-l", "2"]);
 
     // Verify stdout output IS limited to 2 entries (+ header + "Other" summary row).
     // read_stdout implicitly validates command success: it parses CSV from stdout
@@ -5296,7 +5332,10 @@ fn frequency_toon_cache_high_card_fallback_full() {
             "With --select color, all fields should be 'color', got: {row:?}"
         );
     }
-    assert!(got_cached.len() > 1, "Should have output rows for color column");
+    assert!(
+        got_cached.len() > 1,
+        "Should have output rows for color column"
+    );
 }
 
 #[test]
@@ -5397,6 +5436,57 @@ fn frequency_toon_cache_no_nulls_incompatible() {
 }
 
 #[test]
+fn frequency_toon_cache_delimiter_incompatible() {
+    // Cache generated with one delimiter should NOT be used when a different delimiter is set.
+    // The cached values would contain unintended delimiter characters otherwise.
+    let wrk = Workdir::new("frequency_toon_cache_delimiter_incompatible");
+    let rows = vec![
+        svec!["name", "color"],
+        svec!["Alice", "red"],
+        svec!["Bob", "blue"],
+        svec!["Alice", "red"],
+    ];
+    wrk.create("in.csv", rows.clone());
+
+    // Create stats cache (comma-delimited)
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Create frequency cache with default (comma) delimiter
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv").arg("--frequency-toon");
+    wrk.assert_success(&mut cmd1);
+
+    // Tamper cache to prove cache reads: change a count
+    let cache_path = wrk.path("in.freq.csv.data.toon");
+    assert!(cache_path.exists(), "Cache TOON file should exist");
+    tamper_toon_cache(&cache_path, 2, 999);
+
+    // Run with same delimiter — tampered count should appear (cache hit)
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv");
+    let got_same: String = wrk.stdout(&mut cmd2);
+    assert!(
+        got_same.contains("999"),
+        "Same delimiter should use cache (tampered count 999 expected)"
+    );
+
+    // Run with different delimiter — cache should be skipped (incompatible),
+    // tampered count should NOT appear
+    let mut cmd3 = wrk.command("frequency");
+    cmd3.arg("in.csv").arg("--delimiter").arg("\t");
+    let got_diff: String = wrk.stdout(&mut cmd3);
+    assert!(
+        !got_diff.contains("999"),
+        "Different delimiter should skip cache (tampered count 999 should not appear)"
+    );
+}
+
+#[test]
 fn frequency_toon_cache_metadata_written() {
     // Verify that the unified .freq.csv.data.toon cache contains metadata + data
     let wrk = Workdir::new("frequency_toon_cache_metadata_written");
@@ -5483,9 +5573,7 @@ fn frequency_toon_force() {
 
     // Run with --force --frequency-toon — should rewrite cache
     let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv")
-        .arg("--frequency-toon")
-        .arg("--force");
+    cmd2.arg("in.csv").arg("--frequency-toon").arg("--force");
     wrk.assert_success(&mut cmd2);
 
     // Cache should be rewritten (newer mtime)
@@ -5501,10 +5589,7 @@ fn frequency_toon_force() {
 fn frequency_toon_ignore_case_error() {
     // --frequency-toon with --ignore-case should error
     let wrk = Workdir::new("frequency_toon_ignore_case_error");
-    let rows = vec![
-        svec!["name", "color"],
-        svec!["Alice", "red"],
-    ];
+    let rows = vec![svec!["name", "color"], svec!["Alice", "red"]];
     wrk.create("in.csv", rows);
 
     let mut cmd = wrk.command("frequency");
@@ -5518,16 +5603,11 @@ fn frequency_toon_ignore_case_error() {
 fn frequency_toon_no_trim_error() {
     // --frequency-toon with --no-trim should error
     let wrk = Workdir::new("frequency_toon_no_trim_error");
-    let rows = vec![
-        svec!["name", "color"],
-        svec!["Alice", "red"],
-    ];
+    let rows = vec![svec!["name", "color"], svec!["Alice", "red"]];
     wrk.create("in.csv", rows);
 
     let mut cmd = wrk.command("frequency");
-    cmd.arg("in.csv")
-        .arg("--frequency-toon")
-        .arg("--no-trim");
+    cmd.arg("in.csv").arg("--frequency-toon").arg("--no-trim");
     wrk.assert_err(&mut cmd);
 }
 
@@ -5535,10 +5615,7 @@ fn frequency_toon_no_trim_error() {
 fn frequency_toon_weight_error() {
     // --frequency-toon with --weight should error
     let wrk = Workdir::new("frequency_toon_weight_error");
-    let rows = vec![
-        svec!["name", "color", "weight"],
-        svec!["Alice", "red", "2"],
-    ];
+    let rows = vec![svec!["name", "color", "weight"], svec!["Alice", "red", "2"]];
     wrk.create("in.csv", rows);
 
     let mut cmd = wrk.command("frequency");
@@ -5598,11 +5675,7 @@ fn frequency_toon_cache_no_headers() {
     );
 
     // Verify field names are 1-based indices (not header text)
-    let field_names: Vec<&str> = got2
-        .iter()
-        .skip(1)
-        .map(|row| row[0].as_str())
-        .collect();
+    let field_names: Vec<&str> = got2.iter().skip(1).map(|row| row[0].as_str()).collect();
     assert!(
         field_names.iter().all(|f| *f == "1" || *f == "2"),
         "With --no-headers, field names should be 1-based indices, got: {field_names:?}"
@@ -5671,11 +5744,7 @@ fn frequency_toon_cache_null_roundtrip() {
 
     // Verify that empty cells are rendered as "(NULL)" in the output
     // (this is the standard null representation in frequency output)
-    let values: Vec<&str> = got2
-        .iter()
-        .skip(1)
-        .map(|row| row[1].as_str())
-        .collect();
+    let values: Vec<&str> = got2.iter().skip(1).map(|row| row[1].as_str()).collect();
     assert!(
         values.contains(&"(NULL)"),
         "Empty cells should be rendered as '(NULL)' in frequency output, got: {values:?}"

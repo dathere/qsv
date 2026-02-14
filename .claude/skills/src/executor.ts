@@ -6,6 +6,7 @@
 import { spawn, type ChildProcess } from "child_process";
 import type { QsvSkill, Option, SkillParams, SkillResult } from "./types.js";
 import { config } from "./config.js";
+import { compareVersions } from "./utils.js";
 
 /**
  * Check if a skill has subcommands by examining its first argument
@@ -276,10 +277,14 @@ export class SkillExecutor {
     // For frequency command, always ensure --frequency-jsonl flag is set
     // This creates the frequency cache for reuse
     // Skip when reading from stdin (e.g. pipelines) since cache requires a file path
+    // Only enable if the binary version supports the flag (>= skill version)
+    const binaryVersion = config.qsvValidation.version;
     if (
       skill.command.subcommand === "frequency" &&
       !params.stdin &&
-      findOptionDef(skill, "frequency-jsonl")
+      findOptionDef(skill, "frequency-jsonl") &&
+      binaryVersion &&
+      compareVersions(binaryVersion, skill.version) >= 0
     ) {
       if (!params.options) {
         params.options = {};

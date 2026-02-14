@@ -265,7 +265,8 @@ export class SkillExecutor {
 
     // For stats command, always ensure --stats-jsonl flag is set
     // This creates the stats cache that other "smart" commands use
-    if (skill.command.subcommand === "stats") {
+    // Skip when reading from stdin (e.g. pipelines) since cache requires a file path
+    if (skill.command.subcommand === "stats" && !params.stdin) {
       if (!params.options) {
         params.options = {};
       }
@@ -274,8 +275,10 @@ export class SkillExecutor {
 
     // For frequency command, always ensure --frequency-jsonl flag is set
     // This creates the frequency cache for reuse
+    // Skip when reading from stdin (e.g. pipelines) since cache requires a file path
     if (
       skill.command.subcommand === "frequency" &&
+      !params.stdin &&
       findOptionDef(skill, "frequency-jsonl")
     ) {
       if (!params.options) {

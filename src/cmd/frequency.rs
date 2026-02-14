@@ -2133,9 +2133,13 @@ impl Args {
 
         // Sort by count (weight)
         if self.flag_asc {
-            counts.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            counts.sort_unstable_by(|a, b| {
+                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+            });
         } else {
-            counts.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            counts.sort_unstable_by(|a, b| {
+                b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
 
         // Calculate total weight (sum of all weights)

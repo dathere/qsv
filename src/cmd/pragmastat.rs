@@ -88,8 +88,16 @@ Common options:
     -d, --delimiter <c>    The field delimiter for reading/writing CSV data.
                            Must be a single character. (default: ,)
     -n, --no-headers       When set, the first row will not be treated as headers.
+    -j, --jobs <arg>       The number of jobs to run in parallel.
+                           When not set, the number of jobs is set to the
+                           number of CPUs detected.
+    --memcheck             Check if there is enough memory to load the entire
+                           CSV into memory using CONSERVATIVE heuristics. Not valid for stdin.
+    -p, --progressbar      Show progress bars. Not valid for stdin.
 "#;
 
+use indicatif::{ProgressBar, ProgressDrawTarget};
+use rayon::prelude::*;
 use serde::Deserialize;
 
 use crate::{
@@ -102,13 +110,16 @@ use crate::{
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input:       Option<String>,
-    flag_twosample:  bool,
-    flag_select:     Option<SelectColumns>,
-    flag_misrate:    f64,
-    flag_output:     Option<String>,
-    flag_delimiter:  Option<Delimiter>,
-    flag_no_headers: bool,
+    arg_input:        Option<String>,
+    flag_twosample:   bool,
+    flag_select:      Option<SelectColumns>,
+    flag_misrate:     f64,
+    flag_output:      Option<String>,
+    flag_delimiter:   Option<Delimiter>,
+    flag_no_headers:  bool,
+    flag_jobs:        Option<usize>,
+    flag_memcheck:    bool,
+    flag_progressbar: bool,
 }
 
 struct OneSampleResult {
@@ -139,6 +150,7 @@ struct TwoSampleResult {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     validate_misrate(args.flag_misrate)?;
+    util::njobs(args.flag_jobs);
     let (col_names, col_values) = read_columns(&args)?;
     write_results(&args, &col_names, &col_values)?;
     Ok(())
@@ -158,10 +170,21 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers);
 
+    if let Some(ref path) = rconfig.path {
+        util::mem_file_check(path, false, args.flag_memcheck)?;
+    }
+
     let mut rdr = rconfig.reader()?;
     let headers = rdr.byte_headers()?.clone();
     let selected = resolve_columns(&rconfig, &headers, args.flag_select.as_ref())?;
-    collect_numeric_values(&mut rdr, &headers, &selected, rconfig.no_headers)
+    collect_numeric_values(
+        &mut rdr,
+        &headers,
+        &selected,
+        rconfig.no_headers,
+        (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR")) && !rconfig.is_stdin(),
+        &rconfig,
+    )
 }
 
 fn resolve_columns(
@@ -204,9 +227,15 @@ fn write_onesample_results(
     misrate: f64,
 ) -> CliResult<()> {
     write_onesample_header(wtr)?;
-    for (i, name) in col_names.iter().enumerate() {
-        let result = compute_one_sample(name, &col_values[i], misrate);
-        write_onesample_row(wtr, &result)?;
+
+    let results: Vec<OneSampleResult> = col_names
+        .par_iter()
+        .enumerate()
+        .map(|(i, name)| compute_one_sample(name, &col_values[i], misrate))
+        .collect();
+
+    for result in &results {
+        write_onesample_row(wtr, result)?;
     }
     Ok(())
 }
@@ -218,17 +247,35 @@ fn write_twosample_results(
     misrate: f64,
 ) -> CliResult<()> {
     write_twosample_header(wtr)?;
-    for i in 0..col_names.len() {
-        for j in (i + 1)..col_names.len() {
-            let result = compute_two_sample(
+
+    let k = col_names.len();
+    let num_pairs = k.saturating_mul(k - 1) / 2;
+    if num_pairs > 100 {
+        winfo!(
+            "computing {num_pairs} column pairs from {k} columns. Use --select to limit columns \
+             for faster results."
+        );
+    }
+
+    let pairs: Vec<(usize, usize)> = (0..k)
+        .flat_map(|i| ((i + 1)..k).map(move |j| (i, j)))
+        .collect();
+
+    let results: Vec<TwoSampleResult> = pairs
+        .par_iter()
+        .map(|&(i, j)| {
+            compute_two_sample(
                 &col_names[i],
                 &col_names[j],
                 &col_values[i],
                 &col_values[j],
                 misrate,
-            );
-            write_twosample_row(wtr, &result)?;
-        }
+            )
+        })
+        .collect();
+
+    for result in &results {
+        write_twosample_row(wtr, result)?;
     }
     Ok(())
 }
@@ -238,6 +285,8 @@ fn collect_numeric_values(
     headers: &csv::ByteRecord,
     selected: &[usize],
     no_headers: bool,
+    show_progress: bool,
+    rconfig: &Config,
 ) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
     let col_names: Vec<String> = selected
         .iter()
@@ -252,6 +301,13 @@ fn collect_numeric_values(
 
     let mut col_values: Vec<Vec<f64>> = vec![Vec::new(); selected.len()];
 
+    let progress = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(5));
+    if show_progress {
+        util::prep_progress(&progress, util::count_rows(rconfig)?);
+    } else {
+        progress.set_draw_target(ProgressDrawTarget::hidden());
+    }
+
     for result in rdr.byte_records() {
         let record = result?;
         for (idx, &col_idx) in selected.iter().enumerate() {
@@ -262,6 +318,13 @@ fn collect_numeric_values(
                 col_values[idx].push(val);
             }
         }
+        if show_progress {
+            progress.inc(1);
+        }
+    }
+
+    if show_progress {
+        util::finish_progress(&progress);
     }
 
     Ok((col_names, col_values))

@@ -2131,14 +2131,18 @@ impl Args {
         let mut counts: Vec<(Vec<u8>, f64)> =
             weighted_map.iter().map(|(k, v)| (k.clone(), *v)).collect();
 
-        // Sort by count (weight)
+        // Sort by count (weight), breaking ties by value for deterministic output
         if self.flag_asc {
             counts.sort_unstable_by(|a, b| {
-                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+                a.1.partial_cmp(&b.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.0.cmp(&b.0))
             });
         } else {
             counts.sort_unstable_by(|a, b| {
-                b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                b.1.partial_cmp(&a.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.0.cmp(&b.0))
             });
         }
 
@@ -3106,12 +3110,17 @@ impl Args {
                                      processed_frequencies: &mut Vec<ProcessedFrequency>,
                                      field_stats: &mut Vec<FieldStats>,
                                      skip_stats: bool| {
-            // Sort frequencies by count if flag_other_sorted
+            // Sort frequencies by count if flag_other_sorted,
+            // breaking ties by value for deterministic output
             if self.flag_other_sorted {
                 if self.flag_asc {
-                    processed_frequencies.sort_unstable_by_key(|a| a.count);
+                    processed_frequencies.sort_unstable_by(|a, b| {
+                        a.count.cmp(&b.count).then_with(|| a.value.cmp(&b.value))
+                    });
                 } else {
-                    processed_frequencies.sort_unstable_by_key(|b| std::cmp::Reverse(b.count));
+                    processed_frequencies.sort_unstable_by(|a, b| {
+                        b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value))
+                    });
                 }
             }
 

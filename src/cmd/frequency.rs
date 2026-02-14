@@ -1560,7 +1560,7 @@ impl Args {
                 .flag_delimiter
                 .as_ref()
                 .map(|d| (d.as_byte() as char).to_string())
-                .unwrap_or_default(),
+                .unwrap_or_else(|| ",".to_string()),
             record_count:             row_count,
             column_count:             headers.len(),
             date_generated:           chrono::Utc::now().to_rfc3339(),
@@ -1656,7 +1656,7 @@ impl Args {
             .flag_delimiter
             .as_ref()
             .map(|d| (d.as_byte() as char).to_string())
-            .unwrap_or_default();
+            .unwrap_or_else(|| ",".to_string());
         if cache.flag_delimiter != current_delimiter {
             log::info!(
                 "Frequency cache incompatible: --delimiter differs (cache={:?}, current={:?})",

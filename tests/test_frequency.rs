@@ -5446,7 +5446,7 @@ fn frequency_toon_cache_delimiter_incompatible() {
         svec!["Bob", "blue"],
         svec!["Alice", "red"],
     ];
-    wrk.create("in.csv", rows.clone());
+    wrk.create("in.csv", rows);
 
     // Create stats cache (comma-delimited)
     let mut stats_cmd = wrk.command("stats");
@@ -5466,7 +5466,7 @@ fn frequency_toon_cache_delimiter_incompatible() {
     assert!(cache_path.exists(), "Cache TOON file should exist");
     tamper_toon_cache(&cache_path, 2, 999);
 
-    // Run with same delimiter — tampered count should appear (cache hit)
+    // Run with same (default) delimiter — tampered count should appear (cache hit)
     let mut cmd2 = wrk.command("frequency");
     cmd2.arg("in.csv");
     let got_same: String = wrk.stdout(&mut cmd2);
@@ -5475,8 +5475,22 @@ fn frequency_toon_cache_delimiter_incompatible() {
         "Same delimiter should use cache (tampered count 999 expected)"
     );
 
-    // Run with different delimiter — cache should be skipped (incompatible),
-    // tampered count should NOT appear
+    // Run with explicit --delimiter "," — should also hit cache because
+    // the delimiter is normalized (explicit comma == default comma)
+    let mut cmd_explicit = wrk.command("frequency");
+    cmd_explicit
+        .arg("in.csv")
+        .arg("--delimiter")
+        .arg(",");
+    let got_explicit: String = wrk.stdout(&mut cmd_explicit);
+    assert!(
+        got_explicit.contains("999"),
+        "Explicit comma delimiter should use cache (tampered count 999 expected)"
+    );
+
+    // Run with different delimiter — cache should be skipped (incompatible).
+    // Note: this runs tab-delimiter on a comma-delimited file, so output is
+    // not meaningful — we only verify cache invalidation (tampered 999 absent).
     let mut cmd3 = wrk.command("frequency");
     cmd3.arg("in.csv").arg("--delimiter").arg("\t");
     let got_diff: String = wrk.stdout(&mut cmd3);

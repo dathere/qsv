@@ -320,7 +320,10 @@ fn compute_one_sample(name: &str, values: &[f64], misrate: f64) -> OneSampleResu
 
     let center = pragmastat::center(values).ok();
     let spread = pragmastat::spread(values).ok();
-    // compute rel_spread manually to avoid redundant O(n log n) center + spread recomputation
+    // Compute rel_spread manually to avoid redundant O(n log n) center + spread recomputation.
+    // The positivity check (v > 0.0) matches pragmastat::check_positivity which rejects v <= 0.0.
+    // When all values are strictly positive, center is guaranteed positive, so c.abs() > 0.0
+    // is always true — but we keep it as a defensive guard matching the library's use of .abs().
     let rel_spread = match (spread, center) {
         (Some(s), Some(c)) if values.iter().all(|&v| v > 0.0) && c.abs() > 0.0 => {
             Some(s / c.abs())
@@ -369,14 +372,18 @@ fn compute_two_sample(
 
     let shift = pragmastat::shift(x, y).ok();
     let avg_spread = pragmastat::avg_spread(x, y).ok();
-    // compute disparity manually to avoid redundant shift + 2×spread recomputation
+    // Compute disparity manually to avoid redundant shift + 2×spread recomputation.
+    // pragmastat::avg_spread already checks sparity (spread > 0) for both samples,
+    // so if avg_spread is Some, it is guaranteed positive — the a > 0.0 guard is defensive.
     let disparity = match (shift, avg_spread) {
         (Some(s), Some(a)) if a > 0.0 => Some(s / a),
         _ => None,
     };
     let shift_bounds = pragmastat::shift_bounds(x, y, misrate).ok();
 
-    // share a single log-transformation between ratio and ratio_bounds
+    // Share a single log-transformation between ratio and ratio_bounds.
+    // This trades 2 explicit Vec allocations for avoiding duplicate log-transforms
+    // that the library would perform separately in ratio() and ratio_bounds().
     let all_positive = x.iter().all(|&v| v > 0.0) && y.iter().all(|&v| v > 0.0);
     let (ratio, ratio_lower, ratio_upper) = if all_positive {
         let log_x: Vec<f64> = x.iter().map(|v| v.ln()).collect();
@@ -411,11 +418,7 @@ fn compute_two_sample(
 }
 
 fn fmt_opt(val: Option<f64>) -> String {
-    if let Some(v) = val {
-        util::round_num(v, 4)
-    } else {
-        String::new()
-    }
+    val.map_or_else(String::new, |v| util::round_num(v, 4))
 }
 
 fn write_onesample_header(

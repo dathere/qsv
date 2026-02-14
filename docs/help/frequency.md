@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/frequency.rs](https://github.com/dathere/qsv/blob/master/src/cmd/frequency.rs)** | 📇😣🏎️👆🪄![Luau](../images/luau.png)
 
 <a name="nav"></a>
-[Description](#description) | [Usage](#usage) | [Frequency Options](#frequency-options) | [JSON Output Options](#json-output-options) | [Common Options](#common-options)
+[Description](#description) | [Usage](#usage) | [Frequency Options](#frequency-options) | [Frequency Cache Options](#frequency-cache-options) | [JSON Output Options](#json-output-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -118,6 +118,17 @@ qsv frequency --help
 | &nbsp;`--all-unique-text`&nbsp; | string | The text to use for the "<ALL_UNIQUE>" category. | `<ALL_UNIQUE>` |
 | &nbsp;`--vis-whitespace`&nbsp; | flag | Visualize whitespace characters in the output. See <https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers> for the list of whitespace markers. |  |
 | &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
+
+<a name="frequency-cache-options"></a>
+
+## Frequency Cache Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`--frequency-jsonl`&nbsp; | flag | Write the complete frequency distribution as a JSONL cache file (FILESTEM.freq.csv.data.jsonl). Requires a non-stdin input file. The cache contains metadata and per-column frequency data. ALL_UNIQUE columns (rowcount == cardinality) get a single ALL_UNIQUE sentinel. HIGH_CARDINALITY columns (cardinality exceeds the smaller of --high-card-threshold/--high-card-pct of rowcount) get a single HIGH_CARDINALITY sentinel. When a valid (fresh) cache already exists, frequency will automatically reuse it instead of recomputing from the CSV. Use --force to regenerate the cache even when it is valid. Cache is NOT used when --ignore-case, --no-trim, or --weight are active, as these change how values are computed. |  |
+| &nbsp;`--high-card-threshold`&nbsp; | string | Absolute cardinality threshold for HIGH_CARDINALITY classification in the frequency cache. Can also be set with QSV_FREQ_HIGH_CARD_THRESHOLD env var (env var takes precedence when CLI value equals the default). Only used with --frequency-jsonl. | `100` |
+| &nbsp;`--high-card-pct`&nbsp; | string | Percentage of rowcount threshold for HIGH_CARDINALITY classification in the frequency cache. Must be between 1 and 100. Can also be set with QSV_FREQ_HIGH_CARD_PCT env var (env var takes precedence when CLI value equals the default). Only used with --frequency-jsonl. | `90` |
+| &nbsp;`--force`&nbsp; | flag | Force recomputation and cache regeneration even when a valid frequency cache exists. Use with --frequency-jsonl to regenerate the cache. |  |
 
 <a name="json-output-options"></a>
 

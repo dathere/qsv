@@ -182,7 +182,7 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
         &headers,
         &selected,
         rconfig.no_headers,
-        args.flag_progressbar,
+        (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR")) && !rconfig.is_stdin(),
         &rconfig,
     )
 }

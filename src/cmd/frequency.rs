@@ -1580,11 +1580,14 @@ impl Args {
         let mut rdr = rconfig.reader()?;
         let full_headers = rdr.byte_headers()?.clone();
 
-        // can_use_freq_cache already guards args.flag_weight.is_none()
-        debug_assert!(
-            self.flag_weight.is_none(),
-            "try_output_from_cache called with --weight set"
-        );
+        // Safety net: can_use_freq_cache already guards flag_weight.is_none(),
+        // but keep a runtime check because the selection below does not
+        // exclude the weight column. If the guard in can_use_freq_cache is
+        // ever loosened, this prevents silently including the weight column
+        // in frequency output.
+        if self.flag_weight.is_some() {
+            return Ok(false);
+        }
         let sel = self.rconfig().selection(&full_headers)?;
         let selected_headers: csv::ByteRecord = sel.select(&full_headers).collect();
 
@@ -1792,9 +1795,6 @@ impl Args {
             processed_frequencies.clear();
         }
         wtr.flush()?;
-
-        // sel was used above for selected_headers; drop it explicitly
-        drop(sel);
 
         log::info!("Output produced from frequency cache");
         Ok(true)

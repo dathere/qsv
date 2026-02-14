@@ -5351,20 +5351,32 @@ fn frequency_jsonl_cache_no_headers() {
     cmd1.arg("in.csv")
         .arg("--frequency-jsonl")
         .arg("--no-headers");
-    let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
+    wrk.assert_success(&mut cmd1);
 
     // Verify cache exists
     let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
     assert!(jsonl_path.exists(), "JSONL cache file should exist");
 
-    // Run again without --frequency-jsonl (should read from cache)
+    // Tamper with the cache to prove the second run actually reads it:
+    // change a count to 999, which can't occur from recomputation.
+    let cache_contents = std::fs::read_to_string(&jsonl_path).unwrap();
+    let tampered = cache_contents.replacen("\"count\":2", "\"count\":999", 1);
+    assert_ne!(
+        cache_contents, tampered,
+        "Cache should contain a count of 2 to tamper with"
+    );
+    std::fs::write(&jsonl_path, tampered).unwrap();
+
+    // Run again without --frequency-jsonl (should read from tampered cache)
     let mut cmd2 = wrk.command("frequency");
     cmd2.arg("in.csv").arg("--no-headers");
     let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
 
-    assert_eq!(
-        got1, got2,
-        "Output from cache with --no-headers should be identical to fresh computation"
+    // The tampered count of 999 must appear in the output, proving cache was read
+    let has_999 = got2.iter().any(|row| row.iter().any(|cell| cell == "999"));
+    assert!(
+        has_999,
+        "Output should contain tampered count 999 from cache, got: {got2:?}"
     );
 
     // Verify field names are 1-based indices (not header text)
@@ -5402,10 +5414,10 @@ fn frequency_jsonl_cache_null_roundtrip() {
         .arg("--stats-jsonl");
     wrk.assert_success(&mut stats_cmd);
 
-    // Create frequency cache and capture output
+    // Create frequency cache
     let mut cmd1 = wrk.command("frequency");
     cmd1.arg("in.csv").arg("--frequency-jsonl");
-    let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
+    wrk.assert_success(&mut cmd1);
 
     // Verify cache exists
     let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
@@ -5426,14 +5438,26 @@ fn frequency_jsonl_cache_null_roundtrip() {
         "Cache should contain empty string entries for null values"
     );
 
-    // Run again without --frequency-jsonl (should read from cache)
+    // Tamper with the cache to prove the second run actually reads it:
+    // change a count to 888, which can't occur from recomputation.
+    let cache_contents = std::fs::read_to_string(&jsonl_path).unwrap();
+    let tampered = cache_contents.replacen("\"count\":2", "\"count\":888", 1);
+    assert_ne!(
+        cache_contents, tampered,
+        "Cache should contain a count of 2 to tamper with"
+    );
+    std::fs::write(&jsonl_path, tampered).unwrap();
+
+    // Run again without --frequency-jsonl (should read from tampered cache)
     let mut cmd2 = wrk.command("frequency");
     cmd2.arg("in.csv");
     let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
 
-    assert_eq!(
-        got1, got2,
-        "Output with null values should be identical after cache round-trip"
+    // The tampered count of 888 must appear in the output, proving cache was read
+    let has_888 = got2.iter().any(|row| row.iter().any(|cell| cell == "888"));
+    assert!(
+        has_888,
+        "Output should contain tampered count 888 from cache, got: {got2:?}"
     );
 
     // Verify that empty cells are rendered as "(NULL)" in the output

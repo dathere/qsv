@@ -5192,11 +5192,14 @@ fn frequency_jsonl_cache_high_card_fallback() {
     wrk.assert_success(&mut cmd1);
 
     // Verify cache has HIGH_CARDINALITY for "code"
+    // Search all JSONL lines rather than assuming field ordering
     let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
     let contents = std::fs::read_to_string(&jsonl_path).unwrap();
-    let lines: Vec<&str> = contents.lines().collect();
-    let code_entry: Value = serde_json::from_str(lines[0]).unwrap();
-    assert_eq!(code_entry["field"], "code");
+    let code_entry: Value = contents
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .find(|entry| entry["field"] == "code")
+        .expect("cache should contain an entry for 'code'");
     assert_eq!(
         code_entry["frequencies"][0]["value"], "<HIGH_CARDINALITY>",
         "code column should have HIGH_CARDINALITY sentinel"
@@ -5320,4 +5323,128 @@ fn frequency_jsonl_weight_error() {
         .arg("--weight")
         .arg("weight");
     wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn frequency_jsonl_cache_no_headers() {
+    // Verify the cache read path works correctly with --no-headers,
+    // where column names are 1-based numeric indices.
+    let wrk = Workdir::new("frequency_jsonl_cache_no_headers");
+    let rows = vec![
+        svec!["Alice", "red"],
+        svec!["Bob", "blue"],
+        svec!["Alice", "red"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache (with --no-headers)
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl")
+        .arg("--no-headers");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Create frequency cache with --no-headers
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .arg("--no-headers");
+    let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
+
+    // Verify cache exists
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(jsonl_path.exists(), "JSONL cache file should exist");
+
+    // Run again without --frequency-jsonl (should read from cache)
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv").arg("--no-headers");
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+
+    assert_eq!(
+        got1, got2,
+        "Output from cache with --no-headers should be identical to fresh computation"
+    );
+
+    // Verify field names are 1-based indices (not header text)
+    let field_names: Vec<&str> = got2
+        .iter()
+        .skip(1)
+        .map(|row| row[0].as_str())
+        .collect();
+    assert!(
+        field_names.iter().all(|f| *f == "1" || *f == "2"),
+        "With --no-headers, field names should be 1-based indices, got: {field_names:?}"
+    );
+}
+
+#[test]
+fn frequency_jsonl_cache_null_roundtrip() {
+    // Verify that null/empty values survive the cache round-trip:
+    // FTable vec![] → cache "" → read vec![]
+    let wrk = Workdir::new("frequency_jsonl_cache_null_roundtrip");
+    let rows = vec![
+        svec!["name", "color"],
+        svec!["Alice", "red"],
+        svec!["", "blue"],
+        svec!["Alice", ""],
+        svec!["Bob", "red"],
+        svec!["", ""],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Create frequency cache and capture output
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
+    let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
+
+    // Verify cache exists
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(jsonl_path.exists(), "JSONL cache file should exist");
+
+    // Verify cache contains empty string entries for null values
+    let contents = std::fs::read_to_string(&jsonl_path).unwrap();
+    let has_empty_value = contents
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .any(|entry| {
+            entry["frequencies"]
+                .as_array()
+                .map_or(false, |freqs| freqs.iter().any(|f| f["value"] == ""))
+        });
+    assert!(
+        has_empty_value,
+        "Cache should contain empty string entries for null values"
+    );
+
+    // Run again without --frequency-jsonl (should read from cache)
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv");
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+
+    assert_eq!(
+        got1, got2,
+        "Output with null values should be identical after cache round-trip"
+    );
+
+    // Verify that empty cells are rendered as "(NULL)" in the output
+    // (this is the standard null representation in frequency output)
+    let values: Vec<&str> = got2
+        .iter()
+        .skip(1)
+        .map(|row| row[1].as_str())
+        .collect();
+    assert!(
+        values.contains(&"(NULL)"),
+        "Empty cells should be rendered as '(NULL)' in frequency output, got: {values:?}"
+    );
 }

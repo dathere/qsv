@@ -1580,15 +1580,13 @@ impl Args {
         let mut rdr = rconfig.reader()?;
         let full_headers = rdr.byte_headers()?.clone();
 
-        // Resolve selection (handle --weight column exclusion)
-        let (weight_col_idx, sel, selected_headers) =
-            self.process_headers_with_weight_exclusion(&full_headers)?;
-
-        // If weight column is specified, we can't use the cache
-        // (cache doesn't store weighted data)
-        if weight_col_idx.is_some() {
-            return Ok(false);
-        }
+        // can_use_freq_cache already guards args.flag_weight.is_none()
+        debug_assert!(
+            self.flag_weight.is_none(),
+            "try_output_from_cache called with --weight set"
+        );
+        let sel = self.rconfig().selection(&full_headers)?;
+        let selected_headers: csv::ByteRecord = sel.select(&full_headers).collect();
 
         let selected_col_names: Vec<String> = selected_headers
             .iter()
@@ -1677,7 +1675,12 @@ impl Args {
             .get()
             .expect("NULL_VAL should already be set in run()");
 
-        let _ = FREQ_ROW_COUNT.set(row_count);
+        if FREQ_ROW_COUNT.set(row_count).is_err() {
+            log::warn!(
+                "FREQ_ROW_COUNT was already set (stale value from previous invocation?), using \
+                 existing value"
+            );
+        }
 
         // Build unique columns vec: columns where cache has ALL_UNIQUE sentinel
         let unique_columns: Vec<usize> = selected_entries
@@ -1689,7 +1692,12 @@ impl Args {
             })
             .map(|(i, _)| i)
             .collect();
-        let _ = UNIQUE_COLUMNS_VEC.set(unique_columns);
+        if UNIQUE_COLUMNS_VEC.set(unique_columns).is_err() {
+            log::warn!(
+                "UNIQUE_COLUMNS_VEC was already set (stale value from previous invocation?), \
+                 using existing value"
+            );
+        }
 
         // Reconstruct FTables from cache using increment_by
         let mut tables: FTables = Vec::with_capacity(selected_entries.len());
@@ -1715,14 +1723,8 @@ impl Args {
         }
 
         // Now produce output using the existing pipeline
-        // JSON output mode
-        if is_json {
-            // For JSON mode, we need stats records — call get_unique_headers
-            // to populate STATS_RECORDS and COL_CARDINALITY_VEC
-            // But we already set UNIQUE_COLUMNS_VEC, so we can't call sel_headers.
-            // For JSON, fall back to full computation for now.
-            return Ok(false);
-        }
+        // can_use_freq_cache already guards !is_json, so this is unreachable
+        debug_assert!(!is_json, "try_output_from_cache called with JSON mode");
 
         // CSV output mode — reuse the existing output loop
         let abs_dec_places = self.flag_pct_dec_places.unsigned_abs() as u32;
@@ -1791,8 +1793,8 @@ impl Args {
         }
         wtr.flush()?;
 
-        // suppress unused variable warnings
-        let _ = sel;
+        // sel was used above for selected_headers; drop it explicitly
+        drop(sel);
 
         log::info!("Output produced from frequency cache");
         Ok(true)

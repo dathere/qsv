@@ -1589,6 +1589,7 @@ impl Args {
         // Clean up old-format files from previous versions
         let _ = fs::remove_file(path.with_extension("freq.csv.data.jsonl"));
         let _ = fs::remove_file(path.with_extension("freq.csv.data.toon"));
+        let _ = fs::remove_file(path.with_extension("freq.csv.json"));
 
         Ok(())
     }

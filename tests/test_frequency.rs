@@ -5781,24 +5781,29 @@ fn frequency_jsonl_cache_embedded_numbers() {
     let cache_path = wrk.path("in.freq.csv.data.json");
     assert!(cache_path.exists(), "Frequency cache file should exist");
 
-    // Verify cache contains the embedded-number values
+    // Verify cache contains the embedded-number values with correct counts
     let fields = decode_cache_fields(&cache_path);
     let district_freqs = fields[0]["frequencies"].as_array().unwrap();
-    let cached_values: Vec<&str> = district_freqs
+    let cached: Vec<(&str, u64)> = district_freqs
         .iter()
-        .map(|f| f["value"].as_str().unwrap())
+        .map(|f| {
+            (
+                f["value"].as_str().unwrap(),
+                f["count"].as_u64().unwrap(),
+            )
+        })
         .collect();
     assert!(
-        cached_values.contains(&"Queens East 12"),
-        "Cache should contain 'Queens East 12', got: {cached_values:?}"
+        cached.contains(&("Queens East 12", 3)),
+        "Cache should contain 'Queens East 12' with count 3, got: {cached:?}"
     );
     assert!(
-        cached_values.contains(&"Brooklyn West 3"),
-        "Cache should contain 'Brooklyn West 3', got: {cached_values:?}"
+        cached.contains(&("Brooklyn West 3", 2)),
+        "Cache should contain 'Brooklyn West 3' with count 2, got: {cached:?}"
     );
     assert!(
-        cached_values.contains(&"Manhattan 42nd"),
-        "Cache should contain 'Manhattan 42nd', got: {cached_values:?}"
+        cached.contains(&("Manhattan 42nd", 1)),
+        "Cache should contain 'Manhattan 42nd' with count 1, got: {cached:?}"
     );
 
     // Run again without --frequency-jsonl (should read from cache)

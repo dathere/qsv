@@ -177,7 +177,7 @@ frequency options:
 
                             FREQUENCY CACHE OPTIONS:
     --frequency-jsonl       Write the complete frequency distribution as a
-                            JSON cache file (FILESTEM.freq.csv.data.json).
+                            JSONL cache file (FILESTEM.freq.csv.data.jsonl).
                             Requires a non-stdin input file. The cache contains
                             metadata and per-column frequency data.
                             ALL_UNIQUE columns (rowcount == cardinality) get a single
@@ -358,11 +358,12 @@ struct FrequencyCacheValue {
     percentage: f64,
 }
 
-// FrequencyCache combines metadata (how the cache was generated) and per-column
-// frequency data into a single JSON file (.freq.csv.data.json).
+// FrequencyCacheMetadata stores how the cache was generated.
+// Written as the first line of a JSONL cache file (.freq.csv.data.jsonl),
+// followed by one FrequencyCacheEntry per subsequent line.
 // Similar to StatsArgs in stats.rs, the metadata fields enable cache validation.
 #[derive(Serialize, Deserialize)]
-struct FrequencyCache {
+struct FrequencyCacheMetadata {
     arg_input:                String,
     flag_high_card_threshold: usize,
     flag_high_card_pct:       u8,
@@ -373,7 +374,6 @@ struct FrequencyCache {
     column_count:             usize,
     date_generated:           String,
     qsv_version:              String,
-    fields:                   Vec<FrequencyCacheEntry>,
 }
 
 // FrequencyEntry, FrequencyField and FrequencyOutput are
@@ -1552,8 +1552,8 @@ impl Args {
             entries.push(entry);
         }
 
-        // Build unified cache struct with metadata + data
-        let cache = FrequencyCache {
+        // Build metadata struct (written as first JSONL line)
+        let metadata = FrequencyCacheMetadata {
             arg_input:                self.arg_input.clone().unwrap_or_default(),
             flag_high_card_threshold: self.flag_high_card_threshold,
             flag_high_card_pct:       self.flag_high_card_pct,
@@ -1567,16 +1567,20 @@ impl Args {
             column_count:             headers.len(),
             date_generated:           chrono::Utc::now().to_rfc3339(),
             qsv_version:              env!("CARGO_PKG_VERSION").to_string(),
-            fields:                   entries,
         };
-        let num_cache_columns = cache.fields.len();
+        let num_cache_columns = entries.len();
 
-        // Serialize to JSON
-        let json = serde_json::to_string(&cache)?;
+        // Serialize as JSONL: metadata line + one entry per line
+        let mut jsonl = String::with_capacity(entries.len() * 100 + 500); // rough estimate
+        jsonl.push_str(&serde_json::to_string(&metadata)?);
+        for entry in &entries {
+            jsonl.push('\n');
+            jsonl.push_str(&serde_json::to_string(entry)?);
+        }
 
-        let cache_path = path.with_extension("freq.csv.data.json");
-        let cache_len = json.len();
-        fs::write(&cache_path, json)?;
+        let cache_path = path.with_extension("freq.csv.data.jsonl");
+        let cache_len = jsonl.len();
+        fs::write(&cache_path, jsonl)?;
 
         winfo!(
             "Frequency cache written: {} ({} bytes, {} columns, {} rows).",
@@ -1586,21 +1590,16 @@ impl Args {
             row_count
         );
 
-        // Clean up old-format files from previous versions
-        let _ = fs::remove_file(path.with_extension("freq.csv.data.jsonl"));
-        let _ = fs::remove_file(path.with_extension("freq.csv.data.toon"));
-        let _ = fs::remove_file(path.with_extension("freq.csv.json"));
-
         Ok(())
     }
 
-    /// Read and validate the frequency JSON cache file.
+    /// Read and validate the frequency JSONL cache file.
     /// Returns None if cache doesn't exist, is stale, or is incompatible.
     fn read_frequency_cache(&self, rconfig: &Config) -> Option<Vec<FrequencyCacheEntry>> {
         use filetime::FileTime;
 
         let path = rconfig.path.as_ref()?;
-        let cache_path = path.with_extension("freq.csv.data.json");
+        let cache_path = path.with_extension("freq.csv.data.jsonl");
 
         if !cache_path.exists() {
             log::info!("Frequency cache not found: {}", cache_path.display());
@@ -1621,33 +1620,50 @@ impl Args {
             return None;
         }
 
-        // Read and deserialize JSON cache
-        let json_content = fs::read_to_string(&cache_path).ok()?;
-        let cache: FrequencyCache = serde_json::from_str(&json_content)
+        // Read JSONL cache: line 1 = metadata, remaining lines = entries
+        let jsonl_content = fs::read_to_string(&cache_path).ok()?;
+        let mut lines = jsonl_content.lines();
+
+        let metadata_line = lines.next()?;
+        let metadata: FrequencyCacheMetadata = serde_json::from_str(metadata_line)
             .map_err(|e| {
-                wwarn!("Failed to deserialize frequency cache: {e}");
+                wwarn!("Failed to deserialize frequency cache metadata: {e}");
                 e
             })
             .ok()?;
 
+        let mut entries = Vec::new();
+        for line in lines {
+            if line.is_empty() {
+                continue;
+            }
+            let entry: FrequencyCacheEntry = serde_json::from_str(line)
+                .map_err(|e| {
+                    wwarn!("Failed to deserialize frequency cache entry: {e}");
+                    e
+                })
+                .ok()?;
+            entries.push(entry);
+        }
+
         // Validate cache args compatibility
         // flag_no_nulls affects what's stored in the FTable — mismatch means
         // cache has wrong null counts
-        if cache.flag_no_nulls != self.flag_no_nulls {
+        if metadata.flag_no_nulls != self.flag_no_nulls {
             winfo!(
                 "Frequency cache incompatible: --no-nulls differs (cache={}, current={}). \
                  Recomputing.",
-                cache.flag_no_nulls,
+                metadata.flag_no_nulls,
                 self.flag_no_nulls
             );
             return None;
         }
         // flag_no_headers affects column naming in the cache
-        if cache.flag_no_headers != self.flag_no_headers {
+        if metadata.flag_no_headers != self.flag_no_headers {
             winfo!(
                 "Frequency cache incompatible: --no-headers differs (cache={}, current={}). \
                  Recomputing.",
-                cache.flag_no_headers,
+                metadata.flag_no_headers,
                 self.flag_no_headers
             );
             return None;
@@ -1658,11 +1674,11 @@ impl Args {
             .flag_delimiter
             .as_ref()
             .map_or_else(|| ",".to_string(), |d| (d.as_byte() as char).to_string());
-        if cache.flag_delimiter != current_delimiter {
+        if metadata.flag_delimiter != current_delimiter {
             winfo!(
                 "Frequency cache incompatible: --delimiter differs (cache={:?}, current={:?}). \
                  Recomputing.",
-                cache.flag_delimiter,
+                metadata.flag_delimiter,
                 current_delimiter
             );
             return None;
@@ -1677,24 +1693,24 @@ impl Args {
         //     more detailed than the current threshold would produce on a fresh run. The threshold
         //     only controls which columns get full data vs a sentinel during cache *generation*,
         //     not reads.
-        if cache.flag_high_card_threshold != self.flag_high_card_threshold
-            || cache.flag_high_card_pct != self.flag_high_card_pct
+        if metadata.flag_high_card_threshold != self.flag_high_card_threshold
+            || metadata.flag_high_card_pct != self.flag_high_card_pct
         {
             log::info!(
                 "Frequency cache threshold differs: cache=(threshold={}, pct={}), \
                  current=(threshold={}, pct={}). Partial cache still valid.",
-                cache.flag_high_card_threshold,
-                cache.flag_high_card_pct,
+                metadata.flag_high_card_threshold,
+                metadata.flag_high_card_pct,
                 self.flag_high_card_threshold,
                 self.flag_high_card_pct,
             );
         }
 
-        if cache.fields.is_empty() {
+        if entries.is_empty() {
             return None;
         }
 
-        Some(cache.fields)
+        Some(entries)
     }
 
     /// Try to produce output directly from the frequency cache.

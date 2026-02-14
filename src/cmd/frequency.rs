@@ -175,6 +175,36 @@ frequency options:
                             an index. Note that a file handle is opened for each job.
                             When not set, defaults to the number of CPUs detected.
 
+                            FREQUENCY CACHE OPTIONS:
+    --frequency-jsonl       Write the complete frequency distribution as a
+                            JSONL cache file (FILESTEM.freq.csv.data.jsonl).
+                            Requires a non-stdin input file. The cache contains
+                            metadata and per-column frequency data.
+                            ALL_UNIQUE columns (rowcount == cardinality) get a single
+                            ALL_UNIQUE sentinel. HIGH_CARDINALITY columns (cardinality
+                            exceeds the smaller of --high-card-threshold/--high-card-pct
+                            of rowcount) get a single HIGH_CARDINALITY sentinel.
+                            When a valid (fresh) cache already exists, frequency will
+                            automatically reuse it instead of recomputing from the CSV.
+                            Use --force to regenerate the cache even when it is valid.
+                            Cache is NOT used when --ignore-case, --no-trim, or --weight
+                            are active, as these change how values are computed.
+    --high-card-threshold <arg>  Absolute cardinality threshold for HIGH_CARDINALITY
+                            classification in the frequency cache.
+                            Can also be set with QSV_FREQ_HIGH_CARD_THRESHOLD env var
+                            (env var takes precedence when CLI value equals the default).
+                            Only used with --frequency-jsonl.
+                            [default: 1000]
+    --high-card-pct <arg>   Percentage of rowcount threshold for HIGH_CARDINALITY
+                            classification in the frequency cache. Must be between 1 and 100.
+                            Can also be set with QSV_FREQ_HIGH_CARD_PCT env var
+                            (env var takes precedence when CLI value equals the default).
+                            Only used with --frequency-jsonl.
+                            [default: 90]
+    --force                 Force recomputation and cache regeneration even when a
+                            valid frequency cache exists. Use with --frequency-jsonl
+                            to regenerate the cache.
+
                             JSON OUTPUT OPTIONS:
     --json                  Output frequency table as nested JSON instead of CSV.
                             The JSON output includes additional metadata: row count, field count,
@@ -256,38 +286,42 @@ impl FromStr for RankStrategy {
 #[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Deserialize)]
 pub struct Args {
-    pub arg_input:            Option<String>,
-    pub flag_select:          SelectColumns,
-    pub flag_limit:           isize,
-    pub flag_unq_limit:       usize,
-    pub flag_lmt_threshold:   usize,
-    pub flag_rank_strategy:   RankStrategy,
-    pub flag_pct_dec_places:  isize,
-    pub flag_other_sorted:    bool,
-    pub flag_other_text:      String,
-    pub flag_no_other:        bool,
-    pub flag_null_sorted:     bool,
-    pub flag_asc:             bool,
-    pub flag_no_trim:         bool,
-    pub flag_null_text:       String,
-    pub flag_no_nulls:        bool,
-    pub flag_pct_nulls:       bool,
-    pub flag_ignore_case:     bool,
-    pub flag_no_float:        Option<String>,
+    pub arg_input:                Option<String>,
+    pub flag_select:              SelectColumns,
+    pub flag_limit:               isize,
+    pub flag_unq_limit:           usize,
+    pub flag_lmt_threshold:       usize,
+    pub flag_rank_strategy:       RankStrategy,
+    pub flag_pct_dec_places:      isize,
+    pub flag_other_sorted:        bool,
+    pub flag_other_text:          String,
+    pub flag_no_other:            bool,
+    pub flag_null_sorted:         bool,
+    pub flag_asc:                 bool,
+    pub flag_no_trim:             bool,
+    pub flag_null_text:           String,
+    pub flag_no_nulls:            bool,
+    pub flag_pct_nulls:           bool,
+    pub flag_ignore_case:         bool,
+    pub flag_no_float:            Option<String>,
     #[cfg(feature = "luau")]
-    pub flag_stats_filter:    Option<String>,
-    pub flag_all_unique_text: String,
-    pub flag_jobs:            Option<usize>,
-    pub flag_output:          Option<String>,
-    pub flag_no_headers:      bool,
-    pub flag_delimiter:       Option<Delimiter>,
-    pub flag_memcheck:        bool,
-    pub flag_vis_whitespace:  bool,
-    pub flag_json:            bool,
-    pub flag_pretty_json:     bool,
-    pub flag_toon:            bool,
-    pub flag_no_stats:        bool,
-    pub flag_weight:          Option<String>,
+    pub flag_stats_filter:        Option<String>,
+    pub flag_all_unique_text:     String,
+    pub flag_jobs:                Option<usize>,
+    pub flag_output:              Option<String>,
+    pub flag_no_headers:          bool,
+    pub flag_delimiter:           Option<Delimiter>,
+    pub flag_memcheck:            bool,
+    pub flag_vis_whitespace:      bool,
+    pub flag_frequency_jsonl:     bool,
+    pub flag_high_card_threshold: usize,
+    pub flag_high_card_pct:       u8,
+    pub flag_force:               bool,
+    pub flag_json:                bool,
+    pub flag_pretty_json:         bool,
+    pub flag_toon:                bool,
+    pub flag_no_stats:            bool,
+    pub flag_weight:              Option<String>,
 }
 
 const NON_UTF8_ERR: &str = "<Non-UTF8 ERROR>";
@@ -302,7 +336,46 @@ static FLOAT_COLUMNS_TO_SKIP: OnceLock<Vec<usize>> = OnceLock::new();
 #[cfg(feature = "luau")]
 static STATS_FILTER_COLUMNS_TO_SKIP: OnceLock<Vec<usize>> = OnceLock::new();
 static EMPTY_VEC: Vec<(String, u64)> = Vec::new();
+static EMPTY_USIZE_VEC: Vec<usize> = Vec::new();
 static ALL_UNIQUE_TEXT: OnceLock<Vec<u8>> = OnceLock::new();
+// Partial frequency cache: when some columns are cached but others need computation,
+// FREQ_CACHE_SKIP marks which columns to skip in ftables_unweighted (true = cached),
+// and FREQ_CACHE_FTABLES holds their pre-built FTables for merging after computation.
+static FREQ_CACHE_SKIP: OnceLock<Vec<bool>> = OnceLock::new();
+static FREQ_CACHE_FTABLES: OnceLock<FTables> = OnceLock::new();
+// FrequencyCacheEntry and FrequencyCacheValue are structs for --frequency-jsonl JSON cache
+#[derive(Serialize, Deserialize)]
+struct FrequencyCacheEntry {
+    field:       String,
+    cardinality: u64,
+    frequencies: Vec<FrequencyCacheValue>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FrequencyCacheValue {
+    value:      String,
+    count:      u64,
+    percentage: f64,
+}
+
+// FrequencyCacheMetadata stores how the cache was generated.
+// Written as the first line of a JSONL cache file (.freq.csv.data.jsonl),
+// followed by one FrequencyCacheEntry per subsequent line.
+// Similar to StatsArgs in stats.rs, the metadata fields enable cache validation.
+#[derive(Serialize, Deserialize)]
+struct FrequencyCacheMetadata {
+    arg_input:                String,
+    flag_high_card_threshold: usize,
+    flag_high_card_pct:       u8,
+    flag_no_nulls:            bool,
+    flag_no_headers:          bool,
+    flag_delimiter:           String,
+    record_count:             u64,
+    column_count:             usize,
+    date_generated:           String,
+    qsv_version:              String,
+}
+
 // FrequencyEntry, FrequencyField and FrequencyOutput are
 // structs for JSON output
 #[derive(Serialize)]
@@ -545,6 +618,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let is_stdin = rconfig.is_stdin();
 
+    // Validate --frequency-jsonl early, before any computation
+    if args.flag_frequency_jsonl && is_stdin {
+        return fail_clierror!("--frequency-jsonl requires a file input, not stdin.");
+    }
+
     // if stdin and args.flag_json is true, save stdin to tempfile
     // so we can derive stats
     let mut stdin_temp_file;
@@ -620,7 +698,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    // Create NULL_VAL & ALL_UNIQUE_TEXT once at the start to avoid
+    // Create NULL_VAL, ALL_UNIQUE_TEXT & HIGH_CARDINALITY_TEXT once at the start to avoid
     // repeated string & vec allocations in hot loops.
     // safety: we're initializing the OnceLocks at the start of the program
     NULL_VAL
@@ -631,13 +709,111 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .set(args.flag_all_unique_text.as_bytes().to_vec())
         .unwrap();
 
-    let (headers, tables, weighted_tables) = if let Some(idx) = indexed_result
+    if args.flag_frequency_jsonl {
+        // Guard: --frequency-jsonl is incompatible with computation-changing flags
+        if args.flag_ignore_case {
+            return fail_incorrectusage_clierror!(
+                "--frequency-jsonl cannot be used with --ignore-case."
+            );
+        }
+        if args.flag_no_trim {
+            return fail_incorrectusage_clierror!(
+                "--frequency-jsonl cannot be used with --no-trim."
+            );
+        }
+        if args.flag_weight.is_some() {
+            return fail_incorrectusage_clierror!(
+                "--frequency-jsonl cannot be used with --weight."
+            );
+        }
+
+        // Override high-card thresholds from env vars when CLI defaults are used
+        if args.flag_high_card_threshold == 1000
+            && let Ok(val) = std::env::var("QSV_FREQ_HIGH_CARD_THRESHOLD")
+            && let Ok(parsed) = val.parse::<usize>()
+        {
+            args.flag_high_card_threshold = parsed;
+        }
+        if args.flag_high_card_pct == 90
+            && let Ok(val) = std::env::var("QSV_FREQ_HIGH_CARD_PCT")
+            && let Ok(parsed) = val.parse::<u8>()
+        {
+            args.flag_high_card_pct = parsed;
+        }
+
+        // Validate --high-card-pct is in range 1-100
+        if args.flag_high_card_pct == 0 || args.flag_high_card_pct > 100 {
+            return fail_incorrectusage_clierror!(
+                "--high-card-pct must be between 1 and 100, got {}.",
+                args.flag_high_card_pct
+            );
+        }
+    }
+
+    // Try to use frequency cache before computing FTables.
+    // Cache is eligible when: not stdin, not JSON output, not --force,
+    // and no computation-changing flags (--ignore-case, --no-trim, --weight).
+    // Also skip when --no-float or --stats-filter are active (these need stats cache lookups).
+    #[cfg(feature = "luau")]
+    let has_stats_filter = args.flag_stats_filter.is_some();
+    #[cfg(not(feature = "luau"))]
+    let has_stats_filter = false;
+
+    let can_use_freq_cache = !is_stdin
+        && !is_json
+        && !args.flag_force
+        && !args.flag_frequency_jsonl
+        && !args.flag_ignore_case
+        && !args.flag_no_trim
+        && args.flag_weight.is_none()
+        && args.flag_no_float.is_none()
+        && !has_stats_filter;
+
+    if can_use_freq_cache && args.try_output_from_cache(&rconfig, is_json)? {
+        return Ok(());
+    }
+
+    let (headers, mut tables, weighted_tables) = if let Some(idx) = indexed_result
         && util::njobs(args.flag_jobs) > 1
     {
         args.parallel_ftables(&idx)
     } else {
         args.sequential_ftables()
     }?;
+
+    // Merge cached frequency tables for columns that were skipped during computation.
+    // In the partial cache path, some columns have pre-built FTables from the frequency
+    // cache (non-HIGH_CARDINALITY), while HIGH_CARDINALITY columns were computed above.
+    if let (Some(cache_skip), Some(cached_ftables)) =
+        (FREQ_CACHE_SKIP.get(), FREQ_CACHE_FTABLES.get())
+    {
+        debug_assert_eq!(
+            cache_skip.len(),
+            tables.len(),
+            "FREQ_CACHE_SKIP length ({}) != tables length ({})",
+            cache_skip.len(),
+            tables.len()
+        );
+        debug_assert_eq!(
+            cached_ftables.len(),
+            tables.len(),
+            "FREQ_CACHE_FTABLES length ({}) != tables length ({})",
+            cached_ftables.len(),
+            tables.len()
+        );
+        for (i, &is_cached) in cache_skip.iter().enumerate() {
+            if is_cached && i < tables.len() && i < cached_ftables.len() {
+                tables[i] = cached_ftables[i].clone();
+            }
+        }
+    }
+
+    // Write frequency cache if --frequency-jsonl is set.
+    // Always write when explicitly requested — the user may be regenerating
+    // with different thresholds or after data changes.
+    if args.flag_frequency_jsonl {
+        args.write_frequency_jsonl(&headers, &tables, &rconfig)?;
+    }
 
     if is_json {
         return args.output_json(
@@ -1263,6 +1439,547 @@ impl Args {
             .select(self.flag_select.clone())
     }
 
+    /// Write the complete frequency distribution as a JSON cache file
+    /// (`.freq.csv.data.json`). The cache combines metadata (args,
+    /// thresholds) and per-column data in a single JSON object.
+    /// ALL_UNIQUE columns get a single `<ALL_UNIQUE>` sentinel entry.
+    /// HIGH_CARDINALITY columns get a single `<HIGH_CARDINALITY>` sentinel entry.
+    /// Normal columns get complete frequency data (all values, counts, percentages).
+    #[allow(clippy::cast_precision_loss)]
+    fn write_frequency_jsonl(
+        &self,
+        headers: &Headers,
+        tables: &FTables,
+        rconfig: &Config,
+    ) -> CliResult<()> {
+        let path = rconfig.path.as_ref().ok_or_else(|| {
+            crate::CliError::Other("--frequency-jsonl requires a file input, not stdin".to_string())
+        })?;
+
+        let unique_headers = UNIQUE_COLUMNS_VEC.get().unwrap_or(&EMPTY_USIZE_VEC);
+        let row_count = *FREQ_ROW_COUNT.get().unwrap_or(&0);
+        if row_count == 0 {
+            wwarn!(
+                "--frequency-jsonl: row count is 0, skipping frequency cache (no data to cache). \
+                 Run 'qsv stats --cardinality --stats-jsonl' first."
+            );
+            return Ok(());
+        }
+        let col_cardinality = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
+
+        // Compute HIGH_CARDINALITY effective threshold
+        #[allow(clippy::cast_precision_loss)]
+        let high_card_pct_limit =
+            (row_count as f64 * self.flag_high_card_pct as f64 / 100.0) as u64;
+        let effective_threshold = (self.flag_high_card_threshold as u64).min(high_card_pct_limit);
+
+        // Collect all column entries
+        let mut entries: Vec<FrequencyCacheEntry> = Vec::with_capacity(headers.len());
+        for (i, header) in headers.iter().enumerate() {
+            let field_name = if rconfig.no_headers {
+                (i + 1).to_string()
+            } else {
+                String::from_utf8_lossy(header).to_string()
+            };
+
+            let cardinality = col_cardinality
+                .iter()
+                .find(|(name, _)| name == &field_name)
+                .map_or(0, |(_, card)| *card);
+
+            let is_high_cardinality =
+                !unique_headers.contains(&i) && cardinality > effective_threshold;
+
+            let entry = if unique_headers.contains(&i) {
+                // ALL_UNIQUE: single sentinel entry
+                FrequencyCacheEntry {
+                    field: field_name,
+                    cardinality,
+                    frequencies: vec![FrequencyCacheValue {
+                        value:      "<ALL_UNIQUE>".to_string(),
+                        count:      row_count,
+                        percentage: 100.0,
+                    }],
+                }
+            } else if is_high_cardinality {
+                // HIGH_CARDINALITY: single sentinel entry
+                FrequencyCacheEntry {
+                    field: field_name,
+                    cardinality,
+                    frequencies: vec![FrequencyCacheValue {
+                        value:      "<HIGH_CARDINALITY>".to_string(),
+                        count:      row_count,
+                        percentage: 100.0,
+                    }],
+                }
+            } else if i < tables.len() {
+                // Normal column: complete frequency data from FTable
+                let ftab = &tables[i];
+                let (counts_ref, total_count) = ftab.par_frequent(false); // descending
+                let pct_factor = if total_count > 0 {
+                    100.0 / total_count as f64
+                } else {
+                    0.0
+                };
+
+                let frequencies: Vec<FrequencyCacheValue> = counts_ref
+                    .into_iter()
+                    .map(|(value, count)| {
+                        // Use empty string for null values in the cache so we can
+                        // round-trip: FTable vec![] → cache "" → read vec![]
+                        let val_str = if value.is_empty() {
+                            String::new()
+                        } else {
+                            String::from_utf8_lossy(value).to_string()
+                        };
+                        FrequencyCacheValue {
+                            value: val_str,
+                            count,
+                            percentage: count as f64 * pct_factor,
+                        }
+                    })
+                    .collect();
+
+                FrequencyCacheEntry {
+                    field: field_name,
+                    cardinality,
+                    frequencies,
+                }
+            } else {
+                continue;
+            };
+
+            entries.push(entry);
+        }
+
+        // Build metadata struct (written as first JSONL line)
+        let metadata = FrequencyCacheMetadata {
+            arg_input:                self.arg_input.clone().unwrap_or_default(),
+            flag_high_card_threshold: self.flag_high_card_threshold,
+            flag_high_card_pct:       self.flag_high_card_pct,
+            flag_no_nulls:            self.flag_no_nulls,
+            flag_no_headers:          self.flag_no_headers,
+            flag_delimiter:           self
+                .flag_delimiter
+                .as_ref()
+                .map_or_else(|| ",".to_string(), |d| (d.as_byte() as char).to_string()),
+            record_count:             row_count,
+            column_count:             headers.len(),
+            date_generated:           chrono::Utc::now().to_rfc3339(),
+            qsv_version:              env!("CARGO_PKG_VERSION").to_string(),
+        };
+        let num_cache_columns = entries.len();
+
+        // Serialize as JSONL: metadata line + one entry per line
+        let mut jsonl = String::with_capacity(entries.len() * 100 + 500); // rough estimate
+        jsonl.push_str(&serde_json::to_string(&metadata)?);
+        jsonl.push('\n');
+        for entry in &entries {
+            jsonl.push_str(&serde_json::to_string(entry)?);
+            jsonl.push('\n');
+        }
+
+        let cache_path = path.with_extension("freq.csv.data.jsonl");
+        let cache_len = jsonl.len();
+        fs::write(&cache_path, jsonl)?;
+
+        winfo!(
+            "Frequency cache written: {} ({} bytes, {} columns, {} rows).",
+            cache_path.display(),
+            cache_len,
+            num_cache_columns,
+            row_count
+        );
+
+        Ok(())
+    }
+
+    /// Read and validate the frequency JSONL cache file.
+    /// Returns None if cache doesn't exist, is stale, or is incompatible.
+    fn read_frequency_cache(&self, rconfig: &Config) -> Option<Vec<FrequencyCacheEntry>> {
+        use filetime::FileTime;
+
+        let path = rconfig.path.as_ref()?;
+        let cache_path = path.with_extension("freq.csv.data.jsonl");
+
+        if !cache_path.exists() {
+            log::info!("Frequency cache not found: {}", cache_path.display());
+            return None;
+        }
+
+        // Compare mtime: cache must be newer than source CSV
+        let csv_metadata = fs::metadata(path).ok()?;
+        let cache_metadata = fs::metadata(&cache_path).ok()?;
+        let csv_mtime = FileTime::from_last_modification_time(&csv_metadata);
+        let cache_mtime = FileTime::from_last_modification_time(&cache_metadata);
+
+        if cache_mtime <= csv_mtime {
+            winfo!(
+                "Frequency cache is stale (older than source CSV). Recomputing. Use \
+                 --frequency-jsonl to regenerate."
+            );
+            return None;
+        }
+
+        // Read JSONL cache: line 1 = metadata, remaining lines = entries
+        let jsonl_content = fs::read_to_string(&cache_path).ok()?;
+        let mut lines = jsonl_content.lines();
+
+        let metadata_line = lines.next()?;
+        let metadata: FrequencyCacheMetadata = serde_json::from_str(metadata_line)
+            .map_err(|e| {
+                wwarn!("Failed to deserialize frequency cache metadata: {e}");
+                e
+            })
+            .ok()?;
+
+        let mut entries = Vec::new();
+        for line in lines {
+            if line.is_empty() {
+                continue;
+            }
+            let entry: FrequencyCacheEntry = serde_json::from_str(line)
+                .map_err(|e| {
+                    wwarn!("Failed to deserialize frequency cache entry: {e}");
+                    e
+                })
+                .ok()?;
+            entries.push(entry);
+        }
+
+        // Validate cache args compatibility
+        // flag_no_nulls affects what's stored in the FTable — mismatch means
+        // cache has wrong null counts
+        if metadata.flag_no_nulls != self.flag_no_nulls {
+            winfo!(
+                "Frequency cache incompatible: --no-nulls differs (cache={}, current={}). \
+                 Recomputing.",
+                metadata.flag_no_nulls,
+                self.flag_no_nulls
+            );
+            return None;
+        }
+        // flag_no_headers affects column naming in the cache
+        if metadata.flag_no_headers != self.flag_no_headers {
+            winfo!(
+                "Frequency cache incompatible: --no-headers differs (cache={}, current={}). \
+                 Recomputing.",
+                metadata.flag_no_headers,
+                self.flag_no_headers
+            );
+            return None;
+        }
+        // flag_delimiter affects how values are parsed — mismatch means
+        // cache has values split on different boundaries
+        let current_delimiter = self
+            .flag_delimiter
+            .as_ref()
+            .map_or_else(|| ",".to_string(), |d| (d.as_byte() as char).to_string());
+        if metadata.flag_delimiter != current_delimiter {
+            winfo!(
+                "Frequency cache incompatible: --delimiter differs (cache={:?}, current={:?}). \
+                 Recomputing.",
+                metadata.flag_delimiter,
+                current_delimiter
+            );
+            return None;
+        }
+        // Threshold differences don't invalidate the cache — the partial cache
+        // mechanism handles the mismatch gracefully:
+        //   - If the current threshold is MORE lenient (higher) than the cache, columns cached as
+        //     HIGH_CARDINALITY will be recomputed via parallel computation.
+        //   - If the current threshold is STRICTER (lower) than the cache, columns cached with full
+        //     data will still be served from cache even though they would now be classified as
+        //     HIGH_CARDINALITY. This is intentional: the cached data is correct and complete, just
+        //     more detailed than the current threshold would produce on a fresh run. The threshold
+        //     only controls which columns get full data vs a sentinel during cache *generation*,
+        //     not reads.
+        if metadata.flag_high_card_threshold != self.flag_high_card_threshold
+            || metadata.flag_high_card_pct != self.flag_high_card_pct
+        {
+            log::info!(
+                "Frequency cache threshold differs: cache=(threshold={}, pct={}), \
+                 current=(threshold={}, pct={}). Partial cache still valid.",
+                metadata.flag_high_card_threshold,
+                metadata.flag_high_card_pct,
+                self.flag_high_card_threshold,
+                self.flag_high_card_pct,
+            );
+        }
+
+        if entries.is_empty() {
+            return None;
+        }
+
+        Some(entries)
+    }
+
+    /// Try to produce output directly from the frequency cache.
+    /// Returns Ok(true) if output was produced from cache, Ok(false) if cache
+    /// was not usable and normal computation should proceed.
+    ///
+    /// When all selected columns have cached data, FTables are reconstructed via
+    /// `increment_by` and output is produced directly (full cache hit).
+    ///
+    /// When some columns have HIGH_CARDINALITY sentinels (no cached data), sets up a
+    /// partial cache: pre-builds FTables for cached columns into FREQ_CACHE_FTABLES
+    /// and marks them in FREQ_CACHE_SKIP. Returns Ok(false) so the normal parallel
+    /// computation runs, but `ftables_unweighted` skips the cached columns (same
+    /// pattern as ALL_UNIQUE skip). After computation, `run()` merges the cached
+    /// FTables back into the result.
+    #[allow(clippy::cast_precision_loss)]
+    fn try_output_from_cache(&self, rconfig: &Config, is_json: bool) -> CliResult<bool> {
+        // Read and validate the cache
+        let Some(cache_entries) = self.read_frequency_cache(rconfig) else {
+            return Ok(false);
+        };
+
+        // Read CSV headers to resolve --select
+        let mut rdr = rconfig.reader()?;
+        let full_headers = rdr.byte_headers()?.clone();
+
+        // Safety net: can_use_freq_cache already guards flag_weight.is_none(),
+        // but keep a runtime check because the selection below does not
+        // exclude the weight column. If the guard in can_use_freq_cache is
+        // ever loosened, this prevents silently including the weight column
+        // in frequency output.
+        if self.flag_weight.is_some() {
+            return Ok(false);
+        }
+        let sel = self.rconfig().selection(&full_headers)?;
+        let selected_headers: csv::ByteRecord = sel.select(&full_headers).collect();
+
+        let selected_col_names: Vec<String> = selected_headers
+            .iter()
+            .map(|h| {
+                if rconfig.no_headers {
+                    String::new() // handled by index below
+                } else {
+                    String::from_utf8_lossy(h).to_string()
+                }
+            })
+            .collect();
+
+        // Build a map from field name to cache entry for quick lookup
+        let cache_map: foldhash::HashMap<&str, &FrequencyCacheEntry> = cache_entries
+            .iter()
+            .map(|e| (e.field.as_str(), e))
+            .collect();
+
+        // Filter cache entries to selected columns, preserving selection order
+        let mut selected_entries: Vec<&FrequencyCacheEntry> =
+            Vec::with_capacity(selected_col_names.len());
+
+        if rconfig.no_headers {
+            // With no-headers, columns are 1-based indices
+            for (i, _) in selected_headers.iter().enumerate() {
+                let col_name = (i + 1).to_string();
+                if let Some(entry) = cache_map.get(col_name.as_str()) {
+                    selected_entries.push(entry);
+                } else {
+                    log::info!("Column '{col_name}' not found in frequency cache, falling back");
+                    return Ok(false);
+                }
+            }
+        } else {
+            for col_name in &selected_col_names {
+                if let Some(entry) = cache_map.get(col_name.as_str()) {
+                    selected_entries.push(entry);
+                } else {
+                    log::info!("Column '{col_name}' not found in frequency cache, falling back");
+                    return Ok(false);
+                }
+            }
+        }
+
+        // Check if any selected column has HIGH_CARDINALITY sentinel.
+        // If so, set up a partial cache: pre-build FTables for columns with actual
+        // cached data, and let the parallel computation handle only the
+        // HIGH_CARDINALITY columns (which have no data in the cache).
+        let has_high_cardinality = selected_entries.iter().any(|entry| {
+            entry.frequencies.len() == 1 && entry.frequencies[0].value == "<HIGH_CARDINALITY>"
+        });
+
+        if has_high_cardinality {
+            let mut skip_vec: Vec<bool> = Vec::with_capacity(selected_entries.len());
+            let mut cached_ftables: FTables = Vec::with_capacity(selected_entries.len());
+
+            for entry in &selected_entries {
+                let is_sentinel = entry.frequencies.len() == 1
+                    && (entry.frequencies[0].value == "<HIGH_CARDINALITY>"
+                        || entry.frequencies[0].value == "<ALL_UNIQUE>");
+
+                if is_sentinel {
+                    // No actual data in cache — needs computation (or ALL_UNIQUE skip)
+                    skip_vec.push(false);
+                    cached_ftables.push(Frequencies::with_capacity(1));
+                } else {
+                    // Reconstruct FTable from cached data
+                    skip_vec.push(true);
+                    let mut ftab: FTable = Frequencies::with_capacity(entry.frequencies.len());
+                    for freq_val in &entry.frequencies {
+                        let key: Vec<u8> = if freq_val.value.is_empty() {
+                            Vec::new()
+                        } else {
+                            freq_val.value.as_bytes().to_vec()
+                        };
+                        ftab.increment_by(key, freq_val.count);
+                    }
+                    cached_ftables.push(ftab);
+                }
+            }
+
+            let cached_count = skip_vec.iter().filter(|&&s| s).count();
+            winfo!(
+                "Partial frequency cache hit: {cached_count}/{} columns from cache, {} need \
+                 computation.",
+                skip_vec.len(),
+                skip_vec.len() - cached_count,
+            );
+
+            if FREQ_CACHE_SKIP.set(skip_vec).is_err() {
+                log::warn!("FREQ_CACHE_SKIP already set — stale partial cache may be used");
+            }
+            if FREQ_CACHE_FTABLES.set(cached_ftables).is_err() {
+                log::warn!("FREQ_CACHE_FTABLES already set — stale partial cache may be used");
+            }
+            return Ok(false);
+        }
+
+        // Derive row_count from cache: sum counts of first non-ALL_UNIQUE column,
+        // or use cardinality of an ALL_UNIQUE column
+        let row_count = selected_entries
+            .iter()
+            .find_map(|entry| {
+                if entry.frequencies.len() == 1 && entry.frequencies[0].value == "<ALL_UNIQUE>" {
+                    Some(entry.cardinality)
+                } else {
+                    let total: u64 = entry.frequencies.iter().map(|f| f.count).sum();
+                    if total > 0 { Some(total) } else { None }
+                }
+            })
+            .unwrap_or(0);
+
+        if row_count == 0 {
+            return Ok(false);
+        }
+
+        // Initialize OnceLocks that the output pipeline needs
+        NULL_VAL
+            .get()
+            .expect("NULL_VAL should already be set in run()");
+
+        if FREQ_ROW_COUNT.set(row_count).is_err() {
+            log::warn!("FREQ_ROW_COUNT already set — stale row count may be used");
+        }
+
+        // Build unique columns vec: columns where cache has ALL_UNIQUE sentinel
+        let unique_columns: Vec<usize> = selected_entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| {
+                entry.frequencies.len() == 1 && entry.frequencies[0].value == "<ALL_UNIQUE>"
+            })
+            .map(|(i, _)| i)
+            .collect();
+        if UNIQUE_COLUMNS_VEC.set(unique_columns).is_err() {
+            log::warn!("UNIQUE_COLUMNS_VEC already set — stale unique columns may be used");
+        }
+
+        // Reconstruct FTables from cache using increment_by
+        let mut tables: FTables = Vec::with_capacity(selected_entries.len());
+        for entry in &selected_entries {
+            if entry.frequencies.len() == 1 && entry.frequencies[0].value == "<ALL_UNIQUE>" {
+                // ALL_UNIQUE: push empty FTable, process_frequencies handles the sentinel
+                tables.push(Frequencies::with_capacity(1));
+                continue;
+            }
+            let mut ftab: FTable = Frequencies::with_capacity(entry.frequencies.len());
+            for freq_val in &entry.frequencies {
+                // Convert empty string back to empty vec (null representation)
+                let key: Vec<u8> = if freq_val.value.is_empty() {
+                    Vec::new()
+                } else {
+                    freq_val.value.as_bytes().to_vec()
+                };
+                ftab.increment_by(key, freq_val.count);
+            }
+            tables.push(ftab);
+        }
+
+        // Now produce output using the existing pipeline
+        // can_use_freq_cache already guards !is_json, so this is unreachable
+        debug_assert!(!is_json, "try_output_from_cache called with JSON mode");
+
+        // CSV output mode — reuse the existing output loop
+        let abs_dec_places = self.flag_pct_dec_places.unsigned_abs() as u32;
+        // safety: we just set UNIQUE_COLUMNS_VEC above
+        let unique_headers_vec = UNIQUE_COLUMNS_VEC.get().unwrap();
+
+        let mut wtr = Config::new(self.flag_output.as_ref()).writer()?;
+        wtr.write_record(vec!["field", "value", "count", "percentage", "rank"])?;
+
+        let mut header_vec: Vec<u8>;
+        let mut itoa_buffer = itoa::Buffer::new();
+        let mut zmij_buffer = zmij::Buffer::new();
+        let mut rank_buffer = String::with_capacity(20);
+        let mut row: Vec<&[u8]>;
+        let mut processed_frequencies: Vec<ProcessedFrequency> =
+            Vec::with_capacity(selected_entries.len());
+        #[allow(unused_assignments)]
+        let mut value_str = String::with_capacity(100);
+        let vis_whitespace = self.flag_vis_whitespace;
+
+        let head_ftables = selected_headers.iter().zip(tables);
+        for (i, (header, ftab)) in head_ftables.enumerate() {
+            header_vec = if rconfig.no_headers {
+                (i + 1).to_string().into_bytes()
+            } else {
+                header.to_vec()
+            };
+
+            self.process_frequencies(
+                unique_headers_vec.contains(&i),
+                abs_dec_places,
+                row_count,
+                &ftab,
+                &mut processed_frequencies,
+            );
+
+            for processed_freq in &processed_frequencies {
+                rank_buffer.clear();
+                if processed_freq.rank >= 0.0 {
+                    if processed_freq.rank.fract() == 0.0 {
+                        rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
+                    } else {
+                        rank_buffer.push_str(zmij_buffer.format(processed_freq.rank));
+                    }
+                }
+
+                row = vec![
+                    &*header_vec,
+                    if vis_whitespace {
+                        value_str = util::visualize_whitespace(&String::from_utf8_lossy(
+                            &processed_freq.value,
+                        ));
+                        value_str.as_bytes()
+                    } else {
+                        &processed_freq.value
+                    },
+                    itoa_buffer.format(processed_freq.count).as_bytes(),
+                    processed_freq.formatted_percentage.as_bytes(),
+                    rank_buffer.as_bytes(),
+                ];
+                wtr.write_record(row)?;
+            }
+            processed_frequencies.clear();
+        }
+        wtr.flush()?;
+
+        winfo!("Frequency cache hit: output produced from cache.");
+        Ok(true)
+    }
+
     /// Helper to move "Other" category to end if not sorted
     fn move_other_to_end_if_needed<T>(&self, counts: &mut [(Vec<u8>, T, f64, f64)]) {
         let other_prefix = format!("{} (", self.flag_other_text);
@@ -1436,11 +2153,19 @@ impl Args {
         let mut counts: Vec<(Vec<u8>, f64)> =
             weighted_map.iter().map(|(k, v)| (k.clone(), *v)).collect();
 
-        // Sort by count (weight)
+        // Sort by count (weight), breaking ties by value for deterministic output
         if self.flag_asc {
-            counts.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            counts.sort_unstable_by(|a, b| {
+                a.1.partial_cmp(&b.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.0.cmp(&b.0))
+            });
         } else {
-            counts.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            counts.sort_unstable_by(|a, b| {
+                b.1.partial_cmp(&a.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.0.cmp(&b.0))
+            });
         }
 
         // Calculate total weight (sum of all weights)
@@ -2015,11 +2740,19 @@ impl Args {
         let flag_ignore_case = self.flag_ignore_case;
         let flag_no_trim = self.flag_no_trim;
 
-        // compile a vector of bool flags for all_unique_headers
-        // so we can skip the contains check in the hot loop below
-        let all_unique_flag_vec: Vec<bool> = (0..sel_len)
+        // compile a vector of bool flags for columns to skip in the hot loop.
+        // Includes ALL_UNIQUE columns and columns with pre-built FTables from
+        // the frequency cache (partial cache hit — merged back in run()).
+        let mut all_unique_flag_vec: Vec<bool> = (0..sel_len)
             .map(|i| unique_headers_vec.contains(&i))
             .collect();
+        if let Some(cache_skip) = FREQ_CACHE_SKIP.get() {
+            for (i, &is_cached) in cache_skip.iter().enumerate() {
+                if is_cached && i < sel_len {
+                    all_unique_flag_vec[i] = true;
+                }
+            }
+        }
 
         // optimize the capacity of the freq_tables based on the cardinality of the columns
         // if sequential, use the cardinality from the stats cache
@@ -2331,8 +3064,9 @@ impl Args {
         // Compute Float columns to skip if --no-float is specified
         if self.flag_no_float.is_some() {
             let float_columns_to_skip = self.compute_float_columns_to_skip(headers, &col_type_map);
-            // safety: we only set this once per invocation
-            let _ = FLOAT_COLUMNS_TO_SKIP.set(float_columns_to_skip);
+            if FLOAT_COLUMNS_TO_SKIP.set(float_columns_to_skip).is_err() {
+                log::warn!("FLOAT_COLUMNS_TO_SKIP already set — stale float columns may be used");
+            }
         }
 
         // Compute stats filter columns to skip if --stats-filter is specified
@@ -2349,8 +3083,15 @@ impl Args {
                     &stats_records_hashmap,
                     filter_expression,
                 )?;
-                // safety: we only set this once per invocation
-                let _ = STATS_FILTER_COLUMNS_TO_SKIP.set(stats_filter_columns_to_skip);
+                if STATS_FILTER_COLUMNS_TO_SKIP
+                    .set(stats_filter_columns_to_skip)
+                    .is_err()
+                {
+                    log::warn!(
+                        "STATS_FILTER_COLUMNS_TO_SKIP already set — stale filter columns may be \
+                         used"
+                    );
+                }
             }
         }
 
@@ -2391,12 +3132,17 @@ impl Args {
                                      processed_frequencies: &mut Vec<ProcessedFrequency>,
                                      field_stats: &mut Vec<FieldStats>,
                                      skip_stats: bool| {
-            // Sort frequencies by count if flag_other_sorted
+            // Sort frequencies by count if flag_other_sorted,
+            // breaking ties by value for deterministic output
             if self.flag_other_sorted {
                 if self.flag_asc {
-                    processed_frequencies.sort_unstable_by_key(|a| a.count);
+                    processed_frequencies.sort_unstable_by(|a, b| {
+                        a.count.cmp(&b.count).then_with(|| a.value.cmp(&b.value))
+                    });
                 } else {
-                    processed_frequencies.sort_unstable_by_key(|b| std::cmp::Reverse(b.count));
+                    processed_frequencies.sort_unstable_by(|a, b| {
+                        b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value))
+                    });
                 }
             }
 

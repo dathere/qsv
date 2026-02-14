@@ -325,9 +325,7 @@ fn compute_one_sample(name: &str, values: &[f64], misrate: f64) -> OneSampleResu
     // When all values are strictly positive, center is guaranteed positive, so c.abs() > 0.0
     // is always true — but we keep it as a defensive guard matching the library's use of .abs().
     let rel_spread = match (spread, center) {
-        (Some(s), Some(c)) if values.iter().all(|&v| v > 0.0) && c.abs() > 0.0 => {
-            Some(s / c.abs())
-        },
+        (Some(s), Some(c)) if values.iter().all(|&v| v > 0.0) && c.abs() > 0.0 => Some(s / c.abs()),
         _ => None,
     };
     let bounds = pragmastat::center_bounds(values, misrate).ok();

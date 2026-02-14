@@ -5225,10 +5225,11 @@ fn frequency_jsonl_cache_high_card_fallback() {
 }
 
 #[test]
-fn frequency_jsonl_cache_hybrid() {
-    // Test the hybrid approach: cached columns + HIGH_CARDINALITY columns computed from CSV.
-    // Both columns should appear in output with correct data.
-    let wrk = Workdir::new("frequency_jsonl_cache_hybrid");
+fn frequency_jsonl_cache_high_card_fallback_full() {
+    // When HIGH_CARDINALITY columns exist in the selection, the cache falls back
+    // to full parallel computation (never slower than fresh). Output should be
+    // identical whether the cache exists or not.
+    let wrk = Workdir::new("frequency_jsonl_cache_high_card_fallback_full");
     // "code" has 4 unique values out of 5 rows (will be HIGH_CARDINALITY with low threshold)
     // "color" has 3 unique values (will be cached normally)
     let rows = vec![
@@ -5259,24 +5260,31 @@ fn frequency_jsonl_cache_hybrid() {
         .arg("1");
     let got_fresh: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
 
-    // Run without --frequency-jsonl — should use hybrid cache (color from cache, code from CSV)
+    // Run without --frequency-jsonl selecting ALL columns (includes HIGH_CARDINALITY "code")
+    // Should fall back to full parallel computation, NOT use cache
     let mut cmd2 = wrk.command("frequency");
     cmd2.arg("in.csv");
-    let got_cached: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let got_fallback: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
 
-    // Output should be identical (both produce the same frequency data)
+    // Output should be identical (fallback produces same results)
     assert_eq!(
-        got_fresh, got_cached,
-        "Hybrid cache output should match fresh computation"
+        got_fresh, got_fallback,
+        "Fallback output should match fresh computation"
     );
 
-    // Verify both columns are present
-    let fields: HashSet<&str> = got_cached.iter().skip(1).map(|row| row[0].as_str()).collect();
-    assert!(fields.contains("code"), "Output should contain 'code' column");
-    assert!(
-        fields.contains("color"),
-        "Output should contain 'color' column"
-    );
+    // But selecting ONLY the cached "color" column should use the cache
+    let mut cmd3 = wrk.command("frequency");
+    cmd3.arg("in.csv").arg("--select").arg("color");
+    let got_cached: Vec<Vec<String>> = wrk.read_stdout(&mut cmd3);
+
+    // All data rows should be "color" (cache was used for this column)
+    for row in got_cached.iter().skip(1) {
+        assert_eq!(
+            row[0], "color",
+            "With --select color, all fields should be 'color', got: {row:?}"
+        );
+    }
+    assert!(got_cached.len() > 1, "Should have output rows for color column");
 }
 
 #[test]

@@ -1644,19 +1644,25 @@ impl Args {
             }
         }
 
-        // Identify HIGH_CARDINALITY columns that need fresh computation
-        let high_card_indices: Vec<usize> = selected_entries
-            .iter()
-            .enumerate()
-            .filter(|(_, entry)| {
-                entry.frequencies.len() == 1
-                    && entry.frequencies[0].value == "<HIGH_CARDINALITY>"
-            })
-            .map(|(i, _)| i)
-            .collect();
+        // Fall back to full (parallel) computation if any selected column has
+        // HIGH_CARDINALITY sentinel — the cache has no actual data for those columns,
+        // and single-threaded CSV scanning is slower than the parallel indexed path.
+        for entry in &selected_entries {
+            if entry.frequencies.len() == 1
+                && entry.frequencies[0].value == "<HIGH_CARDINALITY>"
+            {
+                log::info!(
+                    "Column '{}' has HIGH_CARDINALITY sentinel in cache, falling back to \
+                     parallel computation (use --select to target cached columns, or increase \
+                     --high-card-threshold when creating the cache)",
+                    entry.field
+                );
+                return Ok(false);
+            }
+        }
 
-        // Derive row_count from cache: sum counts of first non-ALL_UNIQUE,
-        // non-HIGH_CARDINALITY column, or use cardinality of an ALL_UNIQUE column
+        // Derive row_count from cache: sum counts of first non-ALL_UNIQUE column,
+        // or use cardinality of an ALL_UNIQUE column
         let row_count = selected_entries
             .iter()
             .find_map(|entry| {
@@ -1664,10 +1670,6 @@ impl Args {
                     && entry.frequencies[0].value == "<ALL_UNIQUE>"
                 {
                     Some(entry.cardinality)
-                } else if entry.frequencies.len() == 1
-                    && entry.frequencies[0].value == "<HIGH_CARDINALITY>"
-                {
-                    None // skip sentinels
                 } else {
                     let total: u64 = entry.frequencies.iter().map(|f| f.count).sum();
                     if total > 0 { Some(total) } else { None }
@@ -1698,16 +1700,13 @@ impl Args {
             .collect();
         let _ = UNIQUE_COLUMNS_VEC.set(unique_columns);
 
-        // Reconstruct FTables from cache using increment_by.
-        // HIGH_CARDINALITY columns get empty FTables as placeholders.
+        // Reconstruct FTables from cache using increment_by
         let mut tables: FTables = Vec::with_capacity(selected_entries.len());
-        for (i, entry) in selected_entries.iter().enumerate() {
+        for entry in &selected_entries {
             if entry.frequencies.len() == 1
-                && (entry.frequencies[0].value == "<ALL_UNIQUE>"
-                    || entry.frequencies[0].value == "<HIGH_CARDINALITY>")
+                && entry.frequencies[0].value == "<ALL_UNIQUE>"
             {
-                // Sentinel: push empty FTable (ALL_UNIQUE handled by process_frequencies,
-                // HIGH_CARDINALITY will be replaced by fresh computation below)
+                // ALL_UNIQUE: push empty FTable, process_frequencies handles the sentinel
                 tables.push(Frequencies::with_capacity(1));
                 continue;
             }
@@ -1722,43 +1721,6 @@ impl Args {
                 ftab.increment_by(key, freq_val.count);
             }
             tables.push(ftab);
-            log::debug!("Reconstructed FTable for column {} from cache ({} entries)", i, entry.frequencies.len());
-        }
-
-        // If there are HIGH_CARDINALITY columns, scan the CSV to compute them
-        if !high_card_indices.is_empty() {
-            log::info!(
-                "Computing {} HIGH_CARDINALITY column(s) from CSV: {:?}",
-                high_card_indices.len(),
-                high_card_indices
-                    .iter()
-                    .map(|&i| selected_entries[i].field.as_str())
-                    .collect::<Vec<_>>()
-            );
-
-            // Build a boolean mask for which columns need fresh computation
-            let needs_compute: Vec<bool> = (0..selected_entries.len())
-                .map(|i| high_card_indices.contains(&i))
-                .collect();
-
-            // Scan the CSV once, accumulating only the HIGH_CARDINALITY columns
-            let mut fresh_rdr = rconfig.reader()?;
-            let mut row_buffer = csv::ByteRecord::new();
-            let flag_no_nulls = self.flag_no_nulls;
-
-            while fresh_rdr.read_byte_record(&mut row_buffer)? {
-                for (i, field) in sel.select(&row_buffer).enumerate() {
-                    if !needs_compute[i] {
-                        continue;
-                    }
-                    if !field.is_empty() {
-                        let trimmed = trim_bs_whitespace(field).to_vec();
-                        tables[i].add(trimmed);
-                    } else if !flag_no_nulls {
-                        tables[i].add(EMPTY_BYTE_VEC);
-                    }
-                }
-            }
         }
 
         // Now produce output using the existing pipeline
@@ -1832,15 +1794,7 @@ impl Args {
         }
         wtr.flush()?;
 
-        if high_card_indices.is_empty() {
-            log::info!("Output produced entirely from frequency cache");
-        } else {
-            log::info!(
-                "Output produced from frequency cache (hybrid: {} cached, {} computed)",
-                selected_entries.len() - high_card_indices.len(),
-                high_card_indices.len()
-            );
-        }
+        log::info!("Output produced from frequency cache");
         Ok(true)
     }
 

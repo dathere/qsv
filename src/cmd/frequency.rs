@@ -1564,6 +1564,10 @@ impl Args {
     /// Try to produce output directly from the frequency cache.
     /// Returns Ok(true) if output was produced from cache, Ok(false) if cache
     /// was not usable and normal computation should proceed.
+    ///
+    /// For columns with actual cached data, FTables are reconstructed via `increment_by`.
+    /// For HIGH_CARDINALITY columns (sentinel only, no data), the CSV is scanned once
+    /// to compute FTables only for those columns (hybrid approach).
     #[allow(clippy::cast_precision_loss)]
     fn try_output_from_cache(
         &mut self,
@@ -1640,21 +1644,19 @@ impl Args {
             }
         }
 
-        // Check for HIGH_CARDINALITY sentinel — fall back to full computation
-        for entry in &selected_entries {
-            if entry.frequencies.len() == 1
-                && entry.frequencies[0].value == "<HIGH_CARDINALITY>"
-            {
-                log::info!(
-                    "Column '{}' has HIGH_CARDINALITY sentinel, falling back to full computation",
-                    entry.field
-                );
-                return Ok(false);
-            }
-        }
+        // Identify HIGH_CARDINALITY columns that need fresh computation
+        let high_card_indices: Vec<usize> = selected_entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| {
+                entry.frequencies.len() == 1
+                    && entry.frequencies[0].value == "<HIGH_CARDINALITY>"
+            })
+            .map(|(i, _)| i)
+            .collect();
 
-        // Derive row_count from cache: sum counts of first non-ALL_UNIQUE column,
-        // or use cardinality of an ALL_UNIQUE column
+        // Derive row_count from cache: sum counts of first non-ALL_UNIQUE,
+        // non-HIGH_CARDINALITY column, or use cardinality of an ALL_UNIQUE column
         let row_count = selected_entries
             .iter()
             .find_map(|entry| {
@@ -1662,6 +1664,10 @@ impl Args {
                     && entry.frequencies[0].value == "<ALL_UNIQUE>"
                 {
                     Some(entry.cardinality)
+                } else if entry.frequencies.len() == 1
+                    && entry.frequencies[0].value == "<HIGH_CARDINALITY>"
+                {
+                    None // skip sentinels
                 } else {
                     let total: u64 = entry.frequencies.iter().map(|f| f.count).sum();
                     if total > 0 { Some(total) } else { None }
@@ -1678,12 +1684,7 @@ impl Args {
             .get()
             .expect("NULL_VAL should already be set in run()");
 
-        if FREQ_ROW_COUNT.set(row_count).is_err() {
-            log::warn!(
-                "FREQ_ROW_COUNT was already set (stale value from previous invocation?), using \
-                 existing value"
-            );
-        }
+        let _ = FREQ_ROW_COUNT.set(row_count);
 
         // Build unique columns vec: columns where cache has ALL_UNIQUE sentinel
         let unique_columns: Vec<usize> = selected_entries
@@ -1695,24 +1696,22 @@ impl Args {
             })
             .map(|(i, _)| i)
             .collect();
-        if UNIQUE_COLUMNS_VEC.set(unique_columns).is_err() {
-            log::warn!(
-                "UNIQUE_COLUMNS_VEC was already set (stale value from previous invocation?), \
-                 using existing value"
-            );
-        }
+        let _ = UNIQUE_COLUMNS_VEC.set(unique_columns);
 
-        // Reconstruct FTables from cache using increment_by
+        // Reconstruct FTables from cache using increment_by.
+        // HIGH_CARDINALITY columns get empty FTables as placeholders.
         let mut tables: FTables = Vec::with_capacity(selected_entries.len());
-        for entry in &selected_entries {
-            let mut ftab: FTable = Frequencies::with_capacity(entry.frequencies.len());
+        for (i, entry) in selected_entries.iter().enumerate() {
             if entry.frequencies.len() == 1
-                && entry.frequencies[0].value == "<ALL_UNIQUE>"
+                && (entry.frequencies[0].value == "<ALL_UNIQUE>"
+                    || entry.frequencies[0].value == "<HIGH_CARDINALITY>")
             {
-                // ALL_UNIQUE: don't populate FTable, process_frequencies handles it
-                tables.push(ftab);
+                // Sentinel: push empty FTable (ALL_UNIQUE handled by process_frequencies,
+                // HIGH_CARDINALITY will be replaced by fresh computation below)
+                tables.push(Frequencies::with_capacity(1));
                 continue;
             }
+            let mut ftab: FTable = Frequencies::with_capacity(entry.frequencies.len());
             for freq_val in &entry.frequencies {
                 // Convert empty string back to empty vec (null representation)
                 let key: Vec<u8> = if freq_val.value.is_empty() {
@@ -1723,6 +1722,43 @@ impl Args {
                 ftab.increment_by(key, freq_val.count);
             }
             tables.push(ftab);
+            log::debug!("Reconstructed FTable for column {} from cache ({} entries)", i, entry.frequencies.len());
+        }
+
+        // If there are HIGH_CARDINALITY columns, scan the CSV to compute them
+        if !high_card_indices.is_empty() {
+            log::info!(
+                "Computing {} HIGH_CARDINALITY column(s) from CSV: {:?}",
+                high_card_indices.len(),
+                high_card_indices
+                    .iter()
+                    .map(|&i| selected_entries[i].field.as_str())
+                    .collect::<Vec<_>>()
+            );
+
+            // Build a boolean mask for which columns need fresh computation
+            let needs_compute: Vec<bool> = (0..selected_entries.len())
+                .map(|i| high_card_indices.contains(&i))
+                .collect();
+
+            // Scan the CSV once, accumulating only the HIGH_CARDINALITY columns
+            let mut fresh_rdr = rconfig.reader()?;
+            let mut row_buffer = csv::ByteRecord::new();
+            let flag_no_nulls = self.flag_no_nulls;
+
+            while fresh_rdr.read_byte_record(&mut row_buffer)? {
+                for (i, field) in sel.select(&row_buffer).enumerate() {
+                    if !needs_compute[i] {
+                        continue;
+                    }
+                    if !field.is_empty() {
+                        let trimmed = trim_bs_whitespace(field).to_vec();
+                        tables[i].add(trimmed);
+                    } else if !flag_no_nulls {
+                        tables[i].add(EMPTY_BYTE_VEC);
+                    }
+                }
+            }
         }
 
         // Now produce output using the existing pipeline
@@ -1796,7 +1832,15 @@ impl Args {
         }
         wtr.flush()?;
 
-        log::info!("Output produced from frequency cache");
+        if high_card_indices.is_empty() {
+            log::info!("Output produced entirely from frequency cache");
+        } else {
+            log::info!(
+                "Output produced from frequency cache (hybrid: {} cached, {} computed)",
+                selected_entries.len() - high_card_indices.len(),
+                high_card_indices.len()
+            );
+        }
         Ok(true)
     }
 

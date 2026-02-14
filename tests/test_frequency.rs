@@ -5225,6 +5225,61 @@ fn frequency_jsonl_cache_high_card_fallback() {
 }
 
 #[test]
+fn frequency_jsonl_cache_hybrid() {
+    // Test the hybrid approach: cached columns + HIGH_CARDINALITY columns computed from CSV.
+    // Both columns should appear in output with correct data.
+    let wrk = Workdir::new("frequency_jsonl_cache_hybrid");
+    // "code" has 4 unique values out of 5 rows (will be HIGH_CARDINALITY with low threshold)
+    // "color" has 3 unique values (will be cached normally)
+    let rows = vec![
+        svec!["code", "color"],
+        svec!["A1", "red"],
+        svec!["B2", "blue"],
+        svec!["C3", "red"],
+        svec!["D4", "green"],
+        svec!["A1", "blue"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Create frequency cache with low threshold: "code" → HIGH_CARDINALITY, "color" → cached
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .arg("--high-card-threshold")
+        .arg("2")
+        .arg("--high-card-pct")
+        .arg("1");
+    let got_fresh: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
+
+    // Run without --frequency-jsonl — should use hybrid cache (color from cache, code from CSV)
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv");
+    let got_cached: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+
+    // Output should be identical (both produce the same frequency data)
+    assert_eq!(
+        got_fresh, got_cached,
+        "Hybrid cache output should match fresh computation"
+    );
+
+    // Verify both columns are present
+    let fields: HashSet<&str> = got_cached.iter().skip(1).map(|row| row[0].as_str()).collect();
+    assert!(fields.contains("code"), "Output should contain 'code' column");
+    assert!(
+        fields.contains("color"),
+        "Output should contain 'color' column"
+    );
+}
+
+#[test]
 fn frequency_jsonl_force() {
     // --force should regenerate cache even when valid.
     let wrk = Workdir::new("frequency_jsonl_force");

@@ -623,6 +623,7 @@ fn get_unique_values(
         flag_frequency_jsonl: false,
         flag_high_card_threshold: 1000,
         flag_high_card_pct: 90,
+        flag_force: false,
         flag_json: false,
         flag_pretty_json: false,
         flag_no_stats: false,

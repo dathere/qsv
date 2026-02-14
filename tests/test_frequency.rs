@@ -4964,3 +4964,360 @@ fn frequency_jsonl_stdin_error() {
         "Error message should mention that stdin is not supported, got: {stderr}"
     );
 }
+
+// === Frequency cache READ PATH tests ===
+
+#[test]
+fn frequency_jsonl_cache_reuse() {
+    // Create cache, then run again without --frequency-jsonl. Output should
+    // come from cache and be identical to a fresh computation.
+    let wrk = Workdir::new("frequency_jsonl_cache_reuse");
+    let rows = vec![
+        svec!["name", "color"],
+        svec!["Alice", "red"],
+        svec!["Bob", "blue"],
+        svec!["Alice", "red"],
+        svec!["Charlie", "red"],
+        svec!["Bob", "green"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run with --frequency-jsonl to create cache and capture output
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
+    let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
+
+    // Verify cache was created
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(jsonl_path.exists(), "JSONL cache file should exist");
+
+    // Run again without --frequency-jsonl (should use cache)
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv");
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+
+    assert_eq!(
+        got1, got2,
+        "Output from cache should be identical to fresh computation"
+    );
+}
+
+#[test]
+fn frequency_jsonl_stale_cache() {
+    // Create cache, modify source CSV, verify new data is used.
+    let wrk = Workdir::new("frequency_jsonl_stale_cache");
+    let rows = vec![
+        svec!["name", "color"],
+        svec!["Alice", "red"],
+        svec!["Bob", "blue"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache and frequency cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
+    wrk.assert_success(&mut cmd1);
+
+    // Sleep briefly and modify the source CSV (make it newer than cache)
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    // New data: 5 rows with "Charlie" appearing twice (so name is NOT all-unique)
+    let new_rows = vec![
+        svec!["name", "color"],
+        svec!["Alice", "red"],
+        svec!["Bob", "blue"],
+        svec!["Charlie", "green"],
+        svec!["Charlie", "yellow"],
+        svec!["Dave", "purple"],
+    ];
+    wrk.create("in.csv", new_rows);
+
+    // Re-create stats cache for the new data
+    let mut stats_cmd2 = wrk.command("stats");
+    stats_cmd2
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd2);
+
+    // Run without --frequency-jsonl — cache should be stale, so full computation
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+
+    // Should see the new data including "Charlie" with count 2
+    let name_values: Vec<&str> = got
+        .iter()
+        .filter(|row| row[0] == "name")
+        .map(|row| row[1].as_str())
+        .collect();
+    assert!(
+        name_values.contains(&"Charlie"),
+        "Stale cache should be bypassed; expected 'Charlie' in output, got: {name_values:?}"
+    );
+    assert!(
+        name_values.contains(&"Dave"),
+        "Stale cache should be bypassed; expected 'Dave' in output, got: {name_values:?}"
+    );
+}
+
+#[test]
+fn frequency_jsonl_cache_with_select() {
+    // Cache all columns, then read with --select on a subset.
+    let wrk = Workdir::new("frequency_jsonl_cache_with_select");
+    let rows = vec![
+        svec!["name", "color", "size"],
+        svec!["Alice", "red", "small"],
+        svec!["Bob", "blue", "large"],
+        svec!["Alice", "red", "small"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache and frequency cache (all columns)
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
+    wrk.assert_success(&mut cmd1);
+
+    // Run with --select on just "color" (should use cache)
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv").arg("--select").arg("color");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+
+    // All data rows (skip CSV header) should be for "color" field only
+    for row in got.iter().skip(1) {
+        assert_eq!(
+            row[0], "color",
+            "With --select color, all fields should be 'color', got: {row:?}"
+        );
+    }
+    // Should have header + at least 1 data row
+    assert!(got.len() > 1, "Should have output rows for color column");
+}
+
+#[test]
+fn frequency_jsonl_cache_skip_ignore_case() {
+    // Cache should NOT be used when --ignore-case is active.
+    // --frequency-jsonl with --ignore-case should error.
+    let wrk = Workdir::new("frequency_jsonl_cache_skip_ignore_case");
+    let rows = vec![
+        svec!["name", "color"],
+        svec!["Alice", "Red"],
+        svec!["alice", "red"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache and frequency cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
+    wrk.assert_success(&mut cmd1);
+
+    // Run with --ignore-case — should compute fresh (not use cache)
+    // and should NOT error since --frequency-jsonl is not passed
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv").arg("--ignore-case");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+
+    // With --ignore-case, "Alice" and "alice" should merge
+    let name_rows: Vec<&Vec<String>> = got.iter().filter(|row| row[0] == "name").collect();
+    // There should be only 1 unique name value (alice, case-folded)
+    assert_eq!(
+        name_rows.len(),
+        1,
+        "--ignore-case should merge Alice/alice into one entry, got: {name_rows:?}"
+    );
+}
+
+#[test]
+fn frequency_jsonl_cache_high_card_fallback() {
+    // HIGH_CARDINALITY sentinel should cause fallback to full computation.
+    // We need a column with high cardinality but NOT all-unique
+    // (cardinality != rowcount) so it gets HIGH_CARDINALITY instead of ALL_UNIQUE.
+    let wrk = Workdir::new("frequency_jsonl_cache_high_card_fallback");
+    // "code" has 4 unique values out of 5 rows (not all-unique)
+    let rows = vec![
+        svec!["code", "color"],
+        svec!["A1", "red"],
+        svec!["B2", "blue"],
+        svec!["C3", "red"],
+        svec!["D4", "green"],
+        svec!["A1", "blue"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Create frequency cache with very low high-card threshold so "code" gets
+    // HIGH_CARDINALITY (cardinality 4 > threshold 2) and "color" gets normal entries
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .arg("--high-card-threshold")
+        .arg("2")
+        .arg("--high-card-pct")
+        .arg("1");
+    wrk.assert_success(&mut cmd1);
+
+    // Verify cache has HIGH_CARDINALITY for "code"
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    let contents = std::fs::read_to_string(&jsonl_path).unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+    let code_entry: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(code_entry["field"], "code");
+    assert_eq!(
+        code_entry["frequencies"][0]["value"], "<HIGH_CARDINALITY>",
+        "code column should have HIGH_CARDINALITY sentinel"
+    );
+
+    // Run frequency with --select code — should fall back because of HIGH_CARDINALITY
+    // (this means it goes through full computation, which still works)
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv").arg("--select").arg("code");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+
+    // Should have actual frequency data for code
+    assert!(
+        got.len() > 1,
+        "Should have output despite HIGH_CARDINALITY fallback"
+    );
+    // Verify it's actual data, not the sentinel (skip header row)
+    let code_values: Vec<&str> = got.iter().skip(1).map(|row| row[1].as_str()).collect();
+    assert!(
+        !code_values.contains(&"<HIGH_CARDINALITY>"),
+        "Output should have actual data, not HIGH_CARDINALITY sentinel"
+    );
+}
+
+#[test]
+fn frequency_jsonl_force() {
+    // --force should regenerate cache even when valid.
+    let wrk = Workdir::new("frequency_jsonl_force");
+    let rows = vec![
+        svec!["name", "color"],
+        svec!["Alice", "red"],
+        svec!["Bob", "blue"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache and frequency cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
+    wrk.assert_success(&mut cmd1);
+
+    let jsonl_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(jsonl_path.exists(), "JSONL cache file should exist");
+
+    // Get the original mtime
+    let orig_metadata = std::fs::metadata(&jsonl_path).unwrap();
+    let orig_mtime = orig_metadata.modified().unwrap();
+
+    // Sleep briefly so mtime can differ
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+
+    // Run with --force --frequency-jsonl — should rewrite cache
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .arg("--force");
+    wrk.assert_success(&mut cmd2);
+
+    // Cache should be rewritten (newer mtime)
+    let new_metadata = std::fs::metadata(&jsonl_path).unwrap();
+    let new_mtime = new_metadata.modified().unwrap();
+    assert!(
+        new_mtime > orig_mtime,
+        "--force should regenerate cache: new_mtime={new_mtime:?}, orig_mtime={orig_mtime:?}"
+    );
+}
+
+#[test]
+fn frequency_jsonl_ignore_case_error() {
+    // --frequency-jsonl with --ignore-case should error
+    let wrk = Workdir::new("frequency_jsonl_ignore_case_error");
+    let rows = vec![
+        svec!["name", "color"],
+        svec!["Alice", "red"],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .arg("--ignore-case");
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn frequency_jsonl_no_trim_error() {
+    // --frequency-jsonl with --no-trim should error
+    let wrk = Workdir::new("frequency_jsonl_no_trim_error");
+    let rows = vec![
+        svec!["name", "color"],
+        svec!["Alice", "red"],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .arg("--no-trim");
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn frequency_jsonl_weight_error() {
+    // --frequency-jsonl with --weight should error
+    let wrk = Workdir::new("frequency_jsonl_weight_error");
+    let rows = vec![
+        svec!["name", "color", "weight"],
+        svec!["Alice", "red", "2"],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .arg("--frequency-jsonl")
+        .arg("--weight")
+        .arg("weight");
+    wrk.assert_err(&mut cmd);
+}

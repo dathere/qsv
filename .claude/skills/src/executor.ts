@@ -266,20 +266,10 @@ export class SkillExecutor {
     // For stats command, always ensure --stats-jsonl flag is set
     // This creates the stats cache that other "smart" commands use
     if (skill.command.subcommand === "stats") {
-      // Check if --stats-jsonl is already in options
-      const hasStatsJsonl =
-        params.options &&
-        (params.options["stats-jsonl"] === true ||
-          params.options["stats_jsonl"] === true ||
-          params.options["--stats-jsonl"] === true);
-
-      // If not present, add it to params.options
-      if (!hasStatsJsonl) {
-        if (!params.options) {
-          params.options = {};
-        }
-        params.options["stats-jsonl"] = true;
+      if (!params.options) {
+        params.options = {};
       }
+      params.options["stats-jsonl"] = true;
     }
 
     // For frequency command, always ensure --frequency-jsonl flag is set
@@ -288,18 +278,10 @@ export class SkillExecutor {
       skill.command.subcommand === "frequency" &&
       findOptionDef(skill, "frequency-jsonl")
     ) {
-      const hasFreqJsonl =
-        params.options &&
-        (params.options["frequency-jsonl"] === true ||
-          params.options["frequency_jsonl"] === true ||
-          params.options["--frequency-jsonl"] === true);
-
-      if (!hasFreqJsonl) {
-        if (!params.options) {
-          params.options = {};
-        }
-        params.options["frequency-jsonl"] = true;
+      if (!params.options) {
+        params.options = {};
       }
+      params.options["frequency-jsonl"] = true;
     }
 
     // Add options/flags first

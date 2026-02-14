@@ -177,7 +177,7 @@ frequency options:
 
                             FREQUENCY CACHE OPTIONS:
     --frequency-jsonl       Write the complete frequency distribution as a
-                            JSONL cache file (FILESTEM.freq.csv.data.jsonl).
+                            JSON cache file (FILESTEM.freq.csv.data.json).
                             Requires a non-stdin input file. The cache contains
                             metadata and per-column frequency data.
                             ALL_UNIQUE columns (rowcount == cardinality) get a single
@@ -343,7 +343,7 @@ static ALL_UNIQUE_TEXT: OnceLock<Vec<u8>> = OnceLock::new();
 // and FREQ_CACHE_FTABLES holds their pre-built FTables for merging after computation.
 static FREQ_CACHE_SKIP: OnceLock<Vec<bool>> = OnceLock::new();
 static FREQ_CACHE_FTABLES: OnceLock<FTables> = OnceLock::new();
-// FrequencyCacheEntry and FrequencyCacheValue are structs for --frequency-jsonl cache
+// FrequencyCacheEntry and FrequencyCacheValue are structs for --frequency-jsonl JSON cache
 #[derive(Serialize, Deserialize)]
 struct FrequencyCacheEntry {
     field:       String,
@@ -359,7 +359,7 @@ struct FrequencyCacheValue {
 }
 
 // FrequencyCache combines metadata (how the cache was generated) and per-column
-// frequency data into a single JSONL file (.freq.csv.data.jsonl).
+// frequency data into a single JSON file (.freq.csv.data.json).
 // Similar to StatsArgs in stats.rs, the metadata fields enable cache validation.
 #[derive(Serialize, Deserialize)]
 struct FrequencyCache {
@@ -1439,9 +1439,9 @@ impl Args {
             .select(self.flag_select.clone())
     }
 
-    /// Write the complete frequency distribution as a JSON cache file.
-    /// The cache combines metadata (args, thresholds) and per-column data
-    /// in a single `.freq.csv.data.jsonl` file.
+    /// Write the complete frequency distribution as a JSON cache file
+    /// (`.freq.csv.data.json`). The cache combines metadata (args,
+    /// thresholds) and per-column data in a single JSON object.
     /// ALL_UNIQUE columns get a single `<ALL_UNIQUE>` sentinel entry.
     /// HIGH_CARDINALITY columns get a single `<HIGH_CARDINALITY>` sentinel entry.
     /// Normal columns get complete frequency data (all values, counts, percentages).
@@ -1574,7 +1574,7 @@ impl Args {
         // Serialize to JSON
         let json = serde_json::to_string(&cache)?;
 
-        let cache_path = path.with_extension("freq.csv.data.jsonl");
+        let cache_path = path.with_extension("freq.csv.data.json");
         let cache_len = json.len();
         fs::write(&cache_path, json)?;
 
@@ -1587,7 +1587,7 @@ impl Args {
         );
 
         // Clean up old-format files from previous versions
-        let _ = fs::remove_file(path.with_extension("freq.csv.data.json"));
+        let _ = fs::remove_file(path.with_extension("freq.csv.data.jsonl"));
         let _ = fs::remove_file(path.with_extension("freq.csv.data.toon"));
 
         Ok(())
@@ -1599,7 +1599,7 @@ impl Args {
         use filetime::FileTime;
 
         let path = rconfig.path.as_ref()?;
-        let cache_path = path.with_extension("freq.csv.data.jsonl");
+        let cache_path = path.with_extension("freq.csv.data.json");
 
         if !cache_path.exists() {
             log::info!("Frequency cache not found: {}", cache_path.display());

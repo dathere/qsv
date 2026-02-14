@@ -4502,7 +4502,7 @@ fn frequency_jsonl_basic() {
     wrk.assert_success(&mut cmd);
 
     // Verify frequency cache file was created
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     assert!(cache_path.exists(), "Frequency cache file should exist");
 
     // Parse and validate the frequency cache contents
@@ -4553,7 +4553,7 @@ fn frequency_jsonl_cache_all_unique() {
 
     wrk.assert_success(&mut cmd);
 
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     let fields = decode_cache_fields(&cache_path);
 
     // First entry (id column - all unique)
@@ -4607,7 +4607,7 @@ fn frequency_jsonl_high_cardinality() {
 
     wrk.assert_success(&mut cmd);
 
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     let fields = decode_cache_fields(&cache_path);
 
     // id column (cardinality=20 == rowcount) should be ALL_UNIQUE
@@ -4657,7 +4657,7 @@ fn frequency_jsonl_custom_thresholds() {
     cmd.arg("in.csv").arg("--frequency-jsonl");
     wrk.assert_success(&mut cmd);
 
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     let fields = decode_cache_fields(&cache_path);
 
     let freqs = fields[1]["frequencies"].as_array().unwrap();
@@ -4747,7 +4747,7 @@ fn frequency_jsonl_cache_write_no_headers() {
     wrk.assert_success(&mut cmd);
 
     // Verify frequency cache file was created
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     assert!(cache_path.exists(), "Frequency cache file should exist");
 
     let fields = decode_cache_fields(&cache_path);
@@ -4779,7 +4779,7 @@ fn frequency_jsonl_empty_file() {
     wrk.assert_success(&mut cmd);
 
     // Verify that no cache file was created for empty data
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     assert!(
         !cache_path.exists(),
         "Frequency cache file should not be created when row count is 0"
@@ -4847,7 +4847,7 @@ fn frequency_jsonl_high_card_at_threshold() {
         .args(["--high-card-threshold", "5"]);
     wrk.assert_success(&mut cmd);
 
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     let fields = decode_cache_fields(&cache_path);
 
     assert_eq!(fields[1]["field"], "category");
@@ -4897,7 +4897,7 @@ fn frequency_jsonl_no_stats_cache() {
     wrk.assert_success(&mut cmd);
 
     // With no stats cache, the frequency cache is NOT created (row_count=0 → skip)
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     assert!(
         !cache_path.exists(),
         "Frequency cache should not be created without stats cache"
@@ -4952,7 +4952,7 @@ fn frequency_jsonl_limit_does_not_affect_cache() {
     );
 
     // Verify the frequency cache contains ALL frequency values regardless of --limit
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     let fields = decode_cache_fields(&cache_path);
 
     assert_eq!(fields[0]["field"], "color");
@@ -5031,7 +5031,7 @@ fn frequency_jsonl_cache_reuse() {
     let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
 
     // Verify cache was created
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     assert!(cache_path.exists(), "Frequency cache file should exist");
 
     // Run again without --frequency-jsonl (should use cache)
@@ -5227,7 +5227,7 @@ fn frequency_jsonl_cache_high_card_fallback() {
     wrk.assert_success(&mut cmd1);
 
     // Verify cache has HIGH_CARDINALITY for "code"
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     let fields = decode_cache_fields(&cache_path);
     let code_entry = fields
         .iter()
@@ -5447,7 +5447,7 @@ fn frequency_jsonl_cache_delimiter_incompatible() {
     wrk.assert_success(&mut cmd1);
 
     // Tamper cache to prove cache reads: change a count
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     assert!(cache_path.exists(), "Frequency cache file should exist");
     tamper_cache(&cache_path, 2, 999);
 
@@ -5484,7 +5484,7 @@ fn frequency_jsonl_cache_delimiter_incompatible() {
 
 #[test]
 fn frequency_jsonl_cache_metadata_written() {
-    // Verify that the unified .freq.csv.data.jsonl cache contains metadata + data
+    // Verify that the unified .freq.csv.data.json cache contains metadata + data
     let wrk = Workdir::new("frequency_jsonl_cache_metadata_written");
     let rows = vec![
         svec!["name", "color"],
@@ -5507,7 +5507,7 @@ fn frequency_jsonl_cache_metadata_written() {
     wrk.assert_success(&mut cmd);
 
     // Single JSON cache file should exist (no separate metadata file)
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     assert!(cache_path.exists(), "Frequency cache file should exist");
     assert!(
         !wrk.path("in.freq.csv.json").exists(),
@@ -5557,7 +5557,7 @@ fn frequency_jsonl_force() {
     cmd1.arg("in.csv").arg("--frequency-jsonl");
     wrk.assert_success(&mut cmd1);
 
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     assert!(cache_path.exists(), "Frequency cache file should exist");
 
     // Get the original mtime
@@ -5651,7 +5651,7 @@ fn frequency_jsonl_cache_no_headers() {
     wrk.assert_success(&mut cmd1);
 
     // Verify cache exists
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     assert!(cache_path.exists(), "Frequency cache file should exist");
 
     // Tamper with the cache to prove the second run actually reads it:
@@ -5707,7 +5707,7 @@ fn frequency_jsonl_cache_null_roundtrip() {
     wrk.assert_success(&mut cmd1);
 
     // Verify cache exists
-    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let cache_path = wrk.path("in.freq.csv.data.json");
     assert!(cache_path.exists(), "Frequency cache file should exist");
 
     // Verify cache contains empty string entries for null values
@@ -5744,5 +5744,72 @@ fn frequency_jsonl_cache_null_roundtrip() {
     assert!(
         values.contains(&"(NULL)"),
         "Empty cells should be rendered as '(NULL)' in frequency output, got: {values:?}"
+    );
+}
+
+#[test]
+fn frequency_jsonl_cache_embedded_numbers() {
+    // Regression test: values with embedded numbers (e.g., "Queens East 12") must
+    // round-trip correctly through the JSON cache. The previous TOON format failed
+    // to quote such strings, causing silent decode failures.
+    let wrk = Workdir::new("frequency_jsonl_cache_embedded_numbers");
+    let rows = vec![
+        svec!["district", "code"],
+        svec!["Queens East 12", "A1"],
+        svec!["Brooklyn West 3", "B2"],
+        svec!["Queens East 12", "A1"],
+        svec!["Manhattan 42nd", "C3"],
+        svec!["Brooklyn West 3", "B2"],
+        svec!["Queens East 12", "D4"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // Create stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Write frequency cache
+    let mut cmd1 = wrk.command("frequency");
+    cmd1.arg("in.csv").arg("--frequency-jsonl");
+    let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
+
+    // Verify cache was created
+    let cache_path = wrk.path("in.freq.csv.data.json");
+    assert!(cache_path.exists(), "Frequency cache file should exist");
+
+    // Verify cache contains the embedded-number values
+    let fields = decode_cache_fields(&cache_path);
+    let district_freqs = fields[0]["frequencies"].as_array().unwrap();
+    let cached_values: Vec<&str> = district_freqs
+        .iter()
+        .map(|f| f["value"].as_str().unwrap())
+        .collect();
+    assert!(
+        cached_values.contains(&"Queens East 12"),
+        "Cache should contain 'Queens East 12', got: {cached_values:?}"
+    );
+    assert!(
+        cached_values.contains(&"Brooklyn West 3"),
+        "Cache should contain 'Brooklyn West 3', got: {cached_values:?}"
+    );
+    assert!(
+        cached_values.contains(&"Manhattan 42nd"),
+        "Cache should contain 'Manhattan 42nd', got: {cached_values:?}"
+    );
+
+    // Run again without --frequency-jsonl (should read from cache)
+    let mut cmd2 = wrk.command("frequency");
+    cmd2.arg("in.csv");
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+
+    // Output should be identical whether from cache or direct computation
+    assert_eq!(
+        got1, got2,
+        "Cache-based output should match direct computation output for values with embedded \
+         numbers"
     );
 }

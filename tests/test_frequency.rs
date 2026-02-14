@@ -5478,10 +5478,7 @@ fn frequency_toon_cache_delimiter_incompatible() {
     // Run with explicit --delimiter "," — should also hit cache because
     // the delimiter is normalized (explicit comma == default comma)
     let mut cmd_explicit = wrk.command("frequency");
-    cmd_explicit
-        .arg("in.csv")
-        .arg("--delimiter")
-        .arg(",");
+    cmd_explicit.arg("in.csv").arg("--delimiter").arg(",");
     let got_explicit: String = wrk.stdout(&mut cmd_explicit);
     assert!(
         got_explicit.contains("999"),

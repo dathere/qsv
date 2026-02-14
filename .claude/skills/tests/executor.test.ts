@@ -518,3 +518,40 @@ test('buildCommand does not add --frequency-jsonl when reading from stdin', () =
     config.qsvValidation.version = originalVersion;
   }
 });
+
+/**
+ * Frequency skill WITHOUT --frequency-jsonl option definition.
+ * Used to test the findOptionDef guard in the auto-inject logic.
+ */
+const frequencySkillNoJsonlOption: QsvSkill = {
+  name: 'frequency',
+  version: '15.0.0',
+  description: 'Build frequency tables (old version without --frequency-jsonl)',
+  category: 'aggregation',
+  command: {
+    subcommand: 'frequency',
+    args: [
+      { name: 'input', type: 'file', required: true, description: 'Input CSV file' }
+    ],
+    options: [
+      { flag: '--limit', type: 'string', description: 'Limit number of values' }
+    ]
+  },
+  examples: []
+};
+
+test('buildCommand does not add --frequency-jsonl when option definition is missing from skill', () => {
+  const executor = new SkillExecutor('qsv');
+  const originalVersion = config.qsvValidation.version;
+  try {
+    config.qsvValidation.version = '16.0.0';
+    const params: SkillParams = {
+      args: { input: 'data.csv' }
+    };
+    const cmd = executor.buildCommand(frequencySkillNoJsonlOption, params);
+    assert.ok(!cmd.includes('--frequency-jsonl'),
+      'Should NOT add --frequency-jsonl when skill lacks the option definition');
+  } finally {
+    config.qsvValidation.version = originalVersion;
+  }
+});

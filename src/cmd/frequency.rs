@@ -1559,8 +1559,7 @@ impl Args {
             flag_delimiter:           self
                 .flag_delimiter
                 .as_ref()
-                .map(|d| (d.as_byte() as char).to_string())
-                .unwrap_or_else(|| ",".to_string()),
+                .map_or_else(|| ",".to_string(), |d| (d.as_byte() as char).to_string()),
             record_count:             row_count,
             column_count:             headers.len(),
             date_generated:           chrono::Utc::now().to_rfc3339(),
@@ -1655,8 +1654,7 @@ impl Args {
         let current_delimiter = self
             .flag_delimiter
             .as_ref()
-            .map(|d| (d.as_byte() as char).to_string())
-            .unwrap_or_else(|| ",".to_string());
+            .map_or_else(|| ",".to_string(), |d| (d.as_byte() as char).to_string());
         if cache.flag_delimiter != current_delimiter {
             log::info!(
                 "Frequency cache incompatible: --delimiter differs (cache={:?}, current={:?})",
@@ -1709,11 +1707,10 @@ impl Args {
     /// pattern as ALL_UNIQUE skip). After computation, `run()` merges the cached
     /// FTables back into the result.
     #[allow(clippy::cast_precision_loss)]
-    fn try_output_from_cache(&mut self, rconfig: &Config, is_json: bool) -> CliResult<bool> {
+    fn try_output_from_cache(&self, rconfig: &Config, is_json: bool) -> CliResult<bool> {
         // Read and validate the cache
-        let cache_entries = match self.read_frequency_cache(rconfig) {
-            Some(entries) => entries,
-            None => return Ok(false),
+        let Some(cache_entries) = self.read_frequency_cache(rconfig) else {
+            return Ok(false);
         };
 
         // Read CSV headers to resolve --select
@@ -1756,26 +1753,20 @@ impl Args {
             // With no-headers, columns are 1-based indices
             for (i, _) in selected_headers.iter().enumerate() {
                 let col_name = (i + 1).to_string();
-                match cache_map.get(col_name.as_str()) {
-                    Some(entry) => selected_entries.push(entry),
-                    None => {
-                        log::info!(
-                            "Column '{col_name}' not found in frequency cache, falling back"
-                        );
-                        return Ok(false);
-                    },
+                if let Some(entry) = cache_map.get(col_name.as_str()) {
+                    selected_entries.push(entry);
+                } else {
+                    log::info!("Column '{col_name}' not found in frequency cache, falling back");
+                    return Ok(false);
                 }
             }
         } else {
             for col_name in &selected_col_names {
-                match cache_map.get(col_name.as_str()) {
-                    Some(entry) => selected_entries.push(entry),
-                    None => {
-                        log::info!(
-                            "Column '{col_name}' not found in frequency cache, falling back"
-                        );
-                        return Ok(false);
-                    },
+                if let Some(entry) = cache_map.get(col_name.as_str()) {
+                    selected_entries.push(entry);
+                } else {
+                    log::info!("Column '{col_name}' not found in frequency cache, falling back");
+                    return Ok(false);
                 }
             }
         }

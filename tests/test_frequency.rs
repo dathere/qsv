@@ -4667,11 +4667,12 @@ fn frequency_jsonl_custom_thresholds() {
     );
 
     // With low threshold (5), category (cardinality=8 > 5) should be HIGH_CARDINALITY
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv")
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2
+        .arg("in.csv")
         .arg("--frequency-jsonl")
         .args(["--high-card-threshold", "5"]);
-    wrk.assert_success(&mut cmd2);
+    wrk.assert_success(&mut cmd_2);
 
     let fields2 = decode_cache_fields(&cache_path);
 
@@ -4710,9 +4711,9 @@ fn frequency_jsonl_normal_output_unchanged() {
     let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
 
     // Run with --frequency-jsonl
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv").arg("--frequency-jsonl");
-    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv").arg("--frequency-jsonl");
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     assert_eq!(
         got1, got2,
@@ -4859,11 +4860,12 @@ fn frequency_jsonl_high_card_at_threshold() {
     );
 
     // Set threshold to 4 - cardinality 5 > 4, so should be HIGH_CARDINALITY
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv")
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2
+        .arg("in.csv")
         .arg("--frequency-jsonl")
         .args(["--high-card-threshold", "4"]);
-    wrk.assert_success(&mut cmd2);
+    wrk.assert_success(&mut cmd_2);
 
     let fields2 = decode_cache_fields(&cache_path);
 
@@ -5035,9 +5037,9 @@ fn frequency_jsonl_cache_reuse() {
     assert!(cache_path.exists(), "Frequency cache file should exist");
 
     // Run again without --frequency-jsonl (should use cache)
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv");
-    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv");
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     assert_eq!(
         got1, got2,
@@ -5082,17 +5084,17 @@ fn frequency_jsonl_stale_cache() {
     wrk.create("in.csv", new_rows);
 
     // Re-create stats cache for the new data
-    let mut stats_cmd2 = wrk.command("stats");
-    stats_cmd2
+    let mut stats_cmd_2 = wrk.command("stats");
+    stats_cmd_2
         .arg("in.csv")
         .arg("--cardinality")
         .arg("--stats-jsonl");
-    wrk.assert_success(&mut stats_cmd2);
+    wrk.assert_success(&mut stats_cmd_2);
 
     // Run without --frequency-jsonl — cache should be stale, so full computation
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // Should see the new data including "Charlie" with count 2
     let name_values: Vec<&str> = got
@@ -5135,9 +5137,9 @@ fn frequency_jsonl_cache_with_select() {
     wrk.assert_success(&mut cmd1);
 
     // Run with --select on just "color" (should use cache)
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv").arg("--select").arg("color");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv").arg("--select").arg("color");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // All data rows (skip CSV header) should be for "color" field only
     for row in got.iter().skip(1) {
@@ -5176,9 +5178,9 @@ fn frequency_jsonl_cache_skip_ignore_case() {
 
     // Run with --ignore-case — should compute fresh (not use cache)
     // and should NOT error since --frequency-jsonl is not passed
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv").arg("--ignore-case");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv").arg("--ignore-case");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // With --ignore-case, "Alice" and "alice" should merge
     let name_rows: Vec<&Vec<String>> = got.iter().filter(|row| row[0] == "name").collect();
@@ -5240,9 +5242,9 @@ fn frequency_jsonl_cache_high_card_fallback() {
 
     // Run frequency with --select code — should fall back because of HIGH_CARDINALITY
     // (this means it goes through full computation, which still works)
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv").arg("--select").arg("code");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv").arg("--select").arg("code");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // Should have actual frequency data for code
     assert!(
@@ -5295,9 +5297,9 @@ fn frequency_jsonl_cache_high_card_fallback_full() {
 
     // Run without --frequency-jsonl selecting ALL columns (includes HIGH_CARDINALITY "code")
     // Should fall back to full parallel computation, NOT use cache
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv");
-    let got_fallback: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv");
+    let got_fallback: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // Output should be identical (fallback produces same results)
     assert_eq!(
@@ -5360,9 +5362,9 @@ fn frequency_jsonl_cache_partial_hit() {
 
     // Run without --frequency-jsonl (triggers partial cache path):
     // "color" from cache, "code" computed fresh via parallel computation
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv");
-    let got_partial: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv");
+    let got_partial: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // Output should be identical to fresh computation
     assert_eq!(
@@ -5401,9 +5403,9 @@ fn frequency_jsonl_cache_no_nulls_incompatible() {
 
     // Run with --no-nulls — cache should be skipped (incompatible),
     // and output should differ (no null row for "color")
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv").arg("--no-nulls");
-    let got_no_nulls: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv").arg("--no-nulls");
+    let got_no_nulls: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // The outputs should differ because --no-nulls excludes null entries
     assert_ne!(
@@ -5452,9 +5454,9 @@ fn frequency_jsonl_cache_delimiter_incompatible() {
     tamper_cache(&cache_path, 2, 999);
 
     // Run with same (default) delimiter — tampered count should appear (cache hit)
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv");
-    let got_same: String = wrk.stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv");
+    let got_same: String = wrk.stdout(&mut cmd_2);
     assert!(
         got_same.contains("999"),
         "Same delimiter should use cache (tampered count 999 expected)"
@@ -5575,9 +5577,9 @@ fn frequency_jsonl_force() {
     std::thread::sleep(std::time::Duration::from_millis(1100));
 
     // Run with --force --frequency-jsonl — should rewrite cache
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv").arg("--frequency-jsonl").arg("--force");
-    wrk.assert_success(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv").arg("--frequency-jsonl").arg("--force");
+    wrk.assert_success(&mut cmd_2);
 
     // Cache should be rewritten (newer mtime)
     let new_metadata = std::fs::metadata(&cache_path).unwrap();
@@ -5666,9 +5668,9 @@ fn frequency_jsonl_cache_no_headers() {
     tamper_cache(&cache_path, 2, 999);
 
     // Run again without --frequency-jsonl (should read from tampered cache)
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv").arg("--no-headers");
-    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv").arg("--no-headers");
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // The tampered count of 999 must appear in the output, proving cache was read
     let has_999 = got2.iter().any(|row| row.iter().any(|cell| cell == "999"));
@@ -5734,9 +5736,9 @@ fn frequency_jsonl_cache_null_roundtrip() {
     tamper_cache(&cache_path, 2, 888);
 
     // Run again without --frequency-jsonl (should read from tampered cache)
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv");
-    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv");
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // The tampered count of 888 must appear in the output, proving cache was read
     let has_888 = got2.iter().any(|row| row.iter().any(|cell| cell == "888"));
@@ -5809,9 +5811,9 @@ fn frequency_jsonl_cache_embedded_numbers() {
     );
 
     // Run again without --frequency-jsonl (should read from cache)
-    let mut cmd2 = wrk.command("frequency");
-    cmd2.arg("in.csv");
-    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("frequency");
+    cmd_2.arg("in.csv");
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // Output should be identical whether from cache or direct computation
     assert_eq!(

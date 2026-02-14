@@ -6,6 +6,10 @@
 import { spawn, type ChildProcess } from "child_process";
 import type { QsvSkill, Option, SkillParams, SkillResult } from "./types.js";
 import { config } from "./config.js";
+import { compareVersions } from "./utils.js";
+
+/** Minimum qsv binary version that supports --frequency-jsonl */
+const FREQUENCY_JSONL_MIN_VERSION = "16.0.0";
 
 /**
  * Check if a skill has subcommands by examining its first argument
@@ -265,20 +269,33 @@ export class SkillExecutor {
 
     // For stats command, always ensure --stats-jsonl flag is set
     // This creates the stats cache that other "smart" commands use
-    if (skill.command.subcommand === "stats") {
-      // Check if --stats-jsonl is already in options
-      const hasStatsJsonl =
-        params.options &&
-        (params.options["stats-jsonl"] === true ||
-          params.options["stats_jsonl"] === true ||
-          params.options["--stats-jsonl"] === true);
+    // Skip when reading from stdin (e.g. pipelines) since cache requires a file path
+    // Note: --stats-jsonl has been available since qsv 10.0.0, so no version guard needed
+    if (skill.command.subcommand === "stats" && !params.stdin) {
+      if (!params.options) {
+        params.options = {};
+      }
+      params.options["stats-jsonl"] = true;
+    }
 
-      // If not present, add it to params.options
-      if (!hasStatsJsonl) {
+    // For frequency command, always ensure --frequency-jsonl flag is set
+    // This creates the frequency cache for reuse
+    // Skip when reading from stdin (e.g. pipelines) since cache requires a file path
+    // Only enable if the binary version supports the flag (introduced in 16.0.0)
+    if (
+      skill.command.subcommand === "frequency" &&
+      !params.stdin &&
+      findOptionDef(skill, "frequency-jsonl")
+    ) {
+      const binaryVersion = config.qsvValidation.version;
+      if (
+        binaryVersion &&
+        compareVersions(binaryVersion, FREQUENCY_JSONL_MIN_VERSION) >= 0
+      ) {
         if (!params.options) {
           params.options = {};
         }
-        params.options["stats-jsonl"] = true;
+        params.options["frequency-jsonl"] = true;
       }
     }
 

@@ -620,7 +620,7 @@ fn get_unique_values(
         flag_delimiter: args.flag_delimiter,
         flag_memcheck: args.flag_memcheck,
         flag_vis_whitespace: false,
-        flag_frequency_jsonl: false,
+        flag_frequency_toon: false,
         flag_high_card_threshold: 1000,
         flag_high_card_pct: 90,
         flag_force: false,

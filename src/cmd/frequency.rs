@@ -176,10 +176,10 @@ frequency options:
                             When not set, defaults to the number of CPUs detected.
 
                             FREQUENCY CACHE OPTIONS:
-    --frequency-jsonl       Write the complete frequency distribution as a JSONL
-                            cache file (FILESTEM.freq.csv.data.jsonl).
+    --frequency-toon       Write the complete frequency distribution as a compact
+                            TOON cache file (FILESTEM.freq.csv.data.toon).
                             Requires a non-stdin input file. The cache contains
-                            one JSON object per column with its full frequency data.
+                            metadata and per-column frequency data in TOON format.
                             ALL_UNIQUE columns (rowcount == cardinality) get a single
                             ALL_UNIQUE sentinel. HIGH_CARDINALITY columns (cardinality
                             exceeds the smaller of --high-card-threshold/--high-card-pct
@@ -193,16 +193,16 @@ frequency options:
                             classification in the frequency cache.
                             Can also be set with QSV_FREQ_HIGH_CARD_THRESHOLD env var
                             (env var takes precedence when CLI value equals the default).
-                            Only used with --frequency-jsonl.
+                            Only used with --frequency-toon.
                             [default: 1000]
     --high-card-pct <arg>   Percentage of rowcount threshold for HIGH_CARDINALITY
                             classification in the frequency cache. Must be between 1 and 100.
                             Can also be set with QSV_FREQ_HIGH_CARD_PCT env var
                             (env var takes precedence when CLI value equals the default).
-                            Only used with --frequency-jsonl.
+                            Only used with --frequency-toon.
                             [default: 90]
     --force                 Force recomputation and cache regeneration even when a
-                            valid frequency cache exists. Use with --frequency-jsonl
+                            valid frequency cache exists. Use with --frequency-toon
                             to regenerate the cache.
 
                             JSON OUTPUT OPTIONS:
@@ -235,7 +235,7 @@ Common options:
                            CSV into memory using CONSERVATIVE heuristics.
 "#;
 
-use std::{fs, io, io::Write as IoWrite, str::FromStr, sync::OnceLock};
+use std::{fs, io, str::FromStr, sync::OnceLock};
 
 use crossbeam_channel;
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
@@ -245,7 +245,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use stats::{Frequencies, merge_all};
 use threadpool::ThreadPool;
-use toon_format::{EncodeOptions, encode};
+use toon_format::{DecodeOptions, EncodeOptions, decode, encode};
 
 use crate::{
     CliResult,
@@ -313,7 +313,7 @@ pub struct Args {
     pub flag_delimiter:       Option<Delimiter>,
     pub flag_memcheck:        bool,
     pub flag_vis_whitespace:  bool,
-    pub flag_frequency_jsonl: bool,
+    pub flag_frequency_toon: bool,
     pub flag_high_card_threshold: usize,
     pub flag_high_card_pct:  u8,
     pub flag_force:           bool,
@@ -338,7 +338,12 @@ static STATS_FILTER_COLUMNS_TO_SKIP: OnceLock<Vec<usize>> = OnceLock::new();
 static EMPTY_VEC: Vec<(String, u64)> = Vec::new();
 static EMPTY_USIZE_VEC: Vec<usize> = Vec::new();
 static ALL_UNIQUE_TEXT: OnceLock<Vec<u8>> = OnceLock::new();
-// FrequencyCacheEntry and FrequencyCacheValue are structs for --frequency-jsonl cache
+// Partial frequency cache: when some columns are cached but others need computation,
+// FREQ_CACHE_SKIP marks which columns to skip in ftables_unweighted (true = cached),
+// and FREQ_CACHE_FTABLES holds their pre-built FTables for merging after computation.
+static FREQ_CACHE_SKIP: OnceLock<Vec<bool>> = OnceLock::new();
+static FREQ_CACHE_FTABLES: OnceLock<FTables> = OnceLock::new();
+// FrequencyCacheEntry and FrequencyCacheValue are structs for --frequency-toon cache
 #[derive(Serialize, Deserialize)]
 struct FrequencyCacheEntry {
     field:       String,
@@ -351,6 +356,24 @@ struct FrequencyCacheValue {
     value:      String,
     count:      u64,
     percentage: f64,
+}
+
+// FrequencyCache combines metadata (how the cache was generated) and per-column
+// frequency data into a single TOON file (.freq.csv.data.toon).
+// Similar to StatsArgs in stats.rs, the metadata fields enable cache validation.
+#[derive(Serialize, Deserialize)]
+struct FrequencyCache {
+    arg_input:                String,
+    flag_high_card_threshold: usize,
+    flag_high_card_pct:       u8,
+    flag_no_nulls:            bool,
+    flag_no_headers:          bool,
+    flag_delimiter:           String,
+    record_count:             u64,
+    column_count:             usize,
+    date_generated:           String,
+    qsv_version:              String,
+    fields:                   Vec<FrequencyCacheEntry>,
 }
 
 // FrequencyEntry, FrequencyField and FrequencyOutput are
@@ -595,9 +618,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let is_stdin = rconfig.is_stdin();
 
-    // Validate --frequency-jsonl early, before any computation
-    if args.flag_frequency_jsonl && is_stdin {
-        return fail_clierror!("--frequency-jsonl requires a file input, not stdin.");
+    // Validate --frequency-toon early, before any computation
+    if args.flag_frequency_toon && is_stdin {
+        return fail_clierror!("--frequency-toon requires a file input, not stdin.");
     }
 
     // if stdin and args.flag_json is true, save stdin to tempfile
@@ -686,21 +709,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .set(args.flag_all_unique_text.as_bytes().to_vec())
         .unwrap();
 
-    if args.flag_frequency_jsonl {
-        // Guard: --frequency-jsonl is incompatible with computation-changing flags
+    if args.flag_frequency_toon {
+        // Guard: --frequency-toon is incompatible with computation-changing flags
         if args.flag_ignore_case {
             return fail_incorrectusage_clierror!(
-                "--frequency-jsonl cannot be used with --ignore-case."
+                "--frequency-toon cannot be used with --ignore-case."
             );
         }
         if args.flag_no_trim {
             return fail_incorrectusage_clierror!(
-                "--frequency-jsonl cannot be used with --no-trim."
+                "--frequency-toon cannot be used with --no-trim."
             );
         }
         if args.flag_weight.is_some() {
             return fail_incorrectusage_clierror!(
-                "--frequency-jsonl cannot be used with --weight."
+                "--frequency-toon cannot be used with --weight."
             );
         }
 
@@ -739,7 +762,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let can_use_freq_cache = !is_stdin
         && !is_json
         && !args.flag_force
-        && !args.flag_frequency_jsonl
+        && !args.flag_frequency_toon
         && !args.flag_ignore_case
         && !args.flag_no_trim
         && args.flag_weight.is_none()
@@ -750,7 +773,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return Ok(());
     }
 
-    let (headers, tables, weighted_tables) = if let Some(idx) = indexed_result
+    let (headers, mut tables, weighted_tables) = if let Some(idx) = indexed_result
         && util::njobs(args.flag_jobs) > 1
     {
         args.parallel_ftables(&idx)
@@ -758,11 +781,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.sequential_ftables()
     }?;
 
-    // Write frequency cache if --frequency-jsonl is set.
+    // Merge cached frequency tables for columns that were skipped during computation.
+    // In the partial cache path, some columns have pre-built FTables from the frequency
+    // cache (non-HIGH_CARDINALITY), while HIGH_CARDINALITY columns were computed above.
+    if let (Some(cache_skip), Some(cached_ftables)) =
+        (FREQ_CACHE_SKIP.get(), FREQ_CACHE_FTABLES.get())
+    {
+        for (i, &is_cached) in cache_skip.iter().enumerate() {
+            if is_cached && i < tables.len() && i < cached_ftables.len() {
+                tables[i] = cached_ftables[i].clone();
+            }
+        }
+    }
+
+    // Write frequency cache if --frequency-toon is set.
     // Always write when explicitly requested — the user may be regenerating
     // with different thresholds or after data changes.
-    if args.flag_frequency_jsonl {
-        args.write_frequency_jsonl(&headers, &tables, &rconfig)?;
+    if args.flag_frequency_toon {
+        args.write_frequency_toon(&headers, &tables, &rconfig)?;
     }
 
     if is_json {
@@ -1389,13 +1425,14 @@ impl Args {
             .select(self.flag_select.clone())
     }
 
-    /// Write the complete frequency distribution as a JSONL cache file.
-    /// Each line is a JSON object with field name, cardinality, and frequency data.
+    /// Write the complete frequency distribution as a TOON cache file.
+    /// The cache combines metadata (args, thresholds) and per-column data
+    /// in a single `.freq.csv.data.toon` file.
     /// ALL_UNIQUE columns get a single `<ALL_UNIQUE>` sentinel entry.
     /// HIGH_CARDINALITY columns get a single `<HIGH_CARDINALITY>` sentinel entry.
     /// Normal columns get complete frequency data (all values, counts, percentages).
     #[allow(clippy::cast_precision_loss)]
-    fn write_frequency_jsonl(
+    fn write_frequency_toon(
         &self,
         headers: &Headers,
         tables: &FTables,
@@ -1403,18 +1440,15 @@ impl Args {
     ) -> CliResult<()> {
         let path = rconfig.path.as_ref().ok_or_else(|| {
             crate::CliError::Other(
-                "--frequency-jsonl requires a file input, not stdin".to_string(),
+                "--frequency-toon requires a file input, not stdin".to_string(),
             )
         })?;
-
-        // Build cache path: <FILESTEM>.freq.csv.data.jsonl
-        let freq_jsonl_path = path.with_extension("freq.csv.data.jsonl");
 
         let unique_headers = UNIQUE_COLUMNS_VEC.get().unwrap_or(&EMPTY_USIZE_VEC);
         let row_count = *FREQ_ROW_COUNT.get().unwrap_or(&0);
         if row_count == 0 {
             log::warn!(
-                "--frequency-jsonl: row count is 0, skipping frequency cache (no data to cache)"
+                "--frequency-toon: row count is 0, skipping frequency cache (no data to cache)"
             );
             return Ok(());
         }
@@ -1426,9 +1460,8 @@ impl Args {
             (row_count as f64 * self.flag_high_card_pct as f64 / 100.0) as u64;
         let effective_threshold = (self.flag_high_card_threshold as u64).min(high_card_pct_limit);
 
-        let output = fs::File::create(&freq_jsonl_path)?;
-        let mut writer = io::BufWriter::new(output);
-
+        // Collect all column entries
+        let mut entries: Vec<FrequencyCacheEntry> = Vec::with_capacity(headers.len());
         for (i, header) in headers.iter().enumerate() {
             let field_name = if rconfig.no_headers {
                 (i + 1).to_string()
@@ -1503,17 +1536,47 @@ impl Args {
                 continue;
             };
 
-            // Write JSONL line (one JSON object per line)
-            serde_json::to_writer(&mut writer, &entry)?;
-            writeln!(writer)?;
+            entries.push(entry);
         }
 
-        writer.flush()?;
+        // Build unified cache struct with metadata + data
+        let cache = FrequencyCache {
+            arg_input:                self.arg_input.clone().unwrap_or_default(),
+            flag_high_card_threshold: self.flag_high_card_threshold,
+            flag_high_card_pct:       self.flag_high_card_pct,
+            flag_no_nulls:            self.flag_no_nulls,
+            flag_no_headers:          self.flag_no_headers,
+            flag_delimiter:           self
+                .flag_delimiter
+                .as_ref()
+                .map(|d| (d.as_byte() as char).to_string())
+                .unwrap_or_default(),
+            record_count:             row_count,
+            column_count:             headers.len(),
+            date_generated:           chrono::Utc::now().to_rfc3339(),
+            qsv_version:              env!("CARGO_PKG_VERSION").to_string(),
+            fields:                   entries,
+        };
+
+        // Serialize to JSON, then encode to compact TOON format
+        let json_value = serde_json::to_value(&cache)?;
+        let opts = EncodeOptions::new();
+        let toon = encode(&json_value, &opts).map_err(|e| {
+            crate::CliError::Other(format!("Failed to encode frequency cache to TOON: {e}"))
+        })?;
+
+        let toon_path = path.with_extension("freq.csv.data.toon");
+        fs::write(&toon_path, toon)?;
+
+        // Clean up old-format files from previous versions
+        let _ = fs::remove_file(path.with_extension("freq.csv.data.jsonl"));
+        let _ = fs::remove_file(path.with_extension("freq.csv.json"));
+
         Ok(())
     }
 
-    /// Read and validate the frequency JSONL cache file.
-    /// Returns None if cache doesn't exist, is stale, or is invalid.
+    /// Read and validate the frequency TOON cache file.
+    /// Returns None if cache doesn't exist, is stale, or is incompatible.
     fn read_frequency_cache(
         &self,
         rconfig: &Config,
@@ -1521,15 +1584,15 @@ impl Args {
         use filetime::FileTime;
 
         let path = rconfig.path.as_ref()?;
-        let freq_jsonl_path = path.with_extension("freq.csv.data.jsonl");
+        let toon_path = path.with_extension("freq.csv.data.toon");
 
-        if !freq_jsonl_path.exists() {
+        if !toon_path.exists() {
             return None;
         }
 
         // Compare mtime: cache must be newer than source CSV
         let csv_metadata = fs::metadata(path).ok()?;
-        let cache_metadata = fs::metadata(&freq_jsonl_path).ok()?;
+        let cache_metadata = fs::metadata(&toon_path).ok()?;
         let csv_mtime = FileTime::from_last_modification_time(&csv_metadata);
         let cache_mtime = FileTime::from_last_modification_time(&cache_metadata);
 
@@ -1538,36 +1601,83 @@ impl Args {
             return None;
         }
 
-        // Parse JSONL line-by-line
-        let contents = fs::read_to_string(&freq_jsonl_path).ok()?;
-        let mut entries = Vec::new();
-        for line in contents.lines() {
-            if line.is_empty() {
-                continue;
-            }
-            match serde_json::from_str::<FrequencyCacheEntry>(line) {
-                Ok(entry) => entries.push(entry),
-                Err(e) => {
-                    log::warn!("Failed to parse frequency cache line: {e}");
-                    return None;
-                },
-            }
+        // Read and decode TOON cache
+        let toon_content = fs::read_to_string(&toon_path).ok()?;
+        let json_value = decode(
+            &toon_content,
+            &DecodeOptions {
+                strict: false,
+                ..Default::default()
+            },
+        )
+        .map_err(|e| {
+            log::warn!("Failed to decode frequency cache TOON: {e}");
+            e
+        })
+        .ok()?;
+
+        let cache: FrequencyCache = serde_json::from_value(json_value)
+            .map_err(|e| {
+                log::warn!("Failed to deserialize frequency cache: {e}");
+                e
+            })
+            .ok()?;
+
+        // Validate cache args compatibility
+        // flag_no_nulls affects what's stored in the FTable — mismatch means
+        // cache has wrong null counts
+        if cache.flag_no_nulls != self.flag_no_nulls {
+            log::info!(
+                "Frequency cache incompatible: --no-nulls differs (cache={}, current={})",
+                cache.flag_no_nulls,
+                self.flag_no_nulls
+            );
+            return None;
+        }
+        // flag_no_headers affects column naming in the cache
+        if cache.flag_no_headers != self.flag_no_headers {
+            log::info!(
+                "Frequency cache incompatible: --no-headers differs (cache={}, current={})",
+                cache.flag_no_headers,
+                self.flag_no_headers
+            );
+            return None;
+        }
+        // Threshold differences don't invalidate — partial cache handles
+        // HIGH_CARDINALITY columns. Log for debugging.
+        if cache.flag_high_card_threshold != self.flag_high_card_threshold
+            || cache.flag_high_card_pct != self.flag_high_card_pct
+        {
+            log::info!(
+                "Frequency cache threshold differs: cache=(threshold={}, pct={}), \
+                 current=(threshold={}, pct={}). Partial cache still valid.",
+                cache.flag_high_card_threshold,
+                cache.flag_high_card_pct,
+                self.flag_high_card_threshold,
+                self.flag_high_card_pct,
+            );
         }
 
-        if entries.is_empty() {
+        if cache.fields.is_empty() {
             return None;
         }
 
-        Some(entries)
+        Some(cache.fields)
     }
 
     /// Try to produce output directly from the frequency cache.
     /// Returns Ok(true) if output was produced from cache, Ok(false) if cache
     /// was not usable and normal computation should proceed.
     ///
-    /// For columns with actual cached data, FTables are reconstructed via `increment_by`.
-    /// For HIGH_CARDINALITY columns (sentinel only, no data), the CSV is scanned once
-    /// to compute FTables only for those columns (hybrid approach).
+    /// When all selected columns have cached data, FTables are reconstructed via
+    /// `increment_by` and output is produced directly (full cache hit).
+    ///
+    /// When some columns have HIGH_CARDINALITY sentinels (no cached data), sets up a
+    /// partial cache: pre-builds FTables for cached columns into FREQ_CACHE_FTABLES
+    /// and marks them in FREQ_CACHE_SKIP. Returns Ok(false) so the normal parallel
+    /// computation runs, but `ftables_unweighted` skips the cached columns (same
+    /// pattern as ALL_UNIQUE skip). After computation, `run()` merges the cached
+    /// FTables back into the result.
     #[allow(clippy::cast_precision_loss)]
     fn try_output_from_cache(
         &mut self,
@@ -1644,21 +1754,53 @@ impl Args {
             }
         }
 
-        // Fall back to full (parallel) computation if any selected column has
-        // HIGH_CARDINALITY sentinel — the cache has no actual data for those columns,
-        // and single-threaded CSV scanning is slower than the parallel indexed path.
-        for entry in &selected_entries {
-            if entry.frequencies.len() == 1
-                && entry.frequencies[0].value == "<HIGH_CARDINALITY>"
-            {
-                log::info!(
-                    "Column '{}' has HIGH_CARDINALITY sentinel in cache, falling back to \
-                     parallel computation (use --select to target cached columns, or increase \
-                     --high-card-threshold when creating the cache)",
-                    entry.field
-                );
-                return Ok(false);
+        // Check if any selected column has HIGH_CARDINALITY sentinel.
+        // If so, set up a partial cache: pre-build FTables for columns with actual
+        // cached data, and let the parallel computation handle only the
+        // HIGH_CARDINALITY columns (which have no data in the cache).
+        let has_high_cardinality = selected_entries.iter().any(|entry| {
+            entry.frequencies.len() == 1 && entry.frequencies[0].value == "<HIGH_CARDINALITY>"
+        });
+
+        if has_high_cardinality {
+            let mut skip_vec: Vec<bool> = Vec::with_capacity(selected_entries.len());
+            let mut cached_ftables: FTables = Vec::with_capacity(selected_entries.len());
+
+            for entry in &selected_entries {
+                let is_sentinel = entry.frequencies.len() == 1
+                    && (entry.frequencies[0].value == "<HIGH_CARDINALITY>"
+                        || entry.frequencies[0].value == "<ALL_UNIQUE>");
+
+                if is_sentinel {
+                    // No actual data in cache — needs computation (or ALL_UNIQUE skip)
+                    skip_vec.push(false);
+                    cached_ftables.push(Frequencies::with_capacity(1));
+                } else {
+                    // Reconstruct FTable from cached data
+                    skip_vec.push(true);
+                    let mut ftab: FTable = Frequencies::with_capacity(entry.frequencies.len());
+                    for freq_val in &entry.frequencies {
+                        let key: Vec<u8> = if freq_val.value.is_empty() {
+                            Vec::new()
+                        } else {
+                            freq_val.value.as_bytes().to_vec()
+                        };
+                        ftab.increment_by(key, freq_val.count);
+                    }
+                    cached_ftables.push(ftab);
+                }
             }
+
+            let cached_count = skip_vec.iter().filter(|&&s| s).count();
+            log::info!(
+                "Partial frequency cache: {cached_count}/{} columns cached, {} need computation",
+                skip_vec.len(),
+                skip_vec.len() - cached_count,
+            );
+
+            let _ = FREQ_CACHE_SKIP.set(skip_vec);
+            let _ = FREQ_CACHE_FTABLES.set(cached_ftables);
+            return Ok(false);
         }
 
         // Derive row_count from cache: sum counts of first non-ALL_UNIQUE column,
@@ -2550,11 +2692,19 @@ impl Args {
         let flag_ignore_case = self.flag_ignore_case;
         let flag_no_trim = self.flag_no_trim;
 
-        // compile a vector of bool flags for all_unique_headers
-        // so we can skip the contains check in the hot loop below
-        let all_unique_flag_vec: Vec<bool> = (0..sel_len)
+        // compile a vector of bool flags for columns to skip in the hot loop.
+        // Includes ALL_UNIQUE columns and columns with pre-built FTables from
+        // the frequency cache (partial cache hit — merged back in run()).
+        let mut all_unique_flag_vec: Vec<bool> = (0..sel_len)
             .map(|i| unique_headers_vec.contains(&i))
             .collect();
+        if let Some(cache_skip) = FREQ_CACHE_SKIP.get() {
+            for (i, &is_cached) in cache_skip.iter().enumerate() {
+                if is_cached && i < sel_len {
+                    all_unique_flag_vec[i] = true;
+                }
+            }
+        }
 
         // optimize the capacity of the freq_tables based on the cardinality of the columns
         // if sequential, use the cardinality from the stats cache

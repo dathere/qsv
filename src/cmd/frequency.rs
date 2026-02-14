@@ -1573,9 +1573,10 @@ impl Args {
         // Serialize as JSONL: metadata line + one entry per line
         let mut jsonl = String::with_capacity(entries.len() * 100 + 500); // rough estimate
         jsonl.push_str(&serde_json::to_string(&metadata)?);
+        jsonl.push('\n');
         for entry in &entries {
-            jsonl.push('\n');
             jsonl.push_str(&serde_json::to_string(entry)?);
+            jsonl.push('\n');
         }
 
         let cache_path = path.with_extension("freq.csv.data.jsonl");

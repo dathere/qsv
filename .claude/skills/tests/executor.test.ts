@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { SkillExecutor } from '../src/executor.js';
+import { config } from '../src/config.js';
 import type { QsvSkill, SkillParams } from '../src/types.js';
 
 // ============================================================================
@@ -69,6 +70,27 @@ const statsSkill: QsvSkill = {
     options: [
       { flag: '--stats-jsonl', type: 'flag', description: 'Output stats cache' },
       { flag: '--everything', type: 'flag', description: 'Show all stats' }
+    ]
+  },
+  examples: []
+};
+
+/**
+ * Frequency skill for testing auto --frequency-jsonl with version guard
+ */
+const frequencySkill: QsvSkill = {
+  name: 'frequency',
+  version: '16.0.0',
+  description: 'Build frequency tables',
+  category: 'aggregation',
+  command: {
+    subcommand: 'frequency',
+    args: [
+      { name: 'input', type: 'file', required: true, description: 'Input CSV file' }
+    ],
+    options: [
+      { flag: '--frequency-jsonl', type: 'flag', description: 'Output frequency cache' },
+      { flag: '--limit', type: 'string', description: 'Limit number of values' }
     ]
   },
   examples: []
@@ -431,4 +453,68 @@ test('buildCommand handles bare "-" option key gracefully', () => {
   const cmd = executor.buildCommand(countSkill, params);
   assert.ok(cmd.includes('count'));
   assert.ok(cmd.includes('data.csv'));
+});
+
+// ============================================================================
+// Frequency Command Auto --frequency-jsonl Version Guard Tests
+// ============================================================================
+
+test('buildCommand auto-adds --frequency-jsonl when binary version >= 16.0.0', () => {
+  const executor = new SkillExecutor('qsv');
+  const originalVersion = config.qsvValidation.version;
+  try {
+    config.qsvValidation.version = '16.0.0';
+    const params: SkillParams = {
+      args: { input: 'data.csv' }
+    };
+    const cmd = executor.buildCommand(frequencySkill, params);
+    assert.ok(cmd.includes('--frequency-jsonl'), 'Should auto-add --frequency-jsonl when version >= 16.0.0');
+  } finally {
+    config.qsvValidation.version = originalVersion;
+  }
+});
+
+test('buildCommand does not add --frequency-jsonl when binary version < 16.0.0', () => {
+  const executor = new SkillExecutor('qsv');
+  const originalVersion = config.qsvValidation.version;
+  try {
+    config.qsvValidation.version = '15.0.1';
+    const params: SkillParams = {
+      args: { input: 'data.csv' }
+    };
+    const cmd = executor.buildCommand(frequencySkill, params);
+    assert.ok(!cmd.includes('--frequency-jsonl'), 'Should NOT add --frequency-jsonl when version < 16.0.0');
+  } finally {
+    config.qsvValidation.version = originalVersion;
+  }
+});
+
+test('buildCommand does not add --frequency-jsonl when binary version is undefined', () => {
+  const executor = new SkillExecutor('qsv');
+  const originalVersion = config.qsvValidation.version;
+  try {
+    config.qsvValidation.version = undefined as unknown as string;
+    const params: SkillParams = {
+      args: { input: 'data.csv' }
+    };
+    const cmd = executor.buildCommand(frequencySkill, params);
+    assert.ok(!cmd.includes('--frequency-jsonl'), 'Should NOT add --frequency-jsonl when version is undefined');
+  } finally {
+    config.qsvValidation.version = originalVersion;
+  }
+});
+
+test('buildCommand does not add --frequency-jsonl when reading from stdin', () => {
+  const executor = new SkillExecutor('qsv');
+  const originalVersion = config.qsvValidation.version;
+  try {
+    config.qsvValidation.version = '16.0.0';
+    const params: SkillParams = {
+      stdin: 'a,b\n1,2\n'
+    };
+    const cmd = executor.buildCommand(frequencySkill, params);
+    assert.ok(!cmd.includes('--frequency-jsonl'), 'Should NOT add --frequency-jsonl when reading from stdin');
+  } finally {
+    config.qsvValidation.version = originalVersion;
+  }
 });

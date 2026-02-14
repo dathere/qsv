@@ -8,6 +8,9 @@ import type { QsvSkill, Option, SkillParams, SkillResult } from "./types.js";
 import { config } from "./config.js";
 import { compareVersions } from "./utils.js";
 
+/** Minimum qsv binary version that supports --frequency-jsonl */
+const FREQUENCY_JSONL_MIN_VERSION = "16.0.0";
+
 /**
  * Check if a skill has subcommands by examining its first argument
  *
@@ -267,6 +270,7 @@ export class SkillExecutor {
     // For stats command, always ensure --stats-jsonl flag is set
     // This creates the stats cache that other "smart" commands use
     // Skip when reading from stdin (e.g. pipelines) since cache requires a file path
+    // Note: --stats-jsonl has been available since qsv 10.0.0, so no version guard needed
     if (skill.command.subcommand === "stats" && !params.stdin) {
       if (!params.options) {
         params.options = {};
@@ -277,19 +281,22 @@ export class SkillExecutor {
     // For frequency command, always ensure --frequency-jsonl flag is set
     // This creates the frequency cache for reuse
     // Skip when reading from stdin (e.g. pipelines) since cache requires a file path
-    // Only enable if the binary version supports the flag (>= skill version)
-    const binaryVersion = config.qsvValidation.version;
+    // Only enable if the binary version supports the flag (introduced in 16.0.0)
     if (
       skill.command.subcommand === "frequency" &&
       !params.stdin &&
-      findOptionDef(skill, "frequency-jsonl") &&
-      binaryVersion &&
-      compareVersions(binaryVersion, skill.version) >= 0
+      findOptionDef(skill, "frequency-jsonl")
     ) {
-      if (!params.options) {
-        params.options = {};
+      const binaryVersion = config.qsvValidation.version;
+      if (
+        binaryVersion &&
+        compareVersions(binaryVersion, FREQUENCY_JSONL_MIN_VERSION) >= 0
+      ) {
+        if (!params.options) {
+          params.options = {};
+        }
+        params.options["frequency-jsonl"] = true;
       }
-      params.options["frequency-jsonl"] = true;
     }
 
     // Add options/flags first

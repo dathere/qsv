@@ -301,10 +301,11 @@ fn collect_numeric_values(
 
     let mut col_values: Vec<Vec<f64>> = vec![Vec::new(); selected.len()];
 
-    let progress = ProgressBar::with_draw_target(None, ProgressDrawTarget::hidden());
+    let progress = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(5));
     if show_progress {
         util::prep_progress(&progress, util::count_rows(rconfig)?);
-        progress.set_draw_target(ProgressDrawTarget::stderr_with_hz(5));
+    } else {
+        progress.set_draw_target(ProgressDrawTarget::hidden());
     }
 
     for result in rdr.byte_records() {

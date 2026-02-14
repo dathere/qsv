@@ -93,10 +93,8 @@ Common options:
                            number of CPUs detected.
     --memcheck             Check if there is enough memory to load the entire
                            CSV into memory using CONSERVATIVE heuristics. Not valid for stdin.
-    -p, --progressbar      Show progress bars. Not valid for stdin.
 "#;
 
-use indicatif::{ProgressBar, ProgressDrawTarget};
 use rayon::prelude::*;
 use serde::Deserialize;
 
@@ -110,16 +108,15 @@ use crate::{
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input:        Option<String>,
-    flag_twosample:   bool,
-    flag_select:      Option<SelectColumns>,
-    flag_misrate:     f64,
-    flag_output:      Option<String>,
-    flag_delimiter:   Option<Delimiter>,
-    flag_no_headers:  bool,
-    flag_jobs:        Option<usize>,
-    flag_memcheck:    bool,
-    flag_progressbar: bool,
+    arg_input:       Option<String>,
+    flag_twosample:  bool,
+    flag_select:     Option<SelectColumns>,
+    flag_misrate:    f64,
+    flag_output:     Option<String>,
+    flag_delimiter:  Option<Delimiter>,
+    flag_no_headers: bool,
+    flag_jobs:       Option<usize>,
+    flag_memcheck:   bool,
 }
 
 struct OneSampleResult {
@@ -177,14 +174,7 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
     let mut rdr = rconfig.reader()?;
     let headers = rdr.byte_headers()?.clone();
     let selected = resolve_columns(&rconfig, &headers, args.flag_select.as_ref())?;
-    collect_numeric_values(
-        &mut rdr,
-        &headers,
-        &selected,
-        rconfig.no_headers,
-        (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR")) && !rconfig.is_stdin(),
-        &rconfig,
-    )
+    collect_numeric_values(&mut rdr, &headers, &selected, rconfig.no_headers)
 }
 
 fn resolve_columns(
@@ -192,16 +182,15 @@ fn resolve_columns(
     headers: &csv::ByteRecord,
     select: Option<&SelectColumns>,
 ) -> CliResult<Vec<usize>> {
-    match select {
-        Some(sel) => {
-            let conf = rconfig.clone().select(sel.clone());
-            Ok(conf
-                .selection(headers)?
-                .iter()
-                .copied()
-                .collect::<Vec<usize>>())
-        },
-        None => Ok((0..headers.len()).collect::<Vec<usize>>()),
+    if let Some(sel) = select {
+        let conf = rconfig.clone().select(sel.clone());
+        Ok(conf
+            .selection(headers)?
+            .iter()
+            .copied()
+            .collect::<Vec<usize>>())
+    } else {
+        Ok((0..headers.len()).collect::<Vec<usize>>())
     }
 }
 
@@ -285,8 +274,6 @@ fn collect_numeric_values(
     headers: &csv::ByteRecord,
     selected: &[usize],
     no_headers: bool,
-    show_progress: bool,
-    rconfig: &Config,
 ) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
     let col_names: Vec<String> = selected
         .iter()
@@ -301,13 +288,6 @@ fn collect_numeric_values(
 
     let mut col_values: Vec<Vec<f64>> = vec![Vec::new(); selected.len()];
 
-    let progress = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(5));
-    if show_progress {
-        util::prep_progress(&progress, util::count_rows(rconfig)?);
-    } else {
-        progress.set_draw_target(ProgressDrawTarget::hidden());
-    }
-
     for result in rdr.byte_records() {
         let record = result?;
         for (idx, &col_idx) in selected.iter().enumerate() {
@@ -318,13 +298,6 @@ fn collect_numeric_values(
                 col_values[idx].push(val);
             }
         }
-        if show_progress {
-            progress.inc(1);
-        }
-    }
-
-    if show_progress {
-        util::finish_progress(&progress);
     }
 
     Ok((col_names, col_values))

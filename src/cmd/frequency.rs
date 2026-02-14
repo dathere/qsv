@@ -190,11 +190,11 @@ frequency options:
                             Cache is NOT used when --ignore-case, --no-trim, or --weight
                             are active, as these change how values are computed.
     --high-card-threshold <arg>  Absolute cardinality threshold for HIGH_CARDINALITY
-                            classification in the frequency cache.
-                            Can also be set with QSV_FREQ_HIGH_CARD_THRESHOLD env var
-                            (env var takes precedence when CLI value equals the default).
-                            Only used with --frequency-jsonl.
-                            [default: 1000]
+                                 classification in the frequency cache.
+                                 Can also be set with QSV_FREQ_HIGH_CARD_THRESHOLD env var
+                                 (env var takes precedence when CLI value equals the default).
+                                 Only used with --frequency-jsonl.
+                                 [default: 100]
     --high-card-pct <arg>   Percentage of rowcount threshold for HIGH_CARDINALITY
                             classification in the frequency cache. Must be between 1 and 100.
                             Can also be set with QSV_FREQ_HIGH_CARD_PCT env var
@@ -728,7 +728,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
 
         // Override high-card thresholds from env vars when CLI defaults are used
-        if args.flag_high_card_threshold == 1000
+        if args.flag_high_card_threshold == 100
             && let Ok(val) = std::env::var("QSV_FREQ_HIGH_CARD_THRESHOLD")
             && let Ok(parsed) = val.parse::<usize>()
         {

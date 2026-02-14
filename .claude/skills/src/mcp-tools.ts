@@ -139,7 +139,7 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   },
   frequency: {
     whenToUse: "Count unique values. Best for low-cardinality categorical columns. Run qsv_stats --cardinality first to identify high-cardinality columns to exclude.",
-    commonPattern: "Stats → Frequency: Use qsv_stats --cardinality first to identify high-cardinality columns (IDs) to exclude from frequency analysis.",
+    commonPattern: "Stats → Frequency: Use qsv_stats --cardinality first to identify high-cardinality columns (IDs) to exclude. The frequency cache (--frequency-jsonl) is auto-created on first run for faster subsequent analysis.",
     errorPrevention: "High-cardinality columns (IDs, timestamps) can produce huge output. Use qsv_stats --cardinality to inspect column cardinality before running frequency.",
     complementaryServer: "🔗 CENSUS INSIGHT: For US geographic columns, Census MCP Server can enrich frequency results with population/demographic data via `fetch-aggregate-data`.",
     needsMemoryWarning: true,

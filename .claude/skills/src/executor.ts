@@ -282,6 +282,26 @@ export class SkillExecutor {
       }
     }
 
+    // For frequency command, always ensure --frequency-jsonl flag is set
+    // This creates the frequency cache for reuse
+    if (
+      skill.command.subcommand === "frequency" &&
+      findOptionDef(skill, "frequency-jsonl")
+    ) {
+      const hasFreqJsonl =
+        params.options &&
+        (params.options["frequency-jsonl"] === true ||
+          params.options["frequency_jsonl"] === true ||
+          params.options["--frequency-jsonl"] === true);
+
+      if (!hasFreqJsonl) {
+        if (!params.options) {
+          params.options = {};
+        }
+        params.options["frequency-jsonl"] = true;
+      }
+    }
+
     // Add options/flags first
     if (params.options) {
       for (const [key, value] of Object.entries(params.options)) {

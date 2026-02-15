@@ -1,6 +1,6 @@
 {
   "name": "qsv-jsonl",
-  "version": "16.0.0",
+  "version": "16.1.0",
   "description": "Convert newline-delimited JSON (JSONL/NDJSON) to CSV. See `tojsonl` command to convert CSV to JSONL.",
   "category": "conversion",
   "command": {

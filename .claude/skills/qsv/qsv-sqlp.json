@@ -1,6 +1,6 @@
 {
   "name": "qsv-sqlp",
-  "version": "16.0.0",
+  "version": "16.1.0",
   "description": "Run Polars SQL (a PostgreSQL dialect) queries against several CSVs, Parquet, JSONL and Arrow files - converting queries to blazing-fast Polars LazyFrame expressions, processing larger than memory CSV files. Query results can be saved in CSV, JSON, JSONL, Parquet, Apache Arrow IPC and Apache Avro formats.",
   "category": "utility",
   "command": {

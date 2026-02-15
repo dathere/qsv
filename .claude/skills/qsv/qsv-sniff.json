@@ -1,6 +1,6 @@
 {
   "name": "qsv-sniff",
-  "version": "16.0.0",
+  "version": "16.1.0",
   "description": "Quickly sniff & infer CSV metadata (delimiter, header row, preamble rows, quote character, flexible, is_utf8, average record length, number of records, content length & estimated number of records if sniffing a CSV on a URL, number of fields, field names & data types). It is also a general mime type detector.",
   "category": "utility",
   "command": {

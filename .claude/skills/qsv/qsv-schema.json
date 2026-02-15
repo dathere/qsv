@@ -1,6 +1,6 @@
 {
   "name": "qsv-schema",
-  "version": "16.0.0",
+  "version": "16.1.0",
   "description": "Infer either a JSON Schema Validation Draft 2020-12 (Example) or Polars Schema (Example) from CSV data. In JSON Schema Validation mode, it produces a `.schema.json` file replete with inferred data type & domain/range validation rules derived from `stats`. Uses multithreading to go faster if an index is present. See `validate` command to use the generated JSON Schema to validate if similar CSVs comply with the schema. With the `--polars` option, it produces a `.pschema.json` file that all polars commands (`sqlp`, `joinp` & `pivotp`) use to determine the data type of each column & to optimize performance. Both schemas are editable and can be fine-tuned. For JSON Schema, to refine the inferred validation rules. For Polars Schema, to change the inferred Polars data types.",
   "category": "validation",
   "command": {

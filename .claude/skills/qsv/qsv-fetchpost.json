@@ -1,6 +1,6 @@
 {
   "name": "qsv-fetchpost",
-  "version": "16.0.0",
+  "version": "16.1.0",
   "description": "Similar to `fetch`, but uses **HTTP Post** (HTTP GET vs POST methods). Supports HTML form (application/x-www-form-urlencoded), JSON (application/json) and custom content types - with the ability to render payloads using CSV data using the Mini Jinja template engine.",
   "category": "utility",
   "command": {

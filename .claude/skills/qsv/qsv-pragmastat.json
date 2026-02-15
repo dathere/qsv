@@ -1,6 +1,6 @@
 {
   "name": "qsv-pragmastat",
-  "version": "16.0.0",
+  "version": "16.1.0",
   "description": "Compute pragmatic statistics using the Pragmastat library.",
   "category": "aggregation",
   "command": {
@@ -18,6 +18,11 @@
         "flag": "--delimiter",
         "type": "string",
         "description": "The field delimiter for reading/writing CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--memcheck",
+        "type": "flag",
+        "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. Not valid for stdin."
       },
       {
         "flag": "--misrate",

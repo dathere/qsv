@@ -1,6 +1,6 @@
 {
   "name": "qsv-sample",
-  "version": "16.0.0",
+  "version": "16.1.0",
   "description": "Randomly draw rows (with optional seed) from a CSV using seven different sampling methods - reservoir (default), indexed, bernoulli, systematic, stratified, weighted & cluster sampling. Supports sampling from CSVs on remote URLs.",
   "category": "selection",
   "command": {

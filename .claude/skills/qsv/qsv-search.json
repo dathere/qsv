@@ -1,6 +1,6 @@
 {
   "name": "qsv-search",
-  "version": "16.0.0",
+  "version": "16.1.0",
   "description": "Run a regex over a CSV. Applies the regex to selected fields & shows only matching rows.",
   "category": "filtering",
   "command": {

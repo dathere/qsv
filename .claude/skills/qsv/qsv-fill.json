@@ -1,6 +1,6 @@
 {
   "name": "qsv-fill",
-  "version": "16.0.0",
+  "version": "16.1.0",
   "description": "Fill empty values.",
   "category": "utility",
   "command": {

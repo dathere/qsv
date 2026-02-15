@@ -164,13 +164,12 @@ const result = await executor.execute(skill, {
   stdin: csvData
 });
 
-// Reusable pipelines
-const cleaningPipeline = new QsvPipeline(loader)
-  .dedup()
-  .filter('^[^@]+@', 'email');
-
-await cleaningPipeline.execute(data1);
-await cleaningPipeline.execute(data2);
+// Sequential tool calls for multi-step workflows
+const step1 = await executor.execute(dedupSkill, { stdin: csvData });
+const step2 = await executor.execute(searchSkill, {
+  args: { select: 'email', regex: '^[^@]+@' },
+  stdin: step1.stdout
+});
 ```
 
 **Shell Script Generation**:
@@ -608,8 +607,8 @@ The system provides:
 - Rust: 418 lines (generator)
 - TypeScript: 410 lines (executor)
 - Documentation: 3,650 lines
-- Examples: 270 lines
-- **Total**: 4,968 lines
+- Examples: 130 lines
+- **Total**: 4,608 lines
 
 **Generated Artifacts**:
 - 61 skill JSON files

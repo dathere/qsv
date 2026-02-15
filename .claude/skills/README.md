@@ -382,7 +382,7 @@ Claude will automatically:
 
 ### What's Available
 
-- **24 MCP Tools**: 20 common commands + generic fallback + 3 filesystem tools
+- **20 MCP Tools**: 9 core tools (search, config, filesystem, command, to_parquet, index, stats) + 11 common command tools
 - **Local File Access**: Browse and process tabular data files (CSV, Excel, JSONL, etc.) directly from your filesystem
 - **File-Based Processing**: Works with your local files without uploading
 - **Natural Language Interface**: No command syntax needed

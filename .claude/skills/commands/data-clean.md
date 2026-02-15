@@ -47,18 +47,14 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
    - Duplicate rows removed
    - Whitespace trimmed
 
-## Cleaning Template
+## Cleaning Steps
 
-```json
-{
-  "steps": [
-    { "tool": "qsv_command", "args": { "cmd": "safenames", "input_file": "<file>", "output": "step1.csv" } },
-    { "tool": "qsv_command", "args": { "cmd": "fixlengths", "input_file": "step1.csv", "output": "step2.csv" } },
-    { "tool": "qsv_command", "args": { "cmd": "apply", "sub_cmd": "operations", "operations": "trim", "input_file": "step2.csv", "output": "step3.csv" } },
-    { "tool": "qsv_command", "args": { "cmd": "dedup", "input_file": "step3.csv", "output": "<output>" } }
-  ]
-}
-```
+Call each tool sequentially, passing the output of one step as input to the next:
+
+1. `qsv_command` with `cmd: "safenames"`, `input_file: "<file>"`, `output: "step1.csv"`
+2. `qsv_command` with `cmd: "fixlengths"`, `input_file: "step1.csv"`, `output: "step2.csv"`
+3. `qsv_command` with `cmd: "apply"`, `sub_cmd: "operations"`, `operations: "trim"`, `input_file: "step2.csv"`, `output: "step3.csv"`
+4. `qsv_command` with `cmd: "dedup"`, `input_file: "step3.csv"`, `output: "<output>"`
 
 ## Notes
 

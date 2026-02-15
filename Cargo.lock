@@ -913,7 +913,7 @@ dependencies = [
  "arrayvec",
  "cc",
  "cfg-if",
- "constant_time_eq",
+ "constant_time_eq 0.4.2",
  "cpufeatures 0.2.17",
  "memmap2",
  "rayon-core",
@@ -1171,7 +1171,7 @@ dependencies = [
  "log",
  "quick-xml",
  "serde",
- "zip 7.4.0",
+ "zip 7.2.0",
 ]
 
 [[package]]
@@ -1488,6 +1488,12 @@ dependencies = [
  "quote",
  "unicode-xid",
 ]
+
+[[package]]
+name = "constant_time_eq"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 
 [[package]]
 name = "constant_time_eq"
@@ -1856,7 +1862,7 @@ dependencies = [
  "threadpool",
  "typed-builder",
  "walkdir",
- "zip 7.4.0",
+ "zip 7.2.0",
 ]
 
 [[package]]
@@ -2832,7 +2838,7 @@ dependencies = [
  "rkyv 0.8.15",
  "serde",
  "tokio",
- "zip 7.4.0",
+ "zip 7.2.0",
 ]
 
 [[package]]
@@ -2916,13 +2922,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "139ef39800118c7683f2fd3c98c1b23c09ae076556b435f8e9064ae108aaeeec"
 dependencies = [
  "cfg-if",
- "js-sys",
  "libc",
  "r-efi",
  "rand_core 0.10.0",
  "wasip2",
  "wasip3",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -3431,9 +3435,9 @@ dependencies = [
 
 [[package]]
 name = "indicatif"
-version = "0.18.3"
+version = "0.18.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9375e112e4b463ec1b1c6c011953545c65a30164fbab5b581df32b3abf0dcb88"
+checksum = "25470f23803092da7d239834776d653104d551bc4d7eacaf31e6837854b8e9eb"
 dependencies = [
  "console",
  "portable-atomic",
@@ -5908,7 +5912,7 @@ dependencies = [
  "uuid",
  "whatlang",
  "xxhash-rust",
- "zip 7.4.0",
+ "zip 7.2.0",
  "zmij",
 ]
 
@@ -6729,7 +6733,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "84205e093885c6b4e2d93e225a148df2e7fe67a668c27e3322e56e0d93721848"
 dependencies = [
  "tempfile",
- "zip 7.4.0",
+ "zip 7.2.0",
 ]
 
 [[package]]
@@ -9524,17 +9528,18 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "7.4.0"
+version = "7.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc12baa6db2b15a140161ce53d72209dacea594230798c24774139b54ecaa980"
+checksum = "c42e33efc22a0650c311c2ef19115ce232583abbe80850bc8b66509ebef02de0"
 dependencies = [
  "aes",
  "bzip2",
- "constant_time_eq",
+ "constant_time_eq 0.3.1",
  "crc32fast",
  "deflate64",
  "flate2",
- "getrandom 0.4.1",
+ "generic-array",
+ "getrandom 0.3.4",
  "hmac",
  "indexmap",
  "lzma-rust2",

@@ -55,7 +55,9 @@ Shell completions are now auto-generated from USAGE text, replacing 68 manually 
 - deps: bump tempfile from 3.24.0 to 3.25.0
 - deps: bump uuid from 1.20.0 to 1.21.0
 - deps: bump libc from 0.2.180 to 0.2.181
+- deps: bump futures to 0.3.32
 - deps: bump qs from 6.14.1 to 6.14.2 (MCP)
+- deps: update csv patched fork MSRV to 1.93
 
 ### Fixed
 

@@ -649,6 +649,7 @@ const FINGERPRINT_HASH_COLUMNS: usize = 26;
 
 // maximum number of antimodes to display
 const MAX_ANTIMODES: usize = 10;
+const PAR_SORT_THRESHOLD: usize = 10_000;
 // default length of antimode string before truncating and appending "..."
 const DEFAULT_ANTIMODES_LEN: usize = 100;
 
@@ -3200,25 +3201,7 @@ impl Stats {
 
         // Process other types - from most to least frequent
         match t {
-            TInteger => {
-                if let Some(v) = self.unsorted_stats.as_mut() {
-                    v.add(float_val);
-                }
-                if let Some(v) = self.weighted_unsorted_stats.as_mut() {
-                    // Only store valid weights to avoid filtering later
-                    if weight > 0.0 {
-                        v.push((float_val, weight));
-                    }
-                }
-                // safety: online is always enabled
-                unsafe {
-                    self.online.as_mut().unwrap_unchecked().add_f64(float_val);
-                }
-                if let Some(ref mut wos) = self.weighted_online {
-                    wos.add_weighted(float_val, weight);
-                }
-            },
-            TFloat => {
+            TInteger | TFloat => {
                 if let Some(v) = self.unsorted_stats.as_mut() {
                     v.add(float_val);
                 }
@@ -3236,24 +3219,26 @@ impl Stats {
                     wos.add_weighted(float_val, weight);
                 }
 
-                // precision calculation
+                // precision calculation (TFloat only)
                 // note that we are referring to number of decimal places,
                 // not the number of significant digits
-                let precision = if float_val == 0.0 {
-                    0
-                } else {
-                    // safety: we know that f is a valid f64
-                    // so there will always be a fraction part, even if it's 0
-                    unsafe {
-                        zmij::Buffer::new()
-                            .format_finite(float_val)
-                            .split('.')
-                            .next_back()
-                            .unwrap_unchecked()
-                            .len() as u16
-                    }
-                };
-                self.max_precision = std::cmp::max(self.max_precision, precision);
+                if t == TFloat {
+                    let precision = if float_val == 0.0 {
+                        0
+                    } else {
+                        // safety: we know that f is a valid f64
+                        // so there will always be a fraction part, even if it's 0
+                        unsafe {
+                            zmij::Buffer::new()
+                                .format_finite(float_val)
+                                .split('.')
+                                .next_back()
+                                .unwrap_unchecked()
+                                .len() as u16
+                        }
+                    };
+                    self.max_precision = std::cmp::max(self.max_precision, precision);
+                }
             },
             TDateTime | TDate => {
                 // calculate date statistics by adding date samples as unix timestamps
@@ -3456,28 +3441,31 @@ impl Stats {
                             .filter(|&(_, &weight)| (weight - max_weight).abs() < 1e-10)
                             .map(|(value, _)| value)
                             .collect();
-                        modes_keys.par_sort_unstable();
+                        if modes_keys.len() > PAR_SORT_THRESHOLD {
+                            modes_keys.par_sort_unstable();
+                        } else {
+                            modes_keys.sort_unstable();
+                        }
                         let modes_result: Vec<Vec<u8>> = modes_keys.into_iter().cloned().collect();
                         // Collect antimodes (values with min weight) in deterministic order
-                        // limit to 10
-                        let mut antimodes_keys: Vec<&Vec<u8>> = weighted_modes_map
+                        // count all antimodes, but only keep up to MAX_ANTIMODES
+                        let antimodes_all: Vec<&Vec<u8>> = weighted_modes_map
                             .iter()
                             .filter(|&(_, &weight)| (weight - min_weight).abs() < 1e-10)
                             .map(|(value, _)| value)
                             .collect();
-                        antimodes_keys.par_sort_unstable();
-                        let antimodes_result: Vec<Vec<u8>> = antimodes_keys
-                            .into_iter()
-                            .take(MAX_ANTIMODES)
-                            .cloned()
-                            .collect();
+                        let antimodes_count = antimodes_all.len();
+                        let mut antimodes_keys: Vec<&Vec<u8>> = antimodes_all;
+                        if antimodes_keys.len() > PAR_SORT_THRESHOLD {
+                            antimodes_keys.par_sort_unstable();
+                        } else {
+                            antimodes_keys.sort_unstable();
+                        }
+                        antimodes_keys.truncate(MAX_ANTIMODES);
+                        let antimodes_result: Vec<Vec<u8>> =
+                            antimodes_keys.into_iter().cloned().collect();
 
                         let modes_count = modes_result.len();
-                        // we only display MAX_ANTIMODES, but we actually count all antimodes
-                        let antimodes_count = weighted_modes_map
-                            .values()
-                            .filter(|&&w| (w - min_weight).abs() < 1e-10)
-                            .count();
 
                         // Format modes
                         let modes_list = if visualize_ws {
@@ -4233,8 +4221,8 @@ impl Commute for Stats {
         }
 
         if let Some(ref mut wus) = self.weighted_unsorted_stats {
-            if let Some(ref other_wus) = other.weighted_unsorted_stats {
-                wus.extend_from_slice(other_wus);
+            if let Some(mut other_wus) = other.weighted_unsorted_stats {
+                wus.append(&mut other_wus);
             }
         } else if other.weighted_unsorted_stats.is_some() {
             self.weighted_unsorted_stats = other.weighted_unsorted_stats;
@@ -4242,9 +4230,9 @@ impl Commute for Stats {
 
         // Merge weighted modes
         if let Some(ref mut wm) = self.weighted_modes {
-            if let Some(ref other_wm) = other.weighted_modes {
+            if let Some(other_wm) = other.weighted_modes {
                 for (value, weight) in other_wm {
-                    *wm.entry(value.clone()).or_insert(0.0) += weight;
+                    *wm.entry(value).or_insert(0.0) += weight;
                 }
             }
         } else if other.weighted_modes.is_some() {

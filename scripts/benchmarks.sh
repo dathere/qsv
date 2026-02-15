@@ -568,6 +568,7 @@ run --index frequency_index "$qsv_bin" frequency "$data"
 run --index frequency_index_stats_mode_auto env QSV_STATS_MODE=auto bash -c \'"$qsv_bin" frequency "$data"\'
 run --index frequency_index_stats_mode_force env QSV_STATS_MODE=force bash -c \'"$qsv_bin" frequency "$data"\'
 run --index frequency_index_stats_mode_none env QSV_STATS_MODE=none bash -c \'"$qsv_bin" frequency "$data"\'
+run --index frequency_index_frequency_cache "$qsv_bin" frequency --frequency-jsonl "$data"
 run frequency_no_limit "$qsv_bin" frequency --limit 0 "$data"
 run --index frequency_no_limit_index "$qsv_bin" frequency --limit 0 "$data"
 run frequency_other_sorted "$qsv_bin" frequency --other-sorted "$data"

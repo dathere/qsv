@@ -150,9 +150,10 @@ jaq-core = "2"
 jaq-json = { version = "1", features = ["serde_json"] }
 jaq-std = "2"
 json-objects-to-csv = "0.1.3"
-jsonschema = { version = "0.41", features = [
+jsonschema = { version = "0.42", features = [
     "resolve-file",
     "resolve-http",
+    "tls-aws-lc-rs",
 ], default-features = false }
 libc = "0.2"
 log = "0.4"
@@ -331,9 +332,6 @@ geosuggest-utils = { git = "https://github.com/estin/geosuggest", rev = "0430e92
 
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }
-
-# use latest jsonschema upstream with performance improvements
-jsonschema = { git = "https://github.com/Stranger6667/jsonschema-rs", rev = "104d463" }
 
 # use latest upstream now that our PR has been merged while awaiting a new release
 kiddo = { git = "https://github.com/sdd/kiddo.git", rev = "2056051"}

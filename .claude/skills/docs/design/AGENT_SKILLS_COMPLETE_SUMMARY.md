@@ -174,7 +174,7 @@ const step2 = await executor.execute(searchSkill, {
 
 **Shell Script Generation**:
 ```typescript
-const script = await pipeline.toShellScript();
+// Generate shell commands from sequential tool calls
 // Perfect for:
 // - Documentation
 // - Debugging
@@ -221,7 +221,7 @@ const script = await pipeline.toShellScript();
 |------|-------|---------|
 | `AGENT_SKILLS_DESIGN.md` | ~1000 | Architecture |
 | `AGENT_SKILLS_INTEGRATION.md` | ~1000 | Integration guide |
-| `SKILLS_README.md` | ~500 | Executor/Pipeline docs |
+| `SKILLS_README.md` | ~500 | Executor docs |
 | `AGENT_SKILLS_POC_SUMMARY.md` | ~400 | POC summary |
 | `AGENT_SKILLS_COMPLETE_SUMMARY.md` | ~500 | This document |
 | `.claude/skills/README.md` | ~250 | Skills registry |
@@ -611,7 +611,7 @@ The system provides:
 - **Total**: 4,608 lines
 
 **Generated Artifacts**:
-- 61 skill JSON files
+- 56 skill JSON files
 - Complete TypeScript package
 - Comprehensive documentation
 - Working examples

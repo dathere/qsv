@@ -15,7 +15,6 @@
     "test:coverage": "npm run build:test && c8 --reporter=text node scripts/run-tests.js",
     "test:watch": "node --test --watch dist/tests/*.test.js",
     "test:examples": "node examples/basic.js",
-    "test-pipeline": "node examples/pipeline.js",
     "test-update-checker": "node examples/update-checker-demo.js",
     "mcp:start": "node dist/mcp-server.js",
     "mcp:install": "node scripts/install-mcp.js",

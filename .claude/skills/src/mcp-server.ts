@@ -40,10 +40,6 @@ import {
   killAllProcesses,
   getActiveProcessCount,
 } from "./mcp-tools.js";
-import {
-  createPipelineToolDefinition,
-  executePipeline,
-} from "./mcp-pipeline.js";
 import { VERSION } from "./version.js";
 import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
 
@@ -57,7 +53,6 @@ const CORE_TOOLS = [
   "qsv_set_working_dir",
   "qsv_get_working_dir",
   "qsv_list_files",
-  "qsv_pipeline",
   "qsv_command",
   "qsv_to_parquet",
   "qsv_index",
@@ -77,7 +72,7 @@ WORKFLOW ORDER: For new files: (1) qsv_list_files to discover files, (2) qsv_ind
 
 FILE HANDLING: Save outputs to files with descriptive names rather than returning large results to chat. Ensure output files are saved to the qsv working directory. For CSV files >10MB needing SQL queries, convert to Parquet first with qsv_to_parquet, then query with DuckDB or sqlp SKIP_INPUT + read_parquet(). Parquet is ONLY for sqlp/DuckDB; all other qsv commands require CSV/TSV/SSV input. When being used from Claude Cowork or Code, make sure to set qsv_working_dir to the same directory being used by Cowork/Code.
 
-TOOL COMPOSITION: Use qsv_pipeline to chain 2+ sequential operations efficiently by streaming data between commands (no automatic .idx creation; run qsv_index explicitly on files you want indexed). For complex SQL, use qsv_sqlp, falling back on qsv_sqlp error to DuckDB using parquet, if available. Once you use DuckDB, always use it for all future SQL queries. For custom row-level logic, use qsv_command with command="luau".
+TOOL COMPOSITION: For multi-step workflows, call tools sequentially for better error visibility and control. For complex SQL, use qsv_sqlp, falling back on qsv_sqlp error to DuckDB using parquet, if available. Once you use DuckDB, always use it for all future SQL queries. For custom row-level logic, use qsv_command with command="luau".
 
 MEMORY LIMITS: Commands dedup, sort, reverse, table, transpose load entire files into memory. For files >1GB, prefer extdedup/extsort alternatives via qsv_command. Check column cardinality with qsv_stats before running frequency or pivotp to avoid huge output.`;
 
@@ -389,7 +384,7 @@ class QsvMcpServer {
           console.error(
             `[Server] Core tools only mode - skipping command tools`,
           );
-          // Tools will be added below (generic, pipeline, config, search, filesystem)
+          // Tools will be added below (generic, config, search, filesystem)
         } else {
           // Deferred loading mode (default when exposeAllTools is undefined):
           // 1. Expose common command tools
@@ -484,15 +479,6 @@ class QsvMcpServer {
           throw error;
         }
 
-        // Add pipeline tool
-        try {
-          const pipelineTool = createPipelineToolDefinition();
-          tools.push(pipelineTool);
-        } catch (error) {
-          console.error("[Server] Error creating pipeline tool:", error);
-          throw error;
-        }
-
         // Add config, search, and conversion tools
         console.error("[Server] Adding config, search, and conversion tools...");
         try {
@@ -538,7 +524,7 @@ class QsvMcpServer {
         // Tool dispatch chain: ordered from most specific to most general.
         // Each handler has a different signature/dependency set, so a handler map
         // would require a uniform interface wrapper with no real benefit.
-        // Order: filesystem → pipeline → generic command → config → search →
+        // Order: filesystem → generic command → config → search →
         //        to_parquet → skill-based (qsv_*) → unknown tool error.
 
         // Handle filesystem tools
@@ -608,15 +594,6 @@ class QsvMcpServer {
               },
             ],
           };
-        }
-
-        // Handle pipeline tool
-        if (name === "qsv_pipeline") {
-          return await executePipeline(
-            args || {},
-            this.loader,
-            this.filesystemProvider,
-          );
         }
 
         // Handle generic command tool

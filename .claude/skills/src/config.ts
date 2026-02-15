@@ -680,17 +680,6 @@ export const config = {
   ),
 
   /**
-   * Maximum number of steps in a pipeline
-   * Default: 50 steps
-   */
-  maxPipelineSteps: parseIntEnv(
-    "QSV_MCP_MAX_PIPELINE_STEPS",
-    50,
-    1, // Minimum: 1 step
-    1000, // Maximum: 1000 steps
-  ),
-
-  /**
    * Maximum number of concurrent operations
    * Default: 1 operation
    */

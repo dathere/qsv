@@ -815,8 +815,7 @@ The MCP server will fail validation and show an error. Use `qsv_config` to see d
 
 Once you're comfortable with basic usage, explore:
 
-1. **Pipeline Composition** - Chain multiple qsv commands together
-2. **Complex Queries** - Use `qsv sqlp` for SQL-like data queries
+1. **Complex Queries** - Use `qsv sqlp` for SQL-like data queries
 3. **Data Validation** - Create automated validation workflows
 4. **Integration Scripts** - Build data processing automation
 5. **Remote Workflows** - Process data on remote servers

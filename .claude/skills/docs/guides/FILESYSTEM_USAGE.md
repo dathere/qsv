@@ -300,7 +300,6 @@ Here's a complete example of working with local files:
 ### Path Validation
 **What is validated:**
 - All `input_file` and `output_file` parameters in qsv command tools
-- Pipeline `input_file` and `output_file` parameters in `qsv_pipeline`
 - Working directory changes via `qsv_set_working_dir`
 - File browsing via `qsv_list_files` (with recursive subdirectory validation)
 - File preview requests in resource browser

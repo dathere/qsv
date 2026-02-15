@@ -184,7 +184,7 @@ From ~/Downloads/customers.csv:
 4. Show top 10
 ```
 
-Claude will use `qsv_pipeline` to chain multiple operations.
+Claude will chain multiple qsv operations sequentially.
 
 ### Available Operations
 
@@ -612,7 +612,6 @@ Yes! The extension is open source:
 - 66 qsv commands packaged as MCP tools
 - Filesystem resource browsing
 - Auto-conversion for Excel and JSONL files
-- Pipeline composition support
 - Update checker with auto-regeneration
 - Platform-specific configuration (Windows/macOS/Linux)
 

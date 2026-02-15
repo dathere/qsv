@@ -10,7 +10,6 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 - **BM25 Search**: Intelligent tool discovery using probabilistic relevance ranking
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
-- **Pipeline Support**: Chain multiple operations together seamlessly
 - **Intelligent Guidance**: Enhanced tool descriptions help Claude make optimal decisions
 
 ## What's New
@@ -27,7 +26,7 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 - **Deferred Tool Loading** - Implements Anthropic's Tool Search Tool pattern
   - Only 10 core tools loaded initially (reduces token usage ~85%)
   - Tools found via search are dynamically added to subsequent ListTools responses
-  - Core tools: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, `qsv_command`, `qsv_to_parquet`, `qsv_index`, `qsv_stats`
+  - Core tools: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_command`, `qsv_to_parquet`, `qsv_index`, `qsv_stats`
 - **Removed `qsv_data_profile`** - Tool produced ~60KB output filling context window; use `qsv stats --cardinality --stats-jsonl` instead
 
 ### Version 15.1.1
@@ -142,7 +141,6 @@ This script will:
            "QSV_MCP_CONVERTED_LIFO_SIZE_GB": "1",
            "QSV_MCP_OPERATION_TIMEOUT_MS": "600000",
            "QSV_MCP_MAX_FILES_PER_LISTING": "1000",
-           "QSV_MCP_MAX_PIPELINE_STEPS": "50",
            "QSV_MCP_MAX_CONCURRENT_OPERATIONS": "10"
          }
        }
@@ -173,7 +171,6 @@ This script will:
 | `QSV_MCP_CONVERTED_LIFO_SIZE_GB` | `1` | Maximum size for converted file cache (0.1-100 GB) |
 | `QSV_MCP_OPERATION_TIMEOUT_MS` | `600000` | Operation timeout in milliseconds (1s-30min, default 10 minutes) |
 | `QSV_MCP_MAX_FILES_PER_LISTING` | `1000` | Maximum files to return in a single listing (1-100k) |
-| `QSV_MCP_MAX_PIPELINE_STEPS` | `50` | Maximum steps in a pipeline (1-1000) |
 | `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | `10` | Maximum concurrent operations (1-100) |
 | `QSV_MCP_AUTO_REGENERATE_SKILLS` | `false` | Automatically regenerate skills when qsv version changes |
 | `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates when MCP server starts |
@@ -199,7 +196,6 @@ These tools are always available immediately:
 | `qsv_set_working_dir` | Change working directory for file operations |
 | `qsv_get_working_dir` | Get current working directory |
 | `qsv_list_files` | List tabular data files in a directory |
-| `qsv_pipeline` | Chain multiple qsv operations together |
 | `qsv_command` | Execute any of the 55 qsv commands |
 | `qsv_to_parquet` | Convert CSV to Parquet format |
 | `qsv_index` | Create index for fast random access |
@@ -234,17 +230,6 @@ Tools for frequently used commands, loaded when discovered via search:
 - `qsv_welcome` - Welcome message and quick start guide
 - `qsv_examples` - Show common usage examples
 
-### Pipeline Tool
-
-`qsv_pipeline` - Chain multiple operations together:
-```
-User: "Remove duplicates from sales.csv, then calculate statistics on the revenue column"
-
-Claude executes pipeline:
-1. qsv dedup
-2. qsv stats -s revenue
-```
-
 ## Tool Search and Deferred Loading
 
 The MCP server implements Anthropic's Tool Search Tool pattern for optimal token efficiency:
@@ -260,7 +245,6 @@ Only 10 core tools are loaded initially, reducing token usage by ~85%:
 | `qsv_set_working_dir` | Change working directory |
 | `qsv_get_working_dir` | Get current working directory |
 | `qsv_list_files` | List tabular data files |
-| `qsv_pipeline` | Chain multiple operations |
 | `qsv_command` | Execute any qsv command |
 | `qsv_to_parquet` | Convert CSV to Parquet format |
 | `qsv_index` | Create index for fast random access |
@@ -385,24 +369,7 @@ Parameters:
 Result: Statistics (mean, median, min, max, etc.)
 ```
 
-### Example 3: Data Cleaning Pipeline
-
-```
-User: "Clean sales.csv by removing duplicates, then sort by revenue descending, then take top 100"
-
-Claude calls: qsv_pipeline
-Parameters:
-  input_file: "sales.csv"
-  steps: [
-    { command: "dedup" },
-    { command: "sort", params: { columns: "revenue", reverse: true } },
-    { command: "slice", params: { start: 0, end: 100 } }
-  ]
-
-Result: Cleaned, sorted, and sliced CSV
-```
-
-### Example 4: Using Generic Tool
+### Example 3: Using Generic Tool
 
 ```
 User: "Convert data.csv to Parquet format"
@@ -541,11 +508,9 @@ Press Ctrl+C to stop.
 │   ├── mcp-server.ts         # Main MCP server
 │   ├── mcp-tools.ts          # Tool definitions with guidance
 │   ├── mcp-filesystem.ts     # Filesystem resource provider
-│   ├── mcp-pipeline.ts       # Pipeline tool
 │   ├── types.ts              # Type definitions
 │   ├── loader.ts             # Skill loader
-│   ├── executor.ts           # Skill executor
-│   └── pipeline.ts           # Pipeline API
+│   └── executor.ts           # Skill executor
 ├── scripts/
 │   ├── install-mcp.js        # Installation helper
 │   └── package-mcpb.js       # MCPB packaging script
@@ -604,7 +569,6 @@ Potential additions for future versions:
 1. **Streaming Results** - For very large outputs
 2. **Inline CSV Support** - Process small CSV snippets without files
 3. **Progress Updates** - Track progress of long-running operations
-4. **Parallel Execution** - Run independent pipeline steps concurrently
 
 ## Resources
 

@@ -257,7 +257,6 @@ qsv-mcp-server.mcpb
 │  • Tool definitions (26 tools)     │
 │  • Parameter validation            │
 │  • File conversion manager         │
-│  • Pipeline orchestration          │
 │  • Format auto-detection           │
 └──────────────┬──────────────────────┘
                │ execFileSync (secure)
@@ -297,7 +296,6 @@ The extension is configured via environment variables in Claude Desktop's MCP se
 | `QSV_MCP_CONVERTED_LIFO_SIZE_GB` | `1` | Max cache size for converted files (0.1-100 GB) |
 | `QSV_MCP_OPERATION_TIMEOUT_MS` | `600000` | Operation timeout in milliseconds (1s-30min, default 10 minutes) |
 | `QSV_MCP_MAX_FILES_PER_LISTING` | `1000` | Max files in directory listings (1-100k) |
-| `QSV_MCP_MAX_PIPELINE_STEPS` | `50` | Max steps in a pipeline (1-1000) |
 | `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | `10` | Max concurrent operations (1-100) |
 | `QSV_MCP_AUTO_REGENERATE_SKILLS` | `false` | Auto-regenerate when qsv version changes |
 | `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates on startup |
@@ -358,7 +356,6 @@ The MCP server enforces limits to prevent DoS attacks and resource exhaustion:
 
 - **Operation timeout**: Default 120s, prevents hung operations
 - **Max file listings**: Default 1000 files, prevents directory enumeration attacks
-- **Max pipeline steps**: Default 50, prevents infinite loops
 - **Max concurrent ops**: Default 10, prevents resource exhaustion
 - **Converted file cache**: LIFO eviction with size limit (default 1GB)
 
@@ -396,35 +393,6 @@ The MCP server automatically converts Excel and JSONL files to CSV.
 **Supported conversions:**
 - Excel → CSV: `qsv excel` (supports .xls, .xlsx, .xlsm, .xlsb, .ods)
 - JSONL → CSV: `qsv jsonl` (supports .jsonl, .ndjson)
-
-## Pipeline System
-
-The MCP server can compose multiple qsv commands into efficient pipelines.
-
-**Pipeline features:**
-- Automatic intermediate file management
-- Automatic indexing between steps (for eligible commands)
-- Atomic operations (rollback on failure)
-- Performance optimization
-
-**Example pipeline execution:**
-```json
-{
-  "steps": [
-    { "command": "dedup", "params": {} },
-    { "command": "select", "params": { "selection": "name,revenue" } },
-    { "command": "sort", "params": { "columns": "revenue", "reverse": true } },
-    { "command": "slice", "params": { "end": 100 } }
-  ]
-}
-```
-
-**Implementation details:**
-1. Each step outputs to a temporary file
-2. Next step reads from previous step's output
-3. Index automatically created between steps if beneficial
-4. On error, all intermediate files are cleaned up
-5. Final output written to user-specified location (or returned directly)
 
 ## Stats Cache Optimization
 

@@ -6,7 +6,7 @@ This guide explains how to configure and use the **qsv MCP Server** and its asso
 
 The QSV MCP Server exposes **56** tabular data-wrangling commands as tools to the Gemini CLI. To optimize performance and token usage, the server follows a **Deferred Loading** pattern:
 
-1.  **7 Core Tools** are loaded initially (Search, Config, Working Dir, Filesystem, Pipeline).
+1.  **7 Core Tools** are loaded initially (Search, Config, Working Dir, Filesystem, Command).
 2.  **Additional Tools** are discovered via the `qsv_search_tools` tool and added dynamically to the session.
 
 This allows the Gemini CLI to stay focused on your specific data task without being overwhelmed by 56+ tool definitions.
@@ -91,7 +91,7 @@ Launch a new Gemini CLI session in any directory containing data:
 gemini "What qsv core tools are available?"
 ```
 
-You should see the 7 core tools: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_pipeline`, and `qsv_command`.
+You should see the 7 core tools: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_command`, and `qsv_to_parquet`.
 
 ## Common Workflows
 
@@ -112,7 +112,7 @@ gemini "What CSV files are available here?"
 gemini "Summarize the 'revenue' column in sales.csv"
 ```
 
-### Data Pipeline
+### Data Transformation
 ```bash
 gemini "Filter customers.csv to 'active' status and join with orders.csv on 'id'"
 ```

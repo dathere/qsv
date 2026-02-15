@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Successfully delivered a complete end-to-end system for auto-generating, loading, and executing Agent Skills from qsv command USAGE text, with a fluent pipeline composition API for Claude Agent SDK integration.
+Successfully delivered a complete end-to-end system for auto-generating, loading, and executing Agent Skills from qsv command USAGE text for Claude Agent SDK integration.
 
 **Date**: 2026-01-02 (Original) | **Updated**: 2026-01-25
 **Status**: ✅ **COMPLETE** (v14.2.0)
@@ -82,54 +82,15 @@ const result = await executor.execute(skill, {
 });
 ```
 
-### 3. ✅ Pipeline Composition API
-
-**File**: `src/pipeline.ts` (220 lines)
-
-**Features**:
-- **Fluent Interface**: Chainable methods for all common operations
-- **Type Safety**: Full TypeScript support
-- **Shell Script Generation**: Convert pipelines to executable bash
-- **Error Handling**: Graceful failure with detailed messages
-- **Performance Tracking**: Duration metrics for each step
-
-**15 Convenience Methods**:
-- `select()`, `slice()`, `head()` - Selection
-- `search()`, `filter()` - Filtering
-- `dedup()`, `sortBy()`, `rename()`, `apply()`, `transpose()` - Transformation
-- `stats()`, `moarstats()`, `frequency()` - Aggregation
-- `join()` - Joining
-
-**Pipeline Example**:
-```typescript
-const result = await new QsvPipeline(loader)
-  .select('!SSN,password')           // Remove sensitive columns
-  .dedup()                            // Remove duplicates
-  .filter('^[^@]+@', 'email')        // Validate emails
-  .sortBy('revenue', { reverse: true })
-  .slice(0, 100)
-  .execute(customerData);
-
-// Also generates shell equivalent:
-// qsv select '!SSN,password' | \
-//   qsv dedup | \
-//   qsv search -s email '^[^@]+@' | \
-//   qsv sort --reverse -s revenue | \
-//   qsv slice --end 100
-```
-
-### 4. ✅ Example Scripts
+### 3. ✅ Example Scripts
 
 **Files**:
 - `examples/basic.js` (130 lines) - Skill loading and execution
-- `examples/pipeline.js` (140 lines) - Pipeline composition
 
 **Examples Demonstrate**:
 - Loading and exploring skills
 - Searching and categorizing
 - Individual skill execution
-- Multi-step pipeline creation
-- Shell script generation
 - Error handling
 - Performance metrics
 
@@ -193,17 +154,15 @@ throw new Error('Invalid type for column: expected string, got number');
 console.warn('Unknown option: invalid-flag');
 ```
 
-### Pipeline API Quality
+### Executor API Quality
 
-**Composition Patterns**:
+**Execution Patterns**:
 ```typescript
-// Simple chaining
-pipeline.select('1-5').dedup().stats();
-
-// Conditional logic
-if (removeTestAccounts) {
-  pipeline.search('^false$', 'test_account');
-}
+// Individual skill execution
+const result = await executor.execute(skill, {
+  args: { selection: '1-5' },
+  stdin: csvData
+});
 
 // Reusable pipelines
 const cleaningPipeline = new QsvPipeline(loader)
@@ -240,16 +199,15 @@ const script = await pipeline.toShellScript();
 - Configurable output directory
 - Handles edge cases (multiple delimiter types)
 
-### TypeScript Code (Executor + Pipeline)
+### TypeScript Code (Executor)
 
 | File | Lines | Purpose |
 |------|-------|---------|
 | `types.ts` | 95 | Type definitions |
 | `loader.ts` | 105 | Skill loading |
 | `executor.ts` | 190 | Skill execution |
-| `pipeline.ts` | 220 | Pipeline composition |
 | `index.ts` | 20 | Public API |
-| **Total** | **630** | |
+| **Total** | **410** | |
 
 **Quality Features**:
 - Full TypeScript type safety
@@ -275,8 +233,7 @@ const script = await pipeline.toShellScript();
 | File | Lines | Purpose |
 |------|-------|---------|
 | `basic.js` | 130 | Basic usage |
-| `pipeline.js` | 140 | Pipeline composition |
-| **Total** | **270** | |
+| **Total** | **130** | |
 
 ---
 
@@ -346,37 +303,21 @@ console.log(result.metadata.duration); // 123 (ms)
 console.log(result.output);           // Deduplicated CSV
 ```
 
-### Example 3: Data Cleaning Pipeline
+### Example 3: Multi-Step Processing
 
 ```typescript
-import { QsvPipeline } from '@qsv/agent-skills';
+// Chain multiple operations sequentially
+const selectSkill = await loader.load('qsv-select');
+const dedupSkill = await loader.load('qsv-dedup');
 
-const result = await new QsvPipeline(loader)
-  .search('^false$', 'test_account')    // Remove test accounts
-  .dedup()                               // Remove duplicates
-  .filter('^[^@]+@[^@]+\\.[^@]+$', 'email') // Valid emails
-  .select('id,name,email,revenue')      // Select columns
-  .sortBy('revenue', { reverse: true }) // Sort descending
-  .slice(0, 100)                        // Top 100
-  .execute(customerData);
+const selected = await executor.execute(selectSkill, {
+  args: { selection: 'id,name,email,revenue' },
+  stdin: customerData
+});
 
-console.log(result.totalDuration);     // Total execution time
-console.log(result.steps.length);      // 6 steps
-console.log(result.output.toString()); // Final CSV
-```
-
-### Example 4: Generate Shell Script
-
-```typescript
-const pipeline = new QsvPipeline(loader)
-  .select('1-10')
-  .dedup()
-  .stats({ everything: true });
-
-console.log(await pipeline.toShellScript());
-// qsv select 1-10 | \
-//   qsv dedup | \
-//   qsv stats --everything
+const deduped = await executor.execute(dedupSkill, {
+  stdin: selected.output
+});
 ```
 
 ---
@@ -389,7 +330,6 @@ Since the original implementation, significant enhancements have been added:
 The system now uses **Model Context Protocol (MCP)** for Claude integration:
 - `mcp-server.ts` - Main MCP server entry point
 - `mcp-tools.ts` - Tool definitions with guidance enhancement
-- `mcp-pipeline.ts` - Pipeline execution via MCP
 
 ### Tool Search Support
 New `qsv_search_tools` tool for discovering commands:
@@ -461,10 +401,10 @@ await agent.chat("Show me revenue statistics");
 // Returns statistical summary
 
 await agent.chat("Filter for valid emails and sort by revenue");
-// Agent plans pipeline:
+// Agent plans multi-step workflow:
 // 1. qsv-search for email validation
 // 2. qsv-sort for revenue sorting
-// Executes pipeline
+// Executes sequentially
 // Returns cleaned, sorted data
 ```
 
@@ -490,7 +430,7 @@ Execution: ~150ms
 Total: ~156ms
 ```
 
-### Pipeline Execution (5-step pipeline on 10K rows)
+### Multi-Step Execution (5 sequential operations on 10K rows)
 
 ```
 Step 1 (select): ~50ms
@@ -524,17 +464,15 @@ qsv/
 │       │   ├── types.ts             # Type definitions
 │       │   ├── loader.ts            # Skill loader
 │       │   ├── executor.ts          # Skill executor
-│       │   ├── pipeline.ts          # Pipeline API
 │       │   └── index.ts             # Public API
 │       │
 │       ├── examples/
-│       │   ├── basic.js             # Basic usage
-│       │   └── pipeline.js          # Pipeline usage
+│       │   └── basic.js             # Basic usage
 │       │
 │       ├── package.json
 │       ├── tsconfig.json
 │       ├── README.md                # Skills registry
-│       └── SKILLS_README.md         # Executor/Pipeline docs
+│       └── SKILLS_README.md         # Executor docs
 │
 └── docs/
     ├── AGENT_SKILLS_DESIGN.md       # Architecture
@@ -558,8 +496,6 @@ npm install
 # Run basic example
 node examples/basic.js
 
-# Run pipeline example
-node examples/pipeline.js
 ```
 
 ### Expected Output
@@ -584,13 +520,8 @@ Searching for "duplicate" skills:
 ✨ Example complete!
 ```
 
-**Pipeline Example**:
+**Multi-Step Example**:
 ```
-QSV Skills - Pipeline Composition Example
-=========================================
-
-Example 1: Data Cleaning Pipeline
-----------------------------------
 Equivalent shell command:
 qsv search -s test_account '^false$' | \
   qsv dedup | \
@@ -614,8 +545,7 @@ Pipeline execution results:
 
 1. ✅ **Generate all 61 skills** - COMPLETE
 2. ✅ **Build executor wrapper** - COMPLETE
-3. ✅ **Create pipeline API** - COMPLETE
-4. ✅ **Write documentation** - COMPLETE
+3. ✅ **Write documentation** - COMPLETE
 5. ✅ **Create examples** - COMPLETE
 
 ### Short Term (Week 1)
@@ -639,7 +569,6 @@ Pipeline execution results:
 - [ ] Multi-language support
 - [ ] Cloud execution
 - [ ] Skill marketplace
-- [ ] Visual pipeline builder
 
 ---
 
@@ -649,7 +578,6 @@ Pipeline execution results:
 
 - [x] Generate all qsv command skills (61/61)
 - [x] Type-safe executor wrapper
-- [x] Fluent pipeline composition API
 - [x] Comprehensive documentation
 - [x] Working examples
 - [x] Zero manual skill creation
@@ -666,7 +594,7 @@ Successfully delivered a **complete, production-ready system** for:
 
 1. **Auto-generating** Agent Skills from qsv usage text
 2. **Loading and executing** skills with type safety
-3. **Composing pipelines** with a fluent, intuitive API
+3. **Composing workflows** by chaining tools sequentially
 
 The system provides:
 - ✅ **Zero maintenance**: Skills auto-update when code changes
@@ -678,7 +606,7 @@ The system provides:
 
 **Lines of Code**:
 - Rust: 418 lines (generator)
-- TypeScript: 630 lines (executor + pipeline)
+- TypeScript: 410 lines (executor)
 - Documentation: 3,650 lines
 - Examples: 270 lines
 - **Total**: 4,968 lines

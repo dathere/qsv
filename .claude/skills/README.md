@@ -23,8 +23,7 @@ This directory contains:
 
 1. **66 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
 2. **TypeScript Executor** - Complete implementation for running qsv skills
-3. **Pipeline Composition API** - Fluent interface for chaining operations
-4. **MCP Server with Filesystem Access** - Model Context Protocol server for Claude Desktop integration
+3. **MCP Server with Filesystem Access** - Model Context Protocol server for Claude Desktop integration
 5. **Working Demos** - Practical demonstrations of the system
 
 Each skill file provides:
@@ -161,11 +160,9 @@ npm run mcpb:package
 │   ├── types.ts           # Type definitions
 │   ├── loader.ts          # Skill loading
 │   ├── executor.ts        # qsv execution wrapper
-│   ├── pipeline.ts        # Pipeline composition API
 │   ├── mcp-server.ts      # MCP server implementation
 │   ├── mcp-tools.ts       # MCP tool definitions
 │   ├── mcp-filesystem.ts  # Filesystem resource provider
-│   ├── mcp-pipeline.ts    # MCP pipeline tool
 │   └── index.ts           # Public exports
 ├── scripts/
 │   └── install-mcp.js     # MCP installation helper
@@ -207,37 +204,6 @@ const result = await executor.execute(skill, {
 });
 
 console.log(result.output);
-```
-
-### Pipeline Composition
-
-```typescript
-import { SkillLoader, QsvPipeline } from './dist/index.js';
-
-const loader = new SkillLoader();
-await loader.loadAll();
-
-// Create a data cleaning pipeline
-const pipeline = new QsvPipeline(loader)
-  .select('!SSN,password')           // Remove sensitive columns
-  .dedup()                            // Remove duplicates
-  .search('^[^@]+@', 'email')        // Validate emails
-  .sortBy('revenue', { reverse: true }) // Sort descending
-  .slice(0, 100);                     // Top 100
-
-// Execute pipeline
-const result = await pipeline.execute(csvData);
-console.log(result.output.toString());
-
-// Or generate shell script
-const shell = await pipeline.toShellScript();
-console.log(shell);
-// Output:
-// qsv select '!SSN,password' | \
-//   qsv dedup | \
-//   qsv search -s email '^[^@]+@' | \
-//   qsv sort --reverse -s revenue | \
-//   qsv slice --start 0 --end 100
 ```
 
 ## Skill Schema
@@ -416,7 +382,7 @@ Claude will automatically:
 
 ### What's Available
 
-- **25 MCP Tools**: 20 common commands + generic fallback + pipeline tool + 3 filesystem tools
+- **24 MCP Tools**: 20 common commands + generic fallback + 3 filesystem tools
 - **Local File Access**: Browse and process tabular data files (CSV, Excel, JSONL, etc.) directly from your filesystem
 - **File-Based Processing**: Works with your local files without uploading
 - **Natural Language Interface**: No command syntax needed
@@ -434,7 +400,6 @@ npm run build
 
 # Run demos
 npm test                              # Basic skill usage
-npm run test-pipeline                 # Pipeline composition
 npm run mcp:install                   # Install MCP server for Claude Desktop
 
 # Regenerate skills (from qsv repository root)
@@ -479,5 +444,5 @@ MIT
 **Skills**: 66/66 commands (100%)
 **Usage Examples**: 417 from documentation
 **Parsing**: qsv-docopt (robust, accurate)
-**Features**: MCP server, filesystem access, pipeline composition, type-safe execution
+**Features**: MCP server, filesystem access, type-safe execution
 **Status**: ✅ Production Ready

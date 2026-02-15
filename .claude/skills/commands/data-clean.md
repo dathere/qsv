@@ -6,7 +6,6 @@ allowed-tools:
   - mcp__qsv__qsv_index
   - mcp__qsv__qsv_stats
   - mcp__qsv__qsv_command
-  - mcp__qsv__qsv_pipeline
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
@@ -28,7 +27,7 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 2. **Check headers**: Run `qsv_headers` to inspect column names. If names contain spaces, special characters, or are duplicated, plan to use `safenames`.
 
-3. **Build cleaning pipeline**: Construct a `qsv_pipeline` with these steps (skip any that aren't needed based on assessment):
+3. **Build cleaning steps**: Apply these operations in order (skip any that aren't needed based on assessment):
 
    a. **`safenames`** - Normalize column names to safe, ASCII-only identifiers (removes spaces, special chars, ensures uniqueness)
 
@@ -48,7 +47,7 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
    - Duplicate rows removed
    - Whitespace trimmed
 
-## Pipeline Template
+## Cleaning Template
 
 ```json
 {

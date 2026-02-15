@@ -32,7 +32,7 @@ Each combination runs:
 2. **Dependency Installation**: `npm ci` for clean install
 3. **TypeScript Compilation**: `npm run build` to verify code compiles
 4. **Integration Tests**: `npm test` runs all 28 tests including:
-   - Unit tests for config, filesystem, pipeline, tools
+   - Unit tests for config, filesystem, tools
    - Integration tests for qsv commands (count, headers, select, search, etc.)
    - Metadata caching and deduplication tests
 5. **Build Verification**: Tests that `dist/mcp-server.js` is executable

@@ -5,6 +5,13 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+- Removed `qsv_pipeline` tool — agents should call tools sequentially for better error visibility, or use `qsv_sqlp` for multi-step queries
+- Removed `QSV_MCP_MAX_PIPELINE_STEPS` environment variable
+- Removed `pipeline.ts` fluent API and `mcp-pipeline.ts` tool handler
+
 ## [16.0.0] - 2026-02-08
 
 ### Added

@@ -100,7 +100,7 @@ File size?
 
 ## Concurrent Operations
 
-The MCP server limits concurrent qsv operations (default: 1). Pipeline steps run sequentially. For multiple independent files, the agent can issue separate tool calls.
+The MCP server limits concurrent qsv operations (default: 1). For multiple independent files, the agent can issue separate tool calls.
 
 ## Timeout Handling
 

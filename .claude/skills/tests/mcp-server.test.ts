@@ -46,15 +46,14 @@ const CORE_TOOLS = [
   "qsv_set_working_dir",
   "qsv_get_working_dir",
   "qsv_list_files",
-  "qsv_pipeline",
   "qsv_command",
   "qsv_to_parquet",
   "qsv_index",
   "qsv_stats",
 ] as const;
 
-test("CORE_TOOLS has exactly 10 entries", () => {
-  assert.strictEqual(CORE_TOOLS.length, 10);
+test("CORE_TOOLS has exactly 9 entries", () => {
+  assert.strictEqual(CORE_TOOLS.length, 9);
 });
 
 test("CORE_TOOLS all have qsv_ prefix", () => {

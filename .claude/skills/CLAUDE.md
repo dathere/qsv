@@ -120,7 +120,7 @@ npm run mcpb:package
 - Auto-enables `--stats-jsonl` for stats command
 - Integrates update checker for background version monitoring
 - **Server instructions**: Provides cross-tool workflow guidance via MCP `initialize` response
-- **Deferred tool loading**: Only 10 core tools loaded initially (~85% token reduction)
+- **Deferred tool loading**: Only 9 core tools loaded initially (~85% token reduction)
 - **Environment-controlled exposure**: Use `QSV_MCP_EXPOSE_ALL_TOOLS=true` for all tools
 
 **Key Functions**:

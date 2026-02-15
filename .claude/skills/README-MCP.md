@@ -6,7 +6,7 @@ Model Context Protocol (MCP) server that exposes 55 of qsv's tabular data-wrangl
 
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
-- **Deferred Tool Loading**: Only 10 core tools loaded initially (~85% token reduction), with tools discovered via search added dynamically
+- **Deferred Tool Loading**: Only 9 core tools loaded initially (~85% token reduction), with tools discovered via search added dynamically
 - **BM25 Search**: Intelligent tool discovery using probabilistic relevance ranking
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
@@ -24,7 +24,7 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
   - Field-weighted search: name (3x), category (2x), description (1x), examples (0.5x)
   - Text preprocessing with stemming, lowercasing, and negation propagation
 - **Deferred Tool Loading** - Implements Anthropic's Tool Search Tool pattern
-  - Only 10 core tools loaded initially (reduces token usage ~85%)
+  - Only 9 core tools loaded initially (reduces token usage ~85%)
   - Tools found via search are dynamically added to subsequent ListTools responses
   - Core tools: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_command`, `qsv_to_parquet`, `qsv_index`, `qsv_stats`
 - **Removed `qsv_data_profile`** - Tool produced ~60KB output filling context window; use `qsv stats --cardinality --stats-jsonl` instead
@@ -177,7 +177,7 @@ This script will:
 | `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications in logs |
 | `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repository to check for releases |
 | `QSV_MCP_SERVER_INSTRUCTIONS` | (built-in) | Custom server instructions sent during MCP initialization. Overrides built-in workflow guidance. Leave empty for defaults. |
-| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 55+ tools immediately (no deferred loading). `false`: use only 10 core tools (no deferred additions). Unset (default): use deferred loading (10 core tools + tools discovered via search) |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 55+ tools immediately (no deferred loading). `false`: use only 9 core tools (no deferred additions). Unset (default): use deferred loading (9 core tools + tools discovered via search) |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 
@@ -185,7 +185,7 @@ This script will:
 
 ## Available Tools
 
-### 10 Core Tools (Always Loaded)
+### 9 Core Tools (Always Loaded)
 
 These tools are always available immediately:
 
@@ -236,7 +236,7 @@ The MCP server implements Anthropic's Tool Search Tool pattern for optimal token
 
 ### Deferred Loading (Default)
 
-Only 10 core tools are loaded initially, reducing token usage by ~85%:
+Only 9 core tools are loaded initially, reducing token usage by ~85%:
 
 | Core Tool | Purpose |
 |-----------|---------|
@@ -262,8 +262,8 @@ The `qsv_search_tools` tool uses probabilistic BM25 relevance ranking:
 ### Manual Override
 Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override deferred loading:
 - `true`: Always expose all 55+ tools immediately (no deferred loading)
-- `false`: Always use 10 core tools only (disables deferred loading)
-- Unset: Default behavior - 10 core tools with deferred loading (recommended)
+- `false`: Always use 9 core tools only (disables deferred loading)
+- Unset: Default behavior - 9 core tools with deferred loading (recommended)
 
 ### Built-in Tool Search (`qsv_search_tools`)
 
@@ -592,6 +592,6 @@ For issues or questions:
 
 **Updated**: 2026-02-06
 **Version**: 16.0.0
-**Tools**: 10 core tools initially (deferred loading), 55+ when discovered via search
+**Tools**: 9 core tools initially (deferred loading), 55+ when discovered via search
 **Skills**: 55 qsv commands
 **Status**: Production Ready

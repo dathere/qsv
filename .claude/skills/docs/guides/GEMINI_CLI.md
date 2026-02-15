@@ -6,7 +6,7 @@ This guide explains how to configure and use the **qsv MCP Server** and its asso
 
 The QSV MCP Server exposes **56** tabular data-wrangling commands as tools to the Gemini CLI. To optimize performance and token usage, the server follows a **Deferred Loading** pattern:
 
-1.  **7 Core Tools** are loaded initially (Search, Config, Working Dir, Filesystem, Command).
+1.  **9 Core Tools** are loaded initially (see the Core Tools section below for the full list).
 2.  **Additional Tools** are discovered via the `qsv_search_tools` tool and added dynamically to the session.
 
 This allows the Gemini CLI to stay focused on your specific data task without being overwhelmed by 56+ tool definitions.

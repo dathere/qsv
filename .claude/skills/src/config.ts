@@ -761,7 +761,7 @@ export const config = {
    *
    * Three-state configuration:
    * - true: Always expose all 55+ qsv command tools
-   * - false: Always expose only 10 core tools (overrides auto-detect)
+   * - false: Always expose only 9 core tools (overrides auto-detect)
    * - undefined: Auto-detect based on client (Claude clients get all tools)
    *
    * Auto-detection is enabled for:

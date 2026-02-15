@@ -168,7 +168,7 @@ const result = await executor.execute(skill, {
 const step1 = await executor.execute(dedupSkill, { stdin: csvData });
 const step2 = await executor.execute(searchSkill, {
   args: { select: 'email', regex: '^[^@]+@' },
-  stdin: step1.stdout
+  stdin: step1.output
 });
 ```
 

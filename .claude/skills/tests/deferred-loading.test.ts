@@ -15,7 +15,7 @@ import { COMMON_COMMANDS } from '../src/mcp-tools.js';
 import { SkillLoader } from '../src/loader.js';
 
 /**
- * The 10 core tools that should always be loaded
+ * The 9 core tools that should always be loaded
  * (matches CORE_TOOLS in mcp-server.ts)
  */
 const CORE_TOOLS = [
@@ -85,7 +85,7 @@ test('COMMON_COMMANDS and CORE_TOOLS are disjoint sets', () => {
 // ============================================================================
 
 test('deferred loading reduces initial tool count significantly', async () => {
-  // In deferred mode: 10 core tools + 11 common commands = 21 tools initially
+  // In deferred mode: 9 core tools + 11 common commands = 21 tools initially
   // In expose-all mode: all skills from JSON files are available
   // Token reduction = 1 - (initial_tool_count / totalSkillCount)
   // With just core tools (no common), we expect ≥80% reduction

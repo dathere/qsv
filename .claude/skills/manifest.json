@@ -195,10 +195,6 @@
       "description": "Execute any qsv command generically"
     },
     {
-      "name": "qsv_pipeline",
-      "description": "Execute multi-step qsv workflows"
-    },
-    {
       "name": "qsv_config",
       "description": "Display qsv configuration"
     },

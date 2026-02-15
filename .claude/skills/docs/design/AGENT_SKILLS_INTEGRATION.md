@@ -303,143 +303,7 @@ async function example1() {
 
 ## Skill Composition
 
-### 1. Pipeline Builder
-
-```typescript
-// skills/pipeline.ts
-export class QsvPipeline {
-  private steps: PipelineStep[] = [];
-
-  constructor(private loader: QsvSkillLoader) {}
-
-  // Fluent API for building pipelines
-  add(skillName: string, params: SkillParams): this {
-    this.steps.push({ skillName, params });
-    return this;
-  }
-
-  select(selection: string): this {
-    return this.add('qsv-select', {
-      args: { selection }
-    });
-  }
-
-  dedup(): this {
-    return this.add('qsv-dedup', { args: {} });
-  }
-
-  stats(options?: { everything?: boolean }): this {
-    return this.add('qsv-stats', {
-      args: {},
-      options
-    });
-  }
-
-  sortBy(column: string): this {
-    return this.add('qsv-sort', {
-      args: { column }
-    });
-  }
-
-  filter(pattern: string, column?: string): this {
-    return this.add('qsv-search', {
-      args: { regex: pattern },
-      options: column ? { select: column } : {}
-    });
-  }
-
-  // Execute pipeline
-  async execute(input: string | Buffer): Promise<PipelineResult> {
-    let currentData = typeof input === 'string'
-      ? await readFile(input)
-      : input;
-
-    const results: SkillResult[] = [];
-
-    for (const step of this.steps) {
-      const skill = await this.loader.load(step.skillName);
-
-      // Pass output from previous step as input
-      const result = await skill.execute({
-        ...step.params,
-        stdin: currentData
-      });
-
-      if (!result.success) {
-        throw new Error(
-          `Pipeline failed at step ${step.skillName}: ${result.stderr}`
-        );
-      }
-
-      currentData = Buffer.from(result.output);
-      results.push(result);
-    }
-
-    return {
-      output: currentData,
-      steps: results,
-      totalDuration: results.reduce((sum, r) => sum + r.metadata.duration, 0)
-    };
-  }
-
-  // Generate shell script equivalent
-  toShellScript(): string {
-    const commands = this.steps.map(step => {
-      const skill = this.loader.loadSync(step.skillName);
-      const executor = new QsvSkillExecutor(skill);
-      const args = executor.buildArgs(step.params);
-      return `qsv ${args.join(' ')}`;
-    });
-
-    return commands.join(' | \\\n  ');
-  }
-}
-```
-
-### 2. Example: Data Cleaning Pipeline
-
-```typescript
-// examples/pipeline-composition.ts
-async function cleanDataPipeline() {
-  const loader = new QsvSkillLoader();
-  const pipeline = new QsvPipeline(loader);
-
-  // Build a data cleaning pipeline
-  const result = await pipeline
-    .select('!SSN,password,account_no')  // Remove sensitive columns
-    .dedup()                              // Remove duplicates
-    .filter('^[^@]+@[^@]+\\.[^@]+$', 'email')  // Filter invalid emails
-    .sortBy('date')                       // Sort by date
-    .execute('raw_data.csv');
-
-  console.log('Pipeline completed in', result.totalDuration, 'ms');
-  console.log('Steps executed:');
-  result.steps.forEach((step, i) => {
-    console.log(`  ${i + 1}. ${step.metadata.command} (${step.metadata.duration}ms)`);
-  });
-
-  // Write output
-  await writeFile('cleaned_data.csv', result.output);
-
-  // Print equivalent shell command
-  console.log('\nEquivalent shell command:');
-  console.log(pipeline.toShellScript());
-}
-
-// Output:
-// Pipeline completed in 1234 ms
-// Steps executed:
-//   1. qsv select !SSN,password,account_no (123ms)
-//   2. qsv dedup (456ms)
-//   3. qsv search -s email '^[^@]+@[^@]+\.[^@]+$' (345ms)
-//   4. qsv sort -s date (310ms)
-//
-// Equivalent shell command:
-// qsv select '!SSN,password,account_no' | \
-//   qsv dedup | \
-//   qsv search -s email '^[^@]+@[^@]+\.[^@]+$' | \
-//   qsv sort -s date
-```
+Multi-step operations are composed by chaining individual tool calls sequentially, passing the output of each step as input to the next.
 
 ## Agent Integration Examples
 
@@ -1022,7 +886,6 @@ qsv-skill explore
 // - Skill autocomplete in code
 // - Inline documentation from skill definitions
 // - Quick actions to test skills
-// - Pipeline visualization
 ```
 
 ## Summary
@@ -1031,7 +894,7 @@ This integration approach provides:
 
 1. **Seamless Discovery**: Load all skills from JSON files
 2. **Type-Safe Execution**: Validate parameters before execution
-3. **Composable Pipelines**: Chain skills with fluent API
+3. **Composable Workflows**: Chain skills sequentially
 4. **Error Handling**: Retries, fallbacks, validation
 5. **Performance Monitoring**: Track metrics and suggest optimizations
 6. **Developer Tools**: CLI, testing framework, VS Code extension
@@ -1054,7 +917,7 @@ Protocol (MCP)** rather than a standalone SDK. Key differences:
 | `@anthropic-ai/agent-sdk` | `@modelcontextprotocol/sdk` |
 | SkillRegistry | MCP ListTools/CallTool handlers |
 | Agent.invokeSkill() | MCP tool invocation |
-| Pipeline builder | `mcp-pipeline.ts` |
+| Pipeline builder | Removed (use sequential tool calls) |
 
 ### New Features in v14.2.0
 

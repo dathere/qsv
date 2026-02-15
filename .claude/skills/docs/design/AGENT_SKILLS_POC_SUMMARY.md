@@ -176,16 +176,6 @@ await agent.chat("Remove sensitive columns from customer_data.csv");
 // Agent searches skills, finds qsv-select, invokes with appropriate params
 ```
 
-### Pipeline Composition
-
-```typescript
-await new QsvPipeline(registry)
-  .select('!SSN,password')
-  .dedup()
-  .stats({ everything: true })
-  .execute('data.csv');
-```
-
 ## Code Quality
 
 ### Error Handling
@@ -314,7 +304,6 @@ $ cat .claude/skills/qsv/qsv-stats.json | jq '.'
 
 ### Phase 3: Integration - ✅ COMPLETE
 - [x] Implement skill executor wrapper
-- [x] Build pipeline composition API
 - [x] Add streaming support
 
 ### Phase 4: Enhancement - ✅ COMPLETE

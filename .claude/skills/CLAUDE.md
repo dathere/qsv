@@ -10,7 +10,6 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 - **MCP Server**: Exposes qsv commands as MCP tools/resources
 - **MCP Desktop Extension (MCPB)**: One-click installation bundle for Claude Desktop
 - **Converted File Manager**: Tracks converted CSV files with automatic cleanup (LIFO cache)
-- **Pipeline System**: Composes multi-step qsv workflows
 - **Update Checker**: Monitors qsv binary versions and auto-regenerates skills
 - **Type System**: Strong typing for qsv commands and parameters
 - **Guidance Enhancement**: Intelligent tool descriptions with USE WHEN, COMMON PATTERNS, and CAUTION hints
@@ -55,9 +54,6 @@ node --test dist/tests/mcp-filesystem.test.js
 # Test MCP server integration
 npm run test:examples
 
-# Test pipeline system
-npm run test-pipeline
-
 # Test update checker
 npm run test-update-checker
 ```
@@ -85,7 +81,6 @@ npm run mcpb:package
 │   ├── mcp-server.ts      # Main entry point (tools, resources, prompts)
 │   ├── mcp-tools.ts       # Tool definitions with guidance enhancement
 │   ├── mcp-filesystem.ts  # Filesystem operations via MCP
-│   ├── mcp-pipeline.ts    # Multi-step pipeline execution
 │   ├── converted-file-manager.ts  # LIFO cache for converted files
 │   ├── config.ts          # Configuration and validation
 │   ├── executor.ts        # qsv command execution (streaming)
@@ -94,8 +89,7 @@ npm run mcpb:package
 │   ├── utils.ts           # Utility functions
 │   ├── version.ts         # Version management
 │   ├── loader.ts          # Dynamic skill loading and searching
-│   ├── bm25-search.ts     # BM25 search index for tool discovery
-│   └── pipeline.ts        # Fluent pipeline API
+│   └── bm25-search.ts     # BM25 search index for tool discovery
 ├── tests/                  # Test files (each module has <module>.test.ts)
 │   └── test-helpers.ts     # Shared utilities (createTestDir, createTestCSV, QSV_AVAILABLE)
 ├── scripts/                # Build and deployment scripts
@@ -126,7 +120,7 @@ npm run mcpb:package
 - Auto-enables `--stats-jsonl` for stats command
 - Integrates update checker for background version monitoring
 - **Server instructions**: Provides cross-tool workflow guidance via MCP `initialize` response
-- **Deferred tool loading**: Only 10 core tools loaded initially (~85% token reduction)
+- **Deferred tool loading**: Only 9 core tools loaded initially (~85% token reduction)
 - **Environment-controlled exposure**: Use `QSV_MCP_EXPOSE_ALL_TOOLS=true` for all tools
 
 **Key Functions**:
@@ -161,7 +155,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - Timeout management and error parsing
 
 **Key Exports**:
-- `runQsvSimple(binPath, args, options?)` - Lightweight shared executor with `onSpawn`/`onExit` callbacks for process tracking (used by update-checker and pipeline)
+- `runQsvSimple(binPath, args, options?)` - Lightweight shared executor with `onSpawn`/`onExit` callbacks for process tracking (used by update-checker)
 - `SkillExecutor` class - Full-featured skill executor with validation, stats cache, and subcommand support
 
 **Key Features**:
@@ -206,23 +200,6 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - File size monitoring and performance metrics
 - Conversion statistics
 
-#### `mcp-pipeline.ts` - Workflow Composition
-- Chains multiple qsv commands into pipelines
-- Handles intermediate file management
-- Error recovery and rollback
-- Performance optimization (automatic indexing)
-
-**Example Pipeline**:
-```typescript
-{
-  steps: [
-    { tool: "qsv_select", args: { selection: "!SSN,password" } },
-    { tool: "qsv_dedup", args: {} },
-    { tool: "qsv_stats", args: { everything: true } }
-  ]
-}
-```
-
 #### `config.ts` - Configuration System
 - Environment variable loading with template expansion
 - qsv binary detection and validation (5-second timeout)
@@ -238,7 +215,6 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - `QSV_MCP_WORKING_DIR`: Working directory for file operations
 - `QSV_MCP_ALLOWED_DIRS`: Colon-separated list of allowed directories
 - `QSV_MCP_OPERATION_TIMEOUT_MS`: Operation timeout (default: 600000ms / 10 minutes)
-- `QSV_MCP_MAX_PIPELINE_STEPS`: Max pipeline steps (default: 50)
 - `QSV_MCP_MAX_FILES_PER_LISTING`: Max files in directory listing (default: 1000)
 - `QSV_MCP_MAX_CONCURRENT_OPERATIONS`: Max concurrent ops (default: 1)
 - `QSV_MCP_MAX_OUTPUT_SIZE`: Max output size in bytes (default: 50MB)
@@ -699,8 +675,7 @@ For implementation patterns (command execution, argument building, validation, o
 
 1. **Always test with real qsv binary** - don't mock qsv in integration tests
 2. **Keep tools simple** - one qsv command per MCP tool
-3. **Use pipelines for composition** - chain simple tools, don't create mega-tools
-4. **Validate early** - check file existence and parameters before spawning qsv
+3. **Validate early** - check file existence and parameters before spawning qsv
 5. **Provide context in errors** - include command, args, file paths
 6. **Document examples** - every tool should have usage examples
 7. **Clean up temporary files** - use ConvertedFileManager
@@ -746,7 +721,6 @@ The plugin layer (`.claude-plugin/`, `.mcp.json`, `commands/`, `agents/`, `skill
 - [Agent Skills Integration](docs/design/AGENT_SKILLS_INTEGRATION.md)
 - [Agent Skills POC Summary](docs/design/AGENT_SKILLS_POC_SUMMARY.md)
 - [Agent Skills Complete Summary](docs/design/AGENT_SKILLS_COMPLETE_SUMMARY.md)
-- [Filesystem Changelog](docs/design/CHANGELOG_FILESYSTEM.md)
 
 **External:**
 - [Claude Desktop Integration](https://claude.ai/docs)

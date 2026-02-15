@@ -6,7 +6,6 @@ allowed-tools:
   - mcp__qsv__qsv_count
   - mcp__qsv__qsv_headers
   - mcp__qsv__qsv_search_tools
-  - mcp__qsv__qsv_pipeline
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
 argument-hint: "<file> [format]"

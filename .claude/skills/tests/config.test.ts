@@ -16,14 +16,12 @@ import {
 test('config has all required properties', () => {
   assert.ok(typeof config.operationTimeoutMs === 'number');
   assert.ok(typeof config.maxFilesPerListing === 'number');
-  assert.ok(typeof config.maxPipelineSteps === 'number');
   assert.ok(typeof config.maxConcurrentOperations === 'number');
 });
 
 test('config has reasonable defaults', () => {
   assert.ok(config.operationTimeoutMs >= 1000 && config.operationTimeoutMs <= 30 * 60 * 1000);
   assert.ok(config.maxFilesPerListing >= 1 && config.maxFilesPerListing <= 100000);
-  assert.ok(config.maxPipelineSteps >= 1 && config.maxPipelineSteps <= 1000);
   assert.ok(config.maxConcurrentOperations >= 1 && config.maxConcurrentOperations <= 100);
 });
 
@@ -38,7 +36,6 @@ test('config defaults match expected values', () => {
   const expectedDefaults = {
     operationTimeoutMs: 2 * 60 * 1000, // 2 minutes
     maxFilesPerListing: 1000,
-    maxPipelineSteps: 50,
     maxConcurrentOperations: 10,
   };
 
@@ -46,7 +43,6 @@ test('config defaults match expected values', () => {
   if (config.operationTimeoutMs === expectedDefaults.operationTimeoutMs) {
     assert.strictEqual(config.operationTimeoutMs, expectedDefaults.operationTimeoutMs);
     assert.strictEqual(config.maxFilesPerListing, expectedDefaults.maxFilesPerListing);
-    assert.strictEqual(config.maxPipelineSteps, expectedDefaults.maxPipelineSteps);
     assert.strictEqual(config.maxConcurrentOperations, expectedDefaults.maxConcurrentOperations);
   }
 });

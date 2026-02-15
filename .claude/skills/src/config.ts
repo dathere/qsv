@@ -680,17 +680,6 @@ export const config = {
   ),
 
   /**
-   * Maximum number of steps in a pipeline
-   * Default: 50 steps
-   */
-  maxPipelineSteps: parseIntEnv(
-    "QSV_MCP_MAX_PIPELINE_STEPS",
-    50,
-    1, // Minimum: 1 step
-    1000, // Maximum: 1000 steps
-  ),
-
-  /**
    * Maximum number of concurrent operations
    * Default: 1 operation
    */
@@ -772,7 +761,7 @@ export const config = {
    *
    * Three-state configuration:
    * - true: Always expose all 55+ qsv command tools
-   * - false: Always expose only 10 core tools (overrides auto-detect)
+   * - false: Always expose only 9 core tools (overrides auto-detect)
    * - undefined: Auto-detect based on client (Claude clients get all tools)
    *
    * Auto-detection is enabled for:

@@ -77,17 +77,6 @@ export interface SkillResult {
   };
 }
 
-export interface PipelineStep {
-  skillName: string;
-  params: SkillParams;
-}
-
-export interface PipelineResult {
-  output: Buffer;
-  steps: SkillResult[];
-  totalDuration: number;
-}
-
 export type SkillCategory =
   | "selection"
   | "filtering"
@@ -141,11 +130,6 @@ export interface McpResourceContent {
   uri: string;
   mimeType?: string;
   text?: string;
-}
-
-export interface McpPipelineStep {
-  command: string;
-  params: Record<string, unknown>;
 }
 
 /**

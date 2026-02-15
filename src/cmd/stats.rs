@@ -3027,10 +3027,13 @@ impl Stats {
         // to avoid allocating too much memory
         let record_count = *RECORD_COUNT.get().unwrap_or(&10_000) as usize;
         if which.mode || which.cardinality {
-            modes = Some(stats::Unsorted::with_capacity(record_count));
             if use_weights {
+                // When using weights, weighted_modes handles both mode/antimode and cardinality
+                // computation, so we don't need the separate modes (Unsorted) tracker
                 // Estimate capacity: assume average cardinality of 10% of records
                 weighted_modes = Some(HashMap::with_capacity((record_count / 10).max(16)));
+            } else {
+                modes = Some(stats::Unsorted::with_capacity(record_count));
             }
         }
         // we use the same Unsorted struct for median, mad, quartiles & percentiles
@@ -3156,17 +3159,11 @@ impl Stats {
                 .add_with_parsed(t, sample, float_val, int_val);
         };
 
-        // Modes/cardinality - share allocation when both modes and weighted_modes are active
-        if let Some(v) = self.modes.as_mut() {
-            if let Some(ref mut wm) = self.weighted_modes {
-                let owned = sample.to_vec();
-                *wm.entry(owned.clone()).or_insert(0.0) += weight;
-                v.add(owned);
-            } else {
-                v.add(sample.to_vec());
-            }
-        } else if let Some(ref mut wm) = self.weighted_modes {
+        // Modes/cardinality - modes and weighted_modes are mutually exclusive
+        if let Some(ref mut wm) = self.weighted_modes {
             *wm.entry(sample.to_vec()).or_insert(0.0) += weight;
+        } else if let Some(v) = self.modes.as_mut() {
+            v.add(sample.to_vec());
         }
 
         if t == TString {

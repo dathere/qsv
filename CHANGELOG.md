@@ -6,6 +6,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [16.1.0] - 2026-02-15
+
+### 🌟 Major Features
+
+#### New `pragmastat` Command
+A pragmatic statistical toolkit by @AndreyAkinshin — provides an opinionated, human-readable statistical summary with parallelism, progress bar support, and memory checks.
+
+#### Frequency Cache System
+New `--frequency-jsonl` option for the `frequency` command creates a JSONL cache (analogous to `stats --stats-jsonl`) that accelerates repeated frequency analysis. Uses a hybrid strategy for high-cardinality columns with configurable thresholds via `QSV_FREQ_HIGH_CARD_THRESHOLD` and `QSV_FREQ_HIGH_CARD_THRESHOLD_PCT` environment variables.
+
+#### Auto-Generated Help Markdown
+New `--generate-help-md` flag generates markdown documentation from command USAGE text, with section navigation, emoji legends, clickable URLs, and argument/option tables.
+
+#### Next-Gen Shell Completions
+Shell completions are now auto-generated from USAGE text, replacing 68 manually maintained completion files.
+
+---
+
+### Added
+
+- feat: `pragmastat` command — pragmatic statistical toolkit with parallelism, progress bar, and memcheck (by @AndreyAkinshin)
+- feat: `frequency --frequency-jsonl` — JSONL frequency cache with hybrid strategy for high-cardinality columns
+- feat: `--generate-help-md` flag — auto-generate markdown docs from USAGE text with section navigation, emoji legends, and clickable URLs
+- feat(mcp): auto-enable `--frequency-jsonl` and `--stats-jsonl` for frequency/stats commands
+- feat(mcp): plugin mode detection for Google AI CLI environments (by @kulnor)
+- feat(mcp): add `pragmastat` skill and integrate tooling
+- docs: add `QSV_FREQ_HIGH_CARD_THRESHOLD` and `QSV_FREQ_HIGH_CARD_THRESHOLD_PCT` env vars
+
+### Changed
+
+- perf: `stats` — skip redundant modes tracking, reduce allocations, optimize cache line layout, deterministic antimode sorting
+- perf: `pragmastat` — reduce redundant computations, add parallelism
+- perf: `frequency` — use `sort_unstable_by` for faster sorting; parallel computation for high-cardinality columns
+- refactor: shell completions auto-generated from USAGE text (removed 68 manual files)
+- refactor(mcp): remove `qsv_pipeline` tool; deduplicate helpers; extract filesystem tools; fix `any` types
+- refactor(mcp): remove unused `binary` field from CommandSpec
+- refactor: `describegpt` — disambiguate "Other" bucket from literal "Other" in Data Dictionary Examples column
+- deps: bump polars to latest upstream
+- deps: bump jsonschema from 0.41 to 0.42
+- deps: bump pyo3 from 0.28.0 to 0.28.1
+- deps: bump rand from 0.9 to 0.10, rand_hc to 0.5, rand_xoshiro to 0.8
+- deps: bump memmap2 from 0.9.9 to 0.9.10
+- deps: bump toml from 0.9.12 to 1.0.1
+- deps: bump anstream from 0.6.21 to 1.0.0
+- deps: bump zmij from 1.0.20 to 1.0.21
+- deps: bump quickcheck from 1.0.3 to 1.1.0
+- deps: bump tempfile from 3.24.0 to 3.25.0
+- deps: bump uuid from 1.20.0 to 1.21.0
+- deps: bump libc from 0.2.180 to 0.2.181
+- deps: bump qs from 6.14.1 to 6.14.2 (MCP)
+
+### Fixed
+
+- fix: `frequency` — normalize delimiter for cache compatibility; deterministic output with secondary sort key; hybrid cache for high-cardinality columns
+- fix: `stats` — remove unsafe block; deterministic antimode sorting
+- fix(mcp): skip stats/frequency cache when reading stdin; guard `--frequency-jsonl` with version check
+- fix(mcp): remove non-null assertions in executeWithFile; correct stale tool counts and references
+- fix(help): section detection, acronym casing, and option word-wrap in markdown generation
+
+### Removed
+
+- removed `qsv_pipeline` MCP tool (agents call commands sequentially instead)
+- removed 68 manual shell completion files (now auto-generated from USAGE text)
+
+**Full Changelog**: [16.0.0...16.1.0](https://github.com/dathere/qsv/compare/16.0.0...16.1.0)
+
+---
+
 # [16.0.0] - 2026-02-08 🤖 **_"The AI-Native Release"_** 🤖
 
 This release makes qsv deeply AI-native — from smarter date detection that flows through to Polars schemas, to a MCP Plugin layer that lets AI agents wield qsv as a first-class data tool.

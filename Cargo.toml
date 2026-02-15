@@ -364,9 +364,9 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parki
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=2276129
+# QSV_POLARS_REV=c5a142d
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.38.1", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "2276129", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "c5a142d", optional = true }
 
 [features]
 default = ["mimalloc"]

@@ -291,6 +291,89 @@ test('pipeline three-step workflow: select, search, slice', { skip: !QSV_AVAILAB
   }
 });
 
+// ============================================================================
+// executeWithFile() Tests
+// ============================================================================
+
+test('pipeline executeWithFile with single step reads from disk', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  const filesystemProvider = new FilesystemResourceProvider({
+    workingDirectory: testDir,
+    allowedDirectories: [testDir],
+  });
+
+  try {
+    const csvPath = await createTestCSV(
+      testDir,
+      'data.csv',
+      'id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n'
+    );
+
+    const result = await executePipeline(
+      {
+        input_file: csvPath,
+        steps: [
+          { command: 'select', params: { selection: 'name,age' } },
+        ],
+      },
+      loader,
+      filesystemProvider,
+    );
+
+    assert.ok(!result.isError, `Pipeline should succeed: ${result.content[0].text}`);
+    const output = result.content[0].text || '';
+    assert.ok(output.includes('name'), 'Output should include name column');
+    assert.ok(output.includes('Alice'), 'Output should include Alice');
+    assert.ok(!output.includes('id'), 'Output should not include id column');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('pipeline executeWithFile with multi-step pipeline pipes correctly', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  const filesystemProvider = new FilesystemResourceProvider({
+    workingDirectory: testDir,
+    allowedDirectories: [testDir],
+  });
+
+  try {
+    const csvPath = await createTestCSV(
+      testDir,
+      'data.csv',
+      'id,name,city,age\n1,Charlie,NYC,35\n2,Alice,LA,30\n3,Bob,NYC,25\n4,Diana,NYC,28\n'
+    );
+
+    const result = await executePipeline(
+      {
+        input_file: csvPath,
+        steps: [
+          { command: 'search', params: { pattern: 'NYC' } },
+          { command: 'select', params: { selection: 'name,city' } },
+        ],
+      },
+      loader,
+      filesystemProvider,
+    );
+
+    assert.ok(!result.isError, `Pipeline should succeed: ${result.content[0].text}`);
+    const output = result.content[0].text || '';
+    // First step filters to NYC rows, second step selects columns
+    assert.ok(!output.includes('LA'), 'Should not include LA rows after search');
+    assert.ok(!output.includes('age'), 'Should not include age column after select');
+    assert.ok(output.includes('Charlie'), 'Should include Charlie (NYC row)');
+    assert.ok(output.includes('Bob'), 'Should include Bob (NYC row)');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
 if (!QSV_AVAILABLE) {
   console.log('\n⚠️  Pipeline integration tests skipped - qsv binary not available or version too old');
 }

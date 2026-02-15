@@ -566,9 +566,16 @@ export class ConvertedFileManager {
    * Initializes sequence counter if missing
    * Persists any corrections made during validation
    */
-  private async validateCache(cache: any): Promise<ConvertedFileCacheV1> {
+  private async validateCache(cache: unknown): Promise<ConvertedFileCacheV1> {
+    // Narrow to object type
+    if (typeof cache !== "object" || cache === null || Array.isArray(cache)) {
+      throw new Error("Invalid cache: not an object");
+    }
+
+    const record = cache as Record<string, unknown>;
+
     // Check if this is v0 format (no version field)
-    if (!cache.version) {
+    if (!record.version) {
       console.error(
         "[Converted File Manager] Detected v0 cache format, migrating to v1...",
       );
@@ -576,48 +583,51 @@ export class ConvertedFileManager {
     }
 
     // Validate v1 format
-    if (cache.version !== 1) {
-      throw new Error(`Unknown cache version: ${cache.version}`);
+    if (record.version !== 1) {
+      throw new Error(`Unknown cache version: ${record.version}`);
     }
 
-    if (!Array.isArray(cache.entries)) {
+    if (!Array.isArray(record.entries)) {
       throw new Error("Invalid cache: entries is not an array");
     }
 
-    if (typeof cache.totalSize !== "number") {
+    if (typeof record.totalSize !== "number") {
       throw new Error("Invalid cache: totalSize is not a number");
     }
+
+    // At this point we've validated the structure matches ConvertedFileCacheV1
+    const validCache = cache as ConvertedFileCacheV1;
 
     // Track whether any corrections were made that need to be persisted
     let needsPersist = false;
 
     // Initialize nextSequence if missing (for existing v1 caches)
-    if (cache.nextSequence === undefined) {
+    if (validCache.nextSequence === undefined) {
       let maxSequence = -1;
-      for (const entry of cache.entries) {
+      for (const entry of validCache.entries) {
         if (entry.sequence !== undefined && entry.sequence > maxSequence) {
           maxSequence = entry.sequence;
         }
       }
-      cache.nextSequence = maxSequence + 1;
+      validCache.nextSequence = maxSequence + 1;
       console.error(
-        `[Converted File Manager] Initialized nextSequence to ${cache.nextSequence}`,
+        `[Converted File Manager] Initialized nextSequence to ${validCache.nextSequence}`,
       );
       needsPersist = true;
     }
 
     // Recalculate totalSize to ensure consistency
     // Allow small tolerance (100 bytes) for concurrent operations or filesystem metadata timing
-    const calculatedSize = cache.entries.reduce(
+    const calculatedSize = validCache.entries.reduce(
       (sum: number, e: ConvertedFileEntry) => sum + e.size,
       0,
     );
     const TOLERANCE_BYTES = 100;
-    if (Math.abs(calculatedSize - cache.totalSize) > TOLERANCE_BYTES) {
+    if (Math.abs(calculatedSize - validCache.totalSize) > TOLERANCE_BYTES) {
       console.warn(
-        `[Converted File Manager] totalSize mismatch (${cache.totalSize} vs ${calculatedSize}), fixing...`,
+        `[Converted File Manager] totalSize mismatch (${validCache.totalSize} vs ${calculatedSize}), fixing...`,
       );
-      cache.totalSize = calculatedSize;
+      validCache.totalSize = calculatedSize;
       needsPersist = true;
     }
 
@@ -626,10 +636,10 @@ export class ConvertedFileManager {
       console.error(
         "[Converted File Manager] Persisting cache validation fixes...",
       );
-      await this.saveCache(cache as ConvertedFileCacheV1);
+      await this.saveCache(validCache);
     }
 
-    return cache as ConvertedFileCacheV1;
+    return validCache;
   }
 
   /**

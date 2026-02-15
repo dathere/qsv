@@ -22,18 +22,7 @@ import { runQsvSimple } from "./executor.js";
 import type { SkillExecutor } from "./executor.js";
 import type { SkillLoader } from "./loader.js";
 import { config, getDetectionDiagnostics } from "./config.js";
-import { formatBytes, findSimilarFiles } from "./utils.js";
-
-/**
- * MCP tool result helpers to eliminate repetitive { content: [{ type: "text"... }] } boilerplate
- */
-function errorResult(message: string) {
-  return { content: [{ type: "text" as const, text: message }], isError: true as const };
-}
-
-function successResult(text: string) {
-  return { content: [{ type: "text" as const, text }], isError: false as const };
-}
+import { formatBytes, findSimilarFiles, errorResult, successResult } from "./utils.js";
 
 /**
  * Auto-indexing threshold in MB
@@ -407,17 +396,13 @@ async function runQsvWithTimeout(
 function isFilesystemProviderExtended(
   obj: unknown,
 ): obj is FilesystemProviderExtended {
+  if (typeof obj !== "object" || obj === null) return false;
+  const record = obj as Record<string, unknown>;
   return (
-    typeof obj === "object" &&
-    obj !== null &&
-    "resolvePath" in obj &&
-    "needsConversion" in obj &&
-    "getConversionCommand" in obj &&
-    "getWorkingDirectory" in obj &&
-    typeof (obj as any).resolvePath === "function" &&
-    typeof (obj as any).needsConversion === "function" &&
-    typeof (obj as any).getConversionCommand === "function" &&
-    typeof (obj as any).getWorkingDirectory === "function"
+    typeof record.resolvePath === "function" &&
+    typeof record.needsConversion === "function" &&
+    typeof record.getConversionCommand === "function" &&
+    typeof record.getWorkingDirectory === "function"
   );
 }
 

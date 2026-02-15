@@ -34,24 +34,24 @@ _qsv() {
         case $line[1] in
             (apply)
 _arguments "${_arguments_options[@]}" : \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'-C+[]: :_default' \
-'--comparand=[]: :_default' \
-'-R+[]: :_default' \
-'--replacement=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-R+[]: :_default' \
+'--replacement=[]: :_default' \
+'-C+[]: :_default' \
+'--comparand=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
 '-p[]' \
@@ -70,24 +70,24 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (calcconv)
 _arguments "${_arguments_options[@]}" : \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'-C+[]: :_default' \
-'--comparand=[]: :_default' \
-'-R+[]: :_default' \
-'--replacement=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-R+[]: :_default' \
+'--replacement=[]: :_default' \
+'-C+[]: :_default' \
+'--comparand=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
 '-p[]' \
@@ -98,24 +98,24 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (dynfmt)
 _arguments "${_arguments_options[@]}" : \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'-C+[]: :_default' \
-'--comparand=[]: :_default' \
-'-R+[]: :_default' \
-'--replacement=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-R+[]: :_default' \
+'--replacement=[]: :_default' \
+'-C+[]: :_default' \
+'--comparand=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
 '-p[]' \
@@ -126,24 +126,24 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (emptyreplace)
 _arguments "${_arguments_options[@]}" : \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'-C+[]: :_default' \
-'--comparand=[]: :_default' \
-'-R+[]: :_default' \
-'--replacement=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-R+[]: :_default' \
+'--replacement=[]: :_default' \
+'-C+[]: :_default' \
+'--comparand=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
 '-p[]' \
@@ -154,24 +154,24 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (operations)
 _arguments "${_arguments_options[@]}" : \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'-C+[]: :_default' \
-'--comparand=[]: :_default' \
-'-R+[]: :_default' \
-'--replacement=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-R+[]: :_default' \
+'--replacement=[]: :_default' \
+'-C+[]: :_default' \
+'--comparand=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
 '-p[]' \
@@ -234,17 +234,17 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-g+[]: :_default' \
 '--group=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-N+[]: :_default' \
-'--group-name=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-p[]' \
-'--pad[]' \
+'-N+[]: :_default' \
+'--group-name=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '--flexible[]' \
 '-n[]' \
 '--no-headers[]' \
+'-p[]' \
+'--pad[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_qsv__cat_commands" \
@@ -261,17 +261,17 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-g+[]: :_default' \
 '--group=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-N+[]: :_default' \
-'--group-name=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-p[]' \
-'--pad[]' \
+'-N+[]: :_default' \
+'--group-name=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '--flexible[]' \
 '-n[]' \
 '--no-headers[]' \
+'-p[]' \
+'--pad[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -280,17 +280,17 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-g+[]: :_default' \
 '--group=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-N+[]: :_default' \
-'--group-name=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-p[]' \
-'--pad[]' \
+'-N+[]: :_default' \
+'--group-name=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '--flexible[]' \
 '-n[]' \
 '--no-headers[]' \
+'-p[]' \
+'--pad[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -299,17 +299,17 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-g+[]: :_default' \
 '--group=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-N+[]: :_default' \
-'--group-name=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-p[]' \
-'--pad[]' \
+'-N+[]: :_default' \
+'--group-name=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '--flexible[]' \
 '-n[]' \
 '--no-headers[]' \
+'-p[]' \
+'--pad[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -360,17 +360,17 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (color)
 _arguments "${_arguments_options[@]}" : \
-'-t+[]: :_default' \
-'--title=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-t+[]: :_default' \
+'--title=[]: :_default' \
 '-n[]' \
 '--row-numbers[]' \
-'--memcheck[]' \
 '-C[]' \
 '--color[]' \
+'--memcheck[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -379,49 +379,49 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-H[]' \
-'--human-readable[]' \
-'--json[]' \
 '--no-polars[]' \
+'--low-memory[]' \
 '-f[]' \
 '--flexible[]' \
-'--low-memory[]' \
-'--width[]' \
 '-n[]' \
 '--no-headers[]' \
 '--width-no-delims[]' \
+'--json[]' \
+'-H[]' \
+'--human-readable[]' \
+'--width[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (datefmt)
 _arguments "${_arguments_options[@]}" : \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'--output-tz=[]: :_default' \
+'--formatstr=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '--input-tz=[]: :_default' \
-'--default-tz=[]: :_default' \
+'-R+[]: :_default' \
+'--ts-resolution=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
-'--formatstr=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-R+[]: :_default' \
-'--ts-resolution=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--utc[]' \
+'--output-tz=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
+'--default-tz=[]: :_default' \
+'--prefer-dmy[]' \
+'--keep-zero-time[]' \
 '--zulu[]' \
 '-p[]' \
 '--progressbar[]' \
-'--prefer-dmy[]' \
 '-n[]' \
 '--no-headers[]' \
-'--keep-zero-time[]' \
+'--utc[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -432,100 +432,100 @@ _arguments "${_arguments_options[@]}" : \
 '--select=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-D+[]: :_default' \
 '--dupes-output=[]: :_default' \
+'-i[]' \
+'--ignore-case[]' \
+'--sorted[]' \
+'--memcheck[]' \
+'-N[]' \
+'--numeric[]' \
 '-q[]' \
 '--quiet[]' \
 '-H[]' \
 '--human-readable[]' \
-'-N[]' \
-'--numeric[]' \
-'-i[]' \
-'--ignore-case[]' \
-'--memcheck[]' \
 '-n[]' \
 '--no-headers[]' \
-'--sorted[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (describegpt)
 _arguments "${_arguments_options[@]}" : \
-'--language=[]: :_default' \
-'--sql-results=[]: :_default' \
-'--session-len=[]: :_default' \
-'--export-prompt=[]: :_default' \
-'-p+[]: :_default' \
-'--prompt=[]: :_default' \
-'--sample-size=[]: :_default' \
-'-u+[]: :_default' \
-'--base-url=[]: :_default' \
-'--format=[]: :_default' \
-'--timeout=[]: :_default' \
-'--disk-cache-dir=[]: :_default' \
-'--num-examples=[]: :_default' \
 '--truncate-str=[]: :_default' \
-'--ckan-token=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--stats-options=[]: :_default' \
-'--prompt-file=[]: :_default' \
-'--user-agent=[]: :_default' \
 '-m+[]: :_default' \
 '--model=[]: :_default' \
+'--sample-size=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--stats-options=[]: :_default' \
+'-p+[]: :_default' \
+'--prompt=[]: :_default' \
+'--addl-cols-list=[]: :_default' \
+'--session-len=[]: :_default' \
+'--sql-results=[]: :_default' \
+'--freq-options=[]: :_default' \
+'--enum-threshold=[]: :_default' \
+'-u+[]: :_default' \
+'--base-url=[]: :_default' \
+'--num-examples=[]: :_default' \
+'--ckan-api=[]: :_default' \
+'--language=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--prompt-file=[]: :_default' \
+'--session=[]: :_default' \
+'--timeout=[]: :_default' \
+'--user-agent=[]: :_default' \
+'--tag-vocab=[]: :_default' \
+'--export-prompt=[]: :_default' \
 '-k+[]: :_default' \
 '--api-key=[]: :_default' \
-'--tag-vocab=[]: :_default' \
-'--addl-props=[]: :_default' \
-'--ckan-api=[]: :_default' \
-'--freq-options=[]: :_default' \
+'--disk-cache-dir=[]: :_default' \
+'--format=[]: :_default' \
 '--num-tags=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--enum-threshold=[]: :_default' \
 '-t+[]: :_default' \
 '--max-tokens=[]: :_default' \
-'--addl-cols-list=[]: :_default' \
-'--session=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--addl-props=[]: :_default' \
+'--forget[]' \
 '--description[]' \
-'--addl-cols[]' \
-'--redis-cache[]' \
-'--no-cache[]' \
-'--fewshot-examples[]' \
 '--tags[]' \
 '-q[]' \
 '--quiet[]' \
-'--forget[]' \
-'--flush-cache[]' \
-'--dictionary[]' \
-'--fresh[]' \
 '-A[]' \
 '--all[]' \
+'--addl-cols[]' \
+'--fresh[]' \
+'--flush-cache[]' \
+'--dictionary[]' \
+'--no-cache[]' \
+'--redis-cache[]' \
+'--fewshot-examples[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (diff)
 _arguments "${_arguments_options[@]}" : \
-'--sort-columns=[]: :_default' \
 '-k+[]: :_default' \
 '--key=[]: :_default' \
 '--delimiter-output=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--delimiter-left=[]: :_default' \
 '--delimiter-right=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--no-headers-left[]' \
+'--sort-columns=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '--no-headers-output[]' \
 '--no-headers-right[]' \
+'--no-headers-left[]' \
 '--drop-equal-fields[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -545,57 +545,59 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (enum)
 _arguments "${_arguments_options[@]}" : \
+'--start=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
 '--increment=[]: :_default' \
-'--start=[]: :_default' \
 '--constant=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '--hash=[]: :_default' \
+'--copy=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--copy=[]: :_default' \
-'--uuid4[]' \
-'--uuid7[]' \
 '-n[]' \
 '--no-headers[]' \
+'--uuid4[]' \
+'--uuid7[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (excel)
 _arguments "${_arguments_options[@]}" : \
-'--header-row=[]: :_default' \
 '--metadata=[]: :_default' \
-'-s+[]: :_default' \
-'--sheet=[]: :_default' \
-'--cell=[]: :_default' \
+'--range=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--range=[]: :_default' \
-'--error-format=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
+'--date-format=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-s+[]: :_default' \
+'--sheet=[]: :_default' \
+'--error-format=[]: :_default' \
+'--header-row=[]: :_default' \
 '--table=[]: :_default' \
-'--date-format=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--cell=[]: :_default' \
 '--keep-zero-time[]' \
-'--trim[]' \
 '--flexible[]' \
 '-q[]' \
 '--quiet[]' \
+'--trim[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (exclude)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-v[]' \
+'--invert[]' \
 '-i[]' \
 '--ignore-case[]' \
 '-n[]' \
@@ -606,12 +608,12 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (explode)
 _arguments "${_arguments_options[@]}" : \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
 '-h[Print help]' \
@@ -620,117 +622,117 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (extdedup)
 _arguments "${_arguments_options[@]}" : \
-'--memory-limit=[]: :_default' \
-'--temp-dir=[]: :_default' \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '-D+[]: :_default' \
 '--dupes-output=[]: :_default' \
-'--no-output[]' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
+'--memory-limit=[]: :_default' \
+'--temp-dir=[]: :_default' \
 '-q[]' \
 '--quiet[]' \
 '-H[]' \
 '--human-readable[]' \
 '-n[]' \
 '--no-headers[]' \
+'--no-output[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (extsort)
 _arguments "${_arguments_options[@]}" : \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
 '--memory-limit=[]: :_default' \
 '--tmp-dir=[]: :_default' \
-'-R[]' \
-'--reverse[]' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
+'-R[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (fetch)
 _arguments "${_arguments_options[@]}" : \
-'--jaqfile=[]: :_default' \
-'--rate-limit=[]: :_default' \
 '--disk-cache-dir=[]: :_default' \
-'--report=[]: :_default' \
-'--jaq=[]: :_default' \
-'--mem-cache-size=[]: :_default' \
-'-H+[]: :_default' \
-'--http-header=[]: :_default' \
-'--max-retries=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--url-template=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'--timeout=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--user-agent=[]: :_default' \
+'--url-template=[]: :_default' \
+'--timeout=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--max-errors=[]: :_default' \
-'--store-error[]' \
+'--jaq=[]: :_default' \
+'--mem-cache-size=[]: :_default' \
+'--report=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'-H+[]: :_default' \
+'--http-header=[]: :_default' \
+'--jaqfile=[]: :_default' \
+'--user-agent=[]: :_default' \
+'--max-retries=[]: :_default' \
+'--flush-cache[]' \
 '--no-cache[]' \
-'--pretty[]' \
+'--store-error[]' \
 '--cache-error[]' \
-'-p[]' \
-'--progressbar[]' \
+'--redis-cache[]' \
 '--cookies[]' \
 '-n[]' \
 '--no-headers[]' \
 '--disk-cache[]' \
-'--flush-cache[]' \
-'--redis-cache[]' \
+'-p[]' \
+'--progressbar[]' \
+'--pretty[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (fetchpost)
 _arguments "${_arguments_options[@]}" : \
+'--content-type=[]: :_default' \
+'--report=[]: :_default' \
 '-t+[]: :_default' \
 '--payload-tpl=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'--timeout=[]: :_default' \
-'--disk-cache-dir=[]: :_default' \
-'--jaqfile=[]: :_default' \
-'--max-retries=[]: :_default' \
-'--content-type=[]: :_default' \
-'--user-agent=[]: :_default' \
-'--mem-cache-size=[]: :_default' \
-'--report=[]: :_default' \
-'--max-errors=[]: :_default' \
-'--jaq=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-j+[]: :_default' \
-'--globals-json=[]: :_default' \
-'--rate-limit=[]: :_default' \
-'-H+[]: :_default' \
-'--http-header=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--pretty[]' \
-'--cookies[]' \
-'--no-cache[]' \
-'--flush-cache[]' \
-'--store-error[]' \
-'-n[]' \
-'--no-headers[]' \
+'-H+[]: :_default' \
+'--http-header=[]: :_default' \
+'--jaq=[]: :_default' \
+'--user-agent=[]: :_default' \
+'--max-retries=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'--mem-cache-size=[]: :_default' \
+'--jaqfile=[]: :_default' \
+'--timeout=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--max-errors=[]: :_default' \
+'--disk-cache-dir=[]: :_default' \
+'-j+[]: :_default' \
+'--globals-json=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--cache-error[]' \
 '--redis-cache[]' \
+'--disk-cache[]' \
+'--cookies[]' \
+'--flush-cache[]' \
+'-n[]' \
+'--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
-'--disk-cache[]' \
+'--pretty[]' \
+'--store-error[]' \
+'--no-cache[]' \
 '--compress[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -738,20 +740,20 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (fill)
 _arguments "${_arguments_options[@]}" : \
-'-v+[]: :_default' \
-'--default=[]: :_default' \
-'-g+[]: :_default' \
-'--groupby=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-v+[]: :_default' \
+'--default=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
+'-g+[]: :_default' \
+'--groupby=[]: :_default' \
 '-b[]' \
 '--backfill[]' \
 '-f[]' \
 '--first[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -759,15 +761,15 @@ _arguments "${_arguments_options[@]}" : \
 (fixlengths)
 _arguments "${_arguments_options[@]}" : \
 '--quote=[]: :_default' \
-'-l+[]: :_default' \
-'--length=[]: :_default' \
-'--escape=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-i+[]: :_default' \
 '--insert=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-l+[]: :_default' \
+'--length=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--escape=[]: :_default' \
 '-r[]' \
 '--remove-empty[]' \
 '-q[]' \
@@ -782,10 +784,10 @@ _arguments "${_arguments_options[@]}" : \
 '--field-separator=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-s+[]: :_default' \
-'--separator=[]: :_default' \
 '-c+[]: :_default' \
 '--condense=[]: :_default' \
+'-s+[]: :_default' \
+'--separator=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
 '-h[Print help]' \
@@ -794,19 +796,19 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (fmt)
 _arguments "${_arguments_options[@]}" : \
-'-t+[]: :_default' \
-'--out-delimiter=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--escape=[]: :_default' \
-'--quote=[]: :_default' \
+'-t+[]: :_default' \
+'--out-delimiter=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--quote-never[]' \
-'--crlf[]' \
-'--quote-always[]' \
+'--quote=[]: :_default' \
 '--ascii[]' \
+'--quote-always[]' \
+'--quote-never[]' \
 '--no-final-newline[]' \
+'--crlf[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -830,78 +832,82 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (frequency)
 _arguments "${_arguments_options[@]}" : \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--pct-dec-places=[]: :_default' \
-'--stats-filter=[]: :_default' \
-'--lmt-threshold=[]: :_default' \
-'--no-float=[]: :_default' \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-u+[]: :_default' \
-'--unq-limit=[]: :_default' \
+'--high-card-threshold=[]: :_default' \
 '-l+[]: :_default' \
 '--limit=[]: :_default' \
-'-r+[]: :_default' \
-'--rank-strategy=[]: :_default' \
-'--other-text=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '--null-text=[]: :_default' \
-'--all-unique-text=[]: :_default' \
+'--pct-dec-places=[]: :_default' \
+'--other-text=[]: :_default' \
 '--weight=[]: :_default' \
+'--no-float=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--stats-filter=[]: :_default' \
+'--all-unique-text=[]: :_default' \
+'--lmt-threshold=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--no-stats[]' \
-'--memcheck[]' \
-'--toon[]' \
-'--pretty-json[]' \
-'--no-nulls[]' \
-'--vis-whitespace[]' \
+'-r+[]: :_default' \
+'--rank-strategy=[]: :_default' \
+'--high-card-pct=[]: :_default' \
+'-u+[]: :_default' \
+'--unq-limit=[]: :_default' \
+'--json[]' \
 '-i[]' \
 '--ignore-case[]' \
-'--no-trim[]' \
 '--pct-nulls[]' \
-'--json[]' \
-'--null-sorted[]' \
-'--other-sorted[]' \
+'--toon[]' \
+'--no-stats[]' \
+'--no-nulls[]' \
 '--no-other[]' \
+'--null-sorted[]' \
+'--force[]' \
+'--memcheck[]' \
 '-a[]' \
 '--asc[]' \
+'--other-sorted[]' \
+'--no-trim[]' \
+'--pretty-json[]' \
 '-n[]' \
 '--no-headers[]' \
+'--frequency-jsonl[]' \
+'--vis-whitespace[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (geocode)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'-k+[]: :_default' \
-'--k_weight=[]: :_default' \
 '--admin1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--languages=[]: :_default' \
+'--cities-url=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--timeout=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--country=[]: :_default' \
-'--min-score=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'--cities-url=[]: :_default' \
+'--timeout=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'--min-score=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -919,32 +925,32 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (countryinfo)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'-k+[]: :_default' \
-'--k_weight=[]: :_default' \
 '--admin1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--languages=[]: :_default' \
+'--cities-url=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--timeout=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--country=[]: :_default' \
-'--min-score=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'--cities-url=[]: :_default' \
+'--timeout=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'--min-score=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -954,32 +960,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (countryinfonow)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'-k+[]: :_default' \
-'--k_weight=[]: :_default' \
 '--admin1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--languages=[]: :_default' \
+'--cities-url=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--timeout=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--country=[]: :_default' \
-'--min-score=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'--cities-url=[]: :_default' \
+'--timeout=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'--min-score=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -989,32 +995,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (index-check)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'-k+[]: :_default' \
-'--k_weight=[]: :_default' \
 '--admin1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--languages=[]: :_default' \
+'--cities-url=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--timeout=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--country=[]: :_default' \
-'--min-score=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'--cities-url=[]: :_default' \
+'--timeout=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'--min-score=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1024,32 +1030,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (index-load)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'-k+[]: :_default' \
-'--k_weight=[]: :_default' \
 '--admin1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--languages=[]: :_default' \
+'--cities-url=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--timeout=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--country=[]: :_default' \
-'--min-score=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'--cities-url=[]: :_default' \
+'--timeout=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'--min-score=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1059,32 +1065,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (index-reset)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'-k+[]: :_default' \
-'--k_weight=[]: :_default' \
 '--admin1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--languages=[]: :_default' \
+'--cities-url=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--timeout=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--country=[]: :_default' \
-'--min-score=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'--cities-url=[]: :_default' \
+'--timeout=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'--min-score=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1094,32 +1100,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (index-update)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'-k+[]: :_default' \
-'--k_weight=[]: :_default' \
 '--admin1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--languages=[]: :_default' \
+'--cities-url=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--timeout=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--country=[]: :_default' \
-'--min-score=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'--cities-url=[]: :_default' \
+'--timeout=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'--min-score=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1129,32 +1135,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (iplookup)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'-k+[]: :_default' \
-'--k_weight=[]: :_default' \
 '--admin1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--languages=[]: :_default' \
+'--cities-url=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--timeout=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--country=[]: :_default' \
-'--min-score=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'--cities-url=[]: :_default' \
+'--timeout=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'--min-score=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1164,32 +1170,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (iplookupnow)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'-k+[]: :_default' \
-'--k_weight=[]: :_default' \
 '--admin1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--languages=[]: :_default' \
+'--cities-url=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--timeout=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--country=[]: :_default' \
-'--min-score=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'--cities-url=[]: :_default' \
+'--timeout=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'--min-score=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1199,32 +1205,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (reverse)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'-k+[]: :_default' \
-'--k_weight=[]: :_default' \
 '--admin1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--languages=[]: :_default' \
+'--cities-url=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--timeout=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--country=[]: :_default' \
-'--min-score=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'--cities-url=[]: :_default' \
+'--timeout=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'--min-score=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1234,32 +1240,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (reversenow)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'-k+[]: :_default' \
-'--k_weight=[]: :_default' \
 '--admin1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--languages=[]: :_default' \
+'--cities-url=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--timeout=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--country=[]: :_default' \
-'--min-score=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'--cities-url=[]: :_default' \
+'--timeout=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'--min-score=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1269,32 +1275,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (suggest)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'-k+[]: :_default' \
-'--k_weight=[]: :_default' \
 '--admin1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--languages=[]: :_default' \
+'--cities-url=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--timeout=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--country=[]: :_default' \
-'--min-score=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'--cities-url=[]: :_default' \
+'--timeout=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'--min-score=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1304,32 +1310,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (suggestnow)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'-k+[]: :_default' \
-'--k_weight=[]: :_default' \
 '--admin1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--languages=[]: :_default' \
+'--cities-url=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--timeout=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--country=[]: :_default' \
-'--min-score=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
-'--cities-url=[]: :_default' \
+'--timeout=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'--min-score=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1411,16 +1417,16 @@ esac
 ;;
 (geoconvert)
 _arguments "${_arguments_options[@]}" : \
-'-x+[]: :_default' \
-'--longitude=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-g+[]: :_default' \
-'--geometry=[]: :_default' \
 '-y+[]: :_default' \
 '--latitude=[]: :_default' \
 '-l+[]: :_default' \
 '--max-length=[]: :_default' \
+'-g+[]: :_default' \
+'--geometry=[]: :_default' \
+'-x+[]: :_default' \
+'--longitude=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1432,9 +1438,9 @@ _arguments "${_arguments_options[@]}" : \
 '--trim[]' \
 '-j[]' \
 '--just-names[]' \
-'--intersect[]' \
 '-J[]' \
 '--just-count[]' \
+'--intersect[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1449,127 +1455,127 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (input)
 _arguments "${_arguments_options[@]}" : \
+'--quote-style=[]: :_default' \
+'--comment=[]: :_default' \
 '--encoding-errors=[]: :_default' \
+'--skip-lines=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--comment=[]: :_default' \
-'--quote-style=[]: :_default' \
+'--skip-lastlines=[]: :_default' \
 '--escape=[]: :_default' \
 '--quote=[]: :_default' \
-'--skip-lastlines=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--skip-lines=[]: :_default' \
-'--trim-fields[]' \
-'--auto-skip[]' \
-'--trim-headers[]' \
 '--no-quoting[]' \
+'--trim-fields[]' \
+'--trim-headers[]' \
+'--auto-skip[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (join)
 _arguments "${_arguments_options[@]}" : \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '--keys-output=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--left[]' \
-'-i[]' \
-'--ignore-case[]' \
-'-z[]' \
-'--ignore-leading-zeros[]' \
-'--left-semi[]' \
+'--left-anti[]' \
+'--cross[]' \
 '-n[]' \
 '--no-headers[]' \
-'--left-anti[]' \
-'--right-anti[]' \
-'--right[]' \
-'--cross[]' \
-'--full[]' \
 '--right-semi[]' \
+'--right-anti[]' \
 '--nulls[]' \
+'--full[]' \
+'--left[]' \
+'--right[]' \
+'-z[]' \
+'--ignore-leading-zeros[]' \
+'-i[]' \
+'--ignore-case[]' \
+'--left-semi[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (joinp)
 _arguments "${_arguments_options[@]}" : \
-'--date-format=[]: :_default' \
+'--validate=[]: :_default' \
+'--cache-schema=[]: :_default' \
 '-N+[]: :_default' \
 '--norm-unicode=[]: :_default' \
-'--right_by=[]: :_default' \
-'--strategy=[]: :_default' \
-'--maintain-order=[]: :_default' \
-'--time-format=[]: :_default' \
-'--tolerance=[]: :_default' \
-'--left_by=[]: :_default' \
-'--null-value=[]: :_default' \
-'--non-equi=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--datetime-format=[]: :_default' \
-'--cache-schema=[]: :_default' \
-'--sql-filter=[]: :_default' \
-'--float-precision=[]: :_default' \
-'--filter-right=[]: :_default' \
-'--infer-len=[]: :_default' \
 '--filter-left=[]: :_default' \
+'--left_by=[]: :_default' \
+'--maintain-order=[]: :_default' \
+'--right_by=[]: :_default' \
+'--infer-len=[]: :_default' \
+'--tolerance=[]: :_default' \
+'--filter-right=[]: :_default' \
+'--strategy=[]: :_default' \
+'--sql-filter=[]: :_default' \
+'--null-value=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--validate=[]: :_default' \
-'-i[]' \
-'--ignore-case[]' \
-'--asof[]' \
-'--cross[]' \
+'--date-format=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--float-precision=[]: :_default' \
+'--datetime-format=[]: :_default' \
+'--non-equi=[]: :_default' \
+'--time-format=[]: :_default' \
+'--ignore-errors[]' \
 '--left-semi[]' \
+'--right-semi[]' \
 '-X[]' \
 '--allow-exact-matches[]' \
-'--right-semi[]' \
+'--right[]' \
+'--left-anti[]' \
+'--decimal-comma[]' \
+'--left[]' \
+'--no-optimizations[]' \
+'--try-parsedates[]' \
+'--low-memory[]' \
+'-i[]' \
+'--ignore-case[]' \
 '--right-anti[]' \
+'--cross[]' \
+'--no-sort[]' \
 '-z[]' \
 '--ignore-leading-zeros[]' \
-'--left[]' \
 '--full[]' \
-'--nulls[]' \
-'--ignore-errors[]' \
 '--streaming[]' \
-'--low-memory[]' \
-'--no-optimizations[]' \
-'--left-anti[]' \
-'--try-parsedates[]' \
-'--right[]' \
+'--nulls[]' \
+'--asof[]' \
 '--coalesce[]' \
-'--no-sort[]' \
 '-q[]' \
 '--quiet[]' \
-'--decimal-comma[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (json)
 _arguments "${_arguments_options[@]}" : \
-'--jaq=[]: :_default' \
 '-s+[]: :_default' \
 '--select=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--jaq=[]: :_default' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (jsonl)
 _arguments "${_arguments_options[@]}" : \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '--ignore-errors[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -1578,57 +1584,57 @@ _arguments "${_arguments_options[@]}" : \
 (lens)
 _arguments "${_arguments_options[@]}" : \
 '--filter=[]: :_default' \
-'--columns=[]: :_default' \
-'-P+[]: :_default' \
-'--prompt=[]: :_default' \
-'--echo-column=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--find=[]: :_default' \
 '-f+[]: :_default' \
 '--freeze-columns=[]: :_default' \
+'--echo-column=[]: :_default' \
+'--columns=[]: :_default' \
+'--find=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '-W+[]: :_default' \
 '--wrap-mode=[]: :_default' \
+'-P+[]: :_default' \
+'--prompt=[]: :_default' \
+'-S[]' \
+'--streaming-stdin[]' \
+'--no-headers[]' \
+'-A[]' \
+'--auto-reload[]' \
 '-i[]' \
 '--ignore-case[]' \
 '-t[]' \
 '--tab-separated[]' \
-'--no-headers[]' \
 '--debug[]' \
-'-S[]' \
-'--streaming-stdin[]' \
 '-m[]' \
 '--monochrome[]' \
-'-A[]' \
-'--auto-reload[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (luau)
 _arguments "${_arguments_options[@]}" : \
-'--ckan-api=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--ckan-token=[]: :_default' \
-'--max-errors=[]: :_default' \
-'--timeout=[]: :_default' \
-'-E+[]: :_default' \
-'--end=[]: :_default' \
-'-B+[]: :_default' \
-'--begin=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'-E+[]: :_default' \
+'--end=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--ckan-api=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--max-errors=[]: :_default' \
+'-B+[]: :_default' \
+'--begin=[]: :_default' \
+'--timeout=[]: :_default' \
+'-n[]' \
+'--no-headers[]' \
 '-g[]' \
 '--no-globals[]' \
+'-r[]' \
+'--remap[]' \
 '--colindex[]' \
 '-p[]' \
 '--progressbar[]' \
-'-n[]' \
-'--no-headers[]' \
-'-r[]' \
-'--remap[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_qsv__luau_commands" \
@@ -1643,56 +1649,56 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (filter)
 _arguments "${_arguments_options[@]}" : \
-'--ckan-api=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--ckan-token=[]: :_default' \
-'--max-errors=[]: :_default' \
-'--timeout=[]: :_default' \
-'-E+[]: :_default' \
-'--end=[]: :_default' \
-'-B+[]: :_default' \
-'--begin=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'-E+[]: :_default' \
+'--end=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--ckan-api=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--max-errors=[]: :_default' \
+'-B+[]: :_default' \
+'--begin=[]: :_default' \
+'--timeout=[]: :_default' \
+'-n[]' \
+'--no-headers[]' \
 '-g[]' \
 '--no-globals[]' \
+'-r[]' \
+'--remap[]' \
 '--colindex[]' \
 '-p[]' \
 '--progressbar[]' \
-'-n[]' \
-'--no-headers[]' \
-'-r[]' \
-'--remap[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (map)
 _arguments "${_arguments_options[@]}" : \
-'--ckan-api=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--ckan-token=[]: :_default' \
-'--max-errors=[]: :_default' \
-'--timeout=[]: :_default' \
-'-E+[]: :_default' \
-'--end=[]: :_default' \
-'-B+[]: :_default' \
-'--begin=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'-E+[]: :_default' \
+'--end=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--ckan-api=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--max-errors=[]: :_default' \
+'-B+[]: :_default' \
+'--begin=[]: :_default' \
+'--timeout=[]: :_default' \
+'-n[]' \
+'--no-headers[]' \
 '-g[]' \
 '--no-globals[]' \
+'-r[]' \
+'--remap[]' \
 '--colindex[]' \
 '-p[]' \
 '--progressbar[]' \
-'-n[]' \
-'--no-headers[]' \
-'-r[]' \
-'--remap[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1731,74 +1737,95 @@ esac
 ;;
 (moarstats)
 _arguments "${_arguments_options[@]}" : \
-'--stats-options=[]: :_default' \
-'--round=[]: :_default' \
-'-e+[]: :_default' \
-'--epsilon=[]: :_default' \
-'-T+[]: :_default' \
-'--join-type=[]: :_default' \
-'-J+[]: :_default' \
-'--join-inputs=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-K+[]: :_default' \
-'--join-keys=[]: :_default' \
-'--pct-thresholds=[]: :_default' \
-'-S+[]: :_default' \
-'--bivariate-stats=[]: :_default' \
 '-C+[]: :_default' \
 '--cardinality-threshold=[]: :_default' \
+'--stats-options=[]: :_default' \
+'-J+[]: :_default' \
+'--join-inputs=[]: :_default' \
+'-T+[]: :_default' \
+'--join-type=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-e+[]: :_default' \
+'--epsilon=[]: :_default' \
+'-S+[]: :_default' \
+'--bivariate-stats=[]: :_default' \
+'--round=[]: :_default' \
+'-K+[]: :_default' \
+'--join-keys=[]: :_default' \
 '--xsd-gdate-scan=[]: :_default' \
-'--force[]' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--pct-thresholds=[]: :_default' \
+'-p[]' \
+'--progressbar[]' \
 '--use-percentiles[]' \
 '--advanced[]' \
 '-B[]' \
 '--bivariate[]' \
-'-p[]' \
-'--progressbar[]' \
+'--force[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (partition)
 _arguments "${_arguments_options[@]}" : \
+'--limit=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--filename=[]: :_default' \
 '-p+[]: :_default' \
 '--prefix-length=[]: :_default' \
-'--limit=[]: :_default' \
+'--filename=[]: :_default' \
+'--drop[]' \
 '-n[]' \
 '--no-headers[]' \
-'--drop[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (pivotp)
 _arguments "${_arguments_options[@]}" : \
-'-i+[]: :_default' \
-'--index=[]: :_default' \
+'--infer-len=[]: :_default' \
+'-a+[]: :_default' \
+'--agg=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-i+[]: :_default' \
+'--index=[]: :_default' \
 '--col-separator=[]: :_default' \
-'--infer-len=[]: :_default' \
 '-v+[]: :_default' \
 '--values=[]: :_default' \
-'-a+[]: :_default' \
-'--agg=[]: :_default' \
-'--try-parsedates[]' \
-'--maintain-order[]' \
-'--sort-columns[]' \
-'--validate[]' \
-'--decimal-comma[]' \
-'--ignore-errors[]' \
 '-q[]' \
 '--quiet[]' \
+'--maintain-order[]' \
+'--validate[]' \
+'--try-parsedates[]' \
+'--sort-columns[]' \
+'--decimal-comma[]' \
+'--ignore-errors[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(pragmastat)
+_arguments "${_arguments_options[@]}" : \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
+'-m+[]: :_default' \
+'--misrate=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--memcheck[]' \
+'-t[]' \
+'--twosample[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1863,33 +1890,33 @@ esac
 ;;
 (prompt)
 _arguments "${_arguments_options[@]}" : \
-'-F+[]: :_default' \
-'--filters=[]: :_default' \
+'--base-delay-ms=[]: :_default' \
 '-d+[]: :_default' \
 '--workdir=[]: :_default' \
-'--base-delay-ms=[]: :_default' \
-'-m+[]: :_default' \
-'--msg=[]: :_default' \
-'--save-fname=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-f[]' \
-'--fd-output[]' \
+'--save-fname=[]: :_default' \
+'-m+[]: :_default' \
+'--msg=[]: :_default' \
+'-F+[]: :_default' \
+'--filters=[]: :_default' \
 '-q[]' \
 '--quiet[]' \
+'-f[]' \
+'--fd-output[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (pseudo)
 _arguments "${_arguments_options[@]}" : \
-'--increment=[]: :_default' \
-'--start=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--start=[]: :_default' \
 '--formatstr=[]: :_default' \
+'--increment=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
 '-h[Print help]' \
@@ -1898,18 +1925,18 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (py)
 _arguments "${_arguments_options[@]}" : \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-f+[]: :_default' \
 '--helper=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-p[]' \
-'--progressbar[]' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
+'-p[]' \
+'--progressbar[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_qsv__py_commands" \
@@ -1924,36 +1951,36 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (filter)
 _arguments "${_arguments_options[@]}" : \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-f+[]: :_default' \
 '--helper=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-p[]' \
-'--progressbar[]' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
+'-p[]' \
+'--progressbar[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (map)
 _arguments "${_arguments_options[@]}" : \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-f+[]: :_default' \
 '--helper=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-p[]' \
-'--progressbar[]' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
+'-p[]' \
+'--progressbar[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -2005,83 +2032,83 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (replace)
 _arguments "${_arguments_options[@]}" : \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
-'--dfa-size-limit=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
 '--size-limit=[]: :_default' \
-'-p[]' \
-'--progressbar[]' \
+'--dfa-size-limit=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-i[]' \
 '--ignore-case[]' \
-'--not-one[]' \
-'--literal[]' \
-'-n[]' \
-'--no-headers[]' \
-'--exact[]' \
-'-q[]' \
-'--quiet[]' \
 '-u[]' \
 '--unicode[]' \
+'--literal[]' \
+'-p[]' \
+'--progressbar[]' \
+'--exact[]' \
+'-n[]' \
+'--no-headers[]' \
+'--not-one[]' \
+'-q[]' \
+'--quiet[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (reverse)
 _arguments "${_arguments_options[@]}" : \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--memcheck[]' \
 '-n[]' \
 '--no-headers[]' \
-'--memcheck[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (safenames)
 _arguments "${_arguments_options[@]}" : \
-'--mode=[]: :_default' \
 '--reserved=[]: :_default' \
 '--prefix=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--mode=[]: :_default' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (sample)
 _arguments "${_arguments_options[@]}" : \
-'--systematic=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--seed=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--ts-start=[]: :_default' \
-'--stratified=[]: :_default' \
+'--ts-interval=[]: :_default' \
 '--ts-aggregate=[]: :_default' \
 '--max-size=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--rng=[]: :_default' \
 '--weighted=[]: :_default' \
+'--timeseries=[]: :_default' \
 '--ts-adaptive=[]: :_default' \
 '--ts-input-tz=[]: :_default' \
+'--stratified=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--ts-start=[]: :_default' \
+'--user-agent=[]: :_default' \
+'--systematic=[]: :_default' \
+'--seed=[]: :_default' \
 '--cluster=[]: :_default' \
 '--timeout=[]: :_default' \
-'--rng=[]: :_default' \
-'--timeseries=[]: :_default' \
-'--ts-interval=[]: :_default' \
-'--user-agent=[]: :_default' \
+'--force[]' \
 '-n[]' \
 '--no-headers[]' \
-'--force[]' \
 '--ts-prefer-dmy[]' \
 '--bernoulli[]' \
 '-h[Print help]' \
@@ -2090,143 +2117,143 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (schema)
 _arguments "${_arguments_options[@]}" : \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--pattern-columns=[]: :_default' \
-'--dates-whitelist=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '--enum-threshold=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--strict-dates[]' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--dates-whitelist=[]: :_default' \
+'--pattern-columns=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--prefer-dmy[]' \
+'--memcheck[]' \
+'--strict-formats[]' \
+'--polars[]' \
+'-i[]' \
+'--ignore-case[]' \
 '-n[]' \
 '--no-headers[]' \
 '--force[]' \
 '--stdout[]' \
-'--polars[]' \
-'--memcheck[]' \
-'-i[]' \
-'--ignore-case[]' \
-'--prefer-dmy[]' \
-'--strict-formats[]' \
+'--strict-dates[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (search)
 _arguments "${_arguments_options[@]}" : \
-'--size-limit=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-f+[]: :_default' \
-'--flag=[]: :_default' \
-'--dfa-size-limit=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--preview-match=[]: :_default' \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
-'--exact[]' \
-'-Q[]' \
-'--quick[]' \
-'--literal[]' \
-'--json[]' \
-'-i[]' \
-'--ignore-case[]' \
+'--dfa-size-limit=[]: :_default' \
+'-f+[]: :_default' \
+'--flag=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--size-limit=[]: :_default' \
 '--not-one[]' \
-'-n[]' \
-'--no-headers[]' \
 '-c[]' \
 '--count[]' \
+'--json[]' \
 '-q[]' \
 '--quiet[]' \
-'-v[]' \
-'--invert-match[]' \
-'-u[]' \
-'--unicode[]' \
 '-p[]' \
 '--progressbar[]' \
+'--exact[]' \
+'-i[]' \
+'--ignore-case[]' \
+'-n[]' \
+'--no-headers[]' \
+'-u[]' \
+'--unicode[]' \
+'--literal[]' \
+'-v[]' \
+'--invert-match[]' \
+'-Q[]' \
+'--quick[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (searchset)
 _arguments "${_arguments_options[@]}" : \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
-'--jobs=[]: :_default' \
-'--dfa-size-limit=[]: :_default' \
-'-f+[]: :_default' \
-'--flag=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--size-limit=[]: :_default' \
 '--unmatched-output=[]: :_default' \
+'--size-limit=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
+'-f+[]: :_default' \
+'--flag=[]: :_default' \
+'--jobs=[]: :_default' \
+'--dfa-size-limit=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'-Q[]' \
+'--quick[]' \
+'--not-one[]' \
 '-n[]' \
 '--no-headers[]' \
+'-p[]' \
+'--progressbar[]' \
+'--exact[]' \
+'-v[]' \
+'--invert-match[]' \
 '-q[]' \
 '--quiet[]' \
+'--flag-matches-only[]' \
 '-i[]' \
 '--ignore-case[]' \
 '-u[]' \
 '--unicode[]' \
-'--not-one[]' \
-'-p[]' \
-'--progressbar[]' \
-'-v[]' \
-'--invert-match[]' \
-'--exact[]' \
-'-Q[]' \
-'--quick[]' \
-'--literal[]' \
-'--flag-matches-only[]' \
 '-c[]' \
 '--count[]' \
 '-j[]' \
 '--json[]' \
+'--literal[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (select)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '--seed=[]: :_default' \
 '-R[]' \
 '--random[]' \
-'-n[]' \
-'--no-headers[]' \
 '-S[]' \
 '--sort[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (slice)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--len=[]: :_default' \
-'-s+[]: :_default' \
-'--start=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '-e+[]: :_default' \
 '--end=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-s+[]: :_default' \
+'--start=[]: :_default' \
+'-l+[]: :_default' \
+'--len=[]: :_default' \
 '-i+[]: :_default' \
 '--index=[]: :_default' \
-'--json[]' \
 '-n[]' \
 '--no-headers[]' \
+'--json[]' \
 '--invert[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -2234,16 +2261,16 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (snappy)
 _arguments "${_arguments_options[@]}" : \
+'--timeout=[]: :_default' \
+'--user-agent=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--user-agent=[]: :_default' \
-'--timeout=[]: :_default' \
-'-q[]' \
-'--quiet[]' \
 '-p[]' \
 '--progressbar[]' \
+'-q[]' \
+'--quiet[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_qsv__snappy_commands" \
@@ -2258,64 +2285,64 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (check)
 _arguments "${_arguments_options[@]}" : \
+'--timeout=[]: :_default' \
+'--user-agent=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--user-agent=[]: :_default' \
-'--timeout=[]: :_default' \
-'-q[]' \
-'--quiet[]' \
 '-p[]' \
 '--progressbar[]' \
+'-q[]' \
+'--quiet[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (compress)
 _arguments "${_arguments_options[@]}" : \
+'--timeout=[]: :_default' \
+'--user-agent=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--user-agent=[]: :_default' \
-'--timeout=[]: :_default' \
-'-q[]' \
-'--quiet[]' \
 '-p[]' \
 '--progressbar[]' \
+'-q[]' \
+'--quiet[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (decompress)
 _arguments "${_arguments_options[@]}" : \
+'--timeout=[]: :_default' \
+'--user-agent=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--user-agent=[]: :_default' \
-'--timeout=[]: :_default' \
-'-q[]' \
-'--quiet[]' \
 '-p[]' \
 '--progressbar[]' \
+'-q[]' \
+'--quiet[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (validate)
 _arguments "${_arguments_options[@]}" : \
+'--timeout=[]: :_default' \
+'--user-agent=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--user-agent=[]: :_default' \
-'--timeout=[]: :_default' \
-'-q[]' \
-'--quiet[]' \
 '-p[]' \
 '--progressbar[]' \
+'-q[]' \
+'--quiet[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -2362,187 +2389,187 @@ esac
 ;;
 (sniff)
 _arguments "${_arguments_options[@]}" : \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '--quote=[]: :_default' \
-'--timeout=[]: :_default' \
-'--user-agent=[]: :_default' \
 '--sample=[]: :_default' \
 '--save-urlsample=[]: :_default' \
+'--user-agent=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--timeout=[]: :_default' \
 '-p[]' \
 '--progressbar[]' \
-'--just-mime[]' \
-'--harvest-mode[]' \
-'--prefer-dmy[]' \
-'--json[]' \
+'--pretty-json[]' \
 '-Q[]' \
 '--quick[]' \
 '--stats-types[]' \
+'--just-mime[]' \
 '--no-infer[]' \
-'--pretty-json[]' \
+'--harvest-mode[]' \
+'--json[]' \
+'--prefer-dmy[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (sort)
 _arguments "${_arguments_options[@]}" : \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--rng=[]: :_default' \
+'--seed=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--rng=[]: :_default' \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
-'--seed=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
 '--random[]' \
-'-R[]' \
-'--reverse[]' \
-'-i[]' \
-'--ignore-case[]' \
+'--memcheck[]' \
 '-N[]' \
 '--numeric[]' \
+'-R[]' \
+'--reverse[]' \
+'--natural[]' \
+'-i[]' \
+'--ignore-case[]' \
 '--faster[]' \
-'--memcheck[]' \
 '-u[]' \
 '--unique[]' \
-'--natural[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (sortcheck)
 _arguments "${_arguments_options[@]}" : \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '-s+[]: :_default' \
 '--select=[]: :_default' \
-'--pretty-json[]' \
-'--all[]' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '--json[]' \
-'-i[]' \
-'--ignore-case[]' \
-'-p[]' \
-'--progressbar[]' \
 '-n[]' \
 '--no-headers[]' \
+'-p[]' \
+'--progressbar[]' \
+'--all[]' \
+'-i[]' \
+'--ignore-case[]' \
+'--pretty-json[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (split)
 _arguments "${_arguments_options[@]}" : \
-'-c+[]: :_default' \
-'--chunks=[]: :_default' \
+'--filename=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-s+[]: :_default' \
 '--size=[]: :_default' \
 '--filter=[]: :_default' \
-'--filename=[]: :_default' \
+'--pad=[]: :_default' \
+'-c+[]: :_default' \
+'--chunks=[]: :_default' \
 '-k+[]: :_default' \
 '--kb-size=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--pad=[]: :_default' \
 '--filter-ignore-errors[]' \
-'-n[]' \
-'--no-headers[]' \
-'--filter-cleanup[]' \
 '-q[]' \
 '--quiet[]' \
+'--filter-cleanup[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (sqlp)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
+'--infer-len=[]: :_default' \
+'--time-format=[]: :_default' \
+'--wnull-value=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--compress-level=[]: :_default' \
-'--compression=[]: :_default' \
-'--time-format=[]: :_default' \
-'--infer-len=[]: :_default' \
 '--float-precision=[]: :_default' \
+'--format=[]: :_default' \
+'--compression=[]: :_default' \
+'--compress-level=[]: :_default' \
+'--datetime-format=[]: :_default' \
 '--date-format=[]: :_default' \
 '--rnull-values=[]: :_default' \
-'--format=[]: :_default' \
-'--datetime-format=[]: :_default' \
-'--wnull-value=[]: :_default' \
-'--truncate-ragged-lines[]' \
-'--statistics[]' \
-'--try-parsedates[]' \
-'--cache-schema[]' \
-'--low-memory[]' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-q[]' \
 '--quiet[]' \
-'--no-optimizations[]' \
-'--streaming[]' \
-'--ignore-errors[]' \
 '--decimal-comma[]' \
+'--no-optimizations[]' \
+'--cache-schema[]' \
+'--streaming[]' \
+'--truncate-ragged-lines[]' \
+'--ignore-errors[]' \
+'--try-parsedates[]' \
+'--low-memory[]' \
+'--statistics[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (stats)
 _arguments "${_arguments_options[@]}" : \
-'--percentile-list=[]: :_default' \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
-'-c+[]: :_default' \
-'--cache-threshold=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--boolean-patterns=[]: :_default' \
-'--weight=[]: :_default' \
-'--round=[]: :_default' \
+'--dates-whitelist=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--dates-whitelist=[]: :_default' \
+'--percentile-list=[]: :_default' \
+'--round=[]: :_default' \
+'-c+[]: :_default' \
+'--cache-threshold=[]: :_default' \
+'--boolean-patterns=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--nulls[]' \
+'--weight=[]: :_default' \
+'--mad[]' \
+'--median[]' \
+'--percentiles[]' \
+'--cardinality[]' \
 '-E[]' \
 '--everything[]' \
-'--cardinality[]' \
 '--stats-jsonl[]' \
-'--infer-boolean[]' \
+'--vis-whitespace[]' \
+'--force[]' \
+'--typesonly[]' \
+'--nulls[]' \
+'--infer-dates[]' \
+'--prefer-dmy[]' \
+'--quartiles[]' \
 '-n[]' \
 '--no-headers[]' \
-'--median[]' \
-'--memcheck[]' \
-'--infer-dates[]' \
-'--mad[]' \
-'--force[]' \
-'--vis-whitespace[]' \
-'--prefer-dmy[]' \
 '--mode[]' \
-'--typesonly[]' \
-'--percentiles[]' \
-'--quartiles[]' \
+'--infer-boolean[]' \
+'--memcheck[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (table)
 _arguments "${_arguments_options[@]}" : \
+'-a+[]: :_default' \
+'--align=[]: :_default' \
+'-w+[]: :_default' \
+'--width=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-c+[]: :_default' \
-'--condense=[]: :_default' \
-'-w+[]: :_default' \
-'--width=[]: :_default' \
 '-p+[]: :_default' \
 '--pad=[]: :_default' \
-'-a+[]: :_default' \
-'--align=[]: :_default' \
+'-c+[]: :_default' \
+'--condense=[]: :_default' \
 '--memcheck[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -2550,24 +2577,24 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (template)
 _arguments "${_arguments_options[@]}" : \
-'-j+[]: :_default' \
-'--globals-json=[]: :_default' \
-'--delimiter=[]: :_default' \
-'--ckan-api=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--jobs=[]: :_default' \
 '--outsubdir-size=[]: :_default' \
-'--timeout=[]: :_default' \
-'--ckan-token=[]: :_default' \
+'--outfilename=[]: :_default' \
 '--template=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-t+[]: :_default' \
 '--template-file=[]: :_default' \
+'--delimiter=[]: :_default' \
+'--timeout=[]: :_default' \
+'--ckan-token=[]: :_default' \
 '--customfilter-error=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
-'--outfilename=[]: :_default' \
+'--globals-json=[]: :_default' \
+'--ckan-api=[]: :_default' \
 '-p[]' \
 '--progressbar[]' \
 '-n[]' \
@@ -2578,31 +2605,31 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (to)
 _arguments "${_arguments_options[@]}" : \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-s+[]: :_default' \
-'--schema=[]: :_default' \
 '-c+[]: :_default' \
 '--stats-csv=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-s+[]: :_default' \
+'--schema=[]: :_default' \
 '-p+[]: :_default' \
 '--separator=[]: :_default' \
-'--delimiter=[]: :_default' \
-'-a[]' \
-'--stats[]' \
-'-i[]' \
-'--pipe[]' \
-'-k[]' \
-'--print-package[]' \
-'-u[]' \
-'--dump[]' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-A[]' \
 '--all-strings[]' \
-'-e[]' \
-'--evolve[]' \
-'-d[]' \
-'--drop[]' \
+'-i[]' \
+'--pipe[]' \
+'-a[]' \
+'--stats[]' \
 '-q[]' \
 '--quiet[]' \
+'-u[]' \
+'--dump[]' \
+'-e[]' \
+'--evolve[]' \
+'--drop[]' \
+'-k[]' \
+'--print-package[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_qsv__to_commands" \
@@ -2617,155 +2644,155 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (datapackage)
 _arguments "${_arguments_options[@]}" : \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-s+[]: :_default' \
-'--schema=[]: :_default' \
 '-c+[]: :_default' \
 '--stats-csv=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-s+[]: :_default' \
+'--schema=[]: :_default' \
 '-p+[]: :_default' \
 '--separator=[]: :_default' \
-'--delimiter=[]: :_default' \
-'-a[]' \
-'--stats[]' \
-'-i[]' \
-'--pipe[]' \
-'-k[]' \
-'--print-package[]' \
-'-u[]' \
-'--dump[]' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-A[]' \
 '--all-strings[]' \
-'-e[]' \
-'--evolve[]' \
-'-d[]' \
-'--drop[]' \
+'-i[]' \
+'--pipe[]' \
+'-a[]' \
+'--stats[]' \
 '-q[]' \
 '--quiet[]' \
+'-u[]' \
+'--dump[]' \
+'-e[]' \
+'--evolve[]' \
+'--drop[]' \
+'-k[]' \
+'--print-package[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (ods)
 _arguments "${_arguments_options[@]}" : \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-s+[]: :_default' \
-'--schema=[]: :_default' \
 '-c+[]: :_default' \
 '--stats-csv=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-s+[]: :_default' \
+'--schema=[]: :_default' \
 '-p+[]: :_default' \
 '--separator=[]: :_default' \
-'--delimiter=[]: :_default' \
-'-a[]' \
-'--stats[]' \
-'-i[]' \
-'--pipe[]' \
-'-k[]' \
-'--print-package[]' \
-'-u[]' \
-'--dump[]' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-A[]' \
 '--all-strings[]' \
-'-e[]' \
-'--evolve[]' \
-'-d[]' \
-'--drop[]' \
+'-i[]' \
+'--pipe[]' \
+'-a[]' \
+'--stats[]' \
 '-q[]' \
 '--quiet[]' \
+'-u[]' \
+'--dump[]' \
+'-e[]' \
+'--evolve[]' \
+'--drop[]' \
+'-k[]' \
+'--print-package[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (postgres)
 _arguments "${_arguments_options[@]}" : \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-s+[]: :_default' \
-'--schema=[]: :_default' \
 '-c+[]: :_default' \
 '--stats-csv=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-s+[]: :_default' \
+'--schema=[]: :_default' \
 '-p+[]: :_default' \
 '--separator=[]: :_default' \
-'--delimiter=[]: :_default' \
-'-a[]' \
-'--stats[]' \
-'-i[]' \
-'--pipe[]' \
-'-k[]' \
-'--print-package[]' \
-'-u[]' \
-'--dump[]' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-A[]' \
 '--all-strings[]' \
-'-e[]' \
-'--evolve[]' \
-'-d[]' \
-'--drop[]' \
+'-i[]' \
+'--pipe[]' \
+'-a[]' \
+'--stats[]' \
 '-q[]' \
 '--quiet[]' \
+'-u[]' \
+'--dump[]' \
+'-e[]' \
+'--evolve[]' \
+'--drop[]' \
+'-k[]' \
+'--print-package[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (sqlite)
 _arguments "${_arguments_options[@]}" : \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-s+[]: :_default' \
-'--schema=[]: :_default' \
 '-c+[]: :_default' \
 '--stats-csv=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-s+[]: :_default' \
+'--schema=[]: :_default' \
 '-p+[]: :_default' \
 '--separator=[]: :_default' \
-'--delimiter=[]: :_default' \
-'-a[]' \
-'--stats[]' \
-'-i[]' \
-'--pipe[]' \
-'-k[]' \
-'--print-package[]' \
-'-u[]' \
-'--dump[]' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-A[]' \
 '--all-strings[]' \
-'-e[]' \
-'--evolve[]' \
-'-d[]' \
-'--drop[]' \
+'-i[]' \
+'--pipe[]' \
+'-a[]' \
+'--stats[]' \
 '-q[]' \
 '--quiet[]' \
+'-u[]' \
+'--dump[]' \
+'-e[]' \
+'--evolve[]' \
+'--drop[]' \
+'-k[]' \
+'--print-package[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (xlsx)
 _arguments "${_arguments_options[@]}" : \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-s+[]: :_default' \
-'--schema=[]: :_default' \
 '-c+[]: :_default' \
 '--stats-csv=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-s+[]: :_default' \
+'--schema=[]: :_default' \
 '-p+[]: :_default' \
 '--separator=[]: :_default' \
-'--delimiter=[]: :_default' \
-'-a[]' \
-'--stats[]' \
-'-i[]' \
-'--pipe[]' \
-'-k[]' \
-'--print-package[]' \
-'-u[]' \
-'--dump[]' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-A[]' \
 '--all-strings[]' \
-'-e[]' \
-'--evolve[]' \
-'-d[]' \
-'--drop[]' \
+'-i[]' \
+'--pipe[]' \
+'-a[]' \
+'--stats[]' \
 '-q[]' \
 '--quiet[]' \
+'-u[]' \
+'--dump[]' \
+'-e[]' \
+'--evolve[]' \
+'--drop[]' \
+'-k[]' \
+'--print-package[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -2816,19 +2843,19 @@ esac
 ;;
 (tojsonl)
 _arguments "${_arguments_options[@]}" : \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
-'--trim[]' \
-'--no-boolean[]' \
-'--memcheck[]' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '-q[]' \
 '--quiet[]' \
+'--memcheck[]' \
+'--trim[]' \
+'--no-boolean[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -2837,52 +2864,52 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--long=[]: :_default' \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
+'--long=[]: :_default' \
+'--memcheck[]' \
 '-m[]' \
 '--multipass[]' \
-'--memcheck[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (validate)
 _arguments "${_arguments_options[@]}" : \
+'--valid=[]: :_default' \
 '--valid-output=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--invalid=[]: :_default' \
 '--backtrack-limit=[]: :_default' \
 '--timeout=[]: :_default' \
+'--dfa-size-limit=[]: :_default' \
+'--email-min-subdomains=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--ckan-api=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--size-limit=[]: :_default' \
-'--valid=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--invalid=[]: :_default' \
-'--ckan-token=[]: :_default' \
-'--dfa-size-limit=[]: :_default' \
-'--email-min-subdomains=[]: :_default' \
-'--ckan-api=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--fancy-regex[]' \
-'--email-display-text[]' \
-'--trim[]' \
-'--fail-fast[]' \
-'--pretty-json[]' \
+'--json[]' \
+'--email-required-tld[]' \
 '-q[]' \
 '--quiet[]' \
-'--email-required-tld[]' \
-'--email-domain-literal[]' \
-'-n[]' \
-'--no-headers[]' \
+'--email-display-text[]' \
 '-p[]' \
 '--progressbar[]' \
+'--pretty-json[]' \
+'--trim[]' \
+'--fail-fast[]' \
 '--no-format-validation[]' \
-'--json[]' \
+'--fancy-regex[]' \
+'-n[]' \
+'--no-headers[]' \
+'--email-domain-literal[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_qsv__validate_commands" \
@@ -2897,38 +2924,38 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (schema)
 _arguments "${_arguments_options[@]}" : \
+'--valid=[]: :_default' \
 '--valid-output=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--invalid=[]: :_default' \
 '--backtrack-limit=[]: :_default' \
 '--timeout=[]: :_default' \
+'--dfa-size-limit=[]: :_default' \
+'--email-min-subdomains=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--ckan-api=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--size-limit=[]: :_default' \
-'--valid=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--invalid=[]: :_default' \
-'--ckan-token=[]: :_default' \
-'--dfa-size-limit=[]: :_default' \
-'--email-min-subdomains=[]: :_default' \
-'--ckan-api=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--fancy-regex[]' \
-'--email-display-text[]' \
-'--trim[]' \
-'--fail-fast[]' \
-'--pretty-json[]' \
+'--json[]' \
+'--email-required-tld[]' \
 '-q[]' \
 '--quiet[]' \
-'--email-required-tld[]' \
-'--email-domain-literal[]' \
-'-n[]' \
-'--no-headers[]' \
+'--email-display-text[]' \
 '-p[]' \
 '--progressbar[]' \
+'--pretty-json[]' \
+'--trim[]' \
+'--fail-fast[]' \
 '--no-format-validation[]' \
-'--json[]' \
+'--fancy-regex[]' \
+'-n[]' \
+'--no-headers[]' \
+'--email-domain-literal[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -3261,6 +3288,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(pragmastat)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (pro)
 _arguments "${_arguments_options[@]}" : \
 ":: :_qsv__help__pro_commands" \
@@ -3540,6 +3571,7 @@ _qsv_commands() {
 'moarstats:' \
 'partition:' \
 'pivotp:' \
+'pragmastat:' \
 'pro:' \
 'prompt:' \
 'pseudo:' \
@@ -4023,6 +4055,7 @@ _qsv__help_commands() {
 'moarstats:' \
 'partition:' \
 'pivotp:' \
+'pragmastat:' \
 'pro:' \
 'prompt:' \
 'pseudo:' \
@@ -4384,6 +4417,11 @@ _qsv__help__pivotp_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help pivotp commands' commands "$@"
 }
+(( $+functions[_qsv__help__pragmastat_commands] )) ||
+_qsv__help__pragmastat_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help pragmastat commands' commands "$@"
+}
 (( $+functions[_qsv__help__pro_commands] )) ||
 _qsv__help__pro_commands() {
     local commands; commands=(
@@ -4700,6 +4738,11 @@ _qsv__partition_commands() {
 _qsv__pivotp_commands() {
     local commands; commands=()
     _describe -t commands 'qsv pivotp commands' commands "$@"
+}
+(( $+functions[_qsv__pragmastat_commands] )) ||
+_qsv__pragmastat_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv pragmastat commands' commands "$@"
 }
 (( $+functions[_qsv__pro_commands] )) ||
 _qsv__pro_commands() {

@@ -7,10 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [16.1.0] - 2026-02-15
+
+### Added
+- **pragmastat skill** - New `qsv-pragmastat.json` skill with examples
+- **Auto-enable --frequency-jsonl** for frequency command (version guard for qsv >= 16.0.0, skips stdin)
+- **Comprehensive mcp-server test suite** - `mcp-server.test.ts` with 35 tests
+- **Google Gemini CLI support** - Extended plugin mode detection + `QSV_MCP_PLUGIN_MODE` override
+- **c8 code coverage** - `test:coverage` script
+- **Stderr size limit** - Prevents memory issues from excessive error output
+
+### Changed
+- **Renamed 'analysis' category to 'documentation'** for AI-powered documentation commands
+- **Removed unused `binary` field** from CommandSpec type
+- **Extracted filesystem tools** into `mcp-filesystem.ts` module
+- **Hardcoded min version** for frequency-jsonl guard (16.0.0)
+- **Regenerated skills** with normalized USAGE text, sans unused binary property
+- **Minimum qsv version** set to 16.0.0 in manifest metadata
+
+### Fixed
+- Skip stats/frequency cache when reading from stdin
+- Non-null assertion removal in executeWithFile
+- normalizeOptionKey edge case for already-prefixed options
+- NaN for invalid versions instead of incorrect comparison
+- Stale documentation (core tool counts, pipeline references, artifact counts)
+- Timing-dependent test fixes and tightened error assertions
+- Windows 8.3 path compatibility in plugin mode tests
+
+### Dependencies
+- Bumped `qs` from 6.14.1 to 6.14.2
+
 ### Removed
-- Removed `qsv_pipeline` tool — agents should call tools sequentially for better error visibility, or use `qsv_sqlp` for multi-step queries
-- Removed `QSV_MCP_MAX_PIPELINE_STEPS` environment variable
-- Removed `pipeline.ts` fluent API and `mcp-pipeline.ts` tool handler
+- `qsv_pipeline` tool — agents should call tools sequentially for better error visibility, or use `qsv_sqlp` for multi-step queries
+- `QSV_MCP_MAX_PIPELINE_STEPS` environment variable
+- `pipeline.ts` fluent API and `mcp-pipeline.ts` tool handler
 
 ## [16.0.0] - 2026-02-08
 

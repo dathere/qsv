@@ -20,7 +20,7 @@ Claude will understand your request and perform the operations automatically usi
 ### Step 1: Download
 
 Download the extension file:
-- Go to: https://github.com/dathere/qsv/releases/download/15.0.0/qsv-mcp-server-15.0.0.mcpb
+- Go to: https://github.com/dathere/qsv/releases/download/16.1.0/qsv-mcp-server-16.1.0.mcpb
 - Save the `.mcpb` file to your Downloads folder
 
 ### Step 2: Install in Claude Desktop
@@ -569,37 +569,13 @@ To contribute improvements to the Desktop Extension:
 - Documentation improvements
 - Bug fixes
 
-## Version History
-
-**15.0.0** (2026-01-26)
-- Tool Search Support - New `qsv_search_tools` for discovering commands by keyword, category, or regex
-- Expose-All-Tools Mode - Auto-detects Claude clients (Desktop, Code, Cowork) for automatic tool exposure
-- US Census MCP Integration - Census MCP server awareness with integration guides
-
-**14.2.0** (2026-01-25)
-- Configurable examples - `QSV_MCP_MAX_EXAMPLES` controls examples in descriptions (0-20, default: 5)
-- Client auto-detection for expose-all-tools mode
-
-**14.1.0** (2026-01-20)
-- Versioned MCPB Packaging - `.mcpb` files now include version
-- Token Optimization - 66-76% reduction in tool description token usage
-- Windows EPERM Retry Logic - Exponential backoff for file locking errors
-- Streaming Executor - Uses `spawn` instead of `execFileSync` for better output handling
-- Output Size Limits - 50MB stdout limit prevents memory issues
-
-**14.0.0** (2026-01-12)
-- Initial MCPB release
-- Enhanced tool descriptions with guidance system
-- Stats cache auto-generation
-- Production-ready CI/CD
-
 ## License
 
 Same license as qsv: MIT OR Apache-2.0
 
 ---
 
-**Updated**: 2026-01-26
-**Version**: 15.0.0
+**Updated**: 2026-02-15
+**Version**: 16.1.0
 **Format**: MCP Bundle (MCPB) v0.3
 **Compatibility**: Claude Desktop 1.0+

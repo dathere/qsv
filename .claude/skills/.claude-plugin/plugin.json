@@ -1,7 +1,7 @@
 {
   "name": "qsv-data-wrangling",
-  "version": "16.0.0",
-  "description": "Blazingly fast tabular data wrangling with 55 qsv commands for CSV, TSV, Excel, JSONL, and Parquet files",
+  "version": "16.1.0",
+  "description": "Blazingly fast tabular data wrangling with 56 qsv commands for CSV, TSV, Excel, JSONL, and Parquet files",
   "author": {
     "name": "datHere, Inc.",
     "url": "https://dathere.com"

@@ -649,6 +649,7 @@ const FINGERPRINT_HASH_COLUMNS: usize = 26;
 
 // maximum number of antimodes to display
 const MAX_ANTIMODES: usize = 10;
+const PAR_SORT_THRESHOLD: usize = 10_000;
 // default length of antimode string before truncating and appending "..."
 const DEFAULT_ANTIMODES_LEN: usize = 100;
 
@@ -3435,7 +3436,6 @@ impl Stats {
                             .fold(f64::INFINITY, f64::min);
 
                         // Collect modes (values with max weight) in deterministic order
-                        const PAR_SORT_THRESHOLD: usize = 10_000;
                         let mut modes_keys: Vec<&Vec<u8>> = weighted_modes_map
                             .iter()
                             .filter(|&(_, &weight)| (weight - max_weight).abs() < 1e-10)
@@ -3455,16 +3455,13 @@ impl Stats {
                             .map(|(value, _)| value)
                             .collect();
                         let antimodes_count = antimodes_all.len();
-                        let mut antimodes_keys: Vec<&Vec<u8>> = if antimodes_count > MAX_ANTIMODES {
-                            antimodes_all.into_iter().take(MAX_ANTIMODES).collect()
-                        } else {
-                            antimodes_all
-                        };
+                        let mut antimodes_keys: Vec<&Vec<u8>> = antimodes_all;
                         if antimodes_keys.len() > PAR_SORT_THRESHOLD {
                             antimodes_keys.par_sort_unstable();
                         } else {
                             antimodes_keys.sort_unstable();
                         }
+                        antimodes_keys.truncate(MAX_ANTIMODES);
                         let antimodes_result: Vec<Vec<u8>> =
                             antimodes_keys.into_iter().cloned().collect();
 

@@ -2537,8 +2537,8 @@ impl WhichStats {
 #[repr(C, align(64))] // Align to cache line size for better performance
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 struct Stats {
-    // CACHE LINE 1: Most frequently accessed fields (hot data)
-    // Group small, frequently accessed fields together
+    // CACHE LINE 1 (bytes 0-63): Hot fields updated in every add() call
+    // Small, frequently accessed fields packed first
     typ:           FieldType, // 1 byte - accessed in every add() call
     is_ascii:      bool,      // 1 byte - accessed for strings
     max_precision: u16,       // 2 bytes - accessed for floats
@@ -2550,12 +2550,12 @@ struct Stats {
     sum_stotlen:  u64, // 8 bytes - frequently updated counter
     total_weight: f64, // 8 bytes - frequently updated for weighted stats
 
-    // Configuration flags (accessed once during initialization, cold after init)
-    which: WhichStats, // 40 bytes - read-only after initialization
-
-    // CACHE LINE 2+: Less frequently accessed but still important
-    // Large Option types that may be None, grouped by usage pattern
+    // Warm: updated every numeric cell, fits in remaining 32 bytes of cache line 1
     sum: Option<TypedSum>, // 32 bytes - updated in add() for numeric types
+
+    // CACHE LINE 2 (bytes 64-127): Read-only config + statistics computation
+    // which is read-only after init; L1-cached but no longer wastes hot cache line space
+    which: WhichStats, // 40 bytes - read-only after initialization
 
     // CACHE LINE 3+: Statistics computation fields
     online:          Option<OnlineStats>, // 72 bytes - used for mean/variance calculations
@@ -3051,8 +3051,8 @@ impl Stats {
             nullcount: 0,
             sum_stotlen: 0,
             total_weight: 0.0,
-            which,
             sum,
+            which,
             online,
             online_len,
             weighted_online,
@@ -3160,12 +3160,21 @@ impl Stats {
                 .add_with_parsed(t, sample, float_val, int_val);
         };
 
-        // Modes/cardinality less common but still frequent
+        // Modes/cardinality - share allocation when both modes and weighted_modes are active
         if let Some(v) = self.modes.as_mut() {
-            v.add(sample.to_vec());
-        }
-        // Weighted modes: accumulate weights per value
-        if let Some(ref mut wm) = self.weighted_modes {
+            if self.weighted_modes.is_some() {
+                let owned = sample.to_vec();
+                // safety: we just checked weighted_modes is Some
+                *unsafe {
+                    self.weighted_modes.as_mut().unwrap_unchecked()
+                }
+                .entry(owned.clone())
+                .or_insert(0.0) += weight;
+                v.add(owned);
+            } else {
+                v.add(sample.to_vec());
+            }
+        } else if let Some(ref mut wm) = self.weighted_modes {
             *wm.entry(sample.to_vec()).or_insert(0.0) += weight;
         }
 

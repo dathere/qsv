@@ -235,7 +235,10 @@ export class QsvPipeline {
     }
 
     const results: SkillResult[] = [];
-    let currentData: Buffer | null = null;
+    // Initialize to empty buffer to avoid non-null assertions.
+    // The loop always executes at least once (steps.length > 0 checked above),
+    // so currentData will be reassigned before the return statement.
+    let currentData: Buffer = Buffer.alloc(0);
 
     for (let i = 0; i < this.steps.length; i++) {
       const step = this.steps[i];
@@ -249,7 +252,9 @@ export class QsvPipeline {
 
       if (i === 0) {
         // First step: pass the file path as the 'input' argument
-        // so qsv reads directly from disk
+        // so qsv reads directly from disk.
+        // Note: this intentionally overrides any user-supplied 'input' arg
+        // on the first step, since the pipeline's inputFile is the source.
         params = {
           ...step.params,
           args: { ...step.params.args, input: inputFile },
@@ -258,7 +263,7 @@ export class QsvPipeline {
         // Subsequent steps: pipe previous step's stdout via stdin
         params = {
           ...step.params,
-          stdin: currentData!,
+          stdin: currentData,
         };
       }
 
@@ -275,7 +280,7 @@ export class QsvPipeline {
     }
 
     return {
-      output: currentData!,
+      output: currentData,
       steps: results,
       totalDuration: results.reduce((sum, r) => sum + r.metadata.duration, 0),
     };

@@ -53,20 +53,20 @@ Detailed MCP changes are documented in the [MCP CHANGELOG](https://github.com/da
 - perf: `frequency` — use `sort_unstable_by` for faster sorting; parallel computation for high-cardinality columns
 - refactor: shell completions auto-generated from USAGE text (removed 68 manual files)
 - refactor: `describegpt` — disambiguate "Other" bucket from literal "Other" in Data Dictionary Examples column
-- deps: bump polars to latest upstream
-- deps: bump jsonschema from 0.41 to 0.42
-- deps: bump pyo3 from 0.28.0 to 0.28.1
-- deps: bump rand from 0.9 to 0.10, rand_hc to 0.5, rand_xoshiro to 0.8
-- deps: bump memmap2 from 0.9.9 to 0.9.10
-- deps: bump toml from 0.9.12 to 1.0.1
 - deps: bump anstream from 0.6.21 to 1.0.0
-- deps: bump zmij from 1.0.20 to 1.0.21
-- deps: bump quickcheck from 1.0.3 to 1.1.0
-- deps: bump tempfile from 3.24.0 to 3.25.0
-- deps: bump uuid from 1.20.0 to 1.21.0
-- deps: bump libc from 0.2.180 to 0.2.181
 - deps: bump futures to 0.3.32
-- deps: bump qs from 6.14.1 to 6.14.2 (MCP)
+- deps: bump jsonschema from 0.41 to 0.42
+- deps: bump libc from 0.2.180 to 0.2.181
+- deps: bump memmap2 from 0.9.9 to 0.9.10
+- deps: bump polars to latest upstream
+- deps: bump pyo3 from 0.28.0 to 0.28.1
+- deps: bump quickcheck from 1.0.3 to 1.1.0
+- deps: bump rand from 0.9 to 0.10, rand_hc to 0.5, rand_xoshiro to 0.8
+- deps: bump sysinfo from 0.37.2 to 0.38.2
+- deps: bump tempfile from 3.24.0 to 3.25.0
+- deps: bump toml from 0.9.12 to 1.0.1
+- deps: bump uuid from 1.20.0 to 1.21.0
+- deps: bump zmij from 1.0.20 to 1.0.21
 - deps: update csv patched fork MSRV to 1.93
 
 ### Fixed

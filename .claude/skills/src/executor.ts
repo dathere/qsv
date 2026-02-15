@@ -9,7 +9,7 @@ import { config } from "./config.js";
 import { compareVersions } from "./utils.js";
 
 /** Minimum qsv binary version that supports --frequency-jsonl */
-const FREQUENCY_JSONL_MIN_VERSION = "16.0.0";
+const FREQUENCY_JSONL_MIN_VERSION = "16.1.0";
 
 /**
  * Check if a skill has subcommands by examining its first argument

@@ -6,21 +6,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [16.1.0] - 2026-02-15
+## [16.1.0] - 2026-02-15 📊 **_"The Accelerated Civic Intelligence (ACI) Release"_** 📊
+
+Statistical analysis gets faster and more robust; User & Agent Experience (UAX) improvements keep the CLI parser, docs, shell completions, and MCP tool definitions in sync from a single source; and the qsv MCP Server gets leaner and smarter.
+
+With a [properly configured environment](https://dathere.com/2026/01/the-peoples-api-is-finally-here/), AI Agents and Users can team up for **_accelerated analysis_** of large, **real-world, messy data** — datasets, presentations, reports, spreadsheets, etc. — without uploading it all to the cloud or manually wrangling it into shape first.
+
+---
 
 ### 🌟 Major Features
 
 #### New `pragmastat` Command
-A pragmatic statistical toolkit by @AndreyAkinshin — provides an opinionated, human-readable statistical summary with parallelism, progress bar support, and memory checks.
+A pragmatic statistical toolkit by @AndreyAkinshin — Compute robust, median-of-pairwise statistics with the [Pragmastat library](https://crates.io/crates/pragmastat). Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead. See [pragmastat.dev](https://pragmastat.dev) for details on the underlying algorithms and design philosophy.
 
 #### Frequency Cache System
-New `--frequency-jsonl` option for the `frequency` command creates a JSONL cache (analogous to `stats --stats-jsonl`) that accelerates repeated frequency analysis. Uses a hybrid strategy for high-cardinality columns with configurable thresholds via `QSV_FREQ_HIGH_CARD_THRESHOLD` and `QSV_FREQ_HIGH_CARD_THRESHOLD_PCT` environment variables.
+New `--frequency-jsonl` option for the `frequency` command creates a JSONL cache (analogous to `stats --stats-jsonl`) that accelerates repeated frequency analysis. Uses a hybrid strategy for high-cardinality columns with configurable thresholds.
 
-#### Auto-Generated Help Markdown
-New `--generate-help-md` flag generates markdown documentation from command USAGE text, with section navigation, emoji legends, clickable URLs, and argument/option tables.
+#### Improved UAX: Unified Documentation & Shell Completions
+A new qsv-docopt parsing system now generates markdown documentation, shell completions, **and** MCP tool definitions from the same USAGE text that powers qsv's CLI parsing. Everything stays in sync automatically — no more drift between help text, docs, completions and AI tooling.
 
-#### Next-Gen Shell Completions
-Shell completions are now auto-generated from USAGE text, replacing 68 manually maintained completion files.
+- `--generate-help-md` flag produces polished markdown docs with section navigation, emoji legends, clickable URLs, and argument/option tables that are both Human and Agent-friendly.
+- Shell completions are now auto-generated, replacing 68 manually maintained completion files.
+
+#### qsv MCP Server: Leaner Architecture
+The `qsv_pipeline` tool has been removed in favor of direct sequential command execution. In practice, agents were already calling commands one at a time, and removing the pipeline abstraction made the server simpler, more predictable, and easier to debug. Additional MCP improvements include:
+
+- Extended AI agent guidance to take advantage of frequency and stats caches
+- Seamless support for Google Gemini CLI thanks to @kulnor's continuing contributions
+- Major codebase refactoring: deduplicated helpers, extracted filesystem tools, fixed `any` types, and various bug fixes
+
+Detailed MCP changes are documented in the [MCP CHANGELOG](https://github.com/dathere/qsv/blob/master/.claude/skills/CHANGELOG.md) for full details.
 
 ---
 
@@ -29,9 +44,6 @@ Shell completions are now auto-generated from USAGE text, replacing 68 manually 
 - feat: `pragmastat` command — pragmatic statistical toolkit with parallelism, progress bar, and memcheck (by @AndreyAkinshin)
 - feat: `frequency --frequency-jsonl` — JSONL frequency cache with hybrid strategy for high-cardinality columns
 - feat: `--generate-help-md` flag — auto-generate markdown docs from USAGE text with section navigation, emoji legends, and clickable URLs
-- feat(mcp): auto-enable `--frequency-jsonl` and `--stats-jsonl` for frequency/stats commands
-- feat(mcp): plugin mode detection for Google AI CLI environments (by @kulnor)
-- feat(mcp): add `pragmastat` skill and integrate tooling
 - docs: add `QSV_FREQ_HIGH_CARD_THRESHOLD` and `QSV_FREQ_HIGH_CARD_THRESHOLD_PCT` env vars
 
 ### Changed
@@ -40,8 +52,6 @@ Shell completions are now auto-generated from USAGE text, replacing 68 manually 
 - perf: `pragmastat` — reduce redundant computations, add parallelism
 - perf: `frequency` — use `sort_unstable_by` for faster sorting; parallel computation for high-cardinality columns
 - refactor: shell completions auto-generated from USAGE text (removed 68 manual files)
-- refactor(mcp): remove `qsv_pipeline` tool; deduplicate helpers; extract filesystem tools; fix `any` types
-- refactor(mcp): remove unused `binary` field from CommandSpec
 - refactor: `describegpt` — disambiguate "Other" bucket from literal "Other" in Data Dictionary Examples column
 - deps: bump polars to latest upstream
 - deps: bump jsonschema from 0.41 to 0.42
@@ -63,13 +73,9 @@ Shell completions are now auto-generated from USAGE text, replacing 68 manually 
 
 - fix: `frequency` — normalize delimiter for cache compatibility; deterministic output with secondary sort key; hybrid cache for high-cardinality columns
 - fix: `stats` — remove unsafe block; deterministic antimode sorting
-- fix(mcp): skip stats/frequency cache when reading stdin; guard `--frequency-jsonl` with version check
-- fix(mcp): remove non-null assertions in executeWithFile; correct stale tool counts and references
 - fix(help): section detection, acronym casing, and option word-wrap in markdown generation
 
 ### Removed
-
-- removed `qsv_pipeline` MCP tool (agents call commands sequentially instead)
 - removed 68 manual shell completion files (now auto-generated from USAGE text)
 
 **Full Changelog**: [16.0.0...16.1.0](https://github.com/dathere/qsv/compare/16.0.0...16.1.0)

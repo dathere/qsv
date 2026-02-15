@@ -11,17 +11,7 @@ import type {
 import type { SkillLoader } from "./loader.js";
 import { QsvPipeline } from "./pipeline.js";
 import { config } from "./config.js";
-
-/**
- * MCP tool result helpers
- */
-function errorResult(message: string) {
-  return { content: [{ type: "text" as const, text: message }], isError: true as const };
-}
-
-function successResult(text: string) {
-  return { content: [{ type: "text" as const, text }], isError: false as const };
-}
+import { errorResult, successResult } from "./utils.js";
 
 /**
  * Create the qsv_pipeline tool definition
@@ -197,16 +187,15 @@ export async function executePipeline(
       await addStepToPipeline(pipeline, command, stepParams);
     }
 
-    // Read input file
-    const fs = await import("fs/promises");
-    const inputData = await fs.readFile(inputFile);
-
-    // Execute pipeline
-    const result = await pipeline.execute(inputData);
+    // Execute pipeline: pass the file path so the first step reads directly
+    // from disk (avoiding loading the entire file into memory).
+    // Subsequent steps are still piped via stdin.
+    const result = await pipeline.executeWithFile(inputFile);
 
     // Handle output
     if (outputFile) {
       // Write to file
+      const fs = await import("fs/promises");
       await fs.writeFile(outputFile, result.output);
 
       const stepSummary = result.steps

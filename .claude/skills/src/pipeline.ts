@@ -185,7 +185,9 @@ export class QsvPipeline {
   }
 
   /**
-   * Execute the pipeline
+   * Execute the pipeline with stdin data.
+   * Note: This loads the entire input into memory. For file-based pipelines,
+   * prefer executeWithFile() which passes the file path to the first step.
    */
   async execute(input: string | Buffer): Promise<PipelineResult> {
     const results: SkillResult[] = [];
@@ -217,6 +219,63 @@ export class QsvPipeline {
 
     return {
       output: currentData,
+      steps: results,
+      totalDuration: results.reduce((sum, r) => sum + r.metadata.duration, 0),
+    };
+  }
+
+  /**
+   * Execute the pipeline using a file path for the first step.
+   * The first step reads directly from disk (no memory buffering of the input file).
+   * Subsequent steps are piped via stdin from the previous step's stdout.
+   */
+  async executeWithFile(inputFile: string): Promise<PipelineResult> {
+    if (this.steps.length === 0) {
+      throw new Error("Pipeline has no steps");
+    }
+
+    const results: SkillResult[] = [];
+    let currentData: Buffer | null = null;
+
+    for (let i = 0; i < this.steps.length; i++) {
+      const step = this.steps[i];
+      const skill = await this.loader.load(step.skillName);
+
+      if (!skill) {
+        throw new Error(`Skill not found: ${step.skillName}`);
+      }
+
+      let params: SkillParams;
+
+      if (i === 0) {
+        // First step: pass the file path as the 'input' argument
+        // so qsv reads directly from disk
+        params = {
+          ...step.params,
+          args: { ...step.params.args, input: inputFile },
+        };
+      } else {
+        // Subsequent steps: pipe previous step's stdout via stdin
+        params = {
+          ...step.params,
+          stdin: currentData!,
+        };
+      }
+
+      const result = await this.executor.execute(skill, params);
+
+      if (!result.success) {
+        throw new Error(
+          `Pipeline failed at step ${step.skillName}: ${result.stderr}`,
+        );
+      }
+
+      currentData = Buffer.from(result.output);
+      results.push(result);
+    }
+
+    return {
+      output: currentData!,
       steps: results,
       totalDuration: results.reduce((sum, r) => sum + r.metadata.duration, 0),
     };

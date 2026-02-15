@@ -3,6 +3,17 @@
  */
 
 /**
+ * MCP tool result helpers to eliminate repetitive { content: [{ type: "text"... }] } boilerplate
+ */
+export function errorResult(message: string) {
+  return { content: [{ type: "text" as const, text: message }], isError: true as const };
+}
+
+export function successResult(text: string) {
+  return { content: [{ type: "text" as const, text }], isError: false as const };
+}
+
+/**
  * Compare two semantic version strings.
  * Strips pre-release (-alpha.1) and build metadata (+build.123) before comparing.
  * Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2.

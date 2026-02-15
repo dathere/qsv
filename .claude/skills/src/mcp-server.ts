@@ -65,12 +65,13 @@ const CORE_TOOLS = [
 ] as const;
 
 /**
- * Server instructions sent to MCP clients during initialization.
+ * Default server instructions sent to MCP clients during initialization.
  * Injected into the system prompt by compatible clients (Claude Desktop, etc.).
  * Focuses on cross-tool workflows and operational constraints.
+ * Can be overridden via QSV_MCP_SERVER_INSTRUCTIONS environment variable.
  * See: https://blog.modelcontextprotocol.io/posts/2025-11-03-using-server-instructions/
  */
-const QSV_SERVER_INSTRUCTIONS = `qsv is a tabular data-wrangling toolkit. Use qsv_search_tools to discover commands beyond the initially loaded core tools.
+const DEFAULT_SERVER_INSTRUCTIONS = `qsv is a tabular data-wrangling toolkit. Use qsv_search_tools to discover commands beyond the initially loaded core tools.
 
 WORKFLOW ORDER: For new files: (1) qsv_list_files to discover files, (2) qsv_index for files >5MB, (3) qsv_stats --cardinality --stats-jsonl to create stats cache, (4) then run analysis/transformation commands. The stats cache accelerates: frequency, schema, tojsonl, sqlp, joinp, pivotp, diff, sample.
 
@@ -79,6 +80,12 @@ FILE HANDLING: Save outputs to files with descriptive names rather than returnin
 TOOL COMPOSITION: Use qsv_pipeline to chain 2+ sequential operations efficiently by streaming data between commands (no automatic .idx creation; run qsv_index explicitly on files you want indexed). For complex SQL, use qsv_sqlp, falling back on qsv_sqlp error to DuckDB using parquet, if available. Once you use DuckDB, always use it for all future SQL queries. For custom row-level logic, use qsv_command with command="luau".
 
 MEMORY LIMITS: Commands dedup, sort, reverse, table, transpose load entire files into memory. For files >1GB, prefer extdedup/extsort alternatives via qsv_command. Check column cardinality with qsv_stats before running frequency or pivotp to avoid huge output.`;
+
+/**
+ * Resolved server instructions: uses custom instructions from
+ * QSV_MCP_SERVER_INSTRUCTIONS env var if set, otherwise falls back to defaults.
+ */
+const QSV_SERVER_INSTRUCTIONS = config.serverInstructions || DEFAULT_SERVER_INSTRUCTIONS;
 
 /**
  * QSV MCP Server implementation

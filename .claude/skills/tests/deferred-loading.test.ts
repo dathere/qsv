@@ -85,7 +85,7 @@ test('COMMON_COMMANDS and CORE_TOOLS are disjoint sets', () => {
 // ============================================================================
 
 test('deferred loading reduces initial tool count significantly', async () => {
-  // In deferred mode: 9 core tools + 11 common commands = 21 tools initially
+  // In deferred mode: 9 core tools + 11 common commands = 20 tools initially
   // In expose-all mode: all skills from JSON files are available
   // Token reduction = 1 - (initial_tool_count / totalSkillCount)
   // With just core tools (no common), we expect ≥80% reduction

@@ -2537,44 +2537,40 @@ impl WhichStats {
 #[repr(C, align(64))] // Align to cache line size for better performance
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 struct Stats {
-    // CACHE LINE 1: Most frequently accessed fields (hot data)
-    // Group small, frequently accessed fields together
-    typ:           FieldType, // 1 byte - accessed in every add() call
-    is_ascii:      bool,      // 1 byte - accessed for strings
-    max_precision: u16,       // 2 bytes - accessed for floats
+    // Hot fields updated in every add() call, packed first for cache locality.
+    // Approximate sizes shown; actual layout depends on compiler padding/alignment.
+    typ:           FieldType, // accessed in every add() call
+    is_ascii:      bool,      // accessed for strings
+    max_precision: u16,       // accessed for floats
 
-    // 4 bytes padding (automatic with repr(C) for 8-byte alignment)
+    // Hot counters - accessed frequently
+    nullcount:    u64, // frequently updated counter
+    sum_stotlen:  u64, // frequently updated counter
+    total_weight: f64, // frequently updated for weighted stats
 
-    // Hot counters - all 8-byte aligned, accessed frequently
-    nullcount:    u64, // 8 bytes - frequently updated counter
-    sum_stotlen:  u64, // 8 bytes - frequently updated counter
-    total_weight: f64, // 8 bytes - frequently updated for weighted stats
+    // Warm: updated every numeric cell
+    sum: Option<TypedSum>, // updated in add() for numeric types
 
-    // Configuration flags (accessed once during initialization, cold after init)
-    which: WhichStats, // 40 bytes - read-only after initialization
+    // Read-only after init; placed after hot fields to avoid cache line pollution
+    which: WhichStats, // read-only after initialization
 
-    // CACHE LINE 2+: Less frequently accessed but still important
-    // Large Option types that may be None, grouped by usage pattern
-    sum: Option<TypedSum>, // 32 bytes - updated in add() for numeric types
+    // Statistics computation fields
+    online:          Option<OnlineStats>, // used for mean/variance calculations
+    online_len:      Option<OnlineStats>, // used for string length stats
+    weighted_online: Option<WeightedOnlineStats>, // Weighted online statistics
 
-    // CACHE LINE 3+: Statistics computation fields
-    online:          Option<OnlineStats>, // 72 bytes - used for mean/variance calculations
-    online_len:      Option<OnlineStats>, // 72 bytes - used for string length stats
-    weighted_online: Option<WeightedOnlineStats>, // 72 bytes - Weighted online statistics
+    // Mode and cardinality computation
+    modes:          Option<Unsorted<Vec<u8>>>, // used for mode/cardinality
+    weighted_modes: Option<HashMap<Vec<u8>, f64>>, // Weighted mode/antimode tracking
 
-    // CACHE LINE 4+: Mode and cardinality computation
-    modes:          Option<Unsorted<Vec<u8>>>, // 32 bytes - used for mode/cardinality
-    weighted_modes: Option<HashMap<Vec<u8>, f64>>, // 48 bytes - Weighted mode/antimode tracking
-
-    // CACHE LINE 5+: Sorting-based statistics
+    // Sorting-based statistics
     #[allow(clippy::struct_field_names)]
-    unsorted_stats:          Option<Unsorted<f64>>, // 32 bytes - median/quartiles/percentiles
-    weighted_unsorted_stats: Option<Vec<(f64, f64)>>, /* 24 bytes - (value, weight) tuples for
-                                                       * weighted
+    unsorted_stats:          Option<Unsorted<f64>>, // median/quartiles/percentiles
+    weighted_unsorted_stats: Option<Vec<(f64, f64)>>, /* (value, weight) tuples for weighted
                                                        * quantiles */
 
-    // CACHE LINE 6+: Min/Max tracking (largest field, least cache-friendly)
-    minmax: Option<TypedMinMax>, // 432 bytes - largest field, accessed less frequently
+    // Min/Max tracking (largest field, least cache-friendly)
+    minmax: Option<TypedMinMax>, // largest field, accessed less frequently
 }
 
 /// Weighted online statistics using the weighted Welford's algorithm (West, 1979).
@@ -3031,10 +3027,13 @@ impl Stats {
         // to avoid allocating too much memory
         let record_count = *RECORD_COUNT.get().unwrap_or(&10_000) as usize;
         if which.mode || which.cardinality {
-            modes = Some(stats::Unsorted::with_capacity(record_count));
             if use_weights {
+                // When using weights, weighted_modes handles both mode/antimode and cardinality
+                // computation, so we don't need the separate modes (Unsorted) tracker
                 // Estimate capacity: assume average cardinality of 10% of records
                 weighted_modes = Some(HashMap::with_capacity((record_count / 10).max(16)));
+            } else {
+                modes = Some(stats::Unsorted::with_capacity(record_count));
             }
         }
         // we use the same Unsorted struct for median, mad, quartiles & percentiles
@@ -3051,8 +3050,8 @@ impl Stats {
             nullcount: 0,
             sum_stotlen: 0,
             total_weight: 0.0,
-            which,
             sum,
+            which,
             online,
             online_len,
             weighted_online,
@@ -3160,13 +3159,11 @@ impl Stats {
                 .add_with_parsed(t, sample, float_val, int_val);
         };
 
-        // Modes/cardinality less common but still frequent
-        if let Some(v) = self.modes.as_mut() {
-            v.add(sample.to_vec());
-        }
-        // Weighted modes: accumulate weights per value
+        // Modes/cardinality - modes and weighted_modes are mutually exclusive
         if let Some(ref mut wm) = self.weighted_modes {
             *wm.entry(sample.to_vec()).or_insert(0.0) += weight;
+        } else if let Some(v) = self.modes.as_mut() {
+            v.add(sample.to_vec());
         }
 
         if t == TString {

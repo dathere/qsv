@@ -5783,7 +5783,7 @@ dependencies = [
 
 [[package]]
 name = "qsv"
-version = "16.0.0"
+version = "16.1.0"
 dependencies = [
  "actix-governor",
  "actix-web",
@@ -5896,7 +5896,7 @@ dependencies = [
  "strsim",
  "strum 0.27.2",
  "strum_macros 0.27.2",
- "sysinfo 0.38.1",
+ "sysinfo 0.38.2",
  "tempfile",
  "terminal-colorsaurus",
  "textwrap",
@@ -7633,9 +7633,9 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.38.1"
+version = "0.38.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5792d209c2eac902426c0c4a166c9f72147db453af548cf9bf3242644c4d4fe3"
+checksum = "1efc19935b4b66baa6f654ac7924c192f55b175c00a7ab72410fc24284dacda8"
 dependencies = [
  "libc",
  "memchr",

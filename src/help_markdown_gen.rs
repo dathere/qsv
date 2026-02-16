@@ -125,16 +125,34 @@ fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
 
     // First, join continuation lines. A legend entry starts with an emoji or ![
     // at the beginning. Lines that don't start that way are continuations.
+    // We collect lines until a definitive end-of-legend marker (heading, HR, or
+    // footnote reference), skipping any blank lines within the section.
     let mut joined_lines: Vec<String> = Vec::new();
     for line in legend_text.lines() {
         let trimmed = line.trim();
+        // Skip blank lines within the legend section
         if trimmed.is_empty() {
+            continue;
+        }
+        // Stop at a definitive end-of-legend marker: heading, HR rule, or footnote
+        if trimmed.starts_with('#')
+            || trimmed.starts_with("---")
+            || trimmed.starts_with("___")
+            || trimmed.starts_with("***")
+            || trimmed.starts_with("[^")
+        {
             break;
         }
-        // Check if this line starts a new entry (emoji char, ![, or <a tag)
+        // Check if this line starts a new entry: <a tag, ![ image, or emoji character.
+        // Emoji detection: check if the first character is in a known emoji Unicode range
+        // rather than just checking !is_ascii(), which would also match accented chars.
         let first_char = trimmed.chars().next().unwrap_or(' ');
+        let is_emoji_start = !first_char.is_ascii()
+            && (first_char > '\u{2000}'
+                || ('\u{00A9}' == first_char)
+                || ('\u{00AE}' == first_char));
         let is_new_entry =
-            trimmed.starts_with("<a ") || trimmed.starts_with("![") || !first_char.is_ascii();
+            trimmed.starts_with("<a ") || trimmed.starts_with("![") || is_emoji_start;
         if is_new_entry || joined_lines.is_empty() {
             joined_lines.push(trimmed.to_string());
         } else if let Some(last) = joined_lines.last_mut() {
@@ -191,8 +209,12 @@ fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
         let clean_desc = partial_badge_re.replace_all(&clean_desc, "").to_string();
         let clean_desc = link_re.replace_all(&clean_desc, "$1").to_string();
         let clean_desc = html_re.replace_all(&clean_desc, "").to_string();
-        // Escape double quotes for HTML title attribute
-        let clean_desc = clean_desc.replace('"', "&quot;");
+        // Escape HTML entities for safe use in title attributes
+        let clean_desc = clean_desc
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;");
         let clean_desc = clean_desc.trim().to_string();
 
         if !clean_desc.is_empty() {
@@ -239,16 +261,16 @@ fn wrap_emojis_with_tooltips(markers: &str, legend: &[(String, String)]) -> Stri
             format!("<abbr title=\"{desc}\">{key}</abbr>")
         };
 
-        // Use a placeholder that won't appear in normal text
+        // Use a Private Use Area Unicode placeholder that won't appear in normal text
         let idx = replacements.len();
-        let placeholder = format!("\x00EMOJI{idx}\x00");
+        let placeholder = format!("\u{E000}EMOJI{idx}\u{E000}");
         replacements.push(replacement);
         result = result.replace(key.as_str(), &placeholder);
     }
 
     // Pass 2: Replace all placeholders with their actual values
     for (idx, replacement) in replacements.iter().enumerate() {
-        let placeholder = format!("\x00EMOJI{idx}\x00");
+        let placeholder = format!("\u{E000}EMOJI{idx}\u{E000}");
         result = result.replace(&placeholder, replacement);
     }
 
@@ -1581,12 +1603,9 @@ fn format_option_group_title(group_name: &str, _command_name: &str) -> String {
 /// Generate the Table of Contents markdown file
 fn generate_table_of_contents(
     commands: &[CommandInfo],
-    repo_root: &Path,
+    readme_content: &str,
     legend: &[(String, String)],
 ) -> String {
-    let readme_path = repo_root.join("README.md");
-    let readme_content = fs::read_to_string(&readme_path).unwrap_or_default();
-
     let mut md = String::with_capacity(8192);
 
     md.push_str("# qsv Command Help\n\n");
@@ -1627,12 +1646,22 @@ fn generate_table_of_contents(
     let legend_start = readme_content.find("<a name=\"legend_deeplink\">");
     if let Some(start) = legend_start {
         let legend_text = &readme_content[start..];
-        // Collect legend lines until we hit an empty line or other section.
+        // Collect legend lines until we hit a definitive end-of-legend marker.
         // Each entry must be on its own line — use trailing `  ` (two spaces)
         // for markdown line breaks so they don't run together as a paragraph.
         for line in legend_text.lines() {
             let trimmed = line.trim();
+            // Skip blank lines within the legend section
             if trimmed.is_empty() {
+                continue;
+            }
+            // Stop at a definitive end-of-legend marker
+            if trimmed.starts_with('#')
+                || trimmed.starts_with("---")
+                || trimmed.starts_with("___")
+                || trimmed.starts_with("***")
+                || trimmed.starts_with("[^")
+            {
                 break;
             }
             // Clean up legend lines - strip HTML anchor, preserving any
@@ -1735,7 +1764,7 @@ pub fn generate_help_markdown() -> CliResult<()> {
     let commands = extract_commands_from_readme(&repo_root)
         .map_err(|e| format!("Failed to extract commands from README: {e}"))?;
 
-    // Parse emoji legend from README for hover tooltips
+    // Read README once and reuse for legend parsing and table of contents
     let readme_path = repo_root.join("README.md");
     let readme_content = fs::read_to_string(&readme_path).unwrap_or_default();
     let legend = parse_legend(&readme_content);
@@ -1798,7 +1827,7 @@ pub fn generate_help_markdown() -> CliResult<()> {
     }
 
     // Generate Table of Contents and update README only when all commands succeeded
-    let toc = generate_table_of_contents(&commands, &repo_root, &legend);
+    let toc = generate_table_of_contents(&commands, &readme_content, &legend);
     let toc_file = output_dir.join("TableOfContents.md");
     fs::write(&toc_file, &toc)?;
     eprintln!("✅ Generated: {}", toc_file.display());

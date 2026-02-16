@@ -1112,13 +1112,22 @@ fn format_examples(lines: &[String]) -> String {
         }
 
         // Comment lines: # description
+        // Consecutive comment lines are merged into a single blockquote
         if trimmed.starts_with('#') {
             if in_code_block {
                 md.push_str("```\n\n");
                 in_code_block = false;
             }
             let comment = trimmed.trim_start_matches('#').trim();
-            let _ = write!(md, "> {}\n\n", linkify_bare_urls(comment));
+            let _ = write!(md, "> {}\n", linkify_bare_urls(comment));
+            // Check if the next non-empty line is also a comment — if not, end the blockquote
+            let next_is_comment = lines[idx + 1..]
+                .iter()
+                .find(|l| !l.trim().is_empty())
+                .is_some_and(|l| l.trim().starts_with('#'));
+            if !next_is_comment {
+                md.push('\n');
+            }
             continue;
         }
 

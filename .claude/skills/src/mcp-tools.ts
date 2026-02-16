@@ -23,6 +23,16 @@ import type { SkillExecutor } from "./executor.js";
 import type { SkillLoader } from "./loader.js";
 import { config, getDetectionDiagnostics } from "./config.js";
 import { formatBytes, findSimilarFiles, errorResult, successResult } from "./utils.js";
+import {
+  detectDuckDb,
+  getDuckDbStatus,
+  markDuckDbUnavailable,
+  translateSql,
+  executeDuckDbQuery,
+  MULTI_TABLE_PATTERN,
+  CSV_LIKE_EXTENSIONS,
+  normalizeTableRefs,
+} from "./duckdb.js";
 
 /**
  * Auto-indexing threshold in MB
@@ -188,11 +198,11 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   },
   sqlp: {
     whenToUse:
-      "Run Polars SQL queries (PostgreSQL-like). Best for GROUP BY, aggregations, JOINs, WHERE, calculated columns. Supports CSV/TSV/SSV, Parquet, JSONL, and Arrow input.",
+      "Run SQL queries on tabular data. Auto-converts CSV to Parquet for performance, then routes to DuckDB when available (faster, PostgreSQL-compatible). Falls back to Polars SQL (sqlp) otherwise.",
     commonPattern:
-      "For CSV >10MB: convert to Parquet once (qsv_to_parquet, same file stem), then query with DuckDB (preferred) or sqlp using SKIP_INPUT + read_parquet('file.parquet'). Parquet is for sqlp/DuckDB only - use CSV/TSV/SSV for all other qsv commands.",
+      "Input CSVs are auto-converted to Parquet before querying. For multi-file queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() in SQL. DuckDB preferred when available.",
     errorPrevention:
-      "For complex query errors, try DuckDB. Column names are case-sensitive in Polars SQL. Use --try-parsedates for date columns.",
+      "Column names are case-sensitive in Polars SQL but case-insensitive in DuckDB. For unsupported output formats (Arrow, Avro), sqlp is used automatically.",
     hasCommonMistakes: true,
   },
   apply: {
@@ -1120,29 +1130,8 @@ async function formatToolResult(
     responseText = result.output;
   }
 
-  // sqlp performance tip for large CSV files
-  if (commandName === "sqlp" && inputFile) {
-    try {
-      const filename = basename(inputFile).toLowerCase();
-      const isCsvLike =
-        filename.endsWith(".csv") ||
-        filename.endsWith(".tsv") ||
-        filename.endsWith(".tab") ||
-        filename.endsWith(".ssv");
-      if (isCsvLike) {
-        const fileStats = await stat(inputFile);
-        if (fileStats.size > LARGE_FILE_THRESHOLD_BYTES) {
-          const sizeMB = (fileStats.size / (1024 * 1024)).toFixed(1);
-          responseText =
-            `⚡ PERFORMANCE TIP: This CSV is ${sizeMB}MB. Convert to Parquet first with qsv_to_parquet for dramatically faster SQL queries. ` +
-            `Prefer DuckDB if available; otherwise use sqlp with input_file="SKIP_INPUT" and sql="SELECT ... FROM read_parquet('file.parquet')".\n\n` +
-            responseText;
-        }
-      }
-    } catch {
-      // Ignore stat errors (e.g. SKIP_INPUT)
-    }
-  }
+  // sqlp note: CSV inputs are now auto-converted to Parquet before SQL execution
+  // No manual conversion tip needed — ensureParquet() handles it in handleToolCall()
 
   // moarstats bivariate output notification (skip for help requests where inputFile is undefined)
   if (commandName === "moarstats" && params.bivariate && inputFile) {
@@ -1160,6 +1149,258 @@ async function formatToolResult(
   }
 
   return successResult(responseText);
+}
+
+/** In-flight Parquet conversions keyed by CSV path — prevents duplicate concurrent work */
+const parquetConversionLocks = new Map<string, Promise<string>>();
+
+/**
+ * Check if a file is a CSV-like format that can be converted to Parquet
+ */
+export function isCsvLikeFile(filePath: string): boolean {
+  const lower = basename(filePath).toLowerCase();
+  return CSV_LIKE_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
+/**
+ * Get the Parquet path for a CSV-like file (same stem, .parquet extension).
+ * For non-CSV files (e.g., `.json`), appends `.parquet` (e.g., `test.json.parquet`).
+ * Callers should gate on `isCsvLikeFile()` to avoid surprising double-extensions.
+ */
+export function getParquetPath(csvPath: string): string {
+  // Use shared CSV_LIKE_EXTENSIONS, sorted by descending length so longer extensions
+  // (e.g., ".csv.sz") are matched before shorter ones (e.g., ".csv")
+  const orderedExtensions = [...CSV_LIKE_EXTENSIONS].sort(
+    (a, b) => b.length - a.length,
+  );
+  // Match against lowercased basename to avoid false matches on directory names
+  // (e.g., /data/csv_files/test.json). Slicing from original csvPath is safe because
+  // ext and the actual extension have the same length regardless of case.
+  const base = basename(csvPath).toLowerCase();
+  for (const ext of orderedExtensions) {
+    if (base.endsWith(ext)) {
+      return csvPath.slice(0, -ext.length) + ".parquet";
+    }
+  }
+  return csvPath + ".parquet";
+}
+
+/**
+ * Ensure a Parquet file exists for a CSV input.
+ * If a .parquet file with the same stem already exists and is newer than the CSV, use it.
+ * Otherwise, auto-convert using the same 3-step pipeline as handleToParquetCall():
+ *   1. Generate stats cache
+ *   2. Generate Polars schema
+ *   3. Convert to Parquet
+ *
+ * Returns the Parquet file path, or the original path if not a CSV-like file.
+ */
+export async function ensureParquet(inputFile: string): Promise<string> {
+  // Only convert CSV-like files (non-CSV files like .parquet, .jsonl are returned as-is)
+  if (!isCsvLikeFile(inputFile)) {
+    return inputFile;
+  }
+
+  // Check lock map BEFORE any async operations to avoid TOCTOU race
+  const existing = parquetConversionLocks.get(inputFile);
+  if (existing) {
+    console.error(`[MCP Tools] ensureParquet: Waiting on in-flight conversion for: ${inputFile}`);
+    return existing;
+  }
+
+  // Establish the lock (conversion promise) BEFORE any awaited operations to prevent
+  // race where two concurrent calls both pass the lock check above, then both start
+  // conversions. By setting the promise synchronously, the second caller will always
+  // find the lock and await the first caller's promise.
+  const parquetPath = getParquetPath(inputFile);
+  const conversionPromise = (async () => {
+    // Check if Parquet already exists and is newer than CSV
+    try {
+      const csvStats = await stat(inputFile);
+      const parquetStats = await stat(parquetPath);
+      if (parquetStats.mtimeMs >= csvStats.mtimeMs) {
+        console.error(`[MCP Tools] ensureParquet: Using existing Parquet file (up-to-date): ${parquetPath}`);
+        return parquetPath;
+      }
+    } catch {
+      // Parquet doesn't exist or can't stat — need to convert
+    }
+
+    return await doParquetConversion(inputFile, parquetPath);
+  })();
+  parquetConversionLocks.set(inputFile, conversionPromise);
+  try {
+    return await conversionPromise;
+  } finally {
+    parquetConversionLocks.delete(inputFile);
+  }
+}
+
+async function doParquetConversion(inputFile: string, parquetPath: string): Promise<string> {
+  console.error(`[MCP Tools] ensureParquet: Auto-converting CSV to Parquet: ${inputFile}`);
+  const qsvBin = getQsvBinaryPath();
+  const statsFile = inputFile + ".stats.csv";
+  const schemaFile = inputFile + ".pschema.json";
+
+  // Validate input file exists before attempting conversion
+  let inputFileStats;
+  try {
+    inputFileStats = await stat(inputFile);
+  } catch {
+    throw new Error(`Input file not found: ${inputFile}`);
+  }
+
+  // Check if stats/schema need regeneration
+  let needStats = true;
+  let needSchema = true;
+  try {
+    const existingStats = await stat(statsFile);
+    if (existingStats.mtimeMs >= inputFileStats.mtimeMs) needStats = false;
+  } catch { /* needs generation */ }
+  try {
+    const existingSchema = await stat(schemaFile);
+    if (existingSchema.mtimeMs >= inputFileStats.mtimeMs) needSchema = false;
+  } catch { /* needs generation */ }
+
+  // Step 1: Generate stats cache
+  if (needStats) {
+    try {
+      const statsArgs = [
+        "stats", inputFile,
+        "--cardinality", "--stats-jsonl",
+        "--infer-dates", "--dates-whitelist", "sniff",
+      ];
+      await runQsvWithTimeout(qsvBin, statsArgs);
+    } catch (error) {
+      throw new Error(`Stats generation failed for ${inputFile}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  // Step 2: Generate Polars schema
+  if (needSchema) {
+    try {
+      const schemaArgs = ["schema", "--polars", inputFile];
+      await runQsvWithTimeout(qsvBin, schemaArgs);
+    } catch (error) {
+      throw new Error(`Schema generation failed for ${inputFile}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  // Step 3: Convert to Parquet
+  try {
+    const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, parquetPath);
+    await runQsvWithTimeout(qsvBin, conversionArgs);
+  } catch (error) {
+    // Clean up potentially corrupted partial Parquet file
+    try { await unlink(parquetPath); } catch { /* may not exist */ }
+    throw new Error(`Parquet conversion failed for ${inputFile}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  // Verify the output file was actually created and is non-empty
+  let outStats;
+  try {
+    outStats = await stat(parquetPath);
+  } catch {
+    throw new Error(`Parquet conversion completed but output file not found: ${parquetPath}`);
+  }
+  if (outStats.size === 0) {
+    try { await unlink(parquetPath); } catch { /* ignore */ }
+    throw new Error(`Parquet conversion produced an empty file: ${parquetPath}`);
+  }
+
+  console.error(`[MCP Tools] ensureParquet: Successfully converted to ${parquetPath}`);
+  return parquetPath;
+}
+
+/**
+ * Try executing a SQL query via DuckDB.
+ *
+ * Returns a formatted tool result if DuckDB handles the query,
+ * or null if DuckDB is unavailable or the format is unsupported (fall through to sqlp).
+ *
+ * SQL errors from DuckDB are returned to the agent (no silent fallback).
+ * Binary-level failures (exit code 127, ENOENT) mark DuckDB unavailable and return null.
+ *
+ * TRUST ASSUMPTION: The `sql` parameter comes from the MCP agent (a trusted caller).
+ * File paths are escaped against injection, but the SQL string itself is passed through
+ * to `duckdb -c` without sanitization. Do not expose this to untrusted input.
+ */
+async function tryDuckDbExecution(
+  sql: string,
+  parquetFile: string,
+  params: Record<string, unknown>,
+  outputFile: string | undefined,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean } | null> {
+  // Detect DuckDB (lazy, first-call-only)
+  const state = detectDuckDb();
+  if (state.status !== "available") {
+    return null; // Fall through to sqlp
+  }
+
+  const format = (params.format as string)?.toLowerCase() ?? "csv";
+
+  // Unsupported formats fall back to sqlp
+  if (format === "arrow" || format === "avro") {
+    console.error(`[MCP Tools] DuckDB: format '${format}' not supported, falling back to sqlp`);
+    return null;
+  }
+
+  // Translate SQL: _t_1 → read_parquet/read_csv
+  const translatedSql = translateSql(sql, parquetFile, {
+    delimiter: params.delimiter as string | undefined,
+    rnullValues: params["rnull-values"] as string | undefined,
+  });
+
+  console.error(`[MCP Tools] DuckDB: Executing translated SQL: ${translatedSql}`);
+
+  try {
+    const result = await executeDuckDbQuery(translatedSql, {
+      format,
+      outputFile,
+      decimalComma: params["decimal-comma"] === true,
+      compression: params.compression as string | undefined,
+      timeoutMs: config.operationTimeoutMs,
+      onSpawn: (proc) => activeProcesses.add(proc),
+      onExit: (proc) => activeProcesses.delete(proc),
+    });
+
+    // null means unsupported format — fall through
+    if (result === null) {
+      return null;
+    }
+
+    // Binary-level failure
+    if (result.exitCode === 127) {
+      markDuckDbUnavailable("DuckDB binary returned exit code 127");
+      console.error(`[MCP Tools] DuckDB: Binary failure (exit 127), falling back to sqlp`);
+      return null;
+    }
+
+    // SQL error — return to agent (no silent fallback)
+    if (result.exitCode !== 0) {
+      return errorResult(
+        `🦆 Engine: DuckDB v${result.version}\n\nError executing SQL:\n${result.stderr}`,
+      );
+    }
+
+    // Success — prepend engine indicator
+    const engineHeader = `🦆 Engine: DuckDB v${result.version}\n\n`;
+    return successResult(engineHeader + result.output);
+  } catch (error: unknown) {
+    // ENOENT or similar binary-level error
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (
+      errMsg.includes("ENOENT") ||
+      errMsg.includes("not found") ||
+      errMsg.includes("spawn")
+    ) {
+      markDuckDbUnavailable(`Binary error: ${errMsg}`);
+      console.error(`[MCP Tools] DuckDB: Binary error, falling back to sqlp: ${errMsg}`);
+      return null;
+    }
+    // Other errors — return to agent
+    return errorResult(`🦆 Engine: DuckDB\n\nUnexpected error: ${errMsg}`);
+  }
 }
 
 /**
@@ -1235,6 +1476,56 @@ export async function handleToolCall(
       }
     }
 
+    // DuckDB/Parquet-first interception for sqlp queries
+    let parquetConversionWarning = "";
+    if (commandName === "sqlp" && !isHelpRequest && inputFile) {
+      const rawSql = params.sql as string | undefined;
+      if (rawSql) {
+        // Normalize uppercase _T_N references to lowercase _t_N for consistent handling
+        const sql = normalizeTableRefs(rawSql);
+        params.sql = sql;
+        try {
+          // Skip DuckDB for multi-table queries (_t_2, _t_3, etc.) — sqlp handles
+          // multiple input files natively, so let the original input flow through.
+          // NOTE: Multi-table queries don't benefit from Parquet auto-conversion;
+          // users should manually convert all input files with qsv_to_parquet first.
+          if (MULTI_TABLE_PATTERN.test(sql)) {
+            console.error(`[MCP Tools] DuckDB: Multi-table query detected (_t_2+), falling back to sqlp`);
+          } else {
+            // Auto-convert CSV to Parquet (skip for SKIP_INPUT which already has explicit refs)
+            let parquetFile = inputFile;
+            if (inputFile !== "SKIP_INPUT") {
+              parquetFile = await ensureParquet(inputFile);
+            }
+
+            // Try DuckDB execution (single-table path)
+            const duckDbResult = await tryDuckDbExecution(sql, parquetFile, params, outputFile);
+            if (duckDbResult !== null) {
+              return duckDbResult;
+            }
+
+            // DuckDB unavailable or unsupported format — fall through to sqlp
+            // If we converted to Parquet, rewrite SQL via translateSql and use SKIP_INPUT
+            if (parquetFile !== inputFile && parquetFile.endsWith(".parquet")) {
+              const rewrittenSql = translateSql(sql, parquetFile);
+              params.sql = rewrittenSql;
+              inputFile = "SKIP_INPUT";
+              console.error(`[MCP Tools] sqlp fallback with Parquet: ${rewrittenSql}`);
+            }
+          }
+        } catch (error: unknown) {
+          // Parquet conversion or DuckDB failed — warn and fall through to sqlp with original input
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          console.error(
+            `[MCP Tools] Parquet/DuckDB interception failed, falling back to sqlp:`,
+            errorMsg,
+          );
+          // Include warning in result so the agent/user knows the optimization was skipped
+          parquetConversionWarning = `[Warning] Parquet auto-conversion was skipped (${errorMsg}). Query ran against original CSV which may be slower.`;
+        }
+      }
+    }
+
     // Determine if we should use a temp file for output (skip for help requests)
     let autoCreatedTempFile = false;
     if (
@@ -1272,7 +1563,7 @@ export async function handleToolCall(
 
     // Format and return result
     if (result.success) {
-      return await formatToolResult(
+      const formattedResult = await formatToolResult(
         result,
         commandName,
         inputFile,
@@ -1280,8 +1571,20 @@ export async function handleToolCall(
         autoCreatedTempFile,
         params,
       );
+      // Prepend Parquet conversion warning if any
+      if (parquetConversionWarning) {
+        if (formattedResult.content?.[0]?.type === "text") {
+          formattedResult.content[0].text = parquetConversionWarning + "\n\n" + formattedResult.content[0].text;
+        } else {
+          console.error(`[MCP Tools] Could not prepend Parquet warning to result: unexpected content structure`);
+        }
+      }
+      return formattedResult;
     } else {
-      return errorResult(`Error executing ${commandName}:\n${result.stderr}`);
+      const errorMsg = parquetConversionWarning
+        ? `${parquetConversionWarning}\n\nError executing ${commandName}:\n${result.stderr}`
+        : `Error executing ${commandName}:\n${result.stderr}`;
+      return errorResult(errorMsg);
     }
   } catch (error) {
     return errorResult(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
@@ -1594,6 +1897,25 @@ export async function handleConfigTool(
         configText += `\n`;
       }
     }
+  }
+
+  // DuckDB Information
+  configText += `\n## DuckDB\n\n`;
+  const duckDbStatus = getDuckDbStatus();
+  if (!config.useDuckDb) {
+    configText += `⏸️ **Status:** Disabled (QSV_MCP_USE_DUCKDB=false)\n`;
+  } else if (duckDbStatus.status === "available") {
+    configText += `✅ **Status:** Available\n`;
+    configText += `📍 **Path:** \`${duckDbStatus.binPath}\`\n`;
+    configText += `🏷️ **Version:** ${duckDbStatus.version}\n`;
+    configText += `ℹ️ SQL queries are routed through DuckDB for better compatibility and performance.\n`;
+  } else if (duckDbStatus.status === "unavailable") {
+    configText += `❌ **Status:** Unavailable\n`;
+    configText += `⚠️ **Reason:** ${duckDbStatus.reason}\n`;
+    configText += `ℹ️ SQL queries use Polars SQL (sqlp) as fallback.\n`;
+  } else {
+    configText += `⏳ **Status:** Pending (detected on first SQL query)\n`;
+    configText += `ℹ️ DuckDB will be auto-detected when the first SQL query runs.\n`;
   }
 
   // Working Directory
@@ -2168,7 +2490,9 @@ export async function handleToParquetCall(
       `Stats cache: ${statsStatus}\n` +
       `Polars schema: ${schemaStatus}\n` +
       `The Parquet file is now ready for fast SQL queries.\n` +
-      `Prefer DuckDB if available. Otherwise use: qsv_sqlp with input_file="SKIP_INPUT" and sql="SELECT ... FROM read_parquet('${resolvedOutputFile}')".`,
+      (getDuckDbStatus().status === "available"
+        ? `🦆 DuckDB detected — qsv_sqlp will auto-route SQL queries through DuckDB for this file.`
+        : `Use: qsv_sqlp with input_file="SKIP_INPUT" and sql="SELECT ... FROM read_parquet('${resolvedOutputFile}')".`),
     );
   } catch (error) {
     return errorResult(`Error converting CSV to Parquet: ${error instanceof Error ? error.message : String(error)}`);

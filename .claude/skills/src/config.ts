@@ -773,4 +773,19 @@ export const config = {
    * Default: undefined (auto-detect)
    */
   exposeAllTools: getOptionalBooleanEnv("QSV_MCP_EXPOSE_ALL_TOOLS"),
+
+  /**
+   * Path to DuckDB binary
+   * Auto-detected from PATH if not explicitly configured
+   * Default: "" (auto-detect)
+   */
+  duckDbBinPath: getStringEnv("QSV_MCP_DUCKDB_BIN_PATH", ""),
+
+  /**
+   * Whether to use DuckDB for SQL queries when available
+   * When true, SQL queries are routed through DuckDB if detected
+   * When false (default), always use sqlp (Polars SQL)
+   * Default: false (opt-in — most users won't have DuckDB installed)
+   */
+  useDuckDb: getBooleanEnv("QSV_MCP_USE_DUCKDB", false),
 } as const;

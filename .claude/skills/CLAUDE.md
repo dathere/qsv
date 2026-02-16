@@ -225,6 +225,8 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - `QSV_MCP_NOTIFY_UPDATES`: Show update notifications
 - `QSV_MCP_GITHUB_REPO`: GitHub repo for update checks (default: dathere/qsv)
 - `QSV_MCP_EXPOSE_ALL_TOOLS`: Controls tool exposure (`true`: all tools, `false`: core only, unset: deferred loading)
+- `QSV_MCP_DUCKDB_BIN_PATH`: Path to DuckDB binary (default: auto-detect from PATH)
+- `QSV_MCP_USE_DUCKDB`: Enable/disable DuckDB routing for SQL queries (default: false)
 - `MCPB_EXTENSION_MODE`: Desktop extension mode flag
 
 #### `loader.ts` - Dynamic Skill Loading

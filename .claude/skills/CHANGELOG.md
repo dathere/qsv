@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **DuckDB integration** — Automatic DuckDB routing for SQL queries when DuckDB binary is detected
+  - New `src/duckdb.ts` module with lazy detection, SQL translation, and query execution
+  - Parquet-first strategy: CSV inputs are auto-converted to Parquet before SQL execution
+  - DuckDB preferred for PostgreSQL-compatible SQL; falls back to Polars SQL (sqlp) when unavailable
+  - Unsupported output formats (Arrow, Avro) automatically fall back to sqlp
+  - New env vars: `QSV_MCP_DUCKDB_BIN_PATH`, `QSV_MCP_USE_DUCKDB`
+  - DuckDB status shown in `qsv_config` output
+  - Engine indicator (`🦆 Engine: DuckDB vX.Y.Z`) prepended to DuckDB query results
+  - MCPB Desktop Extension: DuckDB settings exposed in user config UI (`duckdb_path`, `use_duckdb`)
+
 ## [16.1.0] - 2026-02-15
 
 ### Added

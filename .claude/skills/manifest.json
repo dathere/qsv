@@ -47,6 +47,8 @@
         "QSV_MCP_NOTIFY_UPDATES": "${user_config.notify_updates}",
         "QSV_MCP_MAX_EXAMPLES": "${user_config.max_examples}",
         "QSV_MCP_SERVER_INSTRUCTIONS": "${user_config.server_instructions}",
+        "QSV_MCP_DUCKDB_BIN_PATH": "${user_config.duckdb_path}",
+        "QSV_MCP_USE_DUCKDB": "${user_config.use_duckdb}",
         "MCPB_EXTENSION_MODE": "true"
       },
       "platform_overrides": {
@@ -135,6 +137,20 @@
       "description": "Custom instructions sent to the AI during initialization. Guides cross-tool workflow, file handling, and operational constraints. Leave empty to use the built-in default server instructions.",
       "required": false,
       "default": ""
+    },
+    "duckdb_path": {
+      "type": "file",
+      "title": "DuckDB Binary Path",
+      "description": "Full path to DuckDB executable. Leave empty to auto-detect from PATH (empty values are treated as 'not set'). When available and 'Use DuckDB' is enabled, SQL queries route through DuckDB for better PostgreSQL compatibility and performance. Install from: https://duckdb.org/docs/installation",
+      "required": false,
+      "default": ""
+    },
+    "use_duckdb": {
+      "type": "boolean",
+      "title": "Use DuckDB for SQL Queries",
+      "description": "When enabled, SQL queries are automatically routed through DuckDB when available (faster, PostgreSQL-compatible). If DuckDB is not installed, queries automatically fall back to Polars SQL (sqlp). Disable to always use sqlp.",
+      "required": false,
+      "default": false
     }
   },
   "tools": [

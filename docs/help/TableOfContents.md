@@ -77,7 +77,7 @@
 
 ### Legend
 
-: enabled by a [feature flag](#feature-flags).  
+✨: enabled by a [feature flag](#feature-flags).  
 📇: uses an index when available.  
 🤯: loads entire CSV into memory, though `dedup`, `stats` & `transpose` have "streaming" modes as well.  
 😣: uses additional memory proportional to the cardinality of the columns in the CSV.  

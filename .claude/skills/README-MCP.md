@@ -51,6 +51,7 @@ The Desktop Extension:
 - **Template Variables** - Supports `$HOME`, `${HOME}` in config paths
 
 See the [MCP Bundle documentation](./docs/desktop/README-MCPB.md) for detailed instructions.
+See the [MacOS Quick Start Guide](./docs/guides/MACOS-QUICK_START.md) for a walkthrough of using the MCP server with Claude Desktop.
 
 ### Option 2: Automated Installation (Developer)
 

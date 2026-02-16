@@ -2,7 +2,7 @@
 
 > Similar to `fetch`, but uses **HTTP Post** ([HTTP GET vs POST methods](https://www.geeksforgeeks.org/difference-between-http-get-and-post-methods/)). Supports HTML form (application/x-www-form-urlencoded), JSON (application/json) and custom content types - with the ability to render payloads using CSV data using the [Mini Jinja](https://docs.rs/minijinja/latest/minijinja/) template engine.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetchpost.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetchpost.rs)** | <abbr title="uses an index when available.">📇</abbr><abbr title="expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.">🧠</abbr><abbr title="has web-aware options.">🌐</abbr><abbr title="uses Mini Jinja template engine.">⛩️</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetchpost.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetchpost.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🧠](TableOfContents.md#legend "expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.")[🌐](TableOfContents.md#legend "has web-aware options.")[⛩️](TableOfContents.md#legend "uses Mini Jinja template engine.")
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Fetchpost Options](#fetchpost-options) | [Caching Options](#caching-options) | [Common Options](#common-options)

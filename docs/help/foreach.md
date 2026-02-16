@@ -2,7 +2,7 @@
 
 > Execute a shell command once per record in a given CSV file.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/foreach.rs](https://github.com/dathere/qsv/blob/master/src/cmd/foreach.rs)** | <abbr title="uses an index when available.">📇</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/foreach.rs](https://github.com/dathere/qsv/blob/master/src/cmd/foreach.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Foreach Options](#foreach-options) | [Common Options](#common-options)

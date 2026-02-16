@@ -2,7 +2,7 @@
 
 > Remove duplicate rows (See also `extdedup`, `extsort`, `sort` & `sortcheck` commands).
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/dedup.rs](https://github.com/dathere/qsv/blob/master/src/cmd/dedup.rs)** | <abbr title="loads entire CSV into memory, though `dedup`, `stats` & `transpose` have &quot;streaming&quot; modes as well.">🤯</abbr><abbr title="multithreaded even without an index.">🚀</abbr><abbr title="has powerful column selector support. See `select` for syntax.">👆</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/dedup.rs](https://github.com/dathere/qsv/blob/master/src/cmd/dedup.rs)** | [🤯](TableOfContents.md#legend "loads entire CSV into memory, though `dedup`, `stats` & `transpose` have \"streaming\" modes as well.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Dedup Options](#dedup-options) | [Common Options](#common-options)

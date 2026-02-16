@@ -2,7 +2,7 @@
 
 > Concatenate CSV files by row or by column.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/cat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/cat.rs)** | <abbr title="Extended input support.">🗄️</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/cat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/cat.rs)** | [🗄️](TableOfContents.md#legend "Extended input support.")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Columns Option](#columns-option) | [Rows Option](#rows-option) | [Rowskey Options](#rowskey-options) | [Common Options](#common-options)

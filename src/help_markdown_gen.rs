@@ -217,13 +217,8 @@ fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
         let clean_desc = partial_badge_re.replace_all(&clean_desc, "").to_string();
         let clean_desc = link_re.replace_all(&clean_desc, "$1").to_string();
         let clean_desc = html_re.replace_all(&clean_desc, "").to_string();
-        // Escape HTML entities for safe use in title attributes
-        let clean_desc = clean_desc
-            .replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-            .replace('"', "&quot;")
-            .replace('\'', "&#39;");
+        // Escape characters for safe use in markdown link title attributes (quoted with ")
+        let clean_desc = clean_desc.replace('\\', "\\\\").replace('"', "\\\"");
         let clean_desc = clean_desc.trim().to_string();
 
         if !clean_desc.is_empty() {
@@ -236,13 +231,17 @@ fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
     legend
 }
 
-/// Wrap emoji markers in a string with `<abbr>` tooltip tags using the parsed legend.
-/// For unicode emojis: `<abbr title="description">emoji</abbr>`
-/// For image markdown `![name](path)`: `![name](path "description")`
+/// Wrap emoji markers in a string with tooltip links using the parsed legend.
+/// For unicode emojis: `[emoji](legend_link "description")`
+/// For image markdown `![name](path)`: `[![name](path)](legend_link "description")`
 ///
 /// Uses a two-pass approach with placeholders to avoid replacing emojis that appear
 /// inside already-inserted tooltip descriptions (e.g. 🏎️'s description mentions 📇).
-fn wrap_emojis_with_tooltips(markers: &str, legend: &[(String, String)]) -> String {
+fn wrap_emojis_with_tooltips(
+    markers: &str,
+    legend: &[(String, String)],
+    legend_link: &str,
+) -> String {
     let mut result = markers.to_string();
     // Regex to match image markdown: ![name](path)
     let img_re = regex_oncelock!(r"^!\[([^\]]*)\]\(([^)]*)\)$");
@@ -256,18 +255,18 @@ fn wrap_emojis_with_tooltips(markers: &str, legend: &[(String, String)]) -> Stri
         }
 
         let replacement = if img_re.is_match(key) {
-            // Image emoji: add title attribute to markdown image
-            // ![name](path) -> ![name](path "description")
+            // Image emoji: wrap with link for tooltip
+            // ![name](path) -> [![name](path)](legend_link "description")
             if let Some(caps) = img_re.captures(key) {
                 let name = &caps[1];
                 let path = &caps[2];
-                format!("![{name}]({path} \"{desc}\")")
+                format!("[![{name}]({path})]({legend_link} \"{desc}\")")
             } else {
                 continue;
             }
         } else {
-            // Unicode emoji: wrap with <abbr>
-            format!("<abbr title=\"{desc}\">{key}</abbr>")
+            // Unicode emoji: wrap with markdown link for tooltip
+            format!("[{key}]({legend_link} \"{desc}\")")
         };
 
         // Use a Private Use Area Unicode placeholder that won't appear in normal text
@@ -455,7 +454,7 @@ fn generate_command_markdown(
         // Rewrite image paths for the docs/help/ location
         let markers = cmd_info.emoji_markers.replace("docs/images/", "../images/");
         // Wrap emojis with hover tooltips
-        let markers = wrap_emojis_with_tooltips(&markers, legend);
+        let markers = wrap_emojis_with_tooltips(&markers, legend, "TableOfContents.md#legend");
         format!(" | {markers}")
     };
     let _ = write!(
@@ -1634,7 +1633,7 @@ fn generate_table_of_contents(
             // lives in docs/help/ and needs to reference docs/images/ as a sibling
             let markers = cmd.emoji_markers.replace("docs/images/", "../images/");
             // Wrap emojis with hover tooltips
-            let markers = wrap_emojis_with_tooltips(&markers, legend);
+            let markers = wrap_emojis_with_tooltips(&markers, legend, "#legend");
             format!("<br>{markers}")
         };
         let _ = writeln!(
@@ -1849,4 +1848,184 @@ pub fn generate_help_markdown() -> CliResult<()> {
     eprintln!("📁 Output directory: {}", output_dir.display());
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_wrap_unicode_emoji_with_tooltip() {
+        let legend = vec![("🔣".to_string(), "Unicode emoji".to_string())];
+        let result = wrap_emojis_with_tooltips("Has 🔣 here", &legend, "#legend");
+        assert_eq!(result, r#"Has [🔣](#legend "Unicode emoji") here"#);
+    }
+
+    #[test]
+    fn test_wrap_image_emoji_with_tooltip() {
+        let legend = vec![(
+            "![img](path/to/img.png)".to_string(),
+            "Image description".to_string(),
+        )];
+        let result =
+            wrap_emojis_with_tooltips("Has ![img](path/to/img.png) here", &legend, "#legend");
+        assert_eq!(
+            result,
+            r#"Has [![img](path/to/img.png)](#legend "Image description") here"#
+        );
+    }
+
+    #[test]
+    fn test_wrap_multiple_emojis_no_cross_contamination() {
+        // 📇's description should not get tooltipped by 🏎️ or vice versa
+        let legend = vec![
+            ("🏎️".to_string(), "Fast, uses 📇 for speed".to_string()),
+            ("📇".to_string(), "Index-accelerated".to_string()),
+        ];
+        let result = wrap_emojis_with_tooltips("🏎️ 📇", &legend, "#legend");
+        assert!(
+            result.contains(r#"[🏎️](#legend "Fast, uses 📇 for speed")"#),
+            "result was: {result}"
+        );
+        assert!(
+            result.contains(r#"[📇](#legend "Index-accelerated")"#),
+            "result was: {result}"
+        );
+    }
+
+    #[test]
+    fn test_wrap_emoji_not_present() {
+        let legend = vec![("🔣".to_string(), "Not here".to_string())];
+        let result = wrap_emojis_with_tooltips("No emojis", &legend, "#legend");
+        assert_eq!(result, "No emojis");
+    }
+
+    #[test]
+    fn test_wrap_with_full_legend_link() {
+        let legend = vec![("📇".to_string(), "Index".to_string())];
+        let result = wrap_emojis_with_tooltips("📇", &legend, "TableOfContents.md#legend");
+        assert_eq!(result, r#"[📇](TableOfContents.md#legend "Index")"#);
+    }
+
+    #[test]
+    fn test_desc_with_escaped_quotes_preserves_link_format() {
+        // Verify that a description with pre-escaped double quotes (as produced by
+        // parse_legend) doesn't break the markdown link syntax when passed through
+        // wrap_emojis_with_tooltips.
+        let legend = vec![("🔣".to_string(), r#"Has \"quotes\""#.to_string())];
+        let result = wrap_emojis_with_tooltips("🔣", &legend, "#legend");
+        // The description should be safely embedded in the markdown title
+        assert!(
+            result.contains("\"Has"),
+            "Double quotes should be escaped: {result}"
+        );
+        // Should not break the markdown link syntax (no unescaped interior quotes)
+        assert!(
+            result.starts_with("[🔣](#legend \""),
+            "Link format should be intact: {result}"
+        );
+    }
+
+    #[test]
+    fn test_parse_legend_escapes_for_markdown() {
+        // Build a minimal README snippet with a legend entry containing special chars
+        let readme = r#"<a name="legend_deeplink"></a>
+🔣: Description with "quotes" & <angles>
+
+## Next Section
+"#;
+        let legend = parse_legend(readme);
+        assert_eq!(legend.len(), 1);
+        let (key, desc) = &legend[0];
+        assert_eq!(key, "🔣");
+        // Double quotes should be escaped for markdown link titles
+        assert!(
+            desc.contains("\\\""),
+            "Double quotes should be backslash-escaped, got: {desc}"
+        );
+        // HTML entities should NOT appear (we're generating markdown, not HTML)
+        assert!(
+            !desc.contains("&amp;"),
+            "Should not contain HTML entities, got: {desc}"
+        );
+        assert!(
+            !desc.contains("&lt;"),
+            "Should not contain HTML entities, got: {desc}"
+        );
+    }
+
+    #[test]
+    fn test_parse_legend_escapes_backslash() {
+        // Verify that literal backslashes in descriptions are escaped for markdown titles
+        let readme = r#"<a name="legend_deeplink"></a>
+🔣: Path is C:\Users\test
+
+## Next Section
+"#;
+        let legend = parse_legend(readme);
+        assert_eq!(legend.len(), 1);
+        let (key, desc) = &legend[0];
+        assert_eq!(key, "🔣");
+        // Backslashes should be doubled for safe embedding in markdown link titles
+        assert!(
+            desc.contains(r"C:\\Users\\test"),
+            "Backslashes should be escaped, got: {desc}"
+        );
+    }
+
+    #[test]
+    fn test_parse_legend_bare_angle_brackets() {
+        // When bare < and > pair up like "< b and c >", the html_re regex
+        // treats it as a tag and strips it. This documents that current behavior.
+        // In practice, legend descriptions don't contain bare angle brackets.
+        let readme = r#"<a name="legend_deeplink"></a>
+🔣: Values where a < b and c > d
+
+## Next Section
+"#;
+        let legend = parse_legend(readme);
+        assert_eq!(legend.len(), 1);
+        let (_key, desc) = &legend[0];
+        // "< b and c >" matches html_re's <[^>]+> pattern, so it gets stripped,
+        // leaving "Values where a  d"
+        assert!(
+            desc.contains("Values where a"),
+            "Text before the pseudo-tag should be preserved, got: {desc}"
+        );
+        assert!(
+            !desc.contains("< b"),
+            "Pseudo-tag '< b and c >' should be stripped by html_re, got: {desc}"
+        );
+        assert!(
+            desc.contains("d"),
+            "Text after the pseudo-tag should be preserved, got: {desc}"
+        );
+    }
+
+    #[test]
+    fn test_parse_legend_unpaired_angle_brackets() {
+        // Truly unpaired angle brackets (e.g., "Values < 5" or "a > b") don't
+        // match html_re's <[^>]+> pattern because they don't pair up, so they
+        // pass through intact. This is distinct from the paired case above.
+        let readme = r#"<a name="legend_deeplink"></a>
+🔣: Values < 5 are small
+📊: Scores > 90 are great
+
+## Next Section
+"#;
+        let legend = parse_legend(readme);
+        assert_eq!(legend.len(), 2);
+
+        let (_key, desc) = &legend[0];
+        assert!(
+            desc.contains("Values < 5 are small"),
+            "Unpaired '<' should pass through, got: {desc}"
+        );
+
+        let (_key, desc) = &legend[1];
+        assert!(
+            desc.contains("Scores > 90 are great"),
+            "Unpaired '>' should pass through, got: {desc}"
+        );
+    }
 }

@@ -2,7 +2,7 @@
 
 > Convert JSON array to CSV.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/json.rs](https://github.com/dathere/qsv/blob/master/src/cmd/json.rs)** | <abbr title="has powerful column selector support. See `select` for syntax.">👆</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/json.rs](https://github.com/dathere/qsv/blob/master/src/cmd/json.rs)** | [👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [JSON Options](#json-options) | [Common Options](#common-options)

@@ -2,7 +2,7 @@
 
 > [Pseudonymise](https://en.wikipedia.org/wiki/Pseudonymization) the value of the given column by replacing them with an incremental identifier.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pseudo.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pseudo.rs)** | <abbr title="requires UTF-8 encoded input.">🔣</abbr><abbr title="has powerful column selector support. See `select` for syntax.">👆</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pseudo.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pseudo.rs)** | [🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Common Options](#common-options)

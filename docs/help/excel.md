@@ -2,7 +2,7 @@
 
 > Exports a specified Excel/ODS sheet to a CSV file.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/excel.rs](https://github.com/dathere/qsv/blob/master/src/cmd/excel.rs)** | <abbr title="multithreaded even without an index.">🚀</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/excel.rs](https://github.com/dathere/qsv/blob/master/src/cmd/excel.rs)** | [🚀](TableOfContents.md#legend "multithreaded even without an index.")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Excel Options](#excel-options) | [Common Options](#common-options)

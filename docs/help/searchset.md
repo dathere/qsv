@@ -2,7 +2,7 @@
 
 > _Run multiple regexes over a CSV in a single pass._ Applies the regexes to each field individually & shows only matching rows.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/searchset.rs](https://github.com/dathere/qsv/blob/master/src/cmd/searchset.rs)** | <abbr title="uses an index when available.">📇</abbr><abbr title="multithreaded and/or faster when an index (📇) is available.">🏎️</abbr><abbr title="has powerful column selector support. See `select` for syntax.">👆</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/searchset.rs](https://github.com/dathere/qsv/blob/master/src/cmd/searchset.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Searchset Options](#searchset-options) | [Common Options](#common-options)

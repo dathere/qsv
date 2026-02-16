@@ -252,10 +252,10 @@ export function translateSql(
       csvOptions.push(`delim = '${options.delimiter}'`);
     }
     if (options?.rnullValues) {
-      // Parse comma-separated null values into array
+      // Parse comma-separated null values into array, escaping single quotes
       const nullStrs = options.rnullValues
         .split(",")
-        .map((s) => `'${s.trim()}'`)
+        .map((s) => `'${s.trim().replace(/'/g, "''")}'`)
         .join(", ");
       csvOptions.push(`nullstr = [${nullStrs}]`);
     }
@@ -364,8 +364,14 @@ export async function executeDuckDbQuery(
       stdout += data;
     });
 
+    const maxStderrSize = 1024 * 1024; // 1 MB cap for stderr
     proc.stderr!.on("data", (chunk) => {
-      stderr += chunk.toString();
+      if (stderr.length < maxStderrSize) {
+        stderr += chunk.toString();
+        if (stderr.length > maxStderrSize) {
+          stderr = stderr.slice(0, maxStderrSize) + "\n[STDERR TRUNCATED]";
+        }
+      }
     });
 
     proc.on("close", (exitCode) => {

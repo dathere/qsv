@@ -1189,13 +1189,8 @@ function getParquetPath(csvPath: string): string {
  * Returns the Parquet file path, or the original path if not a CSV-like file.
  */
 async function ensureParquet(inputFile: string): Promise<string> {
-  // Only convert CSV-like files
+  // Only convert CSV-like files (non-CSV files like .parquet, .jsonl are returned as-is)
   if (!isCsvLikeFile(inputFile)) {
-    return inputFile;
-  }
-
-  // Already a parquet file
-  if (inputFile.toLowerCase().endsWith(".parquet")) {
     return inputFile;
   }
 
@@ -1420,6 +1415,7 @@ export async function handleToolCall(
     }
 
     // DuckDB/Parquet-first interception for sqlp queries
+    let parquetConversionWarning = "";
     if (commandName === "sqlp" && !isHelpRequest && inputFile) {
       const sql = params.sql as string | undefined;
       if (sql) {
@@ -1447,11 +1443,14 @@ export async function handleToolCall(
             console.error(`[MCP Tools] sqlp fallback with Parquet: ${rewrittenSql}`);
           }
         } catch (error: unknown) {
-          // Parquet conversion or DuckDB failed — log and fall through to sqlp with original input
+          // Parquet conversion or DuckDB failed — warn and fall through to sqlp with original input
+          const errorMsg = error instanceof Error ? error.message : String(error);
           console.error(
             `[MCP Tools] Parquet/DuckDB interception failed, falling back to sqlp:`,
-            error instanceof Error ? error.message : String(error),
+            errorMsg,
           );
+          // Include warning in result so the agent/user knows the optimization was skipped
+          parquetConversionWarning = `[Warning] Parquet auto-conversion was skipped (${errorMsg}). Query ran against original CSV which may be slower.`;
         }
       }
     }
@@ -1493,7 +1492,7 @@ export async function handleToolCall(
 
     // Format and return result
     if (result.success) {
-      return await formatToolResult(
+      const formattedResult = await formatToolResult(
         result,
         commandName,
         inputFile,
@@ -1501,6 +1500,11 @@ export async function handleToolCall(
         autoCreatedTempFile,
         params,
       );
+      // Prepend Parquet conversion warning if any
+      if (parquetConversionWarning && formattedResult.content?.[0]?.type === "text") {
+        formattedResult.content[0].text = parquetConversionWarning + "\n\n" + formattedResult.content[0].text;
+      }
+      return formattedResult;
     } else {
       return errorResult(`Error executing ${commandName}:\n${result.stderr}`);
     }

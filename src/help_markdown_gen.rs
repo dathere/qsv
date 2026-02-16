@@ -105,6 +105,18 @@ fn extract_emoji_section(line: &str) -> String {
     String::new()
 }
 
+/// Check if a line marks the end of the legend section.
+/// Used by both `parse_legend()` and `generate_table_of_contents()` to detect
+/// definitive end-of-legend markers (headings, HR rules, footnote references).
+#[inline]
+fn is_legend_end_marker(line: &str) -> bool {
+    line.starts_with('#')
+        || line.starts_with("---")
+        || line.starts_with("___")
+        || line.starts_with("***")
+        || line.starts_with("[^")
+}
+
 /// Parse the legend section from README.md into a vec of (emoji_key, description) pairs.
 /// Returns pairs sorted by key length descending for longest-match-first replacement.
 fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
@@ -135,20 +147,16 @@ fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
             continue;
         }
         // Stop at a definitive end-of-legend marker: heading, HR rule, or footnote
-        if trimmed.starts_with('#')
-            || trimmed.starts_with("---")
-            || trimmed.starts_with("___")
-            || trimmed.starts_with("***")
-            || trimmed.starts_with("[^")
-        {
+        if is_legend_end_marker(trimmed) {
             break;
         }
         // Check if this line starts a new entry: <a tag, ![ image, or emoji character.
         // Emoji detection: check if the first character is in a known emoji Unicode range
         // rather than just checking !is_ascii(), which would also match accented chars.
+        // U+2100 avoids false positives from General Punctuation (U+2000–U+206F).
         let first_char = trimmed.chars().next().unwrap_or(' ');
         let is_emoji_start = !first_char.is_ascii()
-            && (first_char > '\u{2000}'
+            && (first_char > '\u{2100}'
                 || ('\u{00A9}' == first_char)
                 || ('\u{00AE}' == first_char));
         let is_new_entry =
@@ -214,7 +222,8 @@ fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
             .replace('&', "&amp;")
             .replace('<', "&lt;")
             .replace('>', "&gt;")
-            .replace('"', "&quot;");
+            .replace('"', "&quot;")
+            .replace('\'', "&#39;");
         let clean_desc = clean_desc.trim().to_string();
 
         if !clean_desc.is_empty() {
@@ -1656,12 +1665,7 @@ fn generate_table_of_contents(
                 continue;
             }
             // Stop at a definitive end-of-legend marker
-            if trimmed.starts_with('#')
-                || trimmed.starts_with("---")
-                || trimmed.starts_with("___")
-                || trimmed.starts_with("***")
-                || trimmed.starts_with("[^")
-            {
+            if is_legend_end_marker(trimmed) {
                 break;
             }
             // Clean up legend lines - strip HTML anchor, preserving any

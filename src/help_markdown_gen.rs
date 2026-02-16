@@ -1112,14 +1112,49 @@ fn format_examples(lines: &[String]) -> String {
         }
 
         // Comment lines: # description
+        // Consecutive comment lines are merged into a single blockquote
         if trimmed.starts_with('#') {
             if in_code_block {
                 md.push_str("```\n\n");
                 in_code_block = false;
             }
             let comment = trimmed.trim_start_matches('#').trim();
-            let _ = write!(md, "> {}\n\n", linkify_bare_urls(comment));
+            let _ = write!(md, "> {}\n", linkify_bare_urls(comment));
+            // Check if the next non-empty line is also a comment — if not, end the blockquote
+            let next_is_comment = lines
+                .get(idx + 1..)
+                .and_then(|remaining| remaining.iter().find(|l| !l.trim().is_empty()))
+                .is_some_and(|l| l.trim().starts_with('#'));
+            if !next_is_comment {
+                md.push('\n');
+            }
             continue;
+        }
+
+        // Lines ending with \ that lead to a qsv command (e.g. env var prefixes)
+        if trimmed.ends_with('\\') && !in_code_block {
+            let reaches_qsv = lines
+                .get(idx + 1..)
+                .and_then(|remaining| {
+                    remaining
+                        .iter()
+                        .map(|l| l.trim())
+                        .find(|nt| !nt.ends_with('\\'))
+                })
+                .is_some_and(|nt| {
+                    nt.starts_with("qsv ")
+                        || nt.starts_with("$ qsv")
+                        || nt.contains("| qsv ")
+                        || nt.contains("|qsv ")
+                        || (nt.starts_with("$ ") && nt.contains("qsv "))
+                });
+            if reaches_qsv {
+                md.push_str("```console\n");
+                in_code_block = true;
+                md.push_str(trimmed);
+                md.push('\n');
+                continue;
+            }
         }
 
         // Command lines: $ qsv ..., qsv ..., or piped commands containing qsv
@@ -2026,6 +2061,72 @@ mod tests {
         assert!(
             desc.contains("Scores > 90 are great"),
             "Unpaired '>' should pass through, got: {desc}"
+        );
+    }
+
+    // --- format_examples tests ---
+
+    fn lines(input: &[&str]) -> Vec<String> {
+        input.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn test_format_examples_env_var_continuation_reaches_qsv() {
+        let input = lines(&[
+            "# Set engine and run",
+            "QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb \\",
+            "qsv describegpt data.csv",
+        ]);
+        let md = format_examples(&input);
+        assert!(
+            md.contains("```console\nQSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb"),
+            "Env-var continuation should be inside code block, got:\n{md}"
+        );
+        assert!(
+            md.contains("qsv describegpt data.csv\n```"),
+            "qsv command should close the code block, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_format_examples_continuation_not_reaching_qsv() {
+        let input = lines(&["FOO=bar \\", "echo hello"]);
+        let md = format_examples(&input);
+        assert!(
+            !md.contains("```console"),
+            "Non-qsv continuation should not open a code block, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_format_examples_consecutive_comments() {
+        let input = lines(&["# First comment", "# Second comment", "qsv count data.csv"]);
+        let md = format_examples(&input);
+        // Both comments in a single blockquote (no blank line between them)
+        assert!(
+            md.contains("> First comment\n> Second comment\n\n"),
+            "Consecutive comments should be in one blockquote, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_format_examples_comment_as_last_line() {
+        let input = lines(&["# Trailing comment"]);
+        let md = format_examples(&input);
+        assert!(
+            md.contains("> Trailing comment\n"),
+            "Comment as last line should not panic, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_format_examples_backslash_as_last_line() {
+        let input = lines(&["FOO=bar \\"]);
+        let md = format_examples(&input);
+        // Should not panic; treated as plain text since no following qsv line
+        assert!(
+            !md.contains("```console"),
+            "Dangling backslash should not open code block, got:\n{md}"
         );
     }
 }

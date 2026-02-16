@@ -81,7 +81,6 @@ QSV_REDIS_TTL_SECONDS & QSV_REDIS_TTL_REFRESH env vars to change Redis cache set
 ## Examples [↩](#nav)
 
 > Generate a Data Dictionary, Description & Tags of data.csv using default OpenAI gpt-oss-20b model
-
 > (replace <API_KEY> with your OpenAI API key)
 
 ```console
@@ -95,7 +94,6 @@ qsv describegpt data.csv -u http://localhost:11434/v1 --model deepseek-r1:14b --
 ```
 
 > Ask questions about the sample NYC 311 dataset using LM Studio with the default gpt-oss-20b model.
-
 > Questions that can be answered using the Summary Statistics & Frequency Distribution of the dataset.
 
 ```console
@@ -103,18 +101,15 @@ qsv describegpt NYC_311.csv --prompt "What is the most common complaint?"
 ```
 
 > Ask detailed natural language questions that require SQL queries and auto-invoke SQL RAG mode
-
 > Generate a DuckDB SQL query to answer the question
 
-QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb \
 ```console
+QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb \
 qsv describegpt NYC_311.csv -p "What's the breakdown of complaint types by borough descending order?"
 ```
 
 > Prompt requires a natural language query. Convert query to SQL using the LLM and save results to
-
 > a file with the --sql-results option.  If generated SQL query runs successfully,
-
 > the file is "results.csv". Otherwise, it is "results.sql".
 
 ```console
@@ -164,7 +159,6 @@ qsv describegpt data.csv --dictionary --freq-options "--select '!id,!uuid' --lim
 ```
 
 > Generate Data Dictionary, Description & Tags but reduce frequency context
-
 > by showing only top 5 values per field
 
 ```console
@@ -178,7 +172,6 @@ qsv describegpt data.csv --description --freq-options "--limit 50 --asc --weight
 ```
 
 > Generate a Data Dictionary, Description & Tags using a previously compiled stats CSV file and
-
 > frequency CSV file instead of running the stats and frequency commands
 
 ```console

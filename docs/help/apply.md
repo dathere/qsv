@@ -154,7 +154,6 @@ qsv apply operations trim,upper surname -r uppercase_clean_surname file.csv
 ```
 
 > Trim, then transform to uppercase the surname field and
-
 > save it to a new column named uppercase_clean_surname.
 
 ```console
@@ -162,7 +161,6 @@ qsv apply operations trim,upper surname -c uppercase_clean_surname file.csv
 ```
 
 > Trim, then transform to uppercase the firstname and surname fields and
-
 > rename the columns ufirstname and usurname.
 
 ```console
@@ -200,7 +198,6 @@ qsv apply operations encode64 text_col -c encoded file.csv | qsv apply operation
 ```
 
 > Compute the Normalized Damerau-Levenshtein similarity of the neighborhood column to
-
 > the string 'Roxbury' and save it to a new column named dln_roxbury_score.
 
 ```console
@@ -240,7 +237,6 @@ qsv apply emptyreplace '/^Measurement/' --replacement None file.csv
 ```
 
 > Replace all empty cells in file.csv for columns that start with 'observation'
-
 > case insensitive with 'None'.
 
 ```console
@@ -250,7 +246,6 @@ qsv apply emptyreplace --replacement None '/(?i)^observation/' file.csv
 ### DYNFMT
 
 > Create a new column 'mailing address' from 'house number', 'street', 'city'
-
 > and 'zip-code' columns:
 
 ```console

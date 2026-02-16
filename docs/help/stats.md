@@ -125,7 +125,6 @@ qsv stats -E --infer-dates nyc311.tsv
 ```
 
 > Compute all stats for "nyc311.tab", inferring dates only for columns
-
 > with "_date" & "_dte" in the column names
 
 ```console
@@ -163,7 +162,6 @@ qsv stats --typesonly --infer-boolean --infer-dates nyc311.csv
 ```
 
 > Automatically create an index for the "nyc311.csv" file to enable multithreading
-
 > if it's larger than 5MB and there is no existing index file:
 
 ```console
@@ -171,7 +169,6 @@ qsv stats -E --cache-threshold -5000000 nyc311.csv
 ```
 
 > Auto-create a TEMPORARY index for the "nyc311.csv" file to enable multithreading
-
 > if it's larger than 5MB and delete the index and the stats cache file after the stats run:
 
 ```console

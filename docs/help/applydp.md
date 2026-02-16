@@ -95,7 +95,6 @@ qsv applydp operations trim,upper surname -r uppercase_clean_surname file.csv
 ```
 
 > Trim, then transform to uppercase the surname field and
-
 > save it to a new column named uppercase_clean_surname.
 
 ```console
@@ -109,7 +108,6 @@ qsv applydp operations trim,squeeze,upper \_name$\ file.csv
 ```
 
 > Trim, then transform to uppercase the firstname and surname fields and
-
 > rename the columns ufirstname and usurname.
 
 ```console
@@ -161,7 +159,6 @@ qsv applydp emptyreplace '/^Measurement/' --replacement None file.csv
 ```
 
 > Replace all empty cells in file.csv for columns that start with 'observation'
-
 > case insensitive with 'None'.
 
 ```console

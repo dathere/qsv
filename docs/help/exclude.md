@@ -49,7 +49,6 @@ qsv exclude col1-col5 records.csv col1-col5 previously-processed.csv
 ```
 
 > Remove all records in previously-processed.csv with the same id from records.csv
-
 > and write to new-records.csv
 
 ```console
@@ -57,7 +56,6 @@ qsv exclude id records.csv id previously-processed.csv > new-records.csv
 ```
 
 > Remove all records in previously-processed.csv with the same id from records.csv
-
 > and write to new-records.csv
 
 ```console
@@ -65,7 +63,6 @@ qsv exclude id records.csv id previously-processed.csv --output new-records.csv
 ```
 
 > Get the intersection of records.csv and previously-processed.csv on id column
-
 > (i.e., only records present in both files)
 
 ```console

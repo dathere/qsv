@@ -2,10 +2,8 @@
  * Tests for DuckDB integration module
  */
 
-import { test, describe, beforeEach, afterEach } from "node:test";
+import { test, describe, beforeEach } from "node:test";
 import assert from "node:assert";
-import { writeFile } from "fs/promises";
-import { join } from "path";
 import {
   translateSql,
   isDuckDbEnabled,
@@ -14,7 +12,6 @@ import {
   detectDuckDb,
   markDuckDbUnavailable,
 } from "../src/duckdb.js";
-import { createTestDir, cleanupTestDir, createTestCSV } from "./test-helpers.js";
 
 // ============================================================
 // SQL Translation Tests
@@ -115,6 +112,16 @@ describe("translateSql", () => {
     );
   });
 
+  test("escapes SQL injection attempts in file paths", () => {
+    const sql = "SELECT * FROM _t_1";
+    const result = translateSql(sql, "/data/test'); DROP TABLE x; --.parquet");
+    // Single quotes in the path are doubled, neutralizing the injection
+    assert.strictEqual(
+      result,
+      "SELECT * FROM read_parquet('/data/test''); DROP TABLE x; --.parquet')",
+    );
+  });
+
   test("handles .tsv files as CSV-like", () => {
     const sql = "SELECT * FROM _t_1";
     const result = translateSql(sql, "/data/test.tsv");
@@ -130,6 +137,28 @@ describe("translateSql", () => {
     assert.strictEqual(
       result,
       "SELECT * FROM read_csv('/data/test.ssv', auto_detect = true)",
+    );
+  });
+
+  test("treats unknown file extensions as CSV-like", () => {
+    const sql = "SELECT * FROM _t_1";
+
+    const xlsxResult = translateSql(sql, "/data/test.xlsx");
+    assert.strictEqual(
+      xlsxResult,
+      "SELECT * FROM read_csv('/data/test.xlsx', auto_detect = true)",
+    );
+
+    const txtResult = translateSql(sql, "/data/test.txt");
+    assert.strictEqual(
+      txtResult,
+      "SELECT * FROM read_csv('/data/test.txt', auto_detect = true)",
+    );
+
+    const noExtResult = translateSql(sql, "/data/testfile");
+    assert.strictEqual(
+      noExtResult,
+      "SELECT * FROM read_csv('/data/testfile', auto_detect = true)",
     );
   });
 
@@ -194,39 +223,38 @@ describe("DuckDB detection state", () => {
 });
 
 // ============================================================
-// Parquet-first helper tests
+// File extension routing tests
 // ============================================================
-describe("ensureParquet helpers", () => {
-  let testDir: string;
+describe("translateSql file extension routing", () => {
+  test("routes CSV-like extensions to read_csv", () => {
+    const sql = "SELECT * FROM _t_1";
 
-  beforeEach(async () => {
-    testDir = await createTestDir("duckdb-parquet");
-  });
-
-  afterEach(async () => {
-    await cleanupTestDir(testDir);
-  });
-
-  test("isCsvLikeFile identifies CSV extensions correctly", async () => {
-    // Import the internal helper via the module that uses it
-    // We test this indirectly through translateSql behavior
-    const csvResult = translateSql("SELECT * FROM _t_1", "/data/test.csv");
+    const csvResult = translateSql(sql, "/data/test.csv");
     assert.ok(csvResult.includes("read_csv"));
 
-    const tsvResult = translateSql("SELECT * FROM _t_1", "/data/test.tsv");
+    const tsvResult = translateSql(sql, "/data/test.tsv");
     assert.ok(tsvResult.includes("read_csv"));
 
-    const parquetResult = translateSql("SELECT * FROM _t_1", "/data/test.parquet");
-    assert.ok(parquetResult.includes("read_parquet"));
+    const ssvResult = translateSql(sql, "/data/test.ssv");
+    assert.ok(ssvResult.includes("read_csv"));
   });
 
-  test("getParquetPath generates correct paths", () => {
-    // We can test this indirectly: if we pass a CSV and it gets converted,
-    // the parquet path would be the same stem + .parquet
-    // Direct testing via translateSql shows path handling
-    const sql = "SELECT * FROM _t_1";
-    const result = translateSql(sql, "/data/file.csv");
-    // The CSV path should be used in read_csv
-    assert.ok(result.includes("/data/file.csv"));
+  test("routes .parquet to read_parquet", () => {
+    const result = translateSql("SELECT * FROM _t_1", "/data/test.parquet");
+    assert.ok(result.includes("read_parquet"));
+  });
+
+  test("routes .jsonl and .ndjson to read_json", () => {
+    const jsonlResult = translateSql("SELECT * FROM _t_1", "/data/test.jsonl");
+    assert.ok(jsonlResult.includes("read_json"));
+
+    const ndjsonResult = translateSql("SELECT * FROM _t_1", "/data/test.ndjson");
+    assert.ok(ndjsonResult.includes("read_json"));
+  });
+
+  test("falls back to read_csv for unrecognized extensions", () => {
+    const result = translateSql("SELECT * FROM _t_1", "/data/file.dat");
+    assert.ok(result.includes("read_csv"));
+    assert.ok(result.includes("/data/file.dat"));
   });
 });

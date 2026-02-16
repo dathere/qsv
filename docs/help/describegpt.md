@@ -103,8 +103,8 @@ qsv describegpt NYC_311.csv --prompt "What is the most common complaint?"
 > Ask detailed natural language questions that require SQL queries and auto-invoke SQL RAG mode
 > Generate a DuckDB SQL query to answer the question
 
-QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb \
 ```console
+QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb \
 qsv describegpt NYC_311.csv -p "What's the breakdown of complaint types by borough descending order?"
 ```
 

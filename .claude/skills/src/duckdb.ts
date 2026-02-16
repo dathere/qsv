@@ -247,7 +247,12 @@ function validateDuckDbBinary(binPath: string): string | null {
  *
  * Passes through SKIP_INPUT queries unchanged (already have explicit file refs).
  *
- * @param sql - The SQL query with _t_1 table references
+ * SECURITY: The SQL string is NOT sanitized — it is passed through to DuckDB as-is
+ * (only _t_1 references are replaced). This is safe because SQL originates from a
+ * trusted MCP agent, never from end-user input. File paths are escaped (single-quote
+ * doubling) to prevent injection via path values.
+ *
+ * @param sql - The SQL query with _t_1 table references (trusted, not sanitized)
  * @param inputFile - The primary input file path
  * @param options - Translation options (delimiter, null values)
  * @returns Translated SQL ready for DuckDB execution
@@ -327,7 +332,11 @@ export function translateSql(
 /**
  * Execute a SQL query using DuckDB.
  *
- * @param sql - The SQL query to execute (already translated via translateSql)
+ * SECURITY: The SQL string is executed directly by DuckDB without sanitization.
+ * This is intentional — SQL originates from a trusted MCP agent, not end-user input.
+ * See translateSql() for the trust boundary documentation.
+ *
+ * @param sql - The SQL query to execute (already translated via translateSql, trusted)
  * @param options - Execution options
  * @returns DuckDB result, or null if format is unsupported (arrow/avro)
  */

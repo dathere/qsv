@@ -1168,15 +1168,16 @@ export function isCsvLikeFile(filePath: string): boolean {
  * Callers should gate on `isCsvLikeFile()` to avoid surprising double-extensions.
  */
 export function getParquetPath(csvPath: string): string {
-  const csvLikeExtensions = [
-    ".csv.sz", ".tsv.sz", ".tab.sz", ".ssv.sz",
-    ".csv", ".tsv", ".tab", ".ssv",
-  ];
+  // Use shared CSV_LIKE_EXTENSIONS, sorted by descending length so longer extensions
+  // (e.g., ".csv.sz") are matched before shorter ones (e.g., ".csv")
+  const orderedExtensions = [...CSV_LIKE_EXTENSIONS].sort(
+    (a, b) => b.length - a.length,
+  );
   // Match against lowercased basename to avoid false matches on directory names
   // (e.g., /data/csv_files/test.json). Slicing from original csvPath is safe because
   // ext and the actual extension have the same length regardless of case.
   const base = basename(csvPath).toLowerCase();
-  for (const ext of csvLikeExtensions) {
+  for (const ext of orderedExtensions) {
     if (base.endsWith(ext)) {
       return csvPath.slice(0, -ext.length) + ".parquet";
     }
@@ -1207,21 +1208,26 @@ export async function ensureParquet(inputFile: string): Promise<string> {
     return existing;
   }
 
+  // Establish the lock (conversion promise) BEFORE any awaited operations to prevent
+  // race where two concurrent calls both pass the lock check above, then both start
+  // conversions. By setting the promise synchronously, the second caller will always
+  // find the lock and await the first caller's promise.
   const parquetPath = getParquetPath(inputFile);
-
-  // Check if Parquet already exists and is newer than CSV
-  try {
-    const csvStats = await stat(inputFile);
-    const parquetStats = await stat(parquetPath);
-    if (parquetStats.mtimeMs >= csvStats.mtimeMs) {
-      console.error(`[MCP Tools] ensureParquet: Using existing Parquet file (up-to-date): ${parquetPath}`);
-      return parquetPath;
+  const conversionPromise = (async () => {
+    // Check if Parquet already exists and is newer than CSV
+    try {
+      const csvStats = await stat(inputFile);
+      const parquetStats = await stat(parquetPath);
+      if (parquetStats.mtimeMs >= csvStats.mtimeMs) {
+        console.error(`[MCP Tools] ensureParquet: Using existing Parquet file (up-to-date): ${parquetPath}`);
+        return parquetPath;
+      }
+    } catch {
+      // Parquet doesn't exist or can't stat — need to convert
     }
-  } catch {
-    // Parquet doesn't exist or can't stat — need to convert
-  }
 
-  const conversionPromise = doParquetConversion(inputFile, parquetPath);
+    return await doParquetConversion(inputFile, parquetPath);
+  })();
   parquetConversionLocks.set(inputFile, conversionPromise);
   try {
     return await conversionPromise;

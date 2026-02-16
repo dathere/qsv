@@ -2,7 +2,7 @@
 
 > Convert newline-delimited JSON ([JSONL](https://jsonlines.org/)/[NDJSON](http://ndjson.org/)) to CSV. See `tojsonl` command to convert CSV to JSONL.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/jsonl.rs](https://github.com/dathere/qsv/blob/master/src/cmd/jsonl.rs)** | <abbr title="multithreaded even without an index.">🚀</abbr><abbr title="requires UTF-8 encoded input.">🔣</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/jsonl.rs](https://github.com/dathere/qsv/blob/master/src/cmd/jsonl.rs)** | [🚀](TableOfContents.md#legend "multithreaded even without an index.")[🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [JSONL Options](#jsonl-options) | [Common Options](#common-options)

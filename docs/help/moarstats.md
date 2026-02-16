@@ -2,7 +2,7 @@
 
 > Add dozens of additional statistics, including extended outlier, robust & bivariate statistics to an existing stats CSV file. ([example](../moarstats/NYC_311_SR_2010-2020-sample-1M.stats.csv)).
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/moarstats.rs](https://github.com/dathere/qsv/blob/master/src/cmd/moarstats.rs)** | <abbr title="uses an index when available.">📇</abbr><abbr title="multithreaded and/or faster when an index (📇) is available.">🏎️</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/moarstats.rs](https://github.com/dathere/qsv/blob/master/src/cmd/moarstats.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Moarstats Options](#moarstats-options) | [Bivariate Statistics Options](#bivariate-statistics-options) | [Common Options](#common-options)

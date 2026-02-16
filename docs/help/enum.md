@@ -2,7 +2,7 @@
 
 > Add a new column enumerating rows by adding a column of incremental or uuid identifiers. Can also be used to copy a column or fill a new column with a constant value.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/enumerate.rs](https://github.com/dathere/qsv/blob/master/src/cmd/enumerate.rs)** | <abbr title="has powerful column selector support. See `select` for syntax.">👆</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/enumerate.rs](https://github.com/dathere/qsv/blob/master/src/cmd/enumerate.rs)** | [👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Enum Options](#enum-options) | [Common Options](#common-options)

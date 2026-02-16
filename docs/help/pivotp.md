@@ -2,7 +2,7 @@
 
 > Pivot CSV data. Features "smart" aggregation auto-selection based on data type & stats.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pivotp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pivotp.rs)** | <abbr title="multithreaded even without an index.">🚀</abbr><abbr title="command powered/accelerated by  vectorized query engine.">🐻‍❄️</abbr><abbr title="&quot;automagical&quot; commands that uses stats and/or frequency tables to work &quot;smarter&quot; & &quot;faster&quot;.">🪄</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pivotp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pivotp.rs)** | [🚀](TableOfContents.md#legend "multithreaded even without an index.")[🐻‍❄️](TableOfContents.md#legend "command powered/accelerated by  vectorized query engine.")[🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Pivotp Options](#pivotp-options) | [Common Options](#common-options)

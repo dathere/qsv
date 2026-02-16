@@ -2,7 +2,7 @@
 
 > Randomly draw rows (with optional seed) from a CSV using seven different sampling methods - [reservoir](https://en.wikipedia.org/wiki/Reservoir_sampling) (default), [indexed](https://en.wikipedia.org/wiki/Random_access), [bernoulli](https://en.wikipedia.org/wiki/Bernoulli_sampling), [systematic](https://en.wikipedia.org/wiki/Systematic_sampling), [stratified](https://en.wikipedia.org/wiki/Stratified_sampling), [weighted](https://doi.org/10.1016/j.ipl.2005.11.003) & [cluster sampling](https://en.wikipedia.org/wiki/Cluster_sampling). Supports sampling from CSVs on remote URLs.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sample.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sample.rs)** | <abbr title="uses an index when available.">📇</abbr><abbr title="has web-aware options.">🌐</abbr><abbr title="multithreaded and/or faster when an index (📇) is available.">🏎️</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sample.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sample.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🌐](TableOfContents.md#legend "has web-aware options.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sample Options](#sample-options) | [Sampling Methods Options](#sampling-methods-options) | [Time-series Sampling Options](#time-series-sampling-options) | [Common Options](#common-options)

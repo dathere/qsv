@@ -2,7 +2,7 @@
 
 > Provide input from the clipboard or save output to the clipboard.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/clipboard.rs](https://github.com/dathere/qsv/blob/master/src/cmd/clipboard.rs)** | <abbr title="part of the User Interface (UI) feature group">🖥️</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/clipboard.rs](https://github.com/dathere/qsv/blob/master/src/cmd/clipboard.rs)** | [🖥️](TableOfContents.md#legend "part of the User Interface (UI) feature group")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Clip Options](#clip-options) | [Common Options](#common-options)

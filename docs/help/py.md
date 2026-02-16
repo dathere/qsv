@@ -2,7 +2,7 @@
 
 > Create a new computed column or filter rows by evaluating a Python expression on every row of a CSV file. Python's [f-strings](https://www.freecodecamp.org/news/python-f-strings-tutorial-how-to-use-f-strings-for-string-formatting/) is particularly useful for extended formatting, [with the ability to evaluate Python expressions as well](https://github.com/dathere/qsv/blob/4cd00dca88addf0d287247fa27d40563b6d46985/src/cmd/python.rs#L23-L31). [Requires Python 3.8 or greater](https://github.com/dathere/qsv/blob/master/docs/INTERPRETERS.md#building-qsv-with-python-feature).
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/python.rs](https://github.com/dathere/qsv/blob/master/src/cmd/python.rs)** | <abbr title="uses an index when available.">📇</abbr><abbr title="requires UTF-8 encoded input.">🔣</abbr>
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/python.rs](https://github.com/dathere/qsv/blob/master/src/cmd/python.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Py Options](#py-options) | [Common Options](#common-options)

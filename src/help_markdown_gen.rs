@@ -236,13 +236,17 @@ fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
     legend
 }
 
-/// Wrap emoji markers in a string with `<abbr>` tooltip tags using the parsed legend.
-/// For unicode emojis: `<abbr title="description">emoji</abbr>`
-/// For image markdown `![name](path)`: `![name](path "description")`
+/// Wrap emoji markers in a string with tooltip links using the parsed legend.
+/// For unicode emojis: `[emoji](legend_link "description")`
+/// For image markdown `![name](path)`: `[![name](path)](legend_link "description")`
 ///
 /// Uses a two-pass approach with placeholders to avoid replacing emojis that appear
 /// inside already-inserted tooltip descriptions (e.g. 🏎️'s description mentions 📇).
-fn wrap_emojis_with_tooltips(markers: &str, legend: &[(String, String)]) -> String {
+fn wrap_emojis_with_tooltips(
+    markers: &str,
+    legend: &[(String, String)],
+    legend_link: &str,
+) -> String {
     let mut result = markers.to_string();
     // Regex to match image markdown: ![name](path)
     let img_re = regex_oncelock!(r"^!\[([^\]]*)\]\(([^)]*)\)$");
@@ -256,18 +260,18 @@ fn wrap_emojis_with_tooltips(markers: &str, legend: &[(String, String)]) -> Stri
         }
 
         let replacement = if img_re.is_match(key) {
-            // Image emoji: add title attribute to markdown image
-            // ![name](path) -> ![name](path "description")
+            // Image emoji: wrap with link for tooltip
+            // ![name](path) -> [![name](path)](legend_link "description")
             if let Some(caps) = img_re.captures(key) {
                 let name = &caps[1];
                 let path = &caps[2];
-                format!("![{name}]({path} \"{desc}\")")
+                format!("[![{name}]({path})]({legend_link} \"{desc}\")")
             } else {
                 continue;
             }
         } else {
-            // Unicode emoji: wrap with <abbr>
-            format!("<abbr title=\"{desc}\">{key}</abbr>")
+            // Unicode emoji: wrap with markdown link for tooltip
+            format!("[{key}]({legend_link} \"{desc}\")")
         };
 
         // Use a Private Use Area Unicode placeholder that won't appear in normal text
@@ -455,7 +459,7 @@ fn generate_command_markdown(
         // Rewrite image paths for the docs/help/ location
         let markers = cmd_info.emoji_markers.replace("docs/images/", "../images/");
         // Wrap emojis with hover tooltips
-        let markers = wrap_emojis_with_tooltips(&markers, legend);
+        let markers = wrap_emojis_with_tooltips(&markers, legend, "TableOfContents.md#legend");
         format!(" | {markers}")
     };
     let _ = write!(
@@ -1634,7 +1638,7 @@ fn generate_table_of_contents(
             // lives in docs/help/ and needs to reference docs/images/ as a sibling
             let markers = cmd.emoji_markers.replace("docs/images/", "../images/");
             // Wrap emojis with hover tooltips
-            let markers = wrap_emojis_with_tooltips(&markers, legend);
+            let markers = wrap_emojis_with_tooltips(&markers, legend, "#legend");
             format!("<br>{markers}")
         };
         let _ = writeln!(

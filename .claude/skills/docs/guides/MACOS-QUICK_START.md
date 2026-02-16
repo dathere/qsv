@@ -1,4 +1,4 @@
-# MacOS "Have we achieved Accelerated Civic Intelligence (ACI)?" Quick Start
+# "Have we achieved Accelerated Civic Intelligence (ACI)?" Quick Start
 
 This guide walks you through installing Claude Desktop and three powerful data MCP servers on your Mac:
 

@@ -135,24 +135,31 @@ fn clean_readme_description(description: &str) -> String {
     result = anchor_re2.replace_all(&result, "").to_string();
 
     // Rewrite relative URLs in markdown links to work from docs/help/
+    // Uses a regex that handles URLs with balanced parentheses (e.g. Wikipedia links).
     // [text](docs/foo) -> [text](../foo)  (go up from help/ to docs/)
+    // [text](/src/foo) -> [text](../../src/foo)  (strip leading / and go up to repo root)
     // [text](resources/foo) -> [text](../../resources/foo)  (go up to repo root)
-    // Absolute URLs (http/https) and anchors (#) are left unchanged.
-    let link_rewrite_re = regex_oncelock!(r"\]\(([^)]+)\)");
+    // [text](#anchor) -> [text](../../README.md#anchor)  (anchors reference README sections)
+    // Absolute URLs (http/https) and mailto links are left unchanged.
+    let link_rewrite_re = regex_oncelock!(r"\]\(([^()]*(?:\([^()]*\))*[^()]*)\)");
     result = link_rewrite_re
         .replace_all(&result, |caps: &regex::Captures| {
             let path = &caps[1];
-            // Skip absolute URLs, anchors, and mailto links
+            // Skip absolute URLs and mailto links
             if path.starts_with("http://")
                 || path.starts_with("https://")
-                || path.starts_with('#')
                 || path.starts_with("mailto:")
             {
                 caps[0].to_string()
+            } else if path.starts_with('#') {
+                // Anchor-only links reference README sections, not the current help page
+                format!("](../../README.md{path})")
             } else if let Some(rest) = path.strip_prefix("docs/") {
                 format!("](../{rest})")
             } else {
-                format!("](../../{path})")
+                // Strip leading slash to avoid double slashes (e.g. /src/cmd/foo.rs)
+                let clean_path = path.strip_prefix('/').unwrap_or(path);
+                format!("](../../{clean_path})")
             }
         })
         .to_string();
@@ -1487,6 +1494,8 @@ fn generate_table_of_contents(commands: &[CommandInfo], repo_root: &Path) -> Str
             };
             // Rewrite image paths for the docs/help/ location
             let cleaned = cleaned.replace("docs/images/", "../images/");
+            // Rewrite anchor-only links to point to README (these reference README sections)
+            let cleaned = cleaned.replace("](#", "](../../README.md#");
             md.push_str(&cleaned);
             // Preserve markdown line breaks (two trailing spaces + newline)
             md.push_str("  \n");

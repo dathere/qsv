@@ -1,6 +1,6 @@
 # safenames
 
-> Modify headers of a CSV to only have ["safe" names](../..//src/cmd/safenames.rs#L5-L14) - guaranteed "database-ready"/"CKAN-ready" names.
+> Modify headers of a CSV to only have ["safe" names](../../src/cmd/safenames.rs#L5-L14) - guaranteed "database-ready"/"CKAN-ready" names.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/safenames.rs](https://github.com/dathere/qsv/blob/master/src/cmd/safenames.rs)** | ![CKAN](../images/ckan.png)
 

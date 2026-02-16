@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Statistical analysis gets faster and more robust; User & Agent Experience (UAX) improvements keep the CLI parser, docs, shell completions, and MCP tool definitions in sync from a single source; and the qsv MCP Server gets leaner and smarter.
 
-With a [properly configured environment](https://dathere.com/2026/01/the-peoples-api-is-finally-here/), AI Agents and Users can team up for **_accelerated analysis_** of large, **real-world, messy data** — datasets, presentations, reports, spreadsheets, etc. — without uploading it all to the cloud or manually wrangling it into shape first.
+With a [properly configured environment](https://github.com/dathere/qsv/blob/master/.claude/skills/docs/guides/MACOS-QUICK_START.md), a User can team up with several AI Agents for **_accelerated analysis_** of large, **real-world, messy data** — raw datasets, presentations, reports, spreadsheets, etc. — without uploading it all to the cloud or manually wrangling it into shape first.  Analyzing in a few minutes, what would otherwise take a few days, if not a few weeks to compile.
 
 ---
 

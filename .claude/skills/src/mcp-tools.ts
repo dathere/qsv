@@ -1167,17 +1167,19 @@ export function isCsvLikeFile(filePath: string): boolean {
  * For non-CSV files (e.g., `.json`), appends `.parquet` (e.g., `test.json.parquet`).
  * Callers should gate on `isCsvLikeFile()` to avoid surprising double-extensions.
  */
+// CSV_LIKE_EXTENSIONS sorted by descending length so longer extensions
+// (e.g., ".csv.sz") are matched before shorter ones (e.g., ".csv").
+// Sorted once at module level to avoid re-sorting on every call.
+const ORDERED_CSV_EXTENSIONS = [...CSV_LIKE_EXTENSIONS].sort(
+  (a, b) => b.length - a.length,
+);
+
 export function getParquetPath(csvPath: string): string {
-  // Use shared CSV_LIKE_EXTENSIONS, sorted by descending length so longer extensions
-  // (e.g., ".csv.sz") are matched before shorter ones (e.g., ".csv")
-  const orderedExtensions = [...CSV_LIKE_EXTENSIONS].sort(
-    (a, b) => b.length - a.length,
-  );
   // Match against lowercased basename to avoid false matches on directory names
   // (e.g., /data/csv_files/test.json). Slicing from original csvPath is safe because
   // ext and the actual extension have the same length regardless of case.
   const base = basename(csvPath).toLowerCase();
-  for (const ext of orderedExtensions) {
+  for (const ext of ORDERED_CSV_EXTENSIONS) {
     if (base.endsWith(ext)) {
       return csvPath.slice(0, -ext.length) + ".parquet";
     }

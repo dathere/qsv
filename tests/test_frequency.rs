@@ -1278,21 +1278,21 @@ fields[1]:
     sparsity: 0
     uniqueness_ratio: 0.5714
     stats[10]{name,value}:
-    min,Y
-    max,z
-    sort_order,Unsorted
-    min_length,1
-    max_length,1
-    sum_length,7
-    avg_length,1
-    stddev_length,0
-    variance_length,0
-    cv_length,0
+      min,Y
+      max,z
+      sort_order,Unsorted
+      min_length,1
+      max_length,1
+      sum_length,7
+      avg_length,1
+      stddev_length,0
+      variance_length,0
+      cv_length,0
     frequencies[4]{value,count,percentage,rank}:
-    z,3,42.85714,1
-    y,2,28.57143,2
-    Y,1,14.28571,3
-    x,1,14.28571,3
+      z,3,42.85714,1
+      y,2,28.57143,2
+      Y,1,14.28571,3
+      x,1,14.28571,3
 rank_strategy: dense"#
         .to_string();
     assert_eq!(got, expected);
@@ -1320,11 +1320,11 @@ fields[1]:
     sparsity: 0
     uniqueness_ratio: 0.625
     frequencies[5]{value,count,percentage,rank}:
-    a,4,50,1
-    b,1,12.5,2
-    h1,1,12.5,2
-    (NULL),1,12.5,2
-    (NULL),1,12.5,2
+      a,4,50,1
+      b,1,12.5,2
+      h1,1,12.5,2
+      (NULL),1,12.5,2
+      (NULL),1,12.5,2
 rank_strategy: dense"#
         .to_string();
     assert_eq!(got, expected);
@@ -1350,20 +1350,20 @@ fields[1]:
     sparsity: 0
     uniqueness_ratio: 0.4286
     stats[10]{name,value}:
-    min,Y
-    max,z
-    sort_order,Unsorted
-    min_length,1
-    max_length,1
-    sum_length,7
-    avg_length,1
-    stddev_length,0
-    variance_length,0
-    cv_length,0
+      min,Y
+      max,z
+      sort_order,Unsorted
+      min_length,1
+      max_length,1
+      sum_length,7
+      avg_length,1
+      stddev_length,0
+      variance_length,0
+      cv_length,0
     frequencies[3]{value,count,percentage,rank}:
-    y,3,42.85714,1
-    z,3,42.85714,1
-    x,1,14.28571,2
+      y,3,42.85714,1
+      z,3,42.85714,1
+      x,1,14.28571,2
 rank_strategy: dense"#
         .to_string();
     assert_eq!(got, expected);
@@ -1386,19 +1386,19 @@ fields[2]:
     sparsity: 0.1429
     uniqueness_ratio: 0.5714
     stats[10]{name,value}:
-    min,(NULL)
-    max,b
-    sort_order,Unsorted
-    min_length,0
-    max_length,6
-    sum_length,11
-    avg_length,1.5714
-    stddev_length,1.8406
-    variance_length,3.3878
-    cv_length,1.1713
+      min,(NULL)
+      max,b
+      sort_order,Unsorted
+      min_length,0
+      max_length,6
+      sum_length,11
+      avg_length,1.5714
+      stddev_length,1.8406
+      variance_length,3.3878
+      cv_length,1.1713
     frequencies[2]{value,count,percentage,rank}:
-    a,4,57.14286,1
-    Other (3),3,42.85714,0
+      a,4,57.14286,1
+      Other (3),3,42.85714,0
   - field: h2
     type: String
     cardinality: 4
@@ -1406,19 +1406,19 @@ fields[2]:
     sparsity: 0
     uniqueness_ratio: 0.5714
     stats[10]{name,value}:
-    min,Y
-    max,z
-    sort_order,Unsorted
-    min_length,1
-    max_length,1
-    sum_length,7
-    avg_length,1
-    stddev_length,0
-    variance_length,0
-    cv_length,0
+      min,Y
+      max,z
+      sort_order,Unsorted
+      min_length,1
+      max_length,1
+      sum_length,7
+      avg_length,1
+      stddev_length,0
+      variance_length,0
+      cv_length,0
     frequencies[2]{value,count,percentage,rank}:
-    z,3,42.85714,1
-    Other (3),4,57.14286,0
+      z,3,42.85714,1
+      Other (3),4,57.14286,0
 rank_strategy: dense"#
         .to_string();
     assert_eq!(got, expected);
@@ -1444,18 +1444,18 @@ fields[1]:
     sparsity: 0
     uniqueness_ratio: 1
     stats[10]{name,value}:
-    sum,10100411645180
-    min,101004113298
-    max,101004155594
-    range,42296
-    sort_order,Unsorted
-    mean,101004116451.8
-    sem,790.552
-    stddev,7905.5202
-    variance,62497248.9352
-    cv,0
+      sum,10100411645180
+      min,101004113298
+      max,101004155594
+      range,42296
+      sort_order,Unsorted
+      mean,101004116451.8
+      sem,790.552
+      stddev,7905.5202
+      variance,62497248.9352
+      cv,0
     frequencies[1]{value,count,percentage,rank}:
-    <ALL_UNIQUE>,100,100,0
+      <ALL_UNIQUE>,100,100,0
 rank_strategy: dense"#;
     assert!(got.ends_with(expected));
 }

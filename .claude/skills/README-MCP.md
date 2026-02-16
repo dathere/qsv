@@ -25,6 +25,11 @@ The MCP server works with all tabular data formats supported by qsv:
 - **OpenDocument**: `.ods` → converted via `qsv excel`
 - **JSONL/NDJSON**: `.jsonl`, `.ndjson` → converted via `qsv jsonl`
 
+**Parquet support** (via sqlp/DuckDB):
+- **Parquet**: `.parquet`, `.pq` → queryable via `qsv_sqlp` with `read_parquet()`
+- **CSV → Parquet**: Use `qsv_to_parquet` (core tool) for optimized SQL queries on large files
+- Parquet files work ONLY with `sqlp` and DuckDB — all other qsv commands require CSV/TSV/SSV input
+
 Excel and JSONL files are automatically converted to CSV before processing - no extra steps needed!
 
 ## Installation
@@ -332,18 +337,16 @@ Parameters:
 Result: Statistics (mean, median, min, max, etc.)
 ```
 
-### Example 3: Using Generic Tool
+### Example 3: Converting to Parquet
 
 ```
 User: "Convert data.csv to Parquet format"
 
-Claude calls: qsv_command
+Claude calls: qsv_to_parquet
 Parameters:
-  command: "to"
   input_file: "data.csv"
-  args: { output: "data.parquet" }
 
-Result: Parquet file created
+Result: Parquet file created with optimized data types (data.parquet)
 ```
 
 ## Architecture

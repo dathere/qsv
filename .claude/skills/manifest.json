@@ -141,16 +141,16 @@
     "duckdb_path": {
       "type": "file",
       "title": "DuckDB Binary Path",
-      "description": "Full path to DuckDB executable. Leave empty to auto-detect from PATH. When available, SQL queries route through DuckDB for better PostgreSQL compatibility and performance. Install from: https://duckdb.org/docs/installation",
+      "description": "Full path to DuckDB executable. Leave empty to auto-detect from PATH (empty values are treated as 'not set'). When available and 'Use DuckDB' is enabled, SQL queries route through DuckDB for better PostgreSQL compatibility and performance. Install from: https://duckdb.org/docs/installation",
       "required": false,
       "default": ""
     },
     "use_duckdb": {
       "type": "boolean",
       "title": "Use DuckDB for SQL Queries",
-      "description": "When enabled, SQL queries are automatically routed through DuckDB when available (faster, PostgreSQL-compatible). Disable to always use Polars SQL (sqlp).",
+      "description": "When enabled, SQL queries are automatically routed through DuckDB when available (faster, PostgreSQL-compatible). If DuckDB is not installed, queries automatically fall back to Polars SQL (sqlp). Disable to always use sqlp.",
       "required": false,
-      "default": true
+      "default": false
     }
   },
   "tools": [

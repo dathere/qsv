@@ -2,7 +2,7 @@
 
 > Compute pragmatic statistics using the [Pragmastat](https://pragmastat.dev/) library.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pragmastat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pragmastat.rs)** | 🤯
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pragmastat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pragmastat.rs)** | <abbr title="loads entire CSV into memory, though `dedup`, `stats` & `transpose` have &quot;streaming&quot; modes as well.">🤯</abbr>
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Pragmastat Options](#pragmastat-options) | [Common Options](#common-options)

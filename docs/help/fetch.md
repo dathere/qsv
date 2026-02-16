@@ -2,7 +2,7 @@
 
 > Send/Fetch data to/from web services for every row using **HTTP Get**. Comes with [HTTP/2](https://http2-explained.haxx.se/en/part1) [adaptive flow control](https://medium.com/coderscorner/http-2-flow-control-77e54f7fd518), [jaq](https://github.com/01mf02/jaq?tab=readme-ov-file#jaq) JSON query language support, dynamic throttling ([RateLimit](https://www.ietf.org/archive/id/draft-ietf-httpapi-ratelimit-headers-06.html)) & caching with available persistent caching using [Redis](https://redis.io/) or a disk-cache.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetch.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetch.rs)** | 📇🧠🌐
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetch.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetch.rs)** | <abbr title="uses an index when available.">📇</abbr><abbr title="expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.">🧠</abbr><abbr title="has web-aware options.">🌐</abbr>
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Fetch Options](#fetch-options) | [Caching Options](#caching-options) | [Common Options](#common-options)

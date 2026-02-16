@@ -2,7 +2,7 @@
 
 > Does streaming compression/decompression of the input using Google's [Snappy](https://github.com/google/snappy/blob/main/docs/README.md) framing format ([more info](../../README.md#automatic-compressiondecompression)).
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/snappy.rs](https://github.com/dathere/qsv/blob/master/src/cmd/snappy.rs)** | 🚀🌐
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/snappy.rs](https://github.com/dathere/qsv/blob/master/src/cmd/snappy.rs)** | <abbr title="multithreaded even without an index.">🚀</abbr><abbr title="has web-aware options.">🌐</abbr>
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Snappy Options](#snappy-options) | [Common Options](#common-options)

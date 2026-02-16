@@ -2,7 +2,7 @@
 
 > Partition a CSV based on a column value.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/partition.rs](https://github.com/dathere/qsv/blob/master/src/cmd/partition.rs)** | 👆
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/partition.rs](https://github.com/dathere/qsv/blob/master/src/cmd/partition.rs)** | <abbr title="has powerful column selector support. See `select` for syntax.">👆</abbr>
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Partition Options](#partition-options) | [Common Options](#common-options)

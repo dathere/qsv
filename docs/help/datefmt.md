@@ -2,7 +2,7 @@
 
 > Formats recognized date fields ([19 formats recognized](https://docs.rs/qsv-dateparser/latest/qsv_dateparser/#accepted-date-formats)) to a specified date format using [strftime date format specifiers](https://docs.rs/chrono/latest/chrono/format/strftime/).
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/datefmt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/datefmt.rs)** | 📇🚀👆
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/datefmt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/datefmt.rs)** | <abbr title="uses an index when available.">📇</abbr><abbr title="multithreaded even without an index.">🚀</abbr><abbr title="has powerful column selector support. See `select` for syntax.">👆</abbr>
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Datefmt Options](#datefmt-options) | [Common Options](#common-options)

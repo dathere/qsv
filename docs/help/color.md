@@ -2,7 +2,7 @@
 
 > Outputs tabular data as a pretty, colorized table that always fits into the terminal. Apart from CSV and its dialects, Arrow, Avro/IPC, Parquet, JSON array & JSONL formats are supported with the "polars" feature.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/color.rs](https://github.com/dathere/qsv/blob/master/src/cmd/color.rs)** | 🐻‍❄️🖥️
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/color.rs](https://github.com/dathere/qsv/blob/master/src/cmd/color.rs)** | <abbr title="command powered/accelerated by  vectorized query engine.">🐻‍❄️</abbr><abbr title="part of the User Interface (UI) feature group">🖥️</abbr>
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Color Options](#color-options) | [Common Options](#common-options)

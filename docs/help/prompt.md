@@ -2,7 +2,7 @@
 
 > Open a file dialog to either pick a file as input or save output to a file.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/prompt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/prompt.rs)** | 🐻‍❄️🖥️
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/prompt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/prompt.rs)** | <abbr title="command powered/accelerated by  vectorized query engine.">🐻‍❄️</abbr><abbr title="part of the User Interface (UI) feature group">🖥️</abbr>
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Prompt Options](#prompt-options) | [Common Options](#common-options)

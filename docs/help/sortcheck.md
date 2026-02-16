@@ -2,7 +2,7 @@
 
 > Check if a CSV is sorted. With the --json options, also retrieve record count, sort breaks & duplicate count.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sortcheck.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sortcheck.rs)** | 📇👆
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sortcheck.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sortcheck.rs)** | <abbr title="uses an index when available.">📇</abbr><abbr title="has powerful column selector support. See `select` for syntax.">👆</abbr>
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Sort Options](#sort-options) | [Common Options](#common-options)

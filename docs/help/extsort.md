@@ -2,7 +2,7 @@
 
 > Sort an arbitrarily large CSV/text file using a multithreaded [external merge sort](https://en.wikipedia.org/wiki/External_sorting) algorithm.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/extsort.rs](https://github.com/dathere/qsv/blob/master/src/cmd/extsort.rs)** | 🚀📇👆
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/extsort.rs](https://github.com/dathere/qsv/blob/master/src/cmd/extsort.rs)** | <abbr title="multithreaded even without an index.">🚀</abbr><abbr title="uses an index when available.">📇</abbr><abbr title="has powerful column selector support. See `select` for syntax.">👆</abbr>
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [External Sort Option](#external-sort-option) | [CSV Mode Only Options](#csv-mode-only-options)

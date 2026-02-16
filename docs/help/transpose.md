@@ -2,7 +2,7 @@
 
 > Transpose rows/columns of a CSV.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/transpose.rs](https://github.com/dathere/qsv/blob/master/src/cmd/transpose.rs)** | 🤯👆
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/transpose.rs](https://github.com/dathere/qsv/blob/master/src/cmd/transpose.rs)** | <abbr title="loads entire CSV into memory, though `dedup`, `stats` & `transpose` have &quot;streaming&quot; modes as well.">🤯</abbr><abbr title="has powerful column selector support. See `select` for syntax.">👆</abbr>
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Transpose Options](#transpose-options) | [Common Options](#common-options)

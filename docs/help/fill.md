@@ -2,7 +2,7 @@
 
 > Fill empty values.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fill.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fill.rs)** | 👆
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fill.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fill.rs)** | <abbr title="has powerful column selector support. See `select` for syntax.">👆</abbr>
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Fill Options](#fill-options) | [Common Options](#common-options)

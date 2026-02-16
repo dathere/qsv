@@ -2,7 +2,7 @@
 
 > Run a regex over a CSV. Applies the regex to selected fields & shows only matching rows.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/search.rs](https://github.com/dathere/qsv/blob/master/src/cmd/search.rs)** | 📇🏎️👆
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/search.rs](https://github.com/dathere/qsv/blob/master/src/cmd/search.rs)** | <abbr title="uses an index when available.">📇</abbr><abbr title="multithreaded and/or faster when an index (📇) is available.">🏎️</abbr><abbr title="has powerful column selector support. See `select` for syntax.">👆</abbr>
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Search Options](#search-options) | [Common Options](#common-options)

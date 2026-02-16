@@ -105,6 +105,156 @@ fn extract_emoji_section(line: &str) -> String {
     String::new()
 }
 
+/// Parse the legend section from README.md into a vec of (emoji_key, description) pairs.
+/// Returns pairs sorted by key length descending for longest-match-first replacement.
+fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
+    let mut legend = Vec::new();
+    let Some(start) = readme_content.find("<a name=\"legend_deeplink\">") else {
+        return legend;
+    };
+
+    let legend_text = &readme_content[start..];
+    // Regex to strip markdown links: [text](url) -> text
+    let link_re = regex_oncelock!(r"\[([^\]]*)\]\([^)]*\)");
+    // Regex to strip HTML tags
+    let html_re = regex_oncelock!(r"<[^>]+>");
+    // Regex to strip markdown image badges: [![alt](img)](url) -> empty
+    let badge_re = regex_oncelock!(r"\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)");
+    // Regex to strip incomplete/partial badge fragments (e.g. from multi-line badges)
+    let partial_badge_re = regex_oncelock!(r"\[!\[[^\]]*\]\([^)]*$");
+
+    // First, join continuation lines. A legend entry starts with an emoji or ![
+    // at the beginning. Lines that don't start that way are continuations.
+    let mut joined_lines: Vec<String> = Vec::new();
+    for line in legend_text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            break;
+        }
+        // Check if this line starts a new entry (emoji char, ![, or <a tag)
+        let first_char = trimmed.chars().next().unwrap_or(' ');
+        let is_new_entry =
+            trimmed.starts_with("<a ") || trimmed.starts_with("![") || !first_char.is_ascii();
+        if is_new_entry || joined_lines.is_empty() {
+            joined_lines.push(trimmed.to_string());
+        } else if let Some(last) = joined_lines.last_mut() {
+            // Continuation line — append to previous
+            last.push(' ');
+            last.push_str(trimmed);
+        }
+    }
+
+    for joined_line in &joined_lines {
+        // Strip HTML anchor tags first
+        let cleaned = if let Some(close_pos) = joined_line.find("</a>") {
+            let before_close = &joined_line[..close_pos];
+            let after_close = &joined_line[close_pos + 4..];
+            if let Some(open_end) = before_close.rfind('>') {
+                let inner = &before_close[open_end + 1..];
+                format!("{inner}{after_close}")
+            } else {
+                after_close.to_string()
+            }
+        } else {
+            joined_line.to_string()
+        };
+
+        let cleaned = cleaned.trim().to_string();
+        if cleaned.is_empty() {
+            continue;
+        }
+
+        // Split on first ": " to get key and description
+        let (key, desc) = if let Some(pos) = cleaned.find(": ") {
+            // Check if there's a space before the colon (image emoji style like `![X](y) :`)
+            let before_colon = &cleaned[..pos];
+            let after_colon = &cleaned[pos + 2..];
+            if before_colon.ends_with(' ') {
+                (before_colon.trim_end().to_string(), after_colon.to_string())
+            } else {
+                (before_colon.to_string(), after_colon.to_string())
+            }
+        } else {
+            continue;
+        };
+
+        if key.is_empty() || desc.is_empty() {
+            continue;
+        }
+
+        // Rewrite image paths in key to match the rewritten paths in markers
+        // (markers have docs/images/ -> ../images/ applied before tooltip wrapping)
+        let key = key.replace("docs/images/", "../images/");
+
+        // Clean description for tooltip: strip badges, partial badges, markdown links, HTML
+        let clean_desc = badge_re.replace_all(&desc, "").to_string();
+        let clean_desc = partial_badge_re.replace_all(&clean_desc, "").to_string();
+        let clean_desc = link_re.replace_all(&clean_desc, "$1").to_string();
+        let clean_desc = html_re.replace_all(&clean_desc, "").to_string();
+        // Escape double quotes for HTML title attribute
+        let clean_desc = clean_desc.replace('"', "&quot;");
+        let clean_desc = clean_desc.trim().to_string();
+
+        if !clean_desc.is_empty() {
+            legend.push((key, clean_desc));
+        }
+    }
+
+    // Sort by key length descending for longest-match-first replacement
+    legend.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    legend
+}
+
+/// Wrap emoji markers in a string with `<abbr>` tooltip tags using the parsed legend.
+/// For unicode emojis: `<abbr title="description">emoji</abbr>`
+/// For image markdown `![name](path)`: `![name](path "description")`
+///
+/// Uses a two-pass approach with placeholders to avoid replacing emojis that appear
+/// inside already-inserted tooltip descriptions (e.g. 🏎️'s description mentions 📇).
+fn wrap_emojis_with_tooltips(markers: &str, legend: &[(String, String)]) -> String {
+    let mut result = markers.to_string();
+    // Regex to match image markdown: ![name](path)
+    let img_re = regex_oncelock!(r"^!\[([^\]]*)\]\(([^)]*)\)$");
+
+    // Pass 1: Replace each emoji key with a unique placeholder, collecting replacements
+    let mut replacements: Vec<String> = Vec::new();
+
+    for (key, desc) in legend {
+        if !result.contains(key.as_str()) {
+            continue;
+        }
+
+        let replacement = if img_re.is_match(key) {
+            // Image emoji: add title attribute to markdown image
+            // ![name](path) -> ![name](path "description")
+            if let Some(caps) = img_re.captures(key) {
+                let name = &caps[1];
+                let path = &caps[2];
+                format!("![{name}]({path} \"{desc}\")")
+            } else {
+                continue;
+            }
+        } else {
+            // Unicode emoji: wrap with <abbr>
+            format!("<abbr title=\"{desc}\">{key}</abbr>")
+        };
+
+        // Use a placeholder that won't appear in normal text
+        let idx = replacements.len();
+        let placeholder = format!("\x00EMOJI{idx}\x00");
+        replacements.push(replacement);
+        result = result.replace(key.as_str(), &placeholder);
+    }
+
+    // Pass 2: Replace all placeholders with their actual values
+    for (idx, replacement) in replacements.iter().enumerate() {
+        let placeholder = format!("\x00EMOJI{idx}\x00");
+        result = result.replace(&placeholder, replacement);
+    }
+
+    result
+}
+
 /// Extract description from the second column of a README table line
 fn extract_description_from_line(line: &str) -> String {
     // Handle escaped pipes
@@ -252,6 +402,7 @@ fn generate_command_markdown(
     usage_text: &str,
     cmd_info: &CommandInfo,
     _repo_root: &Path,
+    legend: &[(String, String)],
 ) -> String {
     let mut md = String::with_capacity(4096);
 
@@ -272,6 +423,8 @@ fn generate_command_markdown(
     } else {
         // Rewrite image paths for the docs/help/ location
         let markers = cmd_info.emoji_markers.replace("docs/images/", "../images/");
+        // Wrap emojis with hover tooltips
+        let markers = wrap_emojis_with_tooltips(&markers, legend);
         format!(" | {markers}")
     };
     let _ = write!(
@@ -1426,7 +1579,11 @@ fn format_option_group_title(group_name: &str, _command_name: &str) -> String {
 }
 
 /// Generate the Table of Contents markdown file
-fn generate_table_of_contents(commands: &[CommandInfo], repo_root: &Path) -> String {
+fn generate_table_of_contents(
+    commands: &[CommandInfo],
+    repo_root: &Path,
+    legend: &[(String, String)],
+) -> String {
     let readme_path = repo_root.join("README.md");
     let readme_content = fs::read_to_string(&readme_path).unwrap_or_default();
 
@@ -1448,6 +1605,8 @@ fn generate_table_of_contents(commands: &[CommandInfo], repo_root: &Path) -> Str
             // Rewrite image paths from docs/images/ to ../images/ since the ToC
             // lives in docs/help/ and needs to reference docs/images/ as a sibling
             let markers = cmd.emoji_markers.replace("docs/images/", "../images/");
+            // Wrap emojis with hover tooltips
+            let markers = wrap_emojis_with_tooltips(&markers, legend);
             format!("<br>{markers}")
         };
         let _ = writeln!(
@@ -1576,6 +1735,11 @@ pub fn generate_help_markdown() -> CliResult<()> {
     let commands = extract_commands_from_readme(&repo_root)
         .map_err(|e| format!("Failed to extract commands from README: {e}"))?;
 
+    // Parse emoji legend from README for hover tooltips
+    let readme_path = repo_root.join("README.md");
+    let readme_content = fs::read_to_string(&readme_path).unwrap_or_default();
+    let legend = parse_legend(&readme_content);
+
     // Create output directory
     let output_dir = repo_root.join("docs/help");
     fs::create_dir_all(&output_dir)?;
@@ -1611,7 +1775,7 @@ pub fn generate_help_markdown() -> CliResult<()> {
         };
 
         // Generate markdown
-        let markdown = generate_command_markdown(&usage_text, cmd_info, &repo_root);
+        let markdown = generate_command_markdown(&usage_text, cmd_info, &repo_root, &legend);
 
         // Write help file
         let output_file = output_dir.join(format!("{}.md", cmd_info.invocation_name));
@@ -1634,7 +1798,7 @@ pub fn generate_help_markdown() -> CliResult<()> {
     }
 
     // Generate Table of Contents and update README only when all commands succeeded
-    let toc = generate_table_of_contents(&commands, &repo_root);
+    let toc = generate_table_of_contents(&commands, &repo_root, &legend);
     let toc_file = output_dir.join("TableOfContents.md");
     fs::write(&toc_file, &toc)?;
     eprintln!("✅ Generated: {}", toc_file.display());

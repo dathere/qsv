@@ -2,7 +2,7 @@
 
 > Align output of a CSV using [elastic tabstops](https://github.com/BurntSushi/tabwriter) for viewing; or to create an "aligned TSV" file or Fixed Width Format file. To interactively view a CSV, use the `lens` command.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/table.rs](https://github.com/dathere/qsv/blob/master/src/cmd/table.rs)** | 🤯
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/table.rs](https://github.com/dathere/qsv/blob/master/src/cmd/table.rs)** | <abbr title="loads entire CSV into memory, though `dedup`, `stats` & `transpose` have &quot;streaming&quot; modes as well.">🤯</abbr>
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Table Options](#table-options) | [Common Options](#common-options)

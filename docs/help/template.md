@@ -2,7 +2,7 @@
 
 > Renders a template using CSV data with the [Mini Jinja](https://docs.rs/minijinja/latest/minijinja/) template engine ([Example](https://github.com/dathere/qsv/blob/4645ec07b5befe3b0c0e49bf0f547315d0d7514b/src/cmd/template.rs#L18-L44)).
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/template.rs](https://github.com/dathere/qsv/blob/master/src/cmd/template.rs)** | 📇🚀🔣📚⛩️![CKAN](../images/ckan.png)
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/template.rs](https://github.com/dathere/qsv/blob/master/src/cmd/template.rs)** | <abbr title="uses an index when available.">📇</abbr><abbr title="multithreaded even without an index.">🚀</abbr><abbr title="requires UTF-8 encoded input.">🔣</abbr><abbr title="has lookup table support, enabling runtime &quot;lookups&quot; against local or remote reference CSVs.">📚</abbr><abbr title="uses Mini Jinja template engine.">⛩️</abbr>![CKAN](../images/ckan.png "has CKAN-aware integration options.")
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Template Options](#template-options) | [Common Options](#common-options)

@@ -1975,10 +1975,9 @@ mod tests {
 
     #[test]
     fn test_parse_legend_bare_angle_brackets() {
-        // Verify handling of bare < and > that aren't part of HTML tags.
-        // The html_re regex only strips full HTML tags like <tag>, not bare chars
-        // in text like "a < b". Since descriptions are inside quoted markdown titles,
-        // bare angle brackets are safe and should pass through.
+        // When bare < and > pair up like "< b and c >", the html_re regex
+        // treats it as a tag and strips it. This documents that current behavior.
+        // In practice, legend descriptions don't contain bare angle brackets.
         let readme = r#"<a name="legend_deeplink"></a>
 🔣: Values where a < b and c > d
 
@@ -1987,13 +1986,46 @@ mod tests {
         let legend = parse_legend(readme);
         assert_eq!(legend.len(), 1);
         let (_key, desc) = &legend[0];
-        // "a < b and c > d" — the html_re would strip "<" only if it looks like
-        // a tag (i.e. <...>). Here "< b and c >" looks like a tag to the regex,
-        // so it gets stripped. This documents the current behavior.
-        // In practice, legend descriptions don't contain bare angle brackets.
+        // "< b and c >" matches html_re's <[^>]+> pattern, so it gets stripped,
+        // leaving "Values where a  d"
         assert!(
-            !desc.is_empty(),
-            "Description should not be empty after processing"
+            desc.contains("Values where a"),
+            "Text before the pseudo-tag should be preserved, got: {desc}"
+        );
+        assert!(
+            !desc.contains("< b"),
+            "Pseudo-tag '< b and c >' should be stripped by html_re, got: {desc}"
+        );
+        assert!(
+            desc.contains("d"),
+            "Text after the pseudo-tag should be preserved, got: {desc}"
+        );
+    }
+
+    #[test]
+    fn test_parse_legend_unpaired_angle_brackets() {
+        // Truly unpaired angle brackets (e.g., "Values < 5" or "a > b") don't
+        // match html_re's <[^>]+> pattern because they don't pair up, so they
+        // pass through intact. This is distinct from the paired case above.
+        let readme = r#"<a name="legend_deeplink"></a>
+🔣: Values < 5 are small
+📊: Scores > 90 are great
+
+## Next Section
+"#;
+        let legend = parse_legend(readme);
+        assert_eq!(legend.len(), 2);
+
+        let (_key, desc) = &legend[0];
+        assert!(
+            desc.contains("Values < 5 are small"),
+            "Unpaired '<' should pass through, got: {desc}"
+        );
+
+        let (_key, desc) = &legend[1];
+        assert!(
+            desc.contains("Scores > 90 are great"),
+            "Unpaired '>' should pass through, got: {desc}"
         );
     }
 }

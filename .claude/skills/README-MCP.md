@@ -471,9 +471,16 @@ Press Ctrl+C to stop.
 │   ├── mcp-server.ts         # Main MCP server
 │   ├── mcp-tools.ts          # Tool definitions with guidance
 │   ├── mcp-filesystem.ts     # Filesystem resource provider
-│   ├── types.ts              # Type definitions
+│   ├── bm25-search.ts        # BM25 search index for tool discovery
+│   ├── config.ts             # Configuration and validation
+│   ├── converted-file-manager.ts  # LIFO cache for converted files
+│   ├── executor.ts           # Skill executor
 │   ├── loader.ts             # Skill loader
-│   └── executor.ts           # Skill executor
+│   ├── update-checker.ts     # Version detection and skill regeneration
+│   ├── types.ts              # Type definitions
+│   ├── utils.ts              # Utility functions
+│   ├── version.ts            # Version management
+│   └── index.ts              # Module exports
 ├── scripts/
 │   ├── install-mcp.js        # Installation helper
 │   └── package-mcpb.js       # MCPB packaging script

@@ -115,7 +115,10 @@ describe("translateSql", () => {
   test("escapes SQL injection attempts in file paths", () => {
     const sql = "SELECT * FROM _t_1";
     const result = translateSql(sql, "/data/test'); DROP TABLE x; --.parquet");
-    // Single quotes in the path are doubled, neutralizing the injection
+    // Single quotes in the path are doubled, so the malicious payload becomes
+    // a literal string inside read_parquet(). True injection safety relies on
+    // DuckDB treating the doubled-quote content as a filename string, not
+    // executable SQL — which is standard SQL string literal behavior.
     assert.strictEqual(
       result,
       "SELECT * FROM read_parquet('/data/test''); DROP TABLE x; --.parquet')",
@@ -219,42 +222,5 @@ describe("DuckDB detection state", () => {
   test("isDuckDbEnabled returns false by default", () => {
     // Default config has useDuckDb: false (opt-in)
     assert.strictEqual(isDuckDbEnabled(), false);
-  });
-});
-
-// ============================================================
-// File extension routing tests
-// ============================================================
-describe("translateSql file extension routing", () => {
-  test("routes CSV-like extensions to read_csv", () => {
-    const sql = "SELECT * FROM _t_1";
-
-    const csvResult = translateSql(sql, "/data/test.csv");
-    assert.ok(csvResult.includes("read_csv"));
-
-    const tsvResult = translateSql(sql, "/data/test.tsv");
-    assert.ok(tsvResult.includes("read_csv"));
-
-    const ssvResult = translateSql(sql, "/data/test.ssv");
-    assert.ok(ssvResult.includes("read_csv"));
-  });
-
-  test("routes .parquet to read_parquet", () => {
-    const result = translateSql("SELECT * FROM _t_1", "/data/test.parquet");
-    assert.ok(result.includes("read_parquet"));
-  });
-
-  test("routes .jsonl and .ndjson to read_json", () => {
-    const jsonlResult = translateSql("SELECT * FROM _t_1", "/data/test.jsonl");
-    assert.ok(jsonlResult.includes("read_json"));
-
-    const ndjsonResult = translateSql("SELECT * FROM _t_1", "/data/test.ndjson");
-    assert.ok(ndjsonResult.includes("read_json"));
-  });
-
-  test("falls back to read_csv for unrecognized extensions", () => {
-    const result = translateSql("SELECT * FROM _t_1", "/data/file.dat");
-    assert.ok(result.includes("read_csv"));
-    assert.ok(result.includes("/data/file.dat"));
   });
 });

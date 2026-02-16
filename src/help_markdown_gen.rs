@@ -1498,7 +1498,9 @@ fn generate_table_of_contents(commands: &[CommandInfo], repo_root: &Path) -> Str
             // Uses a regex to only match anchor-only links like [text](#section),
             // not full URLs that happen to contain anchors like [text](https://example.com#frag).
             let anchor_only_re = regex_oncelock!(r"\]\(#");
-            let cleaned = anchor_only_re.replace_all(&cleaned, "](../../README.md#").to_string();
+            let cleaned = anchor_only_re
+                .replace_all(&cleaned, "](../../README.md#")
+                .to_string();
             md.push_str(&cleaned);
             // Preserve markdown line breaks (two trailing spaces + newline)
             md.push_str("  \n");

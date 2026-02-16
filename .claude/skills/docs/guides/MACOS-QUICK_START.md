@@ -1,8 +1,14 @@
-# Quick Start: Setting Up Claude Desktop with Data MCP Servers on macOS
+# MacOS "Have we achieved Accelerated Civic Intelligence (ACI)?" Quick Start
 
-This guide walks you through installing Claude Desktop and three powerful data MCP servers on your Mac. When you're done, Claude will be able to work with your local CSV and Excel files, run SQL queries, and pull US Census data — all from a single chat window.
+This guide walks you through installing Claude Desktop and three powerful data MCP servers on your Mac:
 
-This will allow you to recreate the scenarios described in the ["Have we achieved AGI?"](https://dathere.com/2026/01/the-peoples-api-is-finally-here/) blog post series.
+1. **qsv MCP Server** — Slice, dice and run Polars SQL queries on local CSV, Excel, JSONL and Parquet files with qsv's full command set
+2. **US Census Bureau MCP Server** — Access US Census data (population, demographics, economics) via a local Docker container
+3. **Wikidata MCP Server** — Query the Wikidata knowledge graph
+
+When you're done, Claude will be able to work with your local data files, run SQL queries, pull US Census data, and look up Wikidata information — all from a single Claude Chat or Cowork window.
+
+This will allow you to recreate the scenarios described in the ["Have we achieved ACI?"](https://dathere.com/2026/01/the-peoples-api-is-finally-here/) blog post series.
 
 **No programming experience required.** Just follow the steps in order.
 
@@ -12,15 +18,14 @@ This will allow you to recreate the scenarios described in the ["Have we achieve
 
 1. [What You'll Need](#1-what-youll-need)
 2. [Install Homebrew](#2-install-homebrew)
-3. [Install DuckDB CLI](#3-install-duckdb-cli)
-4. [Install the qsv Binary](#4-install-the-qsv-binary)
-5. [Install the qsv MCP Server](#5-install-the-qsv-mcp-server-mcpb-bundle)
-6. [Install the MotherDuck MCP Server](#6-install-the-motherduck-mcp-server-in-memory-duckdb)
-7. [Install the US Census Bureau MCP Server](#7-install-the-us-census-bureau-mcp-server)
-8. [Editing the Claude Desktop Config File](#8-editing-the-claude-desktop-config-file)
-9. [Claude Pro and Cowork](#9-claude-pro-and-cowork)
-10. [Troubleshooting](#10-troubleshooting)
-11. [What's Next](#11-whats-next)
+3. [Install the qsv Binary](#3-install-the-qsv-binary)
+4. [Install the qsv MCP Server](#4-install-the-qsv-mcp-server-mcpb-bundle)
+5. [Install the US Census Bureau MCP Server](#5-install-the-us-census-bureau-mcp-server)
+6. [Install the Wikidata MCP Server](#6-install-the-wikidata-mcp-server)
+7. [Editing the Claude Desktop Config File](#7-editing-the-claude-desktop-config-file)
+8. [Claude Pro and Cowork](#8-claude-pro-and-cowork)
+9. [Troubleshooting](#9-troubleshooting)
+10. [What's Next](#10-whats-next)
 
 ---
 
@@ -42,7 +47,7 @@ You'll also use **Terminal** (found in Applications > Utilities) to run a few co
 
 [Homebrew](https://brew.sh) is the standard package manager for macOS. It makes installing command-line tools easy.
 
-**If you already have Homebrew**, skip to [Step 3](#3-install-duckdb-cli).
+**If you already have Homebrew**, skip to [Step 3](#3-install-the-qsv-binary).
 
 Open **Terminal** and paste this command:
 
@@ -60,27 +65,7 @@ You should see something like `Homebrew 4.x.x`.
 
 ---
 
-## 3. Install DuckDB CLI
-
-[DuckDB](https://duckdb.org) is a fast SQL database engine that works with local files. Both the qsv and MotherDuck MCP servers use it under the hood.
-
-In Terminal, run:
-
-```bash
-brew install duckdb
-```
-
-Verify it installed correctly:
-
-```bash
-duckdb --version
-```
-
-You should see a version number like `v1.x.x`.
-
----
-
-## 4. Install the qsv Binary
+## 3. Install the qsv Binary
 
 qsv is the engine that powers the qsv MCP server. It's a high-performance toolkit for working with CSV, Excel, and other tabular data files.
 
@@ -127,7 +112,7 @@ This downloads a DMG file containing the qsv binary.
 
 ---
 
-## 5. Install the qsv MCP Server (MCPB Bundle)
+## 4. Install the qsv MCP Server (MCPB Bundle)
 
 The qsv MCP server lets Claude read, analyze, and transform your local data files (CSV, Excel, TSV, JSONL, and more) — without uploading anything.
 
@@ -169,78 +154,13 @@ If Claude shows you a list of files, the qsv MCP server is working.
 
 ---
 
-## 6. Install the MotherDuck MCP Server (In-Memory DuckDB)
-
-The [MotherDuck MCP server](https://github.com/motherduckdb/mcp-server-motherduck) gives Claude the ability to run SQL queries using DuckDB. We'll set it up in **in-memory mode** — no cloud account or token needed.
-
-### Install uv (Python Package Runner)
-
-The MotherDuck server uses `uvx` to run without a manual install. First, install `uv`:
-
-```bash
-brew install uv
-```
-
-Verify:
-
-```bash
-uv --version
-```
-
-### Install via MCPB Bundle
-
-Download the MCPB bundle:
-
-**<https://github.com/motherduckdb/mcp-server-motherduck/releases/latest/download/mcp-server-motherduck.mcpb>**
-
-Then install in Claude Desktop:
-
-1. Open **Claude Desktop**
-2. Click your **profile icon** > **Settings** > **Extensions**
-3. Click **"Install from file"**
-4. Select the `mcp-server-motherduck.mcpb` file
-5. Click **Install**
-
-### Alternative: Manual Configuration
-
-If you prefer manual setup (or the MCPB doesn't work), add the server to your Claude Desktop config file. See [Section 8](#8-editing-the-claude-desktop-config-file) for how to open the config file, then add this entry inside `"mcpServers"`:
-
-```json
-"DuckDB (in-memory, r/w)": {
-  "command": "uvx",
-  "args": [
-    "mcp-server-motherduck",
-    "--db-path", ":memory:",
-    "--read-write",
-    "--allow-switch-databases"
-  ],
-  "env": {
-    "HOME": "/Users/YOUR_USERNAME"
-  }
-}
-```
-
-Replace `YOUR_USERNAME` with your actual macOS username. (To find it, run `whoami` in Terminal.)
-
-> **Note:** No MotherDuck token is needed for in-memory mode. DuckDB runs entirely on your Mac.
-
-### Restart and Verify
-
-Close and reopen Claude Desktop. Then ask:
-
-> "Create a DuckDB table with some sample data and query it"
-
-If Claude creates and queries a table successfully, the MotherDuck server is working.
-
----
-
-## 7. Install the US Census Bureau MCP Server
+## 5. Install the US Census Bureau MCP Server
 
 The [US Census Bureau MCP server](https://github.com/dathere/us-census-bureau-data-api-mcp) gives Claude access to US Census data (population, demographics, economics, and more).
 
 This one requires a few extra tools: **Docker**, **Node.js**, and a free **Census API key**.
 
-### 7a. Install Docker Desktop
+### 5a. Install Docker Desktop
 
 Docker is a tool that runs applications in isolated containers. The Census server uses it for its database.
 
@@ -256,7 +176,7 @@ After installation:
 
 > **First time?** Docker may ask for your password and require a restart. This is normal.
 
-### 7b. Install Node.js
+### 5b. Install Node.js
 
 ```bash
 brew install node
@@ -270,14 +190,14 @@ node --version
 
 You should see `v20.x.x` or higher.
 
-### 7c. Get a Census API Key
+### 5c. Get a Census API Key
 
 1. Go to: **<https://api.census.gov/data/key_signup.html>**
 2. Fill out the form (name and email)
 3. Check your email for the API key — it arrives almost instantly
 4. **Save your API key** somewhere handy (you'll need it in a moment)
 
-### 7d. Download and Set Up the Census Server
+### 5d. Download and Set Up the Census Server
 
 In Terminal, run these commands one at a time:
 
@@ -295,7 +215,7 @@ cd us-census-bureau-data-api-mcp
 
 > **Don't have `git`?** You can also [download the ZIP file](https://github.com/dathere/us-census-bureau-data-api-mcp/archive/refs/heads/main.zip), unzip it, and move the folder to your Documents.
 
-### 7e. Initialize the Database
+### 5e. Initialize the Database
 
 Make sure **Docker Desktop is running**, then run:
 
@@ -305,9 +225,9 @@ docker compose --profile prod run --rm census-mcp-db-init sh -c "npm run migrate
 
 This downloads the required containers and sets up the Census database. It may take a few minutes the first time.
 
-### 7f. Add to Claude Desktop Config
+### 5f. Add to Claude Desktop Config
 
-Open the Claude Desktop config file (see [Section 8](#8-editing-the-claude-desktop-config-file) for instructions) and add this inside `"mcpServers"`:
+Open the Claude Desktop config file (see [Section 7](#7-editing-the-claude-desktop-config-file) for instructions) and add this inside `"mcpServers"`:
 
 ```json
 "mcp-census-api": {
@@ -325,7 +245,7 @@ Replace:
 - `YOUR_USERNAME` with your macOS username (run `whoami` in Terminal to check)
 - `YOUR_CENSUS_API_KEY` with the API key from your email
 
-### Restart and Verify
+### Verify Census Server
 
 Close and reopen Claude Desktop. Make sure **Docker Desktop is running**, then ask:
 
@@ -335,11 +255,85 @@ If Claude returns Census data, the server is working.
 
 ---
 
-## 8. Editing the Claude Desktop Config File
+## 6. Install the Wikidata MCP Server
+
+The [Wikidata MCP Server](https://github.com/philippesaade-wmde/WikidataMCP) gives Claude access to [Wikidata](https://www.wikidata.org/) — the free, structured knowledge graph maintained by the Wikimedia Foundation. It provides tools for searching entities, running SPARQL queries, reading entity claims, and more.
+
+There are two ways to set it up. **Method A is recommended** — it uses a hosted server so you don't need to install anything.
+
+### Method A: Remote Hosted Server (Recommended)
+
+Wikimedia Deutschland hosts a public endpoint for the Wikidata MCP Server. No local installation is needed — just add the config to Claude Desktop.
+
+Open the Claude Desktop config file (see [Section 7](#7-editing-the-claude-desktop-config-file) for instructions) and add this inside `"mcpServers"`:
+
+```json
+"Wikidata MCP": {
+  "url": "https://wd-mcp.wmcloud.org/mcp/"
+}
+```
+
+That's it! Skip to [Verify Wikidata Server](#verify-wikidata-server) below.
+
+### Method B: Local Installation (Alternative)
+
+If you prefer to run the server locally (e.g., for development or offline use), follow these steps.
+
+**Install uv** (a fast Python package manager):
+
+```bash
+brew install uv
+```
+
+**Clone the repository:**
+
+```bash
+cd ~/Documents
+```
+
+```bash
+git clone https://github.com/philippesaade-wmde/WikidataMCP.git
+```
+
+```bash
+cd WikidataMCP
+```
+
+**Install dependencies:**
+
+```bash
+uv sync
+```
+
+**Add to Claude Desktop config:**
+
+Open the Claude Desktop config file (see [Section 7](#7-editing-the-claude-desktop-config-file) for instructions) and add this inside `"mcpServers"`:
+
+```json
+"Wikidata MCP": {
+  "command": "uv",
+  "args": ["run", "fastmcp", "run", "./main.py"],
+  "cwd": "/Users/YOUR_USERNAME/Documents/WikidataMCP"
+}
+```
+
+Replace `YOUR_USERNAME` with your macOS username (run `whoami` in Terminal to check).
+
+### Verify Wikidata Server
+
+Close and reopen Claude Desktop. Then start a new conversation and ask:
+
+> "What is the Wikidata entity for Albert Einstein?"
+
+If Claude returns Wikidata entity information (like Q937), the server is working.
+
+---
+
+## 7. Editing the Claude Desktop Config File
 
 Some MCP servers need to be added manually to Claude Desktop's configuration file. Here's how to find and edit it.
 
-### Where Is the Config File?
+### Where is the Config File?
 
 ```
 ~/Library/Application Support/Claude/claude_desktop_config.json
@@ -378,18 +372,6 @@ After setting up all three servers, your config file should look something like 
         "QSV_MCP_ALLOWED_DIRS": "/Users/YOUR_USERNAME/Downloads:/Users/YOUR_USERNAME/Documents"
       }
     },
-    "DuckDB (in-memory, r/w)": {
-      "command": "uvx",
-      "args": [
-        "mcp-server-motherduck",
-        "--db-path", ":memory:",
-        "--read-write",
-        "--allow-switch-databases"
-      ],
-      "env": {
-        "HOME": "/Users/YOUR_USERNAME"
-      }
-    },
     "mcp-census-api": {
       "command": "bash",
       "args": [
@@ -398,18 +380,21 @@ After setting up all three servers, your config file should look something like 
       "env": {
         "CENSUS_API_KEY": "YOUR_CENSUS_API_KEY"
       }
+    },
+    "Wikidata MCP": {
+      "url": "https://wd-mcp.wmcloud.org/mcp/"
     }
   }
 }
 ```
 
-> **Important:** The `qsv` entry is usually managed by the MCPB installer — you shouldn't need to edit it by hand. The MotherDuck and Census entries are added manually.
-
+> **Important:** The `qsv` entry is usually managed by the MCPB installer — you shouldn't need to edit it by hand. The Census and Wikidata entries are added manually.
+>
 > **Tip:** After editing the config file, always close and reopen Claude Desktop for changes to take effect.
 
 ---
 
-## 9. Claude Pro and Cowork
+## 8. Claude Pro and Cowork
 
 **Claude Cowork** lets Claude work on longer, multi-step tasks in the background — like cleaning a dataset, running multiple queries, and summarizing results.
 
@@ -417,12 +402,12 @@ Cowork requires at least a **Claude Pro** plan. [See plans and pricing here.](ht
 
 ---
 
-## 10. Troubleshooting
+## 9. Troubleshooting
 
 ### General
 
 | Problem | Solution |
-|---------|----------|
+| ------- | -------- |
 | Claude doesn't seem to use the MCP servers | Make sure you restarted Claude Desktop after setup. Check Settings > Extensions. |
 | "Permission denied" when running a command | Try prefixing with `sudo` (e.g., `sudo cp ...`). On macOS, you may also need to allow the app in **System Settings > Privacy & Security**. |
 | Config file won't save | Make sure Claude Desktop is closed while editing the config file. |
@@ -430,37 +415,31 @@ Cowork requires at least a **Claude Pro** plan. [See plans and pricing here.](ht
 ### qsv MCP Server
 
 | Problem | Solution |
-|---------|----------|
+| ------- | -------- |
 | "qsv binary not found" | Make sure qsv is at `/usr/local/bin/qsv`. Run `which qsv` to check. |
 | "Operation not permitted" running qsv | Run `xattr -d com.apple.quarantine /usr/local/bin/qsv` to clear the quarantine flag. |
 | Claude says it can't find your file | Use the full file path (e.g., `/Users/you/Downloads/data.csv`) or ask Claude to "list data files" first. |
 
-### MotherDuck MCP Server
+### Wikidata MCP Server
 
 | Problem | Solution |
-|---------|----------|
-| "uvx: command not found" | Install uv: `brew install uv`. Then restart Claude Desktop. |
-| Server fails to start | Check that `uv` is up to date: `uv self update`. |
-| "motherduck_token" error | Make sure you're using `--db-path :memory:` (no token needed for in-memory mode). |
+| ------- | -------- |
+| Wikidata server not responding | Check your internet connection. The hosted server at `wd-mcp.wmcloud.org` requires internet access. |
+| Timeout on SPARQL queries | Complex queries may take time. Try simpler queries first, or break them into smaller parts. |
+| Local server won't start | Make sure `uv` is installed (`brew install uv`) and you ran `uv sync` in the WikidataMCP directory. |
 
 ### US Census Bureau MCP Server
 
 | Problem | Solution |
-|---------|----------|
+| ------- | -------- |
 | "Cannot connect to Docker daemon" | Open Docker Desktop and wait for it to finish starting (green "Running" indicator). |
 | Database initialization fails | Make sure Docker Desktop is running, then try the `docker compose` command again. |
 | "Invalid API key" | Double-check your Census API key. You can request a new one at <https://api.census.gov/data/key_signup.html>. |
 | Census server won't start | Make sure Docker Desktop is running — it's needed every time you use the Census server. |
 
-### DuckDB CLI
-
-| Problem | Solution |
-|---------|----------|
-| "duckdb: command not found" | Run `brew install duckdb` and open a new Terminal window. |
-
 ---
 
-## 11. What's Next
+## 10. What's Next
 
 Now that everything is set up, here are some things you can try:
 
@@ -469,22 +448,21 @@ Now that everything is set up, here are some things you can try:
 **Using qsv (local file analysis):**
 > "Show me statistics for sales.csv in my Downloads folder"
 
-**Using DuckDB (SQL queries):**
-> "Load my Downloads/products.csv into DuckDB and find the top 10 products by revenue"
-
 **Using Census data:**
 > "Compare the median household income of Texas and New York using Census data"
 
+**Using Wikidata:**
+> "Find all Nobel Prize winners in Physics from the last 10 years using Wikidata"
+
 **Combining servers:**
-> "Load the Census population data for all US states into DuckDB, then export it as a CSV file"
+> "Look up the Wikidata entities for all US state capitals, then pull their Census population data and save the results as a CSV"
 
 ### Learn More
 
 - **qsv MCP Server**: [Desktop Extension Guide](../desktop/README-MCPB.md) | [Filesystem Usage](./FILESYSTEM_USAGE.md)
-- **MotherDuck MCP Server**: [GitHub Repository](https://github.com/motherduckdb/mcp-server-motherduck)
 - **US Census Bureau MCP Server**: [GitHub Repository](https://github.com/dathere/us-census-bureau-data-api-mcp)
 - **Claude Desktop**: [Official Documentation](https://claude.ai/docs)
-- **DuckDB**: [Documentation](https://duckdb.org/docs/)
+- **Wikidata**: [Documentation](https://www.wikidata.org/wiki/Wikidata:MCP)
 
 ---
 

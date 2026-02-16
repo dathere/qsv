@@ -217,13 +217,8 @@ fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
         let clean_desc = partial_badge_re.replace_all(&clean_desc, "").to_string();
         let clean_desc = link_re.replace_all(&clean_desc, "$1").to_string();
         let clean_desc = html_re.replace_all(&clean_desc, "").to_string();
-        // Escape HTML entities for safe use in title attributes
-        let clean_desc = clean_desc
-            .replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-            .replace('"', "&quot;")
-            .replace('\'', "&#39;");
+        // Escape characters for safe use in markdown link title attributes (quoted with ")
+        let clean_desc = clean_desc.replace('\\', "\\\\").replace('"', "\\\"");
         let clean_desc = clean_desc.trim().to_string();
 
         if !clean_desc.is_empty() {
@@ -1853,4 +1848,107 @@ pub fn generate_help_markdown() -> CliResult<()> {
     eprintln!("📁 Output directory: {}", output_dir.display());
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_wrap_unicode_emoji_with_tooltip() {
+        let legend = vec![("🔣".to_string(), "Unicode emoji".to_string())];
+        let result = wrap_emojis_with_tooltips("Has 🔣 here", &legend, "#legend");
+        assert_eq!(result, r#"Has [🔣](#legend "Unicode emoji") here"#);
+    }
+
+    #[test]
+    fn test_wrap_image_emoji_with_tooltip() {
+        let legend = vec![(
+            "![img](path/to/img.png)".to_string(),
+            "Image description".to_string(),
+        )];
+        let result =
+            wrap_emojis_with_tooltips("Has ![img](path/to/img.png) here", &legend, "#legend");
+        assert_eq!(
+            result,
+            r#"Has [![img](path/to/img.png)](#legend "Image description") here"#
+        );
+    }
+
+    #[test]
+    fn test_wrap_multiple_emojis_no_cross_contamination() {
+        // 📇's description should not get tooltipped by 🏎️ or vice versa
+        let legend = vec![
+            ("🏎️".to_string(), "Fast, uses 📇 for speed".to_string()),
+            ("📇".to_string(), "Index-accelerated".to_string()),
+        ];
+        let result = wrap_emojis_with_tooltips("🏎️ 📇", &legend, "#legend");
+        assert!(
+            result.contains(r#"[🏎️](#legend "Fast, uses 📇 for speed")"#),
+            "result was: {result}"
+        );
+        assert!(
+            result.contains(r#"[📇](#legend "Index-accelerated")"#),
+            "result was: {result}"
+        );
+    }
+
+    #[test]
+    fn test_wrap_emoji_not_present() {
+        let legend = vec![("🔣".to_string(), "Not here".to_string())];
+        let result = wrap_emojis_with_tooltips("No emojis", &legend, "#legend");
+        assert_eq!(result, "No emojis");
+    }
+
+    #[test]
+    fn test_wrap_with_full_legend_link() {
+        let legend = vec![("📇".to_string(), "Index".to_string())];
+        let result = wrap_emojis_with_tooltips("📇", &legend, "TableOfContents.md#legend");
+        assert_eq!(result, r#"[📇](TableOfContents.md#legend "Index")"#);
+    }
+
+    #[test]
+    fn test_desc_escaping_double_quote() {
+        // Simulate a legend entry whose description contains a double quote
+        let legend = vec![("🔣".to_string(), r#"Has \"quotes\""#.to_string())];
+        let result = wrap_emojis_with_tooltips("🔣", &legend, "#legend");
+        // The description should be safely embedded in the markdown title
+        assert!(
+            result.contains("\"Has"),
+            "Double quotes should be escaped: {result}"
+        );
+        // Should not break the markdown link syntax (no unescaped interior quotes)
+        assert!(
+            result.starts_with("[🔣](#legend \""),
+            "Link format should be intact: {result}"
+        );
+    }
+
+    #[test]
+    fn test_parse_legend_escapes_for_markdown() {
+        // Build a minimal README snippet with a legend entry containing special chars
+        let readme = r#"<a name="legend_deeplink"></a>
+🔣: Description with "quotes" & <angles>
+
+## Next Section
+"#;
+        let legend = parse_legend(readme);
+        assert_eq!(legend.len(), 1);
+        let (key, desc) = &legend[0];
+        assert_eq!(key, "🔣");
+        // Double quotes should be escaped for markdown link titles
+        assert!(
+            desc.contains("\\\""),
+            "Double quotes should be backslash-escaped, got: {desc}"
+        );
+        // HTML entities should NOT appear (we're generating markdown, not HTML)
+        assert!(
+            !desc.contains("&amp;"),
+            "Should not contain HTML entities, got: {desc}"
+        );
+        assert!(
+            !desc.contains("&lt;"),
+            "Should not contain HTML entities, got: {desc}"
+        );
+    }
 }

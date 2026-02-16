@@ -1449,11 +1449,13 @@ fn generate_table_of_contents(commands: &[CommandInfo], repo_root: &Path) -> Str
                 break;
             }
             // Clean up legend lines - strip HTML anchor, preserving any
-            // text content inside the <a> tag (e.g. emoji like ✨)
+            // text content inside the <a> tag (e.g. emoji like ✨).
+            // Uses rfind('>') to correctly skip past any attributes in the
+            // opening <a ...> tag.
             let cleaned = if let Some(close_pos) = trimmed.find("</a>") {
                 let before_close = &trimmed[..close_pos];
                 let after_close = &trimmed[close_pos + 4..];
-                if let Some(open_end) = before_close.find('>') {
+                if let Some(open_end) = before_close.rfind('>') {
                     let inner = &before_close[open_end + 1..];
                     format!("{inner}{after_close}")
                 } else {

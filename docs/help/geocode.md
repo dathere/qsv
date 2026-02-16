@@ -304,7 +304,6 @@ $ qsv geocode index-load my_geonames_index.rkyv
 ## Examples [↩](#nav)
 
 > For US locations, you can retrieve the us_state_fips_code and us_county_fips_code fields of a US City
-
 > to help with Census data enrichment.
 
 ```console
@@ -314,7 +313,6 @@ input_data.csv -o output_data_with_fips.csv
 ```
 
 > For US locations, you can reverse geocode the us_state_fips_code and us_county_fips_code fields of a WGS 84 coordinate
-
 > to help with Census data enrichment. The coordinate can be in "lat, long" or "(lat, long)" format.
 
 ```console

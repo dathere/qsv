@@ -44,7 +44,6 @@ qsv excel --sheet "Sheet 3" input.xlsx
 ```
 
 > Export a sheet by index:
-
 > this exports the 3nd sheet (0-based index)
 
 ```console
@@ -64,7 +63,6 @@ qsv excel -s -2 input.xls
 ```
 
 > Export a table named "Table1" in an XLSX file. Note that --sheet is not required
-
 > as the table definition includes the sheet.
 
 ```console
@@ -78,7 +76,6 @@ qsv excel --range C3:T25 input.xlsx
 ```
 
 > Export a named range in the workbook. Note that --sheet is not required
-
 > as named ranges include the sheet.
 
 ```console
@@ -92,9 +89,7 @@ qsv excel --range C3:T25 -s 1 input.xlsx
 ```
 
 > Export a range of cells in a sheet by name.
-
 > Note the range name must be enclosed in single quotes in certain shells
-
 > as it may contain special characters like ! and $:
 
 ```console
@@ -120,7 +115,6 @@ qsv excel --metadata csv input.xlsx
 ```
 
 > Export metadata in short CSV mode which is much faster
-
 > but doesn't contain as much metadata
 
 ```console

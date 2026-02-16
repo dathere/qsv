@@ -1,6 +1,6 @@
 # fetch
 
-> Send/Fetch data to/from web services for every row using **HTTP Get**. Comes with HTTP/2 adaptive flow control, jaq JSON query language support, dynamic throttling (RateLimit) & caching with available persistent caching using Redis or a disk-cache.
+> Send/Fetch data to/from web services for every row using **HTTP Get**. Comes with [HTTP/2](https://http2-explained.haxx.se/en/part1) [adaptive flow control](https://medium.com/coderscorner/http-2-flow-control-77e54f7fd518), [jaq](https://github.com/01mf02/jaq?tab=readme-ov-file#jaq) JSON query language support, dynamic throttling ([RateLimit](https://www.ietf.org/archive/id/draft-ietf-httpapi-ratelimit-headers-06.html)) & caching with available persistent caching using [Redis](https://redis.io/) or a disk-cache.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetch.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetch.rs)** | 📇🧠🌐
 

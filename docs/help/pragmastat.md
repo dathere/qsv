@@ -1,6 +1,6 @@
 # pragmastat
 
-> Compute pragmatic statistics using the Pragmastat library.
+> Compute pragmatic statistics using the [Pragmastat](https://pragmastat.dev/) library.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pragmastat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pragmastat.rs)** | 🤯
 

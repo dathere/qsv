@@ -1,6 +1,6 @@
 # frequency
 
-> Build frequency distribution tables of each column. Uses multithreading to go faster if an index is present (Examples: CSV JSON TOON).
+> Build [frequency distribution tables](https://en.wikipedia.org/wiki/Frequency_(statistics)) of each column. Uses multithreading to go faster if an index is present (Examples: [CSV](../../scripts/nyc311-1m.freqs.csv) [JSON](../../scripts/nyc311-1m.freqs.json) [TOON](../../scripts/nyc311-1m.freqs.toon)).
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/frequency.rs](https://github.com/dathere/qsv/blob/master/src/cmd/frequency.rs)** | 📇😣🏎️👆🪄![Luau](../images/luau.png)
 

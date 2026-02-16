@@ -1,6 +1,6 @@
 # datefmt
 
-> Formats recognized date fields (19 formats recognized) to a specified date format using strftime date format specifiers.
+> Formats recognized date fields ([19 formats recognized](https://docs.rs/qsv-dateparser/latest/qsv_dateparser/#accepted-date-formats)) to a specified date format using [strftime date format specifiers](https://docs.rs/chrono/latest/chrono/format/strftime/).
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/datefmt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/datefmt.rs)** | 📇🚀👆
 

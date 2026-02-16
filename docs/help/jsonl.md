@@ -1,6 +1,6 @@
 # jsonl
 
-> Convert newline-delimited JSON (JSONL/NDJSON) to CSV. See `tojsonl` command to convert CSV to JSONL.
+> Convert newline-delimited JSON ([JSONL](https://jsonlines.org/)/[NDJSON](http://ndjson.org/)) to CSV. See `tojsonl` command to convert CSV to JSONL.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/jsonl.rs](https://github.com/dathere/qsv/blob/master/src/cmd/jsonl.rs)** | 🚀🔣
 

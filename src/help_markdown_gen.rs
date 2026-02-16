@@ -120,7 +120,9 @@ fn extract_description_from_line(line: &str) -> String {
     }
 }
 
-/// Clean README description by removing markdown links, HTML tags, emojis, etc.
+/// Clean README description by removing HTML tags, emojis, etc.
+/// Preserves markdown links so they remain clickable in the generated help pages.
+/// Rewrites relative URLs to work from the `docs/help/` directory.
 fn clean_readme_description(description: &str) -> String {
     let mut result = description.to_string();
 
@@ -132,11 +134,30 @@ fn clean_readme_description(description: &str) -> String {
     let anchor_re2 = regex_oncelock!(r#"<a name=[^>]*>"#);
     result = anchor_re2.replace_all(&result, "").to_string();
 
-    // Remove markdown links: [text](url) -> text
-    let link_re = regex_oncelock!(r"\[([^\]]+)\]\((?:[^()]+|\([^()]*\))*\)");
-    result = link_re.replace_all(&result, "$1").to_string();
+    // Rewrite relative URLs in markdown links to work from docs/help/
+    // [text](docs/foo) -> [text](../foo)  (go up from help/ to docs/)
+    // [text](resources/foo) -> [text](../../resources/foo)  (go up to repo root)
+    // Absolute URLs (http/https) and anchors (#) are left unchanged.
+    let link_rewrite_re = regex_oncelock!(r"\]\(([^)]+)\)");
+    result = link_rewrite_re
+        .replace_all(&result, |caps: &regex::Captures| {
+            let path = &caps[1];
+            // Skip absolute URLs, anchors, and mailto links
+            if path.starts_with("http://")
+                || path.starts_with("https://")
+                || path.starts_with('#')
+                || path.starts_with("mailto:")
+            {
+                caps[0].to_string()
+            } else if let Some(rest) = path.strip_prefix("docs/") {
+                format!("](../{rest})")
+            } else {
+                format!("](../../{path})")
+            }
+        })
+        .to_string();
 
-    // Remove remaining HTML tags
+    // Remove remaining HTML tags (but not markdown links)
     let html_re = regex_oncelock!(r"<[^>]+>");
     result = html_re.replace_all(&result, " ").to_string();
 

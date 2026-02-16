@@ -1,6 +1,6 @@
 # pro
 
-> Interact with the qsv pro API.
+> Interact with the [qsv pro](https://qsvpro.dathere.com) API.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pro.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pro.rs)**
 

@@ -1,6 +1,6 @@
 # extdedup
 
-> Remove duplicate rows from an arbitrarily large CSV/text file using a memory-mapped, on-disk hash table. Unlike the `dedup` command, this command does not load the entire file into memory nor does it sort the deduped file.
+> Remove duplicate rows from an arbitrarily large CSV/text file using a memory-mapped, [on-disk hash table](https://crates.io/crates/odht). Unlike the `dedup` command, this command does not load the entire file into memory nor does it sort the deduped file.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/extdedup.rs](https://github.com/dathere/qsv/blob/master/src/cmd/extdedup.rs)** | 👆
 

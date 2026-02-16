@@ -1,6 +1,6 @@
 # tojsonl
 
-> Smartly converts CSV to a newline-delimited JSON (JSONL/NDJSON). By scanning the CSV first, it "smartly" infers the appropriate JSON data type for each column. See `jsonl` command to convert JSONL to CSV.
+> Smartly converts CSV to a newline-delimited JSON ([JSONL](https://jsonlines.org/)/[NDJSON](http://ndjson.org/)). By scanning the CSV first, it "smartly" infers the appropriate JSON data type for each column. See `jsonl` command to convert JSONL to CSV.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/tojsonl.rs](https://github.com/dathere/qsv/blob/master/src/cmd/tojsonl.rs)** | 📇😣🚀🔣🪄🗃️
 

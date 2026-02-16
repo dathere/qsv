@@ -12,6 +12,9 @@ import {
   buildConversionArgs,
   createToParquetTool,
   handleToParquetCall,
+  isCsvLikeFile,
+  getParquetPath,
+  ensureParquet,
 } from '../src/mcp-tools.js';
 import { SkillLoader } from '../src/loader.js';
 import { SkillExecutor } from '../src/executor.js';
@@ -375,4 +378,72 @@ test('handleToParquetCall requires input_file parameter', async () => {
   assert.strictEqual(result.isError, true);
   assert.ok(result.content[0].text?.includes('input_file'));
   assert.ok(result.content[0].text?.includes('required'));
+});
+
+// ============================================================================
+// isCsvLikeFile Tests
+// ============================================================================
+
+test('isCsvLikeFile recognizes standard CSV-like extensions', () => {
+  assert.strictEqual(isCsvLikeFile('data.csv'), true);
+  assert.strictEqual(isCsvLikeFile('data.tsv'), true);
+  assert.strictEqual(isCsvLikeFile('data.tab'), true);
+  assert.strictEqual(isCsvLikeFile('data.ssv'), true);
+});
+
+test('isCsvLikeFile recognizes Snappy-compressed CSV-like extensions', () => {
+  assert.strictEqual(isCsvLikeFile('data.csv.sz'), true);
+  assert.strictEqual(isCsvLikeFile('data.tsv.sz'), true);
+  assert.strictEqual(isCsvLikeFile('data.tab.sz'), true);
+  assert.strictEqual(isCsvLikeFile('data.ssv.sz'), true);
+});
+
+test('isCsvLikeFile is case-insensitive', () => {
+  assert.strictEqual(isCsvLikeFile('DATA.CSV'), true);
+  assert.strictEqual(isCsvLikeFile('FILE.TSV.SZ'), true);
+});
+
+test('isCsvLikeFile rejects non-CSV files', () => {
+  assert.strictEqual(isCsvLikeFile('data.json'), false);
+  assert.strictEqual(isCsvLikeFile('data.parquet'), false);
+  assert.strictEqual(isCsvLikeFile('data.xlsx'), false);
+  assert.strictEqual(isCsvLikeFile('data.sz'), false);
+});
+
+// ============================================================================
+// getParquetPath Tests
+// ============================================================================
+
+test('getParquetPath replaces CSV-like extension with .parquet', () => {
+  assert.strictEqual(getParquetPath('/data/test.csv'), '/data/test.parquet');
+  assert.strictEqual(getParquetPath('/data/test.tsv'), '/data/test.parquet');
+  assert.strictEqual(getParquetPath('/data/test.tab'), '/data/test.parquet');
+  assert.strictEqual(getParquetPath('/data/test.ssv'), '/data/test.parquet');
+});
+
+test('getParquetPath handles Snappy-compressed extensions', () => {
+  assert.strictEqual(getParquetPath('/data/test.csv.sz'), '/data/test.parquet');
+  assert.strictEqual(getParquetPath('/data/test.tsv.sz'), '/data/test.parquet');
+});
+
+test('getParquetPath appends .parquet for non-CSV files', () => {
+  assert.strictEqual(getParquetPath('/data/test.json'), '/data/test.json.parquet');
+});
+
+test('getParquetPath does not false-match on directory names containing CSV-like strings', () => {
+  // Regression test: directory paths like /data/csv_files/ should not match .csv
+  assert.strictEqual(getParquetPath('/data/csv_files/test.json'), '/data/csv_files/test.json.parquet');
+  assert.strictEqual(getParquetPath('/data/CSV_FILES/test.json'), '/data/CSV_FILES/test.json.parquet');
+});
+
+// ============================================================================
+// ensureParquet Tests (early-return paths — no qsv binary needed)
+// ============================================================================
+
+test('ensureParquet passes through non-CSV files unchanged', async () => {
+  // Parquet, JSON, and other non-CSV files should be returned as-is
+  assert.strictEqual(await ensureParquet('/data/test.parquet'), '/data/test.parquet');
+  assert.strictEqual(await ensureParquet('/data/test.json'), '/data/test.json');
+  assert.strictEqual(await ensureParquet('/data/test.jsonl'), '/data/test.jsonl');
+  assert.strictEqual(await ensureParquet('/data/test.xlsx'), '/data/test.xlsx');
 });

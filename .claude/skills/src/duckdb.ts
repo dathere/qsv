@@ -6,19 +6,26 @@
  * for better PostgreSQL compatibility and performance.
  */
 
-import { execFileSync } from "child_process";
+import { execFileSync, spawn, type ChildProcess } from "child_process";
 import { statSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { config } from "./config.js";
-import { runQsvSimple } from "./executor.js";
-import type { ChildProcess } from "child_process";
-import { spawn } from "child_process";
 
 /**
  * Timeout for DuckDB binary validation in milliseconds (5 seconds)
  */
 const DUCKDB_VALIDATION_TIMEOUT_MS = 5000;
+
+/**
+ * Maximum stderr buffer size in bytes (1 MB) — prevents unbounded memory growth
+ */
+const MAX_STDERR_SIZE = 1024 * 1024;
+
+/**
+ * Valid Parquet compression codecs for DuckDB COPY TO
+ */
+const VALID_PARQUET_CODECS = new Set(["zstd", "snappy", "gzip", "lz4", "lzo", "brotli", "uncompressed"]);
 
 /**
  * DuckDB detection state — sticky once resolved
@@ -72,6 +79,24 @@ export interface DuckDbResult {
   exitCode: number;
   /** Error output */
   stderr: string;
+}
+
+/** Matches sqlp multi-table references (_t_2, _t_3, … _t_10, etc.) — case-insensitive for defense-in-depth */
+export const MULTI_TABLE_PATTERN = /\b_t_[2-9]\b|\b_t_\d{2,}\b/i;
+
+/** Known CSV-like file extensions (shared across modules) */
+export const CSV_LIKE_EXTENSIONS = [
+  ".csv", ".tsv", ".tab", ".ssv",
+  ".csv.sz", ".tsv.sz", ".tab.sz", ".ssv.sz",
+] as const;
+
+/**
+ * Normalize uppercase table references (_T_1, _T_2, etc.) to lowercase.
+ * Agents may send uppercase `_T_N`; this ensures consistent lowercase
+ * references before pattern matching and sqlp execution.
+ */
+export function normalizeTableRefs(sql: string): string {
+  return sql.replace(/\b_[tT]_(\d+)\b/g, (_match, n) => `_t_${n}`);
 }
 
 /**
@@ -246,10 +271,22 @@ export function translateSql(
   } else if (lowerPath.endsWith(".jsonl") || lowerPath.endsWith(".ndjson")) {
     readExpr = `read_json('${escapedPath}')`;
   } else {
-    // CSV-like: build read_csv with options
+    // CSV-like or unknown extension: build read_csv with options
+    // Warn for extensions that are unlikely to be CSV-compatible
+    // .txt/.dat suppress warnings but aren't in CSV_LIKE_EXTENSIONS (no Parquet conversion)
+    const knownExts = [".txt", ".dat", ...CSV_LIKE_EXTENSIONS];
+    if (!knownExts.some((ext) => lowerPath.endsWith(ext))) {
+      console.error(`[DuckDB] Warning: Unknown file extension treated as CSV: ${inputFile}`);
+    }
     const csvOptions: string[] = [];
     if (options?.delimiter) {
-      csvOptions.push(`delim = '${options.delimiter}'`);
+      // Note: actual tab character (\t) has length 1 and works correctly.
+      // The 2-char string literal "\\t" would be rejected, which is intentional.
+      if (options.delimiter.length !== 1) {
+        throw new Error(`[DuckDB] Invalid delimiter: must be exactly 1 character, got ${options.delimiter.length}`);
+      }
+      const escapedDelim = options.delimiter.replace(/'/g, "''");
+      csvOptions.push(`delim = '${escapedDelim}'`);
     }
     if (options?.rnullValues) {
       // Parse comma-separated null values into array, escaping single quotes
@@ -266,8 +303,24 @@ export function translateSql(
     }
   }
 
-  // Replace _t_1 (case-insensitive, word boundary) with the read expression
-  const translated = sql.replace(/\b_t_1\b/gi, readExpr);
+  // Replace standalone _t_1 (not followed by a dot) with the read expression,
+  // so that qualified column refs like _t_1.column remain valid via the alias.
+  // Only the first standalone occurrence gets the alias; subsequent ones get bare readExpr
+  // to avoid duplicate alias issues in UNION or subquery contexts.
+  // Skip replacements inside single-quoted SQL string literals.
+  const aliasedExpr = `(${readExpr}) AS _t_1`;
+  let firstReplaced = false;
+  const translated = sql.replace(
+    /'[^']*(?:''[^']*)*'|\b_t_1\b(?!\.)/gi,
+    (match) => {
+      if (match.startsWith("'")) return match;
+      if (!firstReplaced) {
+        firstReplaced = true;
+        return aliasedExpr;
+      }
+      return readExpr;
+    },
+  );
   return translated;
 }
 
@@ -312,7 +365,10 @@ export async function executeDuckDbQuery(
       throw new Error("output_file is required for parquet format output with DuckDB");
     }
     const normalizedOutput = outputFile.replace(/\\/g, "/").replace(/'/g, "''");
-    const codec = options?.compression ?? "zstd";
+    const codec = (options?.compression ?? "zstd").toLowerCase();
+    if (!VALID_PARQUET_CODECS.has(codec)) {
+      throw new Error(`Invalid parquet codec '${codec}'. Valid codecs: ${[...VALID_PARQUET_CODECS].join(", ")}`);
+    }
     fullSql += `COPY (${sql}) TO '${normalizedOutput}' (FORMAT PARQUET, CODEC '${codec}');`;
   } else {
     fullSql += sql;
@@ -340,11 +396,12 @@ export async function executeDuckDbQuery(
     let stdoutTruncated = false;
     let timedOut = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
 
     timer = setTimeout(() => {
       timedOut = true;
       proc.kill("SIGTERM");
-      setTimeout(() => {
+      killTimer = setTimeout(() => {
         if (proc.exitCode === null) {
           try { proc.kill("SIGKILL"); } catch { /* ignore */ }
           proc.unref();
@@ -364,18 +421,18 @@ export async function executeDuckDbQuery(
       stdout += data;
     });
 
-    const maxStderrSize = 1024 * 1024; // 1 MB cap for stderr
     proc.stderr!.on("data", (chunk) => {
-      if (stderr.length < maxStderrSize) {
+      if (stderr.length < MAX_STDERR_SIZE) {
         stderr += chunk.toString();
-        if (stderr.length > maxStderrSize) {
-          stderr = stderr.slice(0, maxStderrSize) + "\n[STDERR TRUNCATED]";
+        if (stderr.length > MAX_STDERR_SIZE) {
+          stderr = stderr.slice(0, MAX_STDERR_SIZE) + "\n[STDERR TRUNCATED]";
         }
       }
     });
 
     proc.on("close", (exitCode) => {
       if (timer) clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       options?.onExit?.(proc);
 
       if (timedOut) {
@@ -398,6 +455,7 @@ export async function executeDuckDbQuery(
 
     proc.on("error", (err) => {
       if (timer) clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       options?.onExit?.(proc);
 
       // Binary-level failure (e.g., ENOENT)

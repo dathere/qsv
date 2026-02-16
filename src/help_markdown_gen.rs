@@ -1131,6 +1131,28 @@ fn format_examples(lines: &[String]) -> String {
             continue;
         }
 
+        // Lines ending with \ that lead to a qsv command (e.g. env var prefixes)
+        if trimmed.ends_with('\\') && !in_code_block {
+            let reaches_qsv = lines[idx + 1..]
+                .iter()
+                .map(|l| l.trim())
+                .find(|nt| !nt.ends_with('\\'))
+                .is_some_and(|nt| {
+                    nt.starts_with("qsv ")
+                        || nt.starts_with("$ qsv")
+                        || nt.contains("| qsv ")
+                        || nt.contains("|qsv ")
+                        || (nt.starts_with("$ ") && nt.contains("qsv "))
+                });
+            if reaches_qsv {
+                md.push_str("```console\n");
+                in_code_block = true;
+                md.push_str(trimmed);
+                md.push('\n');
+                continue;
+            }
+        }
+
         // Command lines: $ qsv ..., qsv ..., or piped commands containing qsv
         // (e.g. "cat in.csv | qsv split ..." or "$ cat in.csv | qsv split ...")
         if trimmed.starts_with("$ qsv")

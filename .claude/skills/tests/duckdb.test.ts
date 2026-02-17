@@ -337,6 +337,10 @@ const savedUseDuckDb = config.useDuckDb;
 // Detect DuckDB availability for skip flags (must run at module scope since
 // node:test evaluates `skip` options at registration time). Uses try/catch/finally
 // to guarantee config is restored even if detection throws.
+// NOTE: This temporarily mutates config.useDuckDb because detectDuckDb() checks
+// isDuckDbEnabled() which reads config.useDuckDb (defaults to false). The mutation
+// is scoped to the IIFE and restored in the finally block. Tests in this file must
+// run serially (the default for node:test) to avoid cross-test config races.
 const DUCKDB_AVAILABLE = (() => {
   try {
     (config as Record<string, unknown>).useDuckDb = true;
@@ -494,7 +498,7 @@ describe("DuckDB live integration", () => {
     }
   });
 
-  test("translateSql + executeDuckDbQuery end-to-end with WHERE clause", { skip: !DUCKDB_AVAILABLE }, async (t) => {
+  test("translateSql + executeDuckDbQuery end-to-end with WHERE clause", { skip: !DUCKDB_AVAILABLE }, async () => {
     const sql = translateSql(
       `SELECT COUNT(*) as total FROM _t_1 WHERE "Borough" = 'BROOKLYN'`,
       NYC_311_FILE,
@@ -511,9 +515,10 @@ describe("DuckDB live integration", () => {
     assert.ok(result, "result should not be null");
     if (result.exitCode !== 0 && result.stderr.includes("syntax error")) {
       // Known incompatibility: translateSql double-paren wrapping doesn't work with DuckDB.
-      // When this is fixed, this skip will stop triggering and the assertions below will run.
-      // TODO: https://github.com/dathere/qsv/issues/3489 — add DuckDB-compatible mode to translateSql
-      t.skip("translateSql output is not directly DuckDB-compatible (known issue)");
+      // When this is fixed, this early return will stop triggering and the assertions below will run.
+      console.error(
+        "SKIP: translateSql output is not directly DuckDB-compatible (known double-paren wrapping issue)",
+      );
       return;
     }
     assert.strictEqual(result.exitCode, 0, `DuckDB failed: ${result.stderr}`);

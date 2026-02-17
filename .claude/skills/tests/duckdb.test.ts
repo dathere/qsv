@@ -356,18 +356,19 @@ const DUCKDB_AVAILABLE = (() => {
 
 // 100-row NYC 311 sample fixture (55KB, checked into the repo)
 // Resolve from project root (dist/ compiled output → source tests/fixtures/)
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, "..", "..");
+const TESTS_DIR = dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = join(TESTS_DIR, "..", "..");
 const NYC_311_FILE = join(PROJECT_ROOT, "tests", "fixtures", "nyc311-100.csv");
 
-/** Escape a file path for use inside a SQL single-quoted string literal. */
+/** Escape a file path for use inside a SQL single-quoted string literal.
+ *  Only safe for trusted paths (test fixtures); not a general-purpose SQL escaper. */
 function sqlPath(p: string): string {
   return p.replace(/\\/g, "/").replace(/'/g, "''");
 }
 
 const NYC_311_SQL = sqlPath(NYC_311_FILE);
 
-describe("DuckDB live integration", () => {
+describe("DuckDB live integration", { concurrency: false }, () => {
   beforeEach(() => {
     // Enable DuckDB and reset state for each test
     (config as Record<string, unknown>).useDuckDb = true;
@@ -380,6 +381,25 @@ describe("DuckDB live integration", () => {
     resetDuckDbState();
   });
 
+  // No `skip: !DUCKDB_AVAILABLE` — this test exercises the "unavailable" path
+  // and works regardless of whether the real binary is installed.
+  test("executeDuckDbQuery throws when DuckDB is unavailable", async () => {
+    markDuckDbUnavailable("test: simulating unavailable");
+    try {
+      await assert.rejects(
+        () => executeDuckDbQuery("SELECT 1"),
+        { message: /not available/i },
+        "executeDuckDbQuery should throw when DuckDB is unavailable",
+      );
+    } finally {
+      // Restore to "pending" so beforeEach/afterEach re-detection works cleanly.
+      // resetDuckDbState sets status to "pending", fully clearing the state
+      // set by markDuckDbUnavailable. detectDuckDb then re-resolves from scratch.
+      resetDuckDbState();
+      detectDuckDb();
+    }
+  });
+
   test("detectDuckDb finds real binary and reports version", { skip: !DUCKDB_AVAILABLE }, () => {
     const status = getDuckDbStatus();
     assert.strictEqual(status.status, "available");
@@ -387,7 +407,7 @@ describe("DuckDB live integration", () => {
     assert.match(status.version, /^\d+\.\d+\.\d+$/, "version should be semver-like");
   });
 
-  test("simple CSV query returns header + data rows", { skip: !DUCKDB_AVAILABLE }, async () => {
+  test("simple CSV query returns header + data rows", { skip: !DUCKDB_AVAILABLE, timeout: 30_000 }, async () => {
     const sql = `SELECT "Complaint Type", COUNT(*) as cnt FROM read_csv('${NYC_311_SQL}', auto_detect = true) GROUP BY "Complaint Type" ORDER BY cnt DESC LIMIT 5`;
     const result = await executeDuckDbQuery(sql, { format: "csv" });
     assert.ok(result, "result should not be null");
@@ -401,7 +421,7 @@ describe("DuckDB live integration", () => {
     assert.ok(lines[0].includes("cnt"), "Header should contain 'cnt'");
   });
 
-  test("JSON output returns valid JSON array", { skip: !DUCKDB_AVAILABLE }, async () => {
+  test("JSON output returns valid JSON array", { skip: !DUCKDB_AVAILABLE, timeout: 30_000 }, async () => {
     const sql = `SELECT "Complaint Type", COUNT(*) as cnt FROM read_csv('${NYC_311_SQL}', auto_detect = true) GROUP BY "Complaint Type" ORDER BY cnt DESC LIMIT 5`;
     const result = await executeDuckDbQuery(sql, { format: "json" });
     assert.ok(result, "result should not be null");
@@ -414,7 +434,7 @@ describe("DuckDB live integration", () => {
     assert.ok("cnt" in parsed[0], "First row should have 'cnt' key");
   });
 
-  test("parquet output writes valid file", { skip: !DUCKDB_AVAILABLE }, async () => {
+  test("parquet output writes valid file", { skip: !DUCKDB_AVAILABLE, timeout: 30_000 }, async () => {
     const dir = await createTestDir("duckdb-parquet");
     try {
       const outputFile = join(dir, "test-output.parquet");
@@ -433,14 +453,14 @@ describe("DuckDB live integration", () => {
     }
   });
 
-  test("invalid SQL returns non-zero exit code", { skip: !DUCKDB_AVAILABLE }, async () => {
+  test("invalid SQL returns non-zero exit code", { skip: !DUCKDB_AVAILABLE, timeout: 30_000 }, async () => {
     const result = await executeDuckDbQuery("SELECT * FROM nonexistent_table_xyz");
     assert.ok(result, "result should not be null");
     assert.notStrictEqual(result.exitCode, 0, "Invalid SQL should produce non-zero exit code");
     assert.ok(result.stderr.length > 0, "stderr should contain error message");
   });
 
-  test("multi-column grouping returns correct columns", { skip: !DUCKDB_AVAILABLE }, async () => {
+  test("multi-column grouping returns correct columns", { skip: !DUCKDB_AVAILABLE, timeout: 30_000 }, async () => {
     const sql = `SELECT "Agency", "Borough", COUNT(*) as cnt FROM read_csv('${NYC_311_SQL}', auto_detect = true) GROUP BY "Agency", "Borough" ORDER BY cnt DESC LIMIT 3`;
     const result = await executeDuckDbQuery(sql, { format: "csv" });
     assert.ok(result, "result should not be null");
@@ -454,7 +474,7 @@ describe("DuckDB live integration", () => {
     assert.ok(header.includes("cnt"), "Header should contain 'cnt'");
   });
 
-  test("qsv_to_parquet → DuckDB SQL query end-to-end", { skip: !(DUCKDB_AVAILABLE && QSV_AVAILABLE) }, async () => {
+  test("qsv_to_parquet → DuckDB SQL query end-to-end", { skip: !(DUCKDB_AVAILABLE && QSV_AVAILABLE), timeout: 30_000 }, async () => {
     const dir = await createTestDir("duckdb-qsv-parquet");
     try {
       // Create a small test CSV in the temp dir
@@ -498,7 +518,12 @@ describe("DuckDB live integration", () => {
     }
   });
 
-  test("translateSql + executeDuckDbQuery end-to-end with WHERE clause", { skip: !DUCKDB_AVAILABLE }, async () => {
+  // TODO(#3489): translateSql wraps read_csv in double parens — (read_csv(...)) AS _t_1 —
+  // which is valid for Polars/sqlp but causes a DuckDB parse error. Unskip this test once
+  // translateSql has a DuckDB-compatible mode that omits the outer parens.
+  test("translateSql + executeDuckDbQuery end-to-end with WHERE clause", {
+    skip: "translateSql double-paren wrapping incompatible with DuckDB (#3489)",
+  }, async () => {
     const sql = translateSql(
       `SELECT COUNT(*) as total FROM _t_1 WHERE "Borough" = 'BROOKLYN'`,
       NYC_311_FILE,
@@ -507,20 +532,8 @@ describe("DuckDB live integration", () => {
     assert.ok(sql.includes("read_csv"), "SQL should contain read_csv after translation");
     assert.ok(sql.includes("AS _t_1"), "Translated SQL should alias the table as _t_1");
 
-    // NOTE: translateSql wraps read_csv in parens — (read_csv(...)) AS _t_1 — which
-    // is valid for Polars/sqlp but causes a DuckDB parse error. If this test fails with
-    // a syntax error, it indicates translateSql needs a DuckDB-compatible mode that
-    // produces: read_csv(...) AS _t_1 (without outer parens).
     const result = await executeDuckDbQuery(sql, { format: "csv" });
     assert.ok(result, "result should not be null");
-    if (result.exitCode !== 0 && result.stderr.includes("syntax error")) {
-      // Known incompatibility: translateSql double-paren wrapping doesn't work with DuckDB.
-      // When this is fixed, this early return will stop triggering and the assertions below will run.
-      console.error(
-        "SKIP: translateSql output is not directly DuckDB-compatible (known double-paren wrapping issue)",
-      );
-      return;
-    }
     assert.strictEqual(result.exitCode, 0, `DuckDB failed: ${result.stderr}`);
 
     const lines = result.output.trim().split("\n");

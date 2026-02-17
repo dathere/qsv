@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [16.1.1] - 2026-02-17
+
 ### Added
 - **DuckDB integration** — Automatic DuckDB routing for SQL queries when DuckDB binary is detected
   - New `src/duckdb.ts` module with lazy detection, SQL translation, and query execution
@@ -17,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - DuckDB status shown in `qsv_config` output
   - Engine indicator (`🦆 Engine: DuckDB vX.Y.Z`) prepended to DuckDB query results
   - MCPB Desktop Extension: DuckDB settings exposed in user config UI (`duckdb_path`, `use_duckdb`)
+
+### Fixed
+- CSV truncated-read edge case in file parsing
+- AM/PM date format detection in Polars schema generation
+
+### Tests
+- DuckDB live integration tests with self-contained NYC 311 fixture (8 tests)
+
+### Docs
+- macOS Quick Start guide for installing Claude Desktop with qsv, Census, and Wikidata MCP servers
+- Wikidata MCP Server section added to Quick Start guide
 
 ## [16.1.0] - 2026-02-15
 

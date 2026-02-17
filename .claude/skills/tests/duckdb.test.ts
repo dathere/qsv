@@ -2,7 +2,7 @@
  * Tests for DuckDB integration module
  */
 
-import { test, describe, beforeEach } from "node:test";
+import { test, describe, beforeEach, after } from "node:test";
 import assert from "node:assert";
 import { existsSync, statSync } from "fs";
 import { join, dirname } from "path";
@@ -330,21 +330,38 @@ describe("DuckDB detection state", () => {
 // DuckDB Live Integration Tests
 // ============================================================
 
-// Detect DuckDB availability for integration tests by temporarily enabling it
+// Snapshot the original config value once so both the IIFE and the describe
+// block's after() hook restore to the same value (avoids dual save/restore).
 const savedUseDuckDb = config.useDuckDb;
-(config as Record<string, unknown>).useDuckDb = true;
-resetDuckDbState();
-const duckDbDetection = detectDuckDb();
-const DUCKDB_AVAILABLE = duckDbDetection.status === "available";
-// Restore original config
-(config as Record<string, unknown>).useDuckDb = savedUseDuckDb;
-resetDuckDbState();
+
+// Detect DuckDB availability for skip flags (must run at module scope since
+// node:test evaluates `skip` options at registration time). Uses try/catch/finally
+// to guarantee config is restored even if detection throws.
+const DUCKDB_AVAILABLE = (() => {
+  try {
+    (config as Record<string, unknown>).useDuckDb = true;
+    resetDuckDbState();
+    return detectDuckDb().status === "available";
+  } catch {
+    return false;
+  } finally {
+    (config as Record<string, unknown>).useDuckDb = savedUseDuckDb;
+    resetDuckDbState();
+  }
+})();
 
 // 100-row NYC 311 sample fixture (55KB, checked into the repo)
 // Resolve from project root (dist/ compiled output → source tests/fixtures/)
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..", "..");
 const NYC_311_FILE = join(PROJECT_ROOT, "tests", "fixtures", "nyc311-100.csv");
+
+/** Escape a file path for use inside a SQL single-quoted string literal. */
+function sqlPath(p: string): string {
+  return p.replace(/\\/g, "/").replace(/'/g, "''");
+}
+
+const NYC_311_SQL = sqlPath(NYC_311_FILE);
 
 describe("DuckDB live integration", () => {
   beforeEach(() => {
@@ -354,20 +371,20 @@ describe("DuckDB live integration", () => {
     detectDuckDb();
   });
 
-  // Restore config after all tests in this block
-  // (node:test doesn't have afterAll, but beforeEach resets per-test)
+  after(() => {
+    (config as Record<string, unknown>).useDuckDb = savedUseDuckDb;
+    resetDuckDbState();
+  });
 
   test("detectDuckDb finds real binary and reports version", { skip: !DUCKDB_AVAILABLE }, () => {
     const status = getDuckDbStatus();
     assert.strictEqual(status.status, "available");
-    if (status.status === "available") {
-      assert.ok(status.binPath.length > 0, "binPath should be non-empty");
-      assert.match(status.version, /^\d+\.\d+\.\d+$/, "version should be semver-like");
-    }
+    assert.ok(status.binPath.length > 0, "binPath should be non-empty");
+    assert.match(status.version, /^\d+\.\d+\.\d+$/, "version should be semver-like");
   });
 
   test("simple CSV query returns header + data rows", { skip: !DUCKDB_AVAILABLE }, async () => {
-    const sql = `SELECT "Complaint Type", COUNT(*) as cnt FROM read_csv('${NYC_311_FILE}', auto_detect = true) GROUP BY "Complaint Type" ORDER BY cnt DESC LIMIT 5`;
+    const sql = `SELECT "Complaint Type", COUNT(*) as cnt FROM read_csv('${NYC_311_SQL}', auto_detect = true) GROUP BY "Complaint Type" ORDER BY cnt DESC LIMIT 5`;
     const result = await executeDuckDbQuery(sql, { format: "csv" });
     assert.ok(result, "result should not be null");
     assert.strictEqual(result.exitCode, 0, `DuckDB failed: ${result.stderr}`);
@@ -381,7 +398,7 @@ describe("DuckDB live integration", () => {
   });
 
   test("JSON output returns valid JSON array", { skip: !DUCKDB_AVAILABLE }, async () => {
-    const sql = `SELECT "Complaint Type", COUNT(*) as cnt FROM read_csv('${NYC_311_FILE}', auto_detect = true) GROUP BY "Complaint Type" ORDER BY cnt DESC LIMIT 5`;
+    const sql = `SELECT "Complaint Type", COUNT(*) as cnt FROM read_csv('${NYC_311_SQL}', auto_detect = true) GROUP BY "Complaint Type" ORDER BY cnt DESC LIMIT 5`;
     const result = await executeDuckDbQuery(sql, { format: "json" });
     assert.ok(result, "result should not be null");
     assert.strictEqual(result.exitCode, 0, `DuckDB failed: ${result.stderr}`);
@@ -397,7 +414,7 @@ describe("DuckDB live integration", () => {
     const dir = await createTestDir("duckdb-parquet");
     try {
       const outputFile = join(dir, "test-output.parquet");
-      const sql = `SELECT "Complaint Type", COUNT(*) as cnt FROM read_csv('${NYC_311_FILE}', auto_detect = true) GROUP BY "Complaint Type" ORDER BY cnt DESC LIMIT 5`;
+      const sql = `SELECT "Complaint Type", COUNT(*) as cnt FROM read_csv('${NYC_311_SQL}', auto_detect = true) GROUP BY "Complaint Type" ORDER BY cnt DESC LIMIT 5`;
       const result = await executeDuckDbQuery(sql, {
         format: "parquet",
         outputFile,
@@ -420,7 +437,7 @@ describe("DuckDB live integration", () => {
   });
 
   test("multi-column grouping returns correct columns", { skip: !DUCKDB_AVAILABLE }, async () => {
-    const sql = `SELECT "Agency", "Borough", COUNT(*) as cnt FROM read_csv('${NYC_311_FILE}', auto_detect = true) GROUP BY "Agency", "Borough" ORDER BY cnt DESC LIMIT 3`;
+    const sql = `SELECT "Agency", "Borough", COUNT(*) as cnt FROM read_csv('${NYC_311_SQL}', auto_detect = true) GROUP BY "Agency", "Borough" ORDER BY cnt DESC LIMIT 3`;
     const result = await executeDuckDbQuery(sql, { format: "csv" });
     assert.ok(result, "result should not be null");
     assert.strictEqual(result.exitCode, 0, `DuckDB failed: ${result.stderr}`);
@@ -460,7 +477,7 @@ describe("DuckDB live integration", () => {
       assert.ok(parquetStats.size > 0, "Parquet file should be non-empty");
 
       // Step 2: Query the Parquet file with DuckDB
-      const sql = `SELECT city, population FROM read_parquet('${parquetPath.replace(/'/g, "''")}') WHERE population > 3000000 ORDER BY population DESC`;
+      const sql = `SELECT city, population FROM read_parquet('${sqlPath(parquetPath)}') WHERE population > 3000000 ORDER BY population DESC`;
       const result = await executeDuckDbQuery(sql, { format: "csv" });
       assert.ok(result, "DuckDB result should not be null");
       assert.strictEqual(result.exitCode, 0, `DuckDB query failed: ${result.stderr}`);
@@ -477,7 +494,7 @@ describe("DuckDB live integration", () => {
     }
   });
 
-  test("translateSql + executeDuckDbQuery end-to-end with WHERE clause", { skip: !DUCKDB_AVAILABLE }, async () => {
+  test("translateSql + executeDuckDbQuery end-to-end with WHERE clause", { skip: !DUCKDB_AVAILABLE }, async (t) => {
     const sql = translateSql(
       `SELECT COUNT(*) as total FROM _t_1 WHERE "Borough" = 'BROOKLYN'`,
       NYC_311_FILE,
@@ -494,8 +511,9 @@ describe("DuckDB live integration", () => {
     assert.ok(result, "result should not be null");
     if (result.exitCode !== 0 && result.stderr.includes("syntax error")) {
       // Known incompatibility: translateSql double-paren wrapping doesn't work with DuckDB.
-      // This documents the issue — see translateSql unit tests for the wrapping behavior.
-      assert.ok(true, "translateSql output is not directly DuckDB-compatible (known issue)");
+      // When this is fixed, this skip will stop triggering and the assertions below will run.
+      // TODO: https://github.com/dathere/qsv/issues/3489 — add DuckDB-compatible mode to translateSql
+      t.skip("translateSql output is not directly DuckDB-compatible (known issue)");
       return;
     }
     assert.strictEqual(result.exitCode, 0, `DuckDB failed: ${result.stderr}`);

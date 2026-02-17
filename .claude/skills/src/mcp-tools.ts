@@ -4,7 +4,7 @@
 
 import type { ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
-import { stat, access, readFile, unlink, rename, copyFile, readdir } from "fs/promises";
+import { stat, access, readFile, writeFile, open, unlink, rename, copyFile, readdir } from "fs/promises";
 import { constants } from "fs";
 import { basename, dirname, join } from "path";
 import { tmpdir } from "os";
@@ -455,6 +455,171 @@ export function buildConversionArgs(
   }
   // Standard: qsv <cmd> <input> --output <output>
   return [conversionCmd, inputFile, "--output", outputFile];
+}
+
+/**
+ * Parse a single CSV line respecting RFC 4180 quoted fields.
+ * Returns an array of field values with quotes stripped.
+ */
+function parseCSVLine(line: string): string[] {
+  const fields: string[] = [];
+  let i = 0;
+  while (i <= line.length) {
+    if (i === line.length) {
+      fields.push("");
+      break;
+    }
+    if (line[i] === '"') {
+      // Quoted field
+      let value = "";
+      i++; // skip opening quote
+      while (i < line.length) {
+        if (line[i] === '"') {
+          if (i + 1 < line.length && line[i + 1] === '"') {
+            value += '"';
+            i += 2;
+          } else {
+            i++; // skip closing quote
+            break;
+          }
+        } else {
+          value += line[i];
+          i++;
+        }
+      }
+      fields.push(value);
+      if (i < line.length && line[i] === ',') i++; // skip delimiter
+    } else {
+      // Unquoted field
+      const next = line.indexOf(',', i);
+      if (next === -1) {
+        fields.push(line.slice(i));
+        break;
+      }
+      fields.push(line.slice(i, next));
+      i = next + 1;
+    }
+  }
+  return fields;
+}
+
+/**
+ * Check if a Polars schema dtype represents a Date or Datetime type.
+ * Polars schema dtypes can be a simple string like "Date" or an object like
+ * {"Datetime": ["Milliseconds", null]}.
+ */
+function isDateDtype(dtype: unknown): boolean {
+  if (typeof dtype === "string") {
+    return dtype === "Date";
+  }
+  if (typeof dtype === "object" && dtype !== null) {
+    return "Datetime" in dtype || "Date" in dtype;
+  }
+  return false;
+}
+
+/**
+ * Patch a Polars schema (.pschema.json) to change Date/Datetime columns
+ * that contain AM/PM values to String, since Polars cannot parse 12-hour formats.
+ *
+ * The schema has the structure: { fields: { "ColName": dtype, ... }, metadata: ... }
+ * where dtype is either a string (e.g. "String", "Date") or an object
+ * (e.g. {"Datetime": ["Milliseconds", null]}).
+ *
+ * Reads the first ~50KB of the CSV to sample a few rows, then checks
+ * date/datetime columns for AM/PM patterns.
+ *
+ * @returns List of column names that were patched to String.
+ */
+async function patchSchemaAmPmDates(inputFile: string, schemaFile: string): Promise<string[]> {
+  // Read and parse the schema
+  let schemaText: string;
+  try {
+    schemaText = await readFile(schemaFile, "utf-8");
+  } catch {
+    return []; // schema doesn't exist yet
+  }
+
+  let schema: { fields: Record<string, unknown>; metadata?: unknown };
+  try {
+    schema = JSON.parse(schemaText);
+  } catch {
+    return []; // invalid JSON
+  }
+
+  if (!schema.fields || typeof schema.fields !== "object") return [];
+
+  // Collect date/datetime column names from the schema
+  const dateColNames: string[] = [];
+  for (const [name, dtype] of Object.entries(schema.fields)) {
+    if (isDateDtype(dtype)) {
+      dateColNames.push(name);
+    }
+  }
+  if (dateColNames.length === 0) return [];
+
+  // Read first 50KB of the CSV to sample rows
+  const SAMPLE_BYTES = 50 * 1024;
+  let sampleText: string;
+  try {
+    const fh = await open(inputFile, "r");
+    try {
+      const buf = Buffer.alloc(SAMPLE_BYTES);
+      const { bytesRead } = await fh.read(buf, 0, SAMPLE_BYTES, 0);
+      sampleText = buf.toString("utf-8", 0, bytesRead);
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return [];
+  }
+
+  // Split into lines (drop last potentially partial line)
+  const lines = sampleText.split(/\r?\n/);
+  if (lines.length < 2) return [];
+  lines.pop(); // remove potentially incomplete trailing line
+
+  // Parse header to map column names to indices
+  const headers = parseCSVLine(lines[0]);
+  const colIndices = new Map<string, number>();
+  for (let i = 0; i < headers.length; i++) {
+    colIndices.set(headers[i], i);
+  }
+
+  // Resolve date column positions
+  const targets: Array<{ colIdx: number; name: string }> = [];
+  for (const name of dateColNames) {
+    const idx = colIndices.get(name);
+    if (idx !== undefined) {
+      targets.push({ colIdx: idx, name });
+    }
+  }
+  if (targets.length === 0) return [];
+
+  // Check sample data rows for AM/PM pattern
+  const ampmRe = /[AP]M\b/i;
+  const patchedNames: string[] = [];
+  for (const t of targets) {
+    let found = false;
+    for (let r = 1; r < lines.length && !found; r++) {
+      if (lines[r].trim() === "") continue;
+      const fields = parseCSVLine(lines[r]);
+      if (t.colIdx < fields.length && ampmRe.test(fields[t.colIdx])) {
+        found = true;
+      }
+    }
+    if (found) {
+      schema.fields[t.name] = "String";
+      patchedNames.push(t.name);
+    }
+  }
+
+  // Write back patched schema if any changes
+  if (patchedNames.length > 0) {
+    await writeFile(schemaFile, JSON.stringify(schema, null, 2), "utf-8");
+  }
+
+  return patchedNames;
 }
 
 /**
@@ -1286,6 +1451,12 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
     } catch (error) {
       throw new Error(`Schema generation failed for ${inputFile}: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  // Step 2.5: Patch schema for AM/PM date formats that Polars can't parse
+  const patchedCols = await patchSchemaAmPmDates(inputFile, schemaFile);
+  if (patchedCols.length > 0) {
+    console.error(`[MCP Tools] Patched AM/PM date columns to String: ${patchedCols.join(", ")}`);
   }
 
   // Step 3: Convert to Parquet
@@ -2456,6 +2627,12 @@ export async function handleToParquetCall(
       console.error(
         `[MCP Tools] Step 2: Using existing Polars schema (up-to-date)`,
       );
+    }
+
+    // Step 2.5: Patch schema for AM/PM date formats that Polars can't parse
+    const patchedCols = await patchSchemaAmPmDates(inputFile, schemaFile);
+    if (patchedCols.length > 0) {
+      console.error(`[MCP Tools] Patched AM/PM date columns to String: ${patchedCols.join(", ")}`);
     }
 
     // Step 3: Convert to Parquet (sqlp will auto-detect .pschema.json)

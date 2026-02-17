@@ -20,7 +20,7 @@ Claude will understand your request and perform the operations automatically usi
 ### Step 1: Download
 
 Download the extension file:
-- Go to: https://github.com/dathere/qsv/releases/download/16.1.1/qsv-mcp-server-16.1.1.mcpb
+- Go to: https://github.com/dathere/qsv/releases/download/16.1.0/qsv-mcp-server-16.1.1.mcpb
 - Save the `.mcpb` file to your Downloads folder
 
 ### Step 2: Install in Claude Desktop

@@ -564,8 +564,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-02-15
-**Version**: 16.1.0
+**Updated**: 2026-02-17
+**Version**: 16.1.1
 **Tools**: 9 core tools initially (deferred loading), 56+ when discovered via search
 **Skills**: 56 qsv commands
 **Status**: Production Ready

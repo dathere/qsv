@@ -519,6 +519,18 @@ test('parseCSVLine with tab delimiter does not split on commas', () => {
   assert.deepStrictEqual(parseCSVLine('hello,world\tb\tc', '\t'), ['hello,world', 'b', 'c']);
 });
 
+test('parseCSVLine returns single empty field for empty string', () => {
+  assert.deepStrictEqual(parseCSVLine(''), ['']);
+});
+
+test('parseCSVLine preserves trailing empty field after delimiter', () => {
+  assert.deepStrictEqual(parseCSVLine('a,b,'), ['a', 'b', '']);
+});
+
+test('parseCSVLine preserves trailing empty field after quoted field and delimiter', () => {
+  assert.deepStrictEqual(parseCSVLine('"a","b",'), ['a', 'b', '']);
+});
+
 // ============================================================================
 // isDateDtype Tests
 // ============================================================================
@@ -629,6 +641,25 @@ test('patchSchemaAmPmDates does not false-positive on "Amsterdam"', async () => 
 
     const patched = await patchSchemaAmPmDates(csvFile, schemaFile);
     assert.deepStrictEqual(patched, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('patchSchemaAmPmDates patches AM/PM columns in TSV files', async () => {
+  const dir = join(tmpdir(), `qsv-test-tsv-ampm-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const tsvFile = join(dir, 'data.tsv');
+    const schemaFile = join(dir, 'data.tsv.pschema.json');
+
+    await writeFile(tsvFile, 'id\ttimestamp\n1\t01/15/2024 02:30 PM\n2\t01/16/2024 11:00 AM\n');
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', timestamp: { Datetime: ['Milliseconds', null] } },
+    }));
+
+    const patched = await patchSchemaAmPmDates(tsvFile, schemaFile);
+    assert.deepStrictEqual(patched, ['timestamp']);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

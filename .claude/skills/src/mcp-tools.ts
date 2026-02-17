@@ -474,6 +474,7 @@ export function detectDelimiter(filePath: string): string {
  */
 export function parseCSVLine(line: string, delimiter: string = ","): string[] {
   const fields: string[] = [];
+  if (line.length === 0) return [""];
   let i = 0;
   while (i < line.length) {
     if (line[i] === '"') {
@@ -495,7 +496,11 @@ export function parseCSVLine(line: string, delimiter: string = ","): string[] {
         }
       }
       fields.push(value);
-      if (i < line.length && line[i] === delimiter) i++; // skip delimiter
+      if (i < line.length && line[i] === delimiter) {
+        i++; // skip delimiter
+        // Handle trailing delimiter after quoted field
+        if (i === line.length) fields.push("");
+      }
     } else {
       // Unquoted field
       const next = line.indexOf(delimiter, i);
@@ -505,6 +510,8 @@ export function parseCSVLine(line: string, delimiter: string = ","): string[] {
       }
       fields.push(line.slice(i, next));
       i = next + 1;
+      // Handle trailing delimiter
+      if (i === line.length) fields.push("");
     }
   }
   return fields;

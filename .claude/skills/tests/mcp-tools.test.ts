@@ -15,6 +15,10 @@ import {
   isCsvLikeFile,
   getParquetPath,
   ensureParquet,
+  parseCSVLine,
+  detectDelimiter,
+  isDateDtype,
+  patchSchemaAmPmDates,
 } from '../src/mcp-tools.js';
 import { SkillLoader } from '../src/loader.js';
 import { SkillExecutor } from '../src/executor.js';
@@ -446,4 +450,240 @@ test('ensureParquet passes through non-CSV files unchanged', async () => {
   assert.strictEqual(await ensureParquet('/data/test.json'), '/data/test.json');
   assert.strictEqual(await ensureParquet('/data/test.jsonl'), '/data/test.jsonl');
   assert.strictEqual(await ensureParquet('/data/test.xlsx'), '/data/test.xlsx');
+});
+
+// ============================================================================
+// detectDelimiter Tests
+// ============================================================================
+
+test('detectDelimiter returns comma for .csv files', () => {
+  assert.strictEqual(detectDelimiter('data.csv'), ',');
+  assert.strictEqual(detectDelimiter('/path/to/file.CSV'), ',');
+});
+
+test('detectDelimiter returns tab for .tsv and .tab files', () => {
+  assert.strictEqual(detectDelimiter('data.tsv'), '\t');
+  assert.strictEqual(detectDelimiter('data.tab'), '\t');
+  assert.strictEqual(detectDelimiter('/path/to/file.TSV'), '\t');
+  assert.strictEqual(detectDelimiter('/path/to/file.TAB'), '\t');
+});
+
+test('detectDelimiter returns semicolon for .ssv files', () => {
+  assert.strictEqual(detectDelimiter('data.ssv'), ';');
+  assert.strictEqual(detectDelimiter('/path/to/file.SSV'), ';');
+});
+
+test('detectDelimiter defaults to comma for unknown extensions', () => {
+  assert.strictEqual(detectDelimiter('data.txt'), ',');
+  assert.strictEqual(detectDelimiter('data.json'), ',');
+});
+
+// ============================================================================
+// parseCSVLine Tests
+// ============================================================================
+
+test('parseCSVLine parses simple comma-delimited fields', () => {
+  assert.deepStrictEqual(parseCSVLine('a,b,c'), ['a', 'b', 'c']);
+});
+
+test('parseCSVLine handles quoted fields with commas', () => {
+  assert.deepStrictEqual(parseCSVLine('"hello, world",b,c'), ['hello, world', 'b', 'c']);
+});
+
+test('parseCSVLine handles escaped quotes in quoted fields', () => {
+  assert.deepStrictEqual(parseCSVLine('"say ""hi""",b'), ['say "hi"', 'b']);
+});
+
+test('parseCSVLine handles empty fields', () => {
+  assert.deepStrictEqual(parseCSVLine('a,,c'), ['a', '', 'c']);
+});
+
+test('parseCSVLine handles single field', () => {
+  assert.deepStrictEqual(parseCSVLine('hello'), ['hello']);
+});
+
+test('parseCSVLine does not produce extra trailing empty field', () => {
+  const result = parseCSVLine('a,b,c');
+  assert.strictEqual(result.length, 3);
+});
+
+test('parseCSVLine supports tab delimiter', () => {
+  assert.deepStrictEqual(parseCSVLine('a\tb\tc', '\t'), ['a', 'b', 'c']);
+});
+
+test('parseCSVLine supports semicolon delimiter', () => {
+  assert.deepStrictEqual(parseCSVLine('a;b;c', ';'), ['a', 'b', 'c']);
+});
+
+test('parseCSVLine with tab delimiter does not split on commas', () => {
+  assert.deepStrictEqual(parseCSVLine('hello,world\tb\tc', '\t'), ['hello,world', 'b', 'c']);
+});
+
+test('parseCSVLine returns single empty field for empty string', () => {
+  assert.deepStrictEqual(parseCSVLine(''), ['']);
+});
+
+test('parseCSVLine preserves trailing empty field after delimiter', () => {
+  assert.deepStrictEqual(parseCSVLine('a,b,'), ['a', 'b', '']);
+});
+
+test('parseCSVLine preserves trailing empty field after quoted field and delimiter', () => {
+  assert.deepStrictEqual(parseCSVLine('"a","b",'), ['a', 'b', '']);
+});
+
+// ============================================================================
+// isDateDtype Tests
+// ============================================================================
+
+test('isDateDtype recognizes "Date" string', () => {
+  assert.strictEqual(isDateDtype('Date'), true);
+});
+
+test('isDateDtype recognizes Datetime object', () => {
+  assert.strictEqual(isDateDtype({ Datetime: ['Milliseconds', null] }), true);
+});
+
+test('isDateDtype recognizes Date object', () => {
+  assert.strictEqual(isDateDtype({ Date: 'something' }), true);
+});
+
+test('isDateDtype rejects non-date types', () => {
+  assert.strictEqual(isDateDtype('String'), false);
+  assert.strictEqual(isDateDtype('Int64'), false);
+  assert.strictEqual(isDateDtype(null), false);
+  assert.strictEqual(isDateDtype(undefined), false);
+  assert.strictEqual(isDateDtype(42), false);
+  assert.strictEqual(isDateDtype({ Float64: null }), false);
+});
+
+// ============================================================================
+// patchSchemaAmPmDates Tests
+// ============================================================================
+
+import { writeFile, mkdir, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+test('patchSchemaAmPmDates patches AM/PM datetime columns to String', async () => {
+  const dir = join(tmpdir(), `qsv-test-ampm-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const csvFile = join(dir, 'data.csv');
+    const schemaFile = join(dir, 'data.csv.pschema.json');
+
+    await writeFile(csvFile, 'id,timestamp\n1,01/15/2024 02:30 PM\n2,01/16/2024 11:00 AM\n');
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', timestamp: { Datetime: ['Milliseconds', null] } },
+    }));
+
+    const patched = await patchSchemaAmPmDates(csvFile, schemaFile);
+    assert.deepStrictEqual(patched, ['timestamp']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('patchSchemaAmPmDates skips columns without AM/PM', async () => {
+  const dir = join(tmpdir(), `qsv-test-noampm-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const csvFile = join(dir, 'data.csv');
+    const schemaFile = join(dir, 'data.csv.pschema.json');
+
+    await writeFile(csvFile, 'id,date\n1,2024-01-15\n2,2024-01-16\n');
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', date: 'Date' },
+    }));
+
+    const patched = await patchSchemaAmPmDates(csvFile, schemaFile);
+    assert.deepStrictEqual(patched, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('patchSchemaAmPmDates returns empty for missing schema file', async () => {
+  const patched = await patchSchemaAmPmDates('/nonexistent/data.csv', '/nonexistent/schema.json');
+  assert.deepStrictEqual(patched, []);
+});
+
+test('patchSchemaAmPmDates returns empty for CSV with fewer than 2 lines', async () => {
+  const dir = join(tmpdir(), `qsv-test-short-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const csvFile = join(dir, 'data.csv');
+    const schemaFile = join(dir, 'data.csv.pschema.json');
+
+    await writeFile(csvFile, 'id,timestamp\n');
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', timestamp: { Datetime: ['Milliseconds', null] } },
+    }));
+
+    const patched = await patchSchemaAmPmDates(csvFile, schemaFile);
+    assert.deepStrictEqual(patched, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('patchSchemaAmPmDates does not false-positive on "Amsterdam"', async () => {
+  const dir = join(tmpdir(), `qsv-test-amsterdam-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const csvFile = join(dir, 'data.csv');
+    const schemaFile = join(dir, 'data.csv.pschema.json');
+
+    // Polars might misidentify a column as Date — the regex should not match "Amsterdam"
+    await writeFile(csvFile, 'id,city\n1,Amsterdam\n2,Pamphlet\n');
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', city: 'Date' },
+    }));
+
+    const patched = await patchSchemaAmPmDates(csvFile, schemaFile);
+    assert.deepStrictEqual(patched, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('patchSchemaAmPmDates patches AM/PM columns in TSV files', async () => {
+  const dir = join(tmpdir(), `qsv-test-tsv-ampm-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const tsvFile = join(dir, 'data.tsv');
+    const schemaFile = join(dir, 'data.tsv.pschema.json');
+
+    await writeFile(tsvFile, 'id\ttimestamp\n1\t01/15/2024 02:30 PM\n2\t01/16/2024 11:00 AM\n');
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', timestamp: { Datetime: ['Milliseconds', null] } },
+    }));
+
+    const patched = await patchSchemaAmPmDates(tsvFile, schemaFile);
+    assert.deepStrictEqual(patched, ['timestamp']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('patchSchemaAmPmDates handles CSV without trailing newline', async () => {
+  const dir = join(tmpdir(), `qsv-test-csv-no-trailing-nl-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const csvFile = join(dir, 'data.csv');
+    const schemaFile = join(dir, 'data.csv.pschema.json');
+
+    // Note: no trailing newline after the last data row
+    await writeFile(
+      csvFile,
+      'id,timestamp\n1,01/15/2024 02:30 PM\n2,01/16/2024 11:00 AM',
+    );
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', timestamp: { Datetime: ['Milliseconds', null] } },
+    }));
+
+    const patched = await patchSchemaAmPmDates(csvFile, schemaFile);
+    assert.deepStrictEqual(patched, ['timestamp']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

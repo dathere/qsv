@@ -575,12 +575,14 @@ export async function patchSchemaAmPmDates(inputFile: string, schemaFile: string
   // Read first 50KB of the CSV to sample rows
   const SAMPLE_BYTES = 50 * 1024;
   let sampleText: string;
+  let truncated = false;
   try {
     const fh = await open(inputFile, "r");
     try {
       const buf = Buffer.alloc(SAMPLE_BYTES);
       const { bytesRead } = await fh.read(buf, 0, SAMPLE_BYTES, 0);
       sampleText = buf.toString("utf-8", 0, bytesRead);
+      truncated = bytesRead === SAMPLE_BYTES;
     } finally {
       await fh.close();
     }
@@ -588,10 +590,16 @@ export async function patchSchemaAmPmDates(inputFile: string, schemaFile: string
     return [];
   }
 
-  // Split into lines (drop last potentially partial line)
+  // Split into lines; only drop last line if we truncated the read (potentially partial)
   const lines = sampleText.split(/\r?\n/);
+  if (truncated) {
+    lines.pop(); // remove potentially incomplete trailing line
+  }
+  // Remove trailing empty line from final newline
+  if (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
   if (lines.length < 2) return [];
-  lines.pop(); // remove potentially incomplete trailing line
 
   // Detect delimiter from file extension
   const delimiter = detectDelimiter(inputFile);

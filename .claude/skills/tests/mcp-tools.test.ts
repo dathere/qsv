@@ -664,3 +664,26 @@ test('patchSchemaAmPmDates patches AM/PM columns in TSV files', async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('patchSchemaAmPmDates handles CSV without trailing newline', async () => {
+  const dir = join(tmpdir(), `qsv-test-csv-no-trailing-nl-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const csvFile = join(dir, 'data.csv');
+    const schemaFile = join(dir, 'data.csv.pschema.json');
+
+    // Note: no trailing newline after the last data row
+    await writeFile(
+      csvFile,
+      'id,timestamp\n1,01/15/2024 02:30 PM\n2,01/16/2024 11:00 AM',
+    );
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', timestamp: { Datetime: ['Milliseconds', null] } },
+    }));
+
+    const patched = await patchSchemaAmPmDates(csvFile, schemaFile);
+    assert.deepStrictEqual(patched, ['timestamp']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

@@ -8,10 +8,10 @@ Always follow this sequence when processing CSV data:
 1. **Discover** - `sniff` (detect format, encoding, delimiter) -> `headers` -> `count`
 2. **Index** - `index` (enables fast random access for subsequent commands)
 3. **Profile** - `stats --cardinality --stats-jsonl` (creates cache used by smart commands)
-4. **Inspect** - `slice --len 5` (preview rows), `frequency` (value distributions)
+4. **Inspect** - `slice --len 5` (preview rows), `frequency --frequency-jsonl` (value distributions with cache for reuse)
 5. **Transform** - select, sort, dedup, apply, rename, search, etc.
 6. **Validate** - `validate` (against JSON Schema), `stats` (verify results)
-7. **Export** - `to` (Parquet, XLSX, etc.), `tojsonl`, `table`
+7. **Export** - `to` (XLSX, ODS, etc.), `tojsonl`, `table`
 
 ## Tool Selection Matrix
 
@@ -25,7 +25,7 @@ Always follow this sequence when processing CSV data:
 | Aggregate/GROUP BY | `sqlp` | `frequency` | `frequency` for simple counts |
 | Column stats | `stats` | `moarstats` | `moarstats` for extended stats |
 | Find/replace | `apply operations` | `sqlp` | `sqlp` for conditional replace |
-| Reshape wide->long | `melt` | `sqlp` | Complex reshaping |
+| Reshape wide->long | `transpose --long` | `sqlp` (UNPIVOT) | Complex reshaping |
 | Reshape long->wide | `pivotp` | `sqlp` | Complex pivots |
 | Concatenate files | `cat rows` | `cat rowskey` | Different column orders |
 | Sample rows | `sample` | `slice` | `slice` for positional ranges |
@@ -64,7 +64,7 @@ index (both files) -> stats (both) -> joinp -> select (keep needed columns) -> s
 
 ### Convert and Export
 ```
-excel (to CSV) -> index -> stats -> select -> to parquet/xlsx
+excel (to CSV) -> index -> stats -> select -> to ods/xlsx
 ```
 
 ## Delimiter Handling

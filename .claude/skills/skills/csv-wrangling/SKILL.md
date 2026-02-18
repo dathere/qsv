@@ -25,7 +25,7 @@ Always follow this sequence when processing CSV data:
 | Aggregate/GROUP BY | `sqlp` | `frequency` | `frequency` for simple counts |
 | Column stats | `stats` | `moarstats` | `moarstats` for extended stats |
 | Find/replace | `apply operations` | `sqlp` | `sqlp` for conditional replace |
-| Reshape wide->long | `transpose` | `sqlp` | Complex reshaping |
+| Reshape wide->long | `transpose --long` | `sqlp` (UNPIVOT) | Complex reshaping |
 | Reshape long->wide | `pivotp` | `sqlp` | Complex pivots |
 | Concatenate files | `cat rows` | `cat rowskey` | Different column orders |
 | Sample rows | `sample` | `slice` | `slice` for positional ranges |
@@ -73,6 +73,45 @@ excel (to CSV) -> index -> stats -> select -> to ods/xlsx
 - TSV (`\t`): use `--delimiter '\t'` or file extension `.tsv`
 - SSV (`;`): use `--delimiter ';'` or file extension `.ssv`
 - Auto-detect: set `QSV_SNIFF_DELIMITER=1` environment variable
+
+## Memory & Performance
+
+### Memory Categories
+- **Loads entire file** (🤯): `dedup`, `reverse`, `sort`, `stats` (extended), `table`, `transpose`
+- **Memory ~ cardinality** (😣): `frequency`, `join`, `schema`, `tojsonl`
+- **Streaming/constant memory**: everything else (`select`, `search`, `slice`, `apply`, `count`, etc.)
+
+### Large File Decision Tree
+- **< 10MB**: Any command works fine
+- **10MB–100MB**: Always `index` first; convert to Parquet for SQL queries; prefer streaming commands
+- **100MB–1GB**: `index` + `stats` cache first; prefer Polars commands (`sqlp`, `joinp`, `pivotp`); avoid `sort`/`reverse`/`table`; use `sqlp` ORDER BY LIMIT instead of `sort`
+- **> 1GB**: Must use `index` + `stats` cache; must use Polars commands for joins/queries; avoid all 🤯 commands; consider `split` into chunks then `cat rows`
+
+### Three Accelerators
+1. **Index** (`qsv index`): Enables instant row count, random access, multithreading. Always index if running 2+ commands.
+2. **Stats cache** (`stats --cardinality --stats-jsonl`): Used by smart commands (`frequency`, `schema`, `sqlp`, `joinp`, `pivotp`, `diff`, `sample`). Always run before smart commands.
+3. **Polars engine** (`sqlp`, `joinp`, `pivotp`): Vectorized columnar processing, multi-threaded, handles larger-than-memory files.
+
+## Data Quality Quick Reference
+
+### Quality Checks
+| Dimension | Command | Red Flag |
+|-----------|---------|----------|
+| Completeness | `stats --cardinality` | `sparsity` > 0.5 (>half null) |
+| Uniqueness | `dedup --dupes-output dupes.csv` | Non-empty dupes file; key column cardinality < row count |
+| Validity | `validate schema.json`, `stats` | Type shows "String" for numeric data; `min`/`max` out of range |
+| Consistency | `frequency`, `sniff`, `fixlengths --count` | Same value in different cases; ragged rows |
+
+### Common Fixes
+| Problem | Fix |
+|---------|-----|
+| Inconsistent case | `apply operations upper/lower col` |
+| Whitespace | `apply operations trim col` |
+| Duplicates | `dedup` |
+| Ragged rows | `fixlengths` |
+| Unsafe column names | `safenames` |
+| Wrong encoding | `input` (normalizes to UTF-8) |
+| Empty values | `apply emptyreplace "N/A" col` |
 
 ## Important Notes
 

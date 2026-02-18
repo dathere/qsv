@@ -701,7 +701,14 @@ class QsvMcpServer {
 
         if (uri === "qsv://skills/csv-wrangling") {
           const skillPath = join(__dirname, "../skills/csv-wrangling/SKILL.md");
-          const content = await readFile(skillPath, "utf-8");
+          let content: string;
+          try {
+            content = await readFile(skillPath, "utf-8");
+          } catch {
+            throw new Error(
+              `csv-wrangling skill file not found at ${skillPath}`,
+            );
+          }
           return {
             contents: [
               {

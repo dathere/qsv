@@ -704,10 +704,13 @@ class QsvMcpServer {
           let content: string;
           try {
             content = await readFile(skillPath, "utf-8");
-          } catch {
-            throw new Error(
-              `csv-wrangling skill file not found at ${skillPath}`,
-            );
+          } catch (err: unknown) {
+            const code = (err as NodeJS.ErrnoException).code;
+            const msg =
+              code === "ENOENT"
+                ? `csv-wrangling skill file not found at ${skillPath}`
+                : `Failed to read csv-wrangling skill file: ${err}`;
+            throw new Error(msg);
           }
           return {
             contents: [

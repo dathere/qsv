@@ -111,7 +111,7 @@ excel (to CSV) -> index -> stats -> select -> to ods/xlsx
 | Ragged rows | `fixlengths` |
 | Unsafe column names | `safenames` |
 | Wrong encoding | `input` (normalizes to UTF-8) |
-| Empty values | `apply emptyreplace "N/A" col` |
+| Empty values | `apply emptyreplace col --replacement "N/A"` |
 
 ## Important Notes
 

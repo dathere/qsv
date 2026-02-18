@@ -99,6 +99,8 @@ class QsvMcpServer {
   private manuallySetWorkingDir = false;
   private syncingRoots = false;
   private pendingRootsSync = false;
+  private rootsSyncRetries = 0;
+  private static readonly MAX_ROOTS_SYNC_RETRIES = 3;
 
   /**
    * Track which tools have been loaded via search (for deferred loading).
@@ -578,7 +580,11 @@ class QsvMcpServer {
           // "auto" is a reserved keyword — not treated as a filesystem path
           if (directory.toLowerCase() === "auto") {
             this.manuallySetWorkingDir = false;
-            await this.syncWorkingDirFromRoots();
+            try {
+              await this.syncWorkingDirFromRoots();
+            } catch (syncError) {
+              console.error(`[Roots] Auto-sync from "auto" keyword failed: ${syncError instanceof Error ? syncError.message : String(syncError)}`);
+            }
             const currentDir = this.filesystemProvider.getWorkingDirectory();
             return {
               content: [
@@ -836,6 +842,7 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
       return;
     }
     this.syncingRoots = true;
+    let syncSucceeded = false;
     try {
       const { roots } = await this.server.listRoots();
       const fileRoot = roots.find(r => r.uri.startsWith("file://"));
@@ -855,10 +862,11 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
       if (roots.length > 1) {
         console.error(`[Roots] Note: ${roots.length - 1} additional root(s) ignored; only the first file:// root is used`);
       }
+      syncSucceeded = true;
     } catch (error) {
       // Best-effort feature — suppress expected errors when client doesn't support roots
       if (error instanceof Error) {
-        const errorCode = "code" in error ? (error as { code: unknown }).code : undefined;
+        const errorCode = "code" in error ? (error as Record<string, unknown>).code : undefined;
         if (errorCode === -32601) {
           // JSON-RPC Method Not Found — client doesn't implement roots
           console.error(`[Roots] Client does not support roots (code -32601)`);
@@ -872,18 +880,25 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
         }
         console.error(`[Roots] Failed to sync working directory: ${error.message}`);
       } else {
-        console.error(`[Roots] Failed to sync working directory: ${error}`);
+        console.error(`[Roots] Failed to sync working directory: ${String(error)}`);
       }
     } finally {
       this.syncingRoots = false;
       if (this.pendingRootsSync) {
         this.pendingRootsSync = false;
-        console.error("[Roots] Running pending re-sync");
-        try {
+        if (this.rootsSyncRetries < QsvMcpServer.MAX_ROOTS_SYNC_RETRIES) {
+          this.rootsSyncRetries++;
+          console.error(`[Roots] Running pending re-sync (attempt ${this.rootsSyncRetries}/${QsvMcpServer.MAX_ROOTS_SYNC_RETRIES})`);
           await this.syncWorkingDirFromRoots();
-        } catch (resyncError) {
-          console.error(`[Roots] Pending re-sync failed: ${resyncError}`);
+          // Each recursive call manages syncSucceeded independently;
+          // the retry counter resets only when the *current* call succeeded
+        } else {
+          console.error(`[Roots] Max re-sync retries (${QsvMcpServer.MAX_ROOTS_SYNC_RETRIES}) reached, skipping pending sync`);
+          this.rootsSyncRetries = 0;
         }
+      } else if (syncSucceeded) {
+        // Reset retry counter only when sync actually succeeded and no pending re-sync is queued
+        this.rootsSyncRetries = 0;
       }
     }
   }

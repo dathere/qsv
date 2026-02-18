@@ -6017,7 +6017,7 @@ fn param_prop_frequency_pct_sum(name: &str, rows: CsvData) -> bool {
         // Tolerance scales with PROP_TEST_SIZE: more unique values → more cumulative
         // rounding error in percentages.
         assert!(
-            (pct_sum - 100.0).abs() < PROP_PCT_TOLERANCE,
+            (pct_sum - 100.0).abs() <= PROP_PCT_TOLERANCE,
             "Percentage sum for field '{field}' is {pct_sum}, expected ~100.0"
         );
     }

@@ -1,6 +1,6 @@
 use std::{borrow::ToOwned, collections::hash_map::Entry, process};
 
-use foldhash::{HashMap, HashMapExt, HashSet};
+use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use serde::Deserialize;
 use serde_json::Value;
 use stats::Frequencies;
@@ -795,19 +795,26 @@ fn prop_frequency_indexed() {
 }
 
 fn param_prop_frequency(name: &str, rows: CsvData, idx: bool) -> bool {
-    if !rows.is_empty() {
-        return true;
-    }
+    // Use the shared preamble to skip problematic inputs
+    let vecs = match prop_preamble(&rows) {
+        Some(v) => v,
+        None => return true,
+    };
 
-    let rows_check = rows.clone();
-
-    for row in rows_check.into_iter() {
-        for field in row.into_iter() {
-            if field.contains("\u{FEFF}") {
+    // Skip if any data value contains non-ASCII whitespace that Rust's `.trim()`
+    // handles but qsv's frequency command does not (e.g. EN QUAD \u{2000},
+    // PUNCTUATION SPACE \u{2008}, IDEOGRAPHIC SPACE \u{3000}, etc.).
+    // The in-memory oracle uses `.trim()` which strips these, but qsv preserves them.
+    for row in &vecs[1..] {
+        for field in row {
+            let trimmed = field.trim();
+            let trimmed_ascii = field.trim_ascii();
+            if trimmed != trimmed_ascii {
                 return true;
             }
         }
     }
+
     let wrk = Workdir::new(name);
     if idx {
         wrk.create_indexed("in.csv", rows.clone());
@@ -822,6 +829,13 @@ fn param_prop_frequency(name: &str, rows: CsvData, idx: bool) -> bool {
         .args(["--unq-limit", "0"]);
 
     let stdout = wrk.stdout::<String>(&mut cmd);
+
+    // Skip if qsv collapsed any field to <ALL_UNIQUE> since the in-memory
+    // helper doesn't replicate that logic.
+    if stdout.contains("<ALL_UNIQUE>") {
+        return true;
+    }
+
     let got_ftables = ftables_from_csv_string(stdout);
     let expected_ftables = ftables_from_rows(rows);
     assert_eq_ftables(&got_ftables, &expected_ftables)
@@ -5821,4 +5835,417 @@ fn frequency_jsonl_cache_embedded_numbers() {
         "Cache-based output should match direct computation output for values with embedded \
          numbers"
     );
+}
+
+// ============================================================
+// Property tests: structural invariants of frequency output
+// ============================================================
+
+/// Full frequency row with all 5 columns (percentage and rank may be empty for NULL rows).
+#[derive(Debug, Deserialize)]
+struct FRowFull {
+    field:      String,
+    value:      String,
+    count:      String,
+    percentage: String,
+    rank:       String,
+}
+
+/// Parse frequency CSV output into `FRowFull` records.
+fn parse_frequency_output(stdout: &str) -> Vec<FRowFull> {
+    let mut rdr = csv::Reader::from_reader(stdout.as_bytes());
+    rdr.deserialize().map(|r| r.unwrap()).collect()
+}
+
+/// Group parsed rows by field name.
+fn group_by_field(rows: &[FRowFull]) -> HashMap<String, Vec<&FRowFull>> {
+    let mut map: HashMap<String, Vec<&FRowFull>> = HashMap::new();
+    for row in rows {
+        map.entry(row.field.clone()).or_default().push(row);
+    }
+    map
+}
+
+/// Common preamble: skip empty data, BOM-containing data, header-only data,
+/// and data with duplicate or empty column names.
+/// Returns the rows as vecs if valid, or `None` to signal the test should return `true`.
+fn prop_preamble(rows: &CsvData) -> Option<Vec<Vec<String>>> {
+    if rows.is_empty() {
+        return None;
+    }
+    let vecs = rows.clone().to_vecs();
+    // skip if any field contains BOM or control characters (bytes < 0x20 except tab/newline)
+    // Control characters cause encoding edge cases in frequency output
+    for row in &vecs {
+        for field in row {
+            if field.contains('\u{FEFF}')
+                || field
+                    .chars()
+                    .any(|c| c < ' ' && c != '\t' && c != '\n' && c != '\r')
+            {
+                return None;
+            }
+        }
+    }
+    // skip header-only data (no data rows)
+    if vecs.len() <= 1 {
+        return None;
+    }
+    // skip if any header field is empty or if there are duplicate column names
+    // (duplicate names cause percentage/count grouping issues in assertions)
+    let header = &vecs[0];
+    let mut seen = HashSet::new();
+    for h in header {
+        let trimmed = h.trim();
+        if trimmed.is_empty() || !seen.insert(trimmed.to_owned()) {
+            return None;
+        }
+    }
+    Some(vecs)
+}
+
+// ---- 1. Count sum per field == row count ----
+
+#[test]
+fn prop_frequency_count_sum() {
+    fn p(rows: CsvData) -> bool {
+        param_prop_frequency_count_sum("prop_frequency_count_sum", rows)
+    }
+    qcheck_sized(p as fn(CsvData) -> bool, 5);
+}
+
+fn param_prop_frequency_count_sum(name: &str, rows: CsvData) -> bool {
+    let vecs = match prop_preamble(&rows) {
+        Some(v) => v,
+        None => return true,
+    };
+    let data_row_count = vecs.len() - 1; // exclude header
+
+    let wrk = Workdir::new(name);
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--unq-limit", "0"])
+        .arg("--pct-nulls")
+        .args(["-j", "4"]);
+
+    let stdout = wrk.stdout::<String>(&mut cmd);
+    let parsed = parse_frequency_output(&stdout);
+    let grouped = group_by_field(&parsed);
+
+    for (_field, field_rows) in &grouped {
+        let sum: usize = field_rows
+            .iter()
+            .map(|r| r.count.parse::<usize>().unwrap())
+            .sum();
+        assert_eq!(
+            sum, data_row_count,
+            "Count sum mismatch for field '{_field}': got {sum}, expected {data_row_count}"
+        );
+    }
+    true
+}
+
+// ---- 2. Percentage sum per field ~= 100.0 ----
+
+#[test]
+fn prop_frequency_pct_sum() {
+    fn p(rows: CsvData) -> bool {
+        param_prop_frequency_pct_sum("prop_frequency_pct_sum", rows)
+    }
+    qcheck_sized(p as fn(CsvData) -> bool, 5);
+}
+
+fn param_prop_frequency_pct_sum(name: &str, rows: CsvData) -> bool {
+    let _vecs = match prop_preamble(&rows) {
+        Some(v) => v,
+        None => return true,
+    };
+
+    let wrk = Workdir::new(name);
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--unq-limit", "0"])
+        .arg("--pct-nulls")
+        .args(["--pct-dec-places", "5"])
+        .args(["-j", "4"]);
+
+    let stdout = wrk.stdout::<String>(&mut cmd);
+    let parsed = parse_frequency_output(&stdout);
+    let grouped = group_by_field(&parsed);
+
+    for (_field, field_rows) in &grouped {
+        let pct_sum: f64 = field_rows
+            .iter()
+            .filter_map(|r| {
+                if r.percentage.is_empty() {
+                    None
+                } else {
+                    Some(r.percentage.parse::<f64>().unwrap())
+                }
+            })
+            .sum();
+        assert!(
+            (pct_sum - 100.0).abs() < 0.01,
+            "Percentage sum for field '{_field}' is {pct_sum}, expected ~100.0"
+        );
+    }
+    true
+}
+
+// ---- 3. Limit correctness ----
+
+#[test]
+fn prop_frequency_limit_correctness() {
+    fn p(rows: CsvData) -> bool {
+        param_prop_frequency_limit_correctness("prop_frequency_limit_correctness", rows)
+    }
+    qcheck_sized(p as fn(CsvData) -> bool, 5);
+}
+
+fn param_prop_frequency_limit_correctness(name: &str, rows: CsvData) -> bool {
+    let _vecs = match prop_preamble(&rows) {
+        Some(v) => v,
+        None => return true,
+    };
+
+    let wrk = Workdir::new(name);
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "2"])
+        .arg("--pct-nulls")
+        .args(["-j", "4"]);
+
+    let stdout = wrk.stdout::<String>(&mut cmd);
+    let parsed = parse_frequency_output(&stdout);
+    let grouped = group_by_field(&parsed);
+
+    for (_field, field_rows) in &grouped {
+        let explicit_count = field_rows
+            .iter()
+            .filter(|r| r.value != "Other" && r.value != "(NULL)" && r.value != "<ALL_UNIQUE>")
+            .count();
+        assert!(
+            explicit_count <= 2,
+            "Field '{_field}' has {explicit_count} explicit values with --limit 2"
+        );
+        // Other rows should have rank 0
+        for r in field_rows.iter().filter(|r| r.value == "Other") {
+            if !r.rank.is_empty() {
+                assert_eq!(
+                    r.rank, "0",
+                    "Other row in field '{_field}' should have rank 0, got '{}'",
+                    r.rank
+                );
+            }
+        }
+    }
+    true
+}
+
+// ---- 4. Negative limit: all explicit values have count >= abs(limit) ----
+
+#[test]
+fn prop_frequency_negative_limit() {
+    fn p(rows: CsvData) -> bool {
+        param_prop_frequency_negative_limit("prop_frequency_negative_limit", rows)
+    }
+    qcheck_sized(p as fn(CsvData) -> bool, 5);
+}
+
+fn param_prop_frequency_negative_limit(name: &str, rows: CsvData) -> bool {
+    let _vecs = match prop_preamble(&rows) {
+        Some(v) => v,
+        None => return true,
+    };
+
+    let wrk = Workdir::new(name);
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "-2"])
+        .arg("--pct-nulls")
+        .args(["-j", "4"]);
+
+    let stdout = wrk.stdout::<String>(&mut cmd);
+    let parsed = parse_frequency_output(&stdout);
+
+    for r in &parsed {
+        if r.value != "Other" && r.value != "(NULL)" && r.value != "<ALL_UNIQUE>" {
+            let count: usize = r.count.parse().unwrap();
+            assert!(
+                count >= 2,
+                "Field '{}' value '{}' has count {count} but --limit -2 means count >= 2",
+                r.field,
+                r.value
+            );
+        }
+    }
+    true
+}
+
+// ---- 5. Sequential vs parallel output ----
+
+#[test]
+fn prop_frequency_seq_vs_parallel() {
+    fn p(rows: CsvData) -> bool {
+        param_prop_frequency_seq_vs_parallel("prop_frequency_seq_vs_parallel", rows)
+    }
+    qcheck_sized(p as fn(CsvData) -> bool, 5);
+}
+
+fn param_prop_frequency_seq_vs_parallel(name: &str, rows: CsvData) -> bool {
+    let _vecs = match prop_preamble(&rows) {
+        Some(v) => v,
+        None => return true,
+    };
+
+    let wrk = Workdir::new(name);
+    wrk.create_indexed("in.csv", rows);
+
+    // Sequential run
+    let mut cmd_seq = wrk.command("frequency");
+    cmd_seq
+        .arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--unq-limit", "0"])
+        .arg("--pct-nulls")
+        .args(["-j", "1"]);
+    let stdout_seq = wrk.stdout::<String>(&mut cmd_seq);
+
+    // Parallel run
+    let mut cmd_par = wrk.command("frequency");
+    cmd_par
+        .arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--unq-limit", "0"])
+        .arg("--pct-nulls")
+        .args(["-j", "4"]);
+    let stdout_par = wrk.stdout::<String>(&mut cmd_par);
+
+    // Sort both outputs line by line for comparison (field order may differ)
+    let mut lines_seq: Vec<&str> = stdout_seq.lines().collect();
+    let mut lines_par: Vec<&str> = stdout_par.lines().collect();
+    lines_seq.sort_unstable();
+    lines_par.sort_unstable();
+
+    assert_eq!(
+        lines_seq, lines_par,
+        "Sequential (-j 1) and parallel (-j 4) outputs differ"
+    );
+    true
+}
+
+// ---- 6. Dense rank: contiguous 1..N per field ----
+
+#[test]
+fn prop_frequency_dense_rank_no_gaps() {
+    fn p(rows: CsvData) -> bool {
+        param_prop_frequency_dense_rank_no_gaps("prop_frequency_dense_rank_no_gaps", rows)
+    }
+    qcheck_sized(p as fn(CsvData) -> bool, 5);
+}
+
+fn param_prop_frequency_dense_rank_no_gaps(name: &str, rows: CsvData) -> bool {
+    let _vecs = match prop_preamble(&rows) {
+        Some(v) => v,
+        None => return true,
+    };
+
+    let wrk = Workdir::new(name);
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--unq-limit", "0"])
+        .arg("--pct-nulls")
+        .args(["--rank-strategy", "dense"])
+        .args(["-j", "4"]);
+
+    let stdout = wrk.stdout::<String>(&mut cmd);
+    let parsed = parse_frequency_output(&stdout);
+    let grouped = group_by_field(&parsed);
+
+    for (_field, field_rows) in &grouped {
+        let mut ranks: Vec<usize> = field_rows
+            .iter()
+            .filter_map(|r| {
+                if r.rank.is_empty() || r.rank == "0" {
+                    None
+                } else {
+                    Some(r.rank.parse::<usize>().unwrap())
+                }
+            })
+            .collect();
+        ranks.sort_unstable();
+        ranks.dedup();
+        // Dense ranks should be contiguous: 1, 2, 3, ..., N
+        for (i, rank) in ranks.iter().enumerate() {
+            assert_eq!(
+                *rank,
+                i + 1,
+                "Dense rank gap in field '{_field}': expected {}, got {rank}",
+                i + 1
+            );
+        }
+    }
+    true
+}
+
+// ---- 7. Descending order: counts non-increasing per field ----
+
+#[test]
+fn prop_frequency_desc_order() {
+    fn p(rows: CsvData) -> bool {
+        param_prop_frequency_desc_order("prop_frequency_desc_order", rows)
+    }
+    qcheck_sized(p as fn(CsvData) -> bool, 5);
+}
+
+fn param_prop_frequency_desc_order(name: &str, rows: CsvData) -> bool {
+    let _vecs = match prop_preamble(&rows) {
+        Some(v) => v,
+        None => return true,
+    };
+
+    let wrk = Workdir::new(name);
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--unq-limit", "0"])
+        .arg("--pct-nulls")
+        .args(["-j", "4"]);
+
+    let stdout = wrk.stdout::<String>(&mut cmd);
+    let parsed = parse_frequency_output(&stdout);
+    let grouped = group_by_field(&parsed);
+
+    for (_field, field_rows) in &grouped {
+        // Filter out Other and NULL which may appear at the end
+        let counts: Vec<usize> = field_rows
+            .iter()
+            .filter(|r| r.value != "Other" && r.value != "(NULL)")
+            .map(|r| r.count.parse::<usize>().unwrap())
+            .collect();
+        for window in counts.windows(2) {
+            assert!(
+                window[0] >= window[1],
+                "Counts not in descending order for field '{_field}': {} < {}",
+                window[0],
+                window[1]
+            );
+        }
+    }
+    true
 }

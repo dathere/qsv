@@ -18,7 +18,7 @@ import {
   RootsListChangedNotificationSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 
 import { SkillLoader } from "./loader.js";
 import { SkillExecutor } from "./executor.js";
@@ -579,20 +579,53 @@ class QsvMcpServer {
 
           // "auto" is a reserved keyword — not treated as a filesystem path
           if (directory.toLowerCase() === "auto") {
-            this.manuallySetWorkingDir = false;
+            const previousDir = this.filesystemProvider.getWorkingDirectory();
+            let autoSyncEnabled = false;
+            let currentDir = previousDir;
+            let syncErrorMessage: string | null = null;
+
             try {
               await this.syncWorkingDirFromRoots();
+              // Only mark auto-sync as enabled if the sync completed successfully
+              this.manuallySetWorkingDir = false;
+              autoSyncEnabled = true;
+              currentDir = this.filesystemProvider.getWorkingDirectory();
             } catch (syncError) {
-              console.error(`[Roots] Auto-sync from "auto" keyword failed: ${syncError instanceof Error ? syncError.message : String(syncError)}`);
+              const message =
+                syncError instanceof Error ? syncError.message : String(syncError);
+              syncErrorMessage = message;
+              console.error(
+                `[Roots] Auto-sync from "auto" keyword failed: ${message}`,
+              );
             }
-            const currentDir = this.filesystemProvider.getWorkingDirectory();
+
+            if (autoSyncEnabled) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: `Auto-sync re-enabled. Working directory is now: ${currentDir}\n\nThe working directory will automatically follow the MCP client's root directory.`,
+                  },
+                ],
+              };
+            }
+
+            // Auto-sync could not be enabled; surface a user-visible error.
             return {
               content: [
                 {
                   type: "text" as const,
-                  text: `Auto-sync re-enabled. Working directory is now: ${currentDir}\n\nThe working directory will automatically follow the MCP client's root directory.`,
+                  text:
+                    `Failed to enable automatic root-based working directory sync.\n` +
+                    (syncErrorMessage
+                      ? `Reason: ${syncErrorMessage}\n`
+                      : "") +
+                    `The working directory remains: ${previousDir}\n\n` +
+                    `You can continue using this directory, or choose a different path. ` +
+                    `Pass "auto" again once your MCP client exposes a compatible file:// root to re-enable automatic sync.`,
                 },
               ],
+              isError: true,
             };
           }
 
@@ -854,7 +887,16 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
       }
       const rootPath = fileURLToPath(fileRoot.uri);
       if (!existsSync(rootPath)) {
-        console.error(`[Roots] Skipping non-existent root directory: ${rootPath}`);
+        console.error(`[Roots] Skipping non-existent root path: ${rootPath}`);
+        return;
+      }
+      try {
+        if (!statSync(rootPath).isDirectory()) {
+          console.error(`[Roots] Skipping root path (not a directory): ${rootPath}`);
+          return;
+        }
+      } catch {
+        console.error(`[Roots] Cannot stat root path: ${rootPath}`);
         return;
       }
       const resolved = this.updateWorkingDirectory(rootPath);
@@ -866,7 +908,8 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
     } catch (error) {
       // Best-effort feature — suppress expected errors when client doesn't support roots
       if (error instanceof Error) {
-        const errorCode = "code" in error ? (error as Record<string, unknown>).code : undefined;
+        const rawCode = "code" in error ? (error as Record<string, unknown>).code : undefined;
+        const errorCode = typeof rawCode === "string" ? Number(rawCode) : rawCode;
         if (errorCode === -32601) {
           // JSON-RPC Method Not Found — client doesn't implement roots
           console.error(`[Roots] Client does not support roots (code -32601)`);

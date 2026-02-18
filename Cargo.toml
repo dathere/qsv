@@ -288,7 +288,7 @@ zmij = "1.0"
 
 [dev-dependencies]
 actix-governor = "0.10"
-actix-web = { version = "4.12", default-features = false, features = [
+actix-web = { version = "4.13", default-features = false, features = [
     "compress-brotli",
     "compress-gzip",
 ] }

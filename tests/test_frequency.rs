@@ -5866,7 +5866,21 @@ struct FRowFull {
 /// Parse frequency CSV output into `FRowFull` records.
 fn parse_frequency_output(stdout: &str) -> Vec<FRowFull> {
     let mut rdr = csv::Reader::from_reader(stdout.as_bytes());
-    rdr.deserialize().map(|r| r.unwrap()).collect()
+    // Provide rich context on failure so quickcheck/proptest failures are diagnosable.
+    let truncated_stdout = if stdout.len() > 1024 {
+        format!("{}...(truncated)", &stdout[..1024])
+    } else {
+        stdout.to_owned()
+    };
+    rdr.deserialize()
+        .map(|res| {
+            res.unwrap_or_else(|err| {
+                panic!(
+                    "failed to deserialize frequency CSV output: {err}; stdout (truncated): {truncated_stdout}"
+                )
+            })
+        })
+        .collect()
 }
 
 /// Group parsed rows by field name.

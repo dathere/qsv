@@ -1976,6 +1976,7 @@ export function createSetWorkingDirTool(): McpToolDefinition {
 - Affects: qsv_list_files, all qsv commands with input_file
 - Persists for entire session (until changed again)
 - Validates directory exists and is accessible
+- Pass "auto" as directory to re-enable automatic root-based sync
 
 🔒 SECURITY: Only allowed directories can be set (configured in server settings).
 

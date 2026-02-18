@@ -18,6 +18,7 @@ import {
   RootsListChangedNotificationSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 
 import { SkillLoader } from "./loader.js";
 import { SkillExecutor } from "./executor.js";
@@ -72,7 +73,7 @@ const DEFAULT_SERVER_INSTRUCTIONS = `qsv is a tabular data-wrangling toolkit. Us
 
 WORKFLOW ORDER: For new files: (1) qsv_list_files to discover files, (2) qsv_index for files >5MB, (3) qsv_stats --cardinality --stats-jsonl to create stats cache, (4) then run analysis/transformation commands. The stats cache accelerates: frequency, schema, tojsonl, sqlp, joinp, pivotp, diff, sample. SQL queries on CSV inputs auto-convert to Parquet before execution.
 
-FILE HANDLING: Save outputs to files with descriptive names rather than returning large results to chat. Ensure output files are saved to the qsv working directory. Parquet is ONLY for sqlp/DuckDB; all other qsv commands require CSV/TSV/SSV input. The working directory is automatically synced from the MCP client's root directory (e.g., Claude Cowork's "Work in a folder").
+FILE HANDLING: Save outputs to files with descriptive names rather than returning large results to chat. Ensure output files are saved to the qsv working directory. Parquet is ONLY for sqlp/DuckDB; all other qsv commands require CSV/TSV/SSV input. The working directory is automatically synced from the MCP client's root directory (e.g., Claude Cowork's "Work in a folder"), or set manually with qsv_set_working_dir if needed.
 
 TOOL COMPOSITION: qsv_sqlp auto-converts CSV inputs to Parquet, then routes to DuckDB when available for better SQL compatibility and performance; falls back to Polars SQL otherwise. For multi-file SQL queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() references in SQL. For custom row-level logic, use qsv_command with command="luau".
 
@@ -95,6 +96,9 @@ class QsvMcpServer {
   private updateChecker: UpdateChecker;
   private loggedToolMode: boolean = false;
   private toolsListedOnce: boolean = false;
+  private manuallySetWorkingDir = false;
+  private syncingRoots = false;
+  private pendingRootsSync = false;
 
   /**
    * Track which tools have been loaded via search (for deferred loading).
@@ -570,13 +574,30 @@ class QsvMcpServer {
           }
 
           const directory = args.directory.trim();
+
+          // "auto" is a reserved keyword — not treated as a filesystem path
+          if (directory.toLowerCase() === "auto") {
+            this.manuallySetWorkingDir = false;
+            await this.syncWorkingDirFromRoots();
+            const currentDir = this.filesystemProvider.getWorkingDirectory();
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Auto-sync re-enabled. Working directory is now: ${currentDir}\n\nThe working directory will automatically follow the MCP client's root directory.`,
+                },
+              ],
+            };
+          }
+
           const newWorkingDir = this.updateWorkingDirectory(directory);
+          this.manuallySetWorkingDir = true;
 
           return {
             content: [
               {
                 type: "text" as const,
-                text: `Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory.`,
+                text: `Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`,
               },
             ],
           };
@@ -805,15 +826,65 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
    * Used when the client communicates its root directory (e.g., Claude Cowork's "Work in a folder").
    */
   private async syncWorkingDirFromRoots(): Promise<void> {
+    if (this.manuallySetWorkingDir) {
+      console.error("[Roots] Skipping auto-sync; working directory was manually set via qsv_set_working_dir");
+      return;
+    }
+    if (this.syncingRoots) {
+      console.error("[Roots] Sync already in progress, will re-sync when done");
+      this.pendingRootsSync = true;
+      return;
+    }
+    this.syncingRoots = true;
     try {
       const { roots } = await this.server.listRoots();
-      if (roots.length > 0 && roots[0].uri.startsWith("file://")) {
-        const rootPath = fileURLToPath(roots[0].uri);
-        const resolved = this.updateWorkingDirectory(rootPath);
-        console.error(`[Roots] Auto-set working directory to: ${resolved}`);
+      const fileRoot = roots.find(r => r.uri.startsWith("file://"));
+      if (!fileRoot) {
+        if (roots.length > 0) {
+          console.error(`[Roots] ${roots.length} root(s) found but none use file:// URI; working directory not auto-set`);
+        }
+        return;
       }
-    } catch {
-      // Client doesn't support roots — continue with configured default
+      const rootPath = fileURLToPath(fileRoot.uri);
+      if (!existsSync(rootPath)) {
+        console.error(`[Roots] Skipping non-existent root directory: ${rootPath}`);
+        return;
+      }
+      const resolved = this.updateWorkingDirectory(rootPath);
+      console.error(`[Roots] Auto-set working directory to: ${resolved}`);
+      if (roots.length > 1) {
+        console.error(`[Roots] Note: ${roots.length - 1} additional root(s) ignored; only the first file:// root is used`);
+      }
+    } catch (error) {
+      // Best-effort feature — suppress expected errors when client doesn't support roots
+      if (error instanceof Error) {
+        const errorCode = "code" in error ? (error as { code: unknown }).code : undefined;
+        if (errorCode === -32601) {
+          // JSON-RPC Method Not Found — client doesn't implement roots
+          console.error(`[Roots] Client does not support roots (code -32601)`);
+          return;
+        }
+        const msg = error.message.toLowerCase();
+        if (msg.includes("not supported") || msg.includes("method not found")) {
+          // Fallback string matching for SDKs that don't set error codes
+          console.error(`[Roots] Client does not support roots: ${error.message}`);
+          return;
+        }
+        console.error(`[Roots] Failed to sync working directory: ${error.message}`);
+      } else {
+        console.error(`[Roots] Failed to sync working directory: ${error}`);
+      }
+    } finally {
+      this.syncingRoots = false;
+      if (this.pendingRootsSync) {
+        this.pendingRootsSync = false;
+        console.error("[Roots] Running pending re-sync");
+        try {
+          await this.syncWorkingDirFromRoots();
+        } catch (resyncError) {
+          console.error(`[Roots] Pending re-sync failed: ${resyncError}`);
+        }
+      }
     }
   }
 
@@ -826,6 +897,7 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
     console.error("Starting QSV MCP Server...");
 
     await this.server.connect(transport);
+    console.error("QSV MCP Server running on stdio");
 
     // Auto-sync working directory from MCP client roots
     await this.syncWorkingDirFromRoots();
@@ -837,8 +909,6 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
         await this.syncWorkingDirFromRoots();
       },
     );
-
-    console.error("QSV MCP Server running on stdio");
   }
 }
 

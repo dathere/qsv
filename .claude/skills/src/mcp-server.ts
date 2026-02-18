@@ -15,7 +15,9 @@ import {
   ReadResourceRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  RootsListChangedNotificationSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { fileURLToPath } from "node:url";
 
 import { SkillLoader } from "./loader.js";
 import { SkillExecutor } from "./executor.js";
@@ -70,7 +72,7 @@ const DEFAULT_SERVER_INSTRUCTIONS = `qsv is a tabular data-wrangling toolkit. Us
 
 WORKFLOW ORDER: For new files: (1) qsv_list_files to discover files, (2) qsv_index for files >5MB, (3) qsv_stats --cardinality --stats-jsonl to create stats cache, (4) then run analysis/transformation commands. The stats cache accelerates: frequency, schema, tojsonl, sqlp, joinp, pivotp, diff, sample. SQL queries on CSV inputs auto-convert to Parquet before execution.
 
-FILE HANDLING: Save outputs to files with descriptive names rather than returning large results to chat. Ensure output files are saved to the qsv working directory. Parquet is ONLY for sqlp/DuckDB; all other qsv commands require CSV/TSV/SSV input. When being used from Claude Cowork or Code, make sure to set qsv_working_dir to the same directory being used by Cowork/Code.
+FILE HANDLING: Save outputs to files with descriptive names rather than returning large results to chat. Ensure output files are saved to the qsv working directory. Parquet is ONLY for sqlp/DuckDB; all other qsv commands require CSV/TSV/SSV input. The working directory is automatically synced from the MCP client's root directory (e.g., Claude Cowork's "Work in a folder").
 
 TOOL COMPOSITION: qsv_sqlp auto-converts CSV inputs to Parquet, then routes to DuckDB when available for better SQL compatibility and performance; falls back to Polars SQL otherwise. For multi-file SQL queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() references in SQL. For custom row-level logic, use qsv_command with command="luau".
 
@@ -568,12 +570,7 @@ class QsvMcpServer {
           }
 
           const directory = args.directory.trim();
-          this.filesystemProvider.setWorkingDirectory(directory);
-
-          // Also update executor's working directory so qsv processes
-          // write secondary output files (like *.stats.bivariate.csv) to the correct location
-          const newWorkingDir = this.filesystemProvider.getWorkingDirectory();
-          this.executor.setWorkingDirectory(newWorkingDir);
+          const newWorkingDir = this.updateWorkingDirectory(directory);
 
           return {
             content: [
@@ -793,6 +790,34 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
   }
 
   /**
+   * Update the working directory for both filesystem provider and executor.
+   * Returns the resolved working directory path.
+   */
+  private updateWorkingDirectory(directory: string): string {
+    this.filesystemProvider.setWorkingDirectory(directory);
+    const resolved = this.filesystemProvider.getWorkingDirectory();
+    this.executor.setWorkingDirectory(resolved);
+    return resolved;
+  }
+
+  /**
+   * Auto-sync working directory from MCP client roots.
+   * Used when the client communicates its root directory (e.g., Claude Cowork's "Work in a folder").
+   */
+  private async syncWorkingDirFromRoots(): Promise<void> {
+    try {
+      const { roots } = await this.server.listRoots();
+      if (roots.length > 0 && roots[0].uri.startsWith("file://")) {
+        const rootPath = fileURLToPath(roots[0].uri);
+        const resolved = this.updateWorkingDirectory(rootPath);
+        console.error(`[Roots] Auto-set working directory to: ${resolved}`);
+      }
+    } catch {
+      // Client doesn't support roots — continue with configured default
+    }
+  }
+
+  /**
    * Start the server
    */
   async start(): Promise<void> {
@@ -801,6 +826,17 @@ region, location, geo, tract, cbsa, msa, metro, congressional, district
     console.error("Starting QSV MCP Server...");
 
     await this.server.connect(transport);
+
+    // Auto-sync working directory from MCP client roots
+    await this.syncWorkingDirFromRoots();
+
+    // Listen for root changes mid-session
+    this.server.setNotificationHandler(
+      RootsListChangedNotificationSchema,
+      async () => {
+        await this.syncWorkingDirFromRoots();
+      },
+    );
 
     console.error("QSV MCP Server running on stdio");
   }

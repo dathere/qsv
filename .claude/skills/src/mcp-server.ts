@@ -42,6 +42,12 @@ import {
 } from "./mcp-tools.js";
 import { VERSION } from "./version.js";
 import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
+import { readFile } from "fs/promises";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * Core tools that are always available (defer_loading: false)
@@ -74,7 +80,9 @@ FILE HANDLING: Save outputs to files with descriptive names rather than returnin
 
 TOOL COMPOSITION: qsv_sqlp auto-converts CSV inputs to Parquet, then routes to DuckDB when available for better SQL compatibility and performance; falls back to Polars SQL otherwise. For multi-file SQL queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() references in SQL. For custom row-level logic, use qsv_command with command="luau".
 
-MEMORY LIMITS: Commands dedup, sort, reverse, table, transpose load entire files into memory. For files >1GB, prefer extdedup/extsort alternatives via qsv_command. Check column cardinality with qsv_stats before running frequency or pivotp to avoid huge output.`;
+MEMORY LIMITS: Commands dedup, sort, reverse, table, transpose load entire files into memory. For files >1GB, prefer extdedup/extsort alternatives via qsv_command. Check column cardinality with qsv_stats before running frequency or pivotp to avoid huge output.
+
+DOMAIN KNOWLEDGE: Read the qsv://skills/csv-wrangling resource for workflow patterns, tool selection matrix, and pipeline composition guidance.`;
 
 /**
  * Resolved server instructions: uses custom instructions from
@@ -666,17 +674,24 @@ class QsvMcpServer {
    * Register MCP resource handlers
    */
   private registerResourceHandlers(): void {
-    // List resources handler - no file resources exposed
+    // List resources handler
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
       console.error("Listing resources...");
-      console.error("Returning 0 resources (file resources disabled)");
 
-      return {
-        resources: [],
-      };
+      const resources = [
+        {
+          uri: "qsv://skills/csv-wrangling",
+          name: "CSV Wrangling Guide",
+          description: "Standard workflow order, tool selection matrix, selection syntax, and common pipeline patterns for CSV data wrangling with qsv",
+          mimeType: "text/markdown",
+        },
+      ];
+
+      console.error(`Returning ${resources.length} resources`);
+      return { resources };
     });
 
-    // Read resource handler - minimal implementation since no resources are exposed
+    // Read resource handler
     this.server.setRequestHandler(
       ReadResourceRequestSchema,
       async (request) => {
@@ -684,7 +699,21 @@ class QsvMcpServer {
 
         console.error(`Reading resource: ${uri}`);
 
-        throw new Error(`Resource not found: ${uri}. Use qsv_list_files tool to browse available files.`);
+        if (uri === "qsv://skills/csv-wrangling") {
+          const skillPath = join(__dirname, "../skills/csv-wrangling/SKILL.md");
+          const content = await readFile(skillPath, "utf-8");
+          return {
+            contents: [
+              {
+                uri,
+                mimeType: "text/markdown",
+                text: content,
+              },
+            ],
+          };
+        }
+
+        throw new Error(`Resource not found: ${uri}. Available: qsv://skills/csv-wrangling`);
       },
     );
   }
@@ -693,102 +722,14 @@ class QsvMcpServer {
    * Register MCP prompt handlers
    */
   private registerPromptHandlers(): void {
-    // List prompts handler
     this.server.setRequestHandler(ListPromptsRequestSchema, async () => {
       console.error("Listing prompts...");
-
-      const prompts = [
-        {
-          name: "qsv_census_integration",
-          description:
-            "Guide for using Census MCP Server with qsv for US demographic enrichment",
-        },
-      ];
-
-      console.error(`Returning ${prompts.length} prompts`);
-
-      return {
-        prompts,
-      };
+      console.error("Returning 0 prompts");
+      return { prompts: [] };
     });
 
-    // Get prompt handler
     this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-      const { name } = request.params;
-
-      console.error(`Getting prompt: ${name}`);
-
-      // Handle Census integration prompt
-      if (name === "qsv_census_integration") {
-        return {
-          messages: [
-            {
-              role: "assistant" as const,
-              content: {
-                type: "text" as const,
-                text: `# Census MCP Server Integration Guide
-
-## Overview
-When working with US geographic data in qsv, you can enrich your analysis using the Census MCP Server.
-
-## When to Use Census MCP Server
-Use Census MCP when your data contains:
-- City names (use qsv_geocode suggest first)
-- State names or 2-letter codes
-- County names or FIPS codes
-- ZIP codes or Census tract IDs
-
-## Census MCP Tools
-
-### \`resolve-geography-fips\`
-Converts place names to FIPS codes.
-- Input: City name, state name, or county name
-- Output: FIPS code for Census API queries
-
-### \`fetch-aggregate-data\`
-Gets demographic data for a geography.
-- Population, age distribution
-- Median household income
-- Education attainment
-- Housing statistics
-
-## Workflow Examples
-
-### Example 1: Enrich City Data with Demographics
-1. **qsv_geocode suggest** - Standardize city names
-2. **qsv_stats** - Analyze the geocoded data
-3. **Census resolve-geography-fips** - Get FIPS codes for cities
-4. **Census fetch-aggregate-data** - Get demographics by FIPS
-5. The Census API returns JSON, use qsv_json to convert it to CSV.
-6. **qsv_joinp** - Join demographics back to original data
-
-### Example 2: Validate Geographic Codes
-1. **qsv_frequency** - Check unique values in state/county columns
-2. **Census resolve-geography-fips** - Validate codes exist
-3. **qsv_search** - Find rows with invalid/unmatched codes
-
-## Column Pattern Recognition
-Geographic columns often have names containing:
-city, state, county, fips, zip, zipcode, postal, place, municipality,
-region, location, geo, tract, cbsa, msa, metro, congressional, district
-
-## Important Notes
-- **US Data Only**: Census MCP Server only provides US Census data
-- **FIPS Codes**: Many Census queries require FIPS codes - use resolve-geography-fips first
-- Alternatively, instead of resolve-geography-fips, the qsv_geocode command outputs FIPS codes.
-- **Data Freshness**: Census data is typically 1-2 years behind current year
-- **Rate Limits**: Be mindful of Census API rate limits when making bulk requests
-- When retrieving data from the Census MCP Server, remember to save them locally as CSV in the qsv working directory so you don't fill up your context window with large JSON responses.
-- Refrain from using stdout for qsv commands. Save outputs to files in the qsv working directory and reference those files in subsequent commands.
-- Always save output files with descriptive names in the working directory for easy reference in subsequent commands.
-`,
-              },
-            },
-          ],
-        };
-      }
-
-      throw new Error(`Unknown prompt: ${name}`);
+      throw new Error(`Unknown prompt: ${request.params.name}`);
     });
   }
 

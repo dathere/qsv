@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Current Version**: 16.0.0 | **MSRV**: Rust 1.93
+**Current Version**: 16.1.0 | **MSRV**: Rust 1.93
 
 qsv is a blazingly-fast command-line CSV data-wrangling toolkit written in Rust. It's a fork of xsv with extensive additional functionality, focusing on performance, reliability, and comprehensive data manipulation capabilities.
 It's the data-wrangling, analysis and FAIRification engine of several datHere products - qsv pro and Datapusher+, in particular.
@@ -62,7 +62,7 @@ cargo +nightly clippy -F all_features -- -W clippy::perf
 ### Source Code Organization
 
 - **`src/main.rs`**, **`src/mainlite.rs`**, **`src/maindp.rs`** - Entry points for the three binary variants
-- **`src/cmd/`** - Each command is a separate module (67 commands total)
+- **`src/cmd/`** - Each command is a separate module (68 commands total)
 - **`src/util.rs`** - Shared utility functions used across commands
 - **`src/config.rs`** - Configuration handling, CSV reader/writer setup
 - **`src/select.rs`** - Column selection DSL implementation
@@ -173,7 +173,7 @@ qsv cat rows file1.csv file2.csv
 
 **Streaming vs Memory-Intensive Commands**:
 - Most commands stream CSV data row-by-row for constant memory usage
-- Commands marked with 🤯 load entire CSV into memory (`dedup`, `reverse`, `sort`, `stats` with extended stats, `table`, `transpose`) - streaming modes available for `dedup`, `stats`, and `transpose`
+- Commands marked with 🤯 load entire CSV into memory (`dedup`, `pragmastat`, `reverse`, `sort`, `stats` with extended stats, `table`, `transpose`) - streaming modes available for `dedup`, `stats`, and `transpose`
 - Commands marked with 😣 use memory proportional to column cardinality (`frequency`, `join`, `schema`, `tojsonl`)
 
 **Index-Accelerated Processing**:
@@ -183,7 +183,7 @@ qsv cat rows file1.csv file2.csv
 
 **Stats Cache**:
 - `stats` command creates `.stats.csv` and `.stats.csv.stats.jsonl` cache files
-- Other "smart" commands (`frequency`, `schema`, `tojsonl`, `sqlp`, `joinp`, `pivotp`, `diff`, `sample`) use the stats cache to optimize processing
+- Other "smart" commands (`describegpt`, `frequency`, `joinp`, `moarstats`, `pivotp`, `sample`, `schema`, `sqlp`, `tojsonl`) use the stats cache to optimize processing
 - Cache validity checked via file modification times
 
 **Polars Integration**:
@@ -380,7 +380,7 @@ qsv --update-mcp-skills
 ```
 
 - Skills are generated from command USAGE text and README command table
-- **56 MCP skills** generated (vs 67 CLI commands - some internal commands excluded)
+- **56 MCP skills** generated (vs 68 CLI commands - some internal commands excluded)
 - Examples sections in USAGE text are parsed for agent-friendly examples
 - Section headers (lines starting with "==") are skipped during parsing
 - Generated files are stored in `.claude/skills/qsv/`

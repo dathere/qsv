@@ -22,7 +22,7 @@ Always follow this sequence when processing CSV data:
 | Sort data | `sort` | `sqlp` | Need ORDER BY with LIMIT |
 | Remove duplicates | `dedup` | `sqlp` | Need GROUP BY dedup |
 | Join two files | `joinp` | `join` | `join` for memory-constrained |
-| Aggregate/GROUP BY | `sqlp` | `frequency` | `frequency` for simple counts |
+| Aggregate/GROUP BY | `sqlp` | `frequency` | `frequency` for simple counts; `--frequency-jsonl` creates cache |
 | Column stats | `stats` | `moarstats` | `moarstats` for extended stats |
 | Find/replace | `apply operations` | `sqlp` | `sqlp` for conditional replace |
 | Reshape wide->long | `transpose --long` | `sqlp` (UNPIVOT) | Complex reshaping |

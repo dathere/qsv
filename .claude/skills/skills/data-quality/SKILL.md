@@ -45,7 +45,7 @@
 | Case consistency | `frequency` | "NYC" vs "nyc" vs "Nyc" as separate values |
 | Encoding | `sniff` | Non-UTF-8 encoding detected |
 | Delimiters | `sniff` | Unexpected delimiter or quoting |
-| Row lengths | `fixlengths` | Compare row count before/after to detect ragged rows |
+| Row lengths | `fixlengths` | Pads short rows to match longest row; compare count before/after to detect ragged rows |
 
 **Red flag**: Frequency shows same value in different cases/formats.
 
@@ -70,7 +70,7 @@
 4. stats --cardinality --stats-jsonl -> Full statistical profile
 5. frequency       -> Value distribution for categorical columns
 6. validate        -> Schema validation (if schema available)
-7. fixlengths      -> Fix ragged rows (compare row count before/after)
+7. fixlengths      -> Pad short rows to uniform length (compare count before/after to detect ragged rows)
 ```
 
 ## Quality Report Checklist

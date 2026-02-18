@@ -235,15 +235,7 @@
       "description": "Convert CSV to Parquet format"
     }
   ],
-  "prompts": [
-    {
-      "name": "qsv_census_integration",
-      "description": "Guide for using Census MCP Server with qsv for US demographic enrichment",
-      "text": "Show me how to use Census MCP Server with qsv to enrich data with US demographic information."
-    }
-  ],
   "tools_generated": true,
-  "prompts_generated": false,
   "compatibility": {
     "platforms": ["darwin", "win32", "linux"]
   },

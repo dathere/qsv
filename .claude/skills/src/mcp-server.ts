@@ -13,8 +13,6 @@ import {
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
   RootsListChangedNotificationSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { fileURLToPath } from "node:url";
@@ -179,12 +177,6 @@ class QsvMcpServer {
     console.error("[Init] Registering resource handlers...");
     this.registerResourceHandlers();
     console.error("[Init] ✓ Resource handlers registered");
-    console.error("");
-
-    // Register prompt handlers
-    console.error("[Init] Registering prompt handlers...");
-    this.registerPromptHandlers();
-    console.error("[Init] ✓ Prompt handlers registered");
     console.error("");
 
     console.error("=".repeat(60));
@@ -744,109 +736,6 @@ class QsvMcpServer {
         throw new Error(`Resource not found: ${uri}. Use qsv_list_files tool to browse available files.`);
       },
     );
-  }
-
-  /**
-   * Register MCP prompt handlers
-   */
-  private registerPromptHandlers(): void {
-    // List prompts handler
-    this.server.setRequestHandler(ListPromptsRequestSchema, async () => {
-      console.error("Listing prompts...");
-
-      const prompts = [
-        {
-          name: "qsv_census_integration",
-          description:
-            "Guide for using Census MCP Server with qsv for US demographic enrichment",
-        },
-      ];
-
-      console.error(`Returning ${prompts.length} prompts`);
-
-      return {
-        prompts,
-      };
-    });
-
-    // Get prompt handler
-    this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-      const { name } = request.params;
-
-      console.error(`Getting prompt: ${name}`);
-
-      // Handle Census integration prompt
-      if (name === "qsv_census_integration") {
-        return {
-          messages: [
-            {
-              role: "assistant" as const,
-              content: {
-                type: "text" as const,
-                text: `# Census MCP Server Integration Guide
-
-## Overview
-When working with US geographic data in qsv, you can enrich your analysis using the Census MCP Server.
-
-## When to Use Census MCP Server
-Use Census MCP when your data contains:
-- City names (use qsv_geocode suggest first)
-- State names or 2-letter codes
-- County names or FIPS codes
-- ZIP codes or Census tract IDs
-
-## Census MCP Tools
-
-### \`resolve-geography-fips\`
-Converts place names to FIPS codes.
-- Input: City name, state name, or county name
-- Output: FIPS code for Census API queries
-
-### \`fetch-aggregate-data\`
-Gets demographic data for a geography.
-- Population, age distribution
-- Median household income
-- Education attainment
-- Housing statistics
-
-## Workflow Examples
-
-### Example 1: Enrich City Data with Demographics
-1. **qsv_geocode suggest** - Standardize city names
-2. **qsv_stats** - Analyze the geocoded data
-3. **Census resolve-geography-fips** - Get FIPS codes for cities
-4. **Census fetch-aggregate-data** - Get demographics by FIPS
-5. The Census API returns JSON, use qsv_json to convert it to CSV.
-6. **qsv_joinp** - Join demographics back to original data
-
-### Example 2: Validate Geographic Codes
-1. **qsv_frequency** - Check unique values in state/county columns
-2. **Census resolve-geography-fips** - Validate codes exist
-3. **qsv_search** - Find rows with invalid/unmatched codes
-
-## Column Pattern Recognition
-Geographic columns often have names containing:
-city, state, county, fips, zip, zipcode, postal, place, municipality,
-region, location, geo, tract, cbsa, msa, metro, congressional, district
-
-## Important Notes
-- **US Data Only**: Census MCP Server only provides US Census data
-- **FIPS Codes**: Many Census queries require FIPS codes - use resolve-geography-fips first
-- Alternatively, instead of resolve-geography-fips, the qsv_geocode command outputs FIPS codes.
-- **Data Freshness**: Census data is typically 1-2 years behind current year
-- **Rate Limits**: Be mindful of Census API rate limits when making bulk requests
-- When retrieving data from the Census MCP Server, remember to save them locally as CSV in the qsv working directory so you don't fill up your context window with large JSON responses.
-- Refrain from using stdout for qsv commands. Save outputs to files in the qsv working directory and reference those files in subsequent commands.
-- Always save output files with descriptive names in the working directory for easy reference in subsequent commands.
-`,
-              },
-            },
-          ],
-        };
-      }
-
-      throw new Error(`Unknown prompt: ${name}`);
-    });
   }
 
   /**

@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Re-entrancy guard and retry cap (max 3) prevent unbounded recursion from rapid notification bursts
   - Directory validation, `file://` URI parsing, and robust JSON-RPC error code handling
 
+### Removed
+- Census integration prompt (`qsv_census_integration`) and complementary server hints from tool descriptions
+
 ### Fixed
 - Harden roots sync error handling: validate root path is a directory, normalize JSON-RPC error codes, wrap pending re-sync in try/catch
 - Remove `sqlp` reference for UNPIVOT (not supported in Polars SQL); document DuckDB UNPIVOT as external tool for wide-to-long reshape

@@ -45,7 +45,7 @@
 | Case consistency | `frequency` | "NYC" vs "nyc" vs "Nyc" as separate values |
 | Encoding | `sniff` | Non-UTF-8 encoding detected |
 | Delimiters | `sniff` | Unexpected delimiter or quoting |
-| Row lengths | `fixlengths --count` | Rows with wrong number of fields |
+| Row lengths | `fixlengths` | Pads short rows to match longest row; compare count before/after to detect ragged rows |
 
 **Red flag**: Frequency shows same value in different cases/formats.
 
@@ -70,7 +70,7 @@
 4. stats --cardinality --stats-jsonl -> Full statistical profile
 5. frequency       -> Value distribution for categorical columns
 6. validate        -> Schema validation (if schema available)
-7. fixlengths --count -> Check for ragged rows
+7. fixlengths      -> Pad short rows to uniform length (compare count before/after to detect ragged rows)
 ```
 
 ## Quality Report Checklist
@@ -97,5 +97,5 @@ After profiling, report on:
 | Ragged rows | `fixlengths` |
 | Unsafe column names | `safenames` |
 | Wrong encoding | `input` (normalizes to UTF-8) |
-| Empty value replacement | `apply emptyreplace "N/A" col` |
+| Empty values | `apply emptyreplace col --replacement "N/A"` |
 | Invalid rows | `validate schema.json` + filter |

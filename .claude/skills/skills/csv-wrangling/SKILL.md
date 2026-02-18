@@ -25,7 +25,7 @@ Always follow this sequence when processing CSV data:
 | Aggregate/GROUP BY | `sqlp` | `frequency` | `frequency` for simple counts; `--frequency-jsonl` creates cache |
 | Column stats | `stats` | `moarstats` | `moarstats` for extended stats |
 | Find/replace | `apply operations` | `sqlp` | `sqlp` for conditional replace |
-| Reshape wide->long | `transpose --long` | DuckDB UNPIVOT | Complex reshaping |
+| Reshape wide->long | `transpose --long` | - | DuckDB UNPIVOT (external) for complex reshaping |
 | Reshape long->wide | `pivotp` | `sqlp` | Complex pivots |
 | Concatenate files | `cat rows` | `cat rowskey` | Different column orders |
 | Sample rows | `sample` | `slice` | `slice` for positional ranges |

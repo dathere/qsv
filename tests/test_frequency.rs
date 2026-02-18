@@ -5876,7 +5876,8 @@ fn parse_frequency_output(stdout: &str) -> Vec<FRowFull> {
         .map(|res| {
             res.unwrap_or_else(|err| {
                 panic!(
-                    "failed to deserialize frequency CSV output: {err}; stdout (truncated): {truncated_stdout}"
+                    "failed to deserialize frequency CSV output: {err}; stdout (truncated): \
+                     {truncated_stdout}"
                 )
             })
         })

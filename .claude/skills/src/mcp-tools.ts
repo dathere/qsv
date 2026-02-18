@@ -86,14 +86,13 @@ const METADATA_COMMANDS = new Set(["count", "headers", "index", "sniff"]);
 
 /**
  * Consolidated guidance for each command.
- * Combines when-to-use, common patterns, error prevention, complementary servers,
+ * Combines when-to-use, common patterns, error prevention,
  * and behavioral flags into a single lookup.
  */
 interface CommandGuidance {
   whenToUse?: string;
   commonPattern?: string;
   errorPrevention?: string;
-  complementaryServer?: string;
   needsMemoryWarning?: boolean;
   needsIndexHint?: boolean;
   hasCommonMistakes?: boolean;
@@ -116,14 +115,12 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     whenToUse: "Quick numeric stats (mean, min/max, stddev). Creates cache for other commands. Run 2nd after index.",
     commonPattern: "Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, diff, sample.",
     errorPrevention: "Works with CSV/TSV/SSV files only. For SQL queries, use sqlp. Run qsv_index first for files >10MB.",
-    complementaryServer: "🔗 CENSUS VALIDATION: If stats show US geographic columns (city, state, county, FIPS), Census MCP Server can validate codes and fetch reference demographics for comparison.",
     needsIndexHint: true,
   },
   moarstats: {
     whenToUse: "Comprehensive stats + bivariate stats + outlier details + data type inference. Slower but richer than stats.",
     commonPattern: "Index → Stats → Moarstats for richest analysis. With --bivariate: main stats to --output, bivariate stats to <FILESTEM>.stats.bivariate.csv (separate file next to input).",
     errorPrevention: "Run stats first to create cache. Slower than stats but richer output. IMPORTANT: --bivariate writes results to a SEPARATE file: <FILESTEM>.stats.bivariate.csv (located next to the input file, NOT in stdout/output). Always read this file to get bivariate results. With --join-inputs, the file is <FILESTEM>.stats.bivariate.joined.csv.",
-    complementaryServer: "🔗 CENSUS VALIDATION: If analyzing US geographic data, Census MCP Server can provide demographic baselines for statistical comparison.",
     needsMemoryWarning: true,
     hasCommonMistakes: true,
   },
@@ -140,7 +137,6 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     whenToUse: "Count unique values. Best for low-cardinality categorical columns. Run qsv_stats --cardinality first to identify high-cardinality columns to exclude.",
     commonPattern: "Stats → Frequency: Use qsv_stats --cardinality first to identify high-cardinality columns (IDs) to exclude. The frequency cache (--frequency-jsonl) is auto-created on first run for faster subsequent analysis.",
     errorPrevention: "High-cardinality columns (IDs, timestamps) can produce huge output. Use qsv_stats --cardinality to inspect column cardinality before running frequency.",
-    complementaryServer: "🔗 CENSUS INSIGHT: For US geographic columns, Census MCP Server can enrich frequency results with population/demographic data via `fetch-aggregate-data`.",
     needsMemoryWarning: true,
     hasCommonMistakes: true,
   },
@@ -234,7 +230,6 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     whenToUse: "Geocode locations using Geonames/MaxMind. Subcommands: suggest, reverse, countryinfo, iplookup. Specify via subcommand parameter.",
     commonPattern: "Common: suggest for city lookup, reverse for lat/lon → city, iplookup for IP → location.",
     errorPrevention: "Needs Geonames index (auto-downloads on first use). iplookup needs MaxMind GeoLite2 DB.",
-    complementaryServer: "🔗 CENSUS ENRICHMENT: After geocoding US locations, use Census MCP Server to add demographics. Tools: `resolve-geography-fips` (get FIPS codes), `fetch-aggregate-data` (population, income, education). US data only.",
     needsIndexHint: true,
   },
   pivotp: {
@@ -891,11 +886,6 @@ function enhanceDescription(skill: QsvSkill): string {
     if (skill.examples.length > maxExamples) {
       description += `\n  (${skill.examples.length - maxExamples} more - use help=true for full list)`;
     }
-  }
-
-  // Add complementary server hints (Census MCP integration)
-  if (guidance?.complementaryServer) {
-    description += `\n\n${guidance.complementaryServer}`;
   }
 
   return description;

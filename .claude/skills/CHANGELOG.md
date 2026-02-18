@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [16.1.2] - 2026-02-18
+
+### Added
+- **Auto-sync working directory from MCP client roots** — Automatically detects the client's root directory via MCP `roots/list` protocol and sets it as the working directory, eliminating manual `qsv_set_working_dir` calls when using Claude Cowork's "Work in a folder" feature
+  - Listens for mid-session root changes via `RootsListChangedNotification`
+  - Manual `qsv_set_working_dir` overrides auto-sync; pass `"auto"` to re-enable
+  - Re-entrancy guard and retry cap (max 3) prevent unbounded recursion from rapid notification bursts
+  - Directory validation, `file://` URI parsing, and robust JSON-RPC error code handling
+
+### Removed
+- Census integration prompt (`qsv_census_integration`) and complementary server hints from tool descriptions
+
+### Fixed
+- Harden roots sync error handling: validate root path is a directory, normalize JSON-RPC error codes, wrap pending re-sync in try/catch
+- Remove `sqlp` reference for UNPIVOT (not supported in Polars SQL); document DuckDB UNPIVOT as external tool for wide-to-long reshape
+- Correct inaccurate command references in SKILL.md files (`fixlengths`, `apply emptyreplace` arg order, replaced `to parquet` with `to ods/xlsx`)
+- Clarify `fixlengths` behavior (pads short rows) and add `--frequency-jsonl` cache hint
+- Fix download URL version in README-MCPB
+
+### Tests
+- 9 roots sync contract tests covering directory validation, URI parsing, error code normalization, manual override, re-entrancy guard, and retry cap
+
+### Dependencies
+- Bumped `ajv` from 8.17.1 to 8.18.0
+
 ## [16.1.1] - 2026-02-17
 
 ### Added

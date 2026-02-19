@@ -23,39 +23,36 @@ Input handling
 * NOTE: This command loads all numeric values into memory.
 
 ONE-SAMPLE OUTPUT (default, per selected column)
-field, n, center, spread, rel_spread, center_lower, center_upper
+field, n, center, spread, center_lower, center_upper, spread_lower, spread_upper
 
-center       Robust location; median of pairwise averages (Hodges-Lehmann).
+center             Robust location; median of pairwise averages (Hodges-Lehmann).
 Like the mean but stable with outliers; tolerates up to 29% corrupted data.
-spread       Robust dispersion; median of pairwise absolute differences (Shamos).
+spread             Robust dispersion; median of pairwise absolute differences (Shamos).
 Same units as data; also tolerates up to 29% corrupted data.
-rel_spread   Relative dispersion = spread / center (robust coefficient of variation).
-Dimensionless; compares variability across scales.
-
-center_lower/center_upper
-Bounds for center with error rate = misrate (exact under weak symmetry).
+center_lower/upper Bounds for center with error rate = misrate (exact under weak symmetry).
 Use 1e-3 for everyday analysis or 1e-6 for critical decisions.
+spread_lower/upper Bounds for spread with error rate = misrate (randomized).
 
 TWO-SAMPLE OUTPUT (--twosample, per unordered column pair)
-field_x, field_y, n_x, n_y, shift, ratio, avg_spread, disparity,
-shift_lower, shift_upper, ratio_lower, ratio_upper
+field_x, field_y, n_x, n_y, shift, ratio, disparity,
+shift_lower, shift_upper, ratio_lower, ratio_upper, disparity_lower, disparity_upper
 
-shift        Robust difference in location; median of pairwise differences.
+shift                 Robust difference in location; median of pairwise differences.
 Negative => first column tends to be lower.
-ratio        Robust multiplicative ratio; exp(shift(log x, log y)).
+ratio                 Robust multiplicative ratio; exp(shift(log x, log y)).
 Use for positive-valued quantities (latency, price, concentration).
-avg_spread   Pooled robust dispersion (weighted by sample sizes).
-Note: pooled scale, not Spread(x union y).
-disparity    Effect size = shift / avg_spread (robust Cohen's d).
-
-shift_lower/shift_upper, ratio_lower/ratio_upper
-Bounds for shift/ratio with error rate = misrate (ties may be conservative).
-If bounds exclude 0 (shift) or 1 (ratio), the difference is reliable.
+disparity             Robust effect size = shift / (average spread of x and y).
+shift_lower/upper     Bounds for shift (exact; ties may be conservative).
+If bounds exclude 0, the shift is reliable.
+ratio_lower/upper     Bounds for ratio (exact; requires all values > 0).
+If bounds exclude 1, the ratio is reliable.
+disparity_lower/upper Bounds for disparity (randomized, Bonferroni combination).
+If bounds exclude 0, the disparity is reliable.
 
 When values are blank
 * Column has no numeric data (n=0).
-* Positivity required: rel_spread, ratio, ratio_* need all values > 0.
-* Sparity required: spread/avg_spread/disparity need real variability (not tie-dominant).
+* Positivity required: ratio, ratio_* need all values > 0.
+* Sparity required: spread/spread_*/disparity/disparity_* need real variability (not tie-dominant).
 * Bounds require enough data for requested misrate; try higher misrate or more data.
 
 ### Misrate Parameter
@@ -94,7 +91,7 @@ qsv pragmastat --misrate 1e-6 data.csv
 ```
 
 Full Pragmastat manual:
-<https://github.com/AndreyAkinshin/pragmastat/releases/download/v8.0.0/pragmastat-v8.0.0.pdf>
+<https://github.com/AndreyAkinshin/pragmastat/releases/download/v10.0.0/pragmastat-v10.0.0.pdf>
 <https://pragmastat.dev/> (latest version)
 
 <a name="usage"></a>

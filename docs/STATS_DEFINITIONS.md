@@ -481,7 +481,7 @@ See: [Outlier](https://en.wikipedia.org/wiki/Outlier)
 
 ## `pragmastat`
 
-The `pragmastat` command computes robust, median-of-pairwise statistics using the [Pragmastat library](https://pragmastat.dev/) (v8.0.0). Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
+The `pragmastat` command computes robust, median-of-pairwise statistics using the [Pragmastat library](https://pragmastat.dev/) (v10.0.0). Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
 
 Sourced from `src/cmd/pragmastat.rs`.
 
@@ -493,7 +493,7 @@ Sourced from `src/cmd/pragmastat.rs`.
 
 ### One-Sample Mode (Default)
 
-Output columns: `field, n, center, spread, rel_spread, center_lower, center_upper`
+Output columns: `field, n, center, spread, center_lower, center_upper, spread_lower, spread_upper`
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
@@ -501,15 +501,16 @@ Output columns: `field, n, center, spread, rel_spread, center_lower, center_uppe
 | `n` | Variable | Count of finite numeric values. | Count after filtering non-numeric, NaN, Inf. |
 | `center` | Variable | Hodges-Lehmann estimator — robust location. | Median of pairwise averages. Tolerates up to 29% corrupted data. Like the mean but stable with outliers. |
 | `spread` | Variable | Shamos estimator — robust dispersion. | Median of pairwise absolute differences. Same units as data. Also tolerates up to 29% corrupted data. |
-| `rel_spread` | Variable | Relative dispersion. | `spread / center`. Dimensionless robust coefficient of variation; compares variability across scales. Requires all values > 0. |
 | `center_lower` | Variable | Lower confidence bound for center. | Exact under weak symmetry, with error rate = misrate. |
 | `center_upper` | Variable | Upper confidence bound for center. | Exact under weak symmetry, with error rate = misrate. |
+| `spread_lower` | Variable | Lower confidence bound for spread. | Randomized (bootstrap); error rate = misrate. |
+| `spread_upper` | Variable | Upper confidence bound for spread. | Randomized (bootstrap); error rate = misrate. |
 
 ### Two-Sample Mode
 
 Enabled with the `--twosample` option. Computes statistics for all unordered column pairs.
 
-Output columns: `field_x, field_y, n_x, n_y, shift, ratio, avg_spread, disparity, shift_lower, shift_upper, ratio_lower, ratio_upper`
+Output columns: `field_x, field_y, n_x, n_y, shift, ratio, disparity, shift_lower, shift_upper, ratio_lower, ratio_upper, disparity_lower, disparity_upper`
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
@@ -517,10 +518,10 @@ Output columns: `field_x, field_y, n_x, n_y, shift, ratio, avg_spread, disparity
 | `n_x`, `n_y` | Pairwise | Counts of finite numeric values. | Per-column counts after filtering non-numeric/NaN/Inf. |
 | `shift` | Pairwise | Hodges-Lehmann difference — robust location difference. | Median of pairwise differences between columns. Negative means first column tends to be lower. |
 | `ratio` | Pairwise | Robust multiplicative ratio. | `exp(shift(log x, log y))`. Use for positive-valued quantities (latency, price, concentration). Requires all values > 0. |
-| `avg_spread` | Pairwise | Pooled robust dispersion. | Weighted by sample sizes. Note: this is pooled scale, not Spread(x union y). |
-| `disparity` | Pairwise | Effect size (robust Cohen's d). | `shift / avg_spread`. |
-| `shift_lower`, `shift_upper` | Pairwise | Confidence bounds for shift. | Error rate = misrate. If bounds exclude 0, the difference is reliable. Ties may be conservative. |
-| `ratio_lower`, `ratio_upper` | Pairwise | Confidence bounds for ratio. | Error rate = misrate. If bounds exclude 1, the difference is reliable. Ties may be conservative. |
+| `disparity` | Pairwise | Robust effect size. | `shift / (average spread of x and y)`. |
+| `shift_lower`, `shift_upper` | Pairwise | Confidence bounds for shift. | Exact; error rate = misrate. If bounds exclude 0, the difference is reliable. Ties may be conservative. |
+| `ratio_lower`, `ratio_upper` | Pairwise | Confidence bounds for ratio. | Exact; error rate = misrate. If bounds exclude 1, the difference is reliable. Requires all values > 0. |
+| `disparity_lower`, `disparity_upper` | Pairwise | Confidence bounds for disparity. | Randomized (Bonferroni combination); error rate = misrate. If bounds exclude 0, the disparity is reliable. |
 
 ### Options
 
@@ -537,11 +538,11 @@ Output columns: `field_x, field_y, n_x, n_y, shift, ratio, avg_spread, disparity
 
 Cells are empty (blank) when:
 - **No numeric data (n=0):** The column contains no finite numeric values
-- **Positivity required:** `rel_spread`, `ratio`, `ratio_lower`, and `ratio_upper` require all values > 0
-- **Sparity required:** `spread`, `avg_spread`, and `disparity` need real variability (not tie-dominant data)
-- **Insufficient data for bounds:** `center_lower`, `center_upper`, `shift_lower`, `shift_upper` need enough data for the requested misrate; try a higher misrate or more data
+- **Positivity required:** `ratio`, `ratio_lower`, and `ratio_upper` require all values > 0
+- **Sparity required:** `spread`, `spread_lower`, `spread_upper`, `disparity`, `disparity_lower`, and `disparity_upper` need real variability (not tie-dominant data)
+- **Insufficient data for bounds:** All bounds columns need enough data for the requested misrate; try a higher misrate or more data
 
-See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/releases/download/v8.0.0/pragmastat-v8.0.0.pdf), [pragmastat.dev](https://pragmastat.dev/)
+See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/releases/download/v10.0.0/pragmastat-v10.0.0.pdf), [pragmastat.dev](https://pragmastat.dev/)
 
 ## `frequency`
 

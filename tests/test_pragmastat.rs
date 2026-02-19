@@ -18,34 +18,59 @@ fn pragmastat_onesample_basic() {
             "n",
             "center",
             "spread",
-            "rel_spread",
             "center_lower",
-            "center_upper"
+            "center_upper",
+            "spread_lower",
+            "spread_upper",
         ]
     );
 
-    // Verify latitude with deterministic values
+    // Verify latitude: deterministic values for center and center bounds
     let lat_row = got.iter().find(|r| r[0] == "latitude").unwrap();
-    assert_eq!(
-        lat_row,
-        &svec![
-            "latitude", "100", "42.3405", "0.0259", "0.0006", "42.3272", "42.3503"
-        ]
+    assert_eq!(lat_row[0], "latitude");
+    assert_eq!(lat_row[1], "100");
+    assert_eq!(lat_row[2], "42.3405"); // center
+    assert_eq!(lat_row[3], "0.0259"); // spread
+    assert_eq!(lat_row[4], "42.3272"); // center_lower (deterministic)
+    assert_eq!(lat_row[5], "42.3503"); // center_upper (deterministic)
+    // spread_lower/upper are randomized — verify bounds are valid and straddle spread
+    let spread: f64 = lat_row[3].parse().unwrap();
+    let spread_lower: f64 = lat_row[6]
+        .parse()
+        .expect("spread_lower should be non-empty");
+    let spread_upper: f64 = lat_row[7]
+        .parse()
+        .expect("spread_upper should be non-empty");
+    assert!(
+        spread_lower <= spread,
+        "spread_lower ({spread_lower}) should be <= spread ({spread})"
+    );
+    assert!(
+        spread_upper >= spread,
+        "spread_upper ({spread_upper}) should be >= spread ({spread})"
     );
 
-    // Verify longitude with deterministic values
+    // Verify longitude: deterministic center bounds, randomized spread bounds
     let lon_row = got.iter().find(|r| r[0] == "longitude").unwrap();
-    assert_eq!(
-        lon_row,
-        &svec![
-            "longitude",
-            "100",
-            "-71.068",
-            "0.0249",
-            "",
-            "-71.0814",
-            "-71.0587"
-        ]
+    assert_eq!(lon_row[1], "100");
+    assert_eq!(lon_row[2], "-71.068"); // center
+    assert_eq!(lon_row[3], "0.0249"); // spread
+    assert_eq!(lon_row[4], "-71.0814"); // center_lower (deterministic)
+    assert_eq!(lon_row[5], "-71.0587"); // center_upper (deterministic)
+    let lon_spread: f64 = lon_row[3].parse().unwrap();
+    let lon_spread_lower: f64 = lon_row[6]
+        .parse()
+        .expect("spread_lower should be non-empty");
+    let lon_spread_upper: f64 = lon_row[7]
+        .parse()
+        .expect("spread_upper should be non-empty");
+    assert!(
+        lon_spread_lower <= lon_spread,
+        "spread_lower ({lon_spread_lower}) should be <= spread ({lon_spread})"
+    );
+    assert!(
+        lon_spread_upper >= lon_spread,
+        "spread_upper ({lon_spread_upper}) should be >= spread ({lon_spread})"
     );
 
     // Non-numeric columns should have n=0 and empty estimator cells
@@ -95,24 +120,24 @@ fn pragmastat_onesample_custom_misrate() {
         .arg(&test_file);
     let got_strict: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_strict);
 
-    // Both should have center_lower and center_upper
+    // center_lower is at index 4, center_upper at index 5
     let default_row = &got_default[1];
     let strict_row = &got_strict[1];
 
     assert!(
-        !default_row[5].is_empty(),
+        !default_row[4].is_empty(),
         "center_lower with default misrate"
     );
     assert!(
-        !strict_row[5].is_empty(),
+        !strict_row[4].is_empty(),
         "center_lower with strict misrate"
     );
 
     // Stricter misrate => wider bounds => lower center_lower, higher center_upper
-    let default_lower: f64 = default_row[5].parse().unwrap();
-    let strict_lower: f64 = strict_row[5].parse().unwrap();
-    let default_upper: f64 = default_row[6].parse().unwrap();
-    let strict_upper: f64 = strict_row[6].parse().unwrap();
+    let default_lower: f64 = default_row[4].parse().unwrap();
+    let strict_lower: f64 = strict_row[4].parse().unwrap();
+    let default_upper: f64 = default_row[5].parse().unwrap();
+    let strict_upper: f64 = strict_row[5].parse().unwrap();
 
     assert!(
         strict_lower <= default_lower,
@@ -149,34 +174,70 @@ fn pragmastat_twosample_basic() {
             "n_y",
             "shift",
             "ratio",
-            "avg_spread",
             "disparity",
             "shift_lower",
             "shift_upper",
             "ratio_lower",
-            "ratio_upper"
+            "ratio_upper",
+            "disparity_lower",
+            "disparity_upper",
         ]
     );
 
-    // Single pair: latitude vs longitude with deterministic values
+    // Single pair: latitude vs longitude
     assert_eq!(got.len(), 2);
-    assert_eq!(
-        got[1],
-        svec![
-            "latitude",
-            "longitude",
-            "100",
-            "100",
-            "113.4114",
-            "",
-            "0.0254",
-            "4465.0157",
-            "113.3964",
-            "113.4205",
-            "",
-            ""
-        ]
+    let row = &got[1];
+    assert_eq!(row[0], "latitude");
+    assert_eq!(row[1], "longitude");
+    assert_eq!(row[2], "100");
+    assert_eq!(row[3], "100");
+    // estimators
+    assert_eq!(row[4], "113.4114"); // shift
+    assert!(
+        row[5].is_empty(),
+        "ratio should be empty (longitude is negative)"
     );
+    assert_eq!(row[6], "4465.0157"); // disparity (deterministic)
+    // bounds: shift bounds are deterministic
+    assert_eq!(row[7], "113.3964"); // shift_lower
+    assert_eq!(row[8], "113.4205"); // shift_upper
+    // ratio bounds are empty (ratio was empty)
+    assert!(row[9].is_empty(), "ratio_lower should be empty");
+    assert!(row[10].is_empty(), "ratio_upper should be empty");
+    // disparity_lower/upper are randomized — verify bounds are valid and straddle disparity
+    let disparity: f64 = row[6].parse().unwrap();
+    let disparity_lower: f64 = row[11]
+        .parse()
+        .expect("disparity_lower should be non-empty");
+    let disparity_upper: f64 = row[12]
+        .parse()
+        .expect("disparity_upper should be non-empty");
+    assert!(
+        disparity_lower <= disparity,
+        "disparity_lower ({disparity_lower}) should be <= disparity ({disparity})"
+    );
+    assert!(
+        disparity_upper >= disparity,
+        "disparity_upper ({disparity_upper}) should be >= disparity ({disparity})"
+    );
+}
+
+#[test]
+fn pragmastat_twosample_single_column() {
+    let wrk = Workdir::new("pragmastat_twosample_single_column");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--twosample")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Only header row; k < 2 guard prevents any pair computation
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0][0], "field_x");
 }
 
 #[test]
@@ -216,7 +277,7 @@ fn pragmastat_non_numeric_columns() {
     // case_status is text ("Open"/"Closed") => n=0, all estimators empty
     assert_eq!(got[1][0], "case_status");
     assert_eq!(got[1][1], "0");
-    for i in 2..7 {
+    for i in 2..8 {
         assert!(
             got[1][i].is_empty(),
             "column {} should be empty for non-numeric data",
@@ -290,7 +351,6 @@ fn pragmastat_twosample_all_columns() {
     // boston311-100.csv has 29 columns => C(29,2) = 406 pairs + 1 header
     assert_eq!(got.len(), 407);
 
-    // Non-numeric pairs have n=0 for one or both columns
     // latitude vs longitude pair should be present with n_x=100, n_y=100
     let lat_lon = got
         .iter()

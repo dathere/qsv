@@ -649,7 +649,6 @@ const FINGERPRINT_HASH_COLUMNS: usize = 26;
 
 // maximum number of antimodes to display
 const MAX_ANTIMODES: usize = 10;
-const PAR_SORT_THRESHOLD: usize = 10_000;
 // default length of antimode string before truncating and appending "..."
 const DEFAULT_ANTIMODES_LEN: usize = 100;
 
@@ -2537,40 +2536,44 @@ impl WhichStats {
 #[repr(C, align(64))] // Align to cache line size for better performance
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 struct Stats {
-    // Hot fields updated in every add() call, packed first for cache locality.
-    // Approximate sizes shown; actual layout depends on compiler padding/alignment.
-    typ:           FieldType, // accessed in every add() call
-    is_ascii:      bool,      // accessed for strings
-    max_precision: u16,       // accessed for floats
+    // CACHE LINE 1: Most frequently accessed fields (hot data)
+    // Group small, frequently accessed fields together
+    typ:           FieldType, // 1 byte - accessed in every add() call
+    is_ascii:      bool,      // 1 byte - accessed for strings
+    max_precision: u16,       // 2 bytes - accessed for floats
 
-    // Hot counters - accessed frequently
-    nullcount:    u64, // frequently updated counter
-    sum_stotlen:  u64, // frequently updated counter
-    total_weight: f64, // frequently updated for weighted stats
+    // 4 bytes padding (automatic with repr(C) for 8-byte alignment)
 
-    // Warm: updated every numeric cell
-    sum: Option<TypedSum>, // updated in add() for numeric types
+    // Hot counters - all 8-byte aligned, accessed frequently
+    nullcount:    u64, // 8 bytes - frequently updated counter
+    sum_stotlen:  u64, // 8 bytes - frequently updated counter
+    total_weight: f64, // 8 bytes - frequently updated for weighted stats
 
-    // Read-only after init; placed after hot fields to avoid cache line pollution
-    which: WhichStats, // read-only after initialization
+    // Configuration flags (accessed once during initialization, cold after init)
+    which: WhichStats, // 40 bytes - read-only after initialization
 
-    // Statistics computation fields
-    online:          Option<OnlineStats>, // used for mean/variance calculations
-    online_len:      Option<OnlineStats>, // used for string length stats
-    weighted_online: Option<WeightedOnlineStats>, // Weighted online statistics
+    // CACHE LINE 2+: Less frequently accessed but still important
+    // Large Option types that may be None, grouped by usage pattern
+    sum: Option<TypedSum>, // 32 bytes - updated in add() for numeric types
 
-    // Mode and cardinality computation
-    modes:          Option<Unsorted<Vec<u8>>>, // used for mode/cardinality
-    weighted_modes: Option<HashMap<Vec<u8>, f64>>, // Weighted mode/antimode tracking
+    // CACHE LINE 3+: Statistics computation fields
+    online:          Option<OnlineStats>, // 72 bytes - used for mean/variance calculations
+    online_len:      Option<OnlineStats>, // 72 bytes - used for string length stats
+    weighted_online: Option<WeightedOnlineStats>, // 72 bytes - Weighted online statistics
 
-    // Sorting-based statistics
+    // CACHE LINE 4+: Mode and cardinality computation
+    modes:          Option<Unsorted<Vec<u8>>>, // 32 bytes - used for mode/cardinality
+    weighted_modes: Option<HashMap<Vec<u8>, f64>>, // 48 bytes - Weighted mode/antimode tracking
+
+    // CACHE LINE 5+: Sorting-based statistics
     #[allow(clippy::struct_field_names)]
-    unsorted_stats:          Option<Unsorted<f64>>, // median/quartiles/percentiles
-    weighted_unsorted_stats: Option<Vec<(f64, f64)>>, /* (value, weight) tuples for weighted
+    unsorted_stats:          Option<Unsorted<f64>>, // 32 bytes - median/quartiles/percentiles
+    weighted_unsorted_stats: Option<Vec<(f64, f64)>>, /* 24 bytes - (value, weight) tuples for
+                                                       * weighted
                                                        * quantiles */
 
-    // Min/Max tracking (largest field, least cache-friendly)
-    minmax: Option<TypedMinMax>, // largest field, accessed less frequently
+    // CACHE LINE 6+: Min/Max tracking (largest field, least cache-friendly)
+    minmax: Option<TypedMinMax>, // 432 bytes - largest field, accessed less frequently
 }
 
 /// Weighted online statistics using the weighted Welford's algorithm (West, 1979).
@@ -3050,8 +3053,8 @@ impl Stats {
             nullcount: 0,
             sum_stotlen: 0,
             total_weight: 0.0,
-            sum,
             which,
+            sum,
             online,
             online_len,
             weighted_online,
@@ -3159,11 +3162,13 @@ impl Stats {
                 .add_with_parsed(t, sample, float_val, int_val);
         };
 
-        // Modes/cardinality - modes and weighted_modes are mutually exclusive
+        // Modes/cardinality less common but still frequent
+        if let Some(v) = self.modes.as_mut() {
+            v.add(sample.to_vec());
+        }
+        // Weighted modes: accumulate weights per value
         if let Some(ref mut wm) = self.weighted_modes {
             *wm.entry(sample.to_vec()).or_insert(0.0) += weight;
-        } else if let Some(v) = self.modes.as_mut() {
-            v.add(sample.to_vec());
         }
 
         if t == TString {
@@ -3433,6 +3438,7 @@ impl Stats {
                             .fold(f64::INFINITY, f64::min);
 
                         // Collect modes (values with max weight) in deterministic order
+                        const PAR_SORT_THRESHOLD: usize = 10_000;
                         let mut modes_keys: Vec<&Vec<u8>> = weighted_modes_map
                             .iter()
                             .filter(|&(_, &weight)| (weight - max_weight).abs() < 1e-10)
@@ -3452,13 +3458,16 @@ impl Stats {
                             .map(|(value, _)| value)
                             .collect();
                         let antimodes_count = antimodes_all.len();
-                        let mut antimodes_keys: Vec<&Vec<u8>> = antimodes_all;
+                        let mut antimodes_keys: Vec<&Vec<u8>> = if antimodes_count > MAX_ANTIMODES {
+                            antimodes_all.into_iter().take(MAX_ANTIMODES).collect()
+                        } else {
+                            antimodes_all
+                        };
                         if antimodes_keys.len() > PAR_SORT_THRESHOLD {
                             antimodes_keys.par_sort_unstable();
                         } else {
                             antimodes_keys.sort_unstable();
                         }
-                        antimodes_keys.truncate(MAX_ANTIMODES);
                         let antimodes_result: Vec<Vec<u8>> =
                             antimodes_keys.into_iter().cloned().collect();
 

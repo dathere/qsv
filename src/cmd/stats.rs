@@ -656,6 +656,9 @@ const DEFAULT_ANTIMODES_LEN: usize = 100;
 // in one column, i.e. antimodes/modes & percentiles
 pub const DEFAULT_STATS_SEPARATOR: &str = "|";
 
+// the threshold for when to use parallel sorting for modes/antimodes etc.
+const PAR_SORT_THRESHOLD: usize = 10_000;
+
 static BOOLEAN_PATTERNS: OnceLock<Vec<BooleanPattern>> = OnceLock::new();
 #[derive(Clone, Debug)]
 /// Represents a pattern for boolean value inference in CSV data.
@@ -3438,7 +3441,6 @@ impl Stats {
                             .fold(f64::INFINITY, f64::min);
 
                         // Collect modes (values with max weight) in deterministic order
-                        const PAR_SORT_THRESHOLD: usize = 10_000;
                         let mut modes_keys: Vec<&Vec<u8>> = weighted_modes_map
                             .iter()
                             .filter(|&(_, &weight)| (weight - max_weight).abs() < 1e-10)

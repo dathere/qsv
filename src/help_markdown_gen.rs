@@ -1119,7 +1119,7 @@ fn format_examples(lines: &[String]) -> String {
                 in_code_block = false;
             }
             let comment = trimmed.trim_start_matches('#').trim();
-            let _ = write!(md, "> {}\n", linkify_bare_urls(comment));
+            let _ = writeln!(md, "> {}", linkify_bare_urls(comment));
             // Check if the next non-empty line is also a comment — if not, end the blockquote
             let next_is_comment = lines
                 .get(idx + 1..)

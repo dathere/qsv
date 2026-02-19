@@ -3166,12 +3166,13 @@ impl Stats {
         };
 
         // Modes/cardinality less common but still frequent
-        if let Some(v) = self.modes.as_mut() {
-            v.add(sample.to_vec());
-        }
-        // Weighted modes: accumulate weights per value
+        // These are mutually exclusive: weighted_modes is used when weights are active,
+        // otherwise the unweighted modes (Unsorted) tracker is used.
         if let Some(ref mut wm) = self.weighted_modes {
+            // Weighted modes: accumulate weights per value
             *wm.entry(sample.to_vec()).or_insert(0.0) += weight;
+        } else if let Some(v) = self.modes.as_mut() {
+            v.add(sample.to_vec());
         }
 
         if t == TString {
@@ -3453,23 +3454,19 @@ impl Stats {
                         }
                         let modes_result: Vec<Vec<u8>> = modes_keys.into_iter().cloned().collect();
                         // Collect antimodes (values with min weight) in deterministic order
-                        // count all antimodes, but only keep up to MAX_ANTIMODES
-                        let antimodes_all: Vec<&Vec<u8>> = weighted_modes_map
+                        // Sort first, then truncate to MAX_ANTIMODES for deterministic output
+                        let mut antimodes_keys: Vec<&Vec<u8>> = weighted_modes_map
                             .iter()
                             .filter(|&(_, &weight)| (weight - min_weight).abs() < 1e-10)
                             .map(|(value, _)| value)
                             .collect();
-                        let antimodes_count = antimodes_all.len();
-                        let mut antimodes_keys: Vec<&Vec<u8>> = if antimodes_count > MAX_ANTIMODES {
-                            antimodes_all.into_iter().take(MAX_ANTIMODES).collect()
-                        } else {
-                            antimodes_all
-                        };
+                        let antimodes_count = antimodes_keys.len();
                         if antimodes_keys.len() > PAR_SORT_THRESHOLD {
                             antimodes_keys.par_sort_unstable();
                         } else {
                             antimodes_keys.sort_unstable();
                         }
+                        antimodes_keys.truncate(MAX_ANTIMODES);
                         let antimodes_result: Vec<Vec<u8>> =
                             antimodes_keys.into_iter().cloned().collect();
 

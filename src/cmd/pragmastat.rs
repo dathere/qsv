@@ -11,39 +11,36 @@ Input handling
   * NOTE: This command loads all numeric values into memory.
 
 ONE-SAMPLE OUTPUT (default, per selected column)
-  field, n, center, spread, rel_spread, center_lower, center_upper
+  field, n, center, spread, center_lower, center_upper, spread_lower, spread_upper
 
-  center       Robust location; median of pairwise averages (Hodges-Lehmann).
-               Like the mean but stable with outliers; tolerates up to 29% corrupted data.
-  spread       Robust dispersion; median of pairwise absolute differences (Shamos).
-               Same units as data; also tolerates up to 29% corrupted data.
-  rel_spread   Relative dispersion = spread / center (robust coefficient of variation).
-               Dimensionless; compares variability across scales.
-
-  center_lower/center_upper
-               Bounds for center with error rate = misrate (exact under weak symmetry).
-               Use 1e-3 for everyday analysis or 1e-6 for critical decisions.
+  center             Robust location; median of pairwise averages (Hodges-Lehmann).
+                     Like the mean but stable with outliers; tolerates up to 29% corrupted data.
+  spread             Robust dispersion; median of pairwise absolute differences (Shamos).
+                     Same units as data; also tolerates up to 29% corrupted data.
+  center_lower/upper Bounds for center with error rate = misrate (exact under weak symmetry).
+                     Use 1e-3 for everyday analysis or 1e-6 for critical decisions.
+  spread_lower/upper Bounds for spread with error rate = misrate (randomized).
 
 TWO-SAMPLE OUTPUT (--twosample, per unordered column pair)
-  field_x, field_y, n_x, n_y, shift, ratio, avg_spread, disparity,
-  shift_lower, shift_upper, ratio_lower, ratio_upper
+  field_x, field_y, n_x, n_y, shift, ratio, disparity,
+  shift_lower, shift_upper, ratio_lower, ratio_upper, disparity_lower, disparity_upper
 
-  shift        Robust difference in location; median of pairwise differences.
-               Negative => first column tends to be lower.
-  ratio        Robust multiplicative ratio; exp(shift(log x, log y)).
-               Use for positive-valued quantities (latency, price, concentration).
-  avg_spread   Pooled robust dispersion (weighted by sample sizes).
-               Note: pooled scale, not Spread(x union y).
-  disparity    Effect size = shift / avg_spread (robust Cohen's d).
-
-  shift_lower/shift_upper, ratio_lower/ratio_upper
-               Bounds for shift/ratio with error rate = misrate (ties may be conservative).
-               If bounds exclude 0 (shift) or 1 (ratio), the difference is reliable.
+  shift                 Robust difference in location; median of pairwise differences.
+                        Negative => first column tends to be lower.
+  ratio                 Robust multiplicative ratio; exp(shift(log x, log y)).
+                        Use for positive-valued quantities (latency, price, concentration).
+  disparity             Robust effect size = shift / (average spread of x and y).
+  shift_lower/upper     Bounds for shift (exact; ties may be conservative).
+                        If bounds exclude 0, the shift is reliable.
+  ratio_lower/upper     Bounds for ratio (exact; requires all values > 0).
+                        If bounds exclude 1, the ratio is reliable.
+  disparity_lower/upper Bounds for disparity (randomized, Bonferroni combination).
+                        If bounds exclude 0, the disparity is reliable.
 
 When values are blank
   * Column has no numeric data (n=0).
-  * Positivity required: rel_spread, ratio, ratio_* need all values > 0.
-  * Sparity required: spread/avg_spread/disparity need real variability (not tie-dominant).
+  * Positivity required: ratio, ratio_* need all values > 0.
+  * Sparity required: spread/spread_*/disparity/disparity_* need real variability (not tie-dominant).
   * Bounds require enough data for requested misrate; try higher misrate or more data.
 
 MISRATE PARAMETER
@@ -65,7 +62,7 @@ Examples:
   qsv pragmastat --misrate 1e-6 data.csv
 
 Full Pragmastat manual:
-https://github.com/AndreyAkinshin/pragmastat/releases/download/v8.0.0/pragmastat-v8.0.0.pdf
+https://github.com/AndreyAkinshin/pragmastat/releases/download/v10.0.0/pragmastat-v10.0.0.pdf
 https://pragmastat.dev/ (latest version)
 
 Usage:
@@ -124,24 +121,26 @@ struct OneSampleResult {
     n:            usize,
     center:       Option<f64>,
     spread:       Option<f64>,
-    rel_spread:   Option<f64>,
     center_lower: Option<f64>,
     center_upper: Option<f64>,
+    spread_lower: Option<f64>,
+    spread_upper: Option<f64>,
 }
 
 struct TwoSampleResult {
-    field_x:     String,
-    field_y:     String,
-    n_x:         usize,
-    n_y:         usize,
-    shift:       Option<f64>,
-    ratio:       Option<f64>,
-    avg_spread:  Option<f64>,
-    disparity:   Option<f64>,
-    shift_lower: Option<f64>,
-    shift_upper: Option<f64>,
-    ratio_lower: Option<f64>,
-    ratio_upper: Option<f64>,
+    field_x:         String,
+    field_y:         String,
+    n_x:             usize,
+    n_y:             usize,
+    shift:           Option<f64>,
+    ratio:           Option<f64>,
+    disparity:       Option<f64>,
+    shift_lower:     Option<f64>,
+    shift_upper:     Option<f64>,
+    ratio_lower:     Option<f64>,
+    ratio_upper:     Option<f64>,
+    disparity_lower: Option<f64>,
+    disparity_upper: Option<f64>,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -238,7 +237,10 @@ fn write_twosample_results(
     write_twosample_header(wtr)?;
 
     let k = col_names.len();
-    let num_pairs = k.saturating_mul(k - 1) / 2;
+    if k < 2 {
+        return Ok(());
+    }
+    let num_pairs = k * (k - 1) / 2;
     if num_pairs > 100 {
         winfo!(
             "computing {num_pairs} column pairs from {k} columns. Use --select to limit columns \
@@ -312,32 +314,27 @@ fn compute_one_sample(name: &str, values: &[f64], misrate: f64) -> OneSampleResu
             n,
             center: None,
             spread: None,
-            rel_spread: None,
             center_lower: None,
             center_upper: None,
+            spread_lower: None,
+            spread_upper: None,
         };
     }
 
     let center = pragmastat::center(values).ok();
     let spread = pragmastat::spread(values).ok();
-    // Compute rel_spread manually to avoid redundant O(n log n) center + spread recomputation.
-    // The positivity check (v > 0.0) matches pragmastat::check_positivity which rejects v <= 0.0.
-    // When all values are strictly positive, center is guaranteed positive, so c.abs() > 0.0
-    // is always true — but we keep it as a defensive guard matching the library's use of .abs().
-    let rel_spread = match (spread, center) {
-        (Some(s), Some(c)) if values.iter().all(|&v| v > 0.0) && c.abs() > 0.0 => Some(s / c.abs()),
-        _ => None,
-    };
-    let bounds = pragmastat::center_bounds(values, misrate).ok();
+    let center_bounds = pragmastat::center_bounds(values, misrate).ok();
+    let spread_bounds = pragmastat::spread_bounds(values, misrate).ok();
 
     OneSampleResult {
         field: name.to_string(),
         n,
         center,
         spread,
-        rel_spread,
-        center_lower: bounds.map(|b| b.lower),
-        center_upper: bounds.map(|b| b.upper),
+        center_lower: center_bounds.map(|b| b.lower),
+        center_upper: center_bounds.map(|b| b.upper),
+        spread_lower: spread_bounds.map(|b| b.lower),
+        spread_upper: spread_bounds.map(|b| b.upper),
     }
 }
 
@@ -359,29 +356,24 @@ fn compute_two_sample(
             n_y,
             shift: None,
             ratio: None,
-            avg_spread: None,
             disparity: None,
             shift_lower: None,
             shift_upper: None,
             ratio_lower: None,
             ratio_upper: None,
+            disparity_lower: None,
+            disparity_upper: None,
         };
     }
 
     let shift = pragmastat::shift(x, y).ok();
-    let avg_spread = pragmastat::avg_spread(x, y).ok();
-    // Compute disparity manually to avoid redundant shift + 2×spread recomputation.
-    // pragmastat::avg_spread already checks sparity (spread > 0) for both samples,
-    // so if avg_spread is Some, it is guaranteed positive — the a > 0.0 guard is defensive.
-    let disparity = match (shift, avg_spread) {
-        (Some(s), Some(a)) if a > 0.0 => Some(s / a),
-        _ => None,
-    };
     let shift_bounds = pragmastat::shift_bounds(x, y, misrate).ok();
+    let disparity = pragmastat::disparity(x, y).ok();
+    let disparity_bounds = pragmastat::disparity_bounds(x, y, misrate).ok();
 
-    // Share a single log-transformation between ratio and ratio_bounds.
-    // This trades 2 explicit Vec allocations for avoiding duplicate log-transforms
-    // that the library would perform separately in ratio() and ratio_bounds().
+    // Share log-transformed data between ratio and ratio_bounds to avoid a redundant
+    // O(n) allocation and two O(n log n) sort passes that would occur if ratio() and
+    // ratio_bounds() were called independently on the original data.
     let all_positive = x.iter().all(|&v| v > 0.0) && y.iter().all(|&v| v > 0.0);
     let (ratio, ratio_lower, ratio_upper) = if all_positive {
         let log_x: Vec<f64> = x.iter().map(|v| v.ln()).collect();
@@ -406,12 +398,13 @@ fn compute_two_sample(
         n_y,
         shift,
         ratio,
-        avg_spread,
         disparity,
         shift_lower: shift_bounds.map(|b| b.lower),
         shift_upper: shift_bounds.map(|b| b.upper),
         ratio_lower,
         ratio_upper,
+        disparity_lower: disparity_bounds.map(|b| b.lower),
+        disparity_upper: disparity_bounds.map(|b| b.upper),
     }
 }
 
@@ -427,9 +420,10 @@ fn write_onesample_header(
         "n",
         "center",
         "spread",
-        "rel_spread",
         "center_lower",
         "center_upper",
+        "spread_lower",
+        "spread_upper",
     ])?;
     Ok(())
 }
@@ -443,9 +437,10 @@ fn write_onesample_row(
         &r.n.to_string(),
         &fmt_opt(r.center),
         &fmt_opt(r.spread),
-        &fmt_opt(r.rel_spread),
         &fmt_opt(r.center_lower),
         &fmt_opt(r.center_upper),
+        &fmt_opt(r.spread_lower),
+        &fmt_opt(r.spread_upper),
     ])?;
     Ok(())
 }
@@ -460,12 +455,13 @@ fn write_twosample_header(
         "n_y",
         "shift",
         "ratio",
-        "avg_spread",
         "disparity",
         "shift_lower",
         "shift_upper",
         "ratio_lower",
         "ratio_upper",
+        "disparity_lower",
+        "disparity_upper",
     ])?;
     Ok(())
 }
@@ -481,12 +477,13 @@ fn write_twosample_row(
         &r.n_y.to_string(),
         &fmt_opt(r.shift),
         &fmt_opt(r.ratio),
-        &fmt_opt(r.avg_spread),
         &fmt_opt(r.disparity),
         &fmt_opt(r.shift_lower),
         &fmt_opt(r.shift_upper),
         &fmt_opt(r.ratio_lower),
         &fmt_opt(r.ratio_upper),
+        &fmt_opt(r.disparity_lower),
+        &fmt_opt(r.disparity_upper),
     ])?;
     Ok(())
 }

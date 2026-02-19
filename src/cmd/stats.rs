@@ -2019,6 +2019,7 @@ impl Args {
             typesonly:       self.flag_typesonly,
             percentiles:     self.flag_everything || self.flag_percentiles,
             percentile_list: self.flag_percentile_list.clone(),
+            use_weights:     self.flag_weight.is_some(),
         }
     }
 
@@ -2056,11 +2057,7 @@ impl Args {
     #[inline]
     fn new_stats(&self, record_len: usize) -> Vec<Stats> {
         let mut stats: Vec<Stats> = Vec::with_capacity(record_len);
-        let use_weights = self.flag_weight.is_some();
-        stats.extend(repeat_n(
-            Stats::new(self.which_stats(), use_weights),
-            record_len,
-        ));
+        stats.extend(repeat_n(Stats::new(self.which_stats()), record_len));
         stats
     }
 
@@ -2514,6 +2511,7 @@ struct WhichStats {
     typesonly:       bool,
     percentiles:     bool,
     percentile_list: String,
+    use_weights:     bool,
 }
 
 impl Commute for WhichStats {
@@ -3007,7 +3005,8 @@ impl Stats {
     /// * **Efficient Allocation**: Only allocates memory for enabled statistics
     /// * **Cache-Friendly**: Field layout optimized for CPU cache lines
     /// * **Pre-allocation**: Uses record count to pre-allocate appropriate memory sizes
-    fn new(which: WhichStats, use_weights: bool) -> Stats {
+    fn new(which: WhichStats) -> Stats {
+        let use_weights = which.use_weights;
         let (mut sum, mut minmax, mut online, mut online_len, mut modes, mut unsorted_stats) =
             (None, None, None, None, None, None);
         let mut weighted_online = None;
@@ -3139,7 +3138,8 @@ impl Stats {
         let t = self.typ;
 
         // Update total weight for weighted statistics
-        if weight > 0.0 {
+        // Skip entirely when weights aren't active (the common case)
+        if self.which.use_weights && weight > 0.0 {
             self.total_weight += weight;
         }
 
@@ -3170,7 +3170,12 @@ impl Stats {
         // otherwise the unweighted modes (Unsorted) tracker is used.
         if let Some(ref mut wm) = self.weighted_modes {
             // Weighted modes: accumulate weights per value
-            *wm.entry(sample.to_vec()).or_insert(0.0) += weight;
+            // Use get_mut first to avoid heap-allocating sample.to_vec() when key already exists
+            if let Some(val) = wm.get_mut(sample) {
+                *val += weight;
+            } else {
+                wm.insert(sample.to_vec(), weight);
+            }
         } else if let Some(v) = self.modes.as_mut() {
             v.add(sample.to_vec());
         }
@@ -3208,22 +3213,7 @@ impl Stats {
         // Process other types - from most to least frequent
         match t {
             TInteger | TFloat => {
-                if let Some(v) = self.unsorted_stats.as_mut() {
-                    v.add(float_val);
-                }
-                if let Some(v) = self.weighted_unsorted_stats.as_mut() {
-                    // Only store valid weights to avoid filtering later
-                    if weight > 0.0 {
-                        v.push((float_val, weight));
-                    }
-                }
-                // safety: online is always enabled
-                unsafe {
-                    self.online.as_mut().unwrap_unchecked().add_f64(float_val);
-                }
-                if let Some(ref mut wos) = self.weighted_online {
-                    wos.add_weighted(float_val, weight);
-                }
+                self.add_numeric_value(float_val, weight);
 
                 // precision calculation (TFloat only)
                 // note that we are referring to number of decimal places,
@@ -3251,24 +3241,36 @@ impl Stats {
                 // to the millisecond precision.
                 #[allow(clippy::cast_precision_loss)]
                 let timestamp = int_val as f64;
-                if let Some(v) = self.unsorted_stats.as_mut() {
-                    v.add(timestamp);
-                }
-                if let Some(v) = self.weighted_unsorted_stats.as_mut() {
-                    // Only store valid weights to avoid filtering later
-                    if weight > 0.0 {
-                        v.push((timestamp, weight));
-                    }
-                }
-                // safety: online is always enabled
-                unsafe {
-                    self.online.as_mut().unwrap_unchecked().add_f64(timestamp);
-                }
-                if let Some(ref mut wos) = self.weighted_online {
-                    wos.add_weighted(timestamp, weight);
-                }
+                self.add_numeric_value(timestamp, weight);
             },
             _ => {},
+        }
+    }
+
+    /// Adds a numeric value to online stats, unsorted stats, and weighted variants.
+    /// Shared by TInteger/TFloat and TDateTime/TDate paths to reduce code duplication
+    /// and improve instruction cache utilization.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    fn add_numeric_value(&mut self, value: f64, weight: f64) {
+        if let Some(v) = self.unsorted_stats.as_mut() {
+            v.add(value);
+        }
+        // safety: online is always enabled
+        unsafe {
+            self.online.as_mut().unwrap_unchecked().add_f64(value);
+        }
+        // Skip weighted stats branches entirely when weights aren't active
+        if self.which.use_weights {
+            if let Some(v) = self.weighted_unsorted_stats.as_mut() {
+                // Only store valid weights to avoid filtering later
+                if weight > 0.0 {
+                    v.push((value, weight));
+                }
+            }
+            if let Some(ref mut wos) = self.weighted_online {
+                wos.add_weighted(value, weight);
+            }
         }
     }
 

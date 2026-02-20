@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - perf: `frequency` — eliminate per-field `Vec<u8>` allocations in hot path using borrowed-key lookups; use `partition_point` (binary search) instead of linear search for null insertion
-- **BREAKING**: `frequency --null-sorted` — null entries with tied counts/weights are now placed *before* equal entries in ascending order and *after* in descending order (previously the opposite)
+- **BREAKING**: `frequency --null-sorted` — in ascending order, null entries with tied counts/weights are now placed *before* equal non-null entries (previously *after*); descending behavior is unchanged
 
 ## [16.1.0] - 2026-02-15 📊 **_"The Accelerated Civic Intelligence (ACI) Release"_** 📊
 

@@ -1,0 +1,29 @@
+{
+  "enabledPlugins": {
+    "claude-md-management@claude-plugins-official": true
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -qE '(Cargo\\.lock|\\.claude/skills/qsv/.*\\.json|contrib/completions/examples/)'; then echo 'BLOCK: This file is auto-generated. Use cargo commands for Cargo.lock, qsv --update-mcp-skills for skill JSONs, or bash generate_examples.bash for completions.' && exit 1; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -q '\\.rs\"'; then cargo +nightly fmt --quiet 2>/dev/null; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

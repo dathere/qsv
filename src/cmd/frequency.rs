@@ -325,7 +325,6 @@ pub struct Args {
 }
 
 const NON_UTF8_ERR: &str = "<Non-UTF8 ERROR>";
-const EMPTY_BYTE_VEC: Vec<u8> = Vec::new();
 
 static STATS_RECORDS: OnceLock<HashMap<String, StatsData>> = OnceLock::new();
 static NULL_VAL: OnceLock<Vec<u8>> = OnceLock::new();
@@ -2238,19 +2237,14 @@ impl Args {
         // Insert at the correct sorted position based on weight to preserve sort order
         if let Some((_, null_weight_val)) = null_entry {
             let null_entry_final = (null_val.to_vec(), null_weight_val, -1.0, -1.0);
-            // Find the correct insertion position based on weight (descending or ascending)
+            // Find the correct insertion position using binary search (O(log n))
+            // since counts_final is already sorted by weight
             let insert_pos = if self.flag_asc {
                 // Ascending: find first position where weight > null_weight
-                counts_final
-                    .iter()
-                    .position(|(_, w, _, _)| *w > null_weight_val)
-                    .unwrap_or(counts_final.len())
+                counts_final.partition_point(|(_, w, _, _)| *w <= null_weight_val)
             } else {
                 // Descending: find first position where weight < null_weight
-                counts_final
-                    .iter()
-                    .position(|(_, w, _, _)| *w < null_weight_val)
-                    .unwrap_or(counts_final.len())
+                counts_final.partition_point(|(_, w, _, _)| *w >= null_weight_val)
             };
             counts_final.insert(insert_pos, null_entry_final);
         }
@@ -2379,19 +2373,14 @@ impl Args {
         // Insert at the correct sorted position based on count to preserve sort order
         if let Some((_, null_count_val)) = null_entry {
             let null_entry_final = (null_val.to_vec(), null_count_val, -1.0, -1.0);
-            // Find the correct insertion position based on count (descending or ascending)
+            // Find the correct insertion position using binary search (O(log n))
+            // since counts_final is already sorted by count
             let insert_pos = if self.flag_asc {
                 // Ascending: find first position where count > null_count
-                counts_final
-                    .iter()
-                    .position(|(_, c, _, _)| *c > null_count_val)
-                    .unwrap_or(counts_final.len())
+                counts_final.partition_point(|(_, c, _, _)| *c <= null_count_val)
             } else {
                 // Descending: find first position where count < null_count
-                counts_final
-                    .iter()
-                    .position(|(_, c, _, _)| *c < null_count_val)
-                    .unwrap_or(counts_final.len())
+                counts_final.partition_point(|(_, c, _, _)| *c >= null_count_val)
             };
             counts_final.insert(insert_pos, null_entry_final);
         }
@@ -2600,11 +2589,8 @@ impl Args {
     where
         I: Iterator<Item = csv::Result<csv::ByteRecord>>,
     {
-        // Extract the weighted HashMap implementation from ftables_weighted
-        // This is a duplicate of the weighted logic but returns WeightedFTables
         let sel_len = sel.len();
 
-        #[allow(unused_assignments)]
         let mut field_buffer: Vec<u8> = Vec::with_capacity(1024);
         let mut row_buffer: csv::ByteRecord = csv::ByteRecord::with_capacity(200, sel_len);
         let mut string_buf = String::with_capacity(512);
@@ -2641,31 +2627,61 @@ impl Args {
                 .collect()
         };
 
-        let process_field = if flag_ignore_case {
+        // Helper to do borrowed-key insert/increment on HashMap<Vec<u8>, f64>.
+        // Uses get_mut(&[u8]) first to avoid allocating when key already exists.
+        #[inline]
+        fn weighted_add(map: &mut HashMap<Vec<u8>, f64>, key: &[u8], weight: f64) {
+            if let Some(w) = map.get_mut(key) {
+                *w += weight;
+            } else {
+                map.insert(key.to_vec(), weight);
+            }
+        }
+
+        // Pre-compute function pointer for the hot path to avoid branching in the inner loop.
+        // Uses borrowed-key lookup to avoid allocating Vec<u8> when key exists —
+        // only allocates for new keys, eliminating most allocations for
+        // low-cardinality columns.
+        let process_field: fn(
+            &[u8],
+            &mut HashMap<Vec<u8>, f64>,
+            f64,
+            &mut String,
+            &mut Vec<u8>,
+        ) = if flag_ignore_case {
             if flag_no_trim {
-                |field: &[u8], buf: &mut String| {
+                |field, map, weight, string_buf, field_buffer| {
                     if let Ok(s) = simdutf8::basic::from_utf8(field) {
-                        util::to_lowercase_into(s, buf);
-                        buf.as_bytes().to_vec()
+                        util::to_lowercase_into(s, string_buf);
+                        field_buffer.clear();
+                        field_buffer.extend_from_slice(string_buf.as_bytes());
+                        weighted_add(map, field_buffer, weight);
                     } else {
-                        field.to_vec()
+                        weighted_add(map, field, weight);
                     }
                 }
             } else {
-                |field: &[u8], buf: &mut String| {
+                // ignore-case + trim: use str::trim() for Unicode-aware whitespace trimming
+                |field, map, weight, string_buf, field_buffer| {
                     if let Ok(s) = simdutf8::basic::from_utf8(field) {
-                        util::to_lowercase_into(s.trim(), buf);
-                        buf.as_bytes().to_vec()
+                        util::to_lowercase_into(s.trim(), string_buf);
+                        field_buffer.clear();
+                        field_buffer.extend_from_slice(string_buf.as_bytes());
+                        weighted_add(map, field_buffer, weight);
                     } else {
-                        trim_bs_whitespace(field).to_vec()
+                        weighted_add(map, trim_bs_whitespace(field), weight);
                     }
                 }
             }
         } else if flag_no_trim {
-            |field: &[u8], _buf: &mut String| field.to_vec()
+            |field, map, weight, _string_buf, _field_buffer| {
+                weighted_add(map, field, weight);
+            }
         } else {
-            #[inline]
-            |field: &[u8], _buf: &mut String| trim_bs_whitespace(field).to_vec()
+            // this is the default hot path
+            |field, map, weight, _string_buf, _field_buffer| {
+                weighted_add(map, trim_bs_whitespace(field), weight);
+            }
         };
 
         let mut row_result: csv::ByteRecord;
@@ -2691,28 +2707,19 @@ impl Args {
             }
 
             for (i, field) in sel.select(&row_buffer).enumerate() {
-                // For weighted frequencies, we process all columns including all-unique ones
-                // because the weights provide meaningful information even when values are unique
-                // (unlike unweighted frequencies where all-unique columns are skipped for memory
-                // efficiency)
-
                 // safety: weighted_freq_tables is pre-allocated with sel_len elements.
                 // i will always be < sel_len as it comes from enumerate() over the selected cols
                 if !field.is_empty() {
-                    field_buffer = process_field(field, &mut string_buf);
-                    unsafe {
-                        *weighted_freq_tables
-                            .get_unchecked_mut(i)
-                            .entry(field_buffer)
-                            .or_insert(0.0) += weight;
-                    }
+                    process_field(
+                        field,
+                        unsafe { weighted_freq_tables.get_unchecked_mut(i) },
+                        weight,
+                        &mut string_buf,
+                        &mut field_buffer,
+                    );
                 } else if !flag_no_nulls {
-                    unsafe {
-                        *weighted_freq_tables
-                            .get_unchecked_mut(i)
-                            .entry(EMPTY_BYTE_VEC.clone())
-                            .or_insert(0.0) += weight;
-                    }
+                    let map = unsafe { weighted_freq_tables.get_unchecked_mut(i) };
+                    weighted_add(map, &[], weight);
                 }
             }
         }
@@ -2727,8 +2734,6 @@ impl Args {
     {
         let sel_len = sel.len();
 
-        #[allow(unused_assignments)]
-        // Optimize buffer allocations
         let mut field_buffer: Vec<u8> = Vec::with_capacity(1024);
         let mut row_buffer: csv::ByteRecord = csv::ByteRecord::with_capacity(200, sel_len);
         let mut string_buf = String::with_capacity(512);
@@ -2783,34 +2788,49 @@ impl Args {
                 .collect()
         };
 
-        // Pre-compute function pointers for the hot path
-        // instead of doing if chains repeatedly in the hot loop
-        let process_field = if flag_ignore_case {
+        // Pre-compute function pointer for the hot path to avoid branching in the inner loop.
+        // Uses add_borrowed() to avoid allocating a Vec<u8> for every field —
+        // only the ignore-case path needs field_buffer; other paths pass &[u8] slices
+        // directly, eliminating ~99% of allocations for low-cardinality columns.
+        let process_field: fn(
+            &[u8],
+            &mut Frequencies<Vec<u8>>,
+            &mut String,
+            &mut Vec<u8>,
+        ) = if flag_ignore_case {
             if flag_no_trim {
-                |field: &[u8], buf: &mut String| {
+                |field, ftab, string_buf, field_buffer| {
                     if let Ok(s) = simdutf8::basic::from_utf8(field) {
-                        util::to_lowercase_into(s, buf);
-                        buf.as_bytes().to_vec()
+                        util::to_lowercase_into(s, string_buf);
+                        field_buffer.clear();
+                        field_buffer.extend_from_slice(string_buf.as_bytes());
+                        ftab.add_borrowed(field_buffer);
                     } else {
-                        field.to_vec()
+                        ftab.add_borrowed(field);
                     }
                 }
             } else {
-                |field: &[u8], buf: &mut String| {
+                // ignore-case + trim: use str::trim() for Unicode-aware whitespace trimming
+                |field, ftab, string_buf, field_buffer| {
                     if let Ok(s) = simdutf8::basic::from_utf8(field) {
-                        util::to_lowercase_into(s.trim(), buf);
-                        buf.as_bytes().to_vec()
+                        util::to_lowercase_into(s.trim(), string_buf);
+                        field_buffer.clear();
+                        field_buffer.extend_from_slice(string_buf.as_bytes());
+                        ftab.add_borrowed(field_buffer);
                     } else {
-                        trim_bs_whitespace(field).to_vec()
+                        ftab.add_borrowed(trim_bs_whitespace(field));
                     }
                 }
             }
         } else if flag_no_trim {
-            |field: &[u8], _buf: &mut String| field.to_vec()
+            |field, ftab, _string_buf, _field_buffer| {
+                ftab.add_borrowed(field);
+            }
         } else {
-            // this is the default hot path, so inline it
-            #[inline]
-            |field: &[u8], _buf: &mut String| trim_bs_whitespace(field).to_vec()
+            // this is the default hot path
+            |field, ftab, _string_buf, _field_buffer| {
+                ftab.add_borrowed(trim_bs_whitespace(field));
+            }
         };
 
         for row in it {
@@ -2827,14 +2847,16 @@ impl Args {
                 // safety: freq_tables is pre-allocated with sel_len elements.
                 // i will always be < sel_len as it comes from enumerate() over the selected cols
                 if !field.is_empty() {
-                    field_buffer = process_field(field, &mut string_buf);
-                    unsafe {
-                        freq_tables.get_unchecked_mut(i).add(field_buffer);
-                    }
+                    process_field(
+                        field,
+                        unsafe { freq_tables.get_unchecked_mut(i) },
+                        &mut string_buf,
+                        &mut field_buffer,
+                    );
                 } else if !flag_no_nulls {
                     // set to null (EMPTY_BYTES) as flag_no_nulls is false
                     unsafe {
-                        freq_tables.get_unchecked_mut(i).add(EMPTY_BYTE_VEC);
+                        freq_tables.get_unchecked_mut(i).add_borrowed(&[]);
                     }
                 }
             }

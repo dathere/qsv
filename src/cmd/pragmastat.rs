@@ -170,9 +170,7 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
         util::mem_file_check(path, false, args.flag_memcheck)?;
     }
 
-    let row_count = rconfig
-        .indexed()?
-        .map_or(1024, |idx| idx.count() as usize);
+    let row_count = rconfig.indexed()?.map_or(1024, |idx| idx.count() as usize);
 
     let mut rdr = rconfig.reader()?;
     let headers = rdr.byte_headers()?.clone();

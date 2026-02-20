@@ -4116,7 +4116,10 @@ fn frequency_weight_null_sorted_ties_asc() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     // Ascending order: b (1.0), then a (5.0) and NULL (5.0) tied
     // b should be first, then the tied entries
-    assert_eq!(got[1][1], "b", "b should be first in ascending order (weight 1.0)");
+    assert_eq!(
+        got[1][1], "b",
+        "b should be first in ascending order (weight 1.0)"
+    );
     let null_pos = got
         .iter()
         .position(|r| r.len() > 1 && r[1] == "(NULL)")

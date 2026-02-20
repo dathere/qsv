@@ -2683,47 +2683,42 @@ impl Args {
         // low-cardinality columns.
         // NOTE: field_buffer is borrowed transiently by weighted_add (borrow ends within
         // the call), so reusing it across iterations is safe.
-        let process_field: fn(
-            &[u8],
-            &mut HashMap<Vec<u8>, f64>,
-            f64,
-            &mut String,
-            &mut Vec<u8>,
-        ) = if flag_ignore_case {
-            if flag_no_trim {
-                |field, map, weight, string_buf, field_buffer| {
-                    if let Ok(s) = simdutf8::basic::from_utf8(field) {
-                        util::to_lowercase_into(s, string_buf);
-                        field_buffer.clear();
-                        field_buffer.extend_from_slice(string_buf.as_bytes());
-                        weighted_add(map, field_buffer, weight);
-                    } else {
-                        weighted_add(map, field, weight);
+        let process_field: fn(&[u8], &mut HashMap<Vec<u8>, f64>, f64, &mut String, &mut Vec<u8>) =
+            if flag_ignore_case {
+                if flag_no_trim {
+                    |field, map, weight, string_buf, field_buffer| {
+                        if let Ok(s) = simdutf8::basic::from_utf8(field) {
+                            util::to_lowercase_into(s, string_buf);
+                            field_buffer.clear();
+                            field_buffer.extend_from_slice(string_buf.as_bytes());
+                            weighted_add(map, field_buffer, weight);
+                        } else {
+                            weighted_add(map, field, weight);
+                        }
                     }
+                } else {
+                    // ignore-case + trim: use str::trim() for Unicode-aware whitespace trimming
+                    |field, map, weight, string_buf, field_buffer| {
+                        if let Ok(s) = simdutf8::basic::from_utf8(field) {
+                            util::to_lowercase_into(s.trim(), string_buf);
+                            field_buffer.clear();
+                            field_buffer.extend_from_slice(string_buf.as_bytes());
+                            weighted_add(map, field_buffer, weight);
+                        } else {
+                            weighted_add(map, trim_bs_whitespace(field), weight);
+                        }
+                    }
+                }
+            } else if flag_no_trim {
+                |field, map, weight, _string_buf, _field_buffer| {
+                    weighted_add(map, field, weight);
                 }
             } else {
-                // ignore-case + trim: use str::trim() for Unicode-aware whitespace trimming
-                |field, map, weight, string_buf, field_buffer| {
-                    if let Ok(s) = simdutf8::basic::from_utf8(field) {
-                        util::to_lowercase_into(s.trim(), string_buf);
-                        field_buffer.clear();
-                        field_buffer.extend_from_slice(string_buf.as_bytes());
-                        weighted_add(map, field_buffer, weight);
-                    } else {
-                        weighted_add(map, trim_bs_whitespace(field), weight);
-                    }
+                // this is the default hot path
+                |field, map, weight, _string_buf, _field_buffer| {
+                    weighted_add(map, trim_bs_whitespace(field), weight);
                 }
-            }
-        } else if flag_no_trim {
-            |field, map, weight, _string_buf, _field_buffer| {
-                weighted_add(map, field, weight);
-            }
-        } else {
-            // this is the default hot path
-            |field, map, weight, _string_buf, _field_buffer| {
-                weighted_add(map, trim_bs_whitespace(field), weight);
-            }
-        };
+            };
 
         let mut row_result: csv::ByteRecord;
         for row in it {
@@ -2835,46 +2830,42 @@ impl Args {
         // directly, eliminating ~99% of allocations for low-cardinality columns.
         // NOTE: field_buffer is borrowed transiently by add_borrowed (borrow ends within
         // the call), so reusing it across iterations is safe.
-        let process_field: fn(
-            &[u8],
-            &mut Frequencies<Vec<u8>>,
-            &mut String,
-            &mut Vec<u8>,
-        ) = if flag_ignore_case {
-            if flag_no_trim {
-                |field, ftab, string_buf, field_buffer| {
-                    if let Ok(s) = simdutf8::basic::from_utf8(field) {
-                        util::to_lowercase_into(s, string_buf);
-                        field_buffer.clear();
-                        field_buffer.extend_from_slice(string_buf.as_bytes());
-                        ftab.add_borrowed(field_buffer);
-                    } else {
-                        ftab.add_borrowed(field);
+        let process_field: fn(&[u8], &mut Frequencies<Vec<u8>>, &mut String, &mut Vec<u8>) =
+            if flag_ignore_case {
+                if flag_no_trim {
+                    |field, ftab, string_buf, field_buffer| {
+                        if let Ok(s) = simdutf8::basic::from_utf8(field) {
+                            util::to_lowercase_into(s, string_buf);
+                            field_buffer.clear();
+                            field_buffer.extend_from_slice(string_buf.as_bytes());
+                            ftab.add_borrowed(field_buffer);
+                        } else {
+                            ftab.add_borrowed(field);
+                        }
                     }
+                } else {
+                    // ignore-case + trim: use str::trim() for Unicode-aware whitespace trimming
+                    |field, ftab, string_buf, field_buffer| {
+                        if let Ok(s) = simdutf8::basic::from_utf8(field) {
+                            util::to_lowercase_into(s.trim(), string_buf);
+                            field_buffer.clear();
+                            field_buffer.extend_from_slice(string_buf.as_bytes());
+                            ftab.add_borrowed(field_buffer);
+                        } else {
+                            ftab.add_borrowed(trim_bs_whitespace(field));
+                        }
+                    }
+                }
+            } else if flag_no_trim {
+                |field, ftab, _string_buf, _field_buffer| {
+                    ftab.add_borrowed(field);
                 }
             } else {
-                // ignore-case + trim: use str::trim() for Unicode-aware whitespace trimming
-                |field, ftab, string_buf, field_buffer| {
-                    if let Ok(s) = simdutf8::basic::from_utf8(field) {
-                        util::to_lowercase_into(s.trim(), string_buf);
-                        field_buffer.clear();
-                        field_buffer.extend_from_slice(string_buf.as_bytes());
-                        ftab.add_borrowed(field_buffer);
-                    } else {
-                        ftab.add_borrowed(trim_bs_whitespace(field));
-                    }
+                // this is the default hot path
+                |field, ftab, _string_buf, _field_buffer| {
+                    ftab.add_borrowed(trim_bs_whitespace(field));
                 }
-            }
-        } else if flag_no_trim {
-            |field, ftab, _string_buf, _field_buffer| {
-                ftab.add_borrowed(field);
-            }
-        } else {
-            // this is the default hot path
-            |field, ftab, _string_buf, _field_buffer| {
-                ftab.add_borrowed(trim_bs_whitespace(field));
-            }
-        };
+            };
 
         for row in it {
             // safety: we know the row is valid

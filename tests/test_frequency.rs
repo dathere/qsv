@@ -4058,6 +4058,148 @@ fn frequency_weight_null_sorted() {
 }
 
 #[test]
+fn frequency_weight_null_sorted_ties_desc() {
+    // Weighted frequencies: null has the same weight as another value (descending)
+    let wrk = Workdir::new("frequency_weight_null_sorted_ties_desc");
+    let rows = vec![
+        svec!["col", "weight"],
+        svec!["a", "3.0"],
+        svec!["a", "2.0"], // a total weight = 5.0
+        svec!["", "5.0"],  // NULL weight = 5.0 (tied with a)
+        svec!["b", "1.0"],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "col"])
+        .args(["--weight", "weight"])
+        .arg("--null-sorted");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Descending order: a (5.0) and NULL (5.0) are tied, then b (1.0)
+    // NULL should be inserted at the correct position among tied entries
+    let null_pos = got
+        .iter()
+        .position(|r| r.len() > 1 && r[1] == "(NULL)")
+        .expect("NULL should be present");
+    // partition_point with >= places null after entries with equal weight in desc order
+    assert_eq!(
+        null_pos, 2,
+        "NULL should be placed after a (tied at weight 5.0) in descending order, got position \
+         {null_pos}"
+    );
+}
+
+#[test]
+fn frequency_weight_null_sorted_ties_asc() {
+    // Weighted frequencies: null has the same weight as another value (ascending)
+    let wrk = Workdir::new("frequency_weight_null_sorted_ties_asc");
+    let rows = vec![
+        svec!["col", "weight"],
+        svec!["a", "3.0"],
+        svec!["a", "2.0"], // a total weight = 5.0
+        svec!["", "5.0"],  // NULL weight = 5.0 (tied with a)
+        svec!["b", "1.0"],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--select", "col"])
+        .args(["--weight", "weight"])
+        .arg("--null-sorted")
+        .arg("--asc");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Ascending order: b (1.0), then a (5.0) and NULL (5.0) tied
+    // b should be first, then the tied entries
+    assert_eq!(
+        got[1][1], "b",
+        "b should be first in ascending order (weight 1.0)"
+    );
+    let null_pos = got
+        .iter()
+        .position(|r| r.len() > 1 && r[1] == "(NULL)")
+        .expect("NULL should be present");
+    // partition_point with < places null before entries with equal weight in asc order
+    assert_eq!(
+        null_pos, 2,
+        "NULL should be placed before a (tied at weight 5.0) in ascending order, got position \
+         {null_pos}"
+    );
+}
+
+#[test]
+fn frequency_null_sorted_ties_desc() {
+    // Unweighted frequencies: null has the same count as another value (descending)
+    let wrk = Workdir::new("frequency_null_sorted_ties_desc");
+    let rows = vec![
+        svec!["col"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec!["b"],
+        svec![""], // NULL count = 2, tied with a and b
+        svec![""],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .arg("--null-sorted");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // All three have count 2, so they're all tied
+    // partition_point with >= places null after all entries with equal count in desc order
+    let null_pos = got
+        .iter()
+        .position(|r| r.len() > 1 && r[1] == "(NULL)")
+        .expect("NULL should be present");
+    assert_eq!(
+        null_pos, 3,
+        "NULL should be placed after all tied entries in descending order, got position {null_pos}"
+    );
+}
+
+#[test]
+fn frequency_null_sorted_ties_asc() {
+    // Unweighted frequencies: null has the same count as another value (ascending)
+    let wrk = Workdir::new("frequency_null_sorted_ties_asc");
+    let rows = vec![
+        svec!["col"],
+        svec!["a"],
+        svec!["a"],
+        svec!["b"],
+        svec!["b"],
+        svec![""], // NULL count = 2, tied with a and b
+        svec![""],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .arg("--null-sorted")
+        .arg("--asc");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // All three have count 2, so they're all tied
+    // partition_point with < places null before all entries with equal count in asc order
+    let null_pos = got
+        .iter()
+        .position(|r| r.len() > 1 && r[1] == "(NULL)")
+        .expect("NULL should be present");
+    assert_eq!(
+        null_pos, 1,
+        "NULL should be placed before all tied entries in ascending order, got position {null_pos}"
+    );
+}
+
+#[test]
 fn frequency_custom_null_text_sorted() {
     // Custom null text should work with --null-sorted
     let wrk = Workdir::new("frequency_custom_null_text_sorted");

@@ -389,6 +389,13 @@ pub struct Selection(Vec<usize>);
 type _GetField = for<'c> fn(&mut &'c csv::ByteRecord, &usize) -> Option<&'c [u8]>;
 
 impl Selection {
+    /// Creates a `Selection` from a pre-built vector of column indices.
+    #[inline]
+    #[must_use]
+    pub fn from_indices(indices: Vec<usize>) -> Self {
+        Selection(indices)
+    }
+
     #[inline]
     /// Returns an iterator that yields selected fields from a CSV record.
     ///

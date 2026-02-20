@@ -116,8 +116,8 @@ struct Args {
     flag_memcheck:   bool,
 }
 
-struct OneSampleResult {
-    field:        String,
+struct OneSampleResult<'a> {
+    field:        &'a str,
     n:            usize,
     center:       Option<f64>,
     spread:       Option<f64>,
@@ -127,9 +127,9 @@ struct OneSampleResult {
     spread_upper: Option<f64>,
 }
 
-struct TwoSampleResult {
-    field_x:         String,
-    field_y:         String,
+struct TwoSampleResult<'a> {
+    field_x:         &'a str,
+    field_y:         &'a str,
     n_x:             usize,
     n_y:             usize,
     shift:           Option<f64>,
@@ -170,10 +170,14 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
         util::mem_file_check(path, false, args.flag_memcheck)?;
     }
 
+    let row_count = rconfig
+        .indexed()?
+        .map_or(1024, |idx| idx.count() as usize);
+
     let mut rdr = rconfig.reader()?;
     let headers = rdr.byte_headers()?.clone();
     let selected = resolve_columns(&rconfig, &headers, args.flag_select.as_ref())?;
-    collect_numeric_values(&mut rdr, &headers, &selected, rconfig.no_headers)
+    collect_numeric_values(&mut rdr, &headers, &selected, rconfig.no_headers, row_count)
 }
 
 fn resolve_columns(
@@ -276,6 +280,7 @@ fn collect_numeric_values(
     headers: &csv::ByteRecord,
     selected: &[usize],
     no_headers: bool,
+    row_count: usize,
 ) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
     let col_names: Vec<String> = selected
         .iter()
@@ -288,7 +293,7 @@ fn collect_numeric_values(
         })
         .collect();
 
-    let mut col_values: Vec<Vec<f64>> = vec![Vec::new(); selected.len()];
+    let mut col_values: Vec<Vec<f64>> = vec![Vec::with_capacity(row_count); selected.len()];
 
     for result in rdr.byte_records() {
         let record = result?;
@@ -305,12 +310,12 @@ fn collect_numeric_values(
     Ok((col_names, col_values))
 }
 
-fn compute_one_sample(name: &str, values: &[f64], misrate: f64) -> OneSampleResult {
+fn compute_one_sample<'a>(name: &'a str, values: &[f64], misrate: f64) -> OneSampleResult<'a> {
     let n = values.len();
 
     if n == 0 {
         return OneSampleResult {
-            field: name.to_string(),
+            field: name,
             n,
             center: None,
             spread: None,
@@ -327,7 +332,7 @@ fn compute_one_sample(name: &str, values: &[f64], misrate: f64) -> OneSampleResu
     let spread_bounds = pragmastat::spread_bounds(values, misrate).ok();
 
     OneSampleResult {
-        field: name.to_string(),
+        field: name,
         n,
         center,
         spread,
@@ -338,20 +343,20 @@ fn compute_one_sample(name: &str, values: &[f64], misrate: f64) -> OneSampleResu
     }
 }
 
-fn compute_two_sample(
-    name_x: &str,
-    name_y: &str,
+fn compute_two_sample<'a>(
+    name_x: &'a str,
+    name_y: &'a str,
     x: &[f64],
     y: &[f64],
     misrate: f64,
-) -> TwoSampleResult {
+) -> TwoSampleResult<'a> {
     let n_x = x.len();
     let n_y = y.len();
 
     if n_x == 0 || n_y == 0 {
         return TwoSampleResult {
-            field_x: name_x.to_string(),
-            field_y: name_y.to_string(),
+            field_x: name_x,
+            field_y: name_y,
             n_x,
             n_y,
             shift: None,
@@ -392,8 +397,8 @@ fn compute_two_sample(
     };
 
     TwoSampleResult {
-        field_x: name_x.to_string(),
-        field_y: name_y.to_string(),
+        field_x: name_x,
+        field_y: name_y,
         n_x,
         n_y,
         shift,
@@ -432,9 +437,10 @@ fn write_onesample_row(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     r: &OneSampleResult,
 ) -> CliResult<()> {
+    let mut itoa_buf = itoa::Buffer::new();
     wtr.write_record([
-        &r.field,
-        &r.n.to_string(),
+        r.field,
+        itoa_buf.format(r.n),
         &fmt_opt(r.center),
         &fmt_opt(r.spread),
         &fmt_opt(r.center_lower),
@@ -470,11 +476,15 @@ fn write_twosample_row(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     r: &TwoSampleResult,
 ) -> CliResult<()> {
+    let mut itoa_buf_x = itoa::Buffer::new();
+    let mut itoa_buf_y = itoa::Buffer::new();
+    let n_x_str = itoa_buf_x.format(r.n_x);
+    let n_y_str = itoa_buf_y.format(r.n_y);
     wtr.write_record([
-        &r.field_x,
-        &r.field_y,
-        &r.n_x.to_string(),
-        &r.n_y.to_string(),
+        r.field_x,
+        r.field_y,
+        n_x_str,
+        n_y_str,
         &fmt_opt(r.shift),
         &fmt_opt(r.ratio),
         &fmt_opt(r.disparity),

@@ -10,7 +10,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "FILE_PATH=$(cat | jq -r '.tool_input.file_path') && if echo \"$FILE_PATH\" | grep -qE '(Cargo\\.lock|\\.claude/skills/qsv/.*\\.json|contrib/completions/examples/)'; then echo 'BLOCK: This file is auto-generated. Use cargo commands for Cargo.lock, qsv --update-mcp-skills for skill JSONs, or bash generate_examples.bash for completions.' && exit 2; fi"
+            "command": "FILE_PATH=$(jq -r '.tool_input.file_path // empty') && if echo \"$FILE_PATH\" | grep -qE '(Cargo\\.lock|\\.claude/skills/qsv/.*\\.json|contrib/completions/examples/)'; then echo 'BLOCK: This file is auto-generated. Use cargo commands for Cargo.lock, qsv --update-mcp-skills for skill JSONs, or bash generate_examples.bash for completions.' && exit 2; fi"
           }
         ]
       }
@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "FILE_PATH=$(cat | jq -r '.tool_input.file_path') && if echo \"$FILE_PATH\" | grep -qE '\\.rs$'; then cargo +nightly fmt --quiet -- \"$FILE_PATH\" 2>/dev/null; fi"
+            "command": "FILE_PATH=$(jq -r '.tool_input.file_path // empty') && if echo \"$FILE_PATH\" | grep -qE '\\.rs$'; then cargo +nightly fmt --quiet -- \"$FILE_PATH\" 2>/dev/null; fi"
           }
         ]
       }

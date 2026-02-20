@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "FILE_PATH=$(cat | jq -r '.tool_input.file_path') && if echo \"$FILE_PATH\" | grep -qE '\\.rs$'; then cargo +nightly fmt --quiet 2>/dev/null; fi"
+            "command": "FILE_PATH=$(cat | jq -r '.tool_input.file_path') && if echo \"$FILE_PATH\" | grep -qE '\\.rs$'; then cargo +nightly fmt --quiet -- \"$FILE_PATH\" 2>/dev/null; fi"
           }
         ]
       }

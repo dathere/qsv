@@ -324,7 +324,7 @@ use std::{
     iter::repeat_n,
     path::{Path, PathBuf},
     str,
-    sync::OnceLock,
+    sync::{Arc, OnceLock},
 };
 
 use blake3;
@@ -1706,8 +1706,9 @@ impl Args {
 
         let pool = ThreadPool::new(njobs);
         let (send, recv) = crossbeam_channel::bounded(nchunks);
+        let args = Arc::new(self.clone());
         for i in 0..nchunks {
-            let (send, args, sel) = (send.clone(), self.clone(), sel.clone());
+            let (send, args, sel) = (send.clone(), Arc::clone(&args), sel.clone());
             let weight_idx: Option<usize> = weight_col_idx;
             pool.execute(move || {
                 // safety: indexed() is safe as we know we have an index file
@@ -1958,9 +1959,7 @@ impl Args {
                 )));
             }
 
-            // safety: We know Selection is a tuple struct with a Vec<usize> field
-            // This is safe because we're creating it with valid indices
-            let modified_sel = unsafe { std::mem::transmute::<Vec<usize>, Selection>(sel_vec) };
+            let modified_sel = Selection::from_indices(sel_vec);
 
             // Get selected headers (excluding weight column)
             let selected_headers: csv::ByteRecord = modified_sel.select(full_headers).collect();
@@ -2644,10 +2643,6 @@ impl WeightedOnlineStats {
         self.count += 1;
         self.sum_weights += w;
 
-        if self.sum_weights == 0.0 {
-            return;
-        }
-
         let delta = x - self.weighted_mean;
         self.weighted_mean += (w / self.sum_weights) * delta;
         let delta2 = x - self.weighted_mean;
@@ -2923,7 +2918,9 @@ fn weighted_percentiles(
             (target_cum_weight, idx)
         })
         .collect();
-    targets.par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    // targets is typically 5-10 elements (percentile list), so parallel sort overhead
+    // exceeds the sorting time. Use regular sort instead.
+    targets.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     let mut results = vec![0.0; percentile_list.len()];
     let mut cum_weight = 0.0;
     let mut target_idx = 0;
@@ -3177,7 +3174,7 @@ impl Stats {
                 wm.insert(sample.to_vec(), weight);
             }
         } else if let Some(v) = self.modes.as_mut() {
-            v.add(sample.to_vec());
+            v.add_bytes(sample);
         }
 
         if t == TString {
@@ -4523,7 +4520,7 @@ impl TypedMinMax {
             },
             TString => {
                 self.str_len.add(sample_len);
-                self.strings.add(sample.to_vec());
+                self.strings.add_bytes(sample);
             },
             TNull => {},
             // it must be a TDate or TDateTime

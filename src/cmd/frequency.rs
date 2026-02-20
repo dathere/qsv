@@ -2238,12 +2238,33 @@ impl Args {
         if let Some((_, null_weight_val)) = null_entry {
             let null_entry_final = (null_val.to_vec(), null_weight_val, -1.0, -1.0);
             // Find the correct insertion position using binary search (O(log n))
-            // since counts_final is already sorted by weight
+            // since counts_final is already sorted by weight.
+            // safety: partition_point requires the slice to be partitioned by the predicate,
+            // which holds because counts_final is sorted and all weights are finite
+            // (NaN/Inf/non-positive weights are filtered out during accumulation).
+            debug_assert!(
+                null_weight_val.is_finite(),
+                "null_weight_val must be finite for partition_point"
+            );
+            debug_assert!(
+                counts_final.iter().all(|(_, w, _, _)| w.is_finite()),
+                "all weights must be finite for partition_point"
+            );
+            debug_assert!(
+                if self.flag_asc {
+                    counts_final.windows(2).all(|w| w[0].1 <= w[1].1)
+                } else {
+                    counts_final.windows(2).all(|w| w[0].1 >= w[1].1)
+                },
+                "counts_final must be sorted by weight for partition_point"
+            );
             let insert_pos = if self.flag_asc {
-                // Ascending: find first position where weight > null_weight
-                counts_final.partition_point(|(_, w, _, _)| *w <= null_weight_val)
+                // Ascending: find first position where weight >= null_weight
+                // (places null before entries with equal weight)
+                counts_final.partition_point(|(_, w, _, _)| *w < null_weight_val)
             } else {
                 // Descending: find first position where weight < null_weight
+                // (places null after entries with equal weight)
                 counts_final.partition_point(|(_, w, _, _)| *w >= null_weight_val)
             };
             counts_final.insert(insert_pos, null_entry_final);
@@ -2374,12 +2395,24 @@ impl Args {
         if let Some((_, null_count_val)) = null_entry {
             let null_entry_final = (null_val.to_vec(), null_count_val, -1.0, -1.0);
             // Find the correct insertion position using binary search (O(log n))
-            // since counts_final is already sorted by count
+            // since counts_final is already sorted by count.
+            // safety: partition_point requires the slice to be partitioned by the predicate,
+            // which holds because counts_final is sorted and counts are u64 (always finite).
+            debug_assert!(
+                if self.flag_asc {
+                    counts_final.windows(2).all(|w| w[0].1 <= w[1].1)
+                } else {
+                    counts_final.windows(2).all(|w| w[0].1 >= w[1].1)
+                },
+                "counts_final must be sorted by count for partition_point"
+            );
             let insert_pos = if self.flag_asc {
-                // Ascending: find first position where count > null_count
-                counts_final.partition_point(|(_, c, _, _)| *c <= null_count_val)
+                // Ascending: find first position where count >= null_count
+                // (places null before entries with equal count)
+                counts_final.partition_point(|(_, c, _, _)| *c < null_count_val)
             } else {
                 // Descending: find first position where count < null_count
+                // (places null after entries with equal count)
                 counts_final.partition_point(|(_, c, _, _)| *c >= null_count_val)
             };
             counts_final.insert(insert_pos, null_entry_final);
@@ -2631,6 +2664,12 @@ impl Args {
         // Uses get_mut(&[u8]) first to avoid allocating when key already exists.
         #[inline]
         fn weighted_add(map: &mut HashMap<Vec<u8>, f64>, key: &[u8], weight: f64) {
+            // Upstream validation (weight.is_finite() && weight > 0.0 check) filters
+            // invalid weights before they reach here; this assert guards against regressions.
+            debug_assert!(
+                weight.is_finite() && weight > 0.0,
+                "weighted_add called with invalid weight: {weight}"
+            );
             if let Some(w) = map.get_mut(key) {
                 *w += weight;
             } else {
@@ -2642,6 +2681,8 @@ impl Args {
         // Uses borrowed-key lookup to avoid allocating Vec<u8> when key exists —
         // only allocates for new keys, eliminating most allocations for
         // low-cardinality columns.
+        // NOTE: field_buffer is borrowed transiently by weighted_add (borrow ends within
+        // the call), so reusing it across iterations is safe.
         let process_field: fn(
             &[u8],
             &mut HashMap<Vec<u8>, f64>,
@@ -2792,6 +2833,8 @@ impl Args {
         // Uses add_borrowed() to avoid allocating a Vec<u8> for every field —
         // only the ignore-case path needs field_buffer; other paths pass &[u8] slices
         // directly, eliminating ~99% of allocations for low-cardinality columns.
+        // NOTE: field_buffer is borrowed transiently by add_borrowed (borrow ends within
+        // the call), so reusing it across iterations is safe.
         let process_field: fn(
             &[u8],
             &mut Frequencies<Vec<u8>>,

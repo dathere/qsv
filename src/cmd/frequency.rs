@@ -1,3 +1,4 @@
+#![allow(clippy::missing_asserts_for_indexing)]
 static USAGE: &str = r#"
 Compute a frequency distribution table on input data. It has CSV and JSON output modes.
 https://en.wikipedia.org/wiki/Frequency_(statistics)#Frequency_distribution_table
@@ -2662,6 +2663,7 @@ impl Args {
 
         // Helper to do borrowed-key insert/increment on HashMap<Vec<u8>, f64>.
         // Uses get_mut(&[u8]) first to avoid allocating when key already exists.
+        #[allow(clippy::items_after_statements)]
         #[inline]
         fn weighted_add(map: &mut HashMap<Vec<u8>, f64>, key: &[u8], weight: f64) {
             // Upstream validation (weight.is_finite() && weight > 0.0 check) filters

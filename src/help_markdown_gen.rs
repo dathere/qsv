@@ -1721,12 +1721,9 @@ fn generate_table_of_contents(
             // Rewrite image paths for the docs/help/ location
             let cleaned = cleaned.replace("docs/images/", "../images/");
             // Rewrite anchor-only links to point to README (these reference README sections).
-            // Uses a regex to only match anchor-only links like [text](#section),
-            // not full URLs that happen to contain anchors like [text](https://example.com#frag).
-            let anchor_only_re = regex_oncelock!(r"\]\(#");
-            let cleaned = anchor_only_re
-                .replace_all(&cleaned, "](../../README.md#")
-                .to_string();
+            // Matches `](#` which only appears in anchor-only links like [text](#section),
+            // not in full URLs that happen to contain anchors like [text](https://example.com#frag).
+            let cleaned = cleaned.replace("](#", "](../../README.md#");
             md.push_str(&cleaned);
             // Preserve markdown line breaks (two trailing spaces + newline)
             md.push_str("  \n");

@@ -5608,9 +5608,9 @@ dependencies = [
 
 [[package]]
 name = "pragmastat"
-version = "10.0.2"
+version = "10.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3afff0a31dc5976cc5fc4e0271942c9b6197ddf9accf042bbf77a0d35b274030"
+checksum = "a22aa0380ce2f1c5e8fb2507fc114923e4907954dc8a6d85fab2371d51fb3ced"
 
 [[package]]
 name = "precomputed-hash"

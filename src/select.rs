@@ -392,7 +392,7 @@ impl Selection {
     /// Creates a `Selection` from a pre-built vector of column indices.
     #[inline]
     #[must_use]
-    pub fn from_indices(indices: Vec<usize>) -> Self {
+    pub const fn from_indices(indices: Vec<usize>) -> Self {
         Selection(indices)
     }
 

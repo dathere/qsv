@@ -392,7 +392,8 @@ impl Selection {
     /// Creates a `Selection` from a pre-built vector of column indices.
     #[inline]
     #[must_use]
-    pub const fn from_indices(indices: Vec<usize>) -> Self {
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn from_indices(indices: Vec<usize>) -> Self {
         Selection(indices)
     }
 

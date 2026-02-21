@@ -227,7 +227,7 @@ fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
     }
 
     // Sort by key length descending for longest-match-first replacement
-    legend.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    legend.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
     legend
 }
 

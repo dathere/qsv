@@ -1,8 +1,7 @@
-(?x)(?:\d{3}-\d{2}-\d{4}) #SSN
+(?x)(?:\d{3}-\d{2}-\d{4}) #US Social Security No
 (?x)5[1-5]\d{2}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4} #Mastercard
 (?x)4\d{3}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4} #Visa
-(?x)3[47][0-9]{13} #American Express
-(?x)[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}([A-Z\d]?){0,16} #IBAN
-(?x)[\w\.=-]+@[\w\.-]+\.[\w]{2,3} #Email
-(?x)(\+\d{1,2}\s)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4} #Phone
-
+(?x)3[47]\d{2}[\s-]?\d{6}[\s-]?\d{5} #American Express
+(?x)[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}[A-Z0-9]{0,16} #Intl Bank Acct No
+(?x)(\+\d{1,2}\s)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4} #US Phone No
++(?:[1-9]\d{0,2})(?:(?:[\s.-]?\(?\d{1,4}\)?)){2,8}(?:[\s,;]*(?:ext\.?|x)\s*\d{1,6})?$ #plus prefixed phone no

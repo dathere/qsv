@@ -5,7 +5,9 @@ Unlike the search operation, this allows regex matching of multiple regexes
 in a single pass.
 
 The regexset-file is a plain text file with multiple regexes, with a regex on 
-each line.
+each line. For an example scanning for common Personally Identifiable Information (PII) -
+SSN, credit cards, email, bank account numbers & phones, see
+https://github.com/dathere/qsv/blob/master/resources/examples/searchset/pii_regexes.txt
 
 The regex set is applied to each field in each row, and if any field matches,
 then the row is written to the output, and the number of matches to stderr.

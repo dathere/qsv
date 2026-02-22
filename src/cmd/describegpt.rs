@@ -676,9 +676,10 @@ fn detect_language_from_prompt(prompt: &str, threshold: f64) -> Option<String> {
     let detected_lang = lang_info.lang().eng_name();
     let lang_confidence = lang_info.confidence();
 
-    // safety: these all have valid values, so it's safe to unwrap
-    DETECTED_LANGUAGE.set(detected_lang.to_string()).unwrap();
-    DETECTED_LANGUAGE_CONFIDENCE.set(lang_confidence).unwrap();
+    // We only care about capturing the first detected language and confidence;
+    // ignore errors if they were already set by a previous call.
+    let _ = DETECTED_LANGUAGE.set(detected_lang.to_string());
+    let _ = DETECTED_LANGUAGE_CONFIDENCE.set(lang_confidence);
 
     (lang_confidence >= threshold).then(|| detected_lang.to_string())
 }

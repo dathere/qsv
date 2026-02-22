@@ -228,7 +228,7 @@ Pre-built binaries compiled using Rust Nightly/Unstable are also [available for 
 * set `panic=abort` - removing panic-handling/formatting and backtrace code, making for smaller binaries.
 * enables unstable/nightly features in the `crc32fast`, `pyo3`, `rand`, `simd-json` and `foldhash` crates (and optionally `polars` via the `nightly-polars` feature), that unlock performance/SIMD features on those crates.
 
-Despite the 'unstable' label, these binaries are actually quite stable, given how [Rust is made](https://doc.rust-lang.org/book/appendix-07-nightly-rust.html) and are really more about performance (that's why we can still compile with Rust stable). You only really loose the backtrace messages when qsv panics.
+Despite the 'unstable' label, these binaries are actually quite stable, given how [Rust is made](https://doc.rust-lang.org/book/appendix-07-nightly-rust.html) and are really more about performance (that's why we can still compile with Rust stable). You only really lose the backtrace messages when qsv panics.
 
 If you need to maximize performance - use the nightly builds. If you prefer a "safer", rock-solid experience, use the stable builds.
 

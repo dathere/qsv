@@ -269,7 +269,7 @@ enum FieldType {
 }
 ```
 
-If `--infer-boolean` is enabled, stats also checks for boolean patterns (configurable with `--boolean-patterns` with the default `1:0,t*:f*,y*:n*`) and infers a boolean type if all values match those patterns and the cardinality is 2.
+If `--infer-boolean` is enabled, stats also infers a seventh type - Boolean. Checking for boolean patterns (configurable with `--boolean-patterns` with the default `1:0,t*:f*,y*:n*`), inferring Boolean if all values match those patterns and the cardinality is 2.
 
 #### 2. **Type Inference Process**
 
@@ -282,7 +282,8 @@ For each cell value, the stats command tries to parse it in this order:
 4. Should we try date parsing (check whitelist)?
    ├─→ Can parse as DateTime? → TDateTime
    └─→ Can parse as Date? → TDate
-5. Default → TString
+5. Is it boolean (depending on --infer-boolean and --boolean-patterns)? → "Boolean"?
+6. Default → TString
 ```
 
 #### 3. **Implementation in `Stats` Struct**

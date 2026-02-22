@@ -4768,11 +4768,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 },
             };
 
-            let mut redis_conn = redis_client.get_connection().map_err(|e| {
-                CliError::Other(format!(
-                    r#"Cannot connect to Redis using "{conn_str}": {e:?}"#
-                ))
-            })?;
+            let mut redis_conn = match redis_client.get_connection() {
+                Err(e) => {
+                    return fail_clierror!(r#"Cannot connect to Redis using "{conn_str}": {e:?}"#);
+                },
+                Ok(x) => x,
+            };
 
             if args.flag_flush_cache {
                 redis::cmd("FLUSHDB")

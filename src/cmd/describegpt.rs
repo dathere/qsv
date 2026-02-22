@@ -672,23 +672,16 @@ static PROMPT_VALIDITY_FLAGS: std::sync::LazyLock<std::sync::Mutex<HashMap<Strin
 /// Default threshold is 0.8 (80%)
 #[cfg(feature = "whatlang")]
 fn detect_language_from_prompt(prompt: &str, threshold: f64) -> Option<String> {
-    let lang_info = detect(prompt);
-    if let Some(lang_info) = lang_info {
-        let detected_lang = lang_info.lang().eng_name();
-        let lang_confidence = lang_info.confidence();
+    let lang_info = detect(prompt)?;
+    let detected_lang = lang_info.lang().eng_name();
+    let lang_confidence = lang_info.confidence();
 
-        // safety: these all have valid values, so it's safe to unwrap
-        DETECTED_LANGUAGE.set(detected_lang.to_string()).unwrap();
-        DETECTED_LANGUAGE_CONFIDENCE.set(lang_confidence).unwrap();
+    // We only care about capturing the first detected language and confidence;
+    // ignore errors if they were already set by a previous call.
+    let _ = DETECTED_LANGUAGE.set(detected_lang.to_string());
+    let _ = DETECTED_LANGUAGE_CONFIDENCE.set(lang_confidence);
 
-        if lang_confidence >= threshold {
-            Some(detected_lang.to_string())
-        } else {
-            None
-        }
-    } else {
-        None
-    }
+    (lang_confidence >= threshold).then(|| detected_lang.to_string())
 }
 
 /// Parse the --language option: if it's autodetect, a threshold, or an explicit language
@@ -718,10 +711,7 @@ fn parse_language_option(language: Option<&String>) -> (bool, f64, Option<String
 
 // Check if DuckDB should be used based on environment variable
 fn should_use_duckdb() -> bool {
-    #[allow(clippy::map_unwrap_or)]
-    env::var(QSV_DESCRIBEGPT_DB_ENGINE_ENV)
-        .map(|val| val.to_lowercase().contains("duckdb"))
-        .unwrap_or(false)
+    env::var(QSV_DESCRIBEGPT_DB_ENGINE_ENV).is_ok_and(|val| val.to_lowercase().contains("duckdb"))
 }
 
 // Get DuckDB binary path from environment variable
@@ -1001,15 +991,12 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
         prompt_file.model = model_to_use;
 
         // If max_tokens is 0 or the base URL contains "localhost", disable max_tokens limit
-        let max_tokens = if args.flag_max_tokens == 0 || prompt_file.base_url.contains("localhost")
-        {
-            0
-        } else if args.flag_max_tokens > 0 {
-            args.flag_max_tokens
-        } else {
-            prompt_file.tokens
-        };
-        prompt_file.tokens = max_tokens;
+        prompt_file.tokens =
+            if args.flag_max_tokens == 0 || prompt_file.base_url.contains("localhost") {
+                0
+            } else {
+                args.flag_max_tokens
+            };
         prompt_file.system_prompt = prompt_file
             .system_prompt
             .replace("{TOP_N}", &args.flag_enum_threshold.to_string());
@@ -1966,22 +1953,9 @@ fn format_description_tsv(response: &str, reasoning: &str, token_usage: &TokenUs
     )
 }
 
-/// Format prompt as TSV (single row with columns: response, reasoning, token_usage fields)
-#[rustfmt::skip]
+/// Format prompt as TSV - delegates to format_description_tsv (same format)
 fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) -> String {
-    // Escape tabs and newlines
-    let response_escaped = response.replace(['\t', '\n', '\r'], " ");
-    let reasoning_escaped = reasoning.replace(['\t', '\n', '\r'], " ");
-
-    format!(
-        "response\treasoning\ttoken_prompt\ttoken_completion\ttoken_total\telapsed\n{}\t{}\t{}\t{}\t{}\t{}\n",
-        response_escaped,
-        reasoning_escaped,
-        token_usage.prompt,
-        token_usage.completion,
-        token_usage.total,
-        token_usage.elapsed
-    )
+    format_description_tsv(response, reasoning, token_usage)
 }
 
 /// Generates a prompt for a given prompt type based on either a custom prompt file or default
@@ -2238,12 +2212,12 @@ fn get_prompt(
     minijinja_contrib::add_to_environment(&mut env);
 
     // Build context with all variables needed for template rendering
-    let json_add = if get_output_format(args)? == OutputFormat::Json {
-        " (in valid, pretty-printed JSON format, ensuring string values are properly escaped)"
-    } else if get_output_format(args)? == OutputFormat::Toon {
-        " (in TOON format)"
-    } else {
-        " (in Markdown format)"
+    let json_add = match get_output_format(args)? {
+        OutputFormat::Json => {
+            " (in valid, pretty-printed JSON format, ensuring string values are properly escaped)"
+        },
+        OutputFormat::Toon => " (in TOON format)",
+        _ => " (in Markdown format)",
     };
 
     let ctx = context! {
@@ -2330,11 +2304,7 @@ fn get_completion(
 
     let base_url = prompt_file.base_url.clone();
 
-    let max_tokens = if prompt_file.tokens > 0 {
-        Some(prompt_file.tokens)
-    } else {
-        None
-    };
+    let max_tokens = (prompt_file.tokens > 0).then_some(prompt_file.tokens);
 
     // Create request data
     let mut request_data = json!({
@@ -2672,30 +2642,20 @@ fn get_redis_analysis(
 // Get output format (markdown is default)
 fn get_output_format(args: &Args) -> CliResult<OutputFormat> {
     // Command-line flags take precedence over prompt file settings
-    if let Some(format_str) = &args.flag_format {
-        match format_str.to_lowercase().as_str() {
-            "markdown" | "md" => Ok(OutputFormat::Markdown),
-            "tsv" => Ok(OutputFormat::Tsv),
-            "json" => Ok(OutputFormat::Json),
-            "toon" => Ok(OutputFormat::Toon),
-            _ => fail_incorrectusage_clierror!(
-                "Invalid format '{}'. Must be one of: Markdown, TSV, JSON, TOON",
-                format_str
-            ),
-        }
+    let format_str = if let Some(fmt) = &args.flag_format {
+        fmt.clone()
     } else {
-        // If no command-line flags, check prompt file
-        let prompt_file = get_prompt_file(args)?;
-        match prompt_file.format.to_lowercase().as_str() {
-            "markdown" | "md" => Ok(OutputFormat::Markdown),
-            "tsv" => Ok(OutputFormat::Tsv),
-            "json" => Ok(OutputFormat::Json),
-            "toon" => Ok(OutputFormat::Toon),
-            _ => fail_incorrectusage_clierror!(
-                "Invalid format '{}'. Must be one of: Markdown, TSV, JSON, TOON",
-                prompt_file.format
-            ),
-        }
+        get_prompt_file(args)?.format.clone()
+    };
+
+    match format_str.to_lowercase().as_str() {
+        "markdown" | "md" => Ok(OutputFormat::Markdown),
+        "tsv" => Ok(OutputFormat::Tsv),
+        "json" => Ok(OutputFormat::Json),
+        "toon" => Ok(OutputFormat::Toon),
+        _ => fail_incorrectusage_clierror!(
+            "Invalid format '{format_str}'. Must be one of: Markdown, TSV, JSON, TOON"
+        ),
     }
 }
 
@@ -2703,23 +2663,16 @@ fn get_output_format(args: &Args) -> CliResult<OutputFormat> {
 // Extracts filestem from base output path and appends .{kind}.tsv
 fn get_tsv_output_path(base_output: &str, kind: PromptType) -> String {
     let path = Path::new(base_output);
-    let filestem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(
-        // If no file stem, use the whole path as base
-        base_output,
-    );
-
-    // Get parent directory if it exists
-    let parent = path.parent();
+    let filestem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(base_output);
     let kind_str = kind.to_string().to_lowercase();
+    let filename = format!("{filestem}.{kind_str}.tsv");
 
-    if let Some(parent_path) = parent {
-        parent_path
-            .join(format!("{filestem}.{kind_str}.tsv"))
-            .to_string_lossy()
-            .to_string()
-    } else {
-        format!("{filestem}.{kind_str}.tsv")
-    }
+    path.parent()
+        .map(|p| p.join(&filename).to_string_lossy().to_string())
+        .unwrap_or(filename)
 }
 
 // Unified function to handle cached completions
@@ -4816,13 +4769,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 },
             };
 
-            let mut redis_conn;
-            match redis_client.get_connection() {
+            let mut redis_conn = match redis_client.get_connection() {
                 Err(e) => {
                     return fail_clierror!(r#"Cannot connect to Redis using "{conn_str}": {e:?}"#);
                 },
-                Ok(x) => redis_conn = x,
-            }
+                Ok(x) => x,
+            };
 
             if args.flag_flush_cache {
                 redis::cmd("FLUSHDB")

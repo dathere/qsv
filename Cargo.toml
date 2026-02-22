@@ -320,8 +320,8 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # use fork with updated redis 1.0 dependency & client-side caching features
 cached = { git = "https://github.com/nihohit/cached", branch = "client-side-caching" }
 
-# use latest upstream now that our PR has been merged while awaiting a new release
-csvlens = { git = "https://github.com/YS-L/csvlens", rev = "18fa5ff" }
+# use our patched fork to bump dependencies until our PR is merged
+csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "bump-deps-202602" }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-deps-202602", optional = true }

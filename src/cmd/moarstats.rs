@@ -4627,7 +4627,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let field_type_opt = FieldType::from_str(field_type_str);
 
         // Clear new_values for reuse (reset each string to empty without deallocating)
-        for v in new_values.iter_mut() {
+        for v in &mut new_values {
             v.clear();
         }
 
@@ -4748,7 +4748,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Only compute other stats for numeric/date types
         let Some(field_type) = field_type_opt else {
             // For unrecognized types, write existing fields + new values directly
-            for field in record.iter() {
+            for field in record {
                 wtr.write_field(field)?;
             }
             for val in &new_values {
@@ -5269,7 +5269,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         }
         // Write existing fields + new values directly (avoids record.clone())
-        for field in record.iter() {
+        for field in record {
             wtr.write_field(field)?;
         }
         for val in &new_values {

@@ -52,10 +52,10 @@ Implemented a comprehensive auto-update system for the QSV MCP Server that keeps
 **Contents**:
 ```json
 {
-  "qsvBinaryVersion": "13.0.0",
-  "skillsGeneratedWithVersion": "13.0.0",
-  "mcpServerVersion": "13.0.0",
-  "lastChecked": "2026-01-07T14:56:35.979Z"
+  "qsvBinaryVersion": "16.1.0",
+  "skillsGeneratedWithVersion": "16.1.0",
+  "mcpServerVersion": "16.1.2",
+  "lastChecked": "2026-02-22T00:00:00.000Z"
 }
 ```
 
@@ -129,7 +129,7 @@ Created comprehensive documentation:
 ### 1. Why Three-Tier Strategy?
 
 **qsv binary**: Users manage via their preferred method (package manager, qsv --update, cargo install)
-**Skill definitions**: MCP server can regenerate by calling `qsv --update-mcp-skills` (no Rust toolchain needed)
+**Skill definitions**: MCP server can regenerate by calling `qsv --update-mcp-skills` (uses prebuilt qsv binary, no Rust toolchain needed)
 **MCP server code**: Standard npm package updates
 
 ### 2. Why Quick Check + Background Check?
@@ -175,7 +175,7 @@ npm run test-update-checker
    - Run `npm run mcp:start`
    - Should see version mismatch warning
 
-3. **Test auto-regeneration** (requires Rust toolchain):
+3. **Test auto-regeneration** (requires qsv binary with "mcp" feature):
    ```bash
    export QSV_MCP_AUTO_REGENERATE_SKILLS=true
    # Modify skill version to trigger mismatch
@@ -219,16 +219,18 @@ Potential improvements for future versions:
 
 ## Dependencies
 
-No new npm dependencies required! Uses only Node.js built-ins:
-- `child_process` - For spawning qsv/cargo
+Uses Node.js built-ins plus two npm dependencies:
+- `child_process` - For spawning qsv
 - `fs` - For reading version files
 - `fetch` - For GitHub API (Node 18+ built-in)
+- `wink-bm25-text-search` - BM25 search index for tool discovery
+- `wink-nlp-utils` - NLP utilities for search tokenization
 
 ## Compatibility
 
 - **Node.js**: >= 18.0.0 (for built-in fetch)
 - **qsv**: All versions (uses --version flag)
-- **Rust**: Optional (only needed for auto-regeneration)
+- **Rust**: Not required (auto-regeneration uses the prebuilt qsv binary's `--update-mcp-skills` flag)
 - **OS**: macOS, Linux, Windows
 
 ## Related Documentation
@@ -240,5 +242,5 @@ No new npm dependencies required! Uses only Node.js built-ins:
 ---
 
 **Implemented**: 2026-01-07
-**Version**: 13.0.0
+**Version**: 16.1.2
 **Status**: ✅ Production Ready

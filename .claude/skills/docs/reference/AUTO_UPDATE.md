@@ -319,6 +319,6 @@ For issues with auto-updates:
 
 ---
 
-**Updated**: 2026-01-07
-**Version**: 13.0.0
+**Updated**: 2026-02-22
+**Version**: 16.1.2
 **Status**: ✅ Production Ready

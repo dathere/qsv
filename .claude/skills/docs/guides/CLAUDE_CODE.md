@@ -55,7 +55,7 @@ Claude Code is Anthropic's official CLI for Claude - a powerful terminal-based i
 4. **Verify qsv installation**:
    ```bash
    qsv --version
-   # Should output: qsv 13.0.0 (or later)
+   # Should output: qsv 16.1.0 (or later)
    ```
 
 ---
@@ -669,7 +669,7 @@ This uses all defaults:
 - Auto-detects qsv binary
 - Uses current directory as working dir
 - Allows only working directory access
-- 5 minute timeout
+- 10 minute timeout
 - 50MB output limit
 
 ---
@@ -827,4 +827,4 @@ Check out the [examples directory](./examples/) for inspiration!
 **Status**: ✅ Production Ready
 **Compatibility**: Claude Code v1.0+
 **MCP Protocol**: 2025-06-18
-**Last Updated**: 2026-01-10
+**Last Updated**: 2026-02-22

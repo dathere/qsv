@@ -88,7 +88,7 @@ Get statistics about loaded skills.
 const stats = loader.getStats();
 console.log(stats);
 // {
-//   total: 65,
+//   total: 56,
 //   byCategory: { selection: 5, aggregation: 8, ... },
 //   totalExamples: 200,
 //   totalOptions: 450,
@@ -184,7 +184,6 @@ interface QsvSkill {
   command: CommandSpec;
   examples: Example[];
   hints?: BehavioralHints;
-  test_file?: string;
 }
 ```
 
@@ -192,8 +191,8 @@ interface QsvSkill {
 
 ```typescript
 interface SkillParams {
-  args?: Record<string, any>;     // Positional arguments
-  options?: Record<string, any>;  // Command options
+  args?: Record<string, unknown>;     // Positional arguments
+  options?: Record<string, unknown>;  // Command options
   stdin?: string | Buffer;        // Input data
   inputFile?: string;             // Input file path
 }
@@ -246,7 +245,7 @@ Skills are organized by function:
 | validation | schema, validate, safenames | Data validation |
 | formatting | fmt, fixlengths, table | Output formatting |
 | conversion | to, input, excel | Format conversion |
-| analysis | correlation, describegpt | Advanced analysis |
+| documentation | describegpt | AI-powered data documentation |
 | utility | index, cat, headers | Utility operations |
 
 ## Performance Hints
@@ -319,7 +318,7 @@ Check the skills directory:
 
 ```bash
 ls -la .claude/skills/qsv/
-# Should show 65 .json files
+# Should show 56 .json files
 ```
 
 ## License
@@ -329,6 +328,6 @@ MIT
 ## Links
 
 - [qsv Repository](https://github.com/dathere/qsv)
-- [Design Document](../../docs/AGENT_SKILLS_DESIGN.md)
-- [Integration Guide](../../docs/AGENT_SKILLS_INTEGRATION.md)
-- [Skill Generation POC](../../docs/AGENT_SKILLS_POC_SUMMARY.md)
+- [Design Document](../design/AGENT_SKILLS_DESIGN.md)
+- [Integration Guide](../design/AGENT_SKILLS_INTEGRATION.md)
+- [Skill Generation POC](../design/AGENT_SKILLS_POC_SUMMARY.md)

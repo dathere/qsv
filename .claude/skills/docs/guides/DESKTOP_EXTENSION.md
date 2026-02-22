@@ -46,7 +46,7 @@ The qsv Desktop Extension packages the MCP Server as a `.mcpb` file (MCP Bundle)
 
    ```bash
    qsv --version
-   # Should output: qsv 0.133.0 (or later)
+   # Should output: qsv 16.1.0 (or later)
    ```
 
 ---
@@ -134,7 +134,7 @@ Claude should show your configuration with:
 List available qsv commands
 ```
 
-Claude should respond with a list of 66 qsv commands.
+Claude should respond with a list of available qsv commands.
 
 ### Test Basic Command
 
@@ -188,7 +188,7 @@ Claude will chain multiple qsv operations sequentially.
 
 ### Available Operations
 
-The extension provides 25 MCP tools covering:
+The extension provides MCP tools covering:
 
 - **Data Selection**: select, slice, sample
 - **Statistics**: stats, moarstats, frequency
@@ -252,7 +252,7 @@ where qsv           # Windows
 
 **Purpose**: Security - restrict file access to specific directories
 
-**Default**: `~/Downloads:~/Documents`
+**Default**: Only working directory (empty by default)
 
 **Format**:
 - macOS/Linux: Colon-separated paths (`/path1:/path2`)
@@ -265,7 +265,7 @@ where qsv           # Windows
 
 #### Timeout Settings
 
-**Command Timeout**: Maximum time for qsv operations (default: 5 minutes)
+**Command Timeout**: Maximum time for qsv operations (default: 10 minutes)
 
 **Use cases**:
 - Large files: Increase to 15-30 minutes
@@ -498,9 +498,8 @@ The extension uses skill definitions from `.claude/skills/qsv/*.json`.
 - Results are saved as CSV files
 - Use qsv to convert to other formats:
   ```bash
-  qsv to parquet input.csv
   qsv to xlsx input.csv
-  qsv to json input.csv
+  qsv sqlp input.csv 'SELECT * FROM input' --format parquet --output output.parquet
   ```
 
 **Pipeline with external tools**:
@@ -557,7 +556,7 @@ No. Claude Desktop allows only one instance of each extension. However, you can 
 ### What's the file size limit?
 
 The extension can process files of any size, but practical limits exist:
-- **Timeout**: Default 5 minutes (configurable)
+- **Timeout**: Default 10 minutes (configurable)
 - **Memory**: Memory-intensive commands (🤯) load entire file
 - **Output**: Results > 850KB saved to temp files
 
@@ -604,16 +603,8 @@ Yes! The extension is open source:
 
 ## Changelog
 
-### Version 13.0.0 (2026-01-10)
-- **Auto-detection of qsv binary path** - zero configuration for standard installations
-- **qsv_config diagnostic tool** - verify configuration and troubleshoot path issues
-- **Smart defaults** - working directory auto-expands to ~/Downloads
-- **Optional configuration fields** - leave empty for auto-detection
-- 66 qsv commands packaged as MCP tools
-- Filesystem resource browsing
-- Auto-conversion for Excel and JSONL files
-- Update checker with auto-regeneration
-- Platform-specific configuration (Windows/macOS/Linux)
+### Version 16.1.2 (2026-02-18)
+- See [CHANGELOG.md](../../CHANGELOG.md) for full version history
 
 ---
 

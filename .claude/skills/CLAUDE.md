@@ -56,6 +56,9 @@ npm run test:examples
 
 # Test update checker
 npm run test-update-checker
+
+# Run tests with coverage
+npm run test:coverage
 ```
 
 ### MCP Server Operations
@@ -83,13 +86,17 @@ npm run mcpb:package
 │   ├── mcp-filesystem.ts  # Filesystem operations via MCP
 │   ├── converted-file-manager.ts  # LIFO cache for converted files
 │   ├── config.ts          # Configuration and validation
+│   ├── duckdb.ts          # DuckDB integration for SQL queries
 │   ├── executor.ts        # qsv command execution (streaming)
 │   ├── update-checker.ts  # Version detection and skill regeneration
 │   ├── types.ts           # TypeScript type definitions
 │   ├── utils.ts           # Utility functions
 │   ├── version.ts         # Version management
+│   ├── index.ts           # Package entry point
 │   ├── loader.ts          # Dynamic skill loading and searching
-│   └── bm25-search.ts     # BM25 search index for tool discovery
+│   ├── bm25-search.ts     # BM25 search index for tool discovery
+│   ├── wink-bm25-text-search.d.ts  # Type declarations for wink-bm25
+│   └── wink-nlp-utils.d.ts  # Type declarations for wink-nlp-utils
 ├── tests/                  # Test files (each module has <module>.test.ts)
 │   └── test-helpers.ts     # Shared utilities (createTestDir, createTestCSV, QSV_AVAILABLE)
 ├── scripts/                # Build and deployment scripts
@@ -120,7 +127,7 @@ npm run mcpb:package
 - Auto-enables `--stats-jsonl` for stats command
 - Integrates update checker for background version monitoring
 - **Server instructions**: Provides cross-tool workflow guidance via MCP `initialize` response
-- **Deferred tool loading**: Only 9 core tools loaded initially (~85% token reduction)
+- **Deferred tool loading**: Only 9 core tools loaded initially (~80% token reduction)
 - **Environment-controlled exposure**: Use `QSV_MCP_EXPOSE_ALL_TOOLS=true` for all tools
 
 **Key Functions**:
@@ -139,10 +146,10 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 
 **Key Constants**:
 - `COMMON_COMMANDS`: 11 frequently-used commands (select, moarstats, search, frequency, headers, count, slice, sqlp, joinp, cat, geocode)
-- `ALWAYS_FILE_COMMANDS`: 33 commands that always output to files
+- `ALWAYS_FILE_COMMANDS`: 34 commands that always output to files
 - `METADATA_COMMANDS`: 4 commands returning metadata (count, headers, index, sniff)
 - `COMMAND_GUIDANCE`: `Record<string, CommandGuidance>` — Unified per-command guidance map consolidating when-to-use, common patterns, error prevention, complementary servers, and memory/index/mistake warnings into a single structure
-- `AUTO_INDEX_THRESHOLD`: 10MB - files larger than this are auto-indexed
+- `AUTO_INDEX_SIZE_MB`: 10MB - files larger than this are auto-indexed
 
 #### `executor.ts` - Command Execution
 - Spawns qsv child processes using `spawn` for streaming output
@@ -180,8 +187,8 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 
 **Key Features**:
 - Quick check (local only, no network)
-- Full check (includes GitHub API call)
-- `getMcpServerVersion()` imports `VERSION` constant from `version.ts` (not package.json)
+- Full check (includes GitHub API call, repo configurable via `QSV_MCP_GITHUB_REPO`, default: `dathere/qsv`)
+- `getMcpServerVersion()` imports `VERSION` constant from `version.ts` (which reads from package.json at runtime)
 - `compareVersions()` shared from `utils.ts`
 - Extension mode support (skips MCP server version checks)
 
@@ -196,7 +203,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 
 **Key Features**:
 - Tracks conversions (Excel → CSV, JSON → CSV, etc.)
-- Automatic cleanup with configurable TTL
+- Automatic cleanup with configurable size limit (LIFO eviction)
 - File size monitoring and performance metrics
 - Conversion statistics
 
@@ -223,8 +230,9 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - `QSV_MCP_AUTO_REGENERATE_SKILLS`: Auto-regenerate on version change
 - `QSV_MCP_CHECK_UPDATES_ON_STARTUP`: Check for updates at startup
 - `QSV_MCP_NOTIFY_UPDATES`: Show update notifications
-- `QSV_MCP_GITHUB_REPO`: GitHub repo for update checks (default: dathere/qsv)
 - `QSV_MCP_EXPOSE_ALL_TOOLS`: Controls tool exposure (`true`: all tools, `false`: core only, unset: deferred loading)
+- `QSV_MCP_SERVER_INSTRUCTIONS`: Custom server instructions (default: empty)
+- `QSV_MCP_PLUGIN_MODE`: Explicit plugin mode override (default: auto-detected)
 - `QSV_MCP_DUCKDB_BIN_PATH`: Path to DuckDB binary (default: auto-detect from PATH)
 - `QSV_MCP_USE_DUCKDB`: Enable/disable DuckDB routing for SQL queries (default: false)
 - `MCPB_EXTENSION_MODE`: Desktop extension mode flag
@@ -554,7 +562,7 @@ This project depends on:
 2. **qsv version**: Should match package.json major version (currently 16)
 3. **Feature flags**: Some tools require specific qsv features (Polars, etc.)
 4. **Node.js**: Requires Node.js 18.0.0 or later
-5. **MCP SDK**: Uses @modelcontextprotocol/sdk ^1.25.2
+5. **MCP SDK**: Uses @modelcontextprotocol/sdk ^1.26.0
 
 ### Version Synchronization
 
@@ -729,9 +737,9 @@ The plugin layer (`.claude-plugin/`, `.mcp.json`, `commands/`, `agents/`, `skill
 
 ---
 
-**Document Version**: 2.1
-**Last Updated**: 2026-02-09
+**Document Version**: 2.2
+**Last Updated**: 2026-02-22
 **Target qsv Version**: 16.x
 **Node.js Version**: >=18.0.0
-**MCP SDK Version**: ^1.25.2
+**MCP SDK Version**: ^1.26.0
 **Maintainer**: Joel Natividad

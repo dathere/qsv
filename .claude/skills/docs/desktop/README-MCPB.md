@@ -254,12 +254,12 @@ qsv-mcp-server.mcpb
                │ stdio (JSON-RPC 2.0)
 ┌──────────────▼──────────────────────┐
 │  QSV MCP Server (Node.js/TypeScript)│
-│  • Tool definitions (26 tools)     │
+│  • Tool definitions (20 tools)      │
 │  • Parameter validation            │
 │  • File conversion manager         │
 │  • Format auto-detection           │
 └──────────────┬──────────────────────┘
-               │ execFileSync (secure)
+               │ spawn (streaming, secure)
 ┌──────────────▼──────────────────────┐
 │        qsv binary (Rust)            │
 │  • Tabular data processing         │
@@ -296,14 +296,11 @@ The extension is configured via environment variables in Claude Desktop's MCP se
 | `QSV_MCP_CONVERTED_LIFO_SIZE_GB` | `1` | Max cache size for converted files (0.1-100 GB) |
 | `QSV_MCP_OPERATION_TIMEOUT_MS` | `600000` | Operation timeout in milliseconds (1s-30min, default 10 minutes) |
 | `QSV_MCP_MAX_FILES_PER_LISTING` | `1000` | Max files in directory listings (1-100k) |
-| `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | `10` | Max concurrent operations (1-100) |
+| `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | `1` | Max concurrent operations (1-100) |
 | `QSV_MCP_AUTO_REGENERATE_SKILLS` | `false` | Auto-regenerate when qsv version changes |
 | `QSV_MCP_CHECK_UPDATES_ON_STARTUP` | `true` | Check for updates on startup |
 | `QSV_MCP_NOTIFY_UPDATES` | `true` | Show update notifications |
 | `QSV_MCP_GITHUB_REPO` | `dathere/qsv` | GitHub repo for release checks |
-| `QSV_MCP_PROFILE_CACHE_ENABLED` | `true` | Enable profile caching for data_profile |
-| `QSV_MCP_PROFILE_CACHE_SIZE_MB` | `10` | Max profile cache size (1-500 MB) |
-| `QSV_MCP_PROFILE_CACHE_TTL_MS` | `3600000` | Profile cache TTL (1min-24hr, default 1hr) |
 
 **Template variable expansion:**
 - `$HOME` and `${HOME}` expand to user's home directory
@@ -354,9 +351,9 @@ function validateFileAccess(filePath: string): void {
 
 The MCP server enforces limits to prevent DoS attacks and resource exhaustion:
 
-- **Operation timeout**: Default 120s, prevents hung operations
+- **Operation timeout**: Default 10 minutes (600000ms), prevents hung operations
 - **Max file listings**: Default 1000 files, prevents directory enumeration attacks
-- **Max concurrent ops**: Default 10, prevents resource exhaustion
+- **Max concurrent ops**: Default 1, prevents resource exhaustion
 - **Converted file cache**: LIFO eviction with size limit (default 1GB)
 
 ### Binary Trust
@@ -502,7 +499,7 @@ npm run mcp:install  # Install to Claude Desktop
 ### System Requirements
 
 - **Node.js**: >= 18.0.0 (runtime for MCP server)
-- **qsv**: >= 0.133.0 (CSV processing engine)
+- **qsv**: >= 16.0.0 (CSV processing engine)
 - **Claude Desktop**: Latest version
 - **Memory**: 2GB minimum, 8GB+ recommended for large files
 - **Disk space**: 500MB for extension + converted file cache

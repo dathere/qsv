@@ -19,20 +19,20 @@ All paths below are relative to `.claude/skills/`.
 
 ### Core (must always update)
 
-1. **`package.json`** (line 3): `"version": "X.Y.Z"` — source of truth; `version.ts` reads this at runtime
-2. **`manifest.json`** (line 4): `"version": "X.Y.Z"` — must match package.json
-3. **`.claude-plugin/plugin.json`** (line 3): `"version": "X.Y.Z"`
+1. **`package.json`**: find `"version":` field — source of truth; `version.ts` reads this at runtime
+2. **`manifest.json`**: find `"version":` field near top — must match package.json
+3. **`.claude-plugin/plugin.json`**: find `"version":` field
 
 ### Conditional (only if minimum qsv binary version changes)
 
-4. **`manifest.json`** (~line 250): `"minimum_qsv_version": "X.Y.Z"`
+4. **`manifest.json`**: find `"minimum_qsv_version":` field
 
 ### Documentation (hardcoded versions to update)
 
-5. **`README-MCP.md`** (~line 568): `**Version**: X.Y.Z`
-6. **`docs/guides/MACOS-QUICK_START.md`** (~lines 121, 131, 469): download URL and footer version
-7. **`docs/desktop/README-MCPB.md`** (~lines 23, 576): download URL and version badge
-8. **`docs/guides/DESKTOP_EXTENSION.md`** (~line 606): add version history entry
+5. **`README-MCP.md`**: search for `**Version**: X.Y.Z` near the bottom
+6. **`docs/guides/MACOS-QUICK_START.md`**: search for download URLs and footer version (multiple occurrences)
+7. **`docs/desktop/README-MCPB.md`**: search for download URLs and version badge (multiple occurrences)
+8. **`docs/guides/DESKTOP_EXTENSION.md`**: add version history entry at the end of the version history section
 
 ## Changelog Entry
 
@@ -51,7 +51,17 @@ Add a new section at the top of `CHANGELOG.md` (in `.claude/skills/`) following 
 - (bug fixes)
 ```
 
-Use `git log --oneline --no-merges --grep="(mcp)" <last-tag>..HEAD` to populate — only commits with `(mcp)` in the title are relevant to MCP server releases.
+Find the last MCP release tag and use it to populate the changelog:
+
+```bash
+# Find the most recent MCP release tag
+LAST_TAG=$(git describe --tags --match 'mcp-v*' --abbrev=0 2>/dev/null || echo "")
+
+# List relevant commits since that tag (or all if no tag exists)
+git log --oneline --no-merges --grep="(mcp)" ${LAST_TAG:+$LAST_TAG..}HEAD
+```
+
+Only commits with `(mcp)` in the title are relevant to MCP server releases.
 
 ## Verification Steps
 

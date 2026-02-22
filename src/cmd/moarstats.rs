@@ -2224,7 +2224,7 @@ where
             // Only compute frequency counts if needed for mutual information
             if needs_freq_counts {
                 // Optimization #2 & #6: String interning - get() first (borrowing),
-                // only insert() + clone on cache miss
+                // only clone on cache hit; insert + 2 clones on cache miss (cold path)
                 let x_str_interned = if let Some(cached) = string_interner.get(x_str) {
                     cached.clone()
                 } else {
@@ -2954,7 +2954,8 @@ fn compute_all_bivariatestats_sequential(
                 // Only compute frequency counts if needed for mutual information
                 if needs_freq_counts {
                     // Optimization #2 & #6: Reduce string allocations using string interning
-                    // Intern strings - get() first (borrowing), only insert on miss
+                    // Intern strings - get() first (borrowing), only clone on hit; insert on miss
+                    // (cold path)
                     let x_str = if let Some(cached) = string_interner.get(value_str_x) {
                         cached.clone()
                     } else {

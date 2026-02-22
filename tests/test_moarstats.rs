@@ -5026,3 +5026,123 @@ fn moarstats_xsd_gdate_scan_fallback_quick() {
         }
     }
 }
+
+// Regression test for the outlier key bug fix:
+// Previously, `needs_outlier_counting` checked for "outliers_extreme_lower" instead of
+// "outliers_extreme_lower_cnt", causing outlier counts to never be computed.
+// This test verifies that outlier count columns are actually populated with values
+// when the data contains clear outliers.
+#[test]
+fn moarstats_outlier_counts_populated() {
+    let wrk = Workdir::new("moarstats_outlier_counts_populated");
+
+    // Create test data with obvious outliers:
+    // Normal values: 10-50, Extreme outlier: 1000
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["category", "value"],
+            svec!["a", "10"],
+            svec!["b", "20"],
+            svec!["c", "25"],
+            svec!["d", "30"],
+            svec!["e", "35"],
+            svec!["f", "40"],
+            svec!["g", "45"],
+            svec!["h", "50"],
+            svec!["i", "1000"], // extreme upper outlier
+        ],
+    );
+
+    // Generate baseline stats with quartiles (required for outlier detection)
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats to compute outlier statistics
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Read the enriched stats file
+    let stats_content = wrk.read_to_string("test.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+
+    // Verify all outlier count columns exist
+    let outlier_cnt_columns = [
+        "outliers_extreme_lower_cnt",
+        "outliers_mild_lower_cnt",
+        "outliers_normal_cnt",
+        "outliers_mild_upper_cnt",
+        "outliers_extreme_upper_cnt",
+        "outliers_total_cnt",
+    ];
+    for col in &outlier_cnt_columns {
+        assert!(
+            get_column_index(&headers, col).is_some(),
+            "Missing outlier count column: {col}"
+        );
+    }
+
+    // Find the "value" field and verify outlier counts are actually populated
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field_name = get_field_value(&record, field_idx).unwrap();
+
+        if field_name == "value" {
+            // outliers_total_cnt must be non-empty and > 0 (we have a clear outlier at 1000)
+            let total_idx = get_column_index(&headers, "outliers_total_cnt").unwrap();
+            let total_val = get_field_value(&record, total_idx).unwrap();
+            assert!(
+                !total_val.is_empty(),
+                "outliers_total_cnt should not be empty for data with obvious outliers"
+            );
+            let total_count: u64 = total_val
+                .parse()
+                .expect("outliers_total_cnt should be numeric");
+            assert!(
+                total_count > 0,
+                "outliers_total_cnt should be > 0 when data contains outliers, got {total_count}"
+            );
+
+            // outliers_normal_cnt should also be populated
+            let normal_idx = get_column_index(&headers, "outliers_normal_cnt").unwrap();
+            let normal_val = get_field_value(&record, normal_idx).unwrap();
+            assert!(
+                !normal_val.is_empty(),
+                "outliers_normal_cnt should not be empty"
+            );
+            let normal_count: u64 = normal_val
+                .parse()
+                .expect("outliers_normal_cnt should be numeric");
+            assert!(
+                normal_count > 0,
+                "outliers_normal_cnt should be > 0, got {normal_count}"
+            );
+
+            // Verify extreme upper outlier count (1000 should be extreme upper)
+            let extreme_upper_idx =
+                get_column_index(&headers, "outliers_extreme_upper_cnt").unwrap();
+            let extreme_upper_val = get_field_value(&record, extreme_upper_idx).unwrap();
+            assert!(
+                !extreme_upper_val.is_empty(),
+                "outliers_extreme_upper_cnt should not be empty"
+            );
+            let extreme_upper_count: u64 = extreme_upper_val
+                .parse()
+                .expect("outliers_extreme_upper_cnt should be numeric");
+            assert!(
+                extreme_upper_count > 0,
+                "outliers_extreme_upper_cnt should be > 0 for data with value=1000, got \
+                 {extreme_upper_count}"
+            );
+
+            break;
+        }
+    }
+}

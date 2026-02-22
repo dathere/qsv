@@ -19,7 +19,7 @@
 The `stats` command is one of the most critical components of qsv. It computes comprehensive statistical summaries and infers data types for CSV columns. Unlike sampling-based approaches, stats performs **guaranteed** inference by scanning the entire file.
 
 ### Key Responsibilities
-- **Type Inference**: Detects NULL, Integer, String, Float, Date, DateTime, and Boolean types
+- **Type Inference**: Detects NULL, Integer, String, Float, Date, and DateTime types
 - **Streaming Statistics**: Computes mean, sum, min/max, standard deviation, variance, etc. with constant memory
 - **Non-Streaming Statistics**: Computes cardinality, modes, medians, quartiles (requires loading all data)
 - **Date Handling**: Flexible date format inference with configurable patterns
@@ -118,7 +118,7 @@ fn get_sum<T: std::ops::Add<Output = T> + Default + Copy>(values: &[T]) -> T {
 }
 ```
 
-**In stats.rs**: The `compute()` function uses generics: `fn compute<I>(&self, sel: &Selection, it: I) -> Vec<Stats>` where `I` is any iterator over CSV records.
+**In stats.rs**: The `compute()` function uses generics: `fn compute<I>(&self, sel: &Selection, it: I, weight_col_idx: Option<usize>) -> Vec<Stats>` where `I` is any iterator over CSV records.
 
 ### 5. **Iterators and the Iterator Trait**
 ```rust
@@ -254,17 +254,16 @@ stats.rs depends on:
 
 ### Type Inference Mechanism
 
-The stats command infers one of seven data types for each column:
+The stats command infers one of six data types for each column:
 
 #### 1. **FieldType Enum**
 ```rust
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FieldType {
-    TNull,      // All values are NULL/empty
-    TInteger,   // All values are integers
-    TFloat,     // Contains decimal numbers
+    TNull,      // All values are NULL/empty (default)
     TString,    // Contains text (fallback)
-    TBool,      // Contains only boolean values
+    TFloat,     // Contains decimal numbers
+    TInteger,   // All values are integers
     TDate,      // Dates (e.g., "2024-01-15")
     TDateTime,  // Dates with times (e.g., "2024-01-15T10:30:00Z")
 }
@@ -278,11 +277,10 @@ For each cell value, the stats command tries to parse it in this order:
 1. Is it empty/NULL? → TNull
 2. Can it parse as integer? → TInteger
 3. Can it parse as float? → TFloat
-4. Should we try date parsing (check whitelist)? 
+4. Should we try date parsing (check whitelist)?
    ├─→ Can parse as DateTime? → TDateTime
    └─→ Can parse as Date? → TDate
-5. Is it boolean (pattern matching)? → TBool
-6. Default → TString
+5. Default → TString
 ```
 
 #### 3. **Implementation in `Stats` Struct**
@@ -308,10 +306,10 @@ impl Stats {
 #### 4. **Type Inference Example**
 
 ```csv
-name,age,salary,joined_date,active
-Alice,30,50000.50,2024-01-15,true
-Bob,25,45000,2023-06-20,yes
-Charlie,,55000,2022-12-01,1
+name,age,salary,joined_date
+Alice,30,50000.50,2024-01-15
+Bob,25,45000,2023-06-20
+Charlie,,55000,2022-12-01
 ```
 
 Inferred types:
@@ -319,7 +317,6 @@ Inferred types:
 - `age` → TInteger (all integers, even with NULL)
 - `salary` → TFloat (contains decimal)
 - `joined_date` → TDate (if date inference enabled)
-- `active` → TBool (matches boolean patterns)
 
 ---
 
@@ -413,23 +410,15 @@ let mean = stats.online.ref_stat().mean();
 let stddev = stats.online.ref_stat().std();
 ```
 
-### 5. **TypedSum for Overflow Detection**
+### 5. **TypedSum for Numeric Summation**
 
-The stats command detects numeric overflow:
+The stats command tracks sums using a struct with separate integer and float accumulators:
 
 ```rust
-enum TypedSum {
-    Integer(i64),     // 64-bit signed integer
-    Float(f64),       // 64-bit float
-    FloatOverflow,    // Overflow detected
-}
-
-// When adding:
-if integer_sum would overflow {
-    Convert to Float
-}
-if float_sum would overflow {
-    Set to FloatOverflow
+struct TypedSum {
+    float:   Option<f64>,  // Float accumulator (None until a float is seen)
+    integer: i64,          // Integer accumulator
+    stotlen: u64,          // Sum of the total length of strings
 }
 ```
 
@@ -542,7 +531,7 @@ The `compute()` function is marked `#[inline]` and uses unsafe to avoid bounds c
 
 ```rust
 #[inline]
-fn compute<I>(&self, sel: &Selection, it: I) -> Vec<Stats>
+fn compute<I>(&self, sel: &Selection, it: I, weight_col_idx: Option<usize>) -> Vec<Stats>
 where
     I: Iterator<Item = csv::Result<csv::ByteRecord>>,
 {
@@ -788,7 +777,7 @@ This is the innermost loop, processing each record:
 
 ```rust
 #[inline]
-fn compute<I>(&self, sel: &Selection, it: I) -> Vec<Stats>
+fn compute<I>(&self, sel: &Selection, it: I, weight_col_idx: Option<usize>) -> Vec<Stats>
 where
     I: Iterator<Item = csv::Result<csv::ByteRecord>>,
 {
@@ -863,15 +852,7 @@ impl Stats {
             }
         }
         
-        // 4. Try boolean if enabled
-        if infer_boolean {
-            if let Some(bool_val) = check_boolean(field_str) {
-                self.typ = TBool;
-                return;
-            }
-        }
-        
-        // 5. Default to string
+        // 4. Default to string
         self.typ = TString;
     }
 }
@@ -916,7 +897,7 @@ fn stats_to_records(&self, stats: Vec<Stats>, visualize_ws: bool)
 
 1. **Setup Development Environment**
    ```bash
-   cd /Users/pascal/git-hub/qsv
+   cd /path/to/qsv
    rustup update stable
    cargo build --release
    ```
@@ -1062,9 +1043,9 @@ echo "col1,col2
 
 ### Code Style and Standards
 
-Per the project's copilot-instructions.md:
+Per the project's `.github/copilot-instructions.md`:
 
-1. **Use latest Rust features** (edition 2024, Rust 1.90+)
+1. **Use latest Rust features** (edition 2024, Rust 1.93+)
 2. **Always include safety comments**:
    ```rust
    unsafe {

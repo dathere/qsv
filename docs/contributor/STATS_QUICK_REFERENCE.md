@@ -3,14 +3,14 @@
 ## TL;DR
 
 The `stats` command in qsv is a high-performance CSV statistics engine that:
-- **Infers data types** for each column (7 types: NULL, Integer, Float, String, Date, DateTime, Boolean)
+- **Infers data types** for each column (6 types: NULL, Integer, Float, String, Date, DateTime)
 - **Computes statistics** from streaming (mean, sum, stddev) to non-streaming (median, quartiles, modes)
 - **Processes files** either sequentially or in parallel (with index)
 - **Caches results** to avoid recomputation
 - **Supports 44+ output columns** with detailed statistics
 
 ## File Location
-`/Users/pascal/git-hub/qsv/src/cmd/stats.rs` (3,345 lines)
+`/path/to/qsv/src/cmd/stats.rs` (~4,694 lines)
 
 ## Key Entry Points
 
@@ -63,11 +63,10 @@ struct Stats {
 ### `FieldType` Enum - Type Inference
 ```rust
 enum FieldType {
-    TNull,      // All empty/missing
-    TInteger,   // Whole numbers
-    TFloat,     // Decimals
+    TNull,      // All empty/missing (default)
     TString,    // Text (fallback)
-    TBool,      // Boolean values
+    TFloat,     // Decimals
+    TInteger,   // Whole numbers
     TDate,      // Dates only
     TDateTime,  // Dates with times
 }
@@ -102,8 +101,7 @@ For each cell value, tries in order:
 2. Parse as i64? → TInteger
 3. Parse as f64? → TFloat
 4. Date inference enabled? → Try parsing dates → TDate or TDateTime
-5. Boolean inference enabled? → Pattern match → TBool
-6. Default → TString
+5. Default → TString
 ```
 
 ## Caching System
@@ -122,7 +120,7 @@ Reuses cache if:
 
 ### Streaming (constant memory):
 - sum, min, max, range
-- mean, median (sort-free approximation)
+- mean
 - standard deviation, variance, coefficient of variation
 - string length statistics
 - sort order detection
@@ -176,7 +174,7 @@ Bob,25,87.2" | ./target/release/qsv stats
 - Full technical guide: `STATS_TECHNICAL_GUIDE.md` (this repo)
 - qsv wiki: https://github.com/dathere/qsv/wiki
 - stats command docs: `/docs/PERFORMANCE.md`
-- Test cases: `/tests/test_stats.rs` (2,895 lines, ~520 tests)
+- Test cases: `/tests/test_stats.rs` (~5,184 lines)
 
 ## Quick Debugging
 
@@ -201,11 +199,11 @@ cat file.stats.csv.data.jsonl | jq . | head
 
 | File | Purpose |
 |------|---------|
-| `src/cmd/stats.rs` | Main implementation (3,345 lines) |
+| `src/cmd/stats.rs` | Main implementation (~4,694 lines) |
 | `src/config.rs` | CSV reader configuration |
 | `src/select.rs` | Column selection logic |
 | `src/util.rs` | Utility functions |
-| `tests/test_stats.rs` | Comprehensive test suite (2,895 lines) |
+| `tests/test_stats.rs` | Comprehensive test suite (~5,184 lines) |
 | `Cargo.toml` | Dependencies (see `stats` and `csv` crates) |
 
 ---

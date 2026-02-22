@@ -10,7 +10,7 @@ If you’re new to Rust, this overview highlights the specific language patterns
 
 qsv is a high-performance command-line toolkit for working with CSV and other tabular data. It focuses on speed, predictable behavior, and pragmatic ergonomics for data engineering tasks (profiling, selection, joins, transforms, validation, format conversion, indexing, and more).
 
-- Language: Rust (edition 2024; minimum Rust 1.90)
+- Language: Rust (edition 2024; minimum Rust 1.93)
 - Binaries: `qsv` (full-featured), `qsvlite` (reduced feature set), `qsvdp` (Datapusher+ oriented)
 - Philosophy: modern Rust, aggressive performance optimizations (including optional unsafe with documented “safety:” comments), comprehensive tests, and frequent dependency updates.
 
@@ -24,7 +24,7 @@ Useful docs to skim first:
 - `docs/PERFORMANCE_TLDR.md` and `docs/PERFORMANCE.md`
 - `docs/FEATURES.md`
 - `docs/ENVIRONMENT_VARIABLES.md`
-- `docs/Validate.md`, `docs/Fetch.md`, `docs/STATS_TECHNICAL_GUIDE.md` (overview for the stats command lives at repo root as `STATS_TECHNICAL_GUIDE.md`)
+- `docs/Validate.md`, `docs/Fetch.md`, `docs/contributor/STATS_TECHNICAL_GUIDE.md` (overview for the stats command)
 
 ---
 
@@ -162,8 +162,8 @@ Tips:
 
 ```sh
 # Format and lint before committing
-cargo fmt
-cargo clippy --all-features -- -D warnings
+cargo +nightly fmt
+cargo +nightly clippy -F all_features -- -W clippy::perf
 ```
 
 ---
@@ -238,7 +238,7 @@ cargo test --test test_stats -- --test-threads=1
 
 ## See Also
 
-- Deep dive: `STATS_TECHNICAL_GUIDE.md` (repo root) and `docs/PERFORMANCE.md`
+- Deep dive: `docs/contributor/STATS_TECHNICAL_GUIDE.md` and `docs/PERFORMANCE.md`
 - Features reference: `docs/FEATURES.md`
 - Environment variables: `docs/ENVIRONMENT_VARIABLES.md`
 - Validation & schema generation: `docs/Validate.md`

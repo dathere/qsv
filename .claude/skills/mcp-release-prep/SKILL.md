@@ -55,7 +55,7 @@ Find the last qsv release tag and use it to populate the changelog:
 
 ```bash
 # Find the most recent qsv release tag
-LAST_TAG=$(git describe --tags --match '[0-9]*' --abbrev=0 2>/dev/null || echo "")
+LAST_TAG=$(git describe --tags --match '[0-9]*.[0-9]*.[0-9]*' --abbrev=0 2>/dev/null || echo "")
 
 # List relevant commits since that tag (or all commits from repo root if no tag exists)
 git log --oneline --no-merges --grep="(mcp)" "${LAST_TAG:-$(git rev-list --max-parents=0 HEAD)}"..HEAD

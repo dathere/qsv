@@ -5090,11 +5090,13 @@ fn moarstats_outlier_counts_populated() {
     }
 
     // Find the "value" field and verify outlier counts are actually populated
+    let mut found_value = false;
     for result in rdr.records() {
         let record = result.unwrap();
         let field_name = get_field_value(&record, field_idx).unwrap();
 
         if field_name == "value" {
+            found_value = true;
             // outliers_total_cnt must be non-empty and > 0 (we have a clear outlier at 1000)
             let total_idx = get_column_index(&headers, "outliers_total_cnt").unwrap();
             let total_val = get_field_value(&record, total_idx).unwrap();
@@ -5145,4 +5147,8 @@ fn moarstats_outlier_counts_populated() {
             break;
         }
     }
+    assert!(
+        found_value,
+        "Did not find 'value' field in moarstats output"
+    );
 }

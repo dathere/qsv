@@ -307,7 +307,7 @@ use std::{
 
 use crossbeam_channel;
 use csv::{ReaderBuilder, StringRecord, WriterBuilder};
-use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use foldhash::{HashMap, HashMapExt, HashSet};
 use indexmap::IndexMap;
 use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use qsv_dateparser::parse_with_preference;
@@ -527,6 +527,12 @@ fn join_datasets_internal(
     let mut current_input = primary_input_str;
     let mut current_key = join_keys[0].clone();
 
+    // Resolve the executable path once before the loop
+    let qsv_path = env::current_exe()
+        .map_err(|e| CliError::Other(format!("Failed to get current executable path: {e:?}")))?
+        .to_string_lossy()
+        .to_string();
+
     // These are never read, but we need to declare them to avoid compiler errors
     #[allow(clippy::collection_is_never_read)]
     let mut intermediate_temps: Vec<NamedTempFile> = Vec::new();
@@ -572,12 +578,6 @@ fn join_datasets_internal(
 
         // Construct join command directly since it doesn't fit run_qsv_cmd pattern
         // (join takes two input files, not one)
-
-        let qsv_path = env::current_exe()
-            .map_err(|e| CliError::Other(format!("Failed to get current executable path: {e:?}")))?
-            .to_string_lossy()
-            .to_string();
-
         let mut cmd = Command::new(&qsv_path);
         cmd.arg("join").args(&args);
 
@@ -605,6 +605,7 @@ fn join_datasets_internal(
 }
 
 /// Compute Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
+#[inline]
 fn compute_pearson_skewness(
     mean: Option<f64>,
     median: Option<f64>,
@@ -622,6 +623,7 @@ fn compute_pearson_skewness(
 }
 
 /// Compute Range to Standard Deviation Ratio: range / stddev
+#[inline]
 fn compute_range_stddev_ratio(range: Option<f64>, stddev: Option<f64>) -> Option<f64> {
     if let (Some(range_val), Some(stddev_val)) = (range, stddev) {
         if stddev_val.abs() > f64::EPSILON {
@@ -641,6 +643,7 @@ fn compute_range_stddev_ratio(range: Option<f64>, stddev: Option<f64>) -> Option
 /// Also, the standard formula may not yield meaningful results if Q1 is negative and
 /// Q1 >= Q3 (i.e., quartiles are not in the expected order).
 /// Return None if quartiles are not in a valid order (Q1 < Q3), or denominator is 0.
+#[inline]
 fn compute_quartile_coefficient_dispersion(q1: Option<f64>, q3: Option<f64>) -> Option<f64> {
     if let (Some(q1_val), Some(q3_val)) = (q1, q3) {
         // Check that quartile order is valid (Q1 < Q3)
@@ -661,6 +664,7 @@ fn compute_quartile_coefficient_dispersion(q1: Option<f64>, q3: Option<f64>) -> 
 }
 
 /// Compute Z-Score of Mode: (mode - mean) / stddev
+#[inline]
 fn compute_mode_zscore(mode: Option<f64>, mean: Option<f64>, stddev: Option<f64>) -> Option<f64> {
     if let (Some(mode_val), Some(mean_val), Some(stddev_val)) = (mode, mean, stddev) {
         if stddev_val.abs() > f64::EPSILON {
@@ -674,6 +678,7 @@ fn compute_mode_zscore(mode: Option<f64>, mean: Option<f64>, stddev: Option<f64>
 }
 
 /// Compute Relative Standard Error: sem / mean
+#[inline]
 fn compute_relative_standard_error(sem: Option<f64>, mean: Option<f64>) -> Option<f64> {
     if let (Some(sem_val), Some(mean_val)) = (sem, mean) {
         if mean_val.abs() > f64::EPSILON {
@@ -687,6 +692,7 @@ fn compute_relative_standard_error(sem: Option<f64>, mean: Option<f64>) -> Optio
 }
 
 /// Compute Z-Score: (value - mean) / stddev
+#[inline]
 fn compute_zscore(value: Option<f64>, mean: Option<f64>, stddev: Option<f64>) -> Option<f64> {
     if let (Some(val), Some(mean_val), Some(stddev_val)) = (value, mean, stddev) {
         if stddev_val.abs() > f64::EPSILON {
@@ -700,6 +706,7 @@ fn compute_zscore(value: Option<f64>, mean: Option<f64>, stddev: Option<f64>) ->
 }
 
 /// Compute Median-to-Mean Ratio: median / mean
+#[inline]
 fn compute_median_mean_ratio(median: Option<f64>, mean: Option<f64>) -> Option<f64> {
     if let (Some(median_val), Some(mean_val)) = (median, mean) {
         if mean_val.abs() > f64::EPSILON {
@@ -713,6 +720,7 @@ fn compute_median_mean_ratio(median: Option<f64>, mean: Option<f64>) -> Option<f
 }
 
 /// Compute IQR-to-Range Ratio: iqr / range
+#[inline]
 fn compute_iqr_range_ratio(iqr: Option<f64>, range: Option<f64>) -> Option<f64> {
     if let (Some(iqr_val), Some(range_val)) = (iqr, range) {
         if range_val.abs() > f64::EPSILON {
@@ -726,6 +734,7 @@ fn compute_iqr_range_ratio(iqr: Option<f64>, range: Option<f64>) -> Option<f64> 
 }
 
 /// Compute MAD-to-StdDev Ratio: mad / stddev
+#[inline]
 fn compute_mad_stddev_ratio(mad: Option<f64>, stddev: Option<f64>) -> Option<f64> {
     if let (Some(mad_val), Some(stddev_val)) = (mad, stddev) {
         if stddev_val.abs() > f64::EPSILON {
@@ -804,16 +813,15 @@ fn parse_percentile_value(
     percentile_str: &str,
     percentile_label: &str,
     field_type: FieldType,
+    separator: &str,
+    prefer_dmy: bool,
 ) -> Option<f64> {
     if percentile_str.is_empty() {
         return None;
     }
 
-    // Get the separator (default "|")
-    let separator = std::env::var("QSV_STATS_SEPARATOR").unwrap_or_else(|_| "|".to_string());
-
     // Split by separator and find matching percentile
-    for entry in percentile_str.split(&separator) {
+    for entry in percentile_str.split(separator) {
         let entry = entry.trim();
         if let Some(colon_pos) = entry.find(':') {
             let label = entry[..colon_pos].trim();
@@ -822,7 +830,6 @@ fn parse_percentile_value(
             if label == percentile_label {
                 // For Date/DateTime types, parse as date string; for numeric types, parse as float
                 return if field_type.is_date_or_datetime() {
-                    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
                     parse_date_to_days(value_str, prefer_dmy)
                 } else {
                     parse_float_opt(value_str)
@@ -838,17 +845,17 @@ fn parse_percentile_value(
 /// Format: "5: value1|10: value2|25: value3|..." (separator from QSV_STATS_SEPARATOR env var,
 /// default "|") Returns a vector of all percentile value strings (the values after colons)
 /// Used for pattern matching all percentile values in fast mode
-fn parse_all_percentile_string_values(percentile_str: &str) -> Vec<&str> {
+fn parse_all_percentile_string_values<'a>(
+    percentile_str: &'a str,
+    separator: &str,
+) -> Vec<&'a str> {
     if percentile_str.is_empty() {
         return Vec::new();
     }
 
-    // Get the separator (default "|")
-    let separator = std::env::var("QSV_STATS_SEPARATOR").unwrap_or_else(|_| "|".to_string());
-
     // Split by separator and extract all values after colons
     percentile_str
-        .split(&separator)
+        .split(separator)
         .filter_map(|entry| {
             let entry = entry.trim();
             if let Some(colon_pos) = entry.find(':') {
@@ -879,6 +886,7 @@ enum FieldType {
 impl FieldType {
     /// Convert string representation to FieldType enum
     /// Returns None if the string doesn't match any known type
+    #[inline]
     fn from_str(s: &str) -> Option<FieldType> {
         match s {
             "NULL" => Some(FieldType::TNull),
@@ -1374,6 +1382,7 @@ struct BivariateFieldInfo {
 }
 
 /// Update correlation state with a new pair of values using Welford's online algorithm
+#[inline]
 #[allow(clippy::cast_precision_loss)]
 fn update_correlation_state(state: &mut CorrelationState, x: f64, y: f64) {
     state.count += 1;
@@ -2134,21 +2143,21 @@ where
     let mut numeric_value_x;
     let mut numeric_value_y;
 
+    // Optimization #4: Batch string conversions - collect all column indices once (immutable across
+    // records)
+    let col_indices_needed: HashSet<usize> = field_pairs
+        .values()
+        .flat_map(|(f1, f2)| [f1.col_idx, f2.col_idx])
+        .collect();
+    let mut record_strings: HashMap<usize, String> =
+        HashMap::with_capacity(col_indices_needed.len());
+
     // Process each record in the chunk
     for result in records {
         record = result?;
 
-        // Optimization #4: Batch string conversions - convert record to strings once, reuse for all
-        // field pairs Collect all column indices that need string conversion
-        let mut col_indices_needed: HashSet<usize> = HashSet::new();
-        for (field1_info, field2_info) in field_pairs.values() {
-            col_indices_needed.insert(field1_info.col_idx);
-            col_indices_needed.insert(field2_info.col_idx);
-        }
-
-        // Convert needed columns to strings once
-        let mut record_strings: HashMap<usize, String> =
-            HashMap::with_capacity(col_indices_needed.len());
+        // Convert needed columns to strings once per record (reuse HashMap allocation)
+        record_strings.clear();
         for &col_idx in &col_indices_needed {
             if let Some(bytes) = record.get(col_idx)
                 && !bytes.is_empty()
@@ -2178,22 +2187,27 @@ where
             // Optimization #1: Use date parsing cache
             // Optimization #5: Skip date parsing for non-date fields
             numeric_value_x = if field1_info.field_type.is_date_or_datetime() {
-                // Use cached parsed date or parse and cache
-                *date_cache
-                    .entry(x_str.clone())
-                    .or_insert_with(|| parse_date_to_days(x_str, prefer_dmy))
+                // Use cached parsed date or parse and cache - get() first to avoid alloc on hit
+                if let Some(cached) = date_cache.get(x_str.as_str()) {
+                    *cached
+                } else {
+                    let val = parse_date_to_days(x_str, prefer_dmy);
+                    date_cache.insert(x_str.clone(), val);
+                    val
+                }
             } else {
-                // Direct float parsing (much faster than date parsing)
                 parse_float_opt_from_bytes(value_bytes_x)
             };
 
             numeric_value_y = if field2_info.field_type.is_date_or_datetime() {
-                // Use cached parsed date or parse and cache
-                *date_cache
-                    .entry(y_str.clone())
-                    .or_insert_with(|| parse_date_to_days(y_str, prefer_dmy))
+                if let Some(cached) = date_cache.get(y_str.as_str()) {
+                    *cached
+                } else {
+                    let val = parse_date_to_days(y_str, prefer_dmy);
+                    date_cache.insert(y_str.clone(), val);
+                    val
+                }
             } else {
-                // Direct float parsing (much faster than date parsing)
                 parse_float_opt_from_bytes(value_bytes_y)
             };
 
@@ -2209,23 +2223,18 @@ where
 
             // Only compute frequency counts if needed for mutual information
             if needs_freq_counts {
-                // Optimization #2 & #6: Optimized string interning - reduce clones
-                // For occupied entries (common case with repeated strings): 1 clone instead of 3
-                // For vacant entries: 2 clones (same as before, but more efficient)
+                // Optimization #2 & #6: String interning - get() first (borrowing),
+                // only clone on cache hit; insert + 2 clones on cache miss (cold path)
                 let x_str_interned = if let Some(cached) = string_interner.get(x_str) {
-                    // String already interned - reuse it (1 clone instead of 3)
                     cached.clone()
                 } else {
-                    // String not interned - clone once and store reference to itself
                     let owned = x_str.clone();
                     string_interner.insert(owned.clone(), owned.clone());
                     owned
                 };
                 let y_str_interned = if let Some(cached) = string_interner.get(y_str) {
-                    // String already interned - reuse it (1 clone instead of 3)
                     cached.clone()
                 } else {
-                    // String not interned - clone once and store reference to itself
                     let owned = y_str.clone();
                     string_interner.insert(owned.clone(), owned.clone());
                     owned
@@ -2265,28 +2274,34 @@ fn count_all_outliers_from_reader(
 
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
 
-    // amortize allocations
+    // amortize allocations - use ByteRecord for consistency with parallel path (no UTF-8
+    // validation overhead)
     #[allow(unused_assignments)]
-    let mut record: StringRecord = StringRecord::new();
-    let mut value_str;
+    let mut record: csv::ByteRecord = csv::ByteRecord::new();
+    let mut value_bytes;
     let mut numeric_value;
 
     // Process each record once, checking all fields
-    for result in rdr.records() {
+    for result in rdr.byte_records() {
         record = result?;
 
         for (field_name, field_info) in fields_to_count {
-            value_str = record.get(field_info.col_idx).unwrap_or("");
+            value_bytes = record.get(field_info.col_idx).unwrap_or(&[]);
 
-            if value_str.is_empty() {
+            if value_bytes.is_empty() {
                 continue; // Skip null/empty values
             }
 
             // Parse the value based on field type
             numeric_value = if field_info.field_type.is_date_or_datetime() {
-                parse_date_to_days(value_str, prefer_dmy)
+                // Convert bytes to string for date parsing
+                if let Ok(value_str) = from_utf8(value_bytes) {
+                    parse_date_to_days(value_str, prefer_dmy)
+                } else {
+                    None
+                }
             } else {
-                parse_float_opt(value_str)
+                parse_float_opt_from_bytes(value_bytes)
             };
 
             let Some(val) = numeric_value else {
@@ -2902,22 +2917,27 @@ fn compute_all_bivariatestats_sequential(
                 // Optimization #1: Use date parsing cache
                 // Optimization #5: Skip date parsing for non-date fields
                 numeric_value_x = if field1_info.field_type.is_date_or_datetime() {
-                    // Use cached parsed date or parse and cache
-                    *date_cache
-                        .entry(value_str_x.to_string())
-                        .or_insert_with(|| parse_date_to_days(value_str_x, prefer_dmy))
+                    // get() first to avoid alloc on cache hit
+                    if let Some(cached) = date_cache.get(value_str_x) {
+                        *cached
+                    } else {
+                        let val = parse_date_to_days(value_str_x, prefer_dmy);
+                        date_cache.insert(value_str_x.to_string(), val);
+                        val
+                    }
                 } else {
-                    // Direct float parsing (much faster than date parsing)
                     parse_float_opt(value_str_x)
                 };
 
                 numeric_value_y = if field2_info.field_type.is_date_or_datetime() {
-                    // Use cached parsed date or parse and cache
-                    *date_cache
-                        .entry(value_str_y.to_string())
-                        .or_insert_with(|| parse_date_to_days(value_str_y, prefer_dmy))
+                    if let Some(cached) = date_cache.get(value_str_y) {
+                        *cached
+                    } else {
+                        let val = parse_date_to_days(value_str_y, prefer_dmy);
+                        date_cache.insert(value_str_y.to_string(), val);
+                        val
+                    }
                 } else {
-                    // Direct float parsing (much faster than date parsing)
                     parse_float_opt(value_str_y)
                 };
 
@@ -2934,15 +2954,22 @@ fn compute_all_bivariatestats_sequential(
                 // Only compute frequency counts if needed for mutual information
                 if needs_freq_counts {
                     // Optimization #2 & #6: Reduce string allocations using string interning
-                    // Intern strings to reuse allocations for frequently repeated values
-                    let x_str = string_interner
-                        .entry(value_str_x.to_string())
-                        .or_insert_with(|| value_str_x.to_string())
-                        .clone();
-                    let y_str = string_interner
-                        .entry(value_str_y.to_string())
-                        .or_insert_with(|| value_str_y.to_string())
-                        .clone();
+                    // Intern strings - get() first (borrowing), only clone on cache hit;
+                    // insert + 2 clones on cache miss (cold path)
+                    let x_str = if let Some(cached) = string_interner.get(value_str_x) {
+                        cached.clone()
+                    } else {
+                        let owned = value_str_x.to_string();
+                        string_interner.insert(owned.clone(), owned.clone());
+                        owned
+                    };
+                    let y_str = if let Some(cached) = string_interner.get(value_str_y) {
+                        cached.clone()
+                    } else {
+                        let owned = value_str_y.to_string();
+                        string_interner.insert(owned.clone(), owned.clone());
+                        owned
+                    };
 
                     // Accumulate joint frequency counts (xy_counts) - these are needed for mutual
                     // information. Marginal frequencies (x_counts, y_counts) are computed from
@@ -3204,7 +3231,7 @@ fn compute_all_kga_from_reader(
     }
 
     // Compute statistics for each field
-    let mut all_stats: HashMap<String, KGAStats> = HashMap::new();
+    let mut all_stats: HashMap<String, KGAStats> = HashMap::with_capacity(field_values.len());
 
     for (field_name, values) in field_values {
         if values.len() < 2 {
@@ -3378,6 +3405,10 @@ fn compute_all_entropy(input_path: &Path) -> CliResult<HashMap<String, EntropySt
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let start_time = Instant::now();
     let args: Args = util::get_args(USAGE, argv)?;
+
+    // Read environment variables once at the top to avoid repeated reads in hot loops
+    let stats_separator = std::env::var("QSV_STATS_SEPARATOR").unwrap_or_else(|_| "|".to_string());
+    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
 
     // Check if input file is provided
     let input_path_str = args
@@ -3977,7 +4008,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Collect fields that need outlier counting and/or winsorized/trimmed means
     let mut fields_to_count: HashMap<String, OutlierFieldInfo> = HashMap::new();
-    let needs_outlier_counting = new_column_indices.contains_key("outliers_extreme_lower");
+    let needs_outlier_counting = new_column_indices.contains_key("outliers_extreme_lower_cnt");
     let needs_winsorized_trimmed = new_column_indices.contains_key(winsorized_col_name.as_str())
         || new_column_indices.contains_key(trimmed_col_name.as_str());
 
@@ -4034,10 +4065,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         format!("{upper_pct}")
                     };
 
-                    let lower_val =
-                        parse_percentile_value(percentiles_str, &lower_pct_str, field_type);
-                    let upper_val =
-                        parse_percentile_value(percentiles_str, &upper_pct_str, field_type);
+                    let lower_val = parse_percentile_value(
+                        percentiles_str,
+                        &lower_pct_str,
+                        field_type,
+                        &stats_separator,
+                        prefer_dmy,
+                    );
+                    let upper_val = parse_percentile_value(
+                        percentiles_str,
+                        &upper_pct_str,
+                        field_type,
+                        &stats_separator,
+                        prefer_dmy,
+                    );
                     (lower_val, upper_val)
                 } else {
                     (None, None)
@@ -4045,20 +4086,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             } else {
                 // Use Q1/Q3
                 let q1_val = if field_type.is_date_or_datetime() {
-                    q1_idx.and_then(|idx| record.get(idx)).and_then(|s| {
-                        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-                        parse_date_to_days(s, prefer_dmy)
-                    })
+                    q1_idx
+                        .and_then(|idx| record.get(idx))
+                        .and_then(|s| parse_date_to_days(s, prefer_dmy))
                 } else {
                     q1_idx
                         .and_then(|idx| record.get(idx))
                         .and_then(parse_float_opt)
                 };
                 let q3_val = if field_type.is_date_or_datetime() {
-                    q3_idx.and_then(|idx| record.get(idx)).and_then(|s| {
-                        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-                        parse_date_to_days(s, prefer_dmy)
-                    })
+                    q3_idx
+                        .and_then(|idx| record.get(idx))
+                        .and_then(|s| parse_date_to_days(s, prefer_dmy))
                 } else {
                     q3_idx
                         .and_then(|idx| record.get(idx))
@@ -4557,11 +4596,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
     wtr.write_record(&header_record)?;
 
+    // Pre-compute derived column names for winsorized/trimmed stats
+    // to avoid repeated String::replace() allocations in the per-record loop
+    let winsorized_stddev_name = winsorized_col_name.replace("mean", "stddev");
+    let winsorized_variance_name = winsorized_col_name.replace("mean", "variance");
+    let winsorized_cv_name = winsorized_col_name.replace("mean", "cv");
+    let winsorized_base = winsorized_col_name.replace("mean", "").replace("__", "_");
+    let winsorized_stddev_ratio_name =
+        format!("{}_stddev_ratio", winsorized_base.trim_end_matches('_'));
+    let winsorized_range_name = winsorized_col_name.replace("mean", "range");
+    let trimmed_stddev_name = trimmed_col_name.replace("mean", "stddev");
+    let trimmed_variance_name = trimmed_col_name.replace("mean", "variance");
+    let trimmed_cv_name = trimmed_col_name.replace("mean", "cv");
+    let trimmed_base = trimmed_col_name.replace("mean", "").replace("__", "_");
+    let trimmed_stddev_ratio_name = format!("{}_stddev_ratio", trimmed_base.trim_end_matches('_'));
+    let trimmed_range_name = trimmed_col_name.replace("mean", "range");
+
+    // Pre-allocate new_values outside the loop and reuse across iterations
+    let new_columns_len = new_columns.len();
+    let mut new_values: Vec<String> = vec![String::new(); new_columns_len];
+
     // Process each record
     #[allow(clippy::cast_precision_loss)]
     for record in &records {
-        let mut output_record = record.clone();
-
         // Get field name and type (skip dataset stats rows that might not have proper type)
         let field_name = field_idx.and_then(|idx| record.get(idx)).unwrap_or("");
         let field_type_str = record.get(type_idx).unwrap_or("");
@@ -4569,8 +4626,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Convert string to enum for efficient comparisons
         let field_type_opt = FieldType::from_str(field_type_str);
 
-        // Initialize new_values for all field types (needed for entropy which works for all types)
-        let mut new_values = vec![String::new(); new_columns.len()];
+        // Clear new_values for reuse (reset each string to empty without deallocating)
+        for v in &mut new_values {
+            v.clear();
+        }
 
         // Compute XSD type for all field types (needs type, min, max)
         if new_column_indices.contains_key("xsd_type") {
@@ -4592,7 +4651,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             // Empty percentile string, fall back to quick
                             (None, "quick")
                         } else {
-                            let values = parse_all_percentile_string_values(percentiles_str);
+                            let values = parse_all_percentile_string_values(
+                                percentiles_str,
+                                &stats_separator,
+                            );
                             if values.is_empty() {
                                 // Empty percentile values, fall back to quick
                                 (None, "quick")
@@ -4619,11 +4681,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     if s.is_empty() {
                         None
                     } else if field_type_opt.is_some_and(FieldType::is_date_or_datetime) {
-                        // For dates, parse as date string
-                        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
                         parse_date_to_days(s, prefer_dmy)
                     } else {
-                        // For integers/floats, parse as number
                         parse_float_opt(s)
                     }
                 })
@@ -4636,11 +4695,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     if s.is_empty() {
                         None
                     } else if field_type_opt.is_some_and(FieldType::is_date_or_datetime) {
-                        // For dates, parse as date string
-                        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
                         parse_date_to_days(s, prefer_dmy)
                     } else {
-                        // For integers/floats, parse as number
                         parse_float_opt(s)
                     }
                 })
@@ -4691,11 +4747,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // Only compute other stats for numeric/date types
         let Some(field_type) = field_type_opt else {
-            // For unrecognized types, append new values (entropy already set above)
-            for val in new_values {
-                output_record.push_field(&val);
+            // For unrecognized types, write existing fields + new values directly
+            for field in record {
+                wtr.write_field(field)?;
             }
-            wtr.write_record(&output_record)?;
+            for val in &new_values {
+                wtr.write_field(val)?;
+            }
+            wtr.write_record(None::<&[u8]>)?;
             continue;
         };
 
@@ -5091,9 +5150,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         / (n - 1.0);
                     if winsorized_variance >= 0.0 {
                         let winsorized_stddev = winsorized_variance.sqrt();
-                        let winsorized_stddev_name = winsorized_col_name.replace("mean", "stddev");
-                        let winsorized_variance_name =
-                            winsorized_col_name.replace("mean", "variance");
                         if let Some(idx) = new_column_indices.get(&winsorized_stddev_name) {
                             new_values[*idx] = util::round_num(winsorized_stddev, args.flag_round);
                         }
@@ -5102,26 +5158,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 util::round_num(winsorized_variance, args.flag_round);
                         }
                         // Winsorized coefficient of variation
-                        if winsorized_mean_val.abs() > f64::EPSILON {
-                            let winsorized_cv_name = winsorized_col_name.replace("mean", "cv");
-                            if let Some(idx) = new_column_indices.get(&winsorized_cv_name) {
-                                let cv = winsorized_stddev / winsorized_mean_val.abs();
-                                new_values[*idx] = util::round_num(cv, args.flag_round);
-                            }
+                        if winsorized_mean_val.abs() > f64::EPSILON
+                            && let Some(idx) = new_column_indices.get(&winsorized_cv_name)
+                        {
+                            let cv = winsorized_stddev / winsorized_mean_val.abs();
+                            new_values[*idx] = util::round_num(cv, args.flag_round);
                         }
                         // Winsorized stddev ratio
                         if let Some(stddev_val) = stddev
                             && stddev_val.abs() > f64::EPSILON
+                            && let Some(idx) = new_column_indices.get(&winsorized_stddev_ratio_name)
                         {
-                            let winsorized_base =
-                                winsorized_col_name.replace("mean", "").replace("__", "_");
-                            let winsorized_stddev_ratio_name =
-                                format!("{}_stddev_ratio", winsorized_base.trim_end_matches('_'));
-                            if let Some(idx) = new_column_indices.get(&winsorized_stddev_ratio_name)
-                            {
-                                let ratio = winsorized_stddev / stddev_val;
-                                new_values[*idx] = util::round_num(ratio, args.flag_round);
-                            }
+                            let ratio = winsorized_stddev / stddev_val;
+                            new_values[*idx] = util::round_num(ratio, args.flag_round);
                         }
                     }
                 }
@@ -5129,12 +5178,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // Winsorized range
                 if let (Some(min_winsorized), Some(max_winsorized)) =
                     (stats.min_winsorized, stats.max_winsorized)
+                    && let Some(idx) = new_column_indices.get(&winsorized_range_name)
                 {
-                    let winsorized_range_name = winsorized_col_name.replace("mean", "range");
-                    if let Some(idx) = new_column_indices.get(&winsorized_range_name) {
-                        let range = max_winsorized - min_winsorized;
-                        new_values[*idx] = util::round_num(range, args.flag_round);
-                    }
+                    let range = max_winsorized - min_winsorized;
+                    new_values[*idx] = util::round_num(range, args.flag_round);
                 }
 
                 // Trimmed mean
@@ -5158,8 +5205,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         / (n - 1.0);
                     if trimmed_variance >= 0.0 {
                         let trimmed_stddev = trimmed_variance.sqrt();
-                        let trimmed_stddev_name = trimmed_col_name.replace("mean", "stddev");
-                        let trimmed_variance_name = trimmed_col_name.replace("mean", "variance");
                         if let Some(idx) = new_column_indices.get(&trimmed_stddev_name) {
                             new_values[*idx] = util::round_num(trimmed_stddev, args.flag_round);
                         }
@@ -5167,25 +5212,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             new_values[*idx] = util::round_num(trimmed_variance, args.flag_round);
                         }
                         // Trimmed coefficient of variation
-                        if trimmed_mean_val.abs() > f64::EPSILON {
-                            let trimmed_cv_name = trimmed_col_name.replace("mean", "cv");
-                            if let Some(idx) = new_column_indices.get(&trimmed_cv_name) {
-                                let cv = trimmed_stddev / trimmed_mean_val.abs();
-                                new_values[*idx] = util::round_num(cv, args.flag_round);
-                            }
+                        if trimmed_mean_val.abs() > f64::EPSILON
+                            && let Some(idx) = new_column_indices.get(&trimmed_cv_name)
+                        {
+                            let cv = trimmed_stddev / trimmed_mean_val.abs();
+                            new_values[*idx] = util::round_num(cv, args.flag_round);
                         }
                         // Trimmed stddev ratio
                         if let Some(stddev_val) = stddev
                             && stddev_val.abs() > f64::EPSILON
+                            && let Some(idx) = new_column_indices.get(&trimmed_stddev_ratio_name)
                         {
-                            let trimmed_base =
-                                trimmed_col_name.replace("mean", "").replace("__", "_");
-                            let trimmed_stddev_ratio_name =
-                                format!("{}_stddev_ratio", trimmed_base.trim_end_matches('_'));
-                            if let Some(idx) = new_column_indices.get(&trimmed_stddev_ratio_name) {
-                                let ratio = trimmed_stddev / stddev_val;
-                                new_values[*idx] = util::round_num(ratio, args.flag_round);
-                            }
+                            let ratio = trimmed_stddev / stddev_val;
+                            new_values[*idx] = util::round_num(ratio, args.flag_round);
                         }
                     }
                 }
@@ -5193,12 +5232,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // Trimmed range
                 if let (Some(min_trimmed), Some(max_trimmed)) =
                     (stats.min_trimmed, stats.max_trimmed)
+                    && let Some(idx) = new_column_indices.get(&trimmed_range_name)
                 {
-                    let trimmed_range_name = trimmed_col_name.replace("mean", "range");
-                    if let Some(idx) = new_column_indices.get(&trimmed_range_name) {
-                        let range = max_trimmed - min_trimmed;
-                        new_values[*idx] = util::round_num(range, args.flag_round);
-                    }
+                    let range = max_trimmed - min_trimmed;
+                    new_values[*idx] = util::round_num(range, args.flag_round);
                 }
             }
 
@@ -5231,12 +5268,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
             }
         }
-        // Append all new values to record
-        for val in new_values {
-            output_record.push_field(&val);
+        // Write existing fields + new values directly (avoids record.clone())
+        for field in record {
+            wtr.write_field(field)?;
         }
-
-        wtr.write_record(&output_record)?;
+        for val in &new_values {
+            wtr.write_field(val)?;
+        }
+        wtr.write_record(None::<&[u8]>)?;
     }
 
     wtr.flush()?;

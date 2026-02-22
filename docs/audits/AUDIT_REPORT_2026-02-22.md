@@ -1,6 +1,6 @@
 # Documentation Audit Report
 
-Generated: 2026-02-22 | Commit: 159b77e22 | Branch: master
+Generated: 2026-02-22 | Audited Commit: 159b77e22 (pre-fix) | Fixed in: f856a9c7b | Branch: master
 
 ## Executive Summary
 

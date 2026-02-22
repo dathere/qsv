@@ -10,7 +10,7 @@ The `stats` command in qsv is a high-performance CSV statistics engine that:
 - **Supports 44+ output columns** with detailed statistics
 
 ## File Location
-`/path/to/qsv/src/cmd/stats.rs` (~4,694 lines)
+`src/cmd/stats.rs` (~4,694 lines)
 
 ## Key Entry Points
 

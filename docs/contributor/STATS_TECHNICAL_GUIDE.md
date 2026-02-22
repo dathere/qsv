@@ -254,7 +254,7 @@ stats.rs depends on:
 
 ### Type Inference Mechanism
 
-The stats command infers one of six data types for each column:
+The stats command infers one of six core data types for each column:
 
 #### 1. **FieldType Enum**
 ```rust
@@ -268,6 +268,8 @@ enum FieldType {
     TDateTime,  // Dates with times (e.g., "2024-01-15T10:30:00Z")
 }
 ```
+
+If `--infer-boolean` is enabled, stats also checks for boolean patterns (configurable with `--boolean-patterns` with the default `1:0,t*:f*,y*:n*`) and infers a boolean type if all values match those patterns and the cardinality is 2.
 
 #### 2. **Type Inference Process**
 

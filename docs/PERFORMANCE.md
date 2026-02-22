@@ -154,7 +154,7 @@ Otherwise, the default memory check heuristic (NORMAL mode) will only check if t
 Depending on your filesystem's configuration (e.g. block size, file system type, writing to remote file systems (e.g. sshfs, efs, nfs),
 SSD or rotating magnetic disks, etc.), you can also fine-tune qsv's read/write buffers.
 
-By default, the read buffer size is set to [128k](https://github.com/dathere/qsv/blob/master/src/config.rs#L16), you can change it by setting the environment
+By default, the read buffer size is set to [128k](https://github.com/dathere/qsv/blob/master/src/config.rs), you can change it by setting the environment
 variable `QSV_RDR_BUFFER_CAPACITY` in bytes.
 
 The same is true with the write buffer (default: 512k) with the `QSV_WTR_BUFFER_CAPACITY` environment variable.

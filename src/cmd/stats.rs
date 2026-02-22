@@ -333,10 +333,7 @@ use foldhash::{HashMap, HashMapExt};
 use itertools::Itertools;
 use phf::phf_map;
 use qsv_dateparser::parse_with_preference;
-use rayon::{
-    iter::{IntoParallelRefIterator, ParallelIterator},
-    slice::ParallelSliceMut,
-};
+use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
 // Use serde_json on big-endian platforms (e.g. s390x) due to simd_json endianness issues
 #[cfg(target_endian = "little")]
@@ -2873,16 +2870,67 @@ fn weighted_mad(data: &[(f64, f64)], total_weight: f64, median: f64) -> Option<f
 
     // Calculate absolute deviations from the median
     let mut abs_deviations: Vec<(f64, f64)> = data
-        .par_iter()
+        .iter()
         .map(|&(value, weight)| ((value - median).abs(), weight))
         .collect();
 
     // Sort abs_deviations by absolute deviation value (new data, needs sorting)
-    abs_deviations
-        .par_sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    // Use parallel sort only for large datasets to avoid thread pool overhead
+    if abs_deviations.len() > PAR_SORT_THRESHOLD {
+        abs_deviations.par_sort_unstable_by(|a, b| {
+            a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+        });
+    } else {
+        abs_deviations
+            .sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    }
 
     // Calculate weighted median of absolute deviations
     weighted_median(&abs_deviations, total_weight)
+}
+
+/// Formats a list of antimodes into a display string with optional preview prefix,
+/// NULL handling, and length truncation.
+///
+/// Used by both weighted and unweighted antimode formatting paths.
+fn format_antimodes(
+    antimodes: &[impl AsRef<[u8]>],
+    antimodes_count: usize,
+    separator: &str,
+    max_len: &usize,
+    visualize_ws: bool,
+) -> String {
+    let mut antimodes_list = String::with_capacity(*max_len);
+
+    // We only store the first MAX_ANTIMODES antimodes
+    // so if antimodes_count > MAX_ANTIMODES, add the "*PREVIEW: " prefix
+    if antimodes_count > MAX_ANTIMODES {
+        antimodes_list.push_str("*PREVIEW: ");
+    }
+
+    let antimodes_vals = &antimodes
+        .iter()
+        .map(|c| String::from_utf8_lossy(c.as_ref()))
+        .join(separator);
+
+    // if the antimodes result starts with the separator,
+    // it indicates that NULL is the first antimode. Add NULL to the list.
+    if antimodes_vals.starts_with(separator) {
+        antimodes_list.push_str("NULL");
+    }
+    antimodes_list.push_str(antimodes_vals);
+
+    // truncate at max_len characters with an ellipsis
+    if antimodes_list.len() > *max_len {
+        util::utf8_truncate(&mut antimodes_list, *max_len + 1);
+        antimodes_list.push_str("...");
+    }
+
+    if visualize_ws {
+        util::visualize_whitespace(&antimodes_list)
+    } else {
+        antimodes_list
+    }
 }
 
 /// Computes weighted percentiles from (value, weight) pairs.
@@ -3341,6 +3389,8 @@ impl Stats {
         // prealloc memory for performance
         // we have MAX_STAT_COLUMNS columns at most with --everything
         let mut record = csv::StringRecord::with_capacity(512, MAX_STAT_COLUMNS);
+        // reuse a single itoa::Buffer for all integer-to-string conversions
+        let mut itoa_buf = itoa::Buffer::new();
 
         // min/max/range/sort_order/sortiness (5 fields)
         // we do this first as we want to get the sort_order, so we can skip sorting if not
@@ -3395,7 +3445,7 @@ impl Stats {
             if self.which.cardinality {
                 // Cardinality is the number of unique values
                 cardinality = weighted_modes_map.len() as u64;
-                mc_pieces.push(itoa::Buffer::new().format(cardinality).to_owned());
+                mc_pieces.push(itoa_buf.format(cardinality).to_owned());
                 // uniqueness_ratio = cardinality / record_count
                 #[allow(clippy::cast_precision_loss)]
                 mc_pieces.push(util::round_num(
@@ -3451,7 +3501,6 @@ impl Stats {
                         } else {
                             modes_keys.sort_unstable();
                         }
-                        let modes_result: Vec<Vec<u8>> = modes_keys.into_iter().cloned().collect();
                         // Collect antimodes (values with min weight) in deterministic order
                         // Sort first, then truncate to MAX_ANTIMODES for deterministic output
                         let mut antimodes_keys: Vec<&Vec<u8>> = weighted_modes_map
@@ -3466,19 +3515,18 @@ impl Stats {
                             antimodes_keys.sort_unstable();
                         }
                         antimodes_keys.truncate(MAX_ANTIMODES);
-                        let antimodes_result: Vec<Vec<u8>> =
-                            antimodes_keys.into_iter().cloned().collect();
 
-                        let modes_count = modes_result.len();
+                        let modes_count = modes_keys.len();
 
-                        // Format modes
+                        // Format modes - work with &Vec<u8> references directly,
+                        // avoiding heap allocation from .cloned().collect()
                         let modes_list = if visualize_ws {
-                            modes_result
+                            modes_keys
                                 .iter()
                                 .map(|c| util::visualize_whitespace(&String::from_utf8_lossy(c)))
                                 .join(stats_separator)
                         } else {
-                            modes_result
+                            modes_keys
                                 .iter()
                                 .map(|c| String::from_utf8_lossy(c))
                                 .join(stats_separator)
@@ -3497,31 +3545,15 @@ impl Stats {
                             )
                         });
 
-                        let mut antimodes_list = String::with_capacity(*antimodes_len);
-
-                        // We only store the first 10 antimodes
-                        // so if antimodes_count > 10, add the "*PREVIEW: " prefix
-                        if antimodes_count > MAX_ANTIMODES {
-                            antimodes_list.push_str("*PREVIEW: ");
-                        }
-
-                        let antimodes_vals = &antimodes_result
-                            .iter()
-                            .map(|c| String::from_utf8_lossy(c))
-                            .join(stats_separator);
-
-                        // if the antimodes result starts with the separator,
-                        // it indicates that NULL is the first antimode. Add NULL to the list.
-                        if antimodes_vals.starts_with(stats_separator) {
-                            antimodes_list.push_str("NULL");
-                        }
-                        antimodes_list.push_str(antimodes_vals);
-
-                        // and truncate at antimodes_len characters with an ellipsis
-                        if antimodes_list.len() > *antimodes_len {
-                            util::utf8_truncate(&mut antimodes_list, *antimodes_len + 1);
-                            antimodes_list.push_str("...");
-                        }
+                        // Format antimodes - work with &Vec<u8> references directly,
+                        // avoiding heap allocation from .cloned().collect()
+                        let antimodes_list = format_antimodes(
+                            &antimodes_keys,
+                            antimodes_count,
+                            stats_separator,
+                            antimodes_len,
+                            visualize_ws,
+                        );
 
                         // For weighted modes, mode_occurrences is the max weight (rounded)
                         // For weighted antimodes, antimode_occurrences is the min weight (rounded)
@@ -3533,16 +3565,12 @@ impl Stats {
                         mc_pieces.extend_from_slice(&[
                             // mode/s
                             modes_list,
-                            itoa::Buffer::new().format(modes_count).to_owned(),
-                            itoa::Buffer::new().format(mode_occurrences).to_owned(),
+                            itoa_buf.format(modes_count).to_owned(),
+                            itoa_buf.format(mode_occurrences).to_owned(),
                             // antimode/s
-                            if visualize_ws {
-                                util::visualize_whitespace(&antimodes_list)
-                            } else {
-                                antimodes_list
-                            },
-                            itoa::Buffer::new().format(antimodes_count).to_owned(),
-                            itoa::Buffer::new().format(antimode_occurrences).to_owned(),
+                            antimodes_list,
+                            itoa_buf.format(antimodes_count).to_owned(),
+                            itoa_buf.format(antimode_occurrences).to_owned(),
                         ]);
                     }
                 }
@@ -3562,7 +3590,7 @@ impl Stats {
                     mc_pieces.reserve(8);
                     if self.which.cardinality {
                         cardinality = v.cardinality(column_sorted, 1);
-                        mc_pieces.push(itoa::Buffer::new().format(cardinality).to_owned());
+                        mc_pieces.push(itoa_buf.format(cardinality).to_owned());
                         // uniqueness_ratio = cardinality / record_count
                         #[allow(clippy::cast_precision_loss)]
                         mc_pieces.push(util::round_num(
@@ -3619,45 +3647,23 @@ impl Stats {
                                 )
                             });
 
-                            let mut antimodes_list = String::with_capacity(*antimodes_len);
-
-                            // We only store the first 10 antimodes
-                            // so if antimodes_count > 10, add the "*PREVIEW: " prefix
-                            if antimodes_count > MAX_ANTIMODES {
-                                antimodes_list.push_str("*PREVIEW: ");
-                            }
-
-                            let antimodes_vals = &antimodes_result
-                                .iter()
-                                .map(|c| String::from_utf8_lossy(c))
-                                .join(stats_separator);
-
-                            // if the antimodes result starts with the separator,
-                            // it indicates that NULL is the first antimode. Add NULL to the list.
-                            if antimodes_vals.starts_with(stats_separator) {
-                                antimodes_list.push_str("NULL");
-                            }
-                            antimodes_list.push_str(antimodes_vals);
-
-                            // and truncate at antimodes_len characters with an ellipsis
-                            if antimodes_list.len() > *antimodes_len {
-                                util::utf8_truncate(&mut antimodes_list, *antimodes_len + 1);
-                                antimodes_list.push_str("...");
-                            }
+                            let antimodes_list = format_antimodes(
+                                &antimodes_result,
+                                antimodes_count,
+                                stats_separator,
+                                antimodes_len,
+                                visualize_ws,
+                            );
 
                             mc_pieces.extend_from_slice(&[
                                 // mode/s
                                 modes_list,
-                                itoa::Buffer::new().format(modes_count).to_owned(),
-                                itoa::Buffer::new().format(mode_occurrences).to_owned(),
+                                itoa_buf.format(modes_count).to_owned(),
+                                itoa_buf.format(mode_occurrences).to_owned(),
                                 // antimode/s
-                                if visualize_ws {
-                                    util::visualize_whitespace(&antimodes_list)
-                                } else {
-                                    antimodes_list
-                                },
-                                itoa::Buffer::new().format(antimodes_count).to_owned(),
-                                itoa::Buffer::new().format(antimode_occurrences).to_owned(),
+                                antimodes_list,
+                                itoa_buf.format(antimodes_count).to_owned(),
+                                itoa_buf.format(antimode_occurrences).to_owned(),
                             ]);
                         }
                     }
@@ -3735,7 +3741,7 @@ impl Stats {
             record.push_field(&mm.0);
             record.push_field(&mm.1);
             if stotlen < u64::MAX {
-                record.push_field(itoa::Buffer::new().format(stotlen));
+                record.push_field(itoa_buf.format(stotlen));
                 #[allow(clippy::cast_precision_loss)]
                 let avg_len = stotlen as f64 / record_count as f64;
                 record.push_field(&util::round_num(avg_len, round_places));
@@ -3881,15 +3887,15 @@ impl Stats {
         }
 
         // nullcount
-        record.push_field(itoa::Buffer::new().format(self.nullcount));
+        record.push_field(itoa_buf.format(self.nullcount));
 
         // n_negative, n_zero, n_positive
         if typ == TInteger || typ == TFloat {
             if let Some(ref v) = self.online {
                 let (n_negative, n_zero, n_positive) = v.n_counts();
-                record.push_field(itoa::Buffer::new().format(n_negative));
-                record.push_field(itoa::Buffer::new().format(n_zero));
-                record.push_field(itoa::Buffer::new().format(n_positive));
+                record.push_field(itoa_buf.format(n_negative));
+                record.push_field(itoa_buf.format(n_zero));
+                record.push_field(itoa_buf.format(n_positive));
             } else {
                 for _ in 0..3 {
                     record.push_field(EMPTY_STR);
@@ -3903,7 +3909,7 @@ impl Stats {
 
         // max precision
         if typ == TFloat {
-            record.push_field(itoa::Buffer::new().format(self.max_precision));
+            record.push_field(itoa_buf.format(self.max_precision));
         } else {
             record.push_field(EMPTY_STR);
         }
@@ -3936,9 +3942,16 @@ impl Stats {
                     None
                 } else {
                     // Sort in-place - no clone needed since we took ownership
-                    weighted_data.par_sort_unstable_by(|a, b| {
-                        a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
-                    });
+                    // Use parallel sort only for large datasets to avoid thread pool overhead
+                    if weighted_data.len() > PAR_SORT_THRESHOLD {
+                        weighted_data.par_sort_unstable_by(|a, b| {
+                            a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                    } else {
+                        weighted_data.sort_unstable_by(|a, b| {
+                            a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                    }
                     Some(weighted_data)
                 }
             } else {

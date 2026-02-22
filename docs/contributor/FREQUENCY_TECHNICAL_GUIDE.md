@@ -53,7 +53,7 @@ Config::indexed()? + jobs>1 → parallel_ftables(idx)
                 ↓
 sel_headers(): determine selected columns + unique column vector
     ↓
-ftables(): iterate rows → add values into `Frequencies<Vec<u8>>`
+ftables_unweighted() / ftables_weighted_internal(): iterate rows → add values into `Frequencies<Vec<u8>>`
     ↓
 process_frequencies(): apply limits, format percentages, assign ranks
     ↓
@@ -107,7 +107,7 @@ If reading from a file, `util::mem_file_check` optionally verifies available mem
 `sel_headers` retrieves CSV headers (or positional names for `--no-headers`), applies column selection, and initializes the unique columns vector via the stats cache.
 
 ### 4. Frequency Table Construction
-`ftables(sel, it, nchunks)` is the core loop:
+`ftables_unweighted()` and `ftables_weighted_internal()` are the core loops:
 - Pre-computes a bool vector `all_unique_flag_vec` aligned with selected columns.
 - Chooses a field processing closure up front based on `--ignore-case` and `--no-trim` to avoid repeated branching.
 - Iterates rows via a `csv::ByteRecord` buffer, using `unsafe` indexing to skip bounds checks.
@@ -320,7 +320,7 @@ cargo test test_frequency::prop_frequency_indexed -- --ignored
 
 ### Debugging Tips
 - Use `RUST_LOG=debug` alongside ad-hoc `log::debug!` statements when developing new features. Remember to guard them or compile to dev builds only.
-- For performance regressions, record a profiling session using `samply` or `perf` and inspect hot spots in `ftables` and `counts`.
+- For performance regressions, record a profiling session using `samply` or `perf` and inspect hot spots in `ftables_unweighted`/`ftables_weighted_internal` and `counts`.
 - When adding new unsafe code, document invariants with `safety:` comments and consider writing targeted tests that exercise boundary conditions (empty columns, single-row datasets, high cardinality).
 
 ---

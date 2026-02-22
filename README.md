@@ -36,7 +36,7 @@
 | [datefmt](docs/help/datefmt.md)<br>📇🚀👆 | Formats recognized date fields ([19 formats recognized](https://docs.rs/qsv-dateparser/latest/qsv_dateparser/#accepted-date-formats)) to a specified date format using [strftime date format specifiers](https://docs.rs/chrono/latest/chrono/format/strftime/). |
 | [dedup](docs/help/dedup.md)<br>🤯🚀👆 | Remove duplicate rows (See also `extdedup`, `extsort`, `sort` & `sortcheck` commands). |
 | [describegpt](docs/help/describegpt.md)<br>🌐🤖🪄🗃️📚⛩️ ![CKAN](docs/images/ckan.png) | <a name="describegpt_deeplink"></a>Infer a ["neuro-symbolic"](https://en.wikipedia.org/wiki/Neuro-symbolic_AI) Data Dictionary, Description & Tags or ask questions about a CSV with a [configurable, Mini Jinja prompt file](resources/describegpt_defaults.toml), using any [OpenAI API](https://platform.openai.com/docs/introduction)-compatible LLM, including local LLMs via [Ollama](https://ollama.com), [Jan](https://jan.ai) & [LM Studio](https://lmstudio.ai/).<br>(e.g. [Markdown](docs/describegpt/nyc311-describegpt.md), [JSON](docs/describegpt/nyc311-describegpt.json), [TOON](docs/describegpt/nyc311-describegpt.toon), [Everything](docs/describegpt/nyc311-describegpt-everything.md), [Spanish](docs/describegpt/nyc311-describegpt-spanish.md), [Mandarin](docs/describegpt/nyc311-describegpt-mandarin.md), [Controlled Tags](docs/describegpt/nyc311-describegpt-tagvocab.md);<br>[--prompt "What are the top 10 complaint types by community board & borough by year?"](docs/describegpt/nyc311-describegpt-prompt.md) - [deterministic, hallucination-free SQL RAG result](docs/describegpt/nyc311-describegpt-prompt.csv); [iterative, session-based SQL RAG refinement](docs/describegpt/allegheny_discussion3.md) - [refined SQL RAG result](docs/describegpt/mostexpensive6.csv)) |
-| [diff](docs/help/diff.md)<br>🚀🪄 | Find the difference between two CSVs with ludicrous speed!<br/>e.g. _compare two CSVs with 1M rows x 9 columns in under 600ms!_ |
+| [diff](docs/help/diff.md)<br>🚀 | Find the difference between two CSVs with ludicrous speed!<br/>e.g. _compare two CSVs with 1M rows x 9 columns in under 600ms!_ |
 | [edit](docs/help/edit.md) | Replace the value of a cell specified by its row and column. |
 | [enum](docs/help/enum.md)<br>👆 | Add a new column enumerating rows by adding a column of incremental or uuid identifiers. Can also be used to copy a column or fill a new column with a constant value.  |
 | [excel](docs/help/excel.md)<br>🚀 | Exports a specified Excel/ODS sheet to a CSV file. |
@@ -253,7 +253,7 @@ To compile different [variants](#variants) and enable optional [features](#featu
 
 ```bash
 # to compile qsv with all features enabled
-cargo build --release --locked --bin qsv --features feature_capable,apply,fetch,foreach,geocode,luau,polars,python,self_update,to,ui
+cargo build --release --locked --bin qsv --features feature_capable,apply,fetch,foreach,geocode,luau,mcp,magika,polars,python,self_update,to,ui
 # shorthand
 cargo build --release --locked --bin qsv -F all_features
 # enable all CPU optimizations for the current CPU (warning: creates non-portable binary)
@@ -458,7 +458,7 @@ It also has Out-of-Memory prevention, with two modes - NORMAL (default) & CONSER
 
 qsv supports an extensive list of environment variables and supports `.env` files to set them.
 
-For details, see [Environment Variables](docs/ENVIRONMENT_VARIABLES.md) and the [`dotenv.template.yaml`](dotenv.template) file.
+For details, see [Environment Variables](docs/ENVIRONMENT_VARIABLES.md) and the [`dotenv.template`](dotenv.template) file.
 ## Feature Flags
 
 qsv has several [feature flags](https://doc.rust-lang.org/cargo/reference/features.html) that can be used to enable/disable optional features.
@@ -483,7 +483,7 @@ Luau will also serve as the backbone of a whole library of **qsv recipes** - reu
  as command line interfaces go :shrug:. Its commands have numerous options but have sensible defaults. The usage text is written for a data analyst audience, not developers; and there are numerous examples in the usage text, with the tests doubling as examples as well. With [qsv pro](https://qsvpro.dathere.com), it has much expanded functionality while being easier to use with its Graphical User Interface.
 * **As Secure as Possible** - qsv is designed to be secure. It has no external runtime dependencies, is [written](https://aws.amazon.com/blogs/opensource/why-aws-loves-rust-and-how-wed-like-to-help/) [in](https://msrc.microsoft.com/blog/2019/07/why-rust-for-safe-systems-programming/) [Rust](https://opensource.googleblog.com/2023/06/rust-fact-vs-fiction-5-insights-from-googles-rust-journey-2022.html), and its codebase is automatically audited for security vulnerabilities with automated [DevSkim](https://github.com/microsoft/DevSkim#devskim), ["cargo audit"](https://rustsec.org) and [Codacy](https://app.codacy.com/gh/dathere/qsv/dashboard) Github Actions workflows.  
 It uses the latest stable Rust version, with an aggressive MSRV policy and the latest version of all its dependencies.
-It has an extensive test suite with ~2,448 tests, including several [property tests](https://medium.com/criteo-engineering/introduction-to-property-based-testing-f5236229d237) which [randomly generate](https://github.com/BurntSushi/quickcheck#quickcheck) parameters for oft-used commands.   
+It has an extensive test suite with more than 2,500 tests, including several [property tests](https://medium.com/criteo-engineering/introduction-to-property-based-testing-f5236229d237) which [randomly generate](https://github.com/BurntSushi/quickcheck#quickcheck) parameters for oft-used commands.   
 Its prebuilt binary archives are [zipsigned](https://github.com/Kijewski/zipsign#zipsign), so you can [verify their integrity](#verifying-the-integrity-of-the-prebuilt-binaries-zip-archives). Its self-update mechanism automatically verifies the integrity of the prebuilt binaries archive before applying an update.
 See [Security](docs/SECURITY.md) for more info.
 * **As Easy to Contribute to as Possible** - qsv is designed to be easy to contribute to, with a focus on maintainability. It's modular architecture allows the easy addition of self-contained commands gated by feature flags, the source code is heavily commented, the usage text is embedded, and there are helper functions that make it easy to create additional commands and supporting tests. See [Features](docs/FEATURES.md) and [Contributing](CONTRIBUTING.md) for more info.
@@ -496,7 +496,7 @@ It can process well-formed CSVs in _any_ language so long as its UTF-8 encoded. 
 Finally, though the default Geonames index of the `geocode` command is English-only, the index can be rebuilt with the `geocode index-update` subcommand with the `--languages` option to return place names in multiple languages ([with support for 254 languages](http://download.geonames.org/export/dump/alternatenames/)).
 
 ## Testing
-qsv has ~2,448 tests in the [tests](https://github.com/dathere/qsv/tree/master/tests) directory.
+qsv has ~2,525 tests in the [tests](https://github.com/dathere/qsv/tree/master/tests) directory.
 Each command has its own test suite in a separate file with the convention `test_<COMMAND>.rs`.
 Apart from preventing regressions, the tests also serve as good illustrative examples, and are often linked from the usage text of each corresponding command.
 

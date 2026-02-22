@@ -41,9 +41,8 @@ Over time, we realized that the cached stats can be used to make other commands 
 - `frequency` uses the stats cache to short-circuit compiling frequency tables for ID columns (all unique values) by looking at the cardinality of a column and fetching rowcounts from the cache.
 - `schema` uses the cache to create a JSON Schema Validation file. It uses the cache to set the data type, enum values, const values, minLength, maxLength, minimum and maximum properties in the JSON Schema file.
 - `tojsonl` uses the cache to set the JSON data type, and to infer boolean JSON properties.
-- `sqlp` and `joinp` uses the cache to create a Polars Schema, short-circuting Polars' schema inferencing - which is not as reliable as it depends on sampling the first N rows of a CSV, which may lead to wrong type inferences if the sample size is not large enough (which if set too large, slows down the Polars engine). As the data type inferences of `stats` are guaranteed, its not only faster, it works all the time!
+- `sqlp` and `joinp` uses the cache to create a Polars Schema, short-circuiting Polars' schema inferencing - which is not as reliable as it depends on sampling the first N rows of a CSV, which may lead to wrong type inferences if the sample size is not large enough (which if set too large, slows down the Polars engine). As the data type inferences of `stats` are guaranteed, its not only faster, it works all the time!
 - `pivotp` uses the cache extensively to automatically infer the best aggregation function to use based on the attributes of the pivot and value columns.
-- `diff` uses the cache to short-circuit comparison if the files fingerprint hashes are identical. It also uses the rowcount and cardinality of the primary key column to check for uniqueness.
 - `sample` uses the cache to skip unnecessary scanning and to inform its sampling strategies.
 
 For the most part, the default caching behavior works transparently, though you will notice several files with the same file stem will start appearing in the same location as your CSV files. As metadata is tiny by nature and very useful on its own, a conscious decision was made not to hide them.
@@ -155,10 +154,10 @@ Otherwise, the default memory check heuristic (NORMAL mode) will only check if t
 Depending on your filesystem's configuration (e.g. block size, file system type, writing to remote file systems (e.g. sshfs, efs, nfs),
 SSD or rotating magnetic disks, etc.), you can also fine-tune qsv's read/write buffers.
 
-By default, the read buffer size is set to [128k](https://github.com/dathere/qsv/blob/master/src/config.rs#L16), you can change it by setting the environment
+By default, the read buffer size is set to [128k](https://github.com/dathere/qsv/blob/master/src/config.rs), you can change it by setting the environment
 variable `QSV_RDR_BUFFER_CAPACITY` in bytes.
 
-The same is true with the write buffer (default: 256k) with the `QSV_WTR_BUFFER_CAPACITY` environment variable.
+The same is true with the write buffer (default: 512k) with the `QSV_WTR_BUFFER_CAPACITY` environment variable.
 
 ## Multithreading
 
@@ -205,8 +204,8 @@ qsv employs several caching strategies to improve performance:
 * The `stats` command caches its results in both CSV and JSONL formats. It does this to avoid re-computing the same statistics when the same input file/parameters are used, but also, as statistics are used in several other commands (see [Stats Cache](#stats-cache)).   
 The stats cache are automatically refreshed when the input file is modified the next time the `stats` command is run or when cache-aware commands attempt to use them. The stats cache is stored in the same directory as the input file. The stats cache files are named with the same file stem as the input file with the `stats.csv`, `stats.csv.json` and `stats.csv.data.jsonl` extensions. The CSV contains the cached stats, the JSON file contains metadata about how the stats were compiled, and the JSONL file is the JSONL version of the stats that can be directly loaded into memory by other commands. The JSONL is used by the `frequency`, `schema` and `tojsonl` commands and will only be generated when the `--stats-jsonl` option is set.
 * The `geocode` command [memoizes](https://en.wikipedia.org/wiki/Memoization) otherwise expensive geocoding operations and will report its cache hit rate. `geocode` memoization, however, is not persistent across sessions.
-* The `fetch` and `fetchpost` commands also memoizes expensive REST API calls. When the `--redis` option is enabled, it effectively has a persistent cache as the default time-to-live (TTL) before a Redis cache entry is expired is 28 days and Redis entries are persisted across restarts. Redis cache settings can be fine-tuned with the `QSV_REDIS_CONNSTR`, `QSV_REDIS_TTL_SECONDS`, `QSV_REDIS_TTL_REFRESH` and `QSV_FP_REDIS_CONNSTR` environment variables.
-* Alternatively, the `fetch` and `fetchpost` commands can use a local disk cache with the `--disk-cache` option. The default cache directory is `~/.qsv-cache/fetch`. The cache directory can be changed with the `QSV_CACHE_DIR` environment variable or the `--disk-cache-dir` command-line option. A disk cache entry is expired after 28 days by default, but this can be changed with the `QSV_DISK_CACHE_TTL_SECONDS` and `QSV_DISKCACHE_TTL_REFRESH` environment variables.
+* The `fetch` and `fetchpost` commands also memoizes expensive REST API calls. When the `--redis` option is enabled, it effectively has a persistent cache as the default time-to-live (TTL) before a Redis cache entry is expired is 28 days and Redis entries are persisted across restarts. Redis cache settings can be fine-tuned with the `QSV_REDIS_CONNSTR`, `QSV_REDIS_TTL_SECS`, `QSV_REDIS_TTL_REFRESH` and `QSV_FP_REDIS_CONNSTR` environment variables.
+* Alternatively, the `fetch` and `fetchpost` commands can use a local disk cache with the `--disk-cache` option. The default cache directory is `~/.qsv-cache/fetch`. The cache directory can be changed with the `QSV_CACHE_DIR` environment variable or the `--disk-cache-dir` command-line option. A disk cache entry is expired after 28 days by default, but this can be changed with the `QSV_DISKCACHE_TTL_SECS` and `QSV_DISKCACHE_TTL_REFRESH` environment variables.
 * The `luau` command caches lookup tables on disk using the QSV_CACHE_DIR environment variable and the `--cache-dir` command-line option. The default cache directory is `~/.qsv-cache`. The QSV_CACHE_DIR environment variable overrides the `--cache-dir` command-line option.
 
 ## SIMD-accelerated UTF-8 Validation for Performance
@@ -221,15 +220,15 @@ As UTF-8 is the de facto encoding standard, this shouldn't be a problem most of 
 ## Nightly Release Builds
 Pre-built binaries compiled using Rust Nightly/Unstable are also [available for download](https://github.com/dathere/qsv/releases/latest). These binaries are optimized for size and speed:
 
-* compiled with the last known Rust nightly/unstable that passes all ~2,448 tests.
+* compiled with the last known Rust nightly/unstable that passes the full automated test suite.
 * stdlib is compiled from source, instead of using the pre-built stdlib. This ensures stdlib is compiled with all of qsv's release settings
   (link time optimization, opt-level, codegen-units, panic=abort, etc.), presenting more opportunities for Rust/LLVM to optimize the generated code.
   This is why we only have nightly release builds for select platforms (the platform of GitHub's action runners), as we need access to the "native hardware"
   and cannot cross-compile stdlib to other platforms.
 * set `panic=abort` - removing panic-handling/formatting and backtrace code, making for smaller binaries.
-* enables unstable/nightly features in the `rand`, `regex`, `hashbrown`, `pyo3` and `polars` crates, that unlock performance/SIMD features on those crates.
+* enables unstable/nightly features in the `crc32fast`, `pyo3`, `rand`, `simd-json` and `foldhash` crates (and optionally `polars` via the `nightly-polars` feature), that unlock performance/SIMD features on those crates.
 
-Despite the 'unstable' label, these binaries are actually quite stable, given how [Rust is made](https://doc.rust-lang.org/book/appendix-07-nightly-rust.html) and are really more about performance (that's why we can still compile with Rust stable). You only really loose the backtrace messages when qsv panics.
+Despite the 'unstable' label, these binaries are actually quite stable, given how [Rust is made](https://doc.rust-lang.org/book/appendix-07-nightly-rust.html) and are really more about performance (that's why we can still compile with Rust stable). You only really lose the backtrace messages when qsv panics.
 
 If you need to maximize performance - use the nightly builds. If you prefer a "safer", rock-solid experience, use the stable builds.
 
@@ -265,7 +264,7 @@ nightly release build zip files, should you need to pin Rust to a specific night
 
 ## Benchmarking for Performance
 
-Use and fine-tune the [benchmark script](scripts/benchmark-basic.sh) when tweaking qsv's performance to your environment.
+Use and fine-tune the [benchmark script](scripts/benchmarks.sh) when tweaking qsv's performance to your environment.
 Don't be afraid to change the benchmark data and the qsv commands to something that is more representative of your
 workloads.
 

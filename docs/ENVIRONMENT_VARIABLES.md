@@ -20,7 +20,7 @@
 | `QSV_CKAN_API` | The CKAN Action API endpoint to use with the `luau` qsv_register_lookup() helper function when using the "ckan://" scheme. |
 | `QSV_CKAN_TOKEN`| The CKAN token to use with the `luau` qsv_register_lookup() helper function when using the "ckan://" scheme. Only required to access private resources. |
 | `QSV_COMMENT_CHAR` | set to an ascii character. If set, any lines(including the header) that start with this character are ignored. |
-| `QSV_MAX_JOBS` | number of jobs to use for multithreaded commands (currently `apply`, `applydp`, `dedup`, `diff`, `extsort`, `frequency`, `joinp`, `schema`, `snappy`, `sort`, `split`, `stats`, `to`, `tojsonl` & `validate`). If not set, max_jobs is set to the detected number of logical processors.  See [Multithreading](docs/PERFORMANCE.md#multithreading) for more info. |
+| `QSV_MAX_JOBS` | number of jobs to use for multithreaded commands (currently `apply`, `applydp`, `datefmt`, `dedup`, `diff`, `excel`, `extsort`, `frequency`, `geocode`, `joinp`, `jsonl`, `moarstats`, `pivotp`, `pragmastat`, `replace`, `sample`, `schema`, `search`, `searchset`, `snappy`, `sort`, `split`, `sqlp`, `stats`, `template`, `to`, `tojsonl` & `validate`). If not set, max_jobs is set to the detected number of logical processors.  See [Multithreading](docs/PERFORMANCE.md#multithreading) for more info. |
 | `QSV_NO_UPDATE` | if set, prohibit self-update version check for the latest qsv release published on GitHub. |
 | `QSV_LLM_BASE_URL` | The LLM API URL to use with the `describegpt` command. |
 | `QSV_LLM_APIKEY` | The API key of the supported LLM service to use with the `describegpt` command. |
@@ -44,12 +44,12 @@
 | `QSV_LOG_LEVEL` | desired level (default - off; `error`, `warn`, `info`, `trace`, `debug`). |
 | `QSV_LOG_DIR` | when logging is enabled, the directory where the log files will be stored. If the specified directory does not exist, qsv will attempt to create it. If not set, the log files are created in the directory where qsv was started. See [Logging](docs/Logging.md#logging) for more info. |
 | `QSV_LOG_UNBUFFERED` | if set, log messages are written directly to disk, without buffering. Otherwise, log messages are buffered before being written to the log file (8k buffer, flushing every second). See [flexi_logger](https://docs.rs/flexi_logger/latest/flexi_logger/enum.WriteMode.html) for details. |
-| `QSV_PROGRESSBAR` | if set, enable the --progressbar option on the `apply`, `fetch`, `fetchpost`, `foreach`, `luau`, `py`, `replace`, `search`, `searchset`, `sortcheck` & `validate` commands.  |
+| `QSV_PROGRESSBAR` | if set, enable the --progressbar option on the `apply`, `datefmt`, `fetch`, `fetchpost`, `foreach`, `geocode`, `luau`, `moarstats`, `py`, `replace`, `search`, `searchset`, `sniff`, `sortcheck`, `template` & `validate` commands.  |
 | `QSV_DISKCACHE_TTL_SECS` | set time-to-live of diskcache cached values (default (seconds): 2419200 (28 days)). |
 | `QSV_DISKCACHE_TTL_REFRESH`| if set, enables cache hits to refresh TTL of diskcache cached values. |
-| `QSV_REDIS_CONNSTR` | the `fetch` command can use [Redis](https://redis.io/) to cache responses. Set to connect to the desired Redis instance. (default: `redis:127.0.0.1:6379/1`). For more info on valid Redis connection string formats, click [here](https://docs.rs/redis/latest/redis/#connection-parameters). |
-| `QSV_FP_REDIS_CONNSTR` | the `fetchpost` command can also use Redis to cache responses (default: `redis:127.0.0.1:6379/2`). |
-| `QSV_DG_REDIS_CONNSTR` | the `describegpt` command can also use Redis to cache responses (default: `redis:127.0.0.1:6379/3`). |
+| `QSV_REDIS_CONNSTR` | the `fetch` command can use [Redis](https://redis.io/) to cache responses. Set to connect to the desired Redis instance. (default: `redis://127.0.0.1:6379/1`). For more info on valid Redis connection string formats, click [here](https://docs.rs/redis/latest/redis/#connection-parameters). |
+| `QSV_FP_REDIS_CONNSTR` | the `fetchpost` command can also use Redis to cache responses (default: `redis://127.0.0.1:6379/2`). |
+| `QSV_DG_REDIS_CONNSTR` | the `describegpt` command can also use Redis to cache responses (default: `redis://127.0.0.1:6379/3`). |
 | `QSV_REDIS_MAX_POOL_SIZE` | the maximum Redis connection pool size. (default: 20). |
 | `QSV_REDIS_TTL_SECS` | set time-to-live of Redis cached values (default (seconds): 2419200 (28 days)). |
 | `QSV_REDIS_TTL_REFRESH`| if set, enables cache hits to refresh TTL of Redis cached values. |
@@ -69,7 +69,7 @@ Several dependencies also have environment variables that influence qsv's perfor
   qsv uses reqwest and will honor [proxy settings](https://docs.rs/reqwest/latest/reqwest/index.html#proxies) set through the `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` & `NO_PROXY` environment variables.
 
 * Polars   
-  qsv uses [polars](https://github.com/pola.rs/polars) for several commands - currently `count`, `joinp`, `pivotp` and `sqlp`. Polars has its own set of environment variables that can be set to influence its behavior (see [here](https://github.com/pola-rs/polars/blob/dd1fc86b65ae39b741f46edc6da01d024bed50b6/crates/polars/src/lib.rs#L366-L408)). The most relevant ones are:
+  qsv uses [polars](https://github.com/pola.rs/polars) for several commands - currently `color`, `count`, `joinp`, `lens`, `pivotp`, `schema` and `sqlp`. Polars has its own set of environment variables that can be set to influence its behavior (see [here](https://github.com/pola-rs/polars/blob/dd1fc86b65ae39b741f46edc6da01d024bed50b6/crates/polars/src/lib.rs#L366-L408)). The most relevant ones are:
 
   * `POLARS_VERBOSE` - if set to 1, polars will output logging messages to stderr.
   * `POLARS_PANIC_ON_ERR` - if set to 1, panics on polars-related errors, instead of returning an error.

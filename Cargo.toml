@@ -309,6 +309,9 @@ serial_test = { version = "3.4", features = ["file_locks"] }
 # the main features of this csv fork is SIMD-accelerated UTF-8 validation;
 # non-allocating ByteRecord trim and StringRecord trim;
 # a faster `is_non_numeric()` helper;
+# replace byte-by-byte loop in csv-core's scan_and_copy with
+# memchr-based SIMD scanning and copy_from_slice bulk copy;
+# Add the scan_and_copy fast-path to read_field_dfa (previously only in read_record_dfa);
 # and various clippy lint suggestions applied
 csv       = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
 csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }

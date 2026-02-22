@@ -3,7 +3,7 @@
 ## TL;DR
 
 The `stats` command in qsv is a high-performance CSV statistics engine that:
-- **Infers data types** for each column (6 types: NULL, Integer, Float, String, Date, DateTime)
+- **Infers data types** for each column (6 base types: NULL, Integer, Float, String, Date, DateTime; plus optional **Boolean** when `--infer-boolean` is enabled)
 - **Computes statistics** from streaming (mean, sum, stddev) to non-streaming (median, quartiles, modes)
 - **Processes files** either sequentially or in parallel (with index)
 - **Caches results** to avoid recomputation

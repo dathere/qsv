@@ -57,8 +57,8 @@ Find the last MCP release tag and use it to populate the changelog:
 # Find the most recent MCP release tag
 LAST_TAG=$(git describe --tags --match 'mcp-v*' --abbrev=0 2>/dev/null || echo "")
 
-# List relevant commits since that tag (or all if no tag exists)
-git log --oneline --no-merges --grep="(mcp)" ${LAST_TAG:+$LAST_TAG..}HEAD
+# List relevant commits since that tag (or all commits from repo root if no tag exists)
+git log --oneline --no-merges --grep="(mcp)" "${LAST_TAG:-$(git rev-list --max-parents=0 HEAD)}"..HEAD
 ```
 
 Only commits with `(mcp)` in the title are relevant to MCP server releases.

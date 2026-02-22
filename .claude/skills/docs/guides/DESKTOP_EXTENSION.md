@@ -499,7 +499,7 @@ The extension uses skill definitions from `.claude/skills/qsv/*.json`.
 - Use qsv to convert to other formats:
   ```bash
   qsv to xlsx input.csv
-  qsv sqlp input.csv 'COPY (SELECT * FROM input) TO output.parquet'
+  qsv sqlp input.csv 'SELECT * FROM input' --format parquet --output output.parquet
   ```
 
 **Pipeline with external tools**:

@@ -19,7 +19,7 @@
 The `stats` command is one of the most critical components of qsv. It computes comprehensive statistical summaries and infers data types for CSV columns. Unlike sampling-based approaches, stats performs **guaranteed** inference by scanning the entire file.
 
 ### Key Responsibilities
-- **Type Inference**: Detects NULL, Integer, String, Float, Date, and DateTime types
+- **Type Inference**: Detects NULL, Integer, String, Float, Date, DateTime, and (optionally) Boolean types (when `--infer-boolean` is enabled)
 - **Streaming Statistics**: Computes mean, sum, min/max, standard deviation, variance, etc. with constant memory
 - **Non-Streaming Statistics**: Computes cardinality, modes, medians, quartiles (requires loading all data)
 - **Date Handling**: Flexible date format inference with configurable patterns

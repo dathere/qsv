@@ -179,7 +179,7 @@ export function detectDuckDb(): DuckDbState {
       }
     }
   } catch {
-    // Not in PATH
+    // Not in PATH — will check common installation locations next
   }
 
   // Check common installation locations
@@ -210,7 +210,7 @@ export function detectDuckDb(): DuckDbState {
         }
       }
     } catch {
-      // Location doesn't exist
+      // Location doesn't exist or is inaccessible
     }
   }
 

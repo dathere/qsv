@@ -76,15 +76,28 @@ export class UpdateChecker {
    * Get current qsv binary version
    */
   async getQsvBinaryVersion(): Promise<string> {
+    const SPAWN_TIMEOUT_MS = 30_000;
     return new Promise((resolve, reject) => {
       const child = spawn(this.qsvBinaryPath, ["--version"]);
       let output = "";
+      let settled = false;
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          child.kill("SIGTERM");
+          reject(new Error(`qsv --version timed out after ${SPAWN_TIMEOUT_MS}ms`));
+        }
+      }, SPAWN_TIMEOUT_MS);
 
       child.stdout.on("data", (data) => {
         output += data.toString();
       });
 
       child.on("close", (code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         if (code !== 0) {
           reject(new Error(`qsv --version exited with code ${code}`));
           return;
@@ -102,6 +115,9 @@ export class UpdateChecker {
       });
 
       child.on("error", (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         reject(new Error(`Failed to execute qsv: ${error.message}`));
       });
     });
@@ -130,7 +146,7 @@ export class UpdateChecker {
         if (skill.version) {
           return skill.version;
         }
-      } catch (error) {
+      } catch (error: unknown) {
         // Try next file
         continue;
       }
@@ -158,7 +174,7 @@ export class UpdateChecker {
         return null;
       }
       return JSON.parse(readFileSync(this.versionFilePath, "utf-8"));
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("[UpdateChecker] Failed to load version info:", error);
       return null;
     }
@@ -222,7 +238,7 @@ export class UpdateChecker {
       // Tag format is typically "v0.132.0" or "0.132.0"
       const version = tagName.replace(/^v/, "");
       return version;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("[UpdateChecker] Failed to check GitHub releases:", error);
       return null;
     }
@@ -280,8 +296,9 @@ export class UpdateChecker {
         );
         recommendations.push(`   Update with: qsv --update`);
       }
-    } catch (error) {
+    } catch (error: unknown) {
       // Non-critical error, continue
+      console.warn("[UpdateChecker] GitHub release check failed:", error);
     }
 
     // Save current state
@@ -317,14 +334,28 @@ export class UpdateChecker {
 
     console.error("[UpdateChecker] Auto-regenerating skills...");
 
+    const REGEN_TIMEOUT_MS = 60_000;
     return new Promise((resolve) => {
       // Use qsv binary directly with --update-mcp-skills flag
       // This is much simpler and doesn't require Rust toolchain
       const child = spawn(this.qsvBinaryPath, ["--update-mcp-skills"], {
         stdio: "inherit",
       });
+      let settled = false;
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          child.kill("SIGTERM");
+          console.error(`[UpdateChecker] ❌ Skills regeneration timed out after ${REGEN_TIMEOUT_MS}ms`);
+          resolve(false);
+        }
+      }, REGEN_TIMEOUT_MS);
 
       child.on("close", (code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         if (code === 0) {
           console.error("[UpdateChecker] ✅ Skills regenerated successfully");
           resolve(true);
@@ -338,7 +369,10 @@ export class UpdateChecker {
         }
       });
 
-      child.on("error", (error) => {
+      child.on("error", (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         console.error("[UpdateChecker] ❌ Failed to spawn qsv:", error);
         resolve(false);
       });

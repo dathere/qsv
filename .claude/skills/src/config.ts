@@ -79,7 +79,11 @@ function parseNumericEnv(
 
 /** Parse integer from environment variable with validation */
 function parseIntEnv(envVar: string, defaultValue: number, min?: number, max?: number): number {
-  return parseNumericEnv(envVar, defaultValue, (s) => parseInt(s, 10), { min, max });
+  return parseNumericEnv(envVar, defaultValue, (s) => {
+    const n = parseInt(s, 10);
+    if (!Number.isSafeInteger(n)) return NaN; // reject unsafe integers
+    return n;
+  }, { min, max });
 }
 
 /** Parse float from environment variable with validation */
@@ -237,7 +241,7 @@ function detectQsvBinaryPath(): string | null {
       lastDetectionDiagnostics.whichResult = path;
       return path;
     }
-  } catch (error) {
+  } catch (error: unknown) {
     lastDetectionDiagnostics.whichError =
       error instanceof Error ? error.message : String(error);
   }
@@ -482,7 +486,7 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
       availableCommands: commandInfo?.commands,
       commandCount: commandInfo?.count,
     };
-  } catch (error) {
+  } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     return {
       valid: false,
@@ -639,7 +643,7 @@ export const config = {
         return parsed.map((p) => expandTemplateVars(p));
       }
     } catch {
-      // Not JSON, treat as delimited string
+      // Not JSON, treat as delimited string (expected for legacy colon-delimited format)
     }
 
     // Fall back to delimited string (legacy MCP mode)

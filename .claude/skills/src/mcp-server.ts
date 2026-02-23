@@ -16,7 +16,7 @@ import {
   RootsListChangedNotificationSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { fileURLToPath } from "node:url";
-import { existsSync, statSync } from "node:fs";
+import { access, stat as fsStat } from "node:fs/promises";
 
 import { SkillLoader } from "./loader.js";
 import { SkillExecutor } from "./executor.js";
@@ -271,7 +271,7 @@ class QsvMcpServer {
 
       // Perform full check (with network calls) in the background
       // This won't block server startup; abort after 30 seconds to cancel underlying fetch
-      setImmediate(async () => {
+      void setImmediate(async () => {
         const UPDATE_CHECK_TIMEOUT_MS = 30_000;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
@@ -287,7 +287,7 @@ class QsvMcpServer {
             });
             console.error("");
           }
-        } catch (error) {
+        } catch (error: unknown) {
           // Non-critical error - don't block server
           console.error(
             "[UpdateChecker] Background update check failed:",
@@ -297,7 +297,7 @@ class QsvMcpServer {
           clearTimeout(timer);
         }
       });
-    } catch (error) {
+    } catch (error: unknown) {
       // Non-critical error - don't block server startup
       console.error("[UpdateChecker] Failed to check for updates:", error);
     }
@@ -367,7 +367,7 @@ class QsvMcpServer {
               const toolDef = createToolDefinition(skill);
               tools.push(toolDef);
               loadedCount++;
-            } catch (error) {
+            } catch (error: unknown) {
               console.error(
                 `[Server] ✗ Error creating tool definition for ${skillName}:`,
                 error,
@@ -429,7 +429,7 @@ class QsvMcpServer {
             try {
               const toolDef = createToolDefinition(skill);
               tools.push(toolDef);
-            } catch (error) {
+            } catch (error: unknown) {
               console.error(
                 `[Server] ✗ Error creating tool definition for ${skillName}:`,
                 error,
@@ -463,7 +463,7 @@ class QsvMcpServer {
             }
             try {
               tools.push(createToolDefinition(skill));
-            } catch (error) {
+            } catch (error: unknown) {
               console.error(`[Server] ✗ Error loading core skill ${skillName}:`, error);
             }
           }
@@ -474,7 +474,7 @@ class QsvMcpServer {
         try {
           const genericTool = createGenericToolDefinition(this.loader);
           tools.push(genericTool);
-        } catch (error) {
+        } catch (error: unknown) {
           console.error("[Server] Error creating generic tool:", error);
           throw error;
         }
@@ -486,7 +486,7 @@ class QsvMcpServer {
           tools.push(createSearchToolsTool());
           tools.push(createToParquetTool());
           console.error("[Server] config, search, and conversion tools added successfully");
-        } catch (error) {
+        } catch (error: unknown) {
           console.error("[Server] Error creating config/search/conversion tools:", error);
           throw error;
         }
@@ -509,7 +509,7 @@ class QsvMcpServer {
         return response;
       });
       console.error("[Server] Tool handlers registered successfully");
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("[Server] Error registering tool handlers:", error);
       throw error;
     }
@@ -695,7 +695,7 @@ class QsvMcpServer {
           ],
           isError: true,
         };
-      } catch (error) {
+      } catch (error: unknown) {
         console.error(`Error executing tool ${name}:`, error);
 
         return {
@@ -775,12 +775,14 @@ class QsvMcpServer {
         return;
       }
       const rootPath = fileURLToPath(fileRoot.uri);
-      if (!existsSync(rootPath)) {
+      try {
+        await access(rootPath);
+      } catch {
         console.error(`[Roots] Skipping non-existent root path: ${rootPath}`);
         return;
       }
       try {
-        if (!statSync(rootPath).isDirectory()) {
+        if (!(await fsStat(rootPath)).isDirectory()) {
           console.error(`[Roots] Skipping root path (not a directory): ${rootPath}`);
           return;
         }
@@ -794,7 +796,7 @@ class QsvMcpServer {
         console.error(`[Roots] Note: ${roots.length - 1} additional root(s) ignored; only the first file:// root is used`);
       }
       syncSucceeded = true;
-    } catch (error) {
+    } catch (error: unknown) {
       // Best-effort feature — suppress expected errors when client doesn't support roots
       if (error instanceof Error) {
         const rawCode = "code" in error ? (error as Record<string, unknown>).code : undefined;
@@ -925,7 +927,7 @@ async function main(): Promise<void> {
     console.error(
       "[Server] Ready to accept requests (Press Ctrl+C to shutdown)",
     );
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Fatal error starting QSV MCP Server:", error);
     process.exit(1);
   }

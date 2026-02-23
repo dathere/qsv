@@ -77,12 +77,22 @@ export class SkillLoader {
       jsonFiles.map(async (file) => {
         const skillPath = join(this.skillsDir, file);
         const content = await readFile(skillPath, "utf-8");
-        return JSON.parse(content) as QsvSkill;
+        const parsed: unknown = JSON.parse(content);
+        if (
+          typeof parsed !== "object" ||
+          parsed === null ||
+          !("name" in parsed) ||
+          !("description" in parsed)
+        ) {
+          console.warn(`[Loader] Skipping invalid skill file ${file}: missing required fields`);
+          return null;
+        }
+        return parsed as QsvSkill;
       }),
     );
 
     for (const skill of loadResults) {
-      this.skills.set(skill.name, skill);
+      if (skill) this.skills.set(skill.name, skill);
     }
 
     // Build BM25 index after loading all skills
@@ -130,10 +140,21 @@ export class SkillLoader {
     const skillPath = join(this.skillsDir, `${skillName}.json`);
     try {
       const content = await readFile(skillPath, "utf-8");
-      const skill: QsvSkill = JSON.parse(content);
+      const parsed: unknown = JSON.parse(content);
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        !("name" in parsed) ||
+        !("description" in parsed)
+      ) {
+        console.warn(`[Loader] Invalid skill file for ${skillName}: missing required fields`);
+        return null;
+      }
+      const skill = parsed as QsvSkill;
       this.skills.set(skillName, skill);
       return skill;
-    } catch {
+    } catch (error: unknown) {
+      console.warn(`[Loader] Failed to load skill ${skillName}:`, error instanceof Error ? error.message : String(error));
       return null;
     }
   }

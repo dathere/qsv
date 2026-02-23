@@ -25,9 +25,10 @@ function isValidSkillShape(parsed: unknown): parsed is QsvSkill {
 
   // Command must be an object with at least a string `subcommand` property,
   // since code accesses `skill.command.subcommand` in multiple places.
-  const command = obj.command as Record<string, unknown> | undefined;
-  if (!command || typeof command !== "object") return false;
-  if (typeof command.subcommand !== "string") return false;
+  const command = obj.command;
+  if (typeof command !== "object" || command === null) return false;
+  const cmd = command as Record<string, unknown>;
+  if (typeof cmd.subcommand !== "string") return false;
 
   // Examples, if present, should be an array (optional in practice)
   if (obj.examples !== undefined && !Array.isArray(obj.examples)) return false;

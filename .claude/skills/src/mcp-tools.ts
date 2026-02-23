@@ -2366,7 +2366,7 @@ export async function handleSearchToolsCall(
           regex.test(skill.name) ||
           regex.test(skill.description) ||
           regex.test(skill.command.subcommand) ||
-          skill.examples.some((ex) => regex.test(ex.description)),
+          skill.examples?.some((ex) => regex.test(ex.description)),
       );
     } catch (regexError) {
       // Invalid regex, fall back to text search (already done above)

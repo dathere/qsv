@@ -17,7 +17,22 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 function isValidSkillShape(parsed: unknown): parsed is QsvSkill {
   if (typeof parsed !== "object" || parsed === null) return false;
   const obj = parsed as Record<string, unknown>;
-  return typeof obj.name === "string" && typeof obj.description === "string";
+
+  // Basic required string fields
+  if (typeof obj.name !== "string" || typeof obj.description !== "string") return false;
+  if (typeof obj.version !== "string") return false;
+  if (typeof obj.category !== "string") return false;
+
+  // Command must be an object with at least a string `subcommand` property,
+  // since code accesses `skill.command.subcommand` in multiple places.
+  const command = obj.command as Record<string, unknown> | undefined;
+  if (!command || typeof command !== "object") return false;
+  if (typeof command.subcommand !== "string") return false;
+
+  // Examples, if present, should be an array (optional in practice)
+  if (obj.examples !== undefined && !Array.isArray(obj.examples)) return false;
+
+  return true;
 }
 
 export class SkillLoader {

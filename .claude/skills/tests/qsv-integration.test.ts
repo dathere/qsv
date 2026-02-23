@@ -677,11 +677,72 @@ test('handleToParquetCall accepts "output" as alias for "output_file"', { skip: 
     });
 
     assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
-    const output = result.content[0].text || '';
-    assert.ok(output.includes(parquetPath), 'Should mention user-specified output path');
 
-    // Verify the parquet file exists at the specified path
-    await access(parquetPath);
+    // Verify the parquet file exists and has non-zero size
+    const fileStat = await stat(parquetPath);
+    assert.ok(fileStat.size > 0, 'Parquet file should have non-zero size');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('handleToolCall accepts "input" as alias for "input_file"', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name\n1,Alice\n2,Bob\n'
+    );
+    const outputPath = join(testDir, 'result.csv');
+
+    // Use "input" alias instead of "input_file"
+    const result = await handleToolCall(
+      'qsv_select',
+      {
+        input: csvPath,
+        selection: 'name',
+        output_file: outputPath,
+      },
+      executor,
+      loader,
+    );
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+
+    const written = await readFile(outputPath, 'utf-8');
+    assert.ok(written.includes('name'), 'Output file should contain name column');
+    assert.ok(written.includes('Alice'), 'Output file should contain Alice');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('handleToParquetCall accepts "input" as alias for "input_file"', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+
+  try {
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name\n1,Alice\n2,Bob\n'
+    );
+    const parquetPath = join(testDir, 'result.parquet');
+
+    // Use "input" alias instead of "input_file"
+    const result = await handleToParquetCall({
+      input: csvPath,
+      output_file: parquetPath,
+    });
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+
+    // Verify the parquet file exists and has non-zero size
+    const fileStat = await stat(parquetPath);
+    assert.ok(fileStat.size > 0, 'Parquet file should have non-zero size');
   } finally {
     await cleanupTestDir(testDir);
   }

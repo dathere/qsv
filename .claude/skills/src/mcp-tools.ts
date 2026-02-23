@@ -1643,9 +1643,12 @@ export async function handleToolCall(
     }
 
     // Extract input_file and output_file
+    // Accept "input"/"output" as aliases (LLMs sometimes use shorter parameter names)
     let inputFile = params.input_file as string | undefined;
+    if (!inputFile && typeof params.input === "string") {
+      inputFile = params.input;
+    }
     let outputFile = params.output_file as string | undefined;
-    // Accept "output" as alias (LLMs sometimes use shorter parameter names)
     if (!outputFile && typeof params.output === "string") {
       outputFile = params.output;
     }
@@ -2524,9 +2527,12 @@ export async function handleToParquetCall(
   content: Array<{ type: string; text: string }>;
   isError?: boolean;
 }> {
+  // Accept "input"/"output" as aliases (LLMs sometimes use shorter parameter names)
   let inputFile = params.input_file as string | undefined;
+  if (!inputFile && typeof params.input === "string") {
+    inputFile = params.input;
+  }
   let outputFile = params.output_file as string | undefined;
-  // Accept "output" as alias (LLMs sometimes use shorter parameter names)
   if (!outputFile && typeof params.output === "string") {
     outputFile = params.output;
   }

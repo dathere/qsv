@@ -1209,6 +1209,7 @@ function buildSkillExecParams(
     if (
       key === "input_file" ||
       key === "output_file" ||
+      key === "output" ||
       key === "help" ||
       (key === "input" && args.input)
     ) {
@@ -1644,6 +1645,10 @@ export async function handleToolCall(
     // Extract input_file and output_file
     let inputFile = params.input_file as string | undefined;
     let outputFile = params.output_file as string | undefined;
+    // Accept "output" as alias (LLMs sometimes use shorter parameter names)
+    if (!outputFile && typeof params.output === "string") {
+      outputFile = params.output;
+    }
     const isHelpRequest = params.help === true;
 
     if (!inputFile && !isHelpRequest) {
@@ -2521,6 +2526,10 @@ export async function handleToParquetCall(
 }> {
   let inputFile = params.input_file as string | undefined;
   let outputFile = params.output_file as string | undefined;
+  // Accept "output" as alias (LLMs sometimes use shorter parameter names)
+  if (!outputFile && typeof params.output === "string") {
+    outputFile = params.output;
+  }
 
   if (!inputFile) {
     return errorResult("Error: input_file parameter is required");

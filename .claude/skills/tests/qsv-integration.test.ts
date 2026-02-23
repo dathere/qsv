@@ -537,6 +537,156 @@ test('qsv_to_parquet skips regeneration when stats and schema are up-to-date', {
   }
 });
 
+// ============================================================================
+// "output" alias Tests (LLMs sometimes send "output" instead of "output_file")
+// ============================================================================
+
+test('handleToolCall accepts "output" as alias for "output_file"', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name,age\n1,Alice,30\n2,Bob,25\n'
+    );
+    const outputPath = join(testDir, 'result.csv');
+
+    // Use "output" (not "output_file") — the alias LLMs sometimes send
+    const result = await handleToolCall(
+      'qsv_select',
+      {
+        input_file: csvPath,
+        selection: 'name,age',
+        output: outputPath,
+      },
+      executor,
+      loader,
+    );
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+
+    // Verify the file was written to the user-specified path
+    const written = await readFile(outputPath, 'utf-8');
+    assert.ok(written.includes('name'), 'Output file should contain name column');
+    assert.ok(written.includes('Alice'), 'Output file should contain Alice');
+    assert.ok(!written.includes('id'), 'Output file should not contain id column');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('handleToolCall still accepts "output_file" (no regression)', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name,age\n1,Alice,30\n2,Bob,25\n'
+    );
+    const outputPath = join(testDir, 'result.csv');
+
+    const result = await handleToolCall(
+      'qsv_select',
+      {
+        input_file: csvPath,
+        selection: 'name,age',
+        output_file: outputPath,
+      },
+      executor,
+      loader,
+    );
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+
+    const written = await readFile(outputPath, 'utf-8');
+    assert.ok(written.includes('name'), 'Output file should contain name column');
+    assert.ok(written.includes('Alice'), 'Output file should contain Alice');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('handleToolCall prefers "output_file" over "output" when both present', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name\n1,Alice\n'
+    );
+    const preferredPath = join(testDir, 'preferred.csv');
+    const aliasPath = join(testDir, 'alias.csv');
+
+    // When both are present, output_file should win
+    const result = await handleToolCall(
+      'qsv_select',
+      {
+        input_file: csvPath,
+        selection: 'name',
+        output_file: preferredPath,
+        output: aliasPath,
+      },
+      executor,
+      loader,
+    );
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+
+    const written = await readFile(preferredPath, 'utf-8');
+    assert.ok(written.includes('name'), 'Preferred output file should be written');
+
+    // Alias path should NOT exist
+    let aliasExists = true;
+    try { await access(aliasPath); } catch { aliasExists = false; }
+    assert.ok(!aliasExists, 'Alias path should not be written when output_file is present');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('handleToParquetCall accepts "output" as alias for "output_file"', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+
+  try {
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name\n1,Alice\n2,Bob\n'
+    );
+    const parquetPath = join(testDir, 'result.parquet');
+
+    // Use "output" alias
+    const result = await handleToParquetCall({
+      input_file: csvPath,
+      output: parquetPath,
+    });
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+    const output = result.content[0].text || '';
+    assert.ok(output.includes(parquetPath), 'Should mention user-specified output path');
+
+    // Verify the parquet file exists at the specified path
+    await access(parquetPath);
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
 if (!QSV_AVAILABLE) {
   console.log('\n⚠️  qsv integration tests skipped - qsv binary not available or version too old');
   console.log(`   Current validation: ${JSON.stringify(config.qsvValidation, null, 2)}`);

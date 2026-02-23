@@ -5869,7 +5869,7 @@ dependencies = [
  "snap",
  "strsim",
  "strum 0.28.0",
- "strum_macros 0.27.2",
+ "strum_macros 0.28.0",
  "sysinfo 0.38.2",
  "tempfile",
  "terminal-colorsaurus",
@@ -7544,6 +7544,18 @@ name = "strum_macros"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
 dependencies = [
  "heck",
  "proc-macro2",

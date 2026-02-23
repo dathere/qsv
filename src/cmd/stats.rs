@@ -2897,10 +2897,10 @@ fn format_antimodes(
     antimodes: &[impl AsRef<[u8]>],
     antimodes_count: usize,
     separator: &str,
-    max_len: &usize,
+    max_len: usize,
     visualize_ws: bool,
 ) -> String {
-    let mut antimodes_list = String::with_capacity(*max_len);
+    let mut antimodes_list = String::with_capacity(max_len);
 
     // We only store the first MAX_ANTIMODES antimodes
     // so if antimodes_count > MAX_ANTIMODES, add the "*PREVIEW: " prefix
@@ -2921,8 +2921,8 @@ fn format_antimodes(
     antimodes_list.push_str(antimodes_vals);
 
     // truncate at max_len characters with an ellipsis
-    if antimodes_list.len() > *max_len {
-        util::utf8_truncate(&mut antimodes_list, *max_len + 1);
+    if antimodes_list.len() > max_len {
+        util::utf8_truncate(&mut antimodes_list, max_len + 1);
         antimodes_list.push_str("...");
     }
 
@@ -3551,7 +3551,7 @@ impl Stats {
                             &antimodes_keys,
                             antimodes_count,
                             stats_separator,
-                            antimodes_len,
+                            *antimodes_len,
                             visualize_ws,
                         );
 
@@ -3651,7 +3651,7 @@ impl Stats {
                                 &antimodes_result,
                                 antimodes_count,
                                 stats_separator,
-                                antimodes_len,
+                                *antimodes_len,
                                 visualize_ws,
                             );
 

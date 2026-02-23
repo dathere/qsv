@@ -69,13 +69,13 @@ const CORE_TOOLS = [
  */
 const DEFAULT_SERVER_INSTRUCTIONS = `qsv is a tabular data-wrangling toolkit. Use qsv_search_tools to discover commands beyond the initially loaded core tools.
 
-WORKFLOW ORDER: For new files: (1) qsv_list_files to discover files, (2) qsv_index for files >5MB, (3) qsv_stats --cardinality --stats-jsonl to create stats cache, (4) then run analysis/transformation commands. The stats cache accelerates: frequency, schema, tojsonl, sqlp, joinp, pivotp, diff, sample. SQL queries on CSV inputs auto-convert to Parquet before execution.
+WORKFLOW ORDER: For new files: (1) qsv_list_files to discover files, (2) qsv_index for files >10MB, (3) qsv_stats --cardinality --stats-jsonl to create stats cache, (4) then run analysis/transformation commands. The stats cache accelerates: frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. SQL queries on CSV inputs auto-convert to Parquet before execution.
 
-FILE HANDLING: Save outputs to files with descriptive names rather than returning large results to chat. Ensure output files are saved to the qsv working directory. Parquet is ONLY for sqlp/DuckDB; all other qsv commands require CSV/TSV/SSV input. The working directory is automatically synced from the MCP client's root directory (e.g., Claude Cowork's "Work in a folder"), or set manually with qsv_set_working_dir if needed.
+FILE HANDLING: Save outputs to files with descriptive names rather than returning large results to chat. Ensure output files are saved to the qsv working directory. Parquet is ONLY for sqlp/DuckDB; all other qsv commands require CSV/TSV/SSV input. IMPORTANT: You MUST call qsv_set_working_dir at the start of every session to set the working directory. In Claude Cowork, ALWAYS call qsv_set_working_dir with the "Work in a folder" path before running any qsv commands.
 
 TOOL COMPOSITION: qsv_sqlp auto-converts CSV inputs to Parquet, then routes to DuckDB when available for better SQL compatibility and performance; falls back to Polars SQL otherwise. For multi-file SQL queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() references in SQL. For custom row-level logic, use qsv_command with command="luau".
 
-MEMORY LIMITS: Commands dedup, sort, reverse, table, transpose load entire files into memory. For files >1GB, prefer extdedup/extsort alternatives via qsv_command. Check column cardinality with qsv_stats before running frequency or pivotp to avoid huge output.`;
+MEMORY LIMITS: Commands dedup, sort, reverse, table, transpose, pragmastat load entire files into memory. For files >1GB, prefer extdedup/extsort alternatives via qsv_command. Check column cardinality with qsv_stats before running frequency or pivotp to avoid huge output.`;
 
 /**
  * Resolved server instructions: uses custom instructions from

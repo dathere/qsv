@@ -113,7 +113,7 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   },
   stats: {
     whenToUse: "Quick numeric stats (mean, min/max, stddev). Creates cache for other commands. Run 2nd after index.",
-    commonPattern: "Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, diff, sample.",
+    commonPattern: "Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample.",
     errorPrevention: "Works with CSV/TSV/SSV files only. For SQL queries, use sqlp. Run qsv_index first for files >10MB.",
     needsIndexHint: true,
   },
@@ -213,8 +213,8 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     needsIndexHint: true,
   },
   index: {
-    whenToUse: "Create .idx index. Run FIRST for files >5MB queried multiple times. Enables instant counts, fast slicing.",
-    commonPattern: "Run 1st for files >5MB. Makes count instant, slice 100x faster.",
+    whenToUse: "Create .idx index. Run FIRST for files >10MB queried multiple times. Enables instant counts, fast slicing.",
+    commonPattern: "Run 1st for files >10MB. Makes count instant, slice 100x faster.",
     errorPrevention: "Creates .idx index for CSV/TSV/SSV files only. Parquet files don't need indexing.",
   },
   diff: {

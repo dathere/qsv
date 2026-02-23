@@ -838,7 +838,7 @@ export class ConvertedFileManager {
         lastError = error instanceof Error ? error : new Error(String(error));
 
         // Check if this is a retryable Windows EPERM error
-        const isEperm = (error as NodeJS.ErrnoException).code === "EPERM";
+        const isEperm = error instanceof Error && (error as NodeJS.ErrnoException).code === "EPERM";
         const isWindows = process.platform === "win32";
         const shouldRetry = isEperm && isWindows && attempt < maxRetries;
 

@@ -15,12 +15,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** Type guard for parsed JSON that has the minimum required QsvSkill shape. */
 function isValidSkillShape(parsed: unknown): parsed is QsvSkill {
-  return (
-    typeof parsed === "object" &&
-    parsed !== null &&
-    "name" in parsed &&
-    "description" in parsed
-  );
+  if (typeof parsed !== "object" || parsed === null) return false;
+  const obj = parsed as Record<string, unknown>;
+  return typeof obj.name === "string" && typeof obj.description === "string";
 }
 
 export class SkillLoader {

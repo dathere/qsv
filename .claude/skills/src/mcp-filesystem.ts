@@ -517,13 +517,16 @@ export class FilesystemResourceProvider {
         );
       }
 
-      // Evict oldest entries if cache is full (remove 10% to create headroom)
+      // Evict oldest entries if cache is full (remove 10% to create headroom).
+      // Map preserves insertion order, and entries are re-inserted on access,
+      // so the front of the iterator contains the least-recently-used keys.
       if (this.metadataCache.size >= METADATA_CACHE_MAX_SIZE) {
         const evictCount = Math.ceil(METADATA_CACHE_MAX_SIZE * 0.1);
-        const entries = Array.from(this.metadataCache.entries())
-          .sort((a, b) => a[1].cachedAt - b[1].cachedAt);
-        for (let i = 0; i < evictCount && i < entries.length; i++) {
-          this.metadataCache.delete(entries[i][0]);
+        let removed = 0;
+        for (const key of this.metadataCache.keys()) {
+          if (removed >= evictCount) break;
+          this.metadataCache.delete(key);
+          removed++;
         }
       }
 

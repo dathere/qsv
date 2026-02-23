@@ -271,7 +271,7 @@ class QsvMcpServer {
 
       // Perform full check (with network calls) in the background
       // This won't block server startup; abort after 30 seconds to cancel underlying fetch
-      // Note: void suppresses lint warnings; the async callback has its own try/catch
+      // The async callback's returned promise is intentionally ignored; it has its own try/catch
       setImmediate(async () => {
         const UPDATE_CHECK_TIMEOUT_MS = 30_000;
         const controller = new AbortController();

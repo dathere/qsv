@@ -545,15 +545,17 @@ export async function patchSchemaAmPmDates(inputFile: string, schemaFile: string
   let schemaText: string;
   try {
     schemaText = await readFile(schemaFile, "utf-8");
-  } catch {
-    return []; // schema doesn't exist yet
+  } catch (error: unknown) {
+    console.warn(`[MCP Tools] Schema file not found: ${schemaFile}`, error);
+    return [];
   }
 
   let schema: { fields: Record<string, unknown>; metadata?: unknown };
   try {
     schema = JSON.parse(schemaText);
-  } catch {
-    return []; // invalid JSON
+  } catch (error: unknown) {
+    console.warn(`[MCP Tools] Invalid schema JSON in: ${schemaFile}`, error);
+    return [];
   }
 
   if (!schema.fields || typeof schema.fields !== "object") return [];
@@ -581,7 +583,8 @@ export async function patchSchemaAmPmDates(inputFile: string, schemaFile: string
     } finally {
       await fh.close();
     }
-  } catch {
+  } catch (error: unknown) {
+    console.warn(`[MCP Tools] Failed to read input file for AM/PM sampling: ${inputFile}`, error);
     return [];
   }
 
@@ -685,7 +688,7 @@ async function autoIndexIfNeeded(
     try {
       await access(indexPath, constants.F_OK);
       indexExists = true;
-    } catch {
+    } catch { /* ignore: index file does not exist */
       indexExists = false;
     }
 
@@ -701,7 +704,7 @@ async function autoIndexIfNeeded(
       try {
         await runQsvWithTimeout(qsvBin, indexArgs);
         console.error(`[MCP Tools] Index created successfully: ${indexPath}`);
-      } catch (error) {
+      } catch (error: unknown) {
         // Don't fail if indexing fails or times out - just log and continue
         console.error(
           `[MCP Tools] Index creation failed (continuing anyway):`,
@@ -715,7 +718,7 @@ async function autoIndexIfNeeded(
         `[MCP Tools] File is ${fileSizeMB.toFixed(1)}MB, skipping auto-indexing`,
       );
     }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error(
       `[MCP Tools] Auto-indexing error (continuing anyway):`,
       error,
@@ -748,7 +751,7 @@ async function shouldUseTempFile(
   try {
     const stats = await stat(inputFile);
     return stats.size > LARGE_FILE_THRESHOLD_BYTES;
-  } catch (error) {
+  } catch (error: unknown) {
     // If we can't stat the file, default to stdout
     console.error(
       `[MCP Tools] Error checking file size for temp file decision:`,
@@ -1033,7 +1036,7 @@ async function resolveAndConvertInputFile(
     // Validate the generated converted path for defense-in-depth
     try {
       convertedPath = await filesystemProvider.resolvePath(convertedPath);
-    } catch (error) {
+    } catch (error: unknown) {
       throw new Error(
         `Invalid converted file path: ${convertedPath} - ${error}`,
       );
@@ -1066,7 +1069,7 @@ async function resolveAndConvertInputFile(
           if (validConverted) break;
         }
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         "[MCP Tools] Error searching for existing converted file:",
         error,
@@ -1114,8 +1117,7 @@ async function resolveAndConvertInputFile(
           console.error(
             `[MCP Tools] Cleaned up partial conversion file: ${convertedPath}`,
           );
-        } catch {
-          // cleanupPartialConversions will handle it
+        } catch { /* ignore: cleanup */
         }
         convertedManager.trackConversionFailure();
         throw conversionError;
@@ -1417,8 +1419,8 @@ export async function ensureParquet(inputFile: string): Promise<string> {
         console.error(`[MCP Tools] ensureParquet: Using existing Parquet file (up-to-date): ${parquetPath}`);
         return parquetPath;
       }
-    } catch {
-      // Parquet doesn't exist or can't stat — need to convert
+    } catch (error: unknown) {
+      console.warn(`[MCP Tools] Parquet stat check failed (will convert): ${parquetPath}`, error);
     }
 
     return await doParquetConversion(inputFile, parquetPath);
@@ -1441,7 +1443,8 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
   let inputFileStats;
   try {
     inputFileStats = await stat(inputFile);
-  } catch {
+  } catch (error: unknown) {
+    console.warn(`[MCP Tools] Input file stat failed: ${inputFile}`, error);
     throw new Error(`Input file not found: ${inputFile}`);
   }
 
@@ -1451,11 +1454,11 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
   try {
     const existingStats = await stat(statsFile);
     if (existingStats.mtimeMs >= inputFileStats.mtimeMs) needStats = false;
-  } catch { /* needs generation */ }
+  } catch { /* ignore: needs stats generation */ }
   try {
     const existingSchema = await stat(schemaFile);
     if (existingSchema.mtimeMs >= inputFileStats.mtimeMs) needSchema = false;
-  } catch { /* needs generation */ }
+  } catch { /* ignore: needs schema generation */ }
 
   // Step 1: Generate stats cache
   if (needStats) {
@@ -1466,7 +1469,7 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
         "--infer-dates", "--dates-whitelist", "sniff",
       ];
       await runQsvWithTimeout(qsvBin, statsArgs);
-    } catch (error) {
+    } catch (error: unknown) {
       throw new Error(`Stats generation failed for ${inputFile}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -1476,7 +1479,7 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
     try {
       const schemaArgs = ["schema", "--polars", inputFile];
       await runQsvWithTimeout(qsvBin, schemaArgs);
-    } catch (error) {
+    } catch (error: unknown) {
       throw new Error(`Schema generation failed for ${inputFile}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -1488,9 +1491,9 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
   try {
     const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, parquetPath);
     await runQsvWithTimeout(qsvBin, conversionArgs);
-  } catch (error) {
+  } catch (error: unknown) {
     // Clean up potentially corrupted partial Parquet file
-    try { await unlink(parquetPath); } catch { /* may not exist */ }
+    try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
     throw new Error(`Parquet conversion failed for ${inputFile}: ${error instanceof Error ? error.message : String(error)}`);
   }
 
@@ -1498,11 +1501,12 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
   let outStats;
   try {
     outStats = await stat(parquetPath);
-  } catch {
+  } catch (error: unknown) {
+    console.warn(`[MCP Tools] Output file stat failed after conversion: ${parquetPath}`, error);
     throw new Error(`Parquet conversion completed but output file not found: ${parquetPath}`);
   }
   if (outStats.size === 0) {
-    try { await unlink(parquetPath); } catch { /* ignore */ }
+    try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
     throw new Error(`Parquet conversion produced an empty file: ${parquetPath}`);
   }
 
@@ -1663,7 +1667,7 @@ export async function handleToolCall(
             `[MCP Tools] Resolved output file: ${originalOutputFile} -> ${outputFile}`,
           );
         }
-      } catch (error) {
+      } catch (error: unknown) {
         console.error(`[MCP Tools] Error resolving file path:`, error);
         const errorMessage = await buildFileNotFoundError(
           inputFile,
@@ -1784,7 +1788,7 @@ export async function handleToolCall(
         : `Error executing ${commandName}:\n${result.stderr}`;
       return errorResult(errorMsg);
     }
-  } catch (error) {
+  } catch (error: unknown) {
     return errorResult(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
     activeOperationCount--;
@@ -1848,7 +1852,7 @@ export async function handleGenericCommand(
       loader,
       filesystemProvider,
     );
-  } catch (error) {
+  } catch (error: unknown) {
     return errorResult(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
@@ -2362,7 +2366,7 @@ export async function handleSearchToolsCall(
           regex.test(skill.name) ||
           regex.test(skill.description) ||
           regex.test(skill.command.subcommand) ||
-          skill.examples.some((ex) => regex.test(ex.description)),
+          skill.examples?.some((ex) => regex.test(ex.description)),
       );
     } catch (regexError) {
       // Invalid regex, fall back to text search (already done above)
@@ -2530,7 +2534,7 @@ export async function handleToParquetCall(
       console.error(
         `[MCP Tools] Resolved input file: ${originalInputFile} -> ${inputFile}`,
       );
-    } catch (error) {
+    } catch (error: unknown) {
       return errorResult(`Error resolving input file path: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -2577,7 +2581,7 @@ export async function handleToParquetCall(
       console.error(
         `[MCP Tools] Resolved output file: ${originalOutputFile} -> ${resolvedOutputFile}`,
       );
-    } catch (error) {
+    } catch (error: unknown) {
       return errorResult(`Error resolving output file path: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -2599,8 +2603,8 @@ export async function handleToParquetCall(
       if (existingStats.mtimeMs >= inputFileStats.mtimeMs) {
         needStats = false;
       }
-    } catch {
-      // Stats cache doesn't exist - need to generate
+    } catch (error: unknown) {
+      console.warn(`[MCP Tools] Stats cache not found, will generate: ${statsFile}`, error);
     }
 
     try {
@@ -2608,11 +2612,11 @@ export async function handleToParquetCall(
       if (existingSchema.mtimeMs >= inputFileStats.mtimeMs) {
         needSchema = false;
       }
-    } catch {
-      // Schema doesn't exist - need to generate
+    } catch (error: unknown) {
+      console.warn(`[MCP Tools] Schema not found, will generate: ${schemaFile}`, error);
     }
-  } catch {
-    // Can't stat input file - fall back to regenerating
+  } catch (error: unknown) {
+    console.warn(`[MCP Tools] Cannot stat input file, will regenerate stats/schema: ${inputFile}`, error);
   }
 
   try {
@@ -2676,8 +2680,8 @@ export async function handleToParquetCall(
     try {
       const outputStats = await stat(resolvedOutputFile);
       fileSizeInfo = ` (${formatBytes(outputStats.size)})`;
-    } catch {
-      // Ignore stat errors
+    } catch (error: unknown) {
+      console.warn(`[MCP Tools] Could not stat output file for size reporting: ${resolvedOutputFile}`, error);
     }
 
     const statsStatus = needStats ? "generated" : "reused (up-to-date)";
@@ -2696,7 +2700,7 @@ export async function handleToParquetCall(
         ? `🦆 DuckDB detected — qsv_sqlp will auto-route SQL queries through DuckDB for this file.`
         : `Use: qsv_sqlp with input_file="SKIP_INPUT" and sql="SELECT ... FROM read_parquet('${resolvedOutputFile}')".`),
     );
-  } catch (error) {
+  } catch (error: unknown) {
     return errorResult(`Error converting CSV to Parquet: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

@@ -548,7 +548,7 @@ export class SkillExecutor {
 
       // Type validation
       const value = params.args?.[arg.name];
-      if (value && !this.validateType(value, arg.type)) {
+      if (value !== undefined && value !== null && !this.validateType(value, arg.type)) {
         throw new Error(
           `Invalid type for ${arg.name}: expected ${arg.type}, got ${typeof value}`,
         );
@@ -580,7 +580,7 @@ export class SkillExecutor {
   private validateType(value: unknown, expectedType: string): boolean {
     switch (expectedType) {
       case "number":
-        return typeof value === "number" && !isNaN(value);
+        return typeof value === "number" && Number.isFinite(value);
       case "string":
       case "file":
       case "regex":

@@ -42,6 +42,12 @@ function expandTilde(path: string): string {
  */
 const METADATA_CACHE_TTL_MS = 60000;
 
+/**
+ * Maximum number of entries in the metadata cache.
+ * When exceeded, the oldest entries (by cachedAt) are evicted.
+ */
+const METADATA_CACHE_MAX_SIZE = 1000;
+
 export interface FilesystemConfig {
   /**
    * Working directory for relative paths (defaults to process.cwd())
@@ -276,7 +282,7 @@ export class FilesystemResourceProvider {
     let canonical: string;
     try {
       canonical = await realpath(resolved);
-    } catch (error) {
+    } catch (error: unknown) {
       // If file doesn't exist yet (e.g., output file), use resolved path
       // but still validate the parent directory exists and is allowed
       const parentDir = join(resolved, "..");
@@ -325,7 +331,7 @@ export class FilesystemResourceProvider {
       console.error(`Found ${resources.length} tabular data files in ${dir}`);
 
       return { resources };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         `Error listing files in ${directory || "."}: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -412,6 +418,9 @@ export class FilesystemResourceProvider {
       const age = Date.now() - cached.cachedAt;
       // Cache for 60 seconds
       if (age < METADATA_CACHE_TTL_MS) {
+        // Re-insert to maintain LRU ordering (Map preserves insertion order)
+        this.metadataCache.delete(cacheKey);
+        this.metadataCache.set(cacheKey, cached);
         console.error(
           `[Filesystem] Using cached metadata for ${basename(filePath)} (age: ${Math.round(age / 1000)}s)`,
         );
@@ -438,7 +447,7 @@ export class FilesystemResourceProvider {
       const result = await promise;
       this.metadataCachePromises.delete(cacheKey);
       return result;
-    } catch (error) {
+    } catch (error: unknown) {
       this.metadataCachePromises.delete(cacheKey);
       throw error;
     }
@@ -479,7 +488,7 @@ export class FilesystemResourceProvider {
             `[Filesystem] Row count for ${basename(filePath)}: ${rowCount}`,
           );
         }
-      } catch (error) {
+      } catch (error: unknown) {
         console.error(
           `[Filesystem] Failed to get row count for ${basename(filePath)}:`,
           error,
@@ -504,11 +513,24 @@ export class FilesystemResourceProvider {
             `[Filesystem] Column count for ${basename(filePath)}: ${columnNames.length}`,
           );
         }
-      } catch (error) {
+      } catch (error: unknown) {
         console.error(
           `[Filesystem] Failed to get column names for ${basename(filePath)}:`,
           error,
         );
+      }
+
+      // Evict oldest entries if cache is full (remove 10% to create headroom).
+      // Map preserves insertion order, and entries are re-inserted on access,
+      // so the front of the iterator contains the least-recently-used keys.
+      if (this.metadataCache.size >= METADATA_CACHE_MAX_SIZE) {
+        const evictCount = Math.ceil(METADATA_CACHE_MAX_SIZE * 0.1);
+        let removed = 0;
+        for (const key of this.metadataCache.keys()) {
+          if (removed >= evictCount) break;
+          this.metadataCache.delete(key);
+          removed++;
+        }
       }
 
       // Cache the result
@@ -567,7 +589,7 @@ export class FilesystemResourceProvider {
             try {
               await this.resolvePath(relative(this.workingDir, fullPath));
               await this.scanDirectory(fullPath, resources, recursive);
-            } catch (error) {
+            } catch (error: unknown) {
               // Subdirectory is outside allowed directories or inaccessible
               console.error(`Skipping unauthorized directory: ${fullPath}`);
             }
@@ -603,7 +625,7 @@ export class FilesystemResourceProvider {
           }
         }
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`Error scanning directory ${dir}:`, error);
       // Don't throw - just skip inaccessible directories
     }

@@ -8,7 +8,7 @@ export interface QsvSkill {
   description: string;
   category: string;
   command: CommandSpec;
-  examples: Example[];
+  examples?: Example[];
   hints?: BehavioralHints;
 }
 

@@ -8,8 +8,7 @@ import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
  * Get version from package.json
@@ -33,7 +32,7 @@ function getVersion(): string {
       if (typeof version === "string" && version.length > 0) return version;
     }
     return "0.0.0";
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("[Version] Failed to read version from package.json:", error);
     return "0.0.0";
   }

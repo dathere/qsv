@@ -208,7 +208,7 @@ class ConversionLock {
       try {
         await this.lockFd.close();
         this.lockFd = null;
-      } catch (error) {
+      } catch (error: unknown) {
         console.error(
           "[ConversionLock] Error closing lock file descriptor:",
           error,
@@ -431,7 +431,7 @@ export class ConvertedFileManager {
   private async setSecurePermissions(filePath: string): Promise<void> {
     try {
       await chmod(filePath, 0o600);
-    } catch (error) {
+    } catch (error: unknown) {
       // Log but don't fail - permissions aren't critical on all platforms
       console.error(
         `[Converted File Manager] Warning: Failed to set secure permissions on ${filePath}:`,
@@ -461,7 +461,7 @@ export class ConvertedFileManager {
       } finally {
         await handle.close();
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         "[Converted File Manager] Error computing file hash:",
         error,
@@ -655,7 +655,7 @@ export class ConvertedFileManager {
       console.error(
         `[Converted File Manager] Backed up v0 cache to: ${backupPath}`,
       );
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         "[Converted File Manager] Failed to backup v0 cache:",
         error,
@@ -704,7 +704,7 @@ export class ConvertedFileManager {
           `[Converted File Manager] Backed up corrupted cache to: ${backupPath}`,
         );
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         "[Converted File Manager] Failed to backup corrupted cache:",
         error,
@@ -765,7 +765,7 @@ export class ConvertedFileManager {
                 `[Converted File Manager] Found orphaned converted file: ${file}`,
               );
             }
-          } catch (error) {
+          } catch (error: unknown) {
             console.error(
               `[Converted File Manager] Error processing ${file}:`,
               error,
@@ -777,7 +777,7 @@ export class ConvertedFileManager {
       console.error(
         `[Converted File Manager] Recovered ${entries.length} entries from filesystem`,
       );
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         "[Converted File Manager] Error scanning filesystem:",
         error,
@@ -834,11 +834,11 @@ export class ConvertedFileManager {
 
         // Success - return early
         return;
-      } catch (error) {
-        lastError = error as Error;
+      } catch (error: unknown) {
+        lastError = error instanceof Error ? error : new Error(String(error));
 
         // Check if this is a retryable Windows EPERM error
-        const isEperm = (error as NodeJS.ErrnoException).code === "EPERM";
+        const isEperm = (lastError as NodeJS.ErrnoException).code === "EPERM";
         const isWindows = process.platform === "win32";
         const shouldRetry = isEperm && isWindows && attempt < maxRetries;
 
@@ -923,7 +923,7 @@ export class ConvertedFileManager {
       );
       this.metrics.cache.hits++;
       return convertedPath;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         "[Converted File Manager] Error checking converted file:",
         error,
@@ -955,7 +955,7 @@ export class ConvertedFileManager {
 
       // Track conversion start
       this.metrics.conversions.total++;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         "[Converted File Manager] Error registering conversion start:",
         error,
@@ -976,7 +976,7 @@ export class ConvertedFileManager {
       );
 
       await this.saveConversionTracker(tracker);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         "[Converted File Manager] Error registering conversion complete:",
         error,
@@ -999,6 +999,7 @@ export class ConvertedFileManager {
       const data = await readFile(this.conversionsFilePath, "utf-8");
       return JSON.parse(data);
     } catch {
+      // Tracker file missing or corrupt — return empty tracker
       return { conversions: [] };
     }
   }
@@ -1022,7 +1023,7 @@ export class ConvertedFileManager {
 
       // Ensure secure permissions on final file
       await this.setSecurePermissions(this.conversionsFilePath);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         "[Converted File Manager] Failed to save conversion tracker:",
         error,
@@ -1073,7 +1074,7 @@ export class ConvertedFileManager {
       // Update tracker
       tracker.conversions = activeConversions;
       await this.saveConversionTracker(tracker);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         "[Converted File Manager] Error cleaning up partial conversions:",
         error,
@@ -1144,7 +1145,7 @@ export class ConvertedFileManager {
         // Track successful conversion registration
         // Note: Conversion was already marked complete before calling this method
         this.metrics.conversions.successful++;
-      } catch (error) {
+      } catch (error: unknown) {
         console.error(
           "[Converted File Manager] Error registering converted file:",
           error,
@@ -1179,7 +1180,7 @@ export class ConvertedFileManager {
           `[Converted File Manager] Updated timestamp for reused file: ${entry.convertedPath}`,
         );
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         "[Converted File Manager] Error updating timestamp:",
         error,
@@ -1373,11 +1374,12 @@ export class ConvertedFileManager {
         }
       } catch {
         // Directory read failed, not critical
+        console.warn("[Converted File Manager] Failed to read working directory for temp file cleanup");
       }
 
       // Clean up partial conversions
       await this.cleanupPartialConversions();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(
         "[Converted File Manager] Error cleaning up orphaned entries:",
         error,

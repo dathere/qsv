@@ -13,6 +13,29 @@ import { ToolSearchIndex } from "./bm25-search.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+/** Type guard for parsed JSON that has the minimum required QsvSkill shape. */
+function isValidSkillShape(parsed: unknown): parsed is QsvSkill {
+  if (typeof parsed !== "object" || parsed === null) return false;
+  const obj = parsed as Record<string, unknown>;
+
+  // Basic required string fields
+  if (typeof obj.name !== "string" || typeof obj.description !== "string") return false;
+  if (typeof obj.version !== "string") return false;
+  if (typeof obj.category !== "string") return false;
+
+  // Command must be an object with at least a string `subcommand` property,
+  // since code accesses `skill.command.subcommand` in multiple places.
+  const command = obj.command;
+  if (typeof command !== "object" || command === null) return false;
+  const cmd = command as Record<string, unknown>;
+  if (typeof cmd.subcommand !== "string") return false;
+
+  // Examples, if present, should be an array (optional in practice)
+  if (obj.examples !== undefined && !Array.isArray(obj.examples)) return false;
+
+  return true;
+}
+
 export class SkillLoader {
   private skills: Map<string, QsvSkill> = new Map();
   private skillsDir: string;
@@ -77,12 +100,17 @@ export class SkillLoader {
       jsonFiles.map(async (file) => {
         const skillPath = join(this.skillsDir, file);
         const content = await readFile(skillPath, "utf-8");
-        return JSON.parse(content) as QsvSkill;
+        const parsed: unknown = JSON.parse(content);
+        if (!isValidSkillShape(parsed)) {
+          console.warn(`[Loader] Skipping invalid skill file ${file}: missing required fields`);
+          return null;
+        }
+        return parsed;
       }),
     );
 
     for (const skill of loadResults) {
-      this.skills.set(skill.name, skill);
+      if (skill) this.skills.set(skill.name, skill);
     }
 
     // Build BM25 index after loading all skills
@@ -130,10 +158,16 @@ export class SkillLoader {
     const skillPath = join(this.skillsDir, `${skillName}.json`);
     try {
       const content = await readFile(skillPath, "utf-8");
-      const skill: QsvSkill = JSON.parse(content);
+      const parsed: unknown = JSON.parse(content);
+      if (!isValidSkillShape(parsed)) {
+        console.warn(`[Loader] Invalid skill file for ${skillName}: missing required fields`);
+        return null;
+      }
+      const skill = parsed;
       this.skills.set(skillName, skill);
       return skill;
-    } catch {
+    } catch (error: unknown) {
+      console.warn(`[Loader] Failed to load skill ${skillName}:`, error instanceof Error ? error.message : String(error));
       return null;
     }
   }

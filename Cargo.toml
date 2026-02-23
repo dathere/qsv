@@ -268,7 +268,7 @@ sled = { version = "0.34", optional = true }
 smallvec = "1"
 snap = "1"
 strsim = { version = "0.11", optional = true }
-strum = { version = "0.27", features = ["phf"] }
+strum = { version = "0.28", features = ["phf"] }
 strum_macros = "0.27"
 sysinfo = "0.38"
 tempfile = "3.25"

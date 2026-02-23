@@ -517,17 +517,14 @@ export class FilesystemResourceProvider {
         );
       }
 
-      // Evict oldest entries if cache is full
+      // Evict oldest entries if cache is full (remove 10% to create headroom)
       if (this.metadataCache.size >= METADATA_CACHE_MAX_SIZE) {
-        let oldestKey: string | undefined;
-        let oldestTime = Infinity;
-        for (const [key, entry] of this.metadataCache) {
-          if (entry.cachedAt < oldestTime) {
-            oldestTime = entry.cachedAt;
-            oldestKey = key;
-          }
+        const evictCount = Math.ceil(METADATA_CACHE_MAX_SIZE * 0.1);
+        const entries = Array.from(this.metadataCache.entries())
+          .sort((a, b) => a[1].cachedAt - b[1].cachedAt);
+        for (let i = 0; i < evictCount && i < entries.length; i++) {
+          this.metadataCache.delete(entries[i][0]);
         }
-        if (oldestKey) this.metadataCache.delete(oldestKey);
       }
 
       // Cache the result

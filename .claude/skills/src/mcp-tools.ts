@@ -688,7 +688,7 @@ async function autoIndexIfNeeded(
     try {
       await access(indexPath, constants.F_OK);
       indexExists = true;
-    } catch { /* index file does not exist */
+    } catch { /* ignore: index file does not exist */
       indexExists = false;
     }
 
@@ -1117,7 +1117,7 @@ async function resolveAndConvertInputFile(
           console.error(
             `[MCP Tools] Cleaned up partial conversion file: ${convertedPath}`,
           );
-        } catch { /* ignore: cleanup — cleanupPartialConversions will handle it */
+        } catch { /* ignore: cleanup */
         }
         convertedManager.trackConversionFailure();
         throw conversionError;
@@ -1454,11 +1454,11 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
   try {
     const existingStats = await stat(statsFile);
     if (existingStats.mtimeMs >= inputFileStats.mtimeMs) needStats = false;
-  } catch { /* needs stats generation */ }
+  } catch { /* ignore: needs stats generation */ }
   try {
     const existingSchema = await stat(schemaFile);
     if (existingSchema.mtimeMs >= inputFileStats.mtimeMs) needSchema = false;
-  } catch { /* needs schema generation */ }
+  } catch { /* ignore: needs schema generation */ }
 
   // Step 1: Generate stats cache
   if (needStats) {

@@ -13,6 +13,16 @@ import { ToolSearchIndex } from "./bm25-search.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+/** Type guard for parsed JSON that has the minimum required QsvSkill shape. */
+function isValidSkillShape(parsed: unknown): parsed is QsvSkill {
+  return (
+    typeof parsed === "object" &&
+    parsed !== null &&
+    "name" in parsed &&
+    "description" in parsed
+  );
+}
+
 export class SkillLoader {
   private skills: Map<string, QsvSkill> = new Map();
   private skillsDir: string;
@@ -78,16 +88,11 @@ export class SkillLoader {
         const skillPath = join(this.skillsDir, file);
         const content = await readFile(skillPath, "utf-8");
         const parsed: unknown = JSON.parse(content);
-        if (
-          typeof parsed !== "object" ||
-          parsed === null ||
-          !("name" in parsed) ||
-          !("description" in parsed)
-        ) {
+        if (!isValidSkillShape(parsed)) {
           console.warn(`[Loader] Skipping invalid skill file ${file}: missing required fields`);
           return null;
         }
-        return parsed as QsvSkill;
+        return parsed;
       }),
     );
 
@@ -141,16 +146,11 @@ export class SkillLoader {
     try {
       const content = await readFile(skillPath, "utf-8");
       const parsed: unknown = JSON.parse(content);
-      if (
-        typeof parsed !== "object" ||
-        parsed === null ||
-        !("name" in parsed) ||
-        !("description" in parsed)
-      ) {
+      if (!isValidSkillShape(parsed)) {
         console.warn(`[Loader] Invalid skill file for ${skillName}: missing required fields`);
         return null;
       }
-      const skill = parsed as QsvSkill;
+      const skill = parsed;
       this.skills.set(skillName, skill);
       return skill;
     } catch (error: unknown) {

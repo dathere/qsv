@@ -369,7 +369,7 @@ export class UpdateChecker {
         }
       });
 
-      child.on("error", (error: unknown) => {
+      child.on("error", (error) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);

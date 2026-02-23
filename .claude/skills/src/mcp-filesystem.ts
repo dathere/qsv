@@ -418,6 +418,9 @@ export class FilesystemResourceProvider {
       const age = Date.now() - cached.cachedAt;
       // Cache for 60 seconds
       if (age < METADATA_CACHE_TTL_MS) {
+        // Re-insert to maintain LRU ordering (Map preserves insertion order)
+        this.metadataCache.delete(cacheKey);
+        this.metadataCache.set(cacheKey, cached);
         console.error(
           `[Filesystem] Using cached metadata for ${basename(filePath)} (age: ${Math.round(age / 1000)}s)`,
         );

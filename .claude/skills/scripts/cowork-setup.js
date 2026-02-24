@@ -18,21 +18,40 @@ async function main() {
     process.exit(0);
   }
 
-  // Read hook input JSON from stdin (limit to 64KB)
+  // Read hook input JSON from stdin (limit to 64KB; timeout after 5s to avoid hangs).
+  // Destroying stdin on timeout cleanly breaks the for-await loop instead of calling process.exit().
   let input = '';
-  const chunks = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk);
-    input += chunk.toString();
-    if (input.length > 65536) break;
+  const timeoutId = setTimeout(() => {
+    process.stderr.write('cowork-setup: stdin read timed out after 5s\n');
+    process.stdin.destroy();
+  }, 5000);
+  try {
+    for await (const chunk of process.stdin) {
+      input += chunk.toString();
+      if (input.length > 65536) {
+        process.stderr.write('cowork-setup: stdin exceeded 64KB limit, truncating\n');
+        process.stdin.destroy();
+        break;
+      }
+    }
+  } catch (err) {
+    // stdin was destroyed by timeout or limit — continue with whatever was read.
+    // Log unexpected errors to stderr to aid debugging.
+    if (err?.code && err.code !== 'ERR_USE_AFTER_CLOSE' && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+      process.stderr.write(`cowork-setup: stdin error: ${err.code}\n`);
+    }
   }
+  clearTimeout(timeoutId);
 
   let cwd = '';
   try {
     const parsed = JSON.parse(input);
     cwd = parsed.cwd || '';
   } catch {
-    // Invalid or empty JSON — exit silently
+    // Invalid or empty JSON — warn and exit (skip warning for empty stdin)
+    if (input.trim()) {
+      process.stderr.write('cowork-setup: failed to parse stdin as JSON\n');
+    }
     process.exit(0);
   }
 
@@ -62,18 +81,22 @@ async function main() {
     process.exit(0);
   }
 
-  // Path prefix check — case-insensitive on Windows
+  // Path prefix check — case-insensitive on Windows and macOS.
+  // Note: macOS can have case-sensitive APFS volumes, but the default is case-insensitive.
+  // On a case-sensitive macOS volume this guard could theoretically be bypassed with different
+  // casing, but the consequence is only writing a CLAUDE.md into the plugin's own tree.
   const normalizedCwd = normalize(cwd);
   const normalizedRoot = normalize(resolvedPluginRoot);
-  const isWindows = process.platform === 'win32';
-  const cwdForCompare = isWindows ? normalizedCwd.toLowerCase() : normalizedCwd;
-  const rootForCompare = isWindows ? normalizedRoot.toLowerCase() : normalizedRoot;
+  const caseInsensitive = process.platform === 'win32' || process.platform === 'darwin';
+  const cwdForCompare = (caseInsensitive ? normalizedCwd.toLowerCase() : normalizedCwd).replace(/[\\/]+$/, '');
+  const rootForCompare = (caseInsensitive ? normalizedRoot.toLowerCase() : normalizedRoot).replace(/[\\/]+$/, '');
+  const separator = process.platform === 'win32' ? '\\' : '/';
 
-  if (cwdForCompare === rootForCompare || cwdForCompare.startsWith(rootForCompare + (isWindows ? '\\' : '/'))) {
+  if (cwdForCompare === rootForCompare || cwdForCompare.startsWith(rootForCompare + separator)) {
     process.exit(0);
   }
 
-  const template = join(pluginRoot, 'cowork-CLAUDE.md');
+  const template = join(resolvedPluginRoot, 'cowork-CLAUDE.md');
   const target = join(cwd, 'CLAUDE.md');
 
   // Ensure the template exists

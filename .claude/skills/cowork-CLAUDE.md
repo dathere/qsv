@@ -2,7 +2,7 @@
 
 This CLAUDE.md was auto-deployed by the qsv plugin to provide workflow guidance.
 You can edit or replace it — it will NOT be overwritten on future sessions.
-To disable auto-deployment, set `QSV_NO_COWORK_SETUP=1` in your environment.
+To disable auto-deployment, set `QSV_NO_COWORK_SETUP=1` in your shell environment before launching Claude Code.
 
 ---
 
@@ -16,7 +16,7 @@ For new files:
 
 The stats cache accelerates: `frequency`, `schema`, `tojsonl`, `sqlp`, `joinp`, `pivotp`, `describegpt`, `moarstats`, `sample`.
 
-SQL queries on CSV inputs auto-convert to Parquet before execution.
+`qsv_sqlp` auto-converts CSV inputs to Parquet before execution.
 
 ## File Handling
 
@@ -47,4 +47,4 @@ Use **`qsv_search_tools`** to discover commands beyond the initially loaded core
 
 ## Operation Timeout
 
-qsv operations can take significant time on larger files. Allow operations to run to completion.
+qsv operations can take significant time on larger files. The MCP server's default operation timeout is 10 minutes (configurable via `QSV_MCP_OPERATION_TIMEOUT_MS`, max 30 minutes). Allow operations to run to completion.

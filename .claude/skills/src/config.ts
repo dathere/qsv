@@ -388,8 +388,12 @@ export function parseQsvMemoryInfo(
  */
 export function parsePolarsVersion(versionOutput: string): string | null {
   // Match polars-X.Y.Z optionally followed by :HASH
-  // Features are separated by semicolons, but the first feature follows a dash after the count prefix
-  const match = versionOutput.match(/(?:;|[-\s])polars-(\d+\.\d+\.\d+)(?::[0-9a-fA-F]+)?(?:;|$)/);
+  // In qsv --version output, features are semicolon-separated (e.g. "apply;polars-0.53.0:54c9168;self_update")
+  // polars must be preceded by ;, whitespace, or digit-dash (count separator like "315-polars-...")
+  // but NOT by a letter-dash (to avoid matching e.g. "non-polars-...")
+  // Note: \d- could theoretically match a digit-dash in other contexts, but qsv version
+  // strings have a well-defined format (count-features;...) so false positives are unlikely.
+  const match = versionOutput.match(/(?:;|\s|\d-)polars-(\d+\.\d+\.\d+)(?::[0-9a-fA-F]+)?(?:;|\s|$)/);
   return match ? match[1] : null;
 }
 

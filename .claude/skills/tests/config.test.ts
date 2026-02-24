@@ -13,6 +13,7 @@ import {
   expandTemplateVars,
   isPluginMode,
 } from '../src/config.js';
+import { QSV_AVAILABLE } from './test-helpers.js';
 
 test('config has all required properties', () => {
   assert.ok(typeof config.operationTimeoutMs === 'number');
@@ -161,7 +162,7 @@ test('parsePolarsVersion returns null for empty string', () => {
   assert.strictEqual(parsePolarsVersion(''), null);
 });
 
-test('parsePolarsVersion handles polars as first feature', () => {
+test('parsePolarsVersion handles polars as first feature after version string', () => {
   const versionOutput = 'qsv 16.0.0 polars-1.2.3:abc1234;other_feature';
   assert.strictEqual(parsePolarsVersion(versionOutput), '1.2.3');
 });
@@ -176,15 +177,29 @@ test('parsePolarsVersion handles polars without git hash suffix', () => {
   assert.strictEqual(parsePolarsVersion(versionOutput), '0.53.0');
 });
 
-test('config.qsvValidation includes polarsVersion when valid', () => {
-  if (config.qsvValidation.valid) {
-    // If qsv is valid, polarsVersion should be present (Polars is required)
-    assert.ok(typeof config.qsvValidation.polarsVersion === 'string',
-      'polarsVersion should be a string when qsv is valid');
-    // Verify it looks like a semver version
-    assert.ok(/^\d+\.\d+\.\d+$/.test(config.qsvValidation.polarsVersion),
-      `polarsVersion "${config.qsvValidation.polarsVersion}" should match semver format`);
-  }
+test('parsePolarsVersion does not match hyphenated prefix like non-polars', () => {
+  const versionOutput = 'qsv 16.0.0 apply;non-polars-1.0.0;self_update';
+  assert.strictEqual(parsePolarsVersion(versionOutput), null);
+});
+
+test('parsePolarsVersion matches polars as first feature after dash-separated count', () => {
+  // When polars is the first feature (e.g. "315-polars-..."), the digit-dash
+  // count separator is recognized as a valid preceding context.
+  const versionOutput = 'qsv 16.0.0 315-polars-0.53.0;self_update';
+  assert.strictEqual(parsePolarsVersion(versionOutput), '0.53.0');
+});
+
+test('config.qsvValidation includes polarsVersion when valid', { skip: !QSV_AVAILABLE }, () => {
+  // Precondition: qsv must be valid (Polars required for validity)
+  assert.strictEqual(config.qsvValidation.valid, true,
+    'qsv should be valid when QSV_AVAILABLE is true');
+  // If qsv is valid, polarsVersion should be present (Polars is required)
+  assert.ok(typeof config.qsvValidation.polarsVersion === 'string',
+    'polarsVersion should be a string when qsv is valid');
+  // Verify it looks like a semver version
+  const pv = config.qsvValidation.polarsVersion as string;
+  assert.ok(/^\d+\.\d+\.\d+$/.test(pv),
+    `polarsVersion "${pv}" should match semver format`);
 });
 
 // ============================================================================

@@ -320,8 +320,9 @@ function detectQsvBinaryPath(): string | null {
  */
 function parseQsvVersion(versionOutput: string): string | null {
   // Match semantic version with optional pre-release and build metadata
+  // Recognizes qsv, qsvlite, and qsvdp variant names
   const match = versionOutput.match(
-    /qsv\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/,
+    /qsv(?:lite|dp)?\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/,
   );
   return match ? match[1] : null;
 }

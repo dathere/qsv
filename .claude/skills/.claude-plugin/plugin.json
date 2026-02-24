@@ -21,5 +21,14 @@
     "sql",
     "data-quality"
   ],
-  "mcpServers": "./.mcp.json"
+  "mcpServers": "./.mcp.json",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "type": "command",
+        "command": "${CLAUDE_PLUGIN_ROOT}/scripts/cowork-setup.sh"
+      }
+    ]
+  }
 }

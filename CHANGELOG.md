@@ -6,9 +6,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- perf: `frequency` — eliminate per-field `Vec<u8>` allocations in hot path using borrowed-key lookups; use `partition_point` (binary search) instead of linear search for null insertion
-- **BREAKING**: `frequency --null-sorted` — in ascending order, null entries with tied counts/weights are now placed *before* equal non-null entries (previously *after*); descending behavior is unchanged
+## [17.0.0]
+
+## What's Changed
+* perf: `frequency` — eliminate per-field `Vec<u8>` allocations in hot path using borrowed-key lookups; use `partition_point` (binary search) instead of linear search for null insertion
+* **BREAKING**: `frequency --null-sorted` — in ascending order, null entries with tied counts/weights are now placed *before* equal non-null entries (previously *after*); descending behavior is unchanged
+* build(deps): bump pragmastat from 8.0.0 to 9.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3479
+* feat(help): emoji legend tooltips by @jqnatividad in https://github.com/dathere/qsv/pull/3481
+* build(deps): bump toon-format from 0.4.1 to 0.4.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3480
+* feat(mcp): add duckdb support by @jqnatividad in https://github.com/dathere/qsv/pull/3483
+* feat(help): Example section improvements by @jqnatividad in https://github.com/dathere/qsv/pull/3484
+* build(deps): bump toml from 1.0.1+spec-1.1.0 to 1.0.2+spec-1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3485
+* fix (mcp): add polars schema datetime fallback handling by @jqnatividad in https://github.com/dathere/qsv/pull/3487
+* build(deps): bump jsonschema from 0.42.0 to 0.42.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3488
+* tests(mcp): more DuckDB support/integration tests by @jqnatividad in https://github.com/dathere/qsv/pull/3489
+* chore(mcp): v16.1.1 release by @jqnatividad in https://github.com/dathere/qsv/pull/3490
+* build(deps): bump ajv from 8.17.1 to 8.18.0 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3491
+* refactor(mcp): skills optimization by @jqnatividad in https://github.com/dathere/qsv/pull/3493
+* refactor(mcp): more robust cowork working folder integration by @jqnatividad in https://github.com/dathere/qsv/pull/3494
+* fix(mcp): address Copilot review - harden roots sync error handling a… by @jqnatividad in https://github.com/dathere/qsv/pull/3495
+* feat(mcp): v16.1.2 by @jqnatividad in https://github.com/dathere/qsv/pull/3496
+* build(deps): bump pyo3 from 0.28.1 to 0.28.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3497
+* build(deps): bump actix-web from 4.12.1 to 4.13.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3498
+* tests(frequency): more property tests by @jqnatividad in https://github.com/dathere/qsv/pull/3499
+* build(deps): bump redis from 1.0.3 to 1.0.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3500
+* build(deps): bump toml from 1.0.2+spec-1.1.0 to 1.0.3+spec-1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3501
+* feat(pragmastat): upgrade to v10.0.0  by @AndreyAkinshin in https://github.com/dathere/qsv/pull/3502
+* build(deps): bump hono from 4.11.7 to 4.12.0 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3505
+* build(deps): bump qsv-stats from 0.45.0 to 0.46.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3504
+* build(deps): bump pragmastat from 9.0.0 to 10.0.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3503
+* perf(frequency): various microoptimizations by @jqnatividad in https://github.com/dathere/qsv/pull/3506
+* chore(audit): after running documentation-audit skill by @jqnatividad in https://github.com/dathere/qsv/pull/3510
+* build(deps): bump pragmastat from 10.0.2 to 10.0.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3509
+* build(deps): bump minijinja from 2.15.1 to 2.16.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3507
+* build(deps): bump minijinja-contrib from 2.15.1 to 2.16.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3508
+* build(deps): bump qsv-dateparser from 0.13.0 to 0.14.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3511
+* build(deps): bump serial_test from 3.3.1 to 3.4.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3512
+* build(deps): bump csv-nose from 0.8.0 to 1.0.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3513
+* build(deps): bump pragmastat from 10.0.5 to 10.0.6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3514
+* perf(moarstats): Claude performance review by @jqnatividad in https://github.com/dathere/qsv/pull/3515
+* refactor(describegpt): use Claude code-simplifier skill by @jqnatividad in https://github.com/dathere/qsv/pull/3516
+* perf(stats): optimize to_record() output path and weighted_mad() by @jqnatividad in https://github.com/dathere/qsv/pull/3517
+* Documentation audit 202602 by @jqnatividad in https://github.com/dathere/qsv/pull/3518
+* docs(mcp): Claude documentation audit by @jqnatividad in https://github.com/dathere/qsv/pull/3519
+* build(deps): bump strum from 0.27.2 to 0.28.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3521
+* build(deps): bump strum_macros from 0.27.2 to 0.28.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3520
+* refactor(mcp): Claude Code Review by @jqnatividad in https://github.com/dathere/qsv/pull/3522
+* fix(mcp): Make output processing more Cowork friendly by @jqnatividad in https://github.com/dathere/qsv/pull/3524
+* build(deps): bump tempfile from 3.25.0 to 3.26.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3526
+* build(deps): bump chrono from 0.4.43 to 0.4.44 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3527
+* refactor(mcp): MCP server requires polars feature to be enabled by @jqnatividad in https://github.com/dathere/qsv/pull/3525
+* feat(mcp): init CLAUDE.md in Claude cowork working folder; Windows support by @jqnatividad in https://github.com/dathere/qsv/pull/3528
+
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/16.1.0...16.2.0
+
+---
 
 ## [16.1.0] - 2026-02-15 📊 **_"The Accelerated Civic Intelligence (ACI) Release"_** 📊
 
@@ -27,7 +80,7 @@ A pragmatic statistical toolkit by @AndreyAkinshin — Compute robust, median-of
 New `--frequency-jsonl` option for the `frequency` command creates a JSONL cache (analogous to `stats --stats-jsonl`) that accelerates repeated frequency analysis. Uses a hybrid strategy for high-cardinality columns with configurable thresholds.
 
 #### Improved UAX: Unified Documentation & Shell Completions
-A new qsv-docopt parsing system now generates markdown documentation, shell completions, **and** MCP tool definitions from the same USAGE text that powers qsv's CLI parsing. Everything stays in sync automatically — no more drift between help text, docs, completions and AI tooling.
+A new [docopt](http://docopt.org)-based parsing system now generates markdown documentation, shell completions, **and** MCP tool definitions from the same USAGE text that powers qsv's CLI parsing. Everything stays in sync automatically — no more drift between help text, docs, completions and AI tooling.
 
 - `--generate-help-md` flag produces polished markdown docs with section navigation, emoji legends, clickable URLs, and argument/option tables that are both Human and Agent-friendly.
 - Shell completions are now auto-generated, replacing 68 manually maintained completion files.

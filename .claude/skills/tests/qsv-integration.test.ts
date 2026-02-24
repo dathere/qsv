@@ -537,6 +537,314 @@ test('qsv_to_parquet skips regeneration when stats and schema are up-to-date', {
   }
 });
 
+// ============================================================================
+// "output" alias Tests (LLMs sometimes send "output" instead of "output_file")
+// ============================================================================
+
+test('handleToolCall accepts "output" as alias for "output_file"', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name,age\n1,Alice,30\n2,Bob,25\n'
+    );
+    const outputPath = join(testDir, 'result.csv');
+
+    // Use "output" (not "output_file") — the alias LLMs sometimes send
+    const result = await handleToolCall(
+      'qsv_select',
+      {
+        input_file: csvPath,
+        selection: 'name,age',
+        output: outputPath,
+      },
+      executor,
+      loader,
+    );
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+
+    // Verify the file was written to the user-specified path
+    const written = await readFile(outputPath, 'utf-8');
+    assert.ok(written.includes('name'), 'Output file should contain name column');
+    assert.ok(written.includes('Alice'), 'Output file should contain Alice');
+    assert.ok(!written.includes('id'), 'Output file should not contain id column');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('handleToolCall still accepts "output_file" (no regression)', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name,age\n1,Alice,30\n2,Bob,25\n'
+    );
+    const outputPath = join(testDir, 'result.csv');
+
+    const result = await handleToolCall(
+      'qsv_select',
+      {
+        input_file: csvPath,
+        selection: 'name,age',
+        output_file: outputPath,
+      },
+      executor,
+      loader,
+    );
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+
+    const written = await readFile(outputPath, 'utf-8');
+    assert.ok(written.includes('name'), 'Output file should contain name column');
+    assert.ok(written.includes('Alice'), 'Output file should contain Alice');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('handleToolCall prefers "output_file" over "output" when both present', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name\n1,Alice\n'
+    );
+    const preferredPath = join(testDir, 'preferred.csv');
+    const aliasPath = join(testDir, 'alias.csv');
+
+    // When both are present, output_file should win
+    const result = await handleToolCall(
+      'qsv_select',
+      {
+        input_file: csvPath,
+        selection: 'name',
+        output_file: preferredPath,
+        output: aliasPath,
+      },
+      executor,
+      loader,
+    );
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+
+    const written = await readFile(preferredPath, 'utf-8');
+    assert.ok(written.includes('name'), 'Preferred output file should be written');
+
+    // Alias path should NOT exist
+    let aliasExists = true;
+    try { await access(aliasPath); } catch { aliasExists = false; }
+    assert.ok(!aliasExists, 'Alias path should not be written when output_file is present');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('handleToParquetCall accepts "output" as alias for "output_file"', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+
+  try {
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name\n1,Alice\n2,Bob\n'
+    );
+    const parquetPath = join(testDir, 'result.parquet');
+
+    // Use "output" alias
+    const result = await handleToParquetCall({
+      input_file: csvPath,
+      output: parquetPath,
+    });
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+
+    // Verify the parquet file exists and has non-zero size
+    const fileStat = await stat(parquetPath);
+    assert.ok(fileStat.size > 0, 'Parquet file should have non-zero size');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('handleToolCall accepts "input" as alias for "input_file"', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name\n1,Alice\n2,Bob\n'
+    );
+    const outputPath = join(testDir, 'result.csv');
+
+    // Use "input" alias instead of "input_file"
+    const result = await handleToolCall(
+      'qsv_select',
+      {
+        input: csvPath,
+        selection: 'name',
+        output_file: outputPath,
+      },
+      executor,
+      loader,
+    );
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+
+    const written = await readFile(outputPath, 'utf-8');
+    assert.ok(written.includes('name'), 'Output file should contain name column');
+    assert.ok(written.includes('Alice'), 'Output file should contain Alice');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('handleToParquetCall accepts "input" as alias for "input_file"', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+
+  try {
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name\n1,Alice\n2,Bob\n'
+    );
+    const parquetPath = join(testDir, 'result.parquet');
+
+    // Use "input" alias instead of "input_file"
+    const result = await handleToParquetCall({
+      input: csvPath,
+      output_file: parquetPath,
+    });
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+
+    // Verify the parquet file exists and has non-zero size
+    const fileStat = await stat(parquetPath);
+    assert.ok(fileStat.size > 0, 'Parquet file should have non-zero size');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('handleToParquetCall prefers "input_file" over "input" when both present', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+
+  try {
+    // Preferred input: valid CSV that should be converted to parquet
+    const preferredPath = await createTestCSV(
+      testDir,
+      'preferred.csv',
+      'id,name\n1,Alice\n2,Bob\n'
+    );
+
+    // Alias input: a non-existent file path — if used, the command would fail
+    const aliasPath = join(testDir, 'does-not-exist.csv');
+
+    const parquetPath = join(testDir, 'result.parquet');
+
+    const result = await handleToParquetCall({
+      input_file: preferredPath,
+      input: aliasPath,
+      output_file: parquetPath,
+    });
+
+    // If input_file is correctly preferred, this should succeed.
+    // If "input" were used instead, the command would fail because the file doesn't exist.
+    assert.ok(!result.isError, `Command should succeed when both input_file and input are present: ${result.content[0].text}`);
+
+    // Verify the parquet file was actually created from the preferred input
+    const fileStat = await stat(parquetPath);
+    assert.ok(fileStat.size > 0, 'Parquet file should have non-zero size');
+
+    // Verify the parquet file contains the expected schema from preferred input
+    const loader = new SkillLoader();
+    const executor = new SkillExecutor();
+    await loader.loadAll();
+    const headersResult = await handleToolCall(
+      'qsv_headers',
+      { input_file: parquetPath },
+      executor,
+      loader,
+    );
+    assert.ok(!headersResult.isError, `Should read parquet headers: ${headersResult.content[0].text}`);
+    const headersText = headersResult.content[0].text ?? '';
+    assert.ok(
+      /\bid\b/.test(headersText) && /\bname\b/.test(headersText),
+      'Parquet file should contain id,name schema from the preferred input',
+    );
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('handleToolCall prefers "input_file" over "input" when both present', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    // Preferred input: contains the 'name' column we will select
+    const preferredPath = await createTestCSV(
+      testDir,
+      'preferred.csv',
+      'id,name\n1,Alice\n'
+    );
+
+    // Alias input: intentionally does NOT contain 'name' column
+    // If this is used instead of input_file, qsv_select should fail.
+    const aliasPath = await createTestCSV(
+      testDir,
+      'alias.csv',
+      'id,other\n1,Value\n'
+    );
+
+    const result = await handleToolCall(
+      'qsv_select',
+      {
+        input_file: preferredPath,
+        input: aliasPath,
+        selection: 'name',
+      },
+      executor,
+      loader,
+    );
+
+    // If input_file is correctly preferred, this should succeed.
+    // If "input" were used instead, qsv_select would fail because 'name' is missing.
+    assert.ok(!result.isError, `Command should succeed when both input_file and input are present: ${result.content[0].text}`);
+    assert.ok(
+      result.content[0].text?.includes('Alice'),
+      'Output should be based on the preferred input_file contents',
+    );
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
 if (!QSV_AVAILABLE) {
   console.log('\n⚠️  qsv integration tests skipped - qsv binary not available or version too old');
   console.log(`   Current validation: ${JSON.stringify(config.qsvValidation, null, 2)}`);

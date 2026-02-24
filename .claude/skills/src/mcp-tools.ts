@@ -1205,12 +1205,24 @@ function buildSkillExecParams(
     console.error(`[MCP Tools] Added input arg: ${inputFile}`);
   }
 
+  // Check whether a skill declares a distinct --input or --output CLI option.
+  // If so, allow the key through instead of treating it as a file alias.
+  // Note: only checks long-form options (--input/--output), not short flags (-i/-o).
+  // A positional arg named "input" is already consumed above as the input file.
+  const skillHasOption = (name: string) =>
+    skill.command.options.some((o) => o.flag === `--${name}`);
+
   for (const [key, value] of Object.entries(params)) {
+    // Skip meta-parameters that are handled separately (not passed as CLI flags).
+    // "input" and "output" are aliases for input_file/output_file resolved by
+    // resolveParamAliases, so skip them unless the skill declares them as
+    // distinct CLI flags (i.e. the skill has an arg or option named "input"/"output").
     if (
       key === "input_file" ||
       key === "output_file" ||
-      key === "help" ||
-      (key === "input" && args.input)
+      (key === "input" && !skillHasOption("input")) ||
+      (key === "output" && !skillHasOption("output")) ||
+      key === "help"
     ) {
       continue;
     }
@@ -1606,6 +1618,37 @@ async function tryDuckDbExecution(
 }
 
 /**
+ * Resolve LLM-friendly parameter aliases to their canonical names.
+ * LLMs sometimes send "input"/"output" instead of "input_file"/"output_file".
+ * Canonical names take precedence when both are present.
+ */
+function resolveParamAliases(params: Record<string, unknown>): {
+  inputFile: string | undefined;
+  outputFile: string | undefined;
+} {
+  // Only accept string values; reject numbers, booleans, objects, etc.
+  // A numeric value (e.g. { input: 42 }) is almost certainly an LLM mistake,
+  // not a valid file path, so we return undefined rather than coercing to "42".
+  const coerce = (v: unknown, paramName: string): string | undefined => {
+    if (typeof v === "string") return v.trim() || undefined;
+    if (v != null) {
+      console.error(
+        `[MCP Tools] Ignoring non-string ${paramName} value: ${typeof v} (${JSON.stringify(v)})`,
+      );
+    }
+    return undefined;
+  };
+
+  const inputFile =
+    coerce(params.input_file, "input_file") ??
+    coerce(params.input, "input");
+  const outputFile =
+    coerce(params.output_file, "output_file") ??
+    coerce(params.output, "output");
+  return { inputFile, outputFile };
+}
+
+/**
  * Handle execution of a qsv tool
  */
 export async function handleToolCall(
@@ -1641,9 +1684,10 @@ export async function handleToolCall(
       );
     }
 
-    // Extract input_file and output_file
-    let inputFile = params.input_file as string | undefined;
-    let outputFile = params.output_file as string | undefined;
+    // Extract input_file and output_file (with LLM alias resolution)
+    const { inputFile: rawInputFile, outputFile: rawOutputFile } = resolveParamAliases(params);
+    let inputFile = rawInputFile;
+    let outputFile = rawOutputFile;
     const isHelpRequest = params.help === true;
 
     if (!inputFile && !isHelpRequest) {
@@ -2519,8 +2563,10 @@ export async function handleToParquetCall(
   content: Array<{ type: string; text: string }>;
   isError?: boolean;
 }> {
-  let inputFile = params.input_file as string | undefined;
-  let outputFile = params.output_file as string | undefined;
+  // Extract input_file and output_file (with LLM alias resolution)
+  const { inputFile: rawInputFile, outputFile: rawOutputFile } = resolveParamAliases(params);
+  let inputFile = rawInputFile;
+  let outputFile = rawOutputFile;
 
   if (!inputFile) {
     return errorResult("Error: input_file parameter is required");

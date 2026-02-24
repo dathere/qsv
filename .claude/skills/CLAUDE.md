@@ -664,6 +664,12 @@ For implementation patterns (command execution, argument building, validation, o
 - Check MCP server logs in Claude Desktop developer console
 - Verify configuration in `claude_desktop_config.json`
 
+**qsv missing Polars**:
+- The MCP server requires the full `qsv` binary with Polars enabled
+- `qsvlite` and `qsvdp` variants do NOT include Polars
+- Check with `qsv --version` — look for `polars-X.Y.Z` in the feature list
+- Install the full qsv binary from https://github.com/dathere/qsv#installation
+
 **MCPB installation issues**:
 - Ensure manifest.json follows spec v0.3
 - Check that qsv binary path is accessible

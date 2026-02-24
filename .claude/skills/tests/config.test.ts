@@ -8,10 +8,13 @@ import {
   config,
   parseMemoryToBytes,
   parseQsvMemoryInfo,
+  parsePolarsVersion,
+  parseQsvVersion,
   parseQsvCommandList,
   expandTemplateVars,
   isPluginMode,
 } from '../src/config.js';
+import { QSV_AVAILABLE } from './test-helpers.js';
 
 test('config has all required properties', () => {
   assert.ok(typeof config.operationTimeoutMs === 'number');
@@ -135,6 +138,102 @@ test('parseQsvMemoryInfo returns null for invalid output', () => {
   assert.strictEqual(parseQsvMemoryInfo(''), null);
   assert.strictEqual(parseQsvMemoryInfo('qsv 13.0.0'), null);
   assert.strictEqual(parseQsvMemoryInfo('no memory info here'), null);
+});
+
+// ============================================================================
+// qsv Version Parsing Tests
+// ============================================================================
+
+test('parseQsvVersion extracts version from qsv output', () => {
+  const versionOutput = 'qsv 16.1.0-mimalloc 315-apply;fetch;polars-0.53.0:54c9168;self_update-16-16;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parseQsvVersion(versionOutput), '16.1.0-mimalloc');
+});
+
+test('parseQsvVersion extracts version from qsvlite output', () => {
+  const versionOutput = 'qsvlite 16.1.0 100-count;headers;stats;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parseQsvVersion(versionOutput), '16.1.0');
+});
+
+test('parseQsvVersion extracts version from qsvdp output', () => {
+  const versionOutput = 'qsvdp 16.1.0 200-apply;fetch;stats;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parseQsvVersion(versionOutput), '16.1.0');
+});
+
+test('parseQsvVersion returns null for unrecognized binary name', () => {
+  const versionOutput = 'xsv 16.1.0 some-features';
+  assert.strictEqual(parseQsvVersion(versionOutput), null);
+});
+
+test('parseQsvVersion returns null for empty string', () => {
+  assert.strictEqual(parseQsvVersion(''), null);
+});
+
+test('parseQsvVersion handles pre-release versions', () => {
+  const versionOutput = 'qsv 16.2.0-alpha.1 315-apply;fetch';
+  assert.strictEqual(parseQsvVersion(versionOutput), '16.2.0-alpha.1');
+});
+
+// ============================================================================
+// Polars Version Parsing Tests
+// ============================================================================
+
+test('parsePolarsVersion extracts version from full qsv --version output', () => {
+  const versionOutput = 'qsv 16.1.0-mimalloc 315-apply;fetch;polars-0.53.0:54c9168;self_update-16-16;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parsePolarsVersion(versionOutput), '0.53.0');
+});
+
+test('parsePolarsVersion returns null when polars is not present', () => {
+  const versionOutput = 'qsv 16.1.0-mimalloc 315-apply;fetch;self_update-16-16;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parsePolarsVersion(versionOutput), null);
+});
+
+test('parsePolarsVersion returns null for qsvlite output', () => {
+  const versionOutput = 'qsvlite 16.1.0 100-count;headers;stats;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parsePolarsVersion(versionOutput), null);
+});
+
+test('parsePolarsVersion returns null for empty string', () => {
+  assert.strictEqual(parsePolarsVersion(''), null);
+});
+
+test('parsePolarsVersion handles polars as first feature after version string', () => {
+  const versionOutput = 'qsv 16.0.0 polars-1.2.3:abc1234;other_feature';
+  assert.strictEqual(parsePolarsVersion(versionOutput), '1.2.3');
+});
+
+test('parsePolarsVersion handles polars as last feature', () => {
+  const versionOutput = 'qsv 16.0.0 other;polars-0.99.0:def5678';
+  assert.strictEqual(parsePolarsVersion(versionOutput), '0.99.0');
+});
+
+test('parsePolarsVersion handles polars without git hash suffix', () => {
+  const versionOutput = 'qsv 16.0.0 apply;polars-0.53.0;self_update';
+  assert.strictEqual(parsePolarsVersion(versionOutput), '0.53.0');
+});
+
+test('parsePolarsVersion does not match hyphenated prefix like non-polars', () => {
+  const versionOutput = 'qsv 16.0.0 apply;non-polars-1.0.0;self_update';
+  assert.strictEqual(parsePolarsVersion(versionOutput), null);
+});
+
+test('parsePolarsVersion matches polars as first feature after dash-separated count', () => {
+  // When polars is the first feature (e.g. "315-polars-..."), the digit-dash
+  // count separator is recognized as a valid preceding context.
+  const versionOutput = 'qsv 16.0.0 315-polars-0.53.0;self_update';
+  assert.strictEqual(parsePolarsVersion(versionOutput), '0.53.0');
+});
+
+test('config.qsvValidation includes polarsVersion when valid', { skip: !QSV_AVAILABLE }, () => {
+  // Precondition: qsv must be valid (Polars required for validity)
+  assert.strictEqual(config.qsvValidation.valid, true,
+    'qsv should be valid when QSV_AVAILABLE is true');
+  // If qsv is valid, polarsVersion should be present (Polars is required)
+  assert.ok(typeof config.qsvValidation.polarsVersion === 'string',
+    'polarsVersion should be a string when qsv is valid');
+  // Verify it looks like a semver version
+  const pv = config.qsvValidation.polarsVersion as string;
+  assert.ok(/^\d+\.\d+\.\d+$/.test(pv),
+    `polarsVersion "${pv}" should match semver format`);
 });
 
 // ============================================================================

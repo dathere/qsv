@@ -188,6 +188,7 @@ export interface QsvValidationResult {
   error?: string;
   totalMemory?: string; // e.g., "64.00 GiB"
   totalMemoryBytes?: number; // Numeric value in bytes for comparisons
+  polarsVersion?: string; // e.g., "0.53.0" — present when Polars is enabled
   availableCommands?: string[]; // List of available qsv commands
   commandCount?: number; // Number of installed commands
 }
@@ -317,10 +318,11 @@ function detectQsvBinaryPath(): string | null {
  *   "qsv 0.135.0-alpha.1" -> "0.135.0-alpha.1"
  *   "qsv 0.135.0+build.123" -> "0.135.0+build.123"
  */
-function parseQsvVersion(versionOutput: string): string | null {
+export function parseQsvVersion(versionOutput: string): string | null {
   // Match semantic version with optional pre-release and build metadata
+  // Recognizes qsv, qsvlite, and qsvdp variant names
   const match = versionOutput.match(
-    /qsv\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/,
+    /qsv(?:lite|dp)?\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/,
   );
   return match ? match[1] : null;
 }
@@ -373,6 +375,27 @@ export function parseQsvMemoryInfo(
   if (totalMemoryBytes === null) return null;
 
   return { totalMemory: totalMemoryStr, totalMemoryBytes };
+}
+
+/**
+ * Parse Polars version from qsv --version output
+ * The version output contains a semicolon-separated feature list that includes
+ * "polars-X.Y.Z:HASH" when Polars is enabled.
+ * Examples:
+ *   "...;polars-0.53.0:54c9168;..." -> "0.53.0"
+ *   "...;polars-0.53.0;..."         -> "0.53.0" (no git hash suffix)
+ * Returns null if Polars is not present in the feature list.
+ * Exported for testing
+ */
+export function parsePolarsVersion(versionOutput: string): string | null {
+  // Match polars-X.Y.Z optionally followed by :HASH
+  // In qsv --version output, features are semicolon-separated (e.g. "apply;polars-0.53.0:54c9168;self_update")
+  // polars must be preceded by ;, whitespace, or digit-dash (count separator like "315-polars-...")
+  // but NOT by a letter-dash (to avoid matching e.g. "non-polars-...")
+  // Note: \d- could theoretically match a digit-dash in other contexts, but qsv version
+  // strings have a well-defined format (count-features;...) so false positives are unlikely.
+  const match = versionOutput.match(/(?:;|\s|\d-)polars-(\d+\.\d+\.\d+)(?::[0-9a-fA-F]+)?(?:;|\s|$)/);
+  return match ? match[1] : null;
 }
 
 /**
@@ -463,6 +486,20 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
     // Parse memory information from version output
     const memoryInfo = parseQsvMemoryInfo(result);
 
+    // Parse Polars version — Polars is required for sqlp, joinp, pivotp, etc.
+    const polarsVersion = parsePolarsVersion(result);
+    if (!polarsVersion) {
+      return {
+        valid: false,
+        version,
+        path: binPath,
+        error:
+          `qsv binary at "${binPath}" does not have the Polars feature enabled. ` +
+          `The MCP server requires Polars-powered commands (sqlp, joinp, pivotp, etc.). ` +
+          `Please install the full qsv binary (not qsvlite or qsvdp) from https://github.com/dathere/qsv#installation`,
+      };
+    }
+
     // Get list of available commands
     let commandInfo: { commands: string[]; count: number } | null = null;
     try {
@@ -481,6 +518,7 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
       valid: true,
       version,
       path: binPath,
+      polarsVersion,
       totalMemory: memoryInfo?.totalMemory,
       totalMemoryBytes: memoryInfo?.totalMemoryBytes,
       availableCommands: commandInfo?.commands,

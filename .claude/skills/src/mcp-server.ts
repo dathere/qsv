@@ -196,6 +196,7 @@ class QsvMcpServer {
       console.error("✅ qsv binary validated successfully");
       console.error(`   Path: ${validation.path}`);
       console.error(`   Version: ${validation.version}`);
+      console.error(`   Polars: ${validation.polarsVersion}`);
       console.error("");
     } else {
       console.error("");

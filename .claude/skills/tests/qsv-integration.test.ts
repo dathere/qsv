@@ -748,6 +748,52 @@ test('handleToParquetCall accepts "input" as alias for "input_file"', { skip: !Q
   }
 });
 
+test('handleToolCall prefers "input_file" over "input" when both present', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    // Preferred input: contains the 'name' column we will select
+    const preferredPath = await createTestCSV(
+      testDir,
+      'preferred.csv',
+      'id,name\n1,Alice\n'
+    );
+
+    // Alias input: intentionally does NOT contain 'name' column
+    // If this is used instead of input_file, qsv_select should fail.
+    const aliasPath = await createTestCSV(
+      testDir,
+      'alias.csv',
+      'id,other\n1,Value\n'
+    );
+
+    const result = await handleToolCall(
+      'qsv_select',
+      {
+        input_file: preferredPath,
+        input: aliasPath,
+        selection: 'name',
+      },
+      executor,
+      loader,
+    );
+
+    // If input_file is correctly preferred, this should succeed.
+    // If "input" were used instead, qsv_select would fail because 'name' is missing.
+    assert.ok(!result.isError, `Command should succeed when both input_file and input are present: ${result.content[0].text}`);
+    assert.ok(
+      result.content[0].text?.includes('Alice'),
+      'Output should be based on the preferred input_file contents',
+    );
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
 if (!QSV_AVAILABLE) {
   console.log('\n⚠️  qsv integration tests skipped - qsv binary not available or version too old');
   console.log(`   Current validation: ${JSON.stringify(config.qsvValidation, null, 2)}`);

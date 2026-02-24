@@ -8,6 +8,7 @@ import {
   config,
   parseMemoryToBytes,
   parseQsvMemoryInfo,
+  parsePolarsVersion,
   parseQsvCommandList,
   expandTemplateVars,
   isPluginMode,
@@ -135,6 +136,55 @@ test('parseQsvMemoryInfo returns null for invalid output', () => {
   assert.strictEqual(parseQsvMemoryInfo(''), null);
   assert.strictEqual(parseQsvMemoryInfo('qsv 13.0.0'), null);
   assert.strictEqual(parseQsvMemoryInfo('no memory info here'), null);
+});
+
+// ============================================================================
+// Polars Version Parsing Tests
+// ============================================================================
+
+test('parsePolarsVersion extracts version from full qsv --version output', () => {
+  const versionOutput = 'qsv 16.1.0-mimalloc 315-apply;fetch;polars-0.53.0:54c9168;self_update-16-16;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parsePolarsVersion(versionOutput), '0.53.0');
+});
+
+test('parsePolarsVersion returns null when polars is not present', () => {
+  const versionOutput = 'qsv 16.1.0-mimalloc 315-apply;fetch;self_update-16-16;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parsePolarsVersion(versionOutput), null);
+});
+
+test('parsePolarsVersion returns null for qsvlite output', () => {
+  const versionOutput = 'qsvlite 16.1.0 100-count;headers;stats;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parsePolarsVersion(versionOutput), null);
+});
+
+test('parsePolarsVersion returns null for empty string', () => {
+  assert.strictEqual(parsePolarsVersion(''), null);
+});
+
+test('parsePolarsVersion handles polars as first feature', () => {
+  const versionOutput = 'qsv 16.0.0 polars-1.2.3:abc1234;other_feature';
+  assert.strictEqual(parsePolarsVersion(versionOutput), '1.2.3');
+});
+
+test('parsePolarsVersion handles polars as last feature', () => {
+  const versionOutput = 'qsv 16.0.0 other;polars-0.99.0:def5678';
+  assert.strictEqual(parsePolarsVersion(versionOutput), '0.99.0');
+});
+
+test('parsePolarsVersion handles polars without git hash suffix', () => {
+  const versionOutput = 'qsv 16.0.0 apply;polars-0.53.0;self_update';
+  assert.strictEqual(parsePolarsVersion(versionOutput), '0.53.0');
+});
+
+test('config.qsvValidation includes polarsVersion when valid', () => {
+  if (config.qsvValidation.valid) {
+    // If qsv is valid, polarsVersion should be present (Polars is required)
+    assert.ok(typeof config.qsvValidation.polarsVersion === 'string',
+      'polarsVersion should be a string when qsv is valid');
+    // Verify it looks like a semver version
+    assert.ok(/^\d+\.\d+\.\d+$/.test(config.qsvValidation.polarsVersion),
+      `polarsVersion "${config.qsvValidation.polarsVersion}" should match semver format`);
+  }
 });
 
 // ============================================================================

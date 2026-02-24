@@ -777,6 +777,22 @@ test('handleToParquetCall prefers "input_file" over "input" when both present', 
     // Verify the parquet file was actually created from the preferred input
     const fileStat = await stat(parquetPath);
     assert.ok(fileStat.size > 0, 'Parquet file should have non-zero size');
+
+    // Verify the parquet file contains the expected schema from preferred input
+    const loader = new SkillLoader();
+    const executor = new SkillExecutor();
+    await loader.loadAll();
+    const headersResult = await handleToolCall(
+      'qsv_headers',
+      { input_file: parquetPath },
+      executor,
+      loader,
+    );
+    assert.ok(!headersResult.isError, `Should read parquet headers: ${headersResult.content[0].text}`);
+    assert.ok(
+      headersResult.content[0].text?.includes('id') && headersResult.content[0].text?.includes('name'),
+      'Parquet file should contain id,name schema from the preferred input',
+    );
   } finally {
     await cleanupTestDir(testDir);
   }

@@ -9,6 +9,7 @@ import {
   parseMemoryToBytes,
   parseQsvMemoryInfo,
   parsePolarsVersion,
+  parseQsvVersion,
   parseQsvCommandList,
   expandTemplateVars,
   isPluginMode,
@@ -137,6 +138,39 @@ test('parseQsvMemoryInfo returns null for invalid output', () => {
   assert.strictEqual(parseQsvMemoryInfo(''), null);
   assert.strictEqual(parseQsvMemoryInfo('qsv 13.0.0'), null);
   assert.strictEqual(parseQsvMemoryInfo('no memory info here'), null);
+});
+
+// ============================================================================
+// qsv Version Parsing Tests
+// ============================================================================
+
+test('parseQsvVersion extracts version from qsv output', () => {
+  const versionOutput = 'qsv 16.1.0-mimalloc 315-apply;fetch;polars-0.53.0:54c9168;self_update-16-16;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parseQsvVersion(versionOutput), '16.1.0-mimalloc');
+});
+
+test('parseQsvVersion extracts version from qsvlite output', () => {
+  const versionOutput = 'qsvlite 16.1.0 100-count;headers;stats;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parseQsvVersion(versionOutput), '16.1.0');
+});
+
+test('parseQsvVersion extracts version from qsvdp output', () => {
+  const versionOutput = 'qsvdp 16.1.0 200-apply;fetch;stats;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parseQsvVersion(versionOutput), '16.1.0');
+});
+
+test('parseQsvVersion returns null for unrecognized binary name', () => {
+  const versionOutput = 'xsv 16.1.0 some-features';
+  assert.strictEqual(parseQsvVersion(versionOutput), null);
+});
+
+test('parseQsvVersion returns null for empty string', () => {
+  assert.strictEqual(parseQsvVersion(''), null);
+});
+
+test('parseQsvVersion handles pre-release versions', () => {
+  const versionOutput = 'qsv 16.2.0-alpha.1 315-apply;fetch';
+  assert.strictEqual(parseQsvVersion(versionOutput), '16.2.0-alpha.1');
 });
 
 // ============================================================================

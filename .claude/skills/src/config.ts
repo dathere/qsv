@@ -318,7 +318,7 @@ function detectQsvBinaryPath(): string | null {
  *   "qsv 0.135.0-alpha.1" -> "0.135.0-alpha.1"
  *   "qsv 0.135.0+build.123" -> "0.135.0+build.123"
  */
-function parseQsvVersion(versionOutput: string): string | null {
+export function parseQsvVersion(versionOutput: string): string | null {
   // Match semantic version with optional pre-release and build metadata
   // Recognizes qsv, qsvlite, and qsvdp variant names
   const match = versionOutput.match(

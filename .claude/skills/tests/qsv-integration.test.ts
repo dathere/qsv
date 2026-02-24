@@ -748,6 +748,40 @@ test('handleToParquetCall accepts "input" as alias for "input_file"', { skip: !Q
   }
 });
 
+test('handleToParquetCall prefers "input_file" over "input" when both present', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+
+  try {
+    // Preferred input: valid CSV that should be converted to parquet
+    const preferredPath = await createTestCSV(
+      testDir,
+      'preferred.csv',
+      'id,name\n1,Alice\n2,Bob\n'
+    );
+
+    // Alias input: a non-existent file path — if used, the command would fail
+    const aliasPath = join(testDir, 'does-not-exist.csv');
+
+    const parquetPath = join(testDir, 'result.parquet');
+
+    const result = await handleToParquetCall({
+      input_file: preferredPath,
+      input: aliasPath,
+      output_file: parquetPath,
+    });
+
+    // If input_file is correctly preferred, this should succeed.
+    // If "input" were used instead, the command would fail because the file doesn't exist.
+    assert.ok(!result.isError, `Command should succeed when both input_file and input are present: ${result.content[0].text}`);
+
+    // Verify the parquet file was actually created from the preferred input
+    const fileStat = await stat(parquetPath);
+    assert.ok(fileStat.size > 0, 'Parquet file should have non-zero size');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
 test('handleToolCall prefers "input_file" over "input" when both present', { skip: !QSV_AVAILABLE }, async () => {
   const testDir = await createTestDir();
   const loader = new SkillLoader();

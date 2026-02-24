@@ -2,6 +2,7 @@
 
 This CLAUDE.md was auto-deployed by the qsv plugin to provide workflow guidance.
 You can edit or replace it — it will NOT be overwritten on future sessions.
+To disable auto-deployment, set `QSV_NO_COWORK_SETUP=1` in your environment.
 
 ---
 
@@ -34,7 +35,7 @@ SQL queries on CSV inputs auto-convert to Parquet before execution.
 
 ## Memory Limits
 
-Commands `dedup`, `sort`, `reverse`, `table`, `transpose`, `pragmastat` load entire files into memory.
+Commands `dedup`, `sort`, `reverse`, `table`, `transpose`, `pragmastat`, and `stats` (with extended stats) load entire files into memory.
 
 For files >1GB, prefer `extdedup`/`extsort` alternatives via **`qsv_command`**.
 
@@ -42,8 +43,8 @@ Check column cardinality with **`qsv_stats`** before running `frequency` or `piv
 
 ## Tool Discovery
 
-Use **`qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 56 qsv commands available covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more.
+Use **`qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 56 qsv commands available covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more. Tool names may change across versions; check `qsv_search_tools` if any are unrecognized.
 
 ## Operation Timeout
 
-qsv operations can take significant time on larger files. The MCP server's default operation timeout is 10 minutes (configurable via `QSV_MCP_OPERATION_TIMEOUT_MS`, max 30 minutes). Allow operations to run to completion. Check the current timeout with **`qsv_config`**.
+qsv operations can take significant time on larger files. Allow operations to run to completion.

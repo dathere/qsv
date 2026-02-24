@@ -25,7 +25,6 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup",
         "type": "command",
         "command": "${CLAUDE_PLUGIN_ROOT}/scripts/cowork-setup.sh"
       }

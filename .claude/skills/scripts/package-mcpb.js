@@ -200,6 +200,20 @@ async function createArchive() {
       archive.directory(skillsDir, 'skills');
     }
 
+    // Add hook scripts (for SessionStart hook)
+    const scriptsDir = join(rootDir, 'scripts');
+    if (existsSync(scriptsDir)) {
+      console.log('   Adding hook scripts (scripts/)...');
+      archive.directory(scriptsDir, 'scripts');
+    }
+
+    // Add cowork CLAUDE.md template (deployed by SessionStart hook)
+    const coworkTemplate = join(rootDir, 'cowork-CLAUDE.md');
+    if (existsSync(coworkTemplate)) {
+      console.log('   Adding cowork-CLAUDE.md...');
+      archive.file(coworkTemplate, { name: 'cowork-CLAUDE.md' });
+    }
+
     // Add icon if it exists
     const iconPath = join(rootDir, 'qsv-75x91.png');
     if (existsSync(iconPath)) {

@@ -789,8 +789,9 @@ test('handleToParquetCall prefers "input_file" over "input" when both present', 
       loader,
     );
     assert.ok(!headersResult.isError, `Should read parquet headers: ${headersResult.content[0].text}`);
+    const headersText = headersResult.content[0].text ?? '';
     assert.ok(
-      headersResult.content[0].text?.includes('id') && headersResult.content[0].text?.includes('name'),
+      /\bid\b/.test(headersText) && /\bname\b/.test(headersText),
       'Parquet file should contain id,name schema from the preferred input',
     );
   } finally {

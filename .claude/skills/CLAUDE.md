@@ -411,6 +411,8 @@ The 📊 emoji marks stats-related guidance in tool descriptions.
 5. Update tests to cover new parameters
 6. Update guidance hints if behavior changes
 
+**Parameter alias handling**: `buildSkillExecParams` skips `"input"` and `"output"` keys by default (they are aliases for `input_file`/`output_file` via `resolveParamAliases`). However, if a skill declares `--input` or `--output` as a distinct CLI option (flag), the key is allowed through automatically. Note: this check only matches long-form options (`--input`/`--output`), not short flags (`-i`/`-o`); a positional arg named `input` is always consumed as the input file path.
+
 ### Testing Conventions
 
 - Each module has a corresponding test file: `tests/<module>.test.ts`

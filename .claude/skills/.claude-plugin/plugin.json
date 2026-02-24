@@ -26,7 +26,7 @@
     "SessionStart": [
       {
         "type": "command",
-        "command": "${CLAUDE_PLUGIN_ROOT}/scripts/cowork-setup.sh"
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/cowork-setup.js"
       }
     ]
   }

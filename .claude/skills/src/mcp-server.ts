@@ -75,7 +75,9 @@ FILE HANDLING: Save outputs to files with descriptive names rather than returnin
 
 TOOL COMPOSITION: qsv_sqlp auto-converts CSV inputs to Parquet, then routes to DuckDB when available for better SQL compatibility and performance; falls back to Polars SQL otherwise. For multi-file SQL queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() references in SQL. For custom row-level logic, use qsv_command with command="luau".
 
-MEMORY LIMITS: Commands dedup, sort, reverse, table, transpose, pragmastat load entire files into memory. For files >1GB, prefer extdedup/extsort alternatives via qsv_command. Check column cardinality with qsv_stats before running frequency or pivotp to avoid huge output.`;
+MEMORY LIMITS: Commands dedup, sort, reverse, table, transpose, pragmastat load entire files into memory. For files >1GB, prefer extdedup/extsort alternatives via qsv_command. Check column cardinality with qsv_stats before running frequency or pivotp to avoid huge output.
+
+OPERATION TIMEOUT: qsv operations can take significant time, especially on larger files. The MCP server's default operation timeout is 10 minutes (configurable via QSV_MCP_OPERATION_TIMEOUT_MS, max 30 minutes). Do NOT use a shorter client-side timeout — allow operations to run to completion or until the server's configured timeout. Check the current timeout setting with qsv_config.`;
 
 /**
  * Resolved server instructions: uses custom instructions from

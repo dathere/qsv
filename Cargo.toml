@@ -90,7 +90,7 @@ cached = { version = "0.56", features = [
 ] }
 calamine = { version = "0.33", features = ["chrono"] }
 censor = { version = "0.3", optional = true }
-chrono = { version = "0.4.43", default-features = false }
+chrono = { version = "0.4.44", default-features = false }
 chrono-tz = "0.10"
 console = { version = "0.16", optional = true }
 const_format = "0.2"

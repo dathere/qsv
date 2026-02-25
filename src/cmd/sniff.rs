@@ -758,8 +758,8 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                     },
                 }
 
-                // resolve symlinks first so MIME detection and metadata
-                // reflect the target file, not the symlink inode
+                // resolve symlinks first so MIME detection and paths
+                // (display_path/file_to_sniff) reflect the target file
                 // safety: unwrap is safe as qsv requires UTF-8 paths throughout
                 let canonical_path = fs::canonicalize(&path)?.to_str().unwrap().to_string();
 

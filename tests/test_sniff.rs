@@ -714,3 +714,26 @@ fn sniff_github_raw_url() {
     assert!(got.contains("Num Fields: 29"));
     assert!(got.contains("Unsigned  case_enquiry_id"));
 }
+
+// Test that symlinked CSV files are sniffed correctly (issue #3529)
+#[cfg(unix)]
+#[test]
+fn sniff_symlink() {
+    let wrk = Workdir::new("sniff_symlink");
+    wrk.create_with_delim("real.csv", data(), b',');
+
+    // create a symlink pointing to the real file
+    std::os::unix::fs::symlink(wrk.path("real.csv"), wrk.path("link.csv")).unwrap();
+
+    let mut cmd = wrk.command("sniff");
+    cmd.arg(wrk.path("link.csv"));
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // Both magika and file-format backends detect CSV identically here
+    assert!(got.contains("Detected Mime Type: application/csv"));
+    assert!(got.contains("Detected Label: csv"));
+
+    assert!(got.contains("Num Fields: 3"));
+    assert!(got.contains("Num Records: 2"));
+}

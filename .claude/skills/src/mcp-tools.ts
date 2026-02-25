@@ -99,7 +99,8 @@ const BINARY_OUTPUT_FORMATS = new Set(["parquet", "arrow", "avro"]);
 
 /**
  * Check if the command+params produce binary output (not tabular text).
- * Used to prevent .tsv extensions on files containing parquet/arrow/avro data.
+ * Used to skip auto temp file creation and prevent .tsv extensions for
+ * binary formats (parquet/arrow/avro) that can't be read back as UTF-8.
  */
 export function isBinaryOutputFormat(commandName: string, params: Record<string, unknown>): boolean {
   return commandName === "sqlp" &&
@@ -1804,17 +1805,17 @@ export async function handleToolCall(
       }
     }
 
-    // Determine if we should use a temp file for output (skip for help requests)
+    // Determine if we should use a temp file for output (skip for help requests
+    // and binary output formats like parquet/arrow/avro which can't be read as UTF-8)
     let autoCreatedTempFile = false;
     if (
       !outputFile &&
       !isHelpRequest &&
       inputFile &&
+      !isBinaryOutputFormat(commandName, params) &&
       (await shouldUseTempFile(commandName, inputFile))
     ) {
-      // Determine temp file extension: use .tsv in TSV mode for tabular commands,
-      // but never for binary output formats (parquet/arrow/avro from sqlp)
-      const tempExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) && !isBinaryOutputFormat(commandName, params) ? "tsv" : "csv";
+      const tempExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) ? "tsv" : "csv";
       const tempFileName = `qsv-output-${randomUUID()}.${tempExt}`;
       outputFile = join(tmpdir(), tempFileName);
       autoCreatedTempFile = true;

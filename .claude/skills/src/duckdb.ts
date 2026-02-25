@@ -386,7 +386,13 @@ export async function executeDuckDbQuery(
   // Build DuckDB arguments
   const args: string[] = [];
   if (format === "csv") {
+    // DuckDB's -csv flag enables "delimited text" mode (not strictly comma-only).
+    // Adding -separator "\t" makes it produce TSV natively, which is more
+    // token-efficient for AI agent consumption.
     args.push("-csv");
+    if (config.outputFormat === "tsv") {
+      args.push("-separator", "\t");
+    }
   } else if (format === "json") {
     args.push("-json");
   }

@@ -84,6 +84,29 @@ const ALWAYS_FILE_COMMANDS = new Set([
  */
 const METADATA_COMMANDS = new Set(["count", "headers", "index", "sniff"]);
 
+/** Commands whose output is NOT tabular CSV — skip TSV conversion */
+const NON_TABULAR_COMMANDS = new Set([
+  ...METADATA_COMMANDS,  // count, headers, index, sniff
+  "tojsonl",             // JSONL output
+  "template",            // Free-form text
+  "schema",              // JSON Schema output
+  "to",                  // Non-CSV targets (postgres, sqlite, xlsx, etc.)
+  "validate",            // Validation messages, not CSV data
+]);
+
+/** Binary output formats from sqlp that should never get a .tsv extension */
+const BINARY_OUTPUT_FORMATS = new Set(["parquet", "arrow", "avro"]);
+
+/**
+ * Check if the command+params produce binary output (not tabular text).
+ * Used to skip auto temp file creation and prevent .tsv extensions for
+ * binary formats (parquet/arrow/avro) that can't be read back as UTF-8.
+ */
+export function isBinaryOutputFormat(commandName: string, params: Record<string, unknown>): boolean {
+  return commandName === "sqlp" &&
+    BINARY_OUTPUT_FORMATS.has(String(params.format ?? "").toLowerCase());
+}
+
 /**
  * Consolidated guidance for each command.
  * Combines when-to-use, common patterns, error prevention,
@@ -742,6 +765,15 @@ async function shouldUseTempFile(
     return false;
   }
 
+  // TSV mode: force temp file so qsv outputs TSV natively via .tsv extension.
+  // This bypasses size-based heuristics below, meaning even small outputs go through
+  // temp file I/O. This is an acceptable trade-off because: (1) qsv's file I/O is fast,
+  // (2) it avoids a fragile post-processing step to convert CSV→TSV in-memory, and
+  // (3) it ensures consistent tab-delimited output for all tabular commands.
+  if (config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(command)) {
+    return true;
+  }
+
   // Commands that always return full CSV data should use temp files
   if (ALWAYS_FILE_COMMANDS.has(command)) {
     return true;
@@ -1277,7 +1309,8 @@ async function formatToolResult(
             .replace(/[:.]/g, "-")
             .replace("T", "_")
             .split(".")[0];
-          const savedFileName = `qsv-${commandName}-${timestamp}.csv`;
+          const savedExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) && !isBinaryOutputFormat(commandName, params) ? "tsv" : "csv";
+          const savedFileName = `qsv-${commandName}-${timestamp}.${savedExt}`;
           const savedPath = join(config.workingDir, savedFileName);
 
           try {
@@ -1551,7 +1584,7 @@ async function tryDuckDbExecution(
     return null; // Fall through to sqlp
   }
 
-  const format = (params.format as string)?.toLowerCase() ?? "csv";
+  const format = String(params.format ?? "csv").toLowerCase();
 
   // Unsupported formats fall back to sqlp
   if (format === "arrow" || format === "avro") {
@@ -1772,15 +1805,18 @@ export async function handleToolCall(
       }
     }
 
-    // Determine if we should use a temp file for output (skip for help requests)
+    // Determine if we should use a temp file for output (skip for help requests
+    // and binary output formats like parquet/arrow/avro which can't be read as UTF-8)
     let autoCreatedTempFile = false;
     if (
       !outputFile &&
       !isHelpRequest &&
       inputFile &&
+      !isBinaryOutputFormat(commandName, params) &&
       (await shouldUseTempFile(commandName, inputFile))
     ) {
-      const tempFileName = `qsv-output-${randomUUID()}.csv`;
+      const tempExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) ? "tsv" : "csv";
+      const tempFileName = `qsv-output-${randomUUID()}.${tempExt}`;
       outputFile = join(tmpdir(), tempFileName);
       autoCreatedTempFile = true;
       console.error(`[MCP Tools] Auto-created temp output file: ${outputFile}`);
@@ -2193,6 +2229,7 @@ export async function handleConfigTool(
   configText += `⏱️ **Timeout:** ${config.operationTimeoutMs}ms (${Math.round(config.operationTimeoutMs / 1000)}s)\n`;
   configText += `💾 **Max Output Size:** ${formatBytes(config.maxOutputSize)}\n`;
   configText += `🔧 **Auto-Regenerate Skills:** ${config.autoRegenerateSkills ? "Enabled" : "Disabled"}\n`;
+  configText += `📄 **Output Format:** ${config.outputFormat.toUpperCase()}\n`;
 
   // Update Check Settings
   configText += `\n## Update Settings\n\n`;

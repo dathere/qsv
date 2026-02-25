@@ -235,6 +235,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - `QSV_MCP_PLUGIN_MODE`: Explicit plugin mode override (default: auto-detected)
 - `QSV_MCP_DUCKDB_BIN_PATH`: Path to DuckDB binary (default: auto-detect from PATH)
 - `QSV_MCP_USE_DUCKDB`: Enable/disable DuckDB routing for SQL queries (default: false)
+- `QSV_MCP_OUTPUT_FORMAT`: Output format for tabular data - "tsv" (default, token-efficient) or "csv"
 - `MCPB_EXTENSION_MODE`: Desktop extension mode flag
 
 #### `loader.ts` - Dynamic Skill Loading

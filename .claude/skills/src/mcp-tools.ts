@@ -147,8 +147,8 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     hasCommonMistakes: true,
   },
   joinp: {
-    whenToUse: "Fast Polars-powered joins for large files (>50MB) or SQL-like joins (inner/left/right/outer/cross). Use stats cache (qsv_stats --cardinality) to determine optimal table order (smaller cardinality on right).",
-    commonPattern: "Stats → Join: Use qsv_stats --cardinality on both files, put lower-cardinality join column on right for efficiency. Check nullcount on join columns — nulls never match in joins and high null rates explain missing rows.",
+    whenToUse: "Fast Polars-powered joins for large files (>50MB) or SQL-like joins (inner/left/right/outer/cross/asof). Asof joins match on the nearest key rather than exact equality — ideal for time-series data. Use stats cache (qsv_stats --cardinality) to determine optimal table order (smaller cardinality on right).",
+    commonPattern: "Stats → Join: Use qsv_stats --cardinality on both files, put lower-cardinality join column on right for efficiency. Check nullcount on join columns — nulls never match in joins and high null rates explain missing rows. For time-series joins, use --asof to match on nearest key rather than exact equality; both datasets are auto-sorted on join columns unless --no-sort is set.",
     errorPrevention: "Use --try-parsedates for date joins. Check column types with qsv_stats — mismatched types (String vs Integer) cause silent join failures.",
     hasCommonMistakes: true,
   },

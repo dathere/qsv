@@ -147,9 +147,9 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     hasCommonMistakes: true,
   },
   joinp: {
-    whenToUse: "Fast Polars-powered joins for large files (>50MB) or SQL-like joins (inner/left/right/outer/cross). Use stats cache (qsv_stats --cardinality) to determine optimal table order (smaller cardinality on right).",
-    commonPattern: "Stats → Join: Use qsv_stats --cardinality on both files, put lower-cardinality join column on right for efficiency.",
-    errorPrevention: "Use --try-parsedates for date joins.",
+    whenToUse: "Fast Polars-powered joins for large files (>50MB) or SQL-like joins (inner/left/right/outer/cross/asof). Asof joins match on the nearest key rather than exact equality — ideal for time-series data. Use stats cache (qsv_stats --cardinality) to determine optimal table order (smaller cardinality on right).",
+    commonPattern: "Stats → Join: Use qsv_stats --cardinality on both files, put lower-cardinality join column on right for efficiency. Check nullcount on join columns — nulls never match in joins and high null rates explain missing rows. For time-series joins, use --asof to match on nearest key rather than exact equality; both datasets are auto-sorted on join columns unless --no-sort is set.",
+    errorPrevention: "Use --try-parsedates for date joins. Check column types with qsv_stats — mismatched types (String vs Integer) cause silent join failures.",
     hasCommonMistakes: true,
   },
   dedup: {
@@ -196,9 +196,9 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     whenToUse:
       "Run SQL queries on tabular data. Auto-converts CSV to Parquet for performance, then routes to DuckDB when available (faster, PostgreSQL-compatible). Falls back to Polars SQL (sqlp) otherwise.",
     commonPattern:
-      "Input CSVs are auto-converted to Parquet before querying. For multi-file queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() in SQL. DuckDB preferred when available.",
+      "Stats → SQL: Read qsv_stats output before writing queries. Use type for correct casts (don't quote integers, use date functions for Date/DateTime). Use min/max/range for precise WHERE clauses. Use cardinality to optimize GROUP BY (low = fast, high = consider LIMIT). Use sort_order to skip redundant ORDER BY. For value distributions, run qsv_frequency on relevant columns. For multi-file queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() in SQL.",
     errorPrevention:
-      "Column names are case-sensitive in Polars SQL but case-insensitive in DuckDB. For unsupported output formats (Arrow, Avro), sqlp is used automatically.",
+      "Column names are case-sensitive in Polars SQL but case-insensitive in DuckDB. For unsupported output formats (Arrow, Avro), sqlp is used automatically. Use nullcount from qsv_stats to add COALESCE/IS NOT NULL only where nulls actually exist — skip null handling for columns with nullcount=0.",
     hasCommonMistakes: true,
   },
   apply: {
@@ -234,7 +234,7 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   },
   pivotp: {
     whenToUse: "Polars-powered pivot tables. Use --agg for aggregation (sum/mean/count/first/last/min/max/smart). Use qsv_stats --cardinality to check pivot column cardinality.",
-    commonPattern: "Stats → Pivot: Use qsv_stats --cardinality to estimate pivot output width (pivot column cardinality × value columns) and keep estimated columns below ~1000 to avoid overly wide pivots.",
+    commonPattern: "Stats → Pivot: Use qsv_stats --cardinality to estimate pivot output width (pivot column cardinality × value columns) and keep estimated columns below ~1000 to avoid overly wide pivots. Use stats type column to pick the right --agg: sum/mean for numeric, count for categorical.",
     errorPrevention: "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns.",
     hasCommonMistakes: true,
   },

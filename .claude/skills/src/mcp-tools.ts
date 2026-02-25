@@ -94,6 +94,18 @@ const NON_TABULAR_COMMANDS = new Set([
   "validate",            // Validation messages, not CSV data
 ]);
 
+/** Binary output formats from sqlp that should never get a .tsv extension */
+const BINARY_OUTPUT_FORMATS = new Set(["parquet", "arrow", "avro"]);
+
+/**
+ * Check if the command+params produce binary output (not tabular text).
+ * Used to prevent .tsv extensions on files containing parquet/arrow/avro data.
+ */
+export function isBinaryOutputFormat(commandName: string, params: Record<string, unknown>): boolean {
+  return commandName === "sqlp" &&
+    BINARY_OUTPUT_FORMATS.has(String(params.format ?? "").toLowerCase());
+}
+
 /**
  * Consolidated guidance for each command.
  * Combines when-to-use, common patterns, error prevention,
@@ -1296,7 +1308,7 @@ async function formatToolResult(
             .replace(/[:.]/g, "-")
             .replace("T", "_")
             .split(".")[0];
-          const savedExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) ? "tsv" : "csv";
+          const savedExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) && !isBinaryOutputFormat(commandName, params) ? "tsv" : "csv";
           const savedFileName = `qsv-${commandName}-${timestamp}.${savedExt}`;
           const savedPath = join(config.workingDir, savedFileName);
 
@@ -1571,7 +1583,7 @@ async function tryDuckDbExecution(
     return null; // Fall through to sqlp
   }
 
-  const format = (params.format as string)?.toLowerCase() ?? "csv";
+  const format = String(params.format ?? "csv").toLowerCase();
 
   // Unsupported formats fall back to sqlp
   if (format === "arrow" || format === "avro") {
@@ -1802,9 +1814,7 @@ export async function handleToolCall(
     ) {
       // Determine temp file extension: use .tsv in TSV mode for tabular commands,
       // but never for binary output formats (parquet/arrow/avro from sqlp)
-      const isBinaryFormat = commandName === "sqlp" &&
-        ["parquet", "arrow", "avro"].includes((params.format as string)?.toLowerCase() ?? "");
-      const tempExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) && !isBinaryFormat ? "tsv" : "csv";
+      const tempExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) && !isBinaryOutputFormat(commandName, params) ? "tsv" : "csv";
       const tempFileName = `qsv-output-${randomUUID()}.${tempExt}`;
       outputFile = join(tmpdir(), tempFileName);
       autoCreatedTempFile = true;

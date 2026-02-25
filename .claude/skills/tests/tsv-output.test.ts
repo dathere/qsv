@@ -12,7 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 import { readFile } from "fs/promises";
 import { join } from "path";
-import { handleToolCall, handleConfigTool } from "../src/mcp-tools.js";
+import { handleToolCall, handleConfigTool, isBinaryOutputFormat } from "../src/mcp-tools.js";
 import { config } from "../src/config.js";
 import { SkillLoader } from "../src/loader.js";
 import { SkillExecutor } from "../src/executor.js";
@@ -389,3 +389,99 @@ test(
     }
   },
 );
+
+// ============================================================================
+// Binary format guard tests (isBinaryOutputFormat helper)
+// ============================================================================
+
+test("isBinaryOutputFormat returns true for sqlp with parquet format", () => {
+  assert.strictEqual(
+    isBinaryOutputFormat("sqlp", { format: "parquet" }),
+    true,
+    "sqlp + parquet should be detected as binary",
+  );
+});
+
+test("isBinaryOutputFormat returns true for sqlp with arrow format", () => {
+  assert.strictEqual(
+    isBinaryOutputFormat("sqlp", { format: "arrow" }),
+    true,
+    "sqlp + arrow should be detected as binary",
+  );
+});
+
+test("isBinaryOutputFormat returns true for sqlp with avro format", () => {
+  assert.strictEqual(
+    isBinaryOutputFormat("sqlp", { format: "avro" }),
+    true,
+    "sqlp + avro should be detected as binary",
+  );
+});
+
+test("isBinaryOutputFormat is case-insensitive", () => {
+  assert.strictEqual(
+    isBinaryOutputFormat("sqlp", { format: "PARQUET" }),
+    true,
+    "sqlp + PARQUET (uppercase) should be detected as binary",
+  );
+  assert.strictEqual(
+    isBinaryOutputFormat("sqlp", { format: "Arrow" }),
+    true,
+    "sqlp + Arrow (mixed case) should be detected as binary",
+  );
+});
+
+test("isBinaryOutputFormat returns false for sqlp with csv format", () => {
+  assert.strictEqual(
+    isBinaryOutputFormat("sqlp", { format: "csv" }),
+    false,
+    "sqlp + csv should NOT be detected as binary",
+  );
+});
+
+test("isBinaryOutputFormat returns false for sqlp with json format", () => {
+  assert.strictEqual(
+    isBinaryOutputFormat("sqlp", { format: "json" }),
+    false,
+    "sqlp + json should NOT be detected as binary",
+  );
+});
+
+test("isBinaryOutputFormat returns false for sqlp with no format", () => {
+  assert.strictEqual(
+    isBinaryOutputFormat("sqlp", {}),
+    false,
+    "sqlp + no format should NOT be detected as binary",
+  );
+});
+
+test("isBinaryOutputFormat returns false for non-sqlp commands", () => {
+  assert.strictEqual(
+    isBinaryOutputFormat("select", { format: "parquet" }),
+    false,
+    "select + parquet should NOT be detected as binary",
+  );
+  assert.strictEqual(
+    isBinaryOutputFormat("sort", { format: "arrow" }),
+    false,
+    "sort + arrow should NOT be detected as binary",
+  );
+});
+
+test("isBinaryOutputFormat handles non-string format safely", () => {
+  assert.strictEqual(
+    isBinaryOutputFormat("sqlp", { format: 123 }),
+    false,
+    "numeric format should not throw and should return false",
+  );
+  assert.strictEqual(
+    isBinaryOutputFormat("sqlp", { format: true }),
+    false,
+    "boolean format should not throw and should return false",
+  );
+  assert.strictEqual(
+    isBinaryOutputFormat("sqlp", { format: null }),
+    false,
+    "null format should not throw and should return false",
+  );
+});

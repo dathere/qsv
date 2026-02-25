@@ -1800,7 +1800,11 @@ export async function handleToolCall(
       inputFile &&
       (await shouldUseTempFile(commandName, inputFile))
     ) {
-      const tempExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) ? "tsv" : "csv";
+      // Determine temp file extension: use .tsv in TSV mode for tabular commands,
+      // but never for binary output formats (parquet/arrow/avro from sqlp)
+      const isBinaryFormat = commandName === "sqlp" &&
+        ["parquet", "arrow", "avro"].includes((params.format as string)?.toLowerCase() ?? "");
+      const tempExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) && !isBinaryFormat ? "tsv" : "csv";
       const tempFileName = `qsv-output-${randomUUID()}.${tempExt}`;
       outputFile = join(tmpdir(), tempFileName);
       autoCreatedTempFile = true;

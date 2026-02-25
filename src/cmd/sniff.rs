@@ -758,7 +758,11 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                     },
                 }
 
-                let metadata = fs::metadata(&path)?;
+                // resolve symlinks first so MIME detection and metadata
+                // reflect the target file, not the symlink inode
+                let canonical_path = fs::canonicalize(&path)?.to_str().unwrap().to_string();
+
+                let metadata = fs::metadata(&canonical_path)?;
 
                 let file_size = metadata.len() as usize;
                 let last_modified = match metadata.modified() {
@@ -769,11 +773,9 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                     Err(_) => "N/A".to_string(),
                 };
 
-                let canonical_path = fs::canonicalize(&path)?.to_str().unwrap().to_string();
-
                 Ok(SniffFileStruct {
-                    display_path: canonical_path,
-                    file_to_sniff: path,
+                    display_path: canonical_path.clone(),
+                    file_to_sniff: canonical_path,
                     detected_mime: String::new(),
                     detected_label: String::new(),
                     inference_score: None,

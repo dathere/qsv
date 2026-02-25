@@ -387,6 +387,9 @@ export async function executeDuckDbQuery(
   const args: string[] = [];
   if (format === "csv") {
     args.push("-csv");
+    if (config.outputFormat === "tsv") {
+      args.push("-separator", "\t");
+    }
   } else if (format === "json") {
     args.push("-json");
   }

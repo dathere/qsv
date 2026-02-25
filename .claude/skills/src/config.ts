@@ -830,4 +830,19 @@ export const config = {
    * Default: false (opt-in — most users won't have DuckDB installed)
    */
   useDuckDb: getBooleanEnv("QSV_MCP_USE_DUCKDB", false),
+
+  /**
+   * Output format for tabular data returned to MCP clients.
+   * "tsv" is more token-efficient for AI agents (tabs = single tokens, no quoting).
+   * "csv" preserves original comma-delimited format.
+   * Default: "tsv"
+   */
+  outputFormat: (() => {
+    const val = getStringEnv("QSV_MCP_OUTPUT_FORMAT", "tsv");
+    if (val !== "csv" && val !== "tsv") {
+      console.error(`[Config] Invalid QSV_MCP_OUTPUT_FORMAT: "${val}", using default: "tsv"`);
+      return "tsv" as const;
+    }
+    return val as "csv" | "tsv";
+  })(),
 } as const;

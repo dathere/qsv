@@ -84,6 +84,15 @@ const ALWAYS_FILE_COMMANDS = new Set([
  */
 const METADATA_COMMANDS = new Set(["count", "headers", "index", "sniff"]);
 
+/** Commands whose output is NOT tabular CSV — skip TSV conversion */
+const NON_TABULAR_COMMANDS = new Set([
+  ...METADATA_COMMANDS,  // count, headers, index, sniff
+  "tojsonl",             // JSONL output
+  "template",            // Free-form text
+  "schema",              // JSON Schema output
+  "to",                  // Non-CSV targets (postgres, sqlite, xlsx, etc.)
+]);
+
 /**
  * Consolidated guidance for each command.
  * Combines when-to-use, common patterns, error prevention,
@@ -742,6 +751,11 @@ async function shouldUseTempFile(
     return false;
   }
 
+  // TSV mode: force temp file so qsv outputs TSV natively via .tsv extension
+  if (config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(command)) {
+    return true;
+  }
+
   // Commands that always return full CSV data should use temp files
   if (ALWAYS_FILE_COMMANDS.has(command)) {
     return true;
@@ -1277,7 +1291,8 @@ async function formatToolResult(
             .replace(/[:.]/g, "-")
             .replace("T", "_")
             .split(".")[0];
-          const savedFileName = `qsv-${commandName}-${timestamp}.csv`;
+          const savedExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) ? "tsv" : "csv";
+          const savedFileName = `qsv-${commandName}-${timestamp}.${savedExt}`;
           const savedPath = join(config.workingDir, savedFileName);
 
           try {
@@ -1780,7 +1795,8 @@ export async function handleToolCall(
       inputFile &&
       (await shouldUseTempFile(commandName, inputFile))
     ) {
-      const tempFileName = `qsv-output-${randomUUID()}.csv`;
+      const tempExt = config.outputFormat === "tsv" ? "tsv" : "csv";
+      const tempFileName = `qsv-output-${randomUUID()}.${tempExt}`;
       outputFile = join(tmpdir(), tempFileName);
       autoCreatedTempFile = true;
       console.error(`[MCP Tools] Auto-created temp output file: ${outputFile}`);
@@ -2193,6 +2209,7 @@ export async function handleConfigTool(
   configText += `⏱️ **Timeout:** ${config.operationTimeoutMs}ms (${Math.round(config.operationTimeoutMs / 1000)}s)\n`;
   configText += `💾 **Max Output Size:** ${formatBytes(config.maxOutputSize)}\n`;
   configText += `🔧 **Auto-Regenerate Skills:** ${config.autoRegenerateSkills ? "Enabled" : "Disabled"}\n`;
+  configText += `📄 **Output Format:** ${config.outputFormat.toUpperCase()}\n`;
 
   // Update Check Settings
   configText += `\n## Update Settings\n\n`;

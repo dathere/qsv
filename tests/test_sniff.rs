@@ -730,7 +730,10 @@ fn sniff_symlink() {
 
     let got: String = wrk.stdout(&mut cmd);
 
+    // Both magika and file-format backends detect CSV identically here
     assert!(got.contains("Detected Mime Type: application/csv"));
+    assert!(got.contains("Detected Label: csv"));
+
     assert!(got.contains("Num Fields: 3"));
     assert!(got.contains("Num Records: 2"));
 }

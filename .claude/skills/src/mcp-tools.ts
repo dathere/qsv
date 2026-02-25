@@ -91,6 +91,7 @@ const NON_TABULAR_COMMANDS = new Set([
   "template",            // Free-form text
   "schema",              // JSON Schema output
   "to",                  // Non-CSV targets (postgres, sqlite, xlsx, etc.)
+  "validate",            // Validation messages, not CSV data
 ]);
 
 /**
@@ -751,7 +752,11 @@ async function shouldUseTempFile(
     return false;
   }
 
-  // TSV mode: force temp file so qsv outputs TSV natively via .tsv extension
+  // TSV mode: force temp file so qsv outputs TSV natively via .tsv extension.
+  // This bypasses size-based heuristics below, meaning even small outputs go through
+  // temp file I/O. This is an acceptable trade-off because: (1) qsv's file I/O is fast,
+  // (2) it avoids a fragile post-processing step to convert CSV→TSV in-memory, and
+  // (3) it ensures consistent tab-delimited output for all tabular commands.
   if (config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(command)) {
     return true;
   }
@@ -1795,7 +1800,7 @@ export async function handleToolCall(
       inputFile &&
       (await shouldUseTempFile(commandName, inputFile))
     ) {
-      const tempExt = config.outputFormat === "tsv" ? "tsv" : "csv";
+      const tempExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) ? "tsv" : "csv";
       const tempFileName = `qsv-output-${randomUUID()}.${tempExt}`;
       outputFile = join(tmpdir(), tempFileName);
       autoCreatedTempFile = true;

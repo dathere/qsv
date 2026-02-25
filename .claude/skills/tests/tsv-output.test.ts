@@ -27,19 +27,20 @@ import {
 // Config Tests
 // ============================================================================
 
-test("config.outputFormat defaults to tsv", () => {
-  // Default is "tsv" unless QSV_MCP_OUTPUT_FORMAT env var is set
-  assert.ok(
-    config.outputFormat === "tsv" || config.outputFormat === "csv",
-    `outputFormat should be "tsv" or "csv", got: "${config.outputFormat}"`,
-  );
-});
-
-test("config.outputFormat is a valid value", () => {
+test("config.outputFormat is a valid value (tsv or csv)", () => {
   assert.ok(
     ["tsv", "csv"].includes(config.outputFormat),
     `outputFormat must be "tsv" or "csv", got: "${config.outputFormat}"`,
   );
+  // Note: default is "tsv" unless QSV_MCP_OUTPUT_FORMAT env var overrides it.
+  // We can't assert the default here since the env var may be set in CI.
+  if (!process.env.QSV_MCP_OUTPUT_FORMAT) {
+    assert.strictEqual(
+      config.outputFormat,
+      "tsv",
+      "Default outputFormat should be 'tsv' when env var is not set",
+    );
+  }
 });
 
 // ============================================================================

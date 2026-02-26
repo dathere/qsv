@@ -2,7 +2,7 @@
 
 > Find the difference between two CSVs with ludicrous speed! e.g. _compare two CSVs with 1M rows x 9 columns in under 600ms!_
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/diff.rs](https://github.com/dathere/qsv/blob/master/src/cmd/diff.rs)** | [🚀](TableOfContents.md#legend "multithreaded even without an index.")[🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/diff.rs](https://github.com/dathere/qsv/blob/master/src/cmd/diff.rs)** | [🚀](TableOfContents.md#legend "multithreaded even without an index.")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Diff Options](#diff-options) | [Common Options](#common-options)

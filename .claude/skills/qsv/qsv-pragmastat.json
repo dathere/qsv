@@ -54,6 +54,7 @@
   },
   "hints": {
     "streamable": false,
+    "indexed": true,
     "memory": "full"
   },
   "examples": [

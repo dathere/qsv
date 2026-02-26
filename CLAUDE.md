@@ -393,7 +393,7 @@ qsv --update-mcp-skills
 ```
 
 - Skills are generated from command USAGE text and README command table
-- **56 MCP skills** generated (vs 68 CLI commands - some internal commands excluded)
+- **51 MCP skills** generated (targeting qsvmcp commands; vs 68 CLI commands)
 - Examples sections in USAGE text are parsed for agent-friendly examples
 - Section headers (lines starting with "==") are skipped during parsing
 - Generated files are stored in `.claude/skills/qsv/`

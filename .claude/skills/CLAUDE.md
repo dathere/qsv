@@ -15,7 +15,7 @@ This is the **qsv Agent Skills** project - a TypeScript-based MCP (Model Context
 - **Guidance Enhancement**: Intelligent tool descriptions with USE WHEN, COMMON PATTERNS, and CAUTION hints
 
 **Goals**:
-1. Make all 56 qsv commands discoverable and invocable by AI agents
+1. Make all 51 qsv commands discoverable and invocable by AI agents
 2. Auto-generate tool definitions from qsv usage text (zero documentation debt)
 3. Enable intelligent composition of complex data workflows with multi-format support
 4. Provide seamless integration with Claude Desktop and other MCP clients
@@ -104,7 +104,7 @@ npm run mcpb:package
 │   ├── package-mcpb.js    # MCPB packaging script
 │   ├── cowork-setup.js    # Claude Cowork integration setup
 │   └── run-tests.js       # Cross-platform test runner
-├── qsv/                    # Auto-generated skill JSON files (56)
+├── qsv/                    # Auto-generated skill JSON files (51, targeting qsvmcp commands)
 ├── docs/                   # Guides, reference, design docs
 ├── .claude-plugin/plugin.json  # Claude Plugin manifest
 ├── .mcp.json               # MCP server config for plugin (server key: "qsv")

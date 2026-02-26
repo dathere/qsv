@@ -11,7 +11,7 @@ If you’re new to Rust, this overview highlights the specific language patterns
 qsv is a high-performance command-line toolkit for working with CSV and other tabular data. It focuses on speed, predictable behavior, and pragmatic ergonomics for data engineering tasks (profiling, selection, joins, transforms, validation, format conversion, indexing, and more).
 
 - Language: Rust (edition 2024; minimum Rust 1.93)
-- Binaries: `qsv` (full-featured), `qsvlite` (reduced feature set), `qsvdp` (Datapusher+ oriented)
+- Binaries: `qsv` (full-featured), `qsvmcp` (MCP server optimized), `qsvlite` (reduced feature set), `qsvdp` (Datapusher+ oriented)
 - Philosophy: modern Rust, aggressive performance optimizations (including optional unsafe with documented “safety:” comments), comprehensive tests, and frequent dependency updates.
 
 Key links in this repo:
@@ -32,7 +32,7 @@ Useful docs to skim first:
 
 Top-level:
 - `src/` — source code
-  - `main.rs`, `mainlite.rs`, `maindp.rs` — entry points for the different binaries
+  - `main.rs`, `mainlite.rs`, `maindp.rs` — entry points for the different binaries (`qsv` and `qsvmcp` share `main.rs`)
   - `cmd/` — one module per command (e.g., `stats.rs`, `index.rs`, `select.rs`, etc.)
   - Core modules used across commands:
     - `config.rs` — CSV reader/writer configuration, delimiters, file/IO setup
@@ -54,6 +54,7 @@ qsv uses Cargo features to conditionally include commands and dependencies. Some
 
 Binaries:
 - `qsv` (full-featured): requires `feature_capable` and additional features as needed
+- `qsvmcp` (MCP server optimized): built with `qsvmcp` feature (geocode, luau, mcp, polars, self_update); shares `main.rs` with `qsv`
 - `qsvlite`: built with `lite` feature
 - `qsvdp`: built with `datapusher_plus`
 
@@ -61,6 +62,9 @@ Examples (macOS, zsh):
 ```sh
 # Build full-featured binary (features are additive; pick what you need)
 cargo build --release --features "feature_capable,polars,fetch,geocode"
+
+# Build the MCP server optimized binary
+cargo build --release --bin qsvmcp --features qsvmcp
 
 # Build the lite binary
 cargo build --release --bin qsvlite --features lite

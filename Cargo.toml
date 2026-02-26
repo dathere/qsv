@@ -35,6 +35,14 @@ path              = "src/main.rs"
 required-features = ["feature_capable"]
 
 [[bin]]
+name              = "qsvmcp"
+test              = true
+bench             = false
+doctest           = false
+path              = "src/main.rs"
+required-features = ["qsvmcp"]
+
+[[bin]]
 name              = "qsvlite"
 test              = true
 bench             = false
@@ -386,6 +394,7 @@ distrib_features = [
     "to",
 ]
 all_features = ["distrib_features", "magika", "self_update", "ui"]
+qsvmcp = ["feature_capable", "geocode", "luau", "mcp", "polars", "self_update"]
 apply = [
     "base62",
     "base64-simd",

@@ -164,7 +164,7 @@ For Windows, an MSI "Easy installer" for the x86_64 MSVC `qsvp` binary is also a
 For macOS, ["ad-hoc" signatures](https://users.rust-lang.org/t/distributing-cli-apps-on-macos/70223) are used to sign our binaries, so you will need to [set appropriate Gatekeeper security settings](https://support.apple.com/en-us/HT202491) or run the following command to remove the quarantine attribute from qsv before you run it for the first time:
 
 ```bash
-# replace qsv with qsvlite or qsvdp if you installed those binary variants
+# replace qsv with qsvmcp, qsvlite or qsvdp if you installed those binary variants
 xattr -d com.apple.quarantine qsv
 ```
 
@@ -262,6 +262,9 @@ CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo build --release --locked --bi
 # or build qsv with only the fetch and foreach features enabled
 cargo build --release --locked --bin qsv -F feature_capable,fetch,foreach
 
+# for qsvmcp - MCP server optimized variant
+cargo build --release --locked --bin qsvmcp -F qsvmcp
+
 # for qsvlite
 cargo build --release --locked --bin qsvlite -F lite
 
@@ -275,14 +278,15 @@ For Windows, this means installing [Visual Studio 2022](https://visualstudio.mic
 the Windows 10 or 11 SDK & the English language pack, along with any other language packs your require.
 
 > ℹ️ **_NOTE:_** To build with Rust nightly, see [Nightly Release Builds](docs/PERFORMANCE.md#nightly-release-builds).
-The `feature_capable`, `lite` and `datapusher_plus` are MUTUALLY EXCLUSIVE features. See [Special Build Features](docs/FEATURES.md#special-features-for-building-qsv-binary-variants) for more info.
+The `feature_capable`, `qsvmcp`, `lite` and `datapusher_plus` are MUTUALLY EXCLUSIVE features. See [Special Build Features](docs/FEATURES.md#special-features-for-building-qsv-binary-variants) for more info.
 
 ### Variants
 
-There are four binary variants of qsv:
+There are five binary variants of qsv:
 
 * `qsv` - [feature](#feature-flags)-capable(✨), with the [prebuilt binaries](https://github.com/dathere/qsv/releases/latest) enabling all applicable features except Python [^3]
 * `qsvpy` - same as `qsv` but with the Python feature enabled. Three subvariants are available - qsvpy311, qsvpy312 & qsvpy313 - which are compiled with the latest patch version of Python 3.11, 3.12 & 3.13 respectively. We need to have a binary for each Python version as Python is dynamically linked ([more info](docs/INTERPRETERS.md#building-qsv-with-python-feature)).
+* `qsvmcp` - optimized for [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server use with geocode, luau, mcp, polars, and self_update features enabled. Shares `src/main.rs` with `qsv`.
 * `qsvlite` - all features disabled (~13% of the size of `qsv`). If you are migrating from [xsv](https://github.com/BurntSushi/xsv) and want the same experience and feature set, this is the variant for you.
 * `qsvdp` - optimized for use with [DataPusher+](https://github.com/dathere/datapusher-plus) with only DataPusher+ relevant commands; an embedded [`luau`](#luau_deeplink) interpreter; [`applydp`](#applydp_deeplink), a slimmed-down version of the `apply` feature; the `--progressbar` option disabled; and the self-update only checking for new releases, requiring an explicit `--update` (~12% of the the size of `qsv`).
 
@@ -510,6 +514,9 @@ cargo test --features all_features
 cargo test --features lite
 # to test all tests with "stats" in the name with qsvlite
 cargo test stats --features lite
+
+# to test qsvmcp
+cargo test --features qsvmcp
 
 # to test qsvdp
 cargo test --features datapusher_plus

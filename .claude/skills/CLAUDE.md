@@ -694,7 +694,7 @@ For implementation patterns (command execution, argument building, validation, o
 
 **qsv missing Polars**:
 - The MCP server requires the full `qsv` binary with Polars enabled
-- `qsvlite` and `qsvdp` variants do NOT include Polars
+- `qsvlite` and `qsvdp` variants do NOT include Polars (`qsvmcp` DOES include Polars)
 - Check with `qsv --version` — look for `polars-X.Y.Z` in the feature list
 - Install the full qsv binary from https://github.com/dathere/qsv#installation
 

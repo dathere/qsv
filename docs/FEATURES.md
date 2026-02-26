@@ -23,9 +23,10 @@ To check if your qsv build will have the option to self-update, run `qsv --versi
 
 ## Special Features for building qsv binary variants:
 
-* `feature_capable` - enable to build `qsv` binary variant which is feature-capable. (mutually exclusive with `lite` and `datapusher_plus`)
+* `feature_capable` - enable to build `qsv` binary variant which is feature-capable. Also used by `qsvmcp`. (mutually exclusive with `lite` and `datapusher_plus`)
   * `all_features` - shortcut to build `qsv` binary variant with all features enabled (apply,fetch,foreach,geocode,luau,magika,mcp,polars,python,to,self_update,ui).
 
+* `qsvmcp` - enable to build `qsvmcp` binary variant - optimized for [MCP](https://modelcontextprotocol.io/) server use with geocode, luau, mcp, polars, and self_update features. Shares `src/main.rs` with `qsv`. (mutually exclusive with `lite` and `datapusher_plus`)
 * `lite` - enable to build `qsvlite` binary variant with all features disabled. (mutually exclusive with `feature_capable` and `datapusher_plus`)
 * `datapusher_plus` - enable to build `qsvdp` binary variant - the [DataPusher+](https://github.com/dathere/datapusher-plus) optimized qsv binary. (mutually exclusive with `feature_capable` and `lite`)
 * `nightly` - enable to turn on nightly/unstable features in the `crc32fast`, `pyo3`, `rand`, `simd-json` & `foldhash` crates when building with Rust nightly/unstable. Note that Polars has its own separate `nightly-polars` feature.

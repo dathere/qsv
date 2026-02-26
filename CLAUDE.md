@@ -13,7 +13,7 @@ It's the data-wrangling, analysis and FAIRification engine of several datHere pr
 
 ### Building Variants
 
-qsv has three binary variants with mutually exclusive feature flags:
+qsv has four binary variants with mutually exclusive feature flags:
 
 ```bash
 # qsv - full-featured variant (use for development)
@@ -21,6 +21,9 @@ cargo build --locked --bin qsv -F all_features
 
 # qsvlite - minimal variant
 cargo build --locked --bin qsvlite -F lite
+
+# qsvmcp - MCP server optimized variant (shares main.rs with qsv)
+cargo build --locked --bin qsvmcp -F qsvmcp
 
 # qsvdp - DataPusher+ optimized variant
 cargo build --locked --bin qsvdp -F datapusher_plus
@@ -36,6 +39,9 @@ cargo test --features all_features
 
 # Test qsvlite
 cargo test --features lite
+
+# Test qsvmcp
+cargo test --features qsvmcp
 
 # Test qsvdp
 cargo test --features datapusher_plus
@@ -61,7 +67,7 @@ cargo +nightly clippy -F all_features -- -W clippy::perf
 
 ### Source Code Organization
 
-- **`src/main.rs`**, **`src/mainlite.rs`**, **`src/maindp.rs`** - Entry points for the three binary variants
+- **`src/main.rs`**, **`src/mainlite.rs`**, **`src/maindp.rs`** - Entry points for the binary variants (`qsv` and `qsvmcp` share `main.rs`)
 - **`src/cmd/`** - Each command is a separate module (68 commands total)
 - **`src/util.rs`** - Shared utility functions used across commands
 - **`src/config.rs`** - Configuration handling, CSV reader/writer setup

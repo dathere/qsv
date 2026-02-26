@@ -238,7 +238,7 @@ function detectQsvBinaryPath(): string | null {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
       });
-      const path = result.trim().split("\n")[0]; // Take first result
+      const path = result.split(/\r?\n/)[0]?.trim(); // Take first result, handle Windows \r\n
       if (path) {
         lastDetectionDiagnostics.whichResult = path;
         return path;
@@ -305,7 +305,7 @@ function detectQsvBinaryPath(): string | null {
             timeout: QSV_VALIDATION_TIMEOUT_MS,
           });
           diagnostic.executable = true;
-          diagnostic.version = versionOutput.trim().split("\n")[0];
+          diagnostic.version = versionOutput.split(/\r?\n/)[0]?.trim();
           lastDetectionDiagnostics.locationsChecked.push(diagnostic);
           return location; // Found it!
         } catch (execError) {
@@ -426,7 +426,7 @@ export function parsePolarsVersion(versionOutput: string): string | null {
 export function parseQsvCommandList(
   listOutput: string,
 ): { commands: string[]; count: number } | null {
-  // Extract command count from header line (optional - qsvlite doesn't include count)
+  // Extract command count from header line (optional - some formats omit the count)
   const headerMatch = listOutput.match(/Installed commands(?: \((\d+)\))?:/);
   if (!headerMatch) {
     console.error("[Config] Could not parse qsv --list output: header line not found");
@@ -437,7 +437,7 @@ export function parseQsvCommandList(
 
   // Extract command names (first word of each indented line)
   const commands: string[] = [];
-  const lines = listOutput.split("\n");
+  const lines = listOutput.split(/\r?\n/);
 
   for (const line of lines) {
     // Match lines that start with any whitespace followed by a command name

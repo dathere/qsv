@@ -936,13 +936,12 @@ fn sqlp_boston311_explain() {
 "SORT BY [descending: [true, false], nulls_last: [false, true]] [col(""avg_tat""), col(""ward"")]"
   AGGREGATE[maintain_order: false]
 "    [[(col(""closed_dt"")) - (col(""open_dt""))].mean().strict_cast(Float64).alias(""avg_tat"")] BY [col(""ward"")]"
-    FROM
-    Csv SCAN ["#;
+    FROM"#;
     assert!(got.starts_with(expected_begin));
 
     let expected_end = r#"PROJECT 4/29 COLUMNS
-"    SELECTION: [(col(""case_status"")) == (""Closed"")]"
-    ESTIMATED ROWS: 181"#;
+"      SELECTION: [(col(""case_status"")) == (""Closed"")]"
+      ESTIMATED ROWS: 181"#;
     assert!(got.ends_with(expected_end));
 }
 

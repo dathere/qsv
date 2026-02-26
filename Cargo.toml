@@ -40,7 +40,7 @@ test              = true
 bench             = false
 doctest           = false
 path              = "src/main.rs"
-required-features = ["feature_capable", "mcp", "polars"]
+required-features = ["qsvmcp"]
 
 [[bin]]
 name              = "qsvlite"

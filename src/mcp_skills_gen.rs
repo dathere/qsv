@@ -1009,18 +1009,24 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // Get all commands from src/cmd/*.rs (excluding mod.rs and duplicates)
     // Note: "enumerate" command is invoked as "enum" in qsv
     // Commands excluded from MCP skills generation:
+    // - apply: not available in qsvmcp
     // - behead: not needed for AI agents (use slice instead)
     // - clipboard: not useful for AI agents (requires system clipboard)
     // - color: not useful for AI agents (color display in terminal)
     // - edit: not suitable for AI agent use
+    // - fetch: not available in qsvmcp
+    // - fetchpost: not available in qsvmcp
     // - flatten: not suitable for AI agent use
+    // - foreach: not available in qsvmcp
     // - geoconvert: experimental command (not yet stable)
     // - lens: interactive TUI viewer (requires terminal)
     // - pro: contains interactive/terminal-dependent subcommands (lens, workflow)
     // - prompt: interactive prompt builder (requires terminal)
     // - snappy: compression utility not needed for AI agents
+    // - to: not available in qsvmcp
+    //
+    // This list targets commands available in the qsvmcp binary variant.
     let commands = vec![
-        "apply",
         "cat",
         "count",
         "datefmt",
@@ -1033,12 +1039,9 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "explode",
         "extdedup",
         "extsort",
-        "fetch",
-        "fetchpost",
         "fill",
         "fixlengths",
         "fmt",
-        "foreach",
         "frequency",
         "geocode",
         "headers",
@@ -1072,7 +1075,6 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "stats",
         "table",
         "template",
-        "to",
         "tojsonl",
         "transpose",
         "validate",
@@ -1191,6 +1193,35 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         success_count += 1;
     }
 
+    // Clean up stale skill files that were not generated in this run
+    let generated_filenames: std::collections::HashSet<String> = commands
+        .iter()
+        .map(|cmd| {
+            // Match the naming used during generation: "qsv-<invocation_name>.json"
+            // enumerate is invoked as "enum"
+            let name = if *cmd == "enumerate" { "enum" } else { cmd };
+            format!("qsv-{name}.json")
+        })
+        .collect();
+
+    let mut stale_count = 0u32;
+    if let Ok(entries) = fs::read_dir(&output_dir) {
+        for entry in entries.flatten() {
+            let filename = entry.file_name().to_string_lossy().to_string();
+            if filename.starts_with("qsv-")
+                && filename.ends_with(".json")
+                && !generated_filenames.contains(&filename)
+            {
+                if let Err(e) = fs::remove_file(entry.path()) {
+                    eprintln!("  ⚠️  Failed to remove stale skill file {filename}: {e}");
+                } else {
+                    eprintln!("  🗑️  Removed stale skill file: {filename}");
+                    stale_count += 1;
+                }
+            }
+        }
+    }
+
     eprintln!("\n✨ MCP Skills generation complete!");
     eprintln!("📁 Output directory: {}", output_dir.display());
     eprintln!(
@@ -1199,6 +1230,9 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         error_count,
         commands.len()
     );
+    if stale_count > 0 {
+        eprintln!("🗑️  Removed {stale_count} stale skill file(s)");
+    }
 
     if error_count > 0 {
         return fail_clierror!("{} skill(s) failed to generate", error_count);

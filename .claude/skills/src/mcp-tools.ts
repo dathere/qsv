@@ -57,7 +57,6 @@ const ALWAYS_FILE_COMMANDS = new Set([
   "select",
   "search",
   "searchset",
-  "apply",
   "schema",
   "validate",
   "diff",
@@ -75,7 +74,6 @@ const ALWAYS_FILE_COMMANDS = new Set([
   "sqlp",
   "pivotp",
   "pragmastat",
-  "to",
   "tojsonl",
 ]);
 
@@ -90,7 +88,6 @@ const NON_TABULAR_COMMANDS = new Set([
   "tojsonl",             // JSONL output
   "template",            // Free-form text
   "schema",              // JSON Schema output
-  "to",                  // Non-CSV targets (postgres, sqlite, xlsx, etc.)
   "validate",            // Validation messages, not CSV data
 ]);
 
@@ -224,10 +221,6 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
       "Column names are case-sensitive in Polars SQL but case-insensitive in DuckDB. For unsupported output formats (Arrow, Avro), sqlp is used automatically. Use nullcount from qsv_stats to add COALESCE/IS NOT NULL only where nulls actually exist — skip null handling for columns with nullcount=0.",
     hasCommonMistakes: true,
   },
-  apply: {
-    whenToUse: "Transform columns (trim, upper, lower, squeeze, strip). Subcommands: operations, dynfmt, emptyreplace, calcconv. For custom logic, use qsv_luau.",
-    needsIndexHint: true,
-  },
   rename: {
     whenToUse: "Rename columns. Supports bulk/regex.",
   },
@@ -352,13 +345,6 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   pseudo: {
     whenToUse:
       "Pseudonymize column values with incremental IDs. For de-identification or anonymization before sharing data.",
-  },
-  to: {
-    whenToUse:
-      "Export CSV to databases (PostgreSQL, SQLite) or spreadsheets (XLSX, ODS) or Data Package. Specify subcommand: postgres, sqlite, xlsx, ods, datapackage.",
-    errorPrevention:
-      "Requires appropriate database connection for postgres. For sqlite, creates/replaces table. Subcommand is required.",
-    hasCommonMistakes: true,
   },
 };
 
@@ -801,7 +787,7 @@ async function shouldUseTempFile(
  * stats, index
  *
  * Commands moved to qsv_command generic tool:
- * join, sort, dedup, apply, rename, validate, sample, template, diff, schema
+ * join, sort, dedup, luau, rename, validate, sample, template, diff, schema
  */
 export const COMMON_COMMANDS = [
   "select", // Column selection (most frequently used)
@@ -1893,7 +1879,7 @@ export async function handleGenericCommand(
 
     // Flatten nested args and options objects into the params
     // This handles cases where Claude passes:
-    // {"command": "apply", "args": {...}, "options": {...}, "input_file": "...", "output_file": "..."}
+    // {"command": "luau", "args": {...}, "options": {...}, "input_file": "...", "output_file": "..."}
     const flattenedParams: Record<string, unknown> = {};
 
     // Copy top-level params (except 'args' and 'options')
@@ -1951,16 +1937,16 @@ export function createGenericToolDefinition(
     name: "qsv_command",
     description: `Execute any qsv command not exposed as a dedicated tool (${remainingCommands} additional commands available).
 
-Common commands via this tool: join, sort, dedup, apply, rename, validate, sample, template, diff, schema, and 40+ more.
+Common commands via this tool: join, sort, dedup, luau, rename, validate, sample, template, diff, schema, and 30+ more.
 
-❓ HELP: For any command details, use options={"--help": true}. Example: command="apply", options={"--help": true}`,
+❓ HELP: For any command details, use options={"--help": true}. Example: command="luau", options={"--help": true}`,
     inputSchema: {
       type: "object",
       properties: {
         command: {
           type: "string",
           description:
-            'The qsv command to execute (e.g., "to", "sample", "partition")',
+            'The qsv command to execute (e.g., "luau", "sample", "partition")',
         },
         input_file: {
           type: "string",

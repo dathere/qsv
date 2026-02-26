@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Optimize skills for qsvmcp binary**: Removed 5 non-qsvmcp commands (`apply`, `fetch`, `fetchpost`, `foreach`, `to`) from skill generation and TypeScript hardcoded references, reducing skill count from 56 to 51
+- Rust skill generator now auto-cleans stale `qsv-*.json` files after generation
+- Updated `qsv_command` generic tool description to reference `luau` instead of `apply`
+
 ## [16.1.2] - 2026-02-18
 
 ### Added

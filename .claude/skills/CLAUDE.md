@@ -102,6 +102,7 @@ npm run mcpb:package
 ├── scripts/                # Build and deployment scripts
 │   ├── install-mcp.js     # Installation helper
 │   ├── package-mcpb.js    # MCPB packaging script
+│   ├── cowork-setup.js    # Claude Cowork integration setup
 │   └── run-tests.js       # Cross-platform test runner
 ├── qsv/                    # Auto-generated skill JSON files (56)
 ├── docs/                   # Guides, reference, design docs
@@ -129,6 +130,12 @@ npm run mcpb:package
 - **Server instructions**: Provides cross-tool workflow guidance via MCP `initialize` response
 - **Deferred tool loading**: Only 9 core tools loaded initially (~80% token reduction)
 - **Environment-controlled exposure**: Use `QSV_MCP_EXPOSE_ALL_TOOLS=true` for all tools
+- **Roots auto-sync**: `syncWorkingDirFromRoots()` runs on startup and on `RootsListChangedNotification`; manual override via `qsv_set_working_dir`, passing `"auto"` re-enables sync
+
+**Key Constants**:
+- `MAX_ROOTS_SYNC_RETRIES`: 3 — max retries for roots directory sync
+- `SHUTDOWN_TIMEOUT_MS`: 2000 — graceful shutdown timeout (ms)
+- `UPDATE_CHECK_TIMEOUT_MS`: 30_000 — background update check timeout (ms)
 
 **Key Functions**:
 ```typescript
@@ -148,8 +155,17 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - `COMMON_COMMANDS`: 11 frequently-used commands (select, moarstats, search, frequency, headers, count, slice, sqlp, joinp, cat, geocode)
 - `ALWAYS_FILE_COMMANDS`: 34 commands that always output to files
 - `METADATA_COMMANDS`: 4 commands returning metadata (count, headers, index, sniff)
+- `NON_TABULAR_COMMANDS`: 9 commands whose output is not tabular (skips TSV formatting)
+- `BINARY_OUTPUT_FORMATS`: Set of binary formats (parquet, arrow, avro)
 - `COMMAND_GUIDANCE`: `Record<string, CommandGuidance>` — Unified per-command guidance map consolidating when-to-use, common patterns, error prevention, complementary servers, and memory/index/mistake warnings into a single structure
-- `AUTO_INDEX_SIZE_MB`: 10MB - files larger than this are auto-indexed
+- `LARGE_FILE_THRESHOLD_BYTES`: 10MB — files larger than this are auto-indexed (replaces `AUTO_INDEX_SIZE_MB`)
+- `MAX_MCP_RESPONSE_SIZE`: 850KB — responses exceeding this are saved to file instead of returned inline
+
+**Key Exported Functions**:
+- `isBinaryOutputFormat(commandName, params)` - Detect if command output is binary (parquet/arrow/avro)
+- `buildConversionArgs(...)` - Build conversion arguments for format transforms
+- `detectDelimiter(filePath)` - Detect delimiter from file extension
+- `parseCSVLine(line, delimiter)` - Parse a single CSV line into fields
 
 #### `executor.ts` - Command Execution
 - Spawns qsv child processes using `spawn` for streaming output
@@ -159,11 +175,16 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - **Help request detection**: Skips input validation for `--help`
 - **Subcommand support**: First-class handling of commands with subcommands
 - **Stats cache auto-generation**: Forces `--stats-jsonl` for stats command
+- **Frequency JSONL auto-enable**: Auto-adds `--frequency-jsonl` for stats command (version-guarded >= 16.1.0)
 - Timeout management and error parsing
 
+**Key Constants**:
+- `FREQUENCY_JSONL_MIN_VERSION`: `"16.1.0"` — minimum qsv binary version supporting `--frequency-jsonl`
+- `MAX_STDERR_SIZE`: 50MB — stderr buffer limit
+
 **Key Exports**:
-- `runQsvSimple(binPath, args, options?)` - Lightweight shared executor with `onSpawn`/`onExit` callbacks for process tracking (used by update-checker)
-- `SkillExecutor` class - Full-featured skill executor with validation, stats cache, and subcommand support
+- `runQsvSimple(binPath, args, options?)` - Lightweight shared executor (default timeout: 60 seconds) with `onSpawn`/`onExit` callbacks for process tracking (used by update-checker)
+- `SkillExecutor` class - Full-featured skill executor with validation, stats cache, and subcommand support (default timeout: 10 minutes via `config.operationTimeoutMs`, capped at 30 min max)
 
 **Key Features**:
 - Validates parameters before execution (unless `--help` requested)
@@ -177,6 +198,8 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - `formatBytes(bytes)` - Human-readable byte formatting
 - `levenshteinDistance(str1, str2)` - Fuzzy string matching for file suggestions
 - `findSimilarFiles(target, files, max)` - Find similar filenames sorted by edit distance
+- `errorResult(message)` - Create MCP error response with `isError: true`
+- `successResult(text)` - Create MCP success response
 
 #### `update-checker.ts` - Version Management
 - Detects qsv binary version at runtime
@@ -236,6 +259,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - `QSV_MCP_DUCKDB_BIN_PATH`: Path to DuckDB binary (default: auto-detect from PATH)
 - `QSV_MCP_USE_DUCKDB`: Enable/disable DuckDB routing for SQL queries (default: false)
 - `QSV_MCP_OUTPUT_FORMAT`: Output format for tabular data - "tsv" (default, token-efficient) or "csv"
+- `QSV_MCP_GITHUB_REPO`: GitHub repo for update checks (default: `dathere/qsv`, used in `update-checker.ts`)
 - `MCPB_EXTENSION_MODE`: Desktop extension mode flag
 
 #### `loader.ts` - Dynamic Skill Loading
@@ -246,10 +270,13 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 **Key Methods**:
 - `loadAll()`: Load all skills from JSON files (uses `Promise.all` for parallel I/O)
 - `load(skillName)`: Load a specific skill by name
+- `loadByNames(skillNames)`: Load multiple skills by name, returns `Map<string, QsvSkill>`
 - `search(query)`: Search skills by name, description, or category
 - `getByCategory(category)`: Get skills filtered by category
 - `getCategories()`: Get all available categories
 - `getStats()`: Get statistics via single-pass accumulation (total skills, examples, options, args)
+- `isAllLoaded()`: Check if all skills have been loaded
+- `isBM25Indexed()`: Check if BM25 search index has been built
 
 **Skill Categories** (10 categories):
 - `selection` - Column selection and reordering
@@ -720,7 +747,9 @@ The plugin layer (`.claude-plugin/`, `.mcp.json`, `commands/`, `agents/`, `skill
 
 **Guides:**
 - [Quick Start Guide](docs/guides/QUICK_START.md)
+- [macOS Quick Start Guide](docs/guides/MACOS-QUICK_START.md)
 - [Claude Code Integration](docs/guides/CLAUDE_CODE.md)
+- [Gemini CLI Integration](docs/guides/GEMINI_CLI.md)
 - [Desktop Extension Guide](docs/guides/DESKTOP_EXTENSION.md)
 - [Filesystem Usage](docs/guides/FILESYSTEM_USAGE.md)
 
@@ -741,13 +770,16 @@ The plugin layer (`.claude-plugin/`, `.mcp.json`, `commands/`, `agents/`, `skill
 - [Agent Skills POC Summary](docs/design/AGENT_SKILLS_POC_SUMMARY.md)
 - [Agent Skills Complete Summary](docs/design/AGENT_SKILLS_COMPLETE_SUMMARY.md)
 
+**Audits:**
+- [Audit Report 2026-02-22](docs/audits/AUDIT_REPORT_2026-02-22.md)
+
 **External:**
 - [Claude Desktop Integration](https://claude.ai/docs)
 
 ---
 
-**Document Version**: 2.2
-**Last Updated**: 2026-02-22
+**Document Version**: 2.3
+**Last Updated**: 2026-02-25
 **Target qsv Version**: 16.x
 **Node.js Version**: >=18.0.0
 **MCP SDK Version**: ^1.26.0

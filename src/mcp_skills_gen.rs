@@ -1208,10 +1208,16 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     if let Ok(entries) = fs::read_dir(&output_dir) {
         for entry in entries.flatten() {
             let filename = entry.file_name().to_string_lossy().to_string();
-            if filename.starts_with("qsv-")
+            // Only consider files matching the exact skill naming pattern:
+            // "qsv-<command>.json" where <command> is lowercase alpha/hyphens only.
+            // This avoids accidentally deleting non-skill files like qsv-config.json
+            // or qsv-metadata.json that might exist in the directory.
+            let is_skill_file = filename.starts_with("qsv-")
                 && filename.ends_with(".json")
-                && !generated_filenames.contains(&filename)
-            {
+                && filename["qsv-".len()..filename.len() - ".json".len()]
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c == '-');
+            if is_skill_file && !generated_filenames.contains(&filename) {
                 if let Err(e) = fs::remove_file(entry.path()) {
                     eprintln!("  ⚠️  Failed to remove stale skill file {filename}: {e}");
                 } else {

@@ -787,7 +787,7 @@ async function shouldUseTempFile(
  * stats, index
  *
  * Commands moved to qsv_command generic tool:
- * join, sort, dedup, luau, rename, validate, sample, template, diff, schema
+ * join, sort, dedup, rename, validate, sample, template, diff, schema
  */
 export const COMMON_COMMANDS = [
   "select", // Column selection (most frequently used)
@@ -1937,16 +1937,16 @@ export function createGenericToolDefinition(
     name: "qsv_command",
     description: `Execute any qsv command not exposed as a dedicated tool (${remainingCommands} additional commands available).
 
-Common commands via this tool: join, sort, dedup, luau, rename, validate, sample, template, diff, schema, and 30+ more.
+Common commands via this tool: join, sort, dedup, rename, validate, sample, template, diff, schema, and 30+ more.
 
-❓ HELP: For any command details, use options={"--help": true}. Example: command="luau", options={"--help": true}`,
+❓ HELP: For any command details, use options={"--help": true}. Example: command="sort", options={"--help": true}`,
     inputSchema: {
       type: "object",
       properties: {
         command: {
           type: "string",
           description:
-            'The qsv command to execute (e.g., "luau", "sample", "partition")',
+            'The qsv command to execute (e.g., "sort", "sample", "partition")',
         },
         input_file: {
           type: "string",

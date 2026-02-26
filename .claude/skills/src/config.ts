@@ -230,21 +230,23 @@ function detectQsvBinaryPath(): string | null {
     locationsChecked: [],
   };
 
-  // Try using which/where first
-  try {
-    const command = process.platform === "win32" ? "where" : "which";
-    const result = execFileSync(command, ["qsv"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    const path = result.trim().split("\n")[0]; // Take first result
-    if (path) {
-      lastDetectionDiagnostics.whichResult = path;
-      return path;
+  // Try using which/where first — prefer qsvmcp, then fall back to qsv
+  const command = process.platform === "win32" ? "where" : "which";
+  for (const binName of ["qsvmcp", "qsv"]) {
+    try {
+      const result = execFileSync(command, [binName], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      const path = result.trim().split("\n")[0]; // Take first result
+      if (path) {
+        lastDetectionDiagnostics.whichResult = path;
+        return path;
+      }
+    } catch (error: unknown) {
+      lastDetectionDiagnostics.whichError =
+        error instanceof Error ? error.message : String(error);
     }
-  } catch (error: unknown) {
-    lastDetectionDiagnostics.whichError =
-      error instanceof Error ? error.message : String(error);
   }
 
   // Check common installation locations
@@ -252,16 +254,25 @@ function detectQsvBinaryPath(): string | null {
   const commonLocations =
     process.platform === "win32"
       ? [
+        "C:\\Program Files\\qsv\\qsvmcp.exe",
         "C:\\Program Files\\qsv\\qsv.exe",
+        "C:\\qsv\\qsvmcp.exe",
         "C:\\qsv\\qsv.exe",
+        join(homedir(), "scoop", "shims", "qsvmcp.exe"),
         join(homedir(), "scoop", "shims", "qsv.exe"),
+        join(homedir(), "AppData", "Local", "Programs", "qsv", "qsvmcp.exe"),
         join(homedir(), "AppData", "Local", "Programs", "qsv", "qsv.exe"),
       ]
       : [
+        "/usr/local/bin/qsvmcp",
         "/usr/local/bin/qsv",
-        "/opt/homebrew/bin/qsv", // Apple Silicon homebrew
+        "/opt/homebrew/bin/qsvmcp", // Apple Silicon homebrew
+        "/opt/homebrew/bin/qsv",
+        "/usr/bin/qsvmcp",
         "/usr/bin/qsv",
+        join(homedir(), ".cargo", "bin", "qsvmcp"),
         join(homedir(), ".cargo", "bin", "qsv"),
+        join(homedir(), ".local", "bin", "qsvmcp"),
         join(homedir(), ".local", "bin", "qsv"),
       ];
 
@@ -320,9 +331,9 @@ function detectQsvBinaryPath(): string | null {
  */
 export function parseQsvVersion(versionOutput: string): string | null {
   // Match semantic version with optional pre-release and build metadata
-  // Recognizes qsv, qsvlite, and qsvdp variant names
+  // Recognizes qsv and qsvmcp variant names (qsvlite/qsvdp no longer supported)
   const match = versionOutput.match(
-    /qsv(?:lite|dp)?\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/,
+    /qsv(?:mcp)?\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/,
   );
   return match ? match[1] : null;
 }
@@ -401,8 +412,8 @@ export function parsePolarsVersion(versionOutput: string): string | null {
 /**
  * Parse available commands from qsv --list output
  * Handles both formats:
- *   qsv:     "Installed commands (63):"
- *   qsvlite: "Installed commands:"
+ *   qsv/qsvmcp: "Installed commands (63):"
+ *   legacy:     "Installed commands:" (no count)
  * Example output:
  *       apply       Apply series of transformations to a column
  *       behead      Drop header from CSV file
@@ -496,7 +507,7 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
         error:
           `qsv binary at "${binPath}" does not have the Polars feature enabled. ` +
           `The MCP server requires Polars-powered commands (sqlp, joinp, pivotp, etc.). ` +
-          `Please install the full qsv binary (not qsvlite or qsvdp) from https://github.com/dathere/qsv#installation`,
+          `Please install the qsvmcp or full qsv binary from https://github.com/dathere/qsv#installation`,
       };
     }
 
@@ -581,17 +592,24 @@ function initializeQsvBinaryPath(): {
   // Extension mode requires fully qualified, valid qsv binary
   if (inExtensionMode) {
     return {
-      path: detectedPath || "qsv",
+      path: detectedPath || "qsvmcp",
       validation: {
         valid: false,
         error: detectedPath
-          ? `qsv binary found at ${detectedPath} but version validation failed. Please install qsv ${MINIMUM_QSV_VERSION} or higher from https://github.com/dathere/qsv#installation`
-          : `qsv binary not found in PATH. Extension mode requires qsv to be installed. Please install from https://github.com/dathere/qsv#installation and ensure it's in your system PATH.`,
+          ? `qsv binary found at ${detectedPath} but version validation failed. Please install qsvmcp or qsv ${MINIMUM_QSV_VERSION} or higher from https://github.com/dathere/qsv#installation`
+          : `qsvmcp/qsv binary not found in PATH. Extension mode requires qsvmcp or qsv to be installed. Please install from https://github.com/dathere/qsv#installation and ensure it's in your system PATH.`,
       },
     };
   }
 
-  // Legacy MCP mode: Fall back to 'qsv' (will work if in PATH, otherwise will fail)
+  // Legacy MCP mode: Fall back to 'qsvmcp' first, then 'qsv'
+  for (const fallbackBin of ["qsvmcp", "qsv"]) {
+    const validation = validateQsvBinary(fallbackBin);
+    if (validation.valid) {
+      return { path: fallbackBin, validation };
+    }
+  }
+  // Neither found — return last attempt result
   const fallbackPath = "qsv";
   const validation = validateQsvBinary(fallbackPath);
   return { path: fallbackPath, validation };

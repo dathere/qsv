@@ -149,14 +149,14 @@ test('parseQsvVersion extracts version from qsv output', () => {
   assert.strictEqual(parseQsvVersion(versionOutput), '16.1.0-mimalloc');
 });
 
-test('parseQsvVersion extracts version from qsvlite output', () => {
-  const versionOutput = 'qsvlite 16.1.0 100-count;headers;stats;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
-  assert.strictEqual(parseQsvVersion(versionOutput), '16.1.0');
+test('parseQsvVersion extracts version from qsvmcp output', () => {
+  const versionOutput = 'qsvmcp 16.1.0-mimalloc 280-apply;polars-0.53.0:54c9168;stats;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parseQsvVersion(versionOutput), '16.1.0-mimalloc');
 });
 
-test('parseQsvVersion extracts version from qsvdp output', () => {
-  const versionOutput = 'qsvdp 16.1.0 200-apply;fetch;stats;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
-  assert.strictEqual(parseQsvVersion(versionOutput), '16.1.0');
+test('parseQsvVersion returns null for unsupported variants qsvlite/qsvdp', () => {
+  assert.strictEqual(parseQsvVersion('qsvlite 16.1.0 100-count;headers'), null);
+  assert.strictEqual(parseQsvVersion('qsvdp 16.1.0 200-apply;fetch'), null);
 });
 
 test('parseQsvVersion returns null for unrecognized binary name', () => {
@@ -187,9 +187,9 @@ test('parsePolarsVersion returns null when polars is not present', () => {
   assert.strictEqual(parsePolarsVersion(versionOutput), null);
 });
 
-test('parsePolarsVersion returns null for qsvlite output', () => {
-  const versionOutput = 'qsvlite 16.1.0 100-count;headers;stats;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
-  assert.strictEqual(parsePolarsVersion(versionOutput), null);
+test('parsePolarsVersion extracts version from qsvmcp output', () => {
+  const versionOutput = 'qsvmcp 16.1.0-mimalloc 280-apply;polars-0.53.0:54c9168;stats;51.20 GiB-0 B-13.94 GiB-64.00 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parsePolarsVersion(versionOutput), '0.53.0');
 });
 
 test('parsePolarsVersion returns null for empty string', () => {
@@ -258,7 +258,7 @@ test('parseQsvCommandList parses qsv format with count', () => {
   assert.strictEqual(result?.commands.length, 4);
 });
 
-test('parseQsvCommandList parses qsvlite format without count', () => {
+test('parseQsvCommandList parses format without count in header', () => {
   const listOutput = `Installed commands:
     cat         Concatenate CSV files by row or by column
     count       Count the rows in a CSV file

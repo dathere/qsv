@@ -606,15 +606,16 @@ function initializeQsvBinaryPath(): {
   }
 
   // Legacy MCP mode: Fall back to 'qsvmcp' first, then 'qsv'
-  let lastValidation: QsvValidationResult | undefined;
-  for (const fallbackBin of ["qsvmcp", "qsv"]) {
-    lastValidation = validateQsvBinary(fallbackBin);
-    if (lastValidation.valid) {
-      return { path: fallbackBin, validation: lastValidation };
-    }
+  let lastValidation = validateQsvBinary("qsvmcp");
+  if (lastValidation.valid) {
+    return { path: "qsvmcp", validation: lastValidation };
+  }
+  lastValidation = validateQsvBinary("qsv");
+  if (lastValidation.valid) {
+    return { path: "qsv", validation: lastValidation };
   }
   // Neither found — return last attempt result
-  return { path: "qsv", validation: lastValidation! };
+  return { path: "qsv", validation: lastValidation };
 }
 
 /**

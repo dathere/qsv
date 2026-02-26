@@ -192,7 +192,7 @@ mlua = { version = "0.11", features = [
 num_cpus = "1"
 odht = "0.3"
 # ort is needed by magika for ONNX runtime; download-binaries fetches prebuilt binaries
-ort = { version = "2.0.0-rc.10", default-features = false, features = ["download-binaries", "tls-rustls"], optional = true }
+ort = { version = "2.0.0-rc.11", default-features = false, features = ["download-binaries", "tls-rustls"], optional = true }
 phf = { version = "0.13", features = ["macros"] }
 pragmastat = "10.0"
 polars = { version = "0.53", features = [
@@ -375,9 +375,9 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parki
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=84103ce
+# QSV_POLARS_REV=82d00ec
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.38.1", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "84103ce", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "82d00ec", optional = true }
 
 [features]
 default = ["mimalloc"]

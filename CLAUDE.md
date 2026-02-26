@@ -13,7 +13,7 @@ It's the data-wrangling, analysis and FAIRification engine of several datHere pr
 
 ### Building Variants
 
-qsv has four binary variants with mutually exclusive feature flags:
+qsv has the following binary variants with mutually exclusive feature flags:
 
 ```bash
 # qsv - full-featured variant (use for development)

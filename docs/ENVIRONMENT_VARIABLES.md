@@ -163,7 +163,7 @@ It processes `.env` files as follows:
 
 * Upon invocation, qsv will check if the `QSV_DOTENV_PATH` environment variable is set. If it is, it will look for the file specified by the variable. If the file is found, it will be processed.
 * If the `QSV_DOTENV_PATH` environment variable is not set, qsv will look for a file named `.env` in the current working directory. If one is found, it will be processed.
-* If no `.env` file is not found in the current working directory, qsv will next look for an `.env` file with the same filestem as the binary in the directory where the binary is (e.g. if `qsv`/`qsvlite`/`qsvdp` is in `/usr/local/bin`, it will look for `/usr/local/bin/qsv.env`, `/usr/local/bin/qsvlite.env` or `/usr/local/bin/qsvdp.env` respectively).
+* If no `.env` file is not found in the current working directory, qsv will next look for an `.env` file with the same filestem as the binary in the directory where the binary is (e.g. if `qsv`/`qsvmcp`/`qsvlite`/`qsvdp` is in `/usr/local/bin`, it will look for `/usr/local/bin/qsv.env`, `/usr/local/bin/qsvmcp.env`, `/usr/local/bin/qsvlite.env` or `/usr/local/bin/qsvdp.env` respectively).
 * If no `.env` files are found, qsv will proceed with its default settings and the current environment variables, which may include "QSV_" variables.
 
 When processing `.env` files, qsv will:

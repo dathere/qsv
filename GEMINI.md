@@ -23,6 +23,7 @@
 `qsv` supports several binary variants tailored for different needs:
 - `qsv`: Feature-capable variant (all features enabled).
 - `qsvlite`: Slimmed-down version (similar to original `xsv`).
+- `qsvmcp`: Optimized for MCP server use (geocode, luau, mcp, polars, self_update).
 - `qsvdp`: Optimized for `DataPusher+`.
 - `qsvpy`: Variant with Python support enabled.
 

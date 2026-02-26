@@ -238,7 +238,7 @@ function detectQsvBinaryPath(): string | null {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
       });
-      const path = result.split(/\r?\n/)[0]?.trim(); // Take first result, handle Windows \r\n
+      const path = result.trim().split(/\r?\n/)[0]; // Trim full output first, then split for Windows \r\n
       if (path) {
         lastDetectionDiagnostics.whichResult = path;
         return path;

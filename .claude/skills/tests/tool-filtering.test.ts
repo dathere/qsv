@@ -85,7 +85,6 @@ test('filterCommands handles empty available commands', () => {
   assert.strictEqual(skipped.length, COMMON_COMMANDS.length);
 });
 
-
 test('filterCommands preserves order of COMMON_COMMANDS', () => {
   const availableCommands = ['stats', 'count', 'headers']; // Different order
   const commonCommands = ['count', 'headers', 'stats', 'select'];

@@ -244,8 +244,11 @@ function detectQsvBinaryPath(): string | null {
         return path;
       }
     } catch (error: unknown) {
-      lastDetectionDiagnostics.whichError =
-        error instanceof Error ? error.message : String(error);
+      // Preserve errors from all attempts for diagnostics
+      const errMsg = error instanceof Error ? error.message : String(error);
+      lastDetectionDiagnostics.whichError = lastDetectionDiagnostics.whichError
+        ? `${lastDetectionDiagnostics.whichError}; ${binName}: ${errMsg}`
+        : `${binName}: ${errMsg}`;
     }
   }
 
@@ -603,16 +606,15 @@ function initializeQsvBinaryPath(): {
   }
 
   // Legacy MCP mode: Fall back to 'qsvmcp' first, then 'qsv'
+  let lastValidation: QsvValidationResult | undefined;
   for (const fallbackBin of ["qsvmcp", "qsv"]) {
-    const validation = validateQsvBinary(fallbackBin);
-    if (validation.valid) {
-      return { path: fallbackBin, validation };
+    lastValidation = validateQsvBinary(fallbackBin);
+    if (lastValidation.valid) {
+      return { path: fallbackBin, validation: lastValidation };
     }
   }
   // Neither found — return last attempt result
-  const fallbackPath = "qsv";
-  const validation = validateQsvBinary(fallbackPath);
-  return { path: fallbackPath, validation };
+  return { path: "qsv", validation: lastValidation! };
 }
 
 /**

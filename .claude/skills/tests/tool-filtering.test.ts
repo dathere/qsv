@@ -2,7 +2,7 @@
  * Unit tests for tool filtering logic
  *
  * Tests that MCP tools are properly filtered based on available commands
- * in the qsv binary (e.g., qsvlite has fewer commands than full qsv).
+ * in the qsv binary (qsvmcp or full qsv).
  */
 
 import { test } from 'node:test';
@@ -83,29 +83,6 @@ test('filterCommands handles empty available commands', () => {
 
   assert.strictEqual(filtered.length, 0);
   assert.strictEqual(skipped.length, COMMON_COMMANDS.length);
-});
-
-test('filterCommands simulates qsvlite filtering', () => {
-  // Simulate qsvlite which has fewer commands (no moarstats, no Polars commands)
-  // Note: stats and index are now CORE_TOOLS, not in COMMON_COMMANDS
-  const qsvliteCommands = [
-    'cat', 'count', 'dedup', 'diff', 'frequency', 'headers',
-    'index', 'join', 'rename', 'sample', 'schema', 'search',
-    'select', 'slice', 'sort', 'stats', 'validate'
-  ];
-
-  const { filtered, skipped } = filterCommands(qsvliteCommands, COMMON_COMMANDS);
-
-  // Feature-gated commands in COMMON_COMMANDS should be skipped for qsvlite
-  assert.ok(skipped.includes('moarstats'), 'moarstats should be skipped for qsvlite (needs all_features)');
-  assert.ok(skipped.includes('sqlp'), 'sqlp should be skipped for qsvlite (needs Polars)');
-  assert.ok(skipped.includes('joinp'), 'joinp should be skipped for qsvlite (needs Polars)');
-
-  // Core commands should be filtered in
-  assert.ok(filtered.includes('count'), 'count should be available for qsvlite');
-  assert.ok(filtered.includes('select'), 'select should be available for qsvlite');
-  assert.ok(filtered.includes('search'), 'search should be available for qsvlite');
-  assert.ok(filtered.includes('frequency'), 'frequency should be available for qsvlite');
 });
 
 test('filterCommands preserves order of COMMON_COMMANDS', () => {

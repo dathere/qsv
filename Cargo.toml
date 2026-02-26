@@ -40,7 +40,7 @@ test              = true
 bench             = false
 doctest           = false
 path              = "src/main.rs"
-required-features = ["feature_capable"]
+required-features = ["feature_capable", "mcp", "polars"]
 
 [[bin]]
 name              = "qsvlite"
@@ -192,7 +192,7 @@ mlua = { version = "0.11", features = [
 num_cpus = "1"
 odht = "0.3"
 # ort is needed by magika for ONNX runtime; download-binaries fetches prebuilt binaries
-ort = { version = "2.0.0-rc.11", default-features = false, features = ["download-binaries", "tls-rustls"], optional = true }
+ort = { version = "2.0.0-rc.10", default-features = false, features = ["download-binaries", "tls-rustls"], optional = true }
 phf = { version = "0.13", features = ["macros"] }
 pragmastat = "10.0"
 polars = { version = "0.53", features = [

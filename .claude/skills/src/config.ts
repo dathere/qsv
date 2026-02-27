@@ -744,13 +744,25 @@ export const config = {
 
   /**
    * Maximum number of concurrent operations
-   * Default: 1 operation
+   * Default: 3 in plugin mode (Cowork/Code), 1 otherwise
    */
   maxConcurrentOperations: parseIntEnv(
     "QSV_MCP_MAX_CONCURRENT_OPERATIONS",
-    1,
+    isPluginMode() ? 3 : 1,
     1, // Minimum: 1 operation
     100, // Maximum: 100 operations
+  ),
+
+  /**
+   * Timeout in milliseconds for waiting to acquire a concurrency slot.
+   * When all slots are busy, operations queue and wait up to this duration.
+   * Default: 120 seconds (2 minutes)
+   */
+  concurrencyWaitTimeoutMs: parseIntEnv(
+    "QSV_MCP_CONCURRENCY_WAIT_TIMEOUT_MS",
+    120_000, // 2 minutes
+    0, // Minimum: 0 (no waiting, immediate rejection)
+    600_000, // Maximum: 10 minutes
   ),
 
   /**

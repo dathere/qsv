@@ -443,13 +443,17 @@ function releaseSlot(): void {
       // so we must also decrement for the releasing operation to keep the
       // count correct (net effect: count stays the same).
       waiter.callback();
-      activeOperationCount--;
+      if (activeOperationCount > 0) {
+        activeOperationCount--;
+      }
       return; // handed off successfully
     }
     // timed-out waiter, skip
   }
   // No waiters (or all timed out) — just release the slot.
-  activeOperationCount--;
+  if (activeOperationCount > 0) {
+    activeOperationCount--;
+  }
 }
 
 /**

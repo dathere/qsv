@@ -76,6 +76,10 @@ test("releaseSlot hands off to a live waiter", async () => {
     // Count should still be 1 (handoff, not increment+decrement)
     assert.strictEqual(getActiveOperationCount(), 1);
     assert.strictEqual(getSlotWaiterCount(), 0);
+
+    // Explicitly release the slot acquired by the waiter to mirror production usage.
+    releaseSlot();
+    assert.strictEqual(getActiveOperationCount(), 0);
   } finally {
     teardown(saved);
   }

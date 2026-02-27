@@ -115,7 +115,7 @@ test("releaseSlot skips multiple timed-out waiters then hands off to live one", 
     await acquireSlot(100);
 
     // Queue two waiters that time out (each new acquireSlot prunes
-    // settled waiters from the front, so only the last one remains)
+    // all settled waiters from the array)
     const t1 = await acquireSlot(50);
     const t2 = await acquireSlot(50);
     assert.strictEqual(t1, false);
@@ -124,7 +124,7 @@ test("releaseSlot skips multiple timed-out waiters then hands off to live one", 
     await new Promise((r) => setTimeout(r, 20));
     assert.strictEqual(getSlotWaiterCount(), 1); // only last settled waiter remains
 
-    // Queue a live waiter with long timeout (prunes the remaining settled waiter first)
+    // Queue a live waiter with long timeout (prunes all settled waiters first)
     const livePromise = acquireSlot(5000);
     assert.strictEqual(getSlotWaiterCount(), 1); // only the live waiter remains
 
@@ -146,7 +146,7 @@ test("releaseSlot decrements when all waiters timed out", async () => {
     await acquireSlot(100);
 
     // Queue three waiters that all time out (each new acquireSlot prunes
-    // settled waiters from the front, so only the last one remains)
+    // all settled waiters from the array)
     await acquireSlot(50);
     await acquireSlot(50);
     await acquireSlot(50);
@@ -154,6 +154,51 @@ test("releaseSlot decrements when all waiters timed out", async () => {
     await new Promise((r) => setTimeout(r, 20));
     assert.strictEqual(getSlotWaiterCount(), 1); // only last settled waiter remains
 
+    releaseSlot();
+    assert.strictEqual(getActiveOperationCount(), 0);
+    assert.strictEqual(getSlotWaiterCount(), 0);
+  } finally {
+    teardown(saved);
+  }
+});
+
+test("acquireSlot prunes settled waiters from middle of array, not just front", async () => {
+  const saved = setup(1);
+  try {
+    // Fill the slot
+    await acquireSlot(100);
+
+    // Queue a live waiter with a long timeout (stays at front of queue)
+    const livePromise = acquireSlot(5000);
+    assert.strictEqual(getSlotWaiterCount(), 1);
+
+    // Queue a waiter with a short timeout that will settle while the first stays live
+    const shortResult = await acquireSlot(50);
+    assert.strictEqual(shortResult, false);
+    // Wait for the short-timeout waiter to settle
+    await new Promise((r) => setTimeout(r, 70));
+
+    // Now: waiter[0] is live (long timeout), waiter[1] is settled (timed out)
+    // The settled waiter is at the end, not at the front.
+    // A new acquireSlot call should prune the settled waiter from the middle/end.
+    const another = acquireSlot(5000);
+    // After pruning: the settled mid-array waiter is removed,
+    // leaving the original live waiter + the new one = 2
+    assert.strictEqual(getSlotWaiterCount(), 2);
+
+    // Release the original slot — should hand off to the first live waiter
+    releaseSlot();
+    const liveResult = await livePromise;
+    assert.strictEqual(liveResult, true);
+    assert.strictEqual(getActiveOperationCount(), 1);
+
+    // Release again — should hand off to the second live waiter
+    releaseSlot();
+    const anotherResult = await another;
+    assert.strictEqual(anotherResult, true);
+    assert.strictEqual(getActiveOperationCount(), 1);
+
+    // Final cleanup
     releaseSlot();
     assert.strictEqual(getActiveOperationCount(), 0);
     assert.strictEqual(getSlotWaiterCount(), 0);

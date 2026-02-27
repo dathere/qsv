@@ -401,10 +401,14 @@ async function acquireSlot(timeoutMs: number): Promise<boolean> {
     return true;
   }
 
-  // Prune any settled (timed-out) waiters before adding a new one,
+  // Prune all settled (timed-out) waiters before adding a new one,
   // so the array doesn't grow unboundedly if releases are rare.
-  while (slotWaiters.length > 0 && slotWaiters[0].settled) {
-    slotWaiters.shift();
+  // Filter the entire array, not just the front, to handle cases where
+  // early waiters have long timeouts and later ones time out first.
+  if (slotWaiters.length > 0) {
+    const liveWaiters = slotWaiters.filter((w) => !w.settled);
+    slotWaiters.length = 0;
+    slotWaiters.push(...liveWaiters);
   }
 
   // No immediate slot — wait in queue

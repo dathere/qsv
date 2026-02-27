@@ -373,45 +373,61 @@ const activeProcesses = new Set<ChildProcess>();
 let activeOperationCount = 0;
 
 /**
- * Queue of waiters for concurrency slots.
- * Each entry is a resolve function that will be called when a slot opens.
+ * A slot waiter with an explicit settled flag for reliable handoff detection.
+ * `settled` is true if the waiter already timed out (callback becomes a no-op).
  */
-const slotWaiters: Array<() => void> = [];
+interface SlotWaiter {
+  settled: boolean;
+  callback: () => void;
+}
+
+/**
+ * Queue of waiters for concurrency slots.
+ * Each entry carries a settled flag so releaseSlot can skip timed-out waiters
+ * without relying on observable side-effects of the callback.
+ */
+const slotWaiters: SlotWaiter[] = [];
 
 /**
  * Acquire a concurrency slot, waiting up to timeoutMs if all slots are busy.
  * Returns true if slot acquired, false if timed out.
  */
 async function acquireSlot(timeoutMs: number): Promise<boolean> {
+  // IMPORTANT: The check-then-increment below is safe because it's synchronous
+  // (no `await` between check and increment). Node.js single-threaded execution
+  // guarantees atomicity for synchronous code. Do NOT insert an `await` here.
   if (activeOperationCount < config.maxConcurrentOperations) {
     activeOperationCount++;
     return true;
   }
 
+  // Prune any settled (timed-out) waiters before adding a new one,
+  // so the array doesn't grow unboundedly if releases are rare.
+  while (slotWaiters.length > 0 && slotWaiters[0].settled) {
+    slotWaiters.shift();
+  }
+
   // No immediate slot — wait in queue
   return new Promise<boolean>((resolve) => {
-    let settled = false;
+    const waiter: SlotWaiter = { settled: false, callback: () => {} };
 
     const timer = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        // Remove ourselves from the waiter queue
-        const idx = slotWaiters.indexOf(onSlotAvailable);
-        if (idx !== -1) slotWaiters.splice(idx, 1);
+      if (!waiter.settled) {
+        waiter.settled = true;
         resolve(false);
       }
     }, timeoutMs);
 
-    const onSlotAvailable = () => {
-      if (!settled) {
-        settled = true;
+    waiter.callback = () => {
+      if (!waiter.settled) {
+        waiter.settled = true;
         clearTimeout(timer);
         activeOperationCount++;
         resolve(true);
       }
     };
 
-    slotWaiters.push(onSlotAvailable);
+    slotWaiters.push(waiter);
   });
 }
 
@@ -419,11 +435,21 @@ async function acquireSlot(timeoutMs: number): Promise<boolean> {
  * Release a concurrency slot and wake the next waiter if any.
  */
 function releaseSlot(): void {
-  activeOperationCount--;
-  if (slotWaiters.length > 0) {
-    const next = slotWaiters.shift();
-    if (next) next();
+  // Try to hand off to the next live waiter. Skip any that already timed out.
+  while (slotWaiters.length > 0) {
+    const waiter = slotWaiters.shift();
+    if (waiter && !waiter.settled) {
+      // The callback increments activeOperationCount for the new operation,
+      // so we must also decrement for the releasing operation to keep the
+      // count correct (net effect: count stays the same).
+      waiter.callback();
+      activeOperationCount--;
+      return; // handed off successfully
+    }
+    // timed-out waiter, skip
   }
+  // No waiters (or all timed out) — just release the slot.
+  activeOperationCount--;
 }
 
 /**
@@ -1211,7 +1237,7 @@ async function buildFileNotFoundError(
   let errorMessage = `Error resolving file path: ${error instanceof Error ? error.message : String(error)}`;
 
   // Detect Cowork VM paths that won't resolve on the host
-  if (/^\/sessions\/|^\/home\/user\//.test(inputFile)) {
+  if (/^\/sessions\/|^\/home\/user\/|^\/tmp\/cowork-|^\/workspace\//.test(inputFile)) {
     const workingDir = filesystemProvider.getWorkingDirectory();
     errorMessage =
       `This path appears to be a Cowork VM path. qsv runs on the host machine.\n` +
@@ -1613,7 +1639,7 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
  * Suggest fixes for common DuckDB SQL errors.
  * Pattern-matches stderr to provide actionable guidance.
  */
-function suggestDuckDbFixes(stderr: string): string {
+function suggestDuckDbFixes(stderr: string, sql?: string): string {
   const suggestions: string[] = [];
   const lower = stderr.toLowerCase();
 
@@ -1621,6 +1647,27 @@ function suggestDuckDbFixes(stderr: string): string {
     suggestions.push("- Check for trailing commas before FROM/WHERE/GROUP BY clauses");
     suggestions.push("- Verify all parentheses are matched");
     suggestions.push("- Ensure string literals use single quotes, not double quotes");
+    // Query-aware: detect trailing commas in the SQL itself
+    if (sql && /,\s*(?:FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT)\b/i.test(sql)) {
+      suggestions.push("- ⚠ Trailing comma detected before a SQL keyword in your query");
+    }
+    // Only flag double-quoted tokens when the error mentions an unresolved name
+    // that matches one, suggesting the user intended a string literal, not an identifier.
+    if (sql) {
+      const doubleQuoted = sql.match(/"([^"]+)"/g);
+      if (doubleQuoted) {
+        const errorMentionsQuotedToken = doubleQuoted.some((token) => {
+          const bare = token.replace(/"/g, "");
+          return lower.includes(bare.toLowerCase());
+        });
+        if (errorMentionsQuotedToken) {
+          suggestions.push(
+            "- ⚠ A double-quoted identifier in your query matches the error — " +
+              "DuckDB treats double quotes as identifiers; use single quotes for string literals",
+          );
+        }
+      }
+    }
   }
 
   if (lower.includes("column") && lower.includes("not found")) {
@@ -1707,7 +1754,7 @@ async function tryDuckDbExecution(
 
     // SQL error — return to agent with enhanced diagnostics (no silent fallback)
     if (result.exitCode !== 0) {
-      const suggestions = suggestDuckDbFixes(result.stderr);
+      const suggestions = suggestDuckDbFixes(result.stderr, translatedSql);
       return errorResult(
         `🦆 Engine: DuckDB v${result.version}\n\n` +
         `Error executing SQL:\n${result.stderr}\n\n` +
@@ -2400,6 +2447,25 @@ export function getActiveProcessCount(): number {
 export function getActiveOperationCount(): number {
   return activeOperationCount;
 }
+
+/**
+ * Test-only exports for concurrency slot logic.
+ * Exported to enable unit testing of acquireSlot/releaseSlot behavior.
+ */
+export const _testConcurrency = {
+  acquireSlot,
+  releaseSlot,
+  getSlotWaiterCount: () => slotWaiters.length,
+  setMaxConcurrent: (n: number) => {
+    // Test-only escape hatch: bypasses type safety to mutate config directly.
+    // Will break if config is ever frozen or made readonly.
+    (config as Record<string, unknown>).maxConcurrentOperations = n;
+  },
+  reset: () => {
+    activeOperationCount = 0;
+    slotWaiters.length = 0;
+  },
+};
 
 /**
  * Create qsv_search_tools tool definition

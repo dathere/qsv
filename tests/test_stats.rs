@@ -5204,18 +5204,23 @@ fn stats_jsonl_tsv_delimiter() {
         .args(["--output", output_tsv.to_str().unwrap()])
         .arg("data.csv");
 
-    wrk.run(&mut cmd);
+    wrk.assert_success(&mut cmd);
 
-    // verify the TSV output file was created
+    // verify the TSV output file was created and is tab-delimited
     assert!(output_tsv.exists(), "TSV output file should exist");
+    let tsv_content = std::fs::read_to_string(&output_tsv).unwrap();
+    let first_line = tsv_content.lines().next().unwrap();
+    assert!(
+        first_line.contains('\t'),
+        "TSV output should be tab-delimited, got: {first_line}"
+    );
 
     // verify the stats data jsonl file was created
     // the jsonl file is based on the input filestem: data.stats.csv.data.jsonl
     let jsonl_path = wrk.path("data.stats.csv.data.jsonl");
     assert!(
         Path::new(&jsonl_path).exists(),
-        "stats data jsonl file should exist at {}",
-        jsonl_path.display()
+        "stats data jsonl file should exist at {jsonl_path:?} - naming convention may have changed",
     );
 
     // verify the jsonl file contains valid JSON lines

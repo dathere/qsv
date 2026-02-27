@@ -405,10 +405,8 @@ async function acquireSlot(timeoutMs: number): Promise<boolean> {
   // so the array doesn't grow unboundedly if releases are rare.
   // Filter the entire array, not just the front, to handle cases where
   // early waiters have long timeouts and later ones time out first.
-  if (slotWaiters.length > 0) {
-    const liveWaiters = slotWaiters.filter((w) => !w.settled);
-    slotWaiters.length = 0;
-    slotWaiters.push(...liveWaiters);
+  for (let i = slotWaiters.length - 1; i >= 0; i--) {
+    if (slotWaiters[i].settled) slotWaiters.splice(i, 1);
   }
 
   // No immediate slot — wait in queue
@@ -449,6 +447,8 @@ function releaseSlot(): void {
       waiter.callback();
       if (activeOperationCount > 0) {
         activeOperationCount--;
+      } else {
+        console.warn("releaseSlot: activeOperationCount already at 0 during waiter handoff — count/waiter mismatch");
       }
       return; // handed off successfully
     }
@@ -457,6 +457,8 @@ function releaseSlot(): void {
   // No waiters (or all timed out) — just release the slot.
   if (activeOperationCount > 0) {
     activeOperationCount--;
+  } else {
+    console.warn("releaseSlot: activeOperationCount already at 0 — possible double-release");
   }
 }
 

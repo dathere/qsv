@@ -2010,9 +2010,11 @@ export async function handleToolCall(
       }
       return formattedResult;
     } else {
+      const cmdLine = result.metadata?.command ? `\nCommand: ${result.metadata.command}` : "";
+      const stderr = result.stderr.trimEnd();
       const errorMsg = parquetConversionWarning
-        ? `${parquetConversionWarning}\n\nError executing ${commandName}:\n${result.stderr}`
-        : `Error executing ${commandName}:\n${result.stderr}`;
+        ? `${parquetConversionWarning}\n\nError executing ${commandName}:\n${stderr}${cmdLine}`
+        : `Error executing ${commandName}:\n${stderr}${cmdLine}`;
       return errorResult(errorMsg);
     }
   } catch (error: unknown) {

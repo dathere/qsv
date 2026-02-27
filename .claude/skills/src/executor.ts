@@ -275,7 +275,11 @@ export class SkillExecutor {
       if (!params.options) {
         params.options = {};
       }
-      params.options["stats-jsonl"] = true;
+      // Check both key formats to avoid duplicate flags
+      // (buildSkillExecParams uses "--stats-jsonl", auto-add uses "stats-jsonl")
+      if (!params.options["stats-jsonl"] && !params.options["--stats-jsonl"]) {
+        params.options["stats-jsonl"] = true;
+      }
     }
 
     // For frequency command, always ensure --frequency-jsonl flag is set
@@ -295,7 +299,13 @@ export class SkillExecutor {
         if (!params.options) {
           params.options = {};
         }
-        params.options["frequency-jsonl"] = true;
+        // Check both key formats to avoid duplicate flags
+        if (
+          !params.options["frequency-jsonl"] &&
+          !params.options["--frequency-jsonl"]
+        ) {
+          params.options["frequency-jsonl"] = true;
+        }
       }
     }
 

@@ -156,7 +156,7 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   frequency: {
     whenToUse: "Count unique values. Best for low-cardinality categorical columns. Run qsv_stats --cardinality first to identify high-cardinality columns to exclude.",
     commonPattern: "Stats → Frequency: Use qsv_stats --cardinality first to identify high-cardinality columns (IDs) to exclude. The frequency cache (--frequency-jsonl) is auto-created on first run for faster subsequent analysis.",
-    errorPrevention: "High-cardinality columns (IDs, timestamps) can produce huge output. Use qsv_stats --cardinality to inspect column cardinality before running frequency.",
+    errorPrevention: "High-cardinality columns (IDs, timestamps) can produce huge output. Use qsv_stats --cardinality to inspect column cardinality before running frequency. Do NOT set a client-side timeout shorter than the server's operation timeout (default 10 min) — let frequency run to completion. If the server timeout is exceeded on very large files, fall back to qsv_sqlp: 'SELECT col, COUNT(*) FROM _t_1 GROUP BY col ORDER BY COUNT(*) DESC LIMIT 20'. Use --select to target specific columns instead of computing frequency on all columns.",
     needsMemoryWarning: true,
     hasCommonMistakes: true,
   },
@@ -367,10 +367,100 @@ const activeProcesses = new Set<ChildProcess>();
 
 /**
  * Track in-flight operation count for concurrency limiting.
- * Incremented/decremented in handleToolCall to cover the entire execution path
- * (both runQsvSimple and SkillExecutor.runQsv).
+ * Incremented/decremented via acquireSlot/releaseSlot in handleToolCall
+ * to cover the entire execution path (both runQsvSimple and SkillExecutor.runQsv).
  */
 let activeOperationCount = 0;
+
+/**
+ * A slot waiter with an explicit settled flag for reliable handoff detection.
+ * `settled` is true if the waiter already timed out (callback becomes a no-op).
+ */
+interface SlotWaiter {
+  settled: boolean;
+  callback: () => void;
+}
+
+/**
+ * Queue of waiters for concurrency slots.
+ * Each entry carries a settled flag so releaseSlot can skip timed-out waiters
+ * without relying on observable side-effects of the callback.
+ */
+const slotWaiters: SlotWaiter[] = [];
+
+/**
+ * Acquire a concurrency slot, waiting up to timeoutMs if all slots are busy.
+ * Returns true if slot acquired, false if timed out.
+ */
+async function acquireSlot(timeoutMs: number): Promise<boolean> {
+  // IMPORTANT: The check-then-increment below is safe because it's synchronous
+  // (no `await` between check and increment). Node.js single-threaded execution
+  // guarantees atomicity for synchronous code. Do NOT insert an `await` here.
+  if (activeOperationCount < config.maxConcurrentOperations) {
+    activeOperationCount++;
+    return true;
+  }
+
+  // Prune all settled (timed-out) waiters before adding a new one,
+  // so the array doesn't grow unboundedly if releases are rare.
+  // Filter the entire array, not just the front, to handle cases where
+  // early waiters have long timeouts and later ones time out first.
+  for (let i = slotWaiters.length - 1; i >= 0; i--) {
+    if (slotWaiters[i].settled) slotWaiters.splice(i, 1);
+  }
+
+  // No immediate slot — wait in queue
+  return new Promise<boolean>((resolve) => {
+    const waiter: SlotWaiter = { settled: false, callback: () => {} };
+
+    const timer = setTimeout(() => {
+      if (!waiter.settled) {
+        waiter.settled = true;
+        resolve(false);
+      }
+    }, timeoutMs);
+
+    waiter.callback = () => {
+      if (!waiter.settled) {
+        waiter.settled = true;
+        clearTimeout(timer);
+        activeOperationCount++;
+        resolve(true);
+      }
+    };
+
+    slotWaiters.push(waiter);
+  });
+}
+
+/**
+ * Release a concurrency slot and wake the next waiter if any.
+ */
+function releaseSlot(): void {
+  // Try to hand off to the next live waiter. Skip any that already timed out.
+  while (slotWaiters.length > 0) {
+    const waiter = slotWaiters.shift();
+    if (waiter && !waiter.settled) {
+      // The callback increments activeOperationCount for the new operation,
+      // so we must also decrement for the releasing operation to keep the
+      // count correct (net effect: count stays the same).
+      waiter.callback();
+      if (activeOperationCount > 0) {
+        activeOperationCount--;
+      } else {
+        console.warn("releaseSlot: activeOperationCount already at 0 during waiter handoff — count/waiter mismatch");
+      }
+      return; // handed off successfully
+    }
+    // timed-out waiter, skip
+  }
+  // No waiters (or all timed out) — just release the slot.
+  if (activeOperationCount > 0) {
+    activeOperationCount--;
+  } else {
+    console.warn("releaseSlot: activeOperationCount already at 0 — possible double-release");
+  }
+}
 
 /**
  * Flag indicating shutdown is in progress
@@ -1156,6 +1246,16 @@ async function buildFileNotFoundError(
 ): Promise<string> {
   let errorMessage = `Error resolving file path: ${error instanceof Error ? error.message : String(error)}`;
 
+  // Detect Cowork VM paths that won't resolve on the host
+  if (/^\/sessions\/|^\/home\/user\/|^\/tmp\/cowork-|^\/workspace\//.test(inputFile)) {
+    const workingDir = filesystemProvider.getWorkingDirectory();
+    errorMessage =
+      `This path appears to be a Cowork VM path. qsv runs on the host machine.\n` +
+      `Current qsv working directory: ${workingDir}\n` +
+      `Use filenames relative to this directory, or call qsv_set_working_dir first.\n\n` +
+      errorMessage;
+  }
+
   const errorStr = error instanceof Error ? error.message : String(error);
   if (
     errorStr.includes("outside allowed") ||
@@ -1546,6 +1646,59 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
 }
 
 /**
+ * Suggest fixes for common DuckDB SQL errors.
+ * Pattern-matches stderr to provide actionable guidance.
+ */
+function suggestDuckDbFixes(stderr: string, sql?: string): string {
+  const suggestions: string[] = [];
+  const lower = stderr.toLowerCase();
+
+  if (lower.includes("syntax error")) {
+    suggestions.push("- Check for trailing commas before FROM/WHERE/GROUP BY clauses");
+    suggestions.push("- Verify all parentheses are matched");
+    suggestions.push("- Ensure string literals use single quotes, not double quotes");
+    // Query-aware: detect trailing commas in the SQL itself
+    if (sql && /,\s*(?:FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT)\b/i.test(sql)) {
+      suggestions.push("- ⚠ Trailing comma detected before a SQL keyword in your query");
+    }
+    // Only flag double-quoted tokens when the error mentions an unresolved name
+    // that matches one, suggesting the user intended a string literal, not an identifier.
+    if (sql) {
+      const doubleQuoted = sql.match(/"([^"]+)"/g);
+      if (doubleQuoted) {
+        const errorMentionsQuotedToken = doubleQuoted.some((token) => {
+          const bare = token.replace(/"/g, "");
+          return lower.includes(bare.toLowerCase());
+        });
+        if (errorMentionsQuotedToken) {
+          suggestions.push(
+            "- ⚠ A double-quoted identifier in your query matches the error — " +
+              "DuckDB treats double quotes as identifiers; use single quotes for string literals",
+          );
+        }
+      }
+    }
+  }
+
+  if (lower.includes("column") && lower.includes("not found")) {
+    suggestions.push("- Column names are case-sensitive in DuckDB — use qsv_headers to check exact column names");
+    suggestions.push("- Use double quotes around column names with spaces or special characters");
+  }
+
+  if (lower.includes("conversion error") || lower.includes("could not parse") || lower.includes("could not convert")) {
+    suggestions.push("- Type mismatch detected — use TRY_CAST(column AS type) instead of CAST to handle invalid values gracefully");
+    suggestions.push("- Check column types with qsv_stats to verify expected data types");
+  }
+
+  if (lower.includes("binder error")) {
+    suggestions.push("- Verify table alias is correct — the default table alias is _t_1");
+    suggestions.push("- Check that all referenced column names exist using qsv_headers");
+  }
+
+  return suggestions.join("\n");
+}
+
+/**
  * Try executing a SQL query via DuckDB.
  *
  * Returns a formatted tool result if DuckDB handles the query,
@@ -1609,10 +1762,14 @@ async function tryDuckDbExecution(
       return null;
     }
 
-    // SQL error — return to agent (no silent fallback)
+    // SQL error — return to agent with enhanced diagnostics (no silent fallback)
     if (result.exitCode !== 0) {
+      const suggestions = suggestDuckDbFixes(result.stderr, translatedSql);
       return errorResult(
-        `🦆 Engine: DuckDB v${result.version}\n\nError executing SQL:\n${result.stderr}`,
+        `🦆 Engine: DuckDB v${result.version}\n\n` +
+        `Error executing SQL:\n${result.stderr}\n\n` +
+        `SQL query:\n${translatedSql}` +
+        (suggestions ? `\n\n💡 Suggestions:\n${suggestions}` : ""),
       );
     }
 
@@ -1677,12 +1834,16 @@ export async function handleToolCall(
   loader: SkillLoader,
   filesystemProvider?: FilesystemProviderExtended,
 ) {
-  // Check concurrent operation limit
-  if (activeOperationCount >= config.maxConcurrentOperations) {
-    return errorResult(`Error: Maximum concurrent operations limit reached (${config.maxConcurrentOperations}). Please wait for current operations to complete.`);
+  // Acquire concurrency slot (queue if all slots are busy)
+  const acquired = await acquireSlot(config.concurrencyWaitTimeoutMs);
+  if (!acquired) {
+    return errorResult(
+      `Operation queued but timed out after ${Math.round(config.concurrencyWaitTimeoutMs / 1000)}s waiting for a slot. ` +
+      `${activeOperationCount} operation${activeOperationCount !== 1 ? "s" : ""} still running. ` +
+      `Try running operations sequentially.`,
+    );
   }
 
-  activeOperationCount++;
   try {
     // Extract command name from tool name (qsv_select -> select)
     const commandName = toolName.replace("qsv_", "");
@@ -1857,7 +2018,7 @@ export async function handleToolCall(
   } catch (error: unknown) {
     return errorResult(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
-    activeOperationCount--;
+    releaseSlot();
   }
 }
 
@@ -2296,6 +2457,25 @@ export function getActiveProcessCount(): number {
 export function getActiveOperationCount(): number {
   return activeOperationCount;
 }
+
+/**
+ * Test-only exports for concurrency slot logic.
+ * Exported to enable unit testing of acquireSlot/releaseSlot behavior.
+ */
+export const _testConcurrency = {
+  acquireSlot,
+  releaseSlot,
+  getSlotWaiterCount: () => slotWaiters.length,
+  setMaxConcurrent: (n: number) => {
+    // Test-only escape hatch: bypasses type safety to mutate config directly.
+    // Will break if config is ever frozen or made readonly.
+    (config as Record<string, unknown>).maxConcurrentOperations = n;
+  },
+  reset: () => {
+    activeOperationCount = 0;
+    slotWaiters.length = 0;
+  },
+};
 
 /**
  * Create qsv_search_tools tool definition

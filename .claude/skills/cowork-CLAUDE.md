@@ -43,8 +43,20 @@ Check column cardinality with **`qsv_stats`** before running `frequency` or `piv
 
 ## Tool Discovery
 
-Use **`qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 56 qsv commands available covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more. Tool names may change across versions; check `qsv_search_tools` if any are unrecognized.
+Use **`qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 51 qsv commands available covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more. Tool names may change across versions; check `qsv_search_tools` if any are unrecognized.
 
 ## Operation Timeout
 
 qsv operations can take significant time on larger files. The MCP server's default operation timeout is 10 minutes (configurable via `QSV_MCP_OPERATION_TIMEOUT_MS`, max 30 minutes). Allow operations to run to completion.
+
+## Cowork-Specific Notes
+
+- **Path Architecture**: qsv runs on the HOST machine. File paths must be valid
+  on the host. Always verify with `qsv_get_working_dir`.
+- **Sequential Operations**: Prefer sequential over parallel qsv calls to avoid
+  queuing delays: index → stats → analysis.
+- **Large Files (>5GB)**: Let `qsv_frequency` run to completion (server timeout
+  is 10 min). Only fall back to `qsv_sqlp` with GROUP BY if the server timeout
+  is exceeded. Use `extsort`/`extdedup` via `qsv_command` instead of `sort`/`dedup`.
+- **Context Window**: Save outputs to files rather than returning to chat.
+  Use `qsv_slice` or `qsv_sqlp` with LIMIT to inspect subsets.

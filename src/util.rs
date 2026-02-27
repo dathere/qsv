@@ -2916,6 +2916,8 @@ pub fn get_stats_records(
         }
 
         // create a stats data jsonl from the output of the stats command
+        // stats command always writes comma-delimited CSV to tempfile,
+        // so b',' is correct here regardless of the original input delimiter
         csv_to_jsonl(
             &tempfile_path,
             &STATSDATA_TYPES_MAP,

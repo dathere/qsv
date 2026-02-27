@@ -5182,3 +5182,52 @@ fn stats_json_backward_compat() {
         "hash should exist after recomputation"
     );
 }
+
+#[test]
+fn stats_jsonl_tsv_delimiter() {
+    use std::path::Path;
+
+    let wrk = Workdir::new("stats_jsonl_tsv_delimiter");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "value"],
+            svec!["a", "1"],
+            svec!["b", "2"],
+            svec!["c", "3"],
+        ],
+    );
+
+    let output_tsv = wrk.path("output.tsv");
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--stats-jsonl")
+        .args(["--output", output_tsv.to_str().unwrap()])
+        .arg("data.csv");
+
+    wrk.run(&mut cmd);
+
+    // verify the TSV output file was created
+    assert!(output_tsv.exists(), "TSV output file should exist");
+
+    // verify the stats data jsonl file was created
+    // the jsonl file is based on the input filestem: data.stats.csv.data.jsonl
+    let jsonl_path = wrk.path("data.stats.csv.data.jsonl");
+    assert!(
+        Path::new(&jsonl_path).exists(),
+        "stats data jsonl file should exist at {}",
+        jsonl_path.display()
+    );
+
+    // verify the jsonl file contains valid JSON lines
+    let jsonl_content = std::fs::read_to_string(&jsonl_path).unwrap();
+    assert!(
+        !jsonl_content.is_empty(),
+        "stats data jsonl file should not be empty"
+    );
+    for line in jsonl_content.lines() {
+        assert!(
+            serde_json::from_str::<serde_json::Value>(line).is_ok(),
+            "each line in jsonl should be valid JSON: {line}"
+        );
+    }
+}

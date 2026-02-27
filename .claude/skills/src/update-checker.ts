@@ -103,9 +103,9 @@ export class UpdateChecker {
           return;
         }
 
-        // Parse version from output like "qsv 0.132.0" or "qsv 0.132.0-beta"
-        // Handle multiple spaces, extra text, and pre-release tags
-        const match = output.match(/qsv\s+(\d+\.\d+\.\d+)(?:-[\w.]+)?/);
+        // Parse version from output like "qsv 0.132.0", "qsvmcp 16.1.0-mimalloc", etc.
+        // Handle binary variants (qsv, qsvmcp, qsvlite, qsvdp), extra text, and pre-release tags
+        const match = output.match(/qsv\w*\s+(\d+\.\d+\.\d+)(?:-[\w.]+)?/);
         if (match) {
           // Only use the main version number (ignore pre-release tags for now)
           resolve(match[1]);

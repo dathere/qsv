@@ -2916,7 +2916,12 @@ pub fn get_stats_records(
         }
 
         // create a stats data jsonl from the output of the stats command
-        csv_to_jsonl(&tempfile_path, &STATSDATA_TYPES_MAP, statsdatajson_path)?;
+        csv_to_jsonl(
+            &tempfile_path,
+            &STATSDATA_TYPES_MAP,
+            statsdatajson_path,
+            b',',
+        )?;
 
         let statsdatajson_rdr =
             BufReader::with_capacity(DEFAULT_RDR_BUFFER_CAPACITY, File::open(statsdatajson_path)?);
@@ -2951,10 +2956,12 @@ pub fn csv_to_jsonl(
     input_csv: &str,
     csv_types: &phf::Map<&'static str, JsonTypes>,
     output_jsonl: &PathBuf,
+    delimiter: u8,
 ) -> CliResult<()> {
     let file = File::open(input_csv)?;
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(true)
+        .delimiter(delimiter)
         .from_reader(file);
 
     let headers = rdr.headers()?;

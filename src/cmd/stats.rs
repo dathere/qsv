@@ -1479,6 +1479,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     &currstats_filename,
                     &STATSDATA_TYPES_MAP,
                     &stats_jsonl_pathbuf,
+                    output_delim,
                 )?;
             }
         }

@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { formatBytes, compareVersions, isReservedCachePath } from '../src/utils.js';
+import { formatBytes, compareVersions, isReservedCachePath, reservedCachePathError } from '../src/utils.js';
 
 test('formatBytes formats bytes correctly', () => {
   assert.strictEqual(formatBytes(0), '0 Bytes');
@@ -81,4 +81,27 @@ test('isReservedCachePath is case-insensitive', () => {
   assert.strictEqual(isReservedCachePath('DATA.STATS.CSV'), true);
   assert.strictEqual(isReservedCachePath('Data.Stats.Csv.Data.Jsonl'), true);
   assert.strictEqual(isReservedCachePath('FILE.PSCHEMA.JSON'), true);
+});
+
+test('isReservedCachePath handles edge inputs', () => {
+  assert.strictEqual(isReservedCachePath(''), false);
+  // A path that is exactly a suffix (no stem) should still match
+  assert.strictEqual(isReservedCachePath('.stats.csv'), true);
+  assert.strictEqual(isReservedCachePath('.pschema.json'), true);
+});
+
+// ============================================================================
+// reservedCachePathError Tests
+// ============================================================================
+
+test('reservedCachePathError includes the output path and all suffixes', () => {
+  const msg = reservedCachePathError('data.stats.csv');
+  assert.ok(msg.includes('"data.stats.csv"'));
+  // Verify all suffixes from RESERVED_CACHE_SUFFIXES appear in the message
+  assert.ok(msg.includes('.stats.csv'));
+  assert.ok(msg.includes('.stats.csv.data.jsonl'));
+  assert.ok(msg.includes('.stats.bivariate.csv'));
+  assert.ok(msg.includes('.stats.bivariate.joined.csv'));
+  assert.ok(msg.includes('.freq.csv.data.jsonl'));
+  assert.ok(msg.includes('.pschema.json'));
 });

@@ -22,7 +22,7 @@ import { runQsvSimple } from "./executor.js";
 import type { SkillExecutor } from "./executor.js";
 import type { SkillLoader } from "./loader.js";
 import { config, getDetectionDiagnostics } from "./config.js";
-import { formatBytes, findSimilarFiles, errorResult, successResult, isReservedCachePath } from "./utils.js";
+import { formatBytes, findSimilarFiles, errorResult, successResult, isReservedCachePath, reservedCachePathError } from "./utils.js";
 import {
   detectDuckDb,
   getDuckDbStatus,
@@ -1904,11 +1904,7 @@ export async function handleToolCall(
 
     // Prevent overwriting reserved cache files
     if (outputFile && isReservedCachePath(outputFile)) {
-      return errorResult(
-        `Output path "${outputFile}" matches a reserved cache file pattern. ` +
-        `Files ending in .stats.csv, .stats.csv.data.jsonl, .freq.csv.data.jsonl, ` +
-        `.pschema.json, etc. are auto-managed by qsv. Use a different output path.`
-      );
+      return errorResult(reservedCachePathError(outputFile));
     }
 
     // DuckDB/Parquet-first interception for sqlp queries
@@ -2848,11 +2844,7 @@ export async function handleToParquetCall(
 
   // Prevent overwriting reserved cache files
   if (isReservedCachePath(resolvedOutputFile)) {
-    return errorResult(
-      `Output path "${resolvedOutputFile}" matches a reserved cache file pattern. ` +
-      `Files ending in .stats.csv, .stats.csv.data.jsonl, .freq.csv.data.jsonl, ` +
-      `.pschema.json, etc. are auto-managed by qsv. Use a different output path.`
-    );
+    return errorResult(reservedCachePathError(resolvedOutputFile));
   }
 
   const qsvBin = getQsvBinaryPath();

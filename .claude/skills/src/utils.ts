@@ -139,3 +139,15 @@ export function isReservedCachePath(filePath: string): boolean {
   const normalized = filePath.toLowerCase();
   return RESERVED_CACHE_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
 }
+
+/**
+ * Build a user-facing error message for reserved cache path violations.
+ * Derives the suffix list from RESERVED_CACHE_SUFFIXES to stay in sync.
+ */
+export function reservedCachePathError(outputPath: string): string {
+  const suffixList = RESERVED_CACHE_SUFFIXES.join(", ");
+  return (
+    `Output path "${outputPath}" matches a reserved cache file pattern. ` +
+    `Files ending in ${suffixList} are auto-managed by qsv. Use a different output path.`
+  );
+}

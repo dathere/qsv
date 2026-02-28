@@ -128,5 +128,5 @@ The **main qsv CLAUDE.md** (repo root) is **100% accurate** — all 36+ claims v
 
 - [ ] Verify `DESKTOP_EXTENSION.md` tool count — is it 20 (manifest) or something else after deferred loading?
 - [ ] Confirm whether `QSV_MCP_SERVER_INSTRUCTIONS` and `QSV_MCP_PLUGIN_MODE` should be documented publicly
-- [x] Verify stats cache filename: `.stats.csv.data.jsonl` is canonical (confirmed in `stats.rs:1474` and `src/util.rs`) — both CLAUDE.md files now consistent
+- [x] Verify stats cache filename: `.stats.csv.data.jsonl` is canonical (confirmed in `stats.rs:1474` and `util.rs:2676`) — both CLAUDE.md files now consistent
 - [ ] Check if "~80% token reduction" or "~85% token reduction" is correct for deferred loading

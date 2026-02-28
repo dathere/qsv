@@ -69,13 +69,22 @@ const CORE_TOOLS = [
  */
 const DEFAULT_SERVER_INSTRUCTIONS = `qsv is a tabular data-wrangling toolkit. Use qsv_search_tools to discover commands beyond the initially loaded core tools.
 
-WORKFLOW ORDER: For new files: (1) qsv_list_files to discover files, (2) qsv_index for files >10MB, (3) qsv_stats --cardinality --stats-jsonl to create the initial stats cache, (4) qsv_moarstats to enrich the .stats.csv with ~18 additional columns for richer LLM analysis — set output_file to the stats cache path (<FILESTEM>.stats.csv, e.g. for data.csv use output_file=data.stats.csv). Note: moarstats enriches .stats.csv only, not .data.jsonl. (5) Then run analysis/transformation commands. The stats cache (.data.jsonl) accelerates: frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. SQL queries on CSV inputs auto-convert to Parquet before execution.
+WORKFLOW ORDER for new files:
+1. qsv_list_files to discover files
+2. qsv_index for files >10MB
+3. qsv_stats --cardinality --stats-jsonl to create the initial stats cache
+4. qsv_moarstats to enrich the cache (set output_file to <FILESTEM>.stats.csv, e.g. data.stats.csv for data.csv)
+5. Run analysis/transformation commands
+The stats cache (specifically .data.jsonl) is what accelerates smart commands: frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. SQL queries on CSV inputs auto-convert to Parquet before execution.
 
 FILE HANDLING: Save outputs to files with descriptive names rather than returning large results to chat. Ensure output files are saved to the qsv working directory. Parquet is ONLY for sqlp/DuckDB; all other qsv commands require CSV/TSV/SSV input. The working directory is automatically synced from the MCP client's root directory when available. If the auto-synced directory is incorrect or no root is provided, call qsv_set_working_dir to set it manually. In Claude Cowork, verify the working directory matches the "Work in a folder" path by calling qsv_get_working_dir, and correct it with qsv_set_working_dir if needed.
 
 TOOL COMPOSITION: qsv_sqlp auto-converts CSV inputs to Parquet, then routes to DuckDB when available for better SQL compatibility and performance; falls back to Polars SQL otherwise. Before writing SQL, read the qsv_stats output to understand column types, cardinality, null counts, and value ranges; optionally run qsv_frequency for categorical value distributions. For multi-file SQL queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() references in SQL. For custom row-level logic, use qsv_command with command="luau".
 
-CACHE AWARENESS: Before running commands, check if a stats cache (<FILESTEM>.stats.csv, e.g. data.stats.csv for input data.csv) exists for the input file. When the cache exists, read the compact CSV cache file first to inform your choices and minimize token usage, e.g.: use cardinality data to pick optimal join order (smaller cardinality on right in joinp), skip sorting if stats show data is already sorted, and skip dedup if a key column is already all-unique. Also check for a frequency cache (<FILESTEM>.freq.csv.data.jsonl, e.g. data.freq.csv.data.jsonl for input data.csv) if available — it provides pre-computed categorical value distributions that can inform filtering, grouping, and pivoting decisions. The stats .data.jsonl variant (<FILESTEM>.stats.csv.data.jsonl) is for qsv's internal smart command reuse and is less token-efficient than the CSV stats cache. Pass cached column type info from the stats cache to sqlp/joinp for accurate type inference instead of re-sniffing.
+CACHE AWARENESS: Before running commands, check for existing caches to save time and tokens.
+- Stats cache (<FILESTEM>.stats.csv, e.g. data.stats.csv for input data.csv): read this compact CSV first — use cardinality to pick optimal join order (smaller on right in joinp), skip sorting if already sorted, skip dedup if a key column is all-unique, and pass column types to sqlp/joinp instead of re-sniffing.
+- Frequency cache (<FILESTEM>.freq.csv, e.g. data.freq.csv if saved via --output): prefer reading this output CSV directly — it's far more token-efficient than the JSONL sidecar. The MCP server auto-manages this when running qsv_frequency.
+- .data.jsonl variants (<FILESTEM>.stats.csv.data.jsonl and <FILESTEM>.freq.csv.data.jsonl): optimized for qsv's internal smart command reuse, less token-efficient than the CSV caches.
 
 MEMORY LIMITS: Commands dedup, sort, reverse, table, transpose, pragmastat load entire files into memory. For files >1GB, prefer extdedup/extsort alternatives via qsv_command. Check column cardinality with qsv_stats before running frequency or pivotp to avoid huge output.
 

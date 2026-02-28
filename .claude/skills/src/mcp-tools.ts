@@ -1552,11 +1552,18 @@ async function ensureStatsAndSchema(
   const statsFile = inputFile + ".stats.csv";
   const schemaFile = inputFile + ".pschema.json";
 
-  // Stat input, stats cache, and schema in parallel
+  // Stat input, stats cache, and schema in parallel.
+  // Only treat ENOENT (file not found) as "missing" — rethrow permission/IO errors.
+  const statOrNull = (path: string) =>
+    stat(path).catch((err: unknown) => {
+      if (isNodeError(err) && err.code === "ENOENT") return null;
+      throw err;
+    });
+
   const [inputFileStats, existingStats, existingSchema] = await Promise.all([
-    stat(inputFile).catch(() => null),
-    stat(statsFile).catch(() => null),
-    stat(schemaFile).catch(() => null),
+    statOrNull(inputFile),
+    statOrNull(statsFile),
+    statOrNull(schemaFile),
   ]);
 
   if (!inputFileStats) {

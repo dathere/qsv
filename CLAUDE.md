@@ -193,7 +193,7 @@ qsv cat rows file1.csv file2.csv
 - Cache validity checked via file modification times
 
 **Frequency Cache**:
-- `frequency` command creates `.freq.csv` and `.freq.csv.freq.jsonl` cache files via `--frequency-jsonl`
+- `frequency` command creates `.freq.csv` and `.freq.csv.data.jsonl` cache files via `--frequency-jsonl`
 - Other "smart" commands can use frequency cache to optimize processing
 
 **Polars Integration**:

@@ -175,7 +175,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - **Help request detection**: Skips input validation for `--help`
 - **Subcommand support**: First-class handling of commands with subcommands
 - **Stats cache auto-generation**: Forces `--stats-jsonl` for stats command
-- **Frequency JSONL auto-enable**: Auto-adds `--frequency-jsonl` for stats command (version-guarded >= 16.1.0)
+- **Frequency JSONL auto-enable**: Auto-adds `--frequency-jsonl` for frequency command (version-guarded >= 16.1.0)
 - Timeout management and error parsing
 
 **Key Constants**:
@@ -580,6 +580,7 @@ MCP protocol integration (tool registration, resources, prompts) is implemented 
 ### Caching Strategies
 
 - **Stats Cache**: Auto-generated `.stats.csv.data.jsonl` files
+- **Frequency Cache**: Auto-generated `.freq.csv.data.jsonl` files (via `--frequency-jsonl`, auto-enabled by MCP server). Contains per-column frequency distributions with ALL_UNIQUE/HIGH_CARDINALITY sentinels. Not used when `--ignore-case`, `--no-trim`, or `--weight` are active.
 - **Index Files**: Preserve `.csv.idx` files between operations
 - **Converted Files**: Cache Excel→CSV conversions (LIFO cache with configurable size)
 - **Version Cache**: `.qsv-mcp-versions.json` tracks version state

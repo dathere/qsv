@@ -69,7 +69,7 @@ const CORE_TOOLS = [
  */
 const DEFAULT_SERVER_INSTRUCTIONS = `qsv is a tabular data-wrangling toolkit. Use qsv_search_tools to discover commands beyond the initially loaded core tools.
 
-WORKFLOW ORDER: For new files: (1) qsv_list_files to discover files, (2) qsv_index for files >10MB, (3) qsv_stats --cardinality --stats-jsonl to create stats cache, (4) then run analysis/transformation commands. The stats cache accelerates: frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. SQL queries on CSV inputs auto-convert to Parquet before execution.
+WORKFLOW ORDER: For new files: (1) qsv_list_files to discover files, (2) qsv_index for files >10MB, (3) qsv_stats --cardinality --stats-jsonl to create stats cache, (4) qsv_moarstats with just the input file to roughly double the stats in the cache at minimal cost, (5) then run analysis/transformation commands. The stats cache accelerates: frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. SQL queries on CSV inputs auto-convert to Parquet before execution.
 
 FILE HANDLING: Save outputs to files with descriptive names rather than returning large results to chat. Ensure output files are saved to the qsv working directory. Parquet is ONLY for sqlp/DuckDB; all other qsv commands require CSV/TSV/SSV input. The working directory is automatically synced from the MCP client's root directory when available. If the auto-synced directory is incorrect or no root is provided, call qsv_set_working_dir to set it manually. In Claude Cowork, verify the working directory matches the "Work in a folder" path by calling qsv_get_working_dir, and correct it with qsv_set_working_dir if needed.
 

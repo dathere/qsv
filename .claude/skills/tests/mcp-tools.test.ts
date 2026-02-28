@@ -385,6 +385,36 @@ test('handleToParquetCall requires input_file parameter', async () => {
 });
 
 // ============================================================================
+// Reserved cache path guard integration tests
+// ============================================================================
+
+test('handleToolCall rejects reserved cache file as --output', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+  const executor = new SkillExecutor();
+
+  const result = await handleToolCall(
+    'qsv_select',
+    { input_file: 'test.csv', columns: '1', output: 'data.stats.csv' },
+    executor,
+    loader,
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('reserved cache file pattern'));
+});
+
+test('handleToParquetCall rejects reserved cache file as output', async () => {
+  const result = await handleToParquetCall({
+    input_file: 'test.csv',
+    output: 'data.stats.csv',
+  });
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('reserved cache file pattern'));
+});
+
+// ============================================================================
 // isCsvLikeFile Tests
 // ============================================================================
 

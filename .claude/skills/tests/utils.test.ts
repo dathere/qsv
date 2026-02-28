@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { formatBytes, compareVersions } from '../src/utils.js';
+import { formatBytes, compareVersions, isReservedCachePath, reservedCachePathError } from '../src/utils.js';
 
 test('formatBytes formats bytes correctly', () => {
   assert.strictEqual(formatBytes(0), '0 Bytes');
@@ -49,4 +49,59 @@ test('compareVersions handles different-length versions', () => {
   assert.strictEqual(compareVersions('1.0', '1.0.0'), 0);
   assert.strictEqual(compareVersions('1.0.0.0', '1.0.0'), 0);
   assert.strictEqual(compareVersions('1.0', '1.0.1'), -1);
+});
+
+// ============================================================================
+// isReservedCachePath Tests
+// ============================================================================
+
+test('isReservedCachePath returns true for each reserved suffix', () => {
+  assert.strictEqual(isReservedCachePath('data.stats.csv'), true);
+  assert.strictEqual(isReservedCachePath('data.stats.csv.data.jsonl'), true);
+  assert.strictEqual(isReservedCachePath('data.stats.bivariate.csv'), true);
+  assert.strictEqual(isReservedCachePath('data.stats.bivariate.joined.csv'), true);
+  assert.strictEqual(isReservedCachePath('data.freq.csv.data.jsonl'), true);
+  assert.strictEqual(isReservedCachePath('data.pschema.json'), true);
+});
+
+test('isReservedCachePath returns true with full paths', () => {
+  assert.strictEqual(isReservedCachePath('/tmp/output/data.stats.csv'), true);
+  assert.strictEqual(isReservedCachePath('/home/user/results.pschema.json'), true);
+});
+
+test('isReservedCachePath returns false for normal output paths', () => {
+  assert.strictEqual(isReservedCachePath('output.csv'), false);
+  assert.strictEqual(isReservedCachePath('results.parquet'), false);
+  assert.strictEqual(isReservedCachePath('data.freq.csv'), false);
+  assert.strictEqual(isReservedCachePath('schema.json'), false);
+  assert.strictEqual(isReservedCachePath('my_stats.csv.bak'), false);
+});
+
+test('isReservedCachePath is case-insensitive', () => {
+  assert.strictEqual(isReservedCachePath('DATA.STATS.CSV'), true);
+  assert.strictEqual(isReservedCachePath('Data.Stats.Csv.Data.Jsonl'), true);
+  assert.strictEqual(isReservedCachePath('FILE.PSCHEMA.JSON'), true);
+});
+
+test('isReservedCachePath handles edge inputs', () => {
+  assert.strictEqual(isReservedCachePath(''), false);
+  // A path that is exactly a suffix (no stem) should still match
+  assert.strictEqual(isReservedCachePath('.stats.csv'), true);
+  assert.strictEqual(isReservedCachePath('.pschema.json'), true);
+});
+
+// ============================================================================
+// reservedCachePathError Tests
+// ============================================================================
+
+test('reservedCachePathError includes the output path and all suffixes', () => {
+  const msg = reservedCachePathError('data.stats.csv');
+  assert.ok(msg.includes('"data.stats.csv"'));
+  // Verify all suffixes from RESERVED_CACHE_SUFFIXES appear in the message
+  assert.ok(msg.includes('.stats.csv'));
+  assert.ok(msg.includes('.stats.csv.data.jsonl'));
+  assert.ok(msg.includes('.stats.bivariate.csv'));
+  assert.ok(msg.includes('.stats.bivariate.joined.csv'));
+  assert.ok(msg.includes('.freq.csv.data.jsonl'));
+  assert.ok(msg.includes('.pschema.json'));
 });

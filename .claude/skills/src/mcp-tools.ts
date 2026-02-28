@@ -22,7 +22,7 @@ import { runQsvSimple } from "./executor.js";
 import type { SkillExecutor } from "./executor.js";
 import type { SkillLoader } from "./loader.js";
 import { config, getDetectionDiagnostics } from "./config.js";
-import { formatBytes, findSimilarFiles, errorResult, successResult } from "./utils.js";
+import { formatBytes, findSimilarFiles, errorResult, successResult, isReservedCachePath } from "./utils.js";
 import {
   detectDuckDb,
   getDuckDbStatus,
@@ -1902,6 +1902,15 @@ export async function handleToolCall(
       }
     }
 
+    // Prevent overwriting reserved cache files
+    if (outputFile && isReservedCachePath(outputFile)) {
+      return errorResult(
+        `Output path "${outputFile}" matches a reserved cache file pattern. ` +
+        `Files ending in .stats.csv, .stats.csv.data.jsonl, .freq.csv.data.jsonl, ` +
+        `.pschema.json, etc. are auto-managed by qsv. Use a different output path.`
+      );
+    }
+
     // DuckDB/Parquet-first interception for sqlp queries
     let parquetConversionWarning = "";
     if (commandName === "sqlp" && !isHelpRequest && inputFile) {
@@ -2835,6 +2844,15 @@ export async function handleToParquetCall(
     } catch (error: unknown) {
       return errorResult(`Error resolving output file path: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  // Prevent overwriting reserved cache files
+  if (isReservedCachePath(resolvedOutputFile)) {
+    return errorResult(
+      `Output path "${resolvedOutputFile}" matches a reserved cache file pattern. ` +
+      `Files ending in .stats.csv, .stats.csv.data.jsonl, .freq.csv.data.jsonl, ` +
+      `.pschema.json, etc. are auto-managed by qsv. Use a different output path.`
+    );
   }
 
   const qsvBin = getQsvBinaryPath();

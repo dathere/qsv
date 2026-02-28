@@ -470,7 +470,6 @@ function releaseSlot(): void {
  */
 let isShuttingDown = false;
 
-
 /**
  * Run a qsv command with timeout, process tracking, and shutdown awareness.
  * Delegates to shared runQsvSimple for the actual spawning logic.
@@ -490,7 +489,6 @@ async function runQsvWithTimeout(
     onExit: (proc) => activeProcesses.delete(proc),
   });
 }
-
 
 /**
  * Build arguments for file conversion commands.
@@ -1570,6 +1568,9 @@ async function ensureStatsAndSchema(
 
   // Step 1: Generate stats cache
   if (needStats) {
+    console.error(
+      `[MCP Tools] Step 1: ${existingStats ? "Stats cache outdated" : "Stats cache not found"}, generating...`,
+    );
     try {
       const statsArgs = [
         "stats", inputFile,
@@ -1580,16 +1581,23 @@ async function ensureStatsAndSchema(
     } catch (error: unknown) {
       throw new Error(`Stats generation failed for ${inputFile}: ${getErrorMessage(error)}`);
     }
+  } else {
+    console.error(`[MCP Tools] Step 1: Using existing stats cache (up-to-date)`);
   }
 
   // Step 2: Generate Polars schema
   if (needSchema) {
+    console.error(
+      `[MCP Tools] Step 2: ${existingSchema ? "Polars schema outdated" : "Polars schema not found"}, generating...`,
+    );
     try {
       const schemaArgs = ["schema", "--polars", inputFile];
       await runQsvWithTimeout(qsvBin, schemaArgs);
     } catch (error: unknown) {
       throw new Error(`Schema generation failed for ${inputFile}: ${getErrorMessage(error)}`);
     }
+  } else {
+    console.error(`[MCP Tools] Step 2: Using existing Polars schema (up-to-date)`);
   }
 
   // Step 2.5: Patch schema for AM/PM date formats that Polars can't parse

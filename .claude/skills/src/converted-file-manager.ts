@@ -36,8 +36,6 @@ import { randomUUID, createHash } from "crypto";
 import { formatBytes, isNodeError } from "./utils.js";
 import { config } from "./config.js";
 
-// isNodeError type guard imported from utils.ts
-
 /**
  * Cache format version 1 with enhanced metadata
  */

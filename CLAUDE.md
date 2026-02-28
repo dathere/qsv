@@ -188,13 +188,14 @@ qsv cat rows file1.csv file2.csv
 - Multithreaded processing (🏎️) often requires an index
 
 **Stats Cache**:
-- `stats` command creates `.stats.csv` and `.stats.csv.stats.jsonl` cache files
+- `stats` command creates `.stats.csv` and `.stats.csv.data.jsonl` cache files (via `--stats-jsonl`)
 - Other "smart" commands (`describegpt`, `frequency`, `joinp`, `pivotp`, `sample`, `schema`, `sqlp`, `stats`, `tojsonl`) use the stats cache to optimize processing
 - Cache validity checked via file modification times
 
 **Frequency Cache**:
-- `frequency` command creates `.freq.csv` and `.freq.csv.freq.jsonl` cache files via `--frequency-jsonl`
-- Other "smart" commands can use frequency cache to optimize processing
+- `frequency` command output goes to stdout (or to a file via `--output`)
+- When `--frequency-jsonl` is specified, `frequency` additionally creates a `<FILESTEM>.freq.csv.data.jsonl` cache file
+- Other "smart" commands can use the frequency JSONL cache to optimize processing
 
 **Polars Integration**:
 - Commands with 🐻‍❄️ use the latest Polars for vectorized query execution

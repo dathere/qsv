@@ -418,7 +418,7 @@ Tool descriptions include intelligent guidance to help Claude make optimal decis
 
 **Stats-Aware Guidance (📊)**:
 
-Several tools benefit from running `qsv stats --cardinality --stats-jsonl` first to understand data characteristics:
+Run `qsv stats --cardinality --stats-jsonl` first to understand data characteristics. Then read the resulting `.stats.csv` file (token-efficient CSV) rather than the `.stats.csv.data.jsonl`:
 
 | Tool | What Stats Reveals | Why It Helps |
 |------|---------------------|--------------|
@@ -579,7 +579,7 @@ MCP protocol integration (tool registration, resources, prompts) is implemented 
 
 ### Caching Strategies
 
-- **Stats Cache**: Auto-generated `.stats.csv.data.jsonl` files
+- **Stats Cache**: `qsv stats --stats-jsonl` (auto-enabled by MCP server) creates `<STEM>.stats.csv` and `<STEM>.stats.csv.data.jsonl`. Prefer reading the `.stats.csv` file directly — it's a standard CSV that's far more token-efficient than the equivalent `.data.jsonl`. The `.data.jsonl` exists for programmatic use by qsv's "smart" commands internally.
 - **Frequency Cache**: Auto-generated `.freq.csv.data.jsonl` files (via `--frequency-jsonl`, auto-enabled by MCP server). Contains per-column frequency distributions with ALL_UNIQUE/HIGH_CARDINALITY sentinels. Not used when `--ignore-case`, `--no-trim`, or `--weight` are active.
 - **Index Files**: Preserve `.csv.idx` files between operations
 - **Converted Files**: Cache Excel→CSV conversions (LIFO cache with configurable size)

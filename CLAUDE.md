@@ -188,7 +188,7 @@ qsv cat rows file1.csv file2.csv
 - Multithreaded processing (🏎️) often requires an index
 
 **Stats Cache**:
-- `stats` command creates `.stats.csv` and `.stats.csv.stats.jsonl` cache files
+- `stats` command creates `.stats.csv` and `.stats.csv.data.jsonl` cache files (via `--stats-jsonl`)
 - Other "smart" commands (`describegpt`, `frequency`, `joinp`, `pivotp`, `sample`, `schema`, `sqlp`, `stats`, `tojsonl`) use the stats cache to optimize processing
 - Cache validity checked via file modification times
 

@@ -2027,7 +2027,9 @@ export async function handleToolCall(
         autoCreatedTempFile,
         params,
       );
-      // Find the first text content element for prepending/appending notes
+      // Find the first text content element for prepending/appending notes.
+      // Note: find() returns a reference, so mutating textContent.text
+      // modifies the element inside formattedResult.content in-place.
       const textContent = formattedResult.content?.find(
         (c: { type: string }) => c.type === "text",
       ) as { type: "text"; text: string } | undefined;
@@ -2041,8 +2043,12 @@ export async function handleToolCall(
         }
       }
       // Append moarstats auto-enrichment note if applicable
-      if (moarstatsNote && textContent) {
-        textContent.text += moarstatsNote;
+      if (moarstatsNote) {
+        if (textContent) {
+          textContent.text += moarstatsNote;
+        } else {
+          console.error(`[MCP Tools] Could not append moarstats note to result: unexpected content structure`);
+        }
       }
       return formattedResult;
     } else {

@@ -218,7 +218,7 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     commonPattern:
       "Stats → SQL: Read qsv_stats output before writing queries. Use type for correct casts (don't quote integers, use date functions for Date/DateTime). Use min/max/range for precise WHERE clauses. Use cardinality to optimize GROUP BY (low = fast, high = consider LIMIT). Use sort_order to skip redundant ORDER BY. For value distributions, run qsv_frequency on relevant columns. For multi-file queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() in SQL.",
     errorPrevention:
-      "Column names are case-sensitive in Polars SQL but case-insensitive in DuckDB. For unsupported output formats (Arrow, Avro), sqlp is used automatically. Use nullcount from qsv_stats to add COALESCE/IS NOT NULL only where nulls actually exist — skip null handling for columns with nullcount=0.",
+      "Column names are case-sensitive in Polars SQL but case-insensitive in DuckDB. For unsupported output formats (Arrow, Avro), sqlp is used automatically. Use nullcount from qsv_stats to add COALESCE/IS NOT NULL only where nulls actually exist — skip null handling for columns with nullcount=0. In Claude Cowork, ensure DuckDB runs on the host, not the Linux container.",
     hasCommonMistakes: true,
   },
   rename: {

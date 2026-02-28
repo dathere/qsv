@@ -194,7 +194,7 @@ qsv cat rows file1.csv file2.csv
 
 **Frequency Cache**:
 - `frequency` command output goes to stdout (or to a file via `--output`)
-- When `--frequency-jsonl` is specified, `frequency` additionally creates a `<STEM>.freq.csv.data.jsonl` cache file
+- When `--frequency-jsonl` is specified, `frequency` additionally creates a `<FILESTEM>.freq.csv.data.jsonl` cache file
 - Other "smart" commands can use the frequency JSONL cache to optimize processing
 
 **Polars Integration**:

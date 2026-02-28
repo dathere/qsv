@@ -9,7 +9,7 @@ import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { execSync, execFileSync } from "child_process";
 import { statSync } from "fs";
-import { compareVersions } from "./utils.js";
+import { compareVersions, getErrorMessage } from "./utils.js";
 
 /**
  * Timeout for qsv binary validation commands in milliseconds (5 seconds)
@@ -245,7 +245,7 @@ function detectQsvBinaryPath(): string | null {
       }
     } catch (error: unknown) {
       // Preserve errors from all attempts for diagnostics
-      const errMsg = error instanceof Error ? error.message : String(error);
+      const errMsg = getErrorMessage(error);
       lastDetectionDiagnostics.whichError = lastDetectionDiagnostics.whichError
         ? `${lastDetectionDiagnostics.whichError}; ${binName}: ${errMsg}`
         : `${binName}: ${errMsg}`;
@@ -539,7 +539,7 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
       commandCount: commandInfo?.count,
     };
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = getErrorMessage(error);
     return {
       valid: false,
       error: `Failed to execute qsv binary at "${binPath}": ${errorMessage}`,

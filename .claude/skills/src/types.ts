@@ -77,17 +77,20 @@ export interface SkillResult {
   };
 }
 
-export type SkillCategory =
-  | "selection"
-  | "filtering"
-  | "transformation"
-  | "aggregation"
-  | "joining"
-  | "validation"
-  | "formatting"
-  | "conversion"
-  | "documentation"
-  | "utility";
+export const SKILL_CATEGORIES = [
+  "selection",
+  "filtering",
+  "transformation",
+  "aggregation",
+  "joining",
+  "validation",
+  "formatting",
+  "conversion",
+  "documentation",
+  "utility",
+] as const;
+
+export type SkillCategory = (typeof SKILL_CATEGORIES)[number];
 
 /**
  * MCP (Model Context Protocol) Types

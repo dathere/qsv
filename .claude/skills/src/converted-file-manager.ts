@@ -33,15 +33,10 @@ import { constants } from "fs";
 import type { Stats } from "fs";
 import { dirname, basename, join, resolve, relative, sep, isAbsolute } from "path";
 import { randomUUID, createHash } from "crypto";
-import { formatBytes } from "./utils.js";
+import { formatBytes, isNodeError } from "./utils.js";
 import { config } from "./config.js";
 
-/**
- * Type guard to check if an error is a NodeJS.ErrnoException
- */
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
-}
+// isNodeError type guard imported from utils.ts
 
 /**
  * Cache format version 1 with enhanced metadata

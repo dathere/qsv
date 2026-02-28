@@ -9,6 +9,9 @@ import { constants } from "fs";
 import { basename, dirname, join } from "path";
 import { tmpdir } from "os";
 import { ConvertedFileManager } from "./converted-file-manager.js";
+import {
+  SKILL_CATEGORIES,
+} from "./types.js";
 import type {
   QsvSkill,
   Argument,
@@ -22,7 +25,7 @@ import { runQsvSimple } from "./executor.js";
 import type { SkillExecutor } from "./executor.js";
 import type { SkillLoader } from "./loader.js";
 import { config, getDetectionDiagnostics } from "./config.js";
-import { formatBytes, findSimilarFiles, errorResult, successResult, isReservedCachePath, reservedCachePathError } from "./utils.js";
+import { formatBytes, findSimilarFiles, errorResult, successResult, isReservedCachePath, reservedCachePathError, getErrorMessage, isNodeError } from "./utils.js";
 import {
   detectDuckDb,
   getDuckDbStatus,
@@ -467,12 +470,6 @@ function releaseSlot(): void {
  */
 let isShuttingDown = false;
 
-/**
- * Get QSV binary path (centralized)
- */
-function getQsvBinaryPath(): string {
-  return config.qsvBinPath;
-}
 
 /**
  * Run a qsv command with timeout, process tracking, and shutdown awareness.
@@ -494,21 +491,6 @@ async function runQsvWithTimeout(
   });
 }
 
-/**
- * Check if an object has filesystem provider capabilities
- */
-function isFilesystemProviderExtended(
-  obj: unknown,
-): obj is FilesystemProviderExtended {
-  if (typeof obj !== "object" || obj === null) return false;
-  const record = obj as Record<string, unknown>;
-  return (
-    typeof record.resolvePath === "function" &&
-    typeof record.needsConversion === "function" &&
-    typeof record.getConversionCommand === "function" &&
-    typeof record.getWorkingDirectory === "function"
-  );
-}
 
 /**
  * Build arguments for file conversion commands.
@@ -797,7 +779,7 @@ async function autoIndexIfNeeded(
         `[MCP Tools] File is ${fileSizeMB.toFixed(1)}MB, creating index...`,
       );
 
-      const qsvBin = getQsvBinaryPath();
+      const qsvBin = config.qsvBinPath;
       const indexArgs = ["index", filePath];
 
       try {
@@ -1120,10 +1102,7 @@ async function resolveAndConvertInputFile(
   );
 
   // Check if file needs conversion (Excel or JSONL to CSV)
-  if (
-    isFilesystemProviderExtended(filesystemProvider) &&
-    filesystemProvider.needsConversion(inputFile)
-  ) {
+  if (filesystemProvider.needsConversion(inputFile)) {
     const conversionCmd = filesystemProvider.getConversionCommand(inputFile);
     if (!conversionCmd) {
       throw new Error(
@@ -1134,7 +1113,7 @@ async function resolveAndConvertInputFile(
       `[MCP Tools] File requires conversion using qsv ${conversionCmd}`,
     );
 
-    const qsvBin = getQsvBinaryPath();
+    const qsvBin = config.qsvBinPath;
 
     // Generate unique converted file path with UUID to prevent collisions
     // 16 hex chars (64 bits) has 50% collision probability after ~4 billion conversions
@@ -1244,7 +1223,7 @@ async function buildFileNotFoundError(
   error: unknown,
   filesystemProvider: FilesystemProviderExtended,
 ): Promise<string> {
-  let errorMessage = `Error resolving file path: ${error instanceof Error ? error.message : String(error)}`;
+  let errorMessage = `Error resolving file path: ${getErrorMessage(error)}`;
 
   // Detect Cowork VM paths that won't resolve on the host
   if (/^\/sessions\/|^\/home\/user\/|^\/tmp\/cowork-|^\/workspace\//.test(inputFile)) {
@@ -1256,7 +1235,7 @@ async function buildFileNotFoundError(
       errorMessage;
   }
 
-  const errorStr = error instanceof Error ? error.message : String(error);
+  const errorStr = getErrorMessage(error);
   if (
     errorStr.includes("outside allowed") ||
     errorStr.includes("not exist") ||
@@ -1403,7 +1382,7 @@ async function formatToolResult(
             await rename(outputFile, savedPath);
           } catch (renameErr: unknown) {
             // Cross-device rename fails with EXDEV; fall back to copy + delete
-            if (renameErr instanceof Error && "code" in renameErr && (renameErr as NodeJS.ErrnoException).code === "EXDEV") {
+            if (isNodeError(renameErr) && renameErr.code === "EXDEV") {
               await copyFile(outputFile, savedPath);
               await unlink(outputFile);
             } else {
@@ -1564,32 +1543,30 @@ export async function ensureParquet(inputFile: string): Promise<string> {
   }
 }
 
-async function doParquetConversion(inputFile: string, parquetPath: string): Promise<string> {
-  console.error(`[MCP Tools] ensureParquet: Auto-converting CSV to Parquet: ${inputFile}`);
-  const qsvBin = getQsvBinaryPath();
+/**
+ * Shared pipeline: check freshness of stats/schema caches and regenerate if needed.
+ * Returns which steps were generated vs reused.
+ */
+async function ensureStatsAndSchema(
+  inputFile: string,
+): Promise<{ needStats: boolean; needSchema: boolean; statsFile: string; schemaFile: string }> {
+  const qsvBin = config.qsvBinPath;
   const statsFile = inputFile + ".stats.csv";
   const schemaFile = inputFile + ".pschema.json";
 
-  // Validate input file exists before attempting conversion
-  let inputFileStats;
-  try {
-    inputFileStats = await stat(inputFile);
-  } catch (error: unknown) {
-    console.warn(`[MCP Tools] Input file stat failed: ${inputFile}`, error);
+  // Stat input, stats cache, and schema in parallel
+  const [inputFileStats, existingStats, existingSchema] = await Promise.all([
+    stat(inputFile).catch(() => null),
+    stat(statsFile).catch(() => null),
+    stat(schemaFile).catch(() => null),
+  ]);
+
+  if (!inputFileStats) {
     throw new Error(`Input file not found: ${inputFile}`);
   }
 
-  // Check if stats/schema need regeneration
-  let needStats = true;
-  let needSchema = true;
-  try {
-    const existingStats = await stat(statsFile);
-    if (existingStats.mtimeMs >= inputFileStats.mtimeMs) needStats = false;
-  } catch { /* ignore: needs stats generation */ }
-  try {
-    const existingSchema = await stat(schemaFile);
-    if (existingSchema.mtimeMs >= inputFileStats.mtimeMs) needSchema = false;
-  } catch { /* ignore: needs schema generation */ }
+  const needStats = !existingStats || existingStats.mtimeMs < inputFileStats.mtimeMs;
+  const needSchema = !existingSchema || existingSchema.mtimeMs < inputFileStats.mtimeMs;
 
   // Step 1: Generate stats cache
   if (needStats) {
@@ -1601,7 +1578,7 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
       ];
       await runQsvWithTimeout(qsvBin, statsArgs);
     } catch (error: unknown) {
-      throw new Error(`Stats generation failed for ${inputFile}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Stats generation failed for ${inputFile}: ${getErrorMessage(error)}`);
     }
   }
 
@@ -1611,21 +1588,29 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
       const schemaArgs = ["schema", "--polars", inputFile];
       await runQsvWithTimeout(qsvBin, schemaArgs);
     } catch (error: unknown) {
-      throw new Error(`Schema generation failed for ${inputFile}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Schema generation failed for ${inputFile}: ${getErrorMessage(error)}`);
     }
   }
 
   // Step 2.5: Patch schema for AM/PM date formats that Polars can't parse
   await patchSchemaAndLog(inputFile, schemaFile);
 
+  return { needStats, needSchema, statsFile, schemaFile };
+}
+
+async function doParquetConversion(inputFile: string, parquetPath: string): Promise<string> {
+  console.error(`[MCP Tools] ensureParquet: Auto-converting CSV to Parquet: ${inputFile}`);
+
+  await ensureStatsAndSchema(inputFile);
+
   // Step 3: Convert to Parquet
   try {
     const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, parquetPath);
-    await runQsvWithTimeout(qsvBin, conversionArgs);
+    await runQsvWithTimeout(config.qsvBinPath, conversionArgs);
   } catch (error: unknown) {
     // Clean up potentially corrupted partial Parquet file
     try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
-    throw new Error(`Parquet conversion failed for ${inputFile}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Parquet conversion failed for ${inputFile}: ${getErrorMessage(error)}`);
   }
 
   // Verify the output file was actually created and is non-empty
@@ -1778,7 +1763,7 @@ async function tryDuckDbExecution(
     return successResult(engineHeader + result.output);
   } catch (error: unknown) {
     // ENOENT or similar binary-level error
-    const errMsg = error instanceof Error ? error.message : String(error);
+    const errMsg = getErrorMessage(error);
     if (
       errMsg.includes("ENOENT") ||
       errMsg.includes("not found") ||
@@ -1946,7 +1931,7 @@ export async function handleToolCall(
           }
         } catch (error: unknown) {
           // Parquet conversion or DuckDB failed — warn and fall through to sqlp with original input
-          const errorMsg = error instanceof Error ? error.message : String(error);
+          const errorMsg = getErrorMessage(error);
           console.error(
             `[MCP Tools] Parquet/DuckDB interception failed, falling back to sqlp:`,
             errorMsg,
@@ -2018,7 +2003,7 @@ export async function handleToolCall(
           }
         }
       } catch (error: unknown) {
-        console.error(`[MCP Tools] moarstats auto-enrichment error:`, error instanceof Error ? error.message : String(error));
+        console.error(`[MCP Tools] moarstats auto-enrichment error:`, getErrorMessage(error));
       }
     }
 
@@ -2065,7 +2050,7 @@ export async function handleToolCall(
       return errorResult(errorMsg);
     }
   } catch (error: unknown) {
-    return errorResult(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+    return errorResult(`Unexpected error: ${getErrorMessage(error)}`);
   } finally {
     releaseSlot();
   }
@@ -2129,7 +2114,7 @@ export async function handleGenericCommand(
       filesystemProvider,
     );
   } catch (error: unknown) {
-    return errorResult(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+    return errorResult(`Unexpected error: ${getErrorMessage(error)}`);
   }
 }
 
@@ -2463,9 +2448,7 @@ export async function handleConfigTool(
     configText += `These are the actual resolved values used by the server. The configuration UI may show template variables like \`\${HOME}/Downloads\` which get expanded to the paths shown above.\n`;
   }
 
-  return {
-    content: [{ type: "text", text: configText }],
-  };
+  return successResult(configText);
 }
 
 /**
@@ -2558,18 +2541,7 @@ export function createSearchToolsTool(): McpToolDefinition {
           type: "string",
           description:
             "Filter by category: selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, documentation, utility",
-          enum: [
-            "selection",
-            "filtering",
-            "transformation",
-            "aggregation",
-            "joining",
-            "validation",
-            "formatting",
-            "conversion",
-            "documentation",
-            "utility",
-          ],
+          enum: [...SKILL_CATEGORIES],
         },
         limit: {
           type: "number",
@@ -2623,20 +2595,8 @@ export async function handleSearchToolsCall(
   }
 
   // Also check if query matches category name (for discovery)
-  const categories = [
-    "selection",
-    "filtering",
-    "transformation",
-    "aggregation",
-    "joining",
-    "validation",
-    "formatting",
-    "conversion",
-    "documentation",
-    "utility",
-  ];
   const queryLower = query.toLowerCase();
-  const matchedCategory = categories.find((cat) => queryLower.includes(cat));
+  const matchedCategory = SKILL_CATEGORIES.find((cat) => queryLower.includes(cat));
 
   if (matchedCategory && !category) {
     // Add skills from matching category that weren't already found
@@ -2833,7 +2793,7 @@ export async function handleToParquetCall(
         `[MCP Tools] Resolved input file: ${originalInputFile} -> ${inputFile}`,
       );
     } catch (error: unknown) {
-      return errorResult(`Error resolving input file path: ${error instanceof Error ? error.message : String(error)}`);
+      return errorResult(`Error resolving input file path: ${getErrorMessage(error)}`);
     }
   }
 
@@ -2880,7 +2840,7 @@ export async function handleToParquetCall(
         `[MCP Tools] Resolved output file: ${originalOutputFile} -> ${resolvedOutputFile}`,
       );
     } catch (error: unknown) {
-      return errorResult(`Error resolving output file path: ${error instanceof Error ? error.message : String(error)}`);
+      return errorResult(`Error resolving output file path: ${getErrorMessage(error)}`);
     }
   }
 
@@ -2889,81 +2849,11 @@ export async function handleToParquetCall(
     return errorResult(reservedCachePathError(resolvedOutputFile));
   }
 
-  const qsvBin = getQsvBinaryPath();
   const startTime = Date.now();
-  const statsFile = inputFile + ".stats.csv";
-  const schemaFile = inputFile + ".pschema.json";
-
-  // Check if regeneration is needed based on file mtimes
-  let needStats = true;
-  let needSchema = true;
 
   try {
-    const inputFileStats = await stat(inputFile);
-
-    try {
-      const existingStats = await stat(statsFile);
-      if (existingStats.mtimeMs >= inputFileStats.mtimeMs) {
-        needStats = false;
-      }
-    } catch (error: unknown) {
-      console.warn(`[MCP Tools] Stats cache not found, will generate: ${statsFile}`, error);
-    }
-
-    try {
-      const existingSchema = await stat(schemaFile);
-      if (existingSchema.mtimeMs >= inputFileStats.mtimeMs) {
-        needSchema = false;
-      }
-    } catch (error: unknown) {
-      console.warn(`[MCP Tools] Schema not found, will generate: ${schemaFile}`, error);
-    }
-  } catch (error: unknown) {
-    console.warn(`[MCP Tools] Cannot stat input file, will regenerate stats/schema: ${inputFile}`, error);
-  }
-
-  try {
-    // Step 1: Generate stats cache for accurate type inference (if needed)
-    // This creates .stats.csv and .stats.csv.data.jsonl files
-    // Uses --dates-whitelist sniff to let qsv stats detect Date/DateTime columns natively
-    if (needStats) {
-      console.error(
-        `[MCP Tools] Step 1: Generating stats cache for ${inputFile}`,
-      );
-      const statsArgs = [
-        "stats",
-        inputFile,
-        "--cardinality",
-        "--stats-jsonl",
-        "--infer-dates",
-        "--dates-whitelist",
-        "sniff",
-      ];
-      await runQsvWithTimeout(qsvBin, statsArgs);
-      console.error(`[MCP Tools] Stats cache generated successfully`);
-    } else {
-      console.error(
-        `[MCP Tools] Step 1: Using existing stats cache (up-to-date)`,
-      );
-    }
-
-    // Step 2: Generate Polars schema using the stats cache (if needed)
-    // This creates a .pschema.json file that sqlp will auto-detect
-    if (needSchema) {
-      console.error(
-        `[MCP Tools] Step 2: Generating Polars schema for ${inputFile}`,
-      );
-      const schemaArgs = ["schema", "--polars", inputFile];
-      await runQsvWithTimeout(qsvBin, schemaArgs);
-      console.error(`[MCP Tools] Polars schema generated: ${schemaFile}`);
-    } else {
-      console.error(
-        `[MCP Tools] Step 2: Using existing Polars schema (up-to-date)`,
-      );
-    }
-
-    // Step 2.5: Patch schema for AM/PM date formats that Polars can't parse
-    await patchSchemaAndLog(inputFile, schemaFile);
+    // Steps 1-2.5: Ensure stats cache and Polars schema are up-to-date
+    const { needStats, needSchema, schemaFile } = await ensureStatsAndSchema(inputFile);
 
     // Step 3: Convert to Parquet (sqlp will auto-detect .pschema.json)
     console.error(`[MCP Tools] Step 3: Converting to Parquet with schema`);
@@ -2973,9 +2863,9 @@ export async function handleToParquetCall(
       resolvedOutputFile,
     );
     console.error(
-      `[MCP Tools] Running CSV→Parquet conversion: ${qsvBin} ${conversionArgs.join(" ")}`,
+      `[MCP Tools] Running CSV→Parquet conversion: ${config.qsvBinPath} ${conversionArgs.join(" ")}`,
     );
-    await runQsvWithTimeout(qsvBin, conversionArgs);
+    await runQsvWithTimeout(config.qsvBinPath, conversionArgs);
     const duration = Date.now() - startTime;
 
     // Get output file size for reporting
@@ -3004,6 +2894,6 @@ export async function handleToParquetCall(
         : `Use: qsv_sqlp with input_file="SKIP_INPUT" and sql="SELECT ... FROM read_parquet('${resolvedOutputFile}')".`),
     );
   } catch (error: unknown) {
-    return errorResult(`Error converting CSV to Parquet: ${error instanceof Error ? error.message : String(error)}`);
+    return errorResult(`Error converting CSV to Parquet: ${getErrorMessage(error)}`);
   }
 }

@@ -42,6 +42,7 @@ import {
   getActiveProcessCount,
 } from "./mcp-tools.js";
 import { VERSION } from "./version.js";
+import { getErrorMessage, errorResult, successResult } from "./utils.js";
 import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
 
 /**
@@ -556,14 +557,7 @@ class QsvMcpServer {
             .map((r) => `- ${r.name} (${r.description})`)
             .join("\n");
 
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Found ${result.resources.length} tabular data files:\n\n${fileList}\n\nUse these file paths (relative or absolute) in qsv commands via the input_file parameter.`,
-              },
-            ],
-          };
+          return successResult(`Found ${result.resources.length} tabular data files:\n\n${fileList}\n\nUse these file paths (relative or absolute) in qsv commands via the input_file parameter.`);
         }
 
         if (name === "qsv_set_working_dir") {
@@ -571,15 +565,7 @@ class QsvMcpServer {
             typeof args?.directory !== "string" ||
             args.directory.trim().length === 0
           ) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: "Invalid or missing 'directory' argument for qsv_set_working_dir. Please provide a non-empty string path.",
-                },
-              ],
-              isError: true,
-            };
+            return errorResult("Invalid or missing 'directory' argument for qsv_set_working_dir. Please provide a non-empty string path.");
           }
 
           const directory = args.directory.trim();
@@ -597,9 +583,8 @@ class QsvMcpServer {
               this.manuallySetWorkingDir = false;
               autoSyncEnabled = true;
               currentDir = this.filesystemProvider.getWorkingDirectory();
-            } catch (syncError) {
-              const message =
-                syncError instanceof Error ? syncError.message : String(syncError);
+            } catch (syncError: unknown) {
+              const message = getErrorMessage(syncError);
               syncErrorMessage = message;
               console.error(
                 `[Roots] Auto-sync from "auto" keyword failed: ${message}`,
@@ -607,57 +592,29 @@ class QsvMcpServer {
             }
 
             if (autoSyncEnabled) {
-              return {
-                content: [
-                  {
-                    type: "text" as const,
-                    text: `Auto-sync re-enabled. Working directory is now: ${currentDir}\n\nThe working directory will automatically follow the MCP client's root directory.`,
-                  },
-                ],
-              };
+              return successResult(`Auto-sync re-enabled. Working directory is now: ${currentDir}\n\nThe working directory will automatically follow the MCP client's root directory.`);
             }
 
             // Auto-sync could not be enabled; surface a user-visible error.
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text:
-                    `Failed to enable automatic root-based working directory sync.\n` +
-                    (syncErrorMessage
-                      ? `Reason: ${syncErrorMessage}\n`
-                      : "") +
-                    `The working directory remains: ${previousDir}\n\n` +
-                    `You can continue using this directory, or choose a different path. ` +
-                    `Pass "auto" again once your MCP client exposes a compatible file:// root to re-enable automatic sync.`,
-                },
-              ],
-              isError: true,
-            };
+            return errorResult(
+              `Failed to enable automatic root-based working directory sync.\n` +
+              (syncErrorMessage
+                ? `Reason: ${syncErrorMessage}\n`
+                : "") +
+              `The working directory remains: ${previousDir}\n\n` +
+              `You can continue using this directory, or choose a different path. ` +
+              `Pass "auto" again once your MCP client exposes a compatible file:// root to re-enable automatic sync.`,
+            );
           }
 
           const newWorkingDir = this.updateWorkingDirectory(directory);
           this.manuallySetWorkingDir = true;
 
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`,
-              },
-            ],
-          };
+          return successResult(`Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
         }
 
         if (name === "qsv_get_working_dir") {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Current working directory: ${this.filesystemProvider.getWorkingDirectory()}`,
-              },
-            ],
-          };
+          return successResult(`Current working directory: ${this.filesystemProvider.getWorkingDirectory()}`);
         }
 
         // Handle generic command tool
@@ -701,27 +658,10 @@ class QsvMcpServer {
         }
 
         // Unknown tool
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Unknown tool: ${name}`,
-            },
-          ],
-          isError: true,
-        };
+        return errorResult(`Unknown tool: ${name}`);
       } catch (error: unknown) {
         console.error(`Error executing tool ${name}:`, error);
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
+        return errorResult(`Error: ${getErrorMessage(error)}`);
       }
     });
   }

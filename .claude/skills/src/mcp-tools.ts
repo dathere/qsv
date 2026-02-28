@@ -1990,7 +1990,10 @@ export async function handleToolCall(
     // Execute the skill
     const result = await executor.execute(skill, { args, options });
 
-    // Auto-run cheap moarstats after successful stats execution
+    // Auto-run cheap moarstats (without --advanced or --bivariate) after successful stats execution
+    // to enrich the .stats.csv cache with ~18 additional columns at minimal cost.
+    // Note: moarstats overwrites the stats CSV in-place by default (no --output needed).
+    // This only triggers for commandName === "stats", so moarstats itself won't cause recursion.
     let moarstatsNote = "";
     if (commandName === "stats" && result.success && inputFile && !isHelpRequest) {
       try {
@@ -2002,8 +2005,9 @@ export async function handleToolCall(
             options: {},
           });
           if (moarstatsResult.success) {
-            moarstatsNote = `\n\n📊 Auto-enriched stats cache with moarstats (~18 additional columns, ${moarstatsResult.metadata.duration}ms)`;
-            console.error(`[MCP Tools] moarstats auto-enrichment succeeded (${moarstatsResult.metadata.duration}ms)`);
+            const duration = moarstatsResult.metadata?.duration ?? "?";
+            moarstatsNote = `\n\n📊 Auto-enriched stats cache with moarstats (~18 additional columns, ${duration}ms)`;
+            console.error(`[MCP Tools] moarstats auto-enrichment succeeded (${duration}ms)`);
           } else {
             console.error(`[MCP Tools] moarstats auto-enrichment failed: ${moarstatsResult.stderr}`);
           }
@@ -2023,17 +2027,22 @@ export async function handleToolCall(
         autoCreatedTempFile,
         params,
       );
+      // Find the first text content element for prepending/appending notes
+      const textContent = formattedResult.content?.find(
+        (c: { type: string }) => c.type === "text",
+      ) as { type: "text"; text: string } | undefined;
+
       // Prepend Parquet conversion warning if any
       if (parquetConversionWarning) {
-        if (formattedResult.content?.[0]?.type === "text") {
-          formattedResult.content[0].text = parquetConversionWarning + "\n\n" + formattedResult.content[0].text;
+        if (textContent) {
+          textContent.text = parquetConversionWarning + "\n\n" + textContent.text;
         } else {
           console.error(`[MCP Tools] Could not prepend Parquet warning to result: unexpected content structure`);
         }
       }
       // Append moarstats auto-enrichment note if applicable
-      if (moarstatsNote && formattedResult.content?.[0]?.type === "text") {
-        formattedResult.content[0].text += moarstatsNote;
+      if (moarstatsNote && textContent) {
+        textContent.text += moarstatsNote;
       }
       return formattedResult;
     } else {

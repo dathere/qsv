@@ -133,13 +133,13 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   },
   stats: {
     whenToUse: "Quick numeric stats (mean, min/max, stddev). Creates cache for other commands. Run 2nd after index.",
-    commonPattern: "Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. After stats, run moarstats with output_file set to the stats cache path (<FILESTEM>.stats.csv, e.g. for data.csv use output_file=data.stats.csv) to roughly double the statistics in the cache at minimal cost.",
+    commonPattern: "Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. After stats, run moarstats with output_file set to the stats cache path (<FILESTEM>.stats.csv, e.g. for data.csv use output_file=data.stats.csv) to enrich the .stats.csv with ~18 additional columns for richer LLM analysis. Note: moarstats enriches .stats.csv only, not .data.jsonl — smart commands still use the original stats cache.",
     errorPrevention: "Works with CSV/TSV/SSV files only. For SQL queries, use sqlp. Run qsv_index first for files >10MB.",
     needsIndexHint: true,
   },
   moarstats: {
-    whenToUse: "Roughly doubles the statistics in the stats cache cheaply. Also supports bivariate stats + outlier details + data type inference.",
-    commonPattern: "Index → Stats → Moarstats (set output_file to the stats cache path, <FILESTEM>.stats.csv, e.g. for data.csv use output_file=data.stats.csv, to update cache in place) for richest analysis at minimal cost. With --bivariate: main stats to --output, bivariate stats to <FILESTEM>.stats.bivariate.csv (separate file next to input).",
+    whenToUse: "Enriches .stats.csv with ~18 additional statistical columns for richer LLM analysis. Also supports bivariate stats + outlier details + data type inference.",
+    commonPattern: "Index → Stats → Moarstats (set output_file to the stats cache path, <FILESTEM>.stats.csv, e.g. for data.csv use output_file=data.stats.csv, to enrich the LLM-facing cache) for richest analysis at minimal cost. Note: moarstats enriches .stats.csv only, not .data.jsonl — smart commands still use the original stats cache. With --bivariate: main stats to --output, bivariate stats to <FILESTEM>.stats.bivariate.csv (separate file next to input).",
     errorPrevention: "Run stats first to create cache. Slower than stats but richer output. IMPORTANT: --bivariate writes results to a SEPARATE file: <FILESTEM>.stats.bivariate.csv (located next to the input file, NOT in stdout/output). Always read this file to get bivariate results. With --join-inputs, the file is <FILESTEM>.stats.bivariate.joined.csv.",
     needsMemoryWarning: true,
     hasCommonMistakes: true,

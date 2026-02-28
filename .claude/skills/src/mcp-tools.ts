@@ -133,14 +133,14 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   },
   stats: {
     whenToUse: "Quick numeric stats (mean, min/max, stddev). Creates cache for other commands. Run 2nd after index.",
-    commonPattern: `Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. After stats, run moarstats to enrich the cache — see moarstats tool description for details.`,
+    commonPattern: `Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. Moarstats is auto-run after stats to enrich the cache with ~18 additional columns.`,
     errorPrevention: "Works with CSV/TSV/SSV files only. For SQL queries, use sqlp. Run qsv_index first for files >10MB.",
     needsIndexHint: true,
   },
   moarstats: {
-    whenToUse: "Enriches .stats.csv with ~18 additional statistical columns for richer LLM analysis. Also supports bivariate stats + outlier details + data type inference.",
-    commonPattern: "Index → Stats → Moarstats for richest analysis at minimal cost. Set output_file to the stats cache path (<FILESTEM>.stats.csv, e.g. for data.csv use output_file=data.stats.csv). Enriches .stats.csv with ~18 additional columns for richer LLM analysis — moarstats enriches .stats.csv only, not .data.jsonl; smart commands still use .data.jsonl. With --bivariate: main stats to --output, bivariate stats to <FILESTEM>.stats.bivariate.csv (separate file next to input).",
-    errorPrevention: "Run stats first to create cache. Slower than stats but richer output. IMPORTANT: --bivariate writes results to a SEPARATE file: <FILESTEM>.stats.bivariate.csv (located next to the input file, NOT in stdout/output). Always read this file to get bivariate results. With --join-inputs, the file is <FILESTEM>.stats.bivariate.joined.csv.",
+    whenToUse: "Basic moarstats is auto-run after stats. Only invoke manually for --advanced (kurtosis, entropy, gini, etc.) or --bivariate (pairwise correlations).",
+    commonPattern: "Basic moarstats runs automatically after stats to enrich the .stats.csv cache. Invoke manually only for --advanced or --bivariate. When running manually, set output_file to the stats cache path (<FILESTEM>.stats.csv, e.g. for data.csv use output_file=data.stats.csv). Enriches .stats.csv with ~18 additional columns for richer LLM analysis — moarstats enriches .stats.csv only, not .data.jsonl; smart commands still use .data.jsonl. With --bivariate: main stats to --output, bivariate stats to <FILESTEM>.stats.bivariate.csv (separate file next to input).",
+    errorPrevention: "Run stats first to create cache. IMPORTANT: Only run --bivariate when requested as it's expensive. It writes results to a SEPARATE file: <FILESTEM>.stats.bivariate.csv (located next to the input file, NOT in stdout/output). Always read this file to get bivariate results. With --join-inputs, the file is <FILESTEM>.stats.bivariate.joined.csv.",
     needsMemoryWarning: true,
     hasCommonMistakes: true,
   },
@@ -1995,6 +1995,33 @@ export async function handleToolCall(
     // Execute the skill
     const result = await executor.execute(skill, { args, options });
 
+    // Auto-run cheap moarstats (without --advanced or --bivariate) after successful stats execution
+    // to enrich the .stats.csv cache with ~18 additional columns at minimal cost.
+    // Note: moarstats overwrites the stats CSV in-place by default (no --output needed).
+    // This only triggers for commandName === "stats", so moarstats itself won't cause recursion.
+    let moarstatsNote = "";
+    if (commandName === "stats" && result.success && inputFile && !isHelpRequest) {
+      try {
+        const moarstatsSkill = await loader.load("qsv-moarstats");
+        if (moarstatsSkill) {
+          console.error(`[MCP Tools] Auto-running moarstats to enrich stats cache`);
+          const moarstatsResult = await executor.execute(moarstatsSkill, {
+            args: { input: inputFile },
+            options: {},
+          });
+          if (moarstatsResult.success) {
+            const duration = moarstatsResult.metadata?.duration ?? "?";
+            moarstatsNote = `\n\n📊 Auto-enriched stats cache with moarstats (~18 additional columns, ${duration}ms)`;
+            console.error(`[MCP Tools] moarstats auto-enrichment succeeded (${duration}ms)`);
+          } else {
+            console.error(`[MCP Tools] moarstats auto-enrichment failed: ${moarstatsResult.stderr}`);
+          }
+        }
+      } catch (error: unknown) {
+        console.error(`[MCP Tools] moarstats auto-enrichment error:`, error instanceof Error ? error.message : String(error));
+      }
+    }
+
     // Format and return result
     if (result.success) {
       const formattedResult = await formatToolResult(
@@ -2005,12 +2032,27 @@ export async function handleToolCall(
         autoCreatedTempFile,
         params,
       );
+      // Find the first text content element for prepending/appending notes.
+      // Note: find() returns a reference, so mutating textContent.text
+      // modifies the element inside formattedResult.content in-place.
+      const textContent = formattedResult.content?.find(
+        (c: { type: string }) => c.type === "text",
+      ) as { type: "text"; text: string } | undefined;
+
       // Prepend Parquet conversion warning if any
       if (parquetConversionWarning) {
-        if (formattedResult.content?.[0]?.type === "text") {
-          formattedResult.content[0].text = parquetConversionWarning + "\n\n" + formattedResult.content[0].text;
+        if (textContent) {
+          textContent.text = parquetConversionWarning + "\n\n" + textContent.text;
         } else {
           console.error(`[MCP Tools] Could not prepend Parquet warning to result: unexpected content structure`);
+        }
+      }
+      // Append moarstats auto-enrichment note if applicable
+      if (moarstatsNote) {
+        if (textContent) {
+          textContent.text += moarstatsNote;
+        } else {
+          console.error(`[MCP Tools] Could not append moarstats note to result: unexpected content structure`);
         }
       }
       return formattedResult;

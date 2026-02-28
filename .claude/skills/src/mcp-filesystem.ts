@@ -13,7 +13,7 @@ import type {
   McpResource,
   FileMetadata,
 } from "./types.js";
-import { formatBytes } from "./utils.js";
+import { formatBytes, getErrorMessage } from "./utils.js";
 import { config } from "./config.js";
 import { runQsvSimple } from "./executor.js";
 
@@ -333,7 +333,7 @@ export class FilesystemResourceProvider {
       return { resources };
     } catch (error: unknown) {
       console.error(
-        `Error listing files in ${directory || "."}: ${error instanceof Error ? error.message : String(error)}`,
+        `Error listing files in ${directory || "."}: ${getErrorMessage(error)}`,
       );
       throw error;
     }

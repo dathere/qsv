@@ -10,6 +10,7 @@ import { fileURLToPath } from "url";
 import { existsSync } from "fs";
 import type { QsvSkill, SkillCategory } from "./types.js";
 import { ToolSearchIndex } from "./bm25-search.js";
+import { getErrorMessage } from "./utils.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -167,7 +168,7 @@ export class SkillLoader {
       this.skills.set(skillName, skill);
       return skill;
     } catch (error: unknown) {
-      console.warn(`[Loader] Failed to load skill ${skillName}:`, error instanceof Error ? error.message : String(error));
+      console.warn(`[Loader] Failed to load skill ${skillName}:`, getErrorMessage(error));
       return null;
     }
   }

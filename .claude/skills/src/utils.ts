@@ -3,6 +3,22 @@
  */
 
 /**
+ * Extract a human-readable message from an unknown error.
+ * Use in catch blocks: `catch (error: unknown) { getErrorMessage(error) }`
+ */
+export function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Type guard to check if an error is a NodeJS.ErrnoException (has a `code` property).
+ * Use in catch blocks: `if (isNodeError(err) && err.code === 'ENOENT') { ... }`
+ */
+export function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
+
+/**
  * MCP tool result helpers to eliminate repetitive { content: [{ type: "text"... }] } boilerplate
  */
 export function errorResult(message: string) {

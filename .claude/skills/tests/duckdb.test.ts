@@ -277,6 +277,9 @@ describe("translateSql", () => {
   });
 
   test("qualified _t_1 ref before FROM with no user alias falls back to _tbl_1", () => {
+    // This tests the case where a standalone _t_1 exists (in FROM) but has no
+    // user alias. Note: if the SQL contained *only* qualified _t_1. refs with
+    // no standalone _t_1 at all, the output would be invalid (see NOTE in source).
     const sql = "SELECT _t_1.id FROM _t_1 WHERE _t_1.name = 'x'";
     const result = translateSql(sql, "/data/test.parquet");
     // No user alias on the standalone _t_1 → firstAlias defaults to _tbl_1
@@ -287,7 +290,9 @@ describe("translateSql", () => {
   });
 
   test("multi-table pre-scan only affects _t_1, not _t_2", () => {
-    // _t_2 is left untranslated by translateSql (only _t_1 is handled)
+    // translateSql only handles _t_1 (single file input). _t_2 and higher
+    // placeholders pass through untouched. If multi-file support is added,
+    // this test will need updating.
     const sql = "SELECT _t_1.id, _t_2.name FROM _t_1 a, _t_2 b";
     const result = translateSql(sql, "/data/test.parquet");
     // _t_1.id should resolve to user alias "a" via pre-scan

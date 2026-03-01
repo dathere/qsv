@@ -362,7 +362,10 @@ export function translateSql(
     if (userAlias) firstAlias = userAlias;
     break;
   }
-  // Reset lastIndex so the main .replace() pass starts fresh.
+  // Reset lastIndex so the main .replace() pass starts fresh. The pre-scan
+  // loop `break`s after finding the first standalone _t_1, which leaves
+  // lastIndex at a non-zero position — without this reset, .replace() would
+  // start matching mid-string and miss earlier occurrences.
   pattern.lastIndex = 0;
 
   let aliasCounter = 0;

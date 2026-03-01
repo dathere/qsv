@@ -243,10 +243,10 @@ describe("translateSql", () => {
     const sql =
       "SELECT * FROM _t_1 UNION SELECT * FROM _t_1 WHERE _t_1.val > 5";
     const result = translateSql(sql, "/data/test.parquet");
-    // First standalone _t_1 gets aliased, second gets bare readExpr, qualified ref rewritten to _tbl
+    // Both standalone _t_1 refs get aliased so _tbl.val resolves in the second SELECT's scope
     assert.strictEqual(
       result,
-      "SELECT * FROM read_parquet('/data/test.parquet') AS _tbl UNION SELECT * FROM read_parquet('/data/test.parquet') WHERE _tbl.val > 5",
+      "SELECT * FROM read_parquet('/data/test.parquet') AS _tbl UNION SELECT * FROM read_parquet('/data/test.parquet') AS _tbl WHERE _tbl.val > 5",
     );
   });
 
@@ -528,7 +528,7 @@ describe("DuckDB live integration", { concurrency: false }, () => {
   });
 
   test("translateSql + executeDuckDbQuery end-to-end with WHERE clause", {
-    skip: !(DUCKDB_AVAILABLE && QSV_AVAILABLE),
+    skip: !DUCKDB_AVAILABLE,
     timeout: 30_000,
   }, async () => {
     const sql = translateSql(

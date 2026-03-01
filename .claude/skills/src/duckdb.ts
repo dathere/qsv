@@ -308,26 +308,22 @@ export function translateSql(
     }
   }
 
-  // Replace standalone _t_1 (not followed by a dot) with the read expression,
+  // Replace _t_1 references (standalone and dot-qualified) with the read expression,
   // using a non-colliding alias (_tbl) to avoid double-substitution if the query
   // falls through to the sqlp/Polars fallback path (which uses _t_N internally).
-  // Only the first standalone occurrence gets the alias; subsequent ones get bare readExpr
-  // to avoid duplicate alias issues in UNION or subquery contexts.
+  // Standalone _t_1 → aliased read expression (every occurrence, so each UNION/subquery scope
+  // has a valid _tbl alias for qualified column refs to resolve against).
+  // Qualified _t_1.col → _tbl.col (rewritten to use the new alias).
   // Skip replacements inside single-quoted SQL string literals.
   const aliasedExpr = `${readExpr} AS _tbl`;
-  let firstReplaced = false;
   const translated = sql.replace(
     /'[^']*(?:''[^']*)*'|\b_t_1\b\.?/gi,
     (match) => {
       if (match.startsWith("'")) return match;
       // Qualified column ref: _t_1.col → _tbl.col
       if (match.endsWith(".")) return "_tbl.";
-      // Standalone _t_1: first gets aliased, rest get bare readExpr
-      if (!firstReplaced) {
-        firstReplaced = true;
-        return aliasedExpr;
-      }
-      return readExpr;
+      // Standalone _t_1: always alias so each UNION/subquery scope resolves _tbl refs
+      return aliasedExpr;
     },
   );
   return translated;

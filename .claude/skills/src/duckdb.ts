@@ -312,43 +312,27 @@ export function translateSql(
   // Uses a non-colliding alias prefix (_tbl) to avoid double-substitution if the query
   // falls through to the sqlp/Polars fallback path (which uses _t_N internally).
   //
-  // Two-pass approach:
-  //   Pass 1: Assign unique aliases (_tbl_1, _tbl_2, …) to each standalone _t_1.
-  //           Track which alias each occurrence gets by position, so qualified refs
-  //           in the same scope resolve to the correct alias.
-  //   Pass 2: Rewrite qualified _t_1.col refs to use the alias of the nearest
-  //           preceding standalone _t_1 (i.e. the current scope's FROM alias).
-  // Both passes skip content inside single-quoted SQL string literals.
-
-  // Pass 1: replace standalone _t_1 with uniquely-aliased read expressions
+  // Single-pass approach: match both standalone _t_1 and qualified _t_1. in one regex.
+  // The dot-qualified pattern is listed first so it takes priority over the standalone
+  // pattern. As we scan left-to-right, each standalone _t_1 gets a unique alias
+  // (_tbl_1, _tbl_2, …), and qualified _t_1.col refs resolve to the most recently
+  // assigned alias. Content inside single-quoted SQL string literals is skipped.
   let aliasCounter = 0;
-  // Record the string position where each alias was inserted
-  const aliasPositions: { pos: number; alias: string }[] = [];
-  let pass1 = sql.replace(
-    /'[^']*(?:''[^']*)*'|\b_t_1\b(?!\.)/gi,
-    (match, offset) => {
+  let lastAlias = "";
+  const translated = sql.replace(
+    /'[^']*(?:''[^']*)*'|\b_t_1\b\.|\b_t_1\b(?!\.)/gi,
+    (match) => {
       if (match.startsWith("'")) return match;
-      aliasCounter++;
-      const alias = `_tbl_${aliasCounter}`;
-      aliasPositions.push({ pos: offset, alias });
-      return `${readExpr} AS ${alias}`;
-    },
-  );
-
-  // Pass 2: replace qualified _t_1.col refs, mapping to the nearest preceding alias
-  const translated = pass1.replace(
-    /'[^']*(?:''[^']*)*'|\b_t_1\b\./gi,
-    (match, offset) => {
-      if (match.startsWith("'")) return match;
-      // Find the alias from the nearest preceding standalone _t_1 in the original SQL.
-      // Fall back to _tbl_1 if no preceding standalone was found (e.g. qualified ref
-      // appears before any FROM clause).
-      let alias = "_tbl_1";
-      for (const ap of aliasPositions) {
-        if (ap.pos <= offset) alias = ap.alias;
-        else break;
+      if (match.endsWith(".")) {
+        // Qualified ref (_t_1.): rewrite to use the most recently assigned alias.
+        // Falls back to _tbl_1 if a qualified ref appears before any standalone _t_1
+        // (e.g. SELECT _t_1.col FROM _t_1) — the FROM alias will be _tbl_1.
+        return `${lastAlias || "_tbl_1"}.`;
       }
-      return `${alias}.`;
+      // Standalone _t_1: expand to read expression with a unique alias
+      aliasCounter++;
+      lastAlias = `_tbl_${aliasCounter}`;
+      return `${readExpr} AS ${lastAlias}`;
     },
   );
   return translated;

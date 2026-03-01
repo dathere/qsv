@@ -253,7 +253,11 @@ describe("translateSql", () => {
   test("self-join produces unique aliases for each _t_1 occurrence", () => {
     const sql = "SELECT a.* FROM _t_1 a JOIN _t_1 b ON a.id = b.id";
     const result = translateSql(sql, "/data/test.parquet");
-    // Each standalone _t_1 gets a distinct alias (_tbl_1, _tbl_2)
+    // Each standalone _t_1 gets a distinct alias (_tbl_1, _tbl_2).
+    // Known limitation: user-provided aliases (a, b) appear after the generated
+    // AS _tbl_N alias, producing e.g. "AS _tbl_1 a". DuckDB treats the last
+    // identifier as the effective alias, so "a" and "b" still work as expected
+    // in the query's ON clause.
     assert.ok(result.includes("read_parquet('/data/test.parquet') AS _tbl_1 a"));
     assert.ok(result.includes("read_parquet('/data/test.parquet') AS _tbl_2 b"));
   });

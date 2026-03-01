@@ -275,7 +275,7 @@ impl ExtDedupCache {
             }
         }
 
-        debug!("Dumped {successful_dumps} items to disk, {failed_dumps} failed",);
+        debug!("Dumped {successful_dumps} items to disk, {failed_dumps} failed");
         self.memo_size = 0;
     }
 }

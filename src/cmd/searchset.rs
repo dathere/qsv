@@ -460,9 +460,9 @@ impl Args {
                 let it = idx.byte_records().take(chunk_size);
 
                 let mut results = Vec::with_capacity(chunk_size);
-                let mut row_number = (i * chunk_size) as u64 + 1; // 1-based row numbering
 
-                for record in it.flatten() {
+                // 1-based row numbering
+                for (row_number, record) in ((i * chunk_size) as u64 + 1..).zip(it.flatten()) {
                     // Early exit for quick mode if match already found by another thread
                     if flag_quick && match_found_flag.load(Ordering::Relaxed) {
                         break;
@@ -498,7 +498,6 @@ impl Args {
                         matched: final_matched,
                         match_list,
                     });
-                    row_number += 1;
                 }
                 send.send(results).unwrap();
             });

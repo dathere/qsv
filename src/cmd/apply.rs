@@ -799,12 +799,12 @@ fn validate_operations(
                 }
                 eudex_invokes = eudex_invokes.saturating_add(1);
             },
-            Operations::Mtrim | Operations::Mltrim | Operations::Mrtrim => {
-                if flag_comparand.is_empty() {
-                    return fail_incorrectusage_clierror!(
-                        "--comparand (-C) is required for match trim operations."
-                    );
-                }
+            Operations::Mtrim | Operations::Mltrim | Operations::Mrtrim
+                if flag_comparand.is_empty() =>
+            {
+                return fail_incorrectusage_clierror!(
+                    "--comparand (-C) is required for match trim operations."
+                );
             },
             Operations::Regex_Replace => {
                 if flag_comparand.is_empty() || flag_replacement.is_empty() {
@@ -883,22 +883,19 @@ fn validate_operations(
                     return fail!("Cannot initialize Thousands policy.");
                 }
             },
-            Operations::Round => {
+            Operations::Round
                 if ROUND_PLACES
                     .set(
                         flag_formatstr
                             .parse::<u32>()
                             .unwrap_or(DEFAULT_ROUND_PLACES),
                     )
-                    .is_err()
-                {
-                    return fail!("Cannot initialize Round precision.");
-                }
+                    .is_err() =>
+            {
+                return fail!("Cannot initialize Round precision.");
             },
-            Operations::Crc32 => {
-                if CRC32.set(crc32fast::Hasher::new()).is_err() {
-                    return fail!("Cannot initialize CRC32 Hasher.");
-                }
+            Operations::Crc32 if CRC32.set(crc32fast::Hasher::new()).is_err() => {
+                return fail!("Cannot initialize CRC32 Hasher.");
             },
             Operations::Whatlang => {
                 if flag_new_column.is_none() {

@@ -358,9 +358,9 @@ impl Args {
                 let it = idx.byte_records().take(chunk_size);
 
                 let mut results = Vec::with_capacity(chunk_size);
-                let mut row_number = (i * chunk_size) as u64 + 1; // 1-based row numbering
 
-                for record in it.flatten() {
+                // 1-based row numbering
+                for (row_number, record) in ((i * chunk_size) as u64 + 1..).zip(it.flatten()) {
                     let (processed_record, match_count_local, had_match_local) =
                         process_record(&record, &sel_indices, &pattern, replacement.as_slice());
 
@@ -370,7 +370,6 @@ impl Args {
                         match_count: match_count_local,
                         had_match: had_match_local,
                     });
-                    row_number += 1;
                 }
                 send.send(results).unwrap();
             });

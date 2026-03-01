@@ -3387,7 +3387,7 @@ fn run_inference_options(
         let start_time = Instant::now();
         if let Some(ref tag_vocab_uri) = args.flag_tag_vocab {
             print_status(
-                &format!("  Inferring Tags with Tag Vocabulary ({tag_vocab_uri})...",),
+                &format!("  Inferring Tags with Tag Vocabulary ({tag_vocab_uri})..."),
                 None,
             );
         } else {

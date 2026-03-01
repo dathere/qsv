@@ -1001,11 +1001,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut rows: Vec<(u32, &[Data])> = Vec::with_capacity(row_count);
 
     // we add 1 as we already processed the header row
-    let mut row_idx = range_start.0 + 1;
     // queue rest of the rows for processing as data rows
-    for row in rows_iter {
+    for (row_idx, row) in (range_start.0 + 1..).zip(rows_iter) {
         rows.push((row_idx, row));
-        row_idx += 1;
     }
 
     let njobs = util::njobs(args.flag_jobs);

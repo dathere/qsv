@@ -340,7 +340,6 @@ use serde::{Deserialize, Serialize};
 use simd_json::{OwnedValue, prelude::ValueAsScalar, prelude::ValueObjectAccess};
 use smallvec::SmallVec;
 use stats::{Commute, MinMax, OnlineStats, Unsorted, merge_all};
-use tempfile::NamedTempFile;
 use threadpool::ThreadPool;
 
 use self::FieldType::{TDate, TDateTime, TFloat, TInteger, TNull, TString};
@@ -924,8 +923,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // create a temporary file to store the <FILESTEM>.stats.csv file
     // The cache is always plain CSV (comma-delimited, uncompressed) regardless of
     // the --output format, since it's an internal format consumed by moarstats,
-    // schema, frequency, etc.
-    let stats_csv_tempfile = NamedTempFile::new()?;
+    // schema, frequency, etc. Use .csv suffix so NamedTempFile RAII cleanup
+    // deletes the correct file.
+    let stats_csv_tempfile = tempfile::Builder::new().suffix(".csv").tempfile()?;
+    // safety: we know the tempfile is a valid NamedTempFile, so we can use unwrap
+    let stats_csv_tempfile_fname = stats_csv_tempfile.path().to_str().unwrap().to_string();
 
     // find the delimiter to use based on the extension of the output file
     // and if we need to snappy compress the output
@@ -933,11 +935,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Some(ref output_path) => get_delim_by_extension(Path::new(&output_path), b','),
         _ => (String::new(), b',', false),
     };
-    let stats_csv_tempfile_fname = format!(
-        "{stem}.csv",
-        // safety: we know the tempfile is a valid NamedTempFile, so we can use unwrap
-        stem = stats_csv_tempfile.path().to_str().unwrap(),
-    );
 
     // we will write the stats to a temp file - always as plain CSV
     let wconfig = Config::new(Some(stats_csv_tempfile_fname.clone()).as_ref())

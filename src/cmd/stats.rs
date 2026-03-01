@@ -340,6 +340,7 @@ use serde::{Deserialize, Serialize};
 use simd_json::{OwnedValue, prelude::ValueAsScalar, prelude::ValueObjectAccess};
 use smallvec::SmallVec;
 use stats::{Commute, MinMax, OnlineStats, Unsorted, merge_all};
+use tempfile::Builder as TempFileBuilder;
 use threadpool::ThreadPool;
 
 use self::FieldType::{TDate, TDateTime, TFloat, TInteger, TNull, TString};
@@ -925,7 +926,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // the --output format, since it's an internal format consumed by moarstats,
     // schema, frequency, etc. Use .csv suffix so NamedTempFile RAII cleanup
     // deletes the correct file.
-    let stats_csv_tempfile = tempfile::Builder::new().suffix(".csv").tempfile()?;
+    let stats_csv_tempfile = TempFileBuilder::new().suffix(".csv").tempfile()?;
     // safety: we know the tempfile is a valid NamedTempFile, so we can use unwrap
     let stats_csv_tempfile_fname = stats_csv_tempfile.path().to_str().unwrap().to_string();
 
@@ -956,7 +957,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let temp_dir =
             crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep());
 
-        let mut stdin_file = tempfile::Builder::new().tempfile_in(temp_dir)?;
+        let mut stdin_file = TempFileBuilder::new().tempfile_in(temp_dir)?;
 
         let stdin = std::io::stdin();
         let mut stdin_handle = stdin.lock();

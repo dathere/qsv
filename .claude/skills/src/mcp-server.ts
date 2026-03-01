@@ -564,6 +564,7 @@ class QsvMcpServer {
 
       // Log start (fire-and-forget — logging must not break tool calls)
       // Start entries only at "info" level; "error" level only logs failures
+      // Safe to capture once: config is immutable after initialization
       const auditLogEnabled = config.mcpLogLevel !== "off";
       if (config.mcpLogLevel === "info") {
         runQsvSimple(config.qsvBinPath, ["log", name, `s-${invocationId}`, startMsg], {
@@ -719,7 +720,11 @@ class QsvMcpServer {
         // Log error end with elapsed time (always log errors unless fully off)
         if (auditLogEnabled) {
           const elapsedSecs = ((Date.now() - startTime) / 1000).toFixed(2);
-          runQsvSimple(config.qsvBinPath, ["log", name, `e-${invocationId}`, `error(${elapsedSecs}s): ${getErrorMessage(error)}`], {
+          const errMsg = getErrorMessage(error);
+          const truncatedErr = errMsg.length > MAX_ARGS_LOG_LEN
+            ? errMsg.slice(0, MAX_ARGS_LOG_LEN) + "…[truncated]"
+            : errMsg;
+          runQsvSimple(config.qsvBinPath, ["log", name, `e-${invocationId}`, `error(${elapsedSecs}s): ${truncatedErr}`], {
             timeoutMs: 5_000,
             cwd: this.filesystemProvider.getWorkingDirectory(),
           }).catch(() => {});

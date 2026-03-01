@@ -930,21 +930,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // find the delimiter to use based on the extension of the output file
     // and if we need to snappy compress the output
-    let (output_extension, output_delim, snappy) = match args.flag_output {
+    let (_output_extension, output_delim, snappy) = match args.flag_output {
         Some(ref output_path) => get_delim_by_extension(Path::new(&output_path), b','),
         _ => (String::new(), b',', false),
     };
+    // The cache temp file always uses CSV format (comma delimiter)
+    // regardless of the --output format, since the .stats.csv cache
+    // is an internal format consumed by moarstats, schema, frequency, etc.
     let stats_csv_tempfile_fname = format!(
-        "{stem}.{prime_ext}{snappy_ext}",
-        //safety: we know the tempfile is a valid NamedTempFile, so we can use unwrap
+        "{stem}.csv{snappy_ext}",
+        // safety: we know the tempfile is a valid NamedTempFile, so we can use unwrap
         stem = stats_csv_tempfile.path().to_str().unwrap(),
-        prime_ext = output_extension,
         snappy_ext = if snappy { ".sz" } else { "" }
     );
 
-    // we will write the stats to a temp file
+    // we will write the stats to a temp file - always as CSV
     let wconfig = Config::new(Some(stats_csv_tempfile_fname.clone()).as_ref())
-        .delimiter(Some(Delimiter(output_delim)));
+        .delimiter(Some(Delimiter(b',')));
     let mut wtr = wconfig.writer()?;
 
     let mut rconfig = args.rconfig();
@@ -1479,7 +1481,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     &currstats_filename,
                     &STATSDATA_TYPES_MAP,
                     &stats_jsonl_pathbuf,
-                    output_delim,
+                    b',', // cache is always CSV (comma-delimited)
                 )?;
             }
         }
@@ -1487,14 +1489,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     if stdout_output_flag {
         // if we're outputting to stdout, copy the stats file to stdout
-        let currstats = fs::read_to_string(currstats_filename)?;
-        io::stdout().write_all(currstats.as_bytes())?;
+        if output_delim == b',' {
+            let currstats = fs::read_to_string(currstats_filename)?;
+            io::stdout().write_all(currstats.as_bytes())?;
+        } else {
+            // output has a non-comma delimiter, convert from CSV cache
+            util::csv_to_delimited_writer(&currstats_filename, &mut io::stdout(), output_delim)?;
+        }
         io::stdout().flush()?;
     } else if let Some(output) = args.flag_output {
         // if we're outputting to a file, copy the stats file to the output file
         if currstats_filename != output {
-            // if the stats file is not the same as the output file, copy it
-            fs::copy(currstats_filename, output)?;
+            if output_delim == b',' {
+                fs::copy(currstats_filename, output)?;
+            } else {
+                // output has a non-comma delimiter, convert from CSV cache
+                util::csv_to_delimited(&currstats_filename, &output, output_delim)?;
+            }
         }
     }
 

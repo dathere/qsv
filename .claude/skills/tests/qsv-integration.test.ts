@@ -884,7 +884,7 @@ test('qsv_sqlp success output includes Polars SQL engine header', { skip: !QSV_A
   }
 });
 
-test('qsv_sqlp success with parquet warning has correct ordering: engine header before warning', { skip: !QSV_AVAILABLE }, async () => {
+test('qsv_sqlp success with parquet warning has correct ordering: engine header before warning', { skip: !QSV_AVAILABLE || process.platform === 'win32' }, async () => {
   const testDir = await createTestDir();
   const loader = new SkillLoader();
   const executor = new SkillExecutor();

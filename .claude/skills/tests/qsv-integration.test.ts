@@ -845,6 +845,112 @@ test('handleToolCall prefers "input_file" over "input" when both present', { ski
   }
 });
 
+// ============================================================================
+// Polars SQL Engine Header Tests
+// ============================================================================
+
+test('qsv_sqlp success output includes Polars SQL engine header', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n'
+    );
+
+    const result = await handleToolCall(
+      'qsv_sqlp',
+      {
+        input_file: csvPath,
+        sql: 'SELECT * FROM _t_1',
+      },
+      executor,
+      loader,
+    );
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+    const output = result.content[0].text || '';
+    assert.ok(
+      output.startsWith('🐻‍❄️ Engine: Polars SQL'),
+      `sqlp output should start with Polars SQL engine header, got: ${output.substring(0, 80)}`,
+    );
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('qsv_sqlp error output includes Polars SQL engine header', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name,age\n1,Alice,30\n'
+    );
+
+    const result = await handleToolCall(
+      'qsv_sqlp',
+      {
+        input_file: csvPath,
+        sql: 'SELECT nonexistent_column FROM _t_1',
+      },
+      executor,
+      loader,
+    );
+
+    assert.ok(result.isError, 'Command should fail with invalid column');
+    const output = result.content[0].text || '';
+    assert.ok(
+      output.startsWith('🐻‍❄️ Engine: Polars SQL'),
+      `sqlp error output should start with Polars SQL engine header, got: ${output.substring(0, 80)}`,
+    );
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('non-sqlp commands do not include Polars SQL engine header', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name,age\n1,Alice,30\n2,Bob,25\n'
+    );
+
+    const result = await handleToolCall(
+      'qsv_count',
+      { input_file: csvPath },
+      executor,
+      loader,
+    );
+
+    assert.ok(!result.isError, 'Command should succeed');
+    const output = result.content[0].text || '';
+    assert.ok(
+      !output.includes('🐻‍❄️ Engine: Polars SQL'),
+      `Non-sqlp command should not include Polars SQL engine header, got: ${output.substring(0, 80)}`,
+    );
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
 if (!QSV_AVAILABLE) {
   console.log('\n⚠️  qsv integration tests skipped - qsv binary not available or version too old');
   console.log(`   Current validation: ${JSON.stringify(config.qsvValidation, null, 2)}`);

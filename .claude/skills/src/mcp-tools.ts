@@ -2039,19 +2039,21 @@ export async function handleToolCall(
         (c: { type: string }) => c.type === "text",
       ) as { type: "text"; text: string } | undefined;
 
-      // Prepend Polars SQL engine header for sqlp results
-      if (commandName === "sqlp") {
-        if (textContent) {
-          textContent.text = "🐻‍❄️ Engine: Polars SQL\n\n" + textContent.text;
-        }
-      }
-
       // Prepend Parquet conversion warning if any
       if (parquetConversionWarning) {
         if (textContent) {
           textContent.text = parquetConversionWarning + "\n\n" + textContent.text;
         } else {
           console.error(`[MCP Tools] Could not prepend Parquet warning to result: unexpected content structure`);
+        }
+      }
+
+      // Prepend Polars SQL engine header for sqlp results
+      // (after parquet warning so final order is: engine header → warning → output,
+      // consistent with the error path)
+      if (commandName === "sqlp") {
+        if (textContent) {
+          textContent.text = "🐻‍❄️ Engine: Polars SQL\n\n" + textContent.text;
         }
       }
       // Append moarstats auto-enrichment note if applicable

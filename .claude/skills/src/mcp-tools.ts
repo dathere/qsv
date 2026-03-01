@@ -2051,7 +2051,7 @@ export async function handleToolCall(
       // Prepend Polars SQL engine header for sqlp results
       // (after parquet warning so final order is: engine header → warning → output,
       // consistent with the error path)
-      if (commandName === "sqlp") {
+      if (commandName === "sqlp" && !isHelpRequest) {
         if (textContent) {
           textContent.text = "🐻‍❄️ Engine: Polars SQL\n\n" + textContent.text;
         }
@@ -2068,7 +2068,7 @@ export async function handleToolCall(
     } else {
       const cmdLine = result.metadata?.command ? `\nCommand: ${result.metadata.command}` : "";
       const stderr = result.stderr.trimEnd();
-      const engineHeader = commandName === "sqlp" ? "🐻‍❄️ Engine: Polars SQL\n\n" : "";
+      const engineHeader = commandName === "sqlp" && !isHelpRequest ? "🐻‍❄️ Engine: Polars SQL\n\n" : "";
       const errorMsg = parquetConversionWarning
         ? `${engineHeader}${parquetConversionWarning}\n\nError executing ${commandName}:\n${stderr}${cmdLine}`
         : `${engineHeader}Error executing ${commandName}:\n${stderr}${cmdLine}`;

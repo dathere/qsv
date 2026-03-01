@@ -266,6 +266,16 @@ describe("translateSql", () => {
     assert.ok(result.includes("read_parquet('/data/test.parquet') AS b"));
   });
 
+  test("qualified _t_1 reference before aliased FROM uses the user alias", () => {
+    const sql = "SELECT _t_1.id FROM _t_1 a";
+    const result = translateSql(sql, "/data/test.parquet");
+    // The qualified _t_1.id should resolve to the user-provided alias "a",
+    // and no fallback _tbl_1 alias should be introduced.
+    assert.ok(result.includes("read_parquet('/data/test.parquet') AS a"));
+    assert.ok(result.includes("a.id"));
+    assert.ok(!result.includes("_tbl_1.id"));
+  });
+
   test("SQL keywords after _t_1 are not consumed as aliases", () => {
     const sql = "SELECT * FROM _t_1 WHERE x > 0";
     const result = translateSql(sql, "/data/test.csv");

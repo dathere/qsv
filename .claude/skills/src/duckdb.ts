@@ -337,6 +337,23 @@ export function translateSql(
     "gi",
   );
 
+  // Pre-scan: find the alias that the first standalone _t_1 will receive.
+  // This ensures qualified refs appearing *before* the first standalone _t_1
+  // (e.g. `SELECT _t_1.id FROM _t_1 a`) resolve to the correct alias.
+  let firstAlias = "_tbl_1"; // default if no user alias on first standalone _t_1
+  const prescanPattern = new RegExp(
+    `'[^']*(?:''[^']*)*'|\\b_t_1\\b\\.|\\b_t_1\\b(?:\\s+AS\\s+(\\w+)|\\s+(?!(?:${SQL_KEYWORDS})\\b)(\\w+))?(?!\\.)`,"gi",
+  );
+  let prescanMatch;
+  while ((prescanMatch = prescanPattern.exec(sql)) !== null) {
+    const [m, asAlias, bareAlias] = prescanMatch;
+    if (m.startsWith("'") || m === "_t_1." || m === "_T_1.") continue;
+    // Found first standalone _t_1 — check for user alias
+    const userAlias = asAlias || bareAlias;
+    if (userAlias) firstAlias = userAlias;
+    break;
+  }
+
   let aliasCounter = 0;
   let lastAlias = "";
   const translated = sql.replace(
@@ -345,12 +362,9 @@ export function translateSql(
       if (match.startsWith("'")) return match;
       if (match === "_t_1." || match === "_T_1.") {
         // Qualified ref (_t_1.): rewrite to use the most recently assigned alias.
-        // Falls back to _tbl_1 if a qualified ref appears before any standalone _t_1
-        // (e.g. SELECT _t_1.col FROM _t_1) — the FROM alias will be _tbl_1.
-        // NOTE: If the SQL contains *only* qualified refs and no standalone _t_1
-        // (no FROM clause), the _tbl_1 fallback alias is never defined, producing
-        // invalid SQL. This edge case is extremely unlikely in practice.
-        return `${lastAlias || "_tbl_1"}.`;
+        // Falls back to the pre-scanned firstAlias so that early qualified refs
+        // (before the first standalone _t_1) resolve correctly.
+        return `${lastAlias || firstAlias}.`;
       }
       // Standalone _t_1 (possibly with user alias): expand to read expression
       const userAlias = asAlias || bareAlias;

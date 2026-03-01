@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { readFile, stat, access } from 'fs/promises';
+import { readFile, stat, access, chmod } from 'fs/promises';
 import { join } from 'path';
 import { handleToolCall, handleToParquetCall } from '../src/mcp-tools.js';
 import { config } from '../src/config.js';
@@ -839,6 +839,180 @@ test('handleToolCall prefers "input_file" over "input" when both present', { ski
     assert.ok(
       result.content[0].text?.includes('Alice'),
       'Output should be based on the preferred input_file contents',
+    );
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+// ============================================================================
+// Polars SQL Engine Header Tests
+// ============================================================================
+
+test('qsv_sqlp success output includes Polars SQL engine header', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name,age\n1,Alice,30\n2,Bob,25\n3,Charlie,35\n'
+    );
+
+    const result = await handleToolCall(
+      'qsv_sqlp',
+      {
+        input_file: csvPath,
+        sql: 'SELECT * FROM _t_1',
+      },
+      executor,
+      loader,
+    );
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+    const output = result.content[0].text || '';
+    assert.ok(
+      output.startsWith('🐻‍❄️ Engine: Polars SQL'),
+      `sqlp output should start with Polars SQL engine header, got: ${output.substring(0, 80)}`,
+    );
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('qsv_sqlp success with parquet warning has correct ordering: engine header before warning', { skip: !QSV_AVAILABLE || process.platform === 'win32' }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name,age\n1,Alice,30\n2,Bob,25\n'
+    );
+
+    // Make directory read-only to prevent parquet file creation,
+    // which triggers the parquet conversion warning while sqlp still succeeds
+    // against the original CSV.
+    await chmod(testDir, 0o555);
+
+    const result = await handleToolCall(
+      'qsv_sqlp',
+      {
+        input_file: csvPath,
+        sql: 'SELECT * FROM _t_1',
+      },
+      executor,
+      loader,
+    );
+
+    // Restore write permissions before assertions so cleanup always works
+    await chmod(testDir, 0o755);
+
+    assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
+    const output = result.content[0].text || '';
+
+    // Engine header must appear first
+    assert.ok(
+      output.startsWith('🐻‍❄️ Engine: Polars SQL'),
+      `Output should start with engine header, got: ${output.substring(0, 100)}`,
+    );
+
+    // Parquet warning must be present and appear after engine header but before data
+    const warningIndex = output.indexOf('[Warning] Parquet auto-conversion was skipped');
+    const engineIndex = output.indexOf('🐻‍❄️ Engine: Polars SQL');
+    assert.ok(
+      warningIndex !== -1,
+      'Parquet warning should be present in output (read-only dir should prevent parquet creation)',
+    );
+    assert.ok(
+      warningIndex > engineIndex,
+      `Parquet warning (pos ${warningIndex}) should appear after engine header (pos ${engineIndex})`,
+    );
+
+    // Verify there is actual data content after the warning
+    // (the formatted output follows the warning, separated by blank lines)
+    const afterWarning = output.substring(warningIndex + '[Warning] Parquet auto-conversion was skipped'.length);
+    assert.ok(
+      afterWarning.trim().length > 0,
+      'Output should contain data content after the parquet warning',
+    );
+  } finally {
+    // Ensure write permissions are restored for cleanup even if test fails
+    try { await chmod(testDir, 0o755); } catch (_e) { /* best-effort */ }
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('qsv_sqlp error output includes Polars SQL engine header', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name,age\n1,Alice,30\n'
+    );
+
+    // Use definitively invalid SQL syntax that no SQL engine would accept
+    const result = await handleToolCall(
+      'qsv_sqlp',
+      {
+        input_file: csvPath,
+        sql: 'SELEC * FORM _t_1',
+      },
+      executor,
+      loader,
+    );
+
+    assert.ok(result.isError, 'Command should fail with invalid SQL syntax');
+    const output = result.content[0].text || '';
+    assert.ok(
+      output.startsWith('🐻‍❄️ Engine: Polars SQL'),
+      `sqlp error output should start with Polars SQL engine header, got: ${output.substring(0, 80)}`,
+    );
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('non-sqlp commands do not include Polars SQL engine header', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+
+    const csvPath = await createTestCSV(
+      testDir,
+      'test.csv',
+      'id,name,age\n1,Alice,30\n2,Bob,25\n'
+    );
+
+    const result = await handleToolCall(
+      'qsv_count',
+      { input_file: csvPath },
+      executor,
+      loader,
+    );
+
+    assert.ok(!result.isError, 'Command should succeed');
+    const output = result.content[0].text || '';
+    assert.ok(
+      !output.includes('🐻‍❄️ Engine: Polars SQL'),
+      `Non-sqlp command should not include Polars SQL engine header, got: ${output.substring(0, 80)}`,
     );
   } finally {
     await cleanupTestDir(testDir);

@@ -2047,6 +2047,15 @@ export async function handleToolCall(
           console.error(`[MCP Tools] Could not prepend Parquet warning to result: unexpected content structure`);
         }
       }
+
+      // Prepend Polars SQL engine header for sqlp results
+      // (after parquet warning so final order is: engine header → warning → output,
+      // consistent with the error path)
+      if (commandName === "sqlp") {
+        if (textContent) {
+          textContent.text = "🐻‍❄️ Engine: Polars SQL\n\n" + textContent.text;
+        }
+      }
       // Append moarstats auto-enrichment note if applicable
       if (moarstatsNote) {
         if (textContent) {
@@ -2059,9 +2068,10 @@ export async function handleToolCall(
     } else {
       const cmdLine = result.metadata?.command ? `\nCommand: ${result.metadata.command}` : "";
       const stderr = result.stderr.trimEnd();
+      const engineHeader = commandName === "sqlp" ? "🐻‍❄️ Engine: Polars SQL\n\n" : "";
       const errorMsg = parquetConversionWarning
-        ? `${parquetConversionWarning}\n\nError executing ${commandName}:\n${stderr}${cmdLine}`
-        : `Error executing ${commandName}:\n${stderr}${cmdLine}`;
+        ? `${engineHeader}${parquetConversionWarning}\n\nError executing ${commandName}:\n${stderr}${cmdLine}`
+        : `${engineHeader}Error executing ${commandName}:\n${stderr}${cmdLine}`;
       return errorResult(errorMsg);
     }
   } catch (error: unknown) {

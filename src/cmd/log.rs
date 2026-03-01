@@ -1,9 +1,10 @@
 static USAGE: &str = r#"
-Logs an MCP tool invocation entry to qsvmcp.log.
+Logs an MCP tool invocation entry to qsvmcp.log. Only intended for internal use by the
+qsv MCP server, not for general CLI use and only available from the qsvmcp binary variant.
 
-This command is used internally by the MCP server to create an audit trail
-of tool invocations. Each entry includes the tool name, a prefixed invocation
-UUID (s- for start, e- for end), and context (agent's reason or result).
+This command is used internally by the MCP server to create an audit trail of
+tool invocations. Each entry includes the tool name, a prefixed invocation UUID
+(with a "s-" prefix for start, "e-" for end), and context (agent's reason or result).
 
 The log file (qsvmcp.log) is written in the current working directory of the
 process. When invoked by the MCP server, this is the server's configured working
@@ -24,6 +25,7 @@ use serde::Deserialize;
 
 use crate::clitypes::CliResult;
 
+#[allow(clippy::struct_field_names)]
 #[derive(Deserialize)]
 struct Args {
     arg_tool_name:     String,

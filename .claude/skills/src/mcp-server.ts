@@ -553,15 +553,24 @@ class QsvMcpServer {
           )
         : args;
 
-      // Build start message: reason + tool arguments summary
-      const argsSummary = toolArgs ? JSON.stringify(toolArgs) : "";
+      // Build start message: reason + tool arguments summary (truncated to avoid
+      // OS argument-length limits and oversized log entries for large payloads)
+      const MAX_ARGS_LOG_LEN = 1024;
+      const rawArgsSummary = toolArgs ? JSON.stringify(toolArgs) : "";
+      const argsSummary = rawArgsSummary.length > MAX_ARGS_LOG_LEN
+        ? rawArgsSummary.slice(0, MAX_ARGS_LOG_LEN) + "…[truncated]"
+        : rawArgsSummary;
       const startMsg = reason + (argsSummary ? ` | args: ${argsSummary}` : "");
 
       // Log start (fire-and-forget — logging must not break tool calls)
-      runQsvSimple(config.qsvBinPath, ["log", name, `s-${invocationId}`, startMsg], {
-        timeoutMs: 5_000,
-        cwd: this.filesystemProvider.getWorkingDirectory(),
-      }).catch(() => {});
+      // Start entries only at "info" level; "error" level only logs failures
+      const auditLogEnabled = config.mcpLogLevel !== "off";
+      if (config.mcpLogLevel === "info") {
+        runQsvSimple(config.qsvBinPath, ["log", name, `s-${invocationId}`, startMsg], {
+          timeoutMs: 5_000,
+          cwd: this.filesystemProvider.getWorkingDirectory(),
+        }).catch(() => {});
+      }
 
       // Dispatch tool and log result
       const dispatch = async () => {
@@ -695,22 +704,26 @@ class QsvMcpServer {
         // Log end with elapsed time
         const elapsedSecs = ((Date.now() - startTime) / 1000).toFixed(2);
         const isError = "isError" in result && result.isError === true;
-        const endMsg = isError
-          ? `error(${elapsedSecs}s): tool returned error`
-          : `ok(${elapsedSecs}s)`;
-        runQsvSimple(config.qsvBinPath, ["log", name, `e-${invocationId}`, endMsg], {
-          timeoutMs: 5_000,
-          cwd: this.filesystemProvider.getWorkingDirectory(),
-        }).catch(() => {});
+        if (auditLogEnabled && (config.mcpLogLevel === "info" || isError)) {
+          const endMsg = isError
+            ? `error(${elapsedSecs}s): tool returned error`
+            : `ok(${elapsedSecs}s)`;
+          runQsvSimple(config.qsvBinPath, ["log", name, `e-${invocationId}`, endMsg], {
+            timeoutMs: 5_000,
+            cwd: this.filesystemProvider.getWorkingDirectory(),
+          }).catch(() => {});
+        }
 
         return result;
       } catch (error: unknown) {
-        // Log error end with elapsed time
-        const elapsedSecs = ((Date.now() - startTime) / 1000).toFixed(2);
-        runQsvSimple(config.qsvBinPath, ["log", name, `e-${invocationId}`, `error(${elapsedSecs}s): ${getErrorMessage(error)}`], {
-          timeoutMs: 5_000,
-          cwd: this.filesystemProvider.getWorkingDirectory(),
-        }).catch(() => {});
+        // Log error end with elapsed time (always log errors unless fully off)
+        if (auditLogEnabled) {
+          const elapsedSecs = ((Date.now() - startTime) / 1000).toFixed(2);
+          runQsvSimple(config.qsvBinPath, ["log", name, `e-${invocationId}`, `error(${elapsedSecs}s): ${getErrorMessage(error)}`], {
+            timeoutMs: 5_000,
+            cwd: this.filesystemProvider.getWorkingDirectory(),
+          }).catch(() => {});
+        }
 
         console.error(`Error executing tool ${name}:`, error);
         return errorResult(`Error: ${getErrorMessage(error)}`);

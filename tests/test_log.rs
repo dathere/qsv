@@ -10,9 +10,14 @@ fn log_start_entry() {
 
     let log_content: String = wrk.from_str(&wrk.path("qsvmcp.log"));
     assert!(log_content.contains("s-abc123 qsv_stats: Analyzing data"));
-    // Verify ISO-8601 timestamp format
-    assert!(log_content.starts_with('['));
-    assert!(log_content.contains(']'));
+    // Verify ISO-8601 timestamp format (RFC 3339 with milliseconds)
+    // e.g. [2026-03-01T10:30:00.123Z]
+    let re = regex::Regex::new(r"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\] ").unwrap();
+    assert!(
+        re.is_match(&log_content),
+        "Log entry should start with RFC 3339 millis timestamp, got: {}",
+        &log_content[..log_content.len().min(40)]
+    );
 }
 
 #[test]

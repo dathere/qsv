@@ -4,7 +4,7 @@ To keep things simple:
 
 * no additional logging config file required
 * logging level set via env vars (`QSV_LOG_LEVEL` and `QSV_LOG_DIR`)
-* logging can be disabled completely (default behavior for `qsv`/`qsvlite`/`qsvdp`; `qsvmcp` defaults to `info` level to log all MCP tool calls)
+* logging can be disabled completely (default behavior for `qsv`/`qsvlite`/`qsvdp`; `qsvmcp` defaults to `info` level to capture process-level START/END entries)
 * logging goes to specified directory with auto log rotation (default: current directory)
 * if specified directory doesn't exist, qsv will attempt to create it
 * logs to `qsv_rCURRENT.log` - rotating at 1mb, keeping 10 most recent log files uncompressed, 
@@ -13,7 +13,9 @@ To keep things simple:
 
 ## Enable Logging
 
-Set environment variable `QSV_LOG_LEVEL` to desired level. Default is `off` (`qsvmcp` defaults to `info` to automatically log all MCP tool calls).
+Set environment variable `QSV_LOG_LEVEL` to desired level. Default is `off` (`qsvmcp` defaults to `info` to capture process-level START/END entries in `qsv_rCURRENT.log`).
+
+> **Note:** `QSV_LOG_LEVEL` controls the standard `qsv_rCURRENT.log` file (process-level entries). The MCP audit trail (`qsvmcp.log`) is a separate log produced by the `qsv log` command and is controlled by `QSV_MCP_LOG_LEVEL` on the MCP server side.
 * off - no logging
 * error
 * warn

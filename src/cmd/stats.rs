@@ -938,8 +938,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     // we will write the stats to a temp file - always as plain CSV
-    let wconfig = Config::new(Some(&stats_csv_tempfile_fname))
-        .delimiter(Some(Delimiter(b',')));
+    let wconfig = Config::new(Some(&stats_csv_tempfile_fname)).delimiter(Some(Delimiter(b',')));
     let mut wtr = wconfig.writer()?;
 
     let mut rconfig = args.rconfig();

@@ -276,6 +276,28 @@ describe("translateSql", () => {
     assert.ok(!result.includes("_tbl_1.id"));
   });
 
+  test("qualified _t_1 ref before FROM with no user alias falls back to _tbl_1", () => {
+    const sql = "SELECT _t_1.id FROM _t_1 WHERE _t_1.name = 'x'";
+    const result = translateSql(sql, "/data/test.parquet");
+    // No user alias on the standalone _t_1 → firstAlias defaults to _tbl_1
+    assert.ok(result.includes("AS _tbl_1 WHERE"), `Expected _tbl_1 alias, got: ${result}`);
+    // Both qualified refs should resolve to _tbl_1
+    assert.ok(result.includes("_tbl_1.id"), `Expected _tbl_1.id, got: ${result}`);
+    assert.ok(result.includes("_tbl_1.name"), `Expected _tbl_1.name, got: ${result}`);
+  });
+
+  test("multi-table pre-scan only affects _t_1, not _t_2", () => {
+    // _t_2 is left untranslated by translateSql (only _t_1 is handled)
+    const sql = "SELECT _t_1.id, _t_2.name FROM _t_1 a, _t_2 b";
+    const result = translateSql(sql, "/data/test.parquet");
+    // _t_1.id should resolve to user alias "a" via pre-scan
+    assert.ok(result.includes("a.id"), `Expected a.id, got: ${result}`);
+    assert.ok(result.includes("read_parquet('/data/test.parquet') AS a"), `Expected AS a, got: ${result}`);
+    // _t_2 references should be left untouched
+    assert.ok(result.includes("_t_2.name"), `_t_2.name should be untouched, got: ${result}`);
+    assert.ok(result.includes("_t_2 b"), `_t_2 b should be untouched, got: ${result}`);
+  });
+
   test("SQL keywords after _t_1 are not consumed as aliases", () => {
     const sql = "SELECT * FROM _t_1 WHERE x > 0";
     const result = translateSql(sql, "/data/test.csv");

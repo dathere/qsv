@@ -340,19 +340,30 @@ export function translateSql(
   // Pre-scan: find the alias that the first standalone _t_1 will receive.
   // This ensures qualified refs appearing *before* the first standalone _t_1
   // (e.g. `SELECT _t_1.id FROM _t_1 a`) resolve to the correct alias.
+  //
+  // NOTE: If the SQL contains *only* qualified `_t_1.` refs and no standalone
+  // `_t_1`, firstAlias stays as `_tbl_1` which is never defined as a FROM
+  // source — the resulting SQL will be invalid. This is an inherent limitation
+  // since there's no FROM clause to attach a read expression to.
   let firstAlias = "_tbl_1"; // default if no user alias on first standalone _t_1
-  const prescanPattern = new RegExp(
-    `'[^']*(?:''[^']*)*'|\\b_t_1\\b\\.|\\b_t_1\\b(?:\\s+AS\\s+(\\w+)|\\s+(?!(?:${SQL_KEYWORDS})\\b)(\\w+))?(?!\\.)`,"gi",
-  );
+  // Reuse the same `pattern` regex to avoid maintaining a duplicate. Reset
+  // lastIndex so the scan starts from the beginning of the string.
+  pattern.lastIndex = 0;
   let prescanMatch;
-  while ((prescanMatch = prescanPattern.exec(sql)) !== null) {
+  while ((prescanMatch = pattern.exec(sql)) !== null) {
     const [m, asAlias, bareAlias] = prescanMatch;
-    if (m.startsWith("'") || m === "_t_1." || m === "_T_1.") continue;
+    // Skip string literals and dot-qualified refs. The dot-qualified branch
+    // captures exactly `_t_1.` (5 chars) — the `i` flag makes the regex
+    // case-insensitive, but the captured string preserves original case, so
+    // we use a case-insensitive comparison to cover all variants.
+    if (m.startsWith("'") || m.toLowerCase() === "_t_1.") continue;
     // Found first standalone _t_1 — check for user alias
     const userAlias = asAlias || bareAlias;
     if (userAlias) firstAlias = userAlias;
     break;
   }
+  // Reset lastIndex so the main .replace() pass starts fresh.
+  pattern.lastIndex = 0;
 
   let aliasCounter = 0;
   let lastAlias = "";
@@ -360,7 +371,7 @@ export function translateSql(
     pattern,
     (match, asAlias, bareAlias) => {
       if (match.startsWith("'")) return match;
-      if (match === "_t_1." || match === "_T_1.") {
+      if (match.toLowerCase() === "_t_1.") {
         // Qualified ref (_t_1.): rewrite to use the most recently assigned alias.
         // Falls back to the pre-scanned firstAlias so that early qualified refs
         // (before the first standalone _t_1) resolve correctly.

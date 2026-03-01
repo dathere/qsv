@@ -56,9 +56,9 @@ fn log_append_behavior() {
     wrk.output(&mut cmd1);
 
     // Second entry
-    let mut cmd2 = wrk.command("log");
-    cmd2.args(["qsv_frequency", "s-second", "Checking", "frequencies"]);
-    wrk.output(&mut cmd2);
+    let mut cmd_2 = wrk.command("log");
+    cmd_2.args(["qsv_frequency", "s-second", "Checking", "frequencies"]);
+    wrk.output(&mut cmd_2);
 
     let log_content: String = wrk.from_str(&wrk.path("qsvmcp.log"));
     let lines: Vec<&str> = log_content.lines().collect();

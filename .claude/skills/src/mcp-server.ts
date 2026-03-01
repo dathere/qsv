@@ -538,10 +538,10 @@ class QsvMcpServer {
       console.error(`Tool called: ${name}`);
 
       // MCP audit logging: generate invocation ID and extract optional _reason.
-      // _reason is an undeclared meta-parameter that MCP clients may pass to
-      // provide human-readable context for the invocation. It is stripped from
-      // toolArgs before dispatch and only used in the audit log. If absent, the
-      // tool name is used as the reason.
+      // _reason is an optional meta-parameter declared in tool input schemas
+      // that MCP clients may pass to provide human-readable context for the
+      // invocation. It is stripped from toolArgs before dispatch and only used
+      // in the audit log. If absent, the tool name is used as the reason.
       const startTime = Date.now();
       const invocationId = randomUUID();
 

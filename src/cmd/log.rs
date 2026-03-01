@@ -32,10 +32,19 @@ struct Args {
 }
 
 /// Sanitize a string for safe log output by replacing control characters
-/// (newlines, carriage returns, tabs, etc.) with spaces.
+/// (newlines, carriage returns, tabs, etc.) with spaces, and NUL bytes with
+/// the Unicode replacement character (U+FFFD) so they stand out in log output.
 fn sanitize_log_field(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
+        .map(|c| {
+            if c == '\0' {
+                '\u{FFFD}'
+            } else if c.is_control() {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect()
 }
 

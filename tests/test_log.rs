@@ -78,3 +78,47 @@ fn log_empty_message() {
     let log_content: String = wrk.from_str(&wrk.path("qsvmcp.log"));
     assert!(log_content.contains("s-nomsg qsv_count: "));
 }
+
+#[test]
+fn log_special_chars_sanitized() {
+    let wrk = Workdir::new("log_special_chars_sanitized");
+
+    // Message with newlines that could inject fake log entries
+    let mut cmd = wrk.command("log");
+    cmd.args([
+        "qsv_stats",
+        "s-inject1",
+        "legit\n[2099-01-01T00:00:00.000Z] s-fake injected_tool: fake entry",
+    ]);
+    wrk.output(&mut cmd);
+
+    let log_content: String = wrk.from_str(&wrk.path("qsvmcp.log"));
+    let lines: Vec<&str> = log_content.lines().collect();
+    // Should be exactly one log line — the newline must be sanitized
+    assert_eq!(
+        lines.len(),
+        1,
+        "Newline in message must not create extra log lines"
+    );
+    // The sanitized message should still contain all non-control parts on a single line
+    assert!(lines[0].contains("s-inject1 qsv_stats:"));
+    // The injected fake entry text is present but harmlessly on the same line
+    assert!(lines[0].contains("injected_tool"));
+}
+
+#[test]
+fn log_control_chars_in_tool_name() {
+    let wrk = Workdir::new("log_control_chars_in_tool_name");
+    let mut cmd = wrk.command("log");
+    cmd.args(["tool\r\nfake", "s-ctrl", "test"]);
+
+    wrk.output(&mut cmd);
+
+    let log_content: String = wrk.from_str(&wrk.path("qsvmcp.log"));
+    let lines: Vec<&str> = log_content.lines().collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "Control chars in tool name must not create extra log lines"
+    );
+}

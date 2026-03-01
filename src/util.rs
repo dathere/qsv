@@ -2954,6 +2954,32 @@ pub fn get_stats_records(
     Ok((csv_fields.iter().take(csv_stats.len()).collect(), csv_stats))
 }
 
+/// Reads a CSV file (comma-delimited) and writes it with a different delimiter to a writer.
+pub fn csv_to_delimited_writer<W: Write>(
+    input_csv: &str,
+    writer: &mut W,
+    delimiter: u8,
+) -> CliResult<()> {
+    let file = File::open(input_csv)?;
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .delimiter(b',')
+        .from_reader(file);
+    let mut wtr = csv::WriterBuilder::new()
+        .delimiter(delimiter)
+        .from_writer(writer);
+
+    let headers = rdr.headers()?.clone();
+    wtr.write_record(&headers)?;
+
+    for result in rdr.records() {
+        let record = result?;
+        wtr.write_record(&record)?;
+    }
+    wtr.flush()?;
+    Ok(())
+}
+
 pub fn csv_to_jsonl(
     input_csv: &str,
     csv_types: &phf::Map<&'static str, JsonTypes>,

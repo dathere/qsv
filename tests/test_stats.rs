@@ -1528,6 +1528,249 @@ col3	String	true		01	10		Ascending	1	2	2	10	2	0	0	0								0					0
     assert_eq!(got, expected);
 }
 
+// Regression test: when --output is TSV, the .stats.csv cache must remain
+// comma-delimited so downstream commands (moarstats, schema, etc.) can read it.
+#[test]
+fn stats_cache_always_csv_when_output_is_tsv() {
+    let wrk = Workdir::new("stats_cache_always_csv_when_output_is_tsv");
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age"],
+            svec!["Alice", "30"],
+            svec!["Bob", "25"],
+        ],
+    );
+
+    let out_file = wrk.path("output.tsv").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .args(&["--output", &out_file])
+        .args(&["--cache-threshold", "1"]);
+
+    wrk.assert_success(&mut cmd);
+
+    // the output file should be tab-delimited
+    let output_content = std::fs::read_to_string(&out_file).unwrap();
+    assert!(
+        output_content.contains('\t'),
+        "output.tsv should be tab-delimited"
+    );
+    // verify the output is valid stats TSV by checking header fields
+    let tsv_first_line = output_content.lines().next().unwrap();
+    let tsv_fields: Vec<&str> = tsv_first_line.split('\t').collect();
+    assert_eq!(tsv_fields[0], "field", "first TSV header should be 'field'");
+    assert_eq!(tsv_fields[1], "type", "second TSV header should be 'type'");
+
+    // the cache file must be comma-delimited (NOT tab-delimited)
+    let cache_path = wrk.path("data.stats.csv");
+    let cache_content = std::fs::read_to_string(&cache_path).unwrap();
+    let first_line = cache_content.lines().next().unwrap();
+    assert!(
+        first_line.contains(','),
+        "stats cache should be comma-delimited, got: {first_line}"
+    );
+    assert!(
+        !first_line.contains('\t'),
+        "stats cache must NOT be tab-delimited, got: {first_line}"
+    );
+    // verify cache has expected stats headers
+    let cache_fields: Vec<&str> = first_line.split(',').collect();
+    assert_eq!(
+        cache_fields[0], "field",
+        "first cache header should be 'field'"
+    );
+    assert_eq!(
+        cache_fields[1], "type",
+        "second cache header should be 'type'"
+    );
+}
+
+// Regression test: --output with SSV extension should produce semicolon-delimited
+// output while keeping the cache comma-delimited.
+#[test]
+fn stats_cache_always_csv_when_output_is_ssv() {
+    let wrk = Workdir::new("stats_cache_always_csv_when_output_is_ssv");
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age"],
+            svec!["Alice", "30"],
+            svec!["Bob", "25"],
+        ],
+    );
+
+    let out_file = wrk.path("output.ssv").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .args(&["--output", &out_file])
+        .args(&["--cache-threshold", "1"]);
+
+    wrk.assert_success(&mut cmd);
+
+    // the output file should be semicolon-delimited with valid stats headers
+    let output_content = std::fs::read_to_string(&out_file).unwrap();
+    assert!(
+        output_content.contains(';'),
+        "output.ssv should be semicolon-delimited"
+    );
+    let ssv_first_line = output_content.lines().next().unwrap();
+    let ssv_fields: Vec<&str> = ssv_first_line.split(';').collect();
+    assert_eq!(ssv_fields[0], "field", "first SSV header should be 'field'");
+    assert_eq!(ssv_fields[1], "type", "second SSV header should be 'type'");
+
+    // the cache file must still be comma-delimited
+    let cache_path = wrk.path("data.stats.csv");
+    let cache_content = std::fs::read_to_string(&cache_path).unwrap();
+    let first_line = cache_content.lines().next().unwrap();
+    assert!(
+        first_line.contains(','),
+        "stats cache should be comma-delimited, got: {first_line}"
+    );
+    assert!(
+        !first_line.contains(';'),
+        "stats cache must NOT be semicolon-delimited, got: {first_line}"
+    );
+}
+
+// Regression test: --output with .csv.sz (Snappy-compressed, comma delimiter)
+// should produce a Snappy-compressed output while the cache remains plain
+// uncompressed CSV.
+#[test]
+fn stats_cache_always_csv_when_output_is_snappy() {
+    let wrk = Workdir::new("stats_cache_always_csv_when_output_is_snappy");
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age"],
+            svec!["Alice", "30"],
+            svec!["Bob", "25"],
+        ],
+    );
+
+    let out_file = wrk.path("output.csv.sz").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .args(&["--output", &out_file])
+        .args(&["--cache-threshold", "1"]);
+
+    wrk.assert_success(&mut cmd);
+
+    // the output file should exist and NOT be readable as plain text
+    // (it's Snappy-compressed)
+    let output_bytes = std::fs::read(&out_file).unwrap();
+    assert!(
+        !output_bytes.is_empty(),
+        "output.csv.sz should not be empty"
+    );
+    // Snappy framing format starts with 0xff 0x06 0x00 0x00
+    assert_eq!(
+        output_bytes[0], 0xff,
+        "output.csv.sz should start with Snappy magic byte"
+    );
+
+    // decompress and verify the output is valid CSV stats
+    let mut cmd = wrk.command("snappy");
+    cmd.arg("decompress").arg(&out_file);
+
+    let got: String = wrk.stdout(&mut cmd);
+    let first_line = got.lines().next().unwrap();
+    let fields: Vec<&str> = first_line.split(',').collect();
+    assert_eq!(
+        fields[0], "field",
+        "decompressed output first header should be 'field'"
+    );
+    assert_eq!(
+        fields[1], "type",
+        "decompressed output second header should be 'type'"
+    );
+
+    // the cache file must be plain uncompressed CSV
+    let cache_path = wrk.path("data.stats.csv");
+    let cache_content = std::fs::read_to_string(&cache_path).unwrap();
+    let cache_first_line = cache_content.lines().next().unwrap();
+    let cache_fields: Vec<&str> = cache_first_line.split(',').collect();
+    assert_eq!(
+        cache_fields[0], "field",
+        "cache first header should be 'field'"
+    );
+    assert_eq!(
+        cache_fields[1], "type",
+        "cache second header should be 'type'"
+    );
+    // ensure cache is NOT Snappy-compressed (readable as UTF-8 means it's plain text)
+    assert!(
+        cache_content.starts_with("field,"),
+        "cache should be plain CSV starting with 'field,', got: {}",
+        &cache_content[..cache_content.len().min(50)]
+    );
+}
+
+// Regression test: --output with .tsv.sz (Snappy + non-comma delimiter)
+// should still write a comma-delimited cache file.
+#[test]
+fn stats_cache_always_csv_when_output_is_tsv_sz() {
+    let wrk = Workdir::new("stats_cache_always_csv_when_output_is_tsv_sz");
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age"],
+            svec!["Alice", "30"],
+            svec!["Bob", "25"],
+        ],
+    );
+
+    let out_file = wrk.path("output.tsv.sz").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .args(&["--output", &out_file])
+        .args(&["--cache-threshold", "1"]);
+
+    wrk.assert_success(&mut cmd);
+
+    // decompress and verify the output is tab-delimited
+    let mut cmd = wrk.command("snappy");
+    cmd.arg("decompress").arg(&out_file);
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert!(
+        got.contains('\t'),
+        "decompressed output.tsv.sz should be tab-delimited, got: {got}"
+    );
+    // verify decompressed output has valid stats headers
+    let tsv_first_line = got.lines().next().unwrap();
+    let tsv_fields: Vec<&str> = tsv_first_line.split('\t').collect();
+    assert_eq!(
+        tsv_fields[0], "field",
+        "first decompressed TSV header should be 'field'"
+    );
+    assert_eq!(
+        tsv_fields[1], "type",
+        "second decompressed TSV header should be 'type'"
+    );
+
+    // the cache file must still be comma-delimited
+    let cache_path = wrk.path("data.stats.csv");
+    let cache_content = std::fs::read_to_string(&cache_path).unwrap();
+    let first_line = cache_content.lines().next().unwrap();
+    assert!(
+        first_line.contains(','),
+        "stats cache should be comma-delimited, got: {first_line}"
+    );
+    assert!(
+        !first_line.contains('\t'),
+        "stats cache must NOT be tab-delimited, got: {first_line}"
+    );
+}
+
 #[test]
 fn stats_output_ssv_delimited() {
     let wrk = Workdir::new("stats_output_ssv_delimited");

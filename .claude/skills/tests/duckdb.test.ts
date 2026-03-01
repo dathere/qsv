@@ -31,7 +31,7 @@ describe("translateSql", () => {
     const result = translateSql(sql, "/data/test.parquet");
     assert.strictEqual(
       result,
-      "SELECT * FROM read_parquet('/data/test.parquet') AS _tbl WHERE id > 10",
+      "SELECT * FROM read_parquet('/data/test.parquet') AS _tbl_1 WHERE id > 10",
     );
   });
 
@@ -40,7 +40,7 @@ describe("translateSql", () => {
     const result = translateSql(sql, "/data/test.csv");
     assert.strictEqual(
       result,
-      "SELECT * FROM read_csv('/data/test.csv', auto_detect = true) AS _tbl",
+      "SELECT * FROM read_csv('/data/test.csv', auto_detect = true) AS _tbl_1",
     );
   });
 
@@ -49,7 +49,7 @@ describe("translateSql", () => {
     const result = translateSql(sql, "/data/test.jsonl");
     assert.strictEqual(
       result,
-      "SELECT * FROM read_json('/data/test.jsonl') AS _tbl",
+      "SELECT * FROM read_json('/data/test.jsonl') AS _tbl_1",
     );
   });
 
@@ -58,7 +58,7 @@ describe("translateSql", () => {
     const result = translateSql(sql, "/data/test.ndjson");
     assert.strictEqual(
       result,
-      "SELECT * FROM read_json('/data/test.ndjson') AS _tbl",
+      "SELECT * FROM read_json('/data/test.ndjson') AS _tbl_1",
     );
   });
 
@@ -66,10 +66,10 @@ describe("translateSql", () => {
     const sql = "SELECT * FROM _T_1 WHERE _t_1.id > 0";
     const result = translateSql(sql, "/data/test.parquet");
     // _T_1 (standalone) is replaced with aliased read expression;
-    // _t_1.id (qualified column ref) is rewritten to _tbl.id via the alias
+    // _t_1.id (qualified column ref) is rewritten to _tbl_1.id via the alias
     assert.strictEqual(
       result,
-      "SELECT * FROM read_parquet('/data/test.parquet') AS _tbl WHERE _tbl.id > 0",
+      "SELECT * FROM read_parquet('/data/test.parquet') AS _tbl_1 WHERE _tbl_1.id > 0",
     );
   });
 
@@ -78,7 +78,7 @@ describe("translateSql", () => {
     const result = translateSql(sql, "/data/test.tsv", { delimiter: "\t" });
     assert.strictEqual(
       result,
-      "SELECT * FROM read_csv('/data/test.tsv', delim = '\t') AS _tbl",
+      "SELECT * FROM read_csv('/data/test.tsv', delim = '\t') AS _tbl_1",
     );
   });
 
@@ -89,7 +89,7 @@ describe("translateSql", () => {
     });
     assert.strictEqual(
       result,
-      "SELECT * FROM read_csv('/data/test.csv', nullstr = ['NA', 'N/A', 'null']) AS _tbl",
+      "SELECT * FROM read_csv('/data/test.csv', nullstr = ['NA', 'N/A', 'null']) AS _tbl_1",
     );
   });
 
@@ -101,7 +101,7 @@ describe("translateSql", () => {
     });
     assert.strictEqual(
       result,
-      "SELECT * FROM read_csv('/data/test.csv', delim = ';', nullstr = ['NA']) AS _tbl",
+      "SELECT * FROM read_csv('/data/test.csv', delim = ';', nullstr = ['NA']) AS _tbl_1",
     );
   });
 
@@ -110,7 +110,7 @@ describe("translateSql", () => {
     const result = translateSql(sql, "C:\\Users\\data\\test.parquet");
     assert.strictEqual(
       result,
-      "SELECT * FROM read_parquet('C:/Users/data/test.parquet') AS _tbl",
+      "SELECT * FROM read_parquet('C:/Users/data/test.parquet') AS _tbl_1",
     );
   });
 
@@ -119,7 +119,7 @@ describe("translateSql", () => {
     const result = translateSql(sql, "/data/it's a test.parquet");
     assert.strictEqual(
       result,
-      "SELECT * FROM read_parquet('/data/it''s a test.parquet') AS _tbl",
+      "SELECT * FROM read_parquet('/data/it''s a test.parquet') AS _tbl_1",
     );
   });
 
@@ -132,7 +132,7 @@ describe("translateSql", () => {
     // executable SQL — which is standard SQL string literal behavior.
     assert.strictEqual(
       result,
-      "SELECT * FROM read_parquet('/data/test''); DROP TABLE x; --.parquet') AS _tbl",
+      "SELECT * FROM read_parquet('/data/test''); DROP TABLE x; --.parquet') AS _tbl_1",
     );
   });
 
@@ -141,7 +141,7 @@ describe("translateSql", () => {
     const result = translateSql(sql, "/data/test.tsv");
     assert.strictEqual(
       result,
-      "SELECT * FROM read_csv('/data/test.tsv', auto_detect = true) AS _tbl",
+      "SELECT * FROM read_csv('/data/test.tsv', auto_detect = true) AS _tbl_1",
     );
   });
 
@@ -150,7 +150,7 @@ describe("translateSql", () => {
     const result = translateSql(sql, "/data/test.ssv");
     assert.strictEqual(
       result,
-      "SELECT * FROM read_csv('/data/test.ssv', auto_detect = true) AS _tbl",
+      "SELECT * FROM read_csv('/data/test.ssv', auto_detect = true) AS _tbl_1",
     );
   });
 
@@ -160,19 +160,19 @@ describe("translateSql", () => {
     const xlsxResult = translateSql(sql, "/data/test.xlsx");
     assert.strictEqual(
       xlsxResult,
-      "SELECT * FROM read_csv('/data/test.xlsx', auto_detect = true) AS _tbl",
+      "SELECT * FROM read_csv('/data/test.xlsx', auto_detect = true) AS _tbl_1",
     );
 
     const txtResult = translateSql(sql, "/data/test.txt");
     assert.strictEqual(
       txtResult,
-      "SELECT * FROM read_csv('/data/test.txt', auto_detect = true) AS _tbl",
+      "SELECT * FROM read_csv('/data/test.txt', auto_detect = true) AS _tbl_1",
     );
 
     const noExtResult = translateSql(sql, "/data/testfile");
     assert.strictEqual(
       noExtResult,
-      "SELECT * FROM read_csv('/data/testfile', auto_detect = true) AS _tbl",
+      "SELECT * FROM read_csv('/data/testfile', auto_detect = true) AS _tbl_1",
     );
   });
 
@@ -181,7 +181,7 @@ describe("translateSql", () => {
     const result = translateSql(sql, "/data/test.parquet");
     assert.strictEqual(
       result,
-      "SELECT '_t_1' AS label FROM read_parquet('/data/test.parquet') AS _tbl",
+      "SELECT '_t_1' AS label FROM read_parquet('/data/test.parquet') AS _tbl_1",
     );
   });
 
@@ -190,7 +190,7 @@ describe("translateSql", () => {
     const result = translateSql(sql, "/data/test.parquet");
     assert.strictEqual(
       result,
-      "SELECT 'it''s _t_1' AS label FROM read_parquet('/data/test.parquet') AS _tbl",
+      "SELECT 'it''s _t_1' AS label FROM read_parquet('/data/test.parquet') AS _tbl_1",
     );
   });
 
@@ -199,7 +199,7 @@ describe("translateSql", () => {
     const result = translateSql(sql, "/data/test.parquet");
     assert.strictEqual(
       result,
-      "SELECT * FROM read_parquet('/data/test.parquet') AS _tbl WHERE note = 'see _t_1.doc'",
+      "SELECT * FROM read_parquet('/data/test.parquet') AS _tbl_1 WHERE note = 'see _t_1.doc'",
     );
   });
 
@@ -233,21 +233,29 @@ describe("translateSql", () => {
   test("only translates _t_1 — _t_2 and higher are left untranslated", () => {
     const sql = "SELECT * FROM _t_1 JOIN _t_2 ON _t_1.id = _t_2.id";
     const result = translateSql(sql, "/data/test.parquet");
-    // Standalone _t_1 (FROM) is translated with alias; _t_1.id rewritten to _tbl.id; _t_2 untouched
-    assert.ok(result.includes("read_parquet('/data/test.parquet') AS _tbl"));
-    assert.ok(result.includes("_tbl.id"));
+    // Standalone _t_1 (FROM) is translated with alias; _t_1.id rewritten to _tbl_1.id; _t_2 untouched
+    assert.ok(result.includes("read_parquet('/data/test.parquet') AS _tbl_1"));
+    assert.ok(result.includes("_tbl_1.id"));
     assert.ok(result.includes("_t_2"));
   });
 
-  test("multiple standalone _t_1 refs — only first gets alias", () => {
+  test("multiple standalone _t_1 refs get unique aliases", () => {
     const sql =
       "SELECT * FROM _t_1 UNION SELECT * FROM _t_1 WHERE _t_1.val > 5";
     const result = translateSql(sql, "/data/test.parquet");
-    // Both standalone _t_1 refs get aliased so _tbl.val resolves in the second SELECT's scope
+    // Each standalone _t_1 gets a unique alias (_tbl_1, _tbl_2); qualified _t_1.val resolves to _tbl_2
     assert.strictEqual(
       result,
-      "SELECT * FROM read_parquet('/data/test.parquet') AS _tbl UNION SELECT * FROM read_parquet('/data/test.parquet') AS _tbl WHERE _tbl.val > 5",
+      "SELECT * FROM read_parquet('/data/test.parquet') AS _tbl_1 UNION SELECT * FROM read_parquet('/data/test.parquet') AS _tbl_2 WHERE _tbl_2.val > 5",
     );
+  });
+
+  test("self-join produces unique aliases for each _t_1 occurrence", () => {
+    const sql = "SELECT a.* FROM _t_1 a JOIN _t_1 b ON a.id = b.id";
+    const result = translateSql(sql, "/data/test.parquet");
+    // Each standalone _t_1 gets a distinct alias (_tbl_1, _tbl_2)
+    assert.ok(result.includes("read_parquet('/data/test.parquet') AS _tbl_1 a"));
+    assert.ok(result.includes("read_parquet('/data/test.parquet') AS _tbl_2 b"));
   });
 
   test("multi-table regex detects _t_2, _t_3, _t_10 references", () => {
@@ -535,9 +543,9 @@ describe("DuckDB live integration", { concurrency: false }, () => {
       `SELECT COUNT(*) as total FROM _t_1 WHERE "Borough" = 'BROOKLYN'`,
       NYC_311_FILE,
     );
-    // Verify translation happened — read_csv should be present, and _tbl is the alias
+    // Verify translation happened — read_csv should be present, and _tbl_1 is the alias
     assert.ok(sql.includes("read_csv"), "SQL should contain read_csv after translation");
-    assert.ok(sql.includes("AS _tbl"), "Translated SQL should alias the table as _tbl");
+    assert.ok(sql.includes("AS _tbl_1"), "Translated SQL should alias the table as _tbl_1");
 
     const result = await executeDuckDbQuery(sql, { format: "csv" });
     assert.ok(result, "result should not be null");

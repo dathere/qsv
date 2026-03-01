@@ -519,7 +519,8 @@ describe("DuckDB live integration", { concurrency: false }, () => {
   });
 
   test("translateSql + executeDuckDbQuery end-to-end with WHERE clause", {
-    skip: !(DUCKDB_AVAILABLE && QSV_AVAILABLE), timeout: 30_000,
+    skip: !(DUCKDB_AVAILABLE && QSV_AVAILABLE),
+    timeout: 30_000,
   }, async () => {
     const sql = translateSql(
       `SELECT COUNT(*) as total FROM _t_1 WHERE "Borough" = 'BROOKLYN'`,

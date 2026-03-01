@@ -316,10 +316,13 @@ export function translateSql(
   // Skip replacements inside single-quoted SQL string literals.
   const aliasedExpr = `${readExpr} AS _tbl`;
   let firstReplaced = false;
-  let translated = sql.replace(
-    /'[^']*(?:''[^']*)*'|\b_t_1\b(?!\.)/gi,
+  const translated = sql.replace(
+    /'[^']*(?:''[^']*)*'|\b_t_1\b\.?/gi,
     (match) => {
       if (match.startsWith("'")) return match;
+      // Qualified column ref: _t_1.col → _tbl.col
+      if (match.endsWith(".")) return "_tbl.";
+      // Standalone _t_1: first gets aliased, rest get bare readExpr
       if (!firstReplaced) {
         firstReplaced = true;
         return aliasedExpr;
@@ -327,8 +330,6 @@ export function translateSql(
       return readExpr;
     },
   );
-  // Replace qualified column refs: _t_1.col → _tbl.col
-  translated = translated.replace(/\b_t_1\./gi, "_tbl.");
   return translated;
 }
 

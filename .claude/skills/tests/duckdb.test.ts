@@ -274,6 +274,39 @@ describe("translateSql", () => {
     assert.ok(!result.includes("AS WHERE"));
   });
 
+  test("DuckDB-specific keywords (EXCEPT, QUALIFY, etc.) are not consumed as aliases", () => {
+    // EXCEPT after _t_1 should not be treated as an alias
+    const exceptSql = "SELECT * FROM _t_1 EXCEPT SELECT * FROM _t_1 WHERE x > 0";
+    const exceptResult = translateSql(exceptSql, "/data/test.csv");
+    assert.ok(exceptResult.includes("AS _tbl_1 EXCEPT"), `Expected EXCEPT preserved, got: ${exceptResult}`);
+    assert.ok(!exceptResult.includes("AS EXCEPT"));
+
+    // QUALIFY after _t_1
+    const qualifySql = "SELECT *, ROW_NUMBER() OVER () as rn FROM _t_1 QUALIFY rn = 1";
+    const qualifyResult = translateSql(qualifySql, "/data/test.csv");
+    assert.ok(qualifyResult.includes("AS _tbl_1 QUALIFY"), `Expected QUALIFY preserved, got: ${qualifyResult}`);
+  });
+
+  test("comma-separated _t_1 references do not consume commas or next tokens as aliases", () => {
+    // Comma immediately follows _t_1 — no whitespace-alias capture possible
+    const sql = "SELECT * FROM _t_1, _t_1";
+    const result = translateSql(sql, "/data/test.parquet");
+    // Both _t_1 refs should get unique aliases
+    assert.ok(result.includes("AS _tbl_1,"), `Expected first alias, got: ${result}`);
+    assert.ok(result.includes("AS _tbl_2"), `Expected second alias, got: ${result}`);
+  });
+
+  test("user alias with qualified column ref after alias assignment", () => {
+    // Tests that after `_t_1 a`, a qualified ref `a.col` works correctly
+    // (the alias 'a' is preserved, not rewritten)
+    const sql = "SELECT a.name, a.age FROM _t_1 a WHERE a.age > 21";
+    const result = translateSql(sql, "/data/test.csv");
+    assert.ok(result.includes("AS a WHERE"), `Expected user alias 'a', got: ${result}`);
+    // The a.name and a.age refs are NOT _t_1. refs, so they pass through unchanged
+    assert.ok(result.includes("a.name"), "Qualified refs using user alias should be unchanged");
+    assert.ok(result.includes("a.age"), "Qualified refs using user alias should be unchanged");
+  });
+
   test("multi-table regex detects _t_2, _t_3, _t_10 references", () => {
     assert.ok(MULTI_TABLE_PATTERN.test("SELECT * FROM _t_1 JOIN _t_2"));
     assert.ok(MULTI_TABLE_PATTERN.test("SELECT * FROM _t_1, _t_3"));

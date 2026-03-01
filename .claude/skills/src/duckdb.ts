@@ -318,16 +318,38 @@ export function translateSql(
   // falling back to a generated _tbl_N alias otherwise. The dot-qualified branch
   // rewrites _t_1.col to use the most recently assigned alias. Content inside
   // single-quoted SQL string literals is skipped.
+  //
+  // The trailing (?!\.) after the optional alias group is vestigial when a user alias
+  // is captured (it checks after the alias, not after _t_1). It's harmless because
+  // the dot-qualified branch `\b_t_1\b\.` is listed first in the alternation, so
+  // `_t_1.col` is always matched by that branch before the standalone branch runs.
+
+  // SQL keywords that can follow a table reference but must NOT be consumed as bare
+  // aliases. This list covers standard SQL and DuckDB-specific keywords.
+  const SQL_KEYWORDS =
+    "AS|WHERE|ON|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|FULL|UNION|GROUP|ORDER|HAVING|LIMIT|SET" +
+    "|AND|OR|NOT|IN|IS|BETWEEN|LIKE|EXISTS|CASE|WHEN|THEN|ELSE|END|INTO|VALUES|SELECT|FROM" +
+    "|NATURAL|USING|OFFSET|FETCH|WINDOW|QUALIFY|EXCEPT|INTERSECT|RETURNING|WITH|RECURSIVE" +
+    "|LATERAL|TABLESAMPLE|PIVOT|UNPIVOT";
+
+  const pattern = new RegExp(
+    `'[^']*(?:''[^']*)*'|\\b_t_1\\b\\.|\\b_t_1\\b(?:\\s+AS\\s+(\\w+)|\\s+(?!(?:${SQL_KEYWORDS})\\b)(\\w+))?(?!\\.)`,
+    "gi",
+  );
+
   let aliasCounter = 0;
   let lastAlias = "";
   const translated = sql.replace(
-    /'[^']*(?:''[^']*)*'|\b_t_1\b\.|\b_t_1\b(?:\s+AS\s+(\w+)|\s+(?!(?:AS|WHERE|ON|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|FULL|UNION|GROUP|ORDER|HAVING|LIMIT|SET|AND|OR|NOT|IN|IS|BETWEEN|LIKE|EXISTS|CASE|WHEN|THEN|ELSE|END|INTO|VALUES|SELECT|FROM|NATURAL|USING)\b)(\w+))?(?!\.)/gi,
+    pattern,
     (match, asAlias, bareAlias) => {
       if (match.startsWith("'")) return match;
       if (match === "_t_1." || match === "_T_1.") {
         // Qualified ref (_t_1.): rewrite to use the most recently assigned alias.
         // Falls back to _tbl_1 if a qualified ref appears before any standalone _t_1
         // (e.g. SELECT _t_1.col FROM _t_1) — the FROM alias will be _tbl_1.
+        // NOTE: If the SQL contains *only* qualified refs and no standalone _t_1
+        // (no FROM clause), the _tbl_1 fallback alias is never defined, producing
+        // invalid SQL. This edge case is extremely unlikely in practice.
         return `${lastAlias || "_tbl_1"}.`;
       }
       // Standalone _t_1 (possibly with user alias): expand to read expression

@@ -312,29 +312,30 @@ export function translateSql(
   // Uses a non-colliding alias prefix (_tbl) to avoid double-substitution if the query
   // falls through to the sqlp/Polars fallback path (which uses _t_N internally).
   //
-  // Single-pass approach: match both standalone _t_1 and qualified _t_1. in one regex.
-  // The standalone branch uses a negative lookahead (?!\.) to avoid matching when a dot
-  // follows; the dot-qualified branch is listed first as a belt-and-suspenders measure,
-  // but the lookahead is the actual guard. As we scan left-to-right, each standalone
-  // _t_1 gets a unique alias
-  // (_tbl_1, _tbl_2, …), and qualified _t_1.col refs resolve to the most recently
-  // assigned alias. Content inside single-quoted SQL string literals is skipped.
+  // Single-pass approach: match standalone _t_1 (with optional user alias), qualified
+  // _t_1., and string literals in one regex. The standalone branch captures an optional
+  // trailing alias (`_t_1 AS foo`, `_t_1 foo`) and uses the user alias when present,
+  // falling back to a generated _tbl_N alias otherwise. The dot-qualified branch
+  // rewrites _t_1.col to use the most recently assigned alias. Content inside
+  // single-quoted SQL string literals is skipped.
   let aliasCounter = 0;
   let lastAlias = "";
   const translated = sql.replace(
-    /'[^']*(?:''[^']*)*'|\b_t_1\b\.|\b_t_1\b(?!\.)/gi,
-    (match) => {
+    /'[^']*(?:''[^']*)*'|\b_t_1\b\.|\b_t_1\b(?:\s+AS\s+(\w+)|\s+(?!(?:AS|WHERE|ON|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|FULL|UNION|GROUP|ORDER|HAVING|LIMIT|SET|AND|OR|NOT|IN|IS|BETWEEN|LIKE|EXISTS|CASE|WHEN|THEN|ELSE|END|INTO|VALUES|SELECT|FROM|NATURAL|USING)\b)(\w+))?(?!\.)/gi,
+    (match, asAlias, bareAlias) => {
       if (match.startsWith("'")) return match;
-      if (match.endsWith(".")) {
+      if (match === "_t_1." || match === "_T_1.") {
         // Qualified ref (_t_1.): rewrite to use the most recently assigned alias.
         // Falls back to _tbl_1 if a qualified ref appears before any standalone _t_1
         // (e.g. SELECT _t_1.col FROM _t_1) — the FROM alias will be _tbl_1.
-        // NOTE: If the SQL contains *only* qualified refs and no standalone _t_1
-        // (no FROM clause), the _tbl_1 fallback alias is never defined, producing
-        // invalid SQL. This edge case is extremely unlikely in practice.
         return `${lastAlias || "_tbl_1"}.`;
       }
-      // Standalone _t_1: expand to read expression with a unique alias
+      // Standalone _t_1 (possibly with user alias): expand to read expression
+      const userAlias = asAlias || bareAlias;
+      if (userAlias) {
+        lastAlias = userAlias;
+        return `${readExpr} AS ${userAlias}`;
+      }
       aliasCounter++;
       lastAlias = `_tbl_${aliasCounter}`;
       return `${readExpr} AS ${lastAlias}`;

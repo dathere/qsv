@@ -250,16 +250,28 @@ describe("translateSql", () => {
     );
   });
 
-  test("self-join produces unique aliases for each _t_1 occurrence", () => {
+  test("self-join respects user-provided aliases for each _t_1 occurrence", () => {
     const sql = "SELECT a.* FROM _t_1 a JOIN _t_1 b ON a.id = b.id";
     const result = translateSql(sql, "/data/test.parquet");
-    // Each standalone _t_1 gets a distinct alias (_tbl_1, _tbl_2).
-    // Known limitation: user-provided aliases (a, b) appear after the generated
-    // AS _tbl_N alias, producing e.g. "AS _tbl_1 a". DuckDB treats the last
-    // identifier as the effective alias, so "a" and "b" still work as expected
-    // in the query's ON clause.
-    assert.ok(result.includes("read_parquet('/data/test.parquet') AS _tbl_1 a"));
-    assert.ok(result.includes("read_parquet('/data/test.parquet') AS _tbl_2 b"));
+    // When the user aliases _t_1 as a and b, translateSql preserves the user
+    // aliases instead of generating _tbl_N, producing valid DuckDB SQL.
+    assert.ok(result.includes("read_parquet('/data/test.parquet') AS a"));
+    assert.ok(result.includes("read_parquet('/data/test.parquet') AS b"));
+  });
+
+  test("self-join with explicit AS keyword preserves user aliases", () => {
+    const sql = "SELECT a.* FROM _t_1 AS a JOIN _t_1 AS b ON a.id = b.id";
+    const result = translateSql(sql, "/data/test.parquet");
+    assert.ok(result.includes("read_parquet('/data/test.parquet') AS a"));
+    assert.ok(result.includes("read_parquet('/data/test.parquet') AS b"));
+  });
+
+  test("SQL keywords after _t_1 are not consumed as aliases", () => {
+    const sql = "SELECT * FROM _t_1 WHERE x > 0";
+    const result = translateSql(sql, "/data/test.csv");
+    // WHERE should not be consumed as an alias
+    assert.ok(result.includes("AS _tbl_1 WHERE"));
+    assert.ok(!result.includes("AS WHERE"));
   });
 
   test("multi-table regex detects _t_2, _t_3, _t_10 references", () => {

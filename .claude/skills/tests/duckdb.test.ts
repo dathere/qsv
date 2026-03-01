@@ -194,6 +194,15 @@ describe("translateSql", () => {
     );
   });
 
+  test("does not replace qualified _t_1. refs inside string literals", () => {
+    const sql = "SELECT * FROM _t_1 WHERE note = 'see _t_1.doc'";
+    const result = translateSql(sql, "/data/test.parquet");
+    assert.strictEqual(
+      result,
+      "SELECT * FROM read_parquet('/data/test.parquet') AS _tbl WHERE note = 'see _t_1.doc'",
+    );
+  });
+
   test("rejects multi-character delimiter strings", () => {
     const sql = "SELECT * FROM _t_1";
     assert.throws(

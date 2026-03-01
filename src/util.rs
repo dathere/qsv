@@ -2963,6 +2963,7 @@ pub fn csv_to_delimited_writer<W: Write>(
     let file = File::open(input_csv)?;
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(true)
+        .delimiter(b',')
         .from_reader(file);
     let mut wtr = csv::WriterBuilder::new()
         .delimiter(delimiter)

@@ -4,7 +4,7 @@ To keep things simple:
 
 * no additional logging config file required
 * logging level set via env vars (`QSV_LOG_LEVEL` and `QSV_LOG_DIR`)
-* logging can be disabled completely (default behavior)
+* logging can be disabled completely (default behavior for `qsv`/`qsvlite`/`qsvdp`; `qsvmcp` defaults to `info` level to log all MCP tool calls)
 * logging goes to specified directory with auto log rotation (default: current directory)
 * if specified directory doesn't exist, qsv will attempt to create it
 * logs to `qsv_rCURRENT.log` - rotating at 1mb, keeping 10 most recent log files uncompressed, 
@@ -13,7 +13,7 @@ To keep things simple:
 
 ## Enable Logging
 
-Set environment variable `QSV_LOG_LEVEL` to desired level. Default is `off`.
+Set environment variable `QSV_LOG_LEVEL` to desired level. Default is `off` (`qsvmcp` defaults to `info` to automatically log all MCP tool calls).
 * off - no logging
 * error
 * warn

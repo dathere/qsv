@@ -1482,14 +1482,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     if stdout_output_flag {
         // if we're outputting to stdout, copy the stats file to stdout
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
         if output_delim == b',' {
             let currstats = fs::read_to_string(currstats_filename)?;
-            io::stdout().write_all(currstats.as_bytes())?;
+            handle.write_all(currstats.as_bytes())?;
         } else {
             // output has a non-comma delimiter, convert from CSV cache
-            util::csv_to_delimited_writer(&currstats_filename, &mut io::stdout(), output_delim)?;
+            util::csv_to_delimited_writer(&currstats_filename, &mut handle, output_delim)?;
         }
-        io::stdout().flush()?;
+        handle.flush()?;
     } else if let Some(output) = args.flag_output {
         // if we're outputting to a file, copy the stats file to the output file
         if currstats_filename != output {

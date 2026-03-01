@@ -485,6 +485,7 @@ async function runQsvWithTimeout(
 
   await runQsvSimple(qsvBin, args, {
     timeoutMs,
+    cwd: config.workingDir,
     onSpawn: (proc) => activeProcesses.add(proc),
     onExit: (proc) => activeProcesses.delete(proc),
   });

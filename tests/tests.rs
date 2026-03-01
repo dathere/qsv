@@ -95,6 +95,8 @@ mod test_joinp;
 mod test_json;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_jsonl;
+#[cfg(feature = "mcp")]
+mod test_log;
 #[cfg(feature = "luau")]
 mod test_luau;
 mod test_moarstats;

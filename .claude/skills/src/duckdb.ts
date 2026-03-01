@@ -308,22 +308,87 @@ export function translateSql(
     }
   }
 
-  // Replace standalone _t_1 (not followed by a dot) with the read expression,
-  // so that qualified column refs like _t_1.column remain valid via the alias.
-  // Only the first standalone occurrence gets the alias; subsequent ones get bare readExpr
-  // to avoid duplicate alias issues in UNION or subquery contexts.
-  // Skip replacements inside single-quoted SQL string literals.
-  const aliasedExpr = `(${readExpr}) AS _t_1`;
-  let firstReplaced = false;
+  // Replace _t_1 references (standalone and dot-qualified) with the read expression.
+  // Uses a non-colliding alias prefix (_tbl) to avoid double-substitution if the query
+  // falls through to the sqlp/Polars fallback path (which uses _t_N internally).
+  //
+  // Single-pass approach: match standalone _t_1 (with optional user alias), qualified
+  // _t_1., and string literals in one regex. The standalone branch captures an optional
+  // trailing alias (`_t_1 AS foo`, `_t_1 foo`) and uses the user alias when present,
+  // falling back to a generated _tbl_N alias otherwise. The dot-qualified branch
+  // rewrites _t_1.col to use the most recently assigned alias. Content inside
+  // single-quoted SQL string literals is skipped.
+  //
+  // The trailing (?!\.) after the optional alias group is vestigial when a user alias
+  // is captured (it checks after the alias, not after _t_1). It's harmless because
+  // the dot-qualified branch `\b_t_1\b\.` is listed first in the alternation, so
+  // `_t_1.col` is always matched by that branch before the standalone branch runs.
+
+  // SQL keywords that can follow a table reference but must NOT be consumed as bare
+  // aliases. This list covers standard SQL and DuckDB-specific keywords.
+  const SQL_KEYWORDS =
+    "AS|WHERE|ON|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|FULL|UNION|GROUP|ORDER|HAVING|LIMIT|SET" +
+    "|AND|OR|NOT|IN|IS|BETWEEN|LIKE|EXISTS|CASE|WHEN|THEN|ELSE|END|INTO|VALUES|SELECT|FROM" +
+    "|NATURAL|USING|OFFSET|FETCH|WINDOW|QUALIFY|EXCEPT|INTERSECT|RETURNING|WITH|RECURSIVE" +
+    "|LATERAL|TABLESAMPLE|PIVOT|UNPIVOT";
+
+  const pattern = new RegExp(
+    `'[^']*(?:''[^']*)*'|\\b_t_1\\b\\.|\\b_t_1\\b(?:\\s+AS\\s+(\\w+)|\\s+(?!(?:${SQL_KEYWORDS})\\b)(\\w+))?(?!\\.)`,
+    "gi",
+  );
+
+  // Pre-scan: find the alias that the first standalone _t_1 will receive.
+  // This ensures qualified refs appearing *before* the first standalone _t_1
+  // (e.g. `SELECT _t_1.id FROM _t_1 a`) resolve to the correct alias.
+  //
+  // NOTE: If the SQL contains *only* qualified `_t_1.` refs and no standalone
+  // `_t_1`, firstAlias stays as `_tbl_1` which is never defined as a FROM
+  // source — the resulting SQL will be invalid. This is an inherent limitation
+  // since there's no FROM clause to attach a read expression to.
+  let firstAlias = "_tbl_1"; // default if no user alias on first standalone _t_1
+  // Reuse the same `pattern` regex to avoid maintaining a duplicate. Reset
+  // lastIndex so the scan starts from the beginning of the string.
+  pattern.lastIndex = 0;
+  let prescanMatch;
+  while ((prescanMatch = pattern.exec(sql)) !== null) {
+    const [m, asAlias, bareAlias] = prescanMatch;
+    // Skip string literals and dot-qualified refs. The dot-qualified branch
+    // captures exactly `_t_1.` (5 chars) — the `i` flag makes the regex
+    // case-insensitive, but the captured string preserves original case, so
+    // we use a case-insensitive comparison to cover all variants.
+    if (m.startsWith("'") || m.toLowerCase() === "_t_1.") continue;
+    // Found first standalone _t_1 — check for user alias
+    const userAlias = asAlias || bareAlias;
+    if (userAlias) firstAlias = userAlias;
+    break;
+  }
+  // Reset lastIndex so the main .replace() pass starts fresh. The pre-scan
+  // loop `break`s after finding the first standalone _t_1, which leaves
+  // lastIndex at a non-zero position — without this reset, .replace() would
+  // start matching mid-string and miss earlier occurrences.
+  pattern.lastIndex = 0;
+
+  let aliasCounter = 0;
+  let lastAlias = "";
   const translated = sql.replace(
-    /'[^']*(?:''[^']*)*'|\b_t_1\b(?!\.)/gi,
-    (match) => {
+    pattern,
+    (match, asAlias, bareAlias) => {
       if (match.startsWith("'")) return match;
-      if (!firstReplaced) {
-        firstReplaced = true;
-        return aliasedExpr;
+      if (match.toLowerCase() === "_t_1.") {
+        // Qualified ref (_t_1.): rewrite to use the most recently assigned alias.
+        // Falls back to the pre-scanned firstAlias so that early qualified refs
+        // (before the first standalone _t_1) resolve correctly.
+        return `${lastAlias || firstAlias}.`;
       }
-      return readExpr;
+      // Standalone _t_1 (possibly with user alias): expand to read expression
+      const userAlias = asAlias || bareAlias;
+      if (userAlias) {
+        lastAlias = userAlias;
+        return `${readExpr} AS ${userAlias}`;
+      }
+      aliasCounter++;
+      lastAlias = `_tbl_${aliasCounter}`;
+      return `${readExpr} AS ${lastAlias}`;
     },
   );
   return translated;

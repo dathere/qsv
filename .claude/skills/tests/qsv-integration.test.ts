@@ -925,16 +925,28 @@ test('qsv_sqlp success with parquet warning has correct ordering: engine header 
       `Output should start with engine header, got: ${output.substring(0, 100)}`,
     );
 
-    // Parquet warning must appear after engine header but before data
+    // Parquet warning must be present and appear after engine header but before data
     const warningIndex = output.indexOf('[Warning] Parquet auto-conversion was skipped');
     const engineIndex = output.indexOf('🐻‍❄️ Engine: Polars SQL');
+    assert.ok(
+      warningIndex !== -1,
+      'Parquet warning should be present in output (read-only dir should prevent parquet creation)',
+    );
     assert.ok(
       warningIndex > engineIndex,
       `Parquet warning (pos ${warningIndex}) should appear after engine header (pos ${engineIndex})`,
     );
+
+    // Verify there is actual data content after the warning
+    // (the formatted output follows the warning, separated by blank lines)
+    const afterWarning = output.substring(warningIndex + '[Warning] Parquet auto-conversion was skipped'.length);
+    assert.ok(
+      afterWarning.trim().length > 0,
+      'Output should contain data content after the parquet warning',
+    );
   } finally {
     // Ensure write permissions are restored for cleanup even if test fails
-    try { await chmod(testDir, 0o755); } catch { /* best-effort */ }
+    try { await chmod(testDir, 0o755); } catch (_e) { /* best-effort */ }
     await cleanupTestDir(testDir);
   }
 });

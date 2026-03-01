@@ -48,3 +48,4 @@ tmp/*
 scripts/benchmark_data.*
 *.mcpb
 .roborev.toml
+/.claude/skills/docs/diagnosis

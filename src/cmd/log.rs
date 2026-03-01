@@ -69,3 +69,33 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_log_field;
+
+    #[test]
+    fn nul_bytes_replaced_with_fffd() {
+        assert_eq!(sanitize_log_field("id\0test"), "id\u{FFFD}test");
+        assert_eq!(sanitize_log_field("hello\0world"), "hello\u{FFFD}world");
+        assert_eq!(sanitize_log_field("\0"), "\u{FFFD}");
+    }
+
+    #[test]
+    fn control_chars_replaced_with_space() {
+        assert_eq!(sanitize_log_field("a\nb"), "a b");
+        assert_eq!(sanitize_log_field("a\r\nb"), "a  b");
+        assert_eq!(sanitize_log_field("a\tb"), "a b");
+    }
+
+    #[test]
+    fn nul_and_control_chars_mixed() {
+        assert_eq!(sanitize_log_field("a\0b\nc"), "a\u{FFFD}b c");
+    }
+
+    #[test]
+    fn clean_string_unchanged() {
+        assert_eq!(sanitize_log_field("hello world"), "hello world");
+        assert_eq!(sanitize_log_field(""), "");
+    }
+}

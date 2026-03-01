@@ -60,6 +60,8 @@ pub mod json;
 pub mod jsonl;
 #[cfg(feature = "lens")]
 pub mod lens;
+#[cfg(feature = "mcp")]
+pub mod log;
 #[cfg(feature = "luau")]
 pub mod luau;
 pub mod moarstats;

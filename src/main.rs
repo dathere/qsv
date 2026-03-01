@@ -182,6 +182,9 @@ fn main() -> QsvExitCode {
     #[cfg(all(feature = "luau", feature = "feature_capable"))]
     enabled_commands.push_str("    luau        Execute Luau script on CSV data\n");
 
+    #[cfg(feature = "mcp")]
+    enabled_commands.push_str("    log         Log MCP tool invocations to qsvmcp.log\n");
+
     enabled_commands.push_str(
         "    moarstats   Add \"moar\" statistics to existing stats CSV
     partition   Partition CSV data based on a column value\n",
@@ -449,6 +452,8 @@ enum Command {
     Lens,
     #[cfg(all(feature = "luau", feature = "feature_capable"))]
     Luau,
+    #[cfg(feature = "mcp")]
+    Log,
     Partition,
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
     PivotP,
@@ -555,6 +560,8 @@ impl Command {
             Command::Lens => cmd::lens::run(argv),
             #[cfg(all(feature = "luau", feature = "feature_capable"))]
             Command::Luau => cmd::luau::run(argv),
+            #[cfg(feature = "mcp")]
+            Command::Log => cmd::log::run(argv),
             Command::Partition => cmd::partition::run(argv),
             #[cfg(all(feature = "polars", feature = "feature_capable"))]
             Command::PivotP => cmd::pivotp::run(argv),

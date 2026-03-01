@@ -865,6 +865,22 @@ export const config = {
   useDuckDb: getBooleanEnv("QSV_MCP_USE_DUCKDB", false),
 
   /**
+   * MCP audit log level controlling the qsvmcp.log audit trail.
+   * - "info" (default): Log all tool invocations (start/end with timing)
+   * - "off": Disable MCP audit logging entirely
+   * - "error": Log only failed tool invocations
+   */
+  mcpLogLevel: (() => {
+    const val = getStringEnv("QSV_MCP_LOG_LEVEL", "info").toLowerCase();
+    const valid = ["off", "error", "info"];
+    if (!valid.includes(val)) {
+      console.error(`[Config] Invalid QSV_MCP_LOG_LEVEL: "${val}", using default: "info"`);
+      return "info" as const;
+    }
+    return val as "off" | "error" | "info";
+  })(),
+
+  /**
    * Output format for tabular data returned to MCP clients.
    * "tsv" is more token-efficient for AI agents (tabs = single tokens, no quoting).
    * "csv" preserves original comma-delimited format.

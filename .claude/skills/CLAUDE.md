@@ -260,6 +260,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - `QSV_MCP_DUCKDB_BIN_PATH`: Path to DuckDB binary (default: auto-detect from PATH)
 - `QSV_MCP_USE_DUCKDB`: Enable/disable DuckDB routing for SQL queries (default: false)
 - `QSV_MCP_OUTPUT_FORMAT`: Output format for tabular data - "tsv" (default, token-efficient) or "csv"
+- `QSV_MCP_LOG_LEVEL`: MCP audit log level for `qsvmcp.log` - "info" (default, logs all invocations), "error" (errors only), "off" (disabled)
 - `QSV_MCP_GITHUB_REPO`: GitHub repo for update checks (default: `dathere/qsv`, used in `update-checker.ts`)
 - `MCPB_EXTENSION_MODE`: Desktop extension mode flag
 

@@ -1056,6 +1056,13 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
       "Display detailed help text for this command (equivalent to --help flag). Returns usage documentation instead of executing the command.",
   };
 
+  // Add _reason meta-parameter for audit logging
+  properties._reason = {
+    type: "string",
+    description:
+      "Optional human-readable reason for this invocation, recorded in the MCP audit log. If omitted, the tool name is used.",
+  };
+
   return {
     name: skill.name.replace("qsv-", "qsv_"),
     description: enhanceDescription(skill),
@@ -2184,6 +2191,11 @@ Common commands via this tool: join, sort, dedup, rename, validate, sample, temp
           type: "string",
           description:
             "Path to output CSV file (optional). For large results or data transformation commands, a temp file is automatically used if omitted.",
+        },
+        _reason: {
+          type: "string",
+          description:
+            "Optional human-readable reason for this invocation, recorded in the MCP audit log. If omitted, the tool name is used.",
         },
       },
       required: ["command", "input_file"],

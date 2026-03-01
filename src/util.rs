@@ -1301,7 +1301,16 @@ impl<'de> Deserialize<'de> for FilenameTemplate {
 pub fn init_logger() -> CliResult<(String, flexi_logger::LoggerHandle)> {
     use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 
-    let qsv_log_env = env::var("QSV_LOG_LEVEL").unwrap_or_else(|_| "off".to_string());
+    let qsv_log_env = env::var("QSV_LOG_LEVEL").unwrap_or_else(|_| {
+        #[cfg(feature = "qsvmcp")]
+        {
+            "info".to_string()
+        }
+        #[cfg(not(feature = "qsvmcp"))]
+        {
+            "off".to_string()
+        }
+    });
     let qsv_log_dir = env::var("QSV_LOG_DIR").unwrap_or_else(|_| ".".to_string());
     let write_mode = if get_envvar_flag("QSV_LOG_UNBUFFERED") {
         flexi_logger::WriteMode::Direct

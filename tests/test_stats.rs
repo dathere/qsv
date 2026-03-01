@@ -1528,6 +1528,51 @@ col3	String	true		01	10		Ascending	1	2	2	10	2	0	0	0								0					0
     assert_eq!(got, expected);
 }
 
+// Regression test: when --output is TSV, the .stats.csv cache must remain
+// comma-delimited so downstream commands (moarstats, schema, etc.) can read it.
+#[test]
+fn stats_cache_always_csv_when_output_is_tsv() {
+    let wrk = Workdir::new("stats_cache_always_csv_when_output_is_tsv");
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age"],
+            svec!["Alice", "30"],
+            svec!["Bob", "25"],
+        ],
+    );
+
+    let out_file = wrk.path("output.tsv").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv")
+        .args(&["--output", &out_file])
+        .args(&["--cache-threshold", "1"]);
+
+    wrk.assert_success(&mut cmd);
+
+    // the output file should be tab-delimited
+    let output_content = std::fs::read_to_string(&out_file).unwrap();
+    assert!(
+        output_content.contains('\t'),
+        "output.tsv should be tab-delimited"
+    );
+
+    // the cache file must be comma-delimited (NOT tab-delimited)
+    let cache_path = wrk.path("data.stats.csv");
+    let cache_content = std::fs::read_to_string(&cache_path).unwrap();
+    let first_line = cache_content.lines().next().unwrap();
+    assert!(
+        first_line.contains(','),
+        "stats cache should be comma-delimited, got: {first_line}"
+    );
+    assert!(
+        !first_line.contains('\t'),
+        "stats cache must NOT be tab-delimited, got: {first_line}"
+    );
+}
+
 #[test]
 fn stats_output_ssv_delimited() {
     let wrk = Workdir::new("stats_output_ssv_delimited");

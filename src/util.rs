@@ -2954,13 +2954,6 @@ pub fn get_stats_records(
     Ok((csv_fields.iter().take(csv_stats.len()).collect(), csv_stats))
 }
 
-/// Reads a CSV file (comma-delimited) and writes it with a different delimiter to a file.
-pub fn csv_to_delimited(input_csv: &str, output_path: &str, delimiter: u8) -> CliResult<()> {
-    let output_file = File::create(output_path)?;
-    let mut writer = BufWriter::new(output_file);
-    csv_to_delimited_writer(input_csv, &mut writer, delimiter)
-}
-
 /// Reads a CSV file (comma-delimited) and writes it with a different delimiter to a writer.
 pub fn csv_to_delimited_writer<W: Write>(
     input_csv: &str,

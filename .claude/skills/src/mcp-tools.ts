@@ -53,6 +53,12 @@ const statOrNull = (path: string) =>
 const AUTO_INDEX_SIZE_MB = 10;
 
 /**
+ * Maximum length for qsv_log messages (in characters).
+ * Messages exceeding this limit are silently truncated.
+ */
+export const MAX_LOG_MESSAGE_LEN = 4096;
+
+/**
  * Commands that always return full CSV data and should use temp files
  */
 const ALWAYS_FILE_COMMANDS = new Set([
@@ -3255,4 +3261,113 @@ export async function handleToParquetCall(
   } catch (error: unknown) {
     return errorResult(`Error converting CSV to Parquet: ${getErrorMessage(error)}`);
   }
+}
+
+// ============================================================================
+// qsv_log — Agent-initiated reproducibility logging
+// ============================================================================
+
+/** Valid entry types for qsv_log */
+const LOG_ENTRY_TYPES = new Set([
+  "user_prompt",
+  "agent_action",
+  "agent_reasoning",
+  "result_summary",
+  "note",
+]);
+
+/**
+ * Create the qsv_log tool definition.
+ */
+export function createLogTool(): McpToolDefinition {
+  return {
+    name: "qsv_log",
+    description: `Write a structured entry to the qsv audit log (qsvmcp.log) for reproducibility.
+
+💡 USE WHEN:
+- Logging the user's original prompt so a third party can reproduce the session
+- Recording key reasoning or decisions that led to a particular tool choice
+- Summarizing results after a workflow completes
+
+📋 COMMON PATTERN:
+1. Log "user_prompt" when a new user request arrives
+2. Log "agent_reasoning" before complex decisions (e.g., choosing joinp over join)
+3. Log "result_summary" after completing a workflow
+
+📝 ENTRY TYPES:
+- user_prompt — The user's original request (log once per prompt)
+- agent_reasoning — Why you chose a particular approach
+- agent_action — A significant action taken (beyond automatic audit logging)
+- result_summary — Outcome of a completed workflow
+- note — Free-form annotation
+
+⚠️ CAUTION: Keep messages concise. Max ${MAX_LOG_MESSAGE_LEN} chars (truncated silently). Logging never fails the workflow.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        entry_type: {
+          type: "string",
+          enum: ["user_prompt", "agent_action", "agent_reasoning", "result_summary", "note"],
+          description: "Category of log entry.",
+        },
+        message: {
+          type: "string",
+          description: "The log message content.",
+        },
+      },
+      required: ["entry_type", "message"],
+    },
+  };
+}
+
+/**
+ * Handle a qsv_log tool invocation.
+ *
+ * Writes a `u-` prefixed entry to the qsv audit log via `qsv log`.
+ * Logging failures are swallowed — this tool should never break a workflow.
+ */
+export async function handleLogCall(
+  params: Record<string, unknown>,
+  workingDir: string,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  const entryType = String(params.entry_type ?? "");
+  const rawMessage = String(params.message ?? "");
+
+  // Validate entry_type
+  if (!LOG_ENTRY_TYPES.has(entryType)) {
+    return errorResult(
+      `Invalid entry_type "${entryType}". Must be one of: ${[...LOG_ENTRY_TYPES].join(", ")}`,
+    );
+  }
+
+  // Validate message
+  if (rawMessage.trim().length === 0) {
+    return errorResult("message must be a non-empty string.");
+  }
+
+  // Truncate if needed
+  const message =
+    rawMessage.length > MAX_LOG_MESSAGE_LEN
+      ? rawMessage.slice(0, MAX_LOG_MESSAGE_LEN)
+      : rawMessage;
+
+  const logId = `u-${randomUUID()}`;
+
+  try {
+    await runQsvSimple(config.qsvBinPath, [
+      "log",
+      "qsv_log",
+      logId,
+      `[${entryType}] ${message}`,
+    ], {
+      timeoutMs: 5_000,
+      cwd: workingDir,
+    });
+  } catch {
+    // Swallow — logging must never fail the workflow
+    // Return success with a warning so the agent knows
+    return successResult(`Logged ${entryType} entry (warning: write may have failed).`);
+  }
+
+  return successResult(`Logged ${entryType} entry.`);
 }

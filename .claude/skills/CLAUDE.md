@@ -128,7 +128,7 @@ npm run mcpb:package
 - Auto-enables `--stats-jsonl` for stats command
 - Integrates update checker for background version monitoring
 - **Server instructions**: Provides cross-tool workflow guidance via MCP `initialize` response
-- **Deferred tool loading**: Only 9 core tools loaded initially (~80% token reduction)
+- **Deferred tool loading**: Only 10 core tools loaded initially (~80% token reduction)
 - **Environment-controlled exposure**: Use `QSV_MCP_EXPOSE_ALL_TOOLS=true` for all tools
 - **Roots auto-sync**: `syncWorkingDirFromRoots()` runs on startup and on `RootsListChangedNotification`; manual override via `qsv_set_working_dir`, passing `"auto"` re-enables sync
 
@@ -136,6 +136,7 @@ npm run mcpb:package
 - `MAX_ROOTS_SYNC_RETRIES`: 3 — max retries for roots directory sync
 - `SHUTDOWN_TIMEOUT_MS`: 2000 — graceful shutdown timeout (ms)
 - `UPDATE_CHECK_TIMEOUT_MS`: 30_000 — background update check timeout (ms)
+- `skipAuditLog`: guards `s-`/`e-` audit log calls — set to `true` for `qsv_log` to prevent recursive logging
 
 **Key Functions**:
 ```typescript
@@ -160,6 +161,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - `COMMAND_GUIDANCE`: `Record<string, CommandGuidance>` — Unified per-command guidance map consolidating when-to-use, common patterns, error prevention, complementary servers, and memory/index/mistake warnings into a single structure
 - `LARGE_FILE_THRESHOLD_BYTES`: 10MB — files larger than this are auto-indexed (replaces `AUTO_INDEX_SIZE_MB`)
 - `MAX_MCP_RESPONSE_SIZE`: 850KB — responses exceeding this are saved to file instead of returned inline
+- `MAX_LOG_MESSAGE_LEN`: 4096 — max characters for `qsv_log` messages (truncated silently)
 
 **Key Exported Functions**:
 - `isBinaryOutputFormat(commandName, params)` - Detect if command output is binary (parquet/arrow/avro)

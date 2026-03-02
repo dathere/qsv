@@ -38,6 +38,16 @@ import {
 } from "./duckdb.js";
 
 /**
+ * Stat a path, returning null for ENOENT (file not found) and rethrowing
+ * permission / IO errors.  Shared by ensureStatsCache & ensurePolarsSchema.
+ */
+const statOrNull = (path: string) =>
+  stat(path).catch((err: unknown) => {
+    if (isNodeError(err) && err.code === "ENOENT") return null;
+    throw err;
+  });
+
+/**
  * Auto-indexing threshold in MB
  */
 const AUTO_INDEX_SIZE_MB = 10;
@@ -789,7 +799,7 @@ async function convertCsvToParquet(
   inputFile: string,
   parquetPath: string,
   statsFile: string,
-): Promise<{ engine: string; needSchema: boolean; schemaFile: string }> {
+): Promise<{ engine: string; needSchema: boolean; schemaFile: string; schemaSkipped: boolean }> {
   const state = detectDuckDb();
 
   if (state.status === "available") {
@@ -804,7 +814,7 @@ async function convertCsvToParquet(
 
       try {
         await spawnDuckDbCommands(state.binPath, dbPath, sql);
-        return { engine: `DuckDB v${state.version} (ZSTD)`, needSchema: false, schemaFile: "N/A (DuckDB)" };
+        return { engine: `DuckDB v${state.version} (ZSTD)`, needSchema: false, schemaFile: "N/A (DuckDB)", schemaSkipped: true };
       } catch (error: unknown) {
         // Clean up partial parquet on DuckDB failure, then fall through to sqlp
         try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
@@ -831,7 +841,7 @@ async function convertCsvToParquet(
     // Wrap the original error to add context while preserving it as the cause
     throw new Error(message, { cause: error });
   }
-  return { engine: "qsv sqlp (Snappy)", needSchema, schemaFile };
+  return { engine: "qsv sqlp (Snappy)", needSchema, schemaFile, schemaSkipped: false };
 }
 
 /**
@@ -1866,13 +1876,6 @@ async function ensureStatsCache(
   const qsvBin = config.qsvBinPath;
   const statsFile = inputFile + ".stats.csv";
 
-  // Only treat ENOENT (file not found) as "missing" — rethrow permission/IO errors.
-  const statOrNull = (path: string) =>
-    stat(path).catch((err: unknown) => {
-      if (isNodeError(err) && err.code === "ENOENT") return null;
-      throw err;
-    });
-
   const [inputFileStats, existingStats] = await Promise.all([
     statOrNull(inputFile),
     statOrNull(statsFile),
@@ -1916,17 +1919,13 @@ async function ensurePolarsSchema(
   const qsvBin = config.qsvBinPath;
   const schemaFile = inputFile + ".pschema.json";
 
-  const statOrNull = (path: string) =>
-    stat(path).catch((err: unknown) => {
-      if (isNodeError(err) && err.code === "ENOENT") return null;
-      throw err;
-    });
-
+  // Input file existence was already verified by ensureStatsCache; only stat the schema file.
   const [inputFileStats, existingSchema] = await Promise.all([
     statOrNull(inputFile),
     statOrNull(schemaFile),
   ]);
 
+  // Safety check — should never happen since ensureStatsCache runs first.
   if (!inputFileStats) {
     throw new Error(`Input file not found: ${inputFile}`);
   }
@@ -1949,7 +1948,12 @@ async function ensurePolarsSchema(
   }
 
   // Step 2.5: Patch schema for AM/PM date formats that Polars can't parse
-  await patchSchemaAndLog(inputFile, schemaFile);
+  // Only needed when the schema was freshly generated
+  if (needSchema) {
+    await patchSchemaAndLog(inputFile, schemaFile);
+  } else {
+    console.error(`[MCP Tools] Step 2.5: Skipping AM/PM patch (schema reused)`);
+  }
 
   return { needSchema, schemaFile };
 }
@@ -3222,7 +3226,7 @@ export async function handleToParquetCall(
 
     // Step 3: Convert to Parquet (DuckDB with ZSTD when available, sqlp with Snappy otherwise)
     // Schema generation (Steps 2-2.5) is deferred to the sqlp fallback path only
-    const { engine, needSchema, schemaFile } = await convertCsvToParquet(inputFile, resolvedOutputFile, statsFile);
+    const { engine, needSchema, schemaFile, schemaSkipped } = await convertCsvToParquet(inputFile, resolvedOutputFile, statsFile);
     const duration = Date.now() - startTime;
 
     // Get output file size for reporting
@@ -3235,7 +3239,7 @@ export async function handleToParquetCall(
     }
 
     const statsStatus = needStats ? "generated" : "reused (up-to-date)";
-    const schemaStatus = schemaFile.startsWith("N/A") ? "skipped (DuckDB)" : needSchema ? "generated" : "reused (up-to-date)";
+    const schemaStatus = schemaSkipped ? "skipped (DuckDB)" : needSchema ? "generated" : "reused (up-to-date)";
 
     return successResult(
       `✅ Successfully converted CSV to Parquet with optimized schema\n\n` +

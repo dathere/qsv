@@ -674,6 +674,11 @@ async function buildDuckDbParquetSql(
 
   // Detect delimiter for non-comma-delimited files (.tsv/.tab/.ssv)
   const delimiter = detectDelimiter(inputFile);
+  // Defensive allowlist to prevent SQL injection via delimiter interpolation
+  if (![",", "\t", ";"].includes(delimiter)) {
+    console.error(`[MCP Tools] DuckDB Parquet: Unexpected delimiter value, rejecting`);
+    return null;
+  }
   const delimArg = delimiter !== "," ? `, delim='${delimiter === "\t" ? "\\t" : delimiter}'` : "";
 
   // Stream directly via COPY (SELECT ...) TO ... to avoid materializing an intermediate table
@@ -795,8 +800,10 @@ async function convertCsvToParquet(
         console.error(`[MCP Tools] DuckDB runtime failure, falling back to sqlp: ${getErrorMessage(error)}`);
       }
     }
-    // sql === null means stats cache unreadable/unparseable or path validation failed — fall through to sqlp
-    console.error(`[MCP Tools] DuckDB: stats cache unreadable or unparseable, falling back to sqlp`);
+    if (sql === null) {
+      // stats cache unreadable/unparseable or path validation failed — fall through to sqlp
+      console.error(`[MCP Tools] DuckDB: stats cache unreadable or unparseable, falling back to sqlp`);
+    }
   }
 
   // Fallback: sqlp with Snappy compression

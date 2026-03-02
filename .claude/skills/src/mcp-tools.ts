@@ -2,9 +2,9 @@
  * MCP Tool Definitions and Handlers for QSV Commands
  */
 
-import type { ChildProcess } from "child_process";
+import { spawn, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
-import { stat, access, readFile, writeFile, open, unlink, rename, copyFile, readdir } from "fs/promises";
+import { stat, access, readFile, writeFile, open, unlink, rename, copyFile, readdir, mkdir } from "fs/promises";
 import { constants } from "fs";
 import { basename, dirname, join } from "path";
 import { tmpdir } from "os";
@@ -483,6 +483,10 @@ async function runQsvWithTimeout(
     throw new Error("Server is shutting down, operation rejected");
   }
 
+  // Ensure working directory exists before spawning (CWD ENOENT causes
+  // a misleading "binary not found" error from Node.js spawn).
+  await mkdir(config.workingDir, { recursive: true });
+
   await runQsvSimple(qsvBin, args, {
     timeoutMs,
     cwd: config.workingDir,
@@ -530,6 +534,302 @@ export function buildConversionArgs(
   }
   // Standard: qsv <cmd> <input> --output <output>
   return [conversionCmd, inputFile, "--output", outputFile];
+}
+
+/**
+ * Map a qsv stats `type` + min/max range to the tightest DuckDB SQL type.
+ * Returns null for types that should remain VARCHAR (String, NULL, unknown).
+ */
+function statsTypeToDuckDb(statsType: string, minStr: string, maxStr: string): string | null {
+  switch (statsType) {
+    case "Integer": {
+      // Use BigInt to avoid precision loss for values beyond Number.MAX_SAFE_INTEGER
+      let min: bigint;
+      let max: bigint;
+      try {
+        min = BigInt(minStr);
+        max = BigInt(maxStr);
+      } catch {
+        return "BIGINT";
+      }
+      if (min >= 0n) {
+        // DuckDB unsigned integer ranges
+        if (max <= 255n) return "UTINYINT";
+        if (max <= 65535n) return "USMALLINT";
+        if (max <= 4294967295n) return "UINTEGER";
+        // DuckDB signed BIGINT max:  2^63 - 1
+        const BIGINT_MAX = 9223372036854775807n;
+        // DuckDB unsigned UBIGINT max: 2^64 - 1
+        const UBIGINT_MAX = 18446744073709551615n;
+        if (max <= BIGINT_MAX) return "BIGINT";
+        if (max <= UBIGINT_MAX) return "UBIGINT";
+        // Values larger than UBIGINT cannot be safely cast to an integer type
+        return null;
+      }
+      // signed
+      if (min >= -128n && max <= 127n) return "TINYINT";
+      if (min >= -32768n && max <= 32767n) return "SMALLINT";
+      if (min >= -2147483648n && max <= 2147483647n) return "INTEGER";
+      return "BIGINT";
+    }
+    case "Float":
+      return "DOUBLE";
+    case "Date":
+      return "DATE";
+    case "DateTime":
+      return "TIMESTAMP";
+    default:
+      // String, NULL, or unknown — let DuckDB default to VARCHAR
+      return null;
+  }
+}
+
+/**
+ * Parse a qsv stats cache CSV file into a map of column stats.
+ * Returns null on any read/parse failure.
+ *
+ * NOTE: Uses line-by-line parsing which doesn't handle embedded newlines in
+ * quoted fields. This is acceptable because qsv stats output column names
+ * come from CSV headers which rarely contain newlines, but if they do, this
+ * parser will produce incorrect results and return null (falling back to sqlp).
+ */
+async function parseStatsCsv(statsFile: string): Promise<Map<string, { type: string; min: string; max: string }> | null> {
+  let content: string;
+  try {
+    content = await readFile(statsFile, "utf-8");
+  } catch {
+    console.error(`[MCP Tools] DuckDB Parquet: Cannot read stats file: ${statsFile}`);
+    return null;
+  }
+
+  const lines = content.split(/\r?\n/).filter(l => l.length > 0);
+  if (lines.length < 2) {
+    console.error(`[MCP Tools] DuckDB Parquet: Stats file has no data rows: ${statsFile}`);
+    return null;
+  }
+
+  const header = parseCSVLine(lines[0]);
+  const fieldIdx = header.indexOf("field");
+  const typeIdx = header.indexOf("type");
+  const minIdx = header.indexOf("min");
+  const maxIdx = header.indexOf("max");
+
+  if (fieldIdx < 0 || typeIdx < 0 || minIdx < 0 || maxIdx < 0) {
+    console.error(`[MCP Tools] DuckDB Parquet: Stats file missing required columns (field/type/min/max): ${statsFile}`);
+    return null;
+  }
+
+  const result = new Map<string, { type: string; min: string; max: string }>();
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i]);
+    const field = cols[fieldIdx];
+    if (field) {
+      result.set(field, {
+        type: cols[typeIdx] ?? "",
+        min: cols[minIdx] ?? "",
+        max: cols[maxIdx] ?? "",
+      });
+    }
+  }
+
+  if (result.size === 0) {
+    console.error(`[MCP Tools] DuckDB Parquet: No fields parsed from stats file: ${statsFile}`);
+    return null;
+  }
+
+  return result;
+}
+
+/**
+ * Build DuckDB SQL for CSV→Parquet conversion using the stats cache for tight type casting.
+ * Returns null if the stats file cannot be read, parsed, or validated, or if the
+ * input/output paths fail validation (e.g., contain null bytes); caller should fall back to sqlp.
+ */
+async function buildDuckDbParquetSql(
+  inputFile: string,
+  outputFile: string,
+  statsFile: string,
+): Promise<string | null> {
+  const statsMap = await parseStatsCsv(statsFile);
+  if (statsMap === null) return null;
+
+  // Build SELECT columns with CASTs where needed
+  const selectParts: string[] = [];
+  for (const [colName, colStats] of statsMap) {
+    const duckType = statsTypeToDuckDb(colStats.type, colStats.min, colStats.max);
+    // Double-quote column names for safety
+    const quotedCol = `"${colName.replace(/"/g, '""')}"`;
+    if (duckType) {
+      selectParts.push(`CAST(${quotedCol} AS ${duckType}) AS ${quotedCol}`);
+    } else {
+      selectParts.push(quotedCol);
+    }
+  }
+
+  // Validate file paths don't contain null bytes that could break SQL escaping.
+  const dangerousPathPattern = /\x00/;
+  if (dangerousPathPattern.test(inputFile) || dangerousPathPattern.test(outputFile)) {
+    console.error(`[MCP Tools] DuckDB Parquet: Rejecting paths with null bytes`);
+    return null;
+  }
+
+  // Normalize paths for SQL: backslash to forward slash (Windows compat),
+  // then single-quote escaping for SQL string literals.
+  const normInput = inputFile.replace(/\\/g, "/").replace(/'/g, "''");
+  const normOutput = outputFile.replace(/\\/g, "/").replace(/'/g, "''");
+
+  const selectClause = selectParts.length > 0 ? selectParts.join(", ") : "*";
+
+  // Detect delimiter for non-comma-delimited files (.tsv/.tab/.ssv)
+  const delimiter = detectDelimiter(inputFile);
+  // Defensive allowlist to prevent SQL injection via delimiter interpolation
+  if (![",", "\t", ";"].includes(delimiter)) {
+    console.error(`[MCP Tools] DuckDB Parquet: Unexpected delimiter value, rejecting`);
+    return null;
+  }
+  const delimArg = delimiter !== "," ? `, delim='${delimiter === "\t" ? "\\t" : delimiter}'` : "";
+
+  // Stream directly via COPY (SELECT ...) TO ... to avoid materializing an intermediate table
+  const sql =
+    `COPY (SELECT ${selectClause} FROM read_csv('${normInput}', auto_detect=true${delimArg})) ` +
+    `TO '${normOutput}' (FORMAT PARQUET, COMPRESSION ZSTD);`;
+
+  return sql;
+}
+
+/**
+ * Spawn a DuckDB process to execute SQL commands against the specified database path
+ * (either a persistent database file or ':memory:' for an in-memory database).
+ * Integrates with the activeProcesses set for graceful shutdown.
+ */
+async function spawnDuckDbCommands(
+  binPath: string,
+  dbPath: string,
+  sql: string,
+  timeoutMs: number = config.operationTimeoutMs,
+): Promise<void> {
+  if (isShuttingDown) {
+    throw new Error("Server is shutting down, operation rejected");
+  }
+
+  // Ensure working directory exists before spawning
+  await mkdir(config.workingDir, { recursive: true });
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn(binPath, [dbPath, "-c", sql], {
+      // stdout ignored: COPY ... TO produces no result set; prevents backpressure hangs.
+      // If future SQL returns rows, change to "pipe" and consume the stream.
+      stdio: ["ignore", "ignore", "pipe"],
+      cwd: config.workingDir,
+    });
+
+    activeProcesses.add(proc);
+
+    let stderr = "";
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
+
+    timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        if (proc.exitCode === null) {
+          try { proc.kill("SIGKILL"); } catch { /* ignore */ }
+          proc.unref();
+        }
+      }, 1000);
+    }, timeoutMs);
+
+    proc.stderr!.on("data", (chunk) => {
+      if (stderr.length < MAX_STDERR_SIZE) {
+        stderr += chunk.toString();
+        if (stderr.length > MAX_STDERR_SIZE) {
+          stderr = stderr.slice(0, MAX_STDERR_SIZE) + "\n[STDERR TRUNCATED]";
+        }
+      }
+    });
+
+    proc.on("close", (exitCode, signal) => {
+      if (timer) clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+      activeProcesses.delete(proc);
+
+      if (timedOut) {
+        reject(new Error(`DuckDB Parquet conversion timed out after ${timeoutMs}ms`));
+        return;
+      }
+      if (exitCode !== 0) {
+        const exitInfo = exitCode !== null ? `exit ${exitCode}` : `killed by signal ${signal ?? "unknown"}`;
+        reject(new Error(`DuckDB Parquet conversion failed (${exitInfo}): ${stderr}`));
+        return;
+      }
+      resolve();
+    });
+
+    proc.on("error", (err) => {
+      if (timer) clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+      activeProcesses.delete(proc);
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Maximum stderr buffer size for DuckDB spawns (1 MB)
+ */
+const MAX_STDERR_SIZE = 1024 * 1024;
+
+/**
+ * Convert CSV to Parquet, using DuckDB (with ZSTD) when available, falling back to sqlp (Snappy).
+ * Returns the engine description string for reporting.
+ */
+async function convertCsvToParquet(
+  inputFile: string,
+  parquetPath: string,
+  statsFile: string,
+): Promise<{ engine: string }> {
+  const state = detectDuckDb();
+
+  if (state.status === "available") {
+    // Try DuckDB path
+    const sql = await buildDuckDbParquetSql(inputFile, parquetPath, statsFile);
+    if (sql !== null) {
+      const dbPath = ":memory:";
+      console.error(`[MCP Tools] Step 3: Converting to Parquet via DuckDB (ZSTD) [in-memory]`);
+      // Truncate SQL log for wide CSVs (one CAST per column can get very large)
+      const sqlPreview = sql.length > 500 ? `${sql.slice(0, 500)}... (${sql.length} chars total)` : sql;
+      console.error(`[MCP Tools] DuckDB SQL: ${sqlPreview}`);
+
+      try {
+        await spawnDuckDbCommands(state.binPath, dbPath, sql);
+        return { engine: `DuckDB v${state.version} (ZSTD)` };
+      } catch (error: unknown) {
+        // Clean up partial parquet on DuckDB failure, then fall through to sqlp
+        try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
+        console.error(`[MCP Tools] DuckDB runtime failure, falling back to sqlp: ${getErrorMessage(error)}`);
+      }
+    }
+    if (sql === null) {
+      // SQL generation failed (stats cache unreadable, path validation, or delimiter issue) — fall through to sqlp
+      console.error(`[MCP Tools] DuckDB: SQL generation failed (see earlier log for details), falling back to sqlp`);
+    }
+  }
+
+  // Fallback: sqlp with Snappy compression
+  console.error(`[MCP Tools] Step 3: Converting to Parquet via sqlp (Snappy)`);
+  const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, parquetPath);
+  try {
+    await runQsvWithTimeout(config.qsvBinPath, conversionArgs);
+  } catch (error: unknown) {
+    // Clean up partial parquet on sqlp failure
+    try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
+    const message = `Parquet conversion failed for ${inputFile} \u2192 ${parquetPath}: ${getErrorMessage(error)}`;
+    // Wrap the original error to add context while preserving it as the cause
+    throw new Error(message, { cause: error });
+  }
+  return { engine: "qsv sqlp (Snappy)" };
 }
 
 /**
@@ -1624,17 +1924,11 @@ async function ensureStatsAndSchema(
 async function doParquetConversion(inputFile: string, parquetPath: string): Promise<string> {
   console.error(`[MCP Tools] ensureParquet: Auto-converting CSV to Parquet: ${inputFile}`);
 
-  await ensureStatsAndSchema(inputFile);
+  const { statsFile } = await ensureStatsAndSchema(inputFile);
 
-  // Step 3: Convert to Parquet
-  try {
-    const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, parquetPath);
-    await runQsvWithTimeout(config.qsvBinPath, conversionArgs);
-  } catch (error: unknown) {
-    // Clean up potentially corrupted partial Parquet file
-    try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
-    throw new Error(`Parquet conversion failed for ${inputFile}: ${getErrorMessage(error)}`);
-  }
+  // Step 3: Convert to Parquet (DuckDB with ZSTD when available, sqlp with Snappy otherwise)
+  const { engine } = await convertCsvToParquet(inputFile, parquetPath, statsFile);
+  console.error(`[MCP Tools] ensureParquet: Conversion engine: ${engine}`);
 
   // Verify the output file was actually created and is non-empty
   let outStats;
@@ -2891,19 +3185,10 @@ export async function handleToParquetCall(
 
   try {
     // Steps 1-2.5: Ensure stats cache and Polars schema are up-to-date
-    const { needStats, needSchema, schemaFile } = await ensureStatsAndSchema(inputFile);
+    const { needStats, needSchema, statsFile, schemaFile = "N/A" } = await ensureStatsAndSchema(inputFile);
 
-    // Step 3: Convert to Parquet (sqlp will auto-detect .pschema.json)
-    console.error(`[MCP Tools] Step 3: Converting to Parquet with schema`);
-    const conversionArgs = buildConversionArgs(
-      "csv-to-parquet",
-      inputFile,
-      resolvedOutputFile,
-    );
-    console.error(
-      `[MCP Tools] Running CSV→Parquet conversion: ${config.qsvBinPath} ${conversionArgs.join(" ")}`,
-    );
-    await runQsvWithTimeout(config.qsvBinPath, conversionArgs);
+    // Step 3: Convert to Parquet (DuckDB with ZSTD when available, sqlp with Snappy otherwise)
+    const { engine } = await convertCsvToParquet(inputFile, resolvedOutputFile, statsFile);
     const duration = Date.now() - startTime;
 
     // Get output file size for reporting
@@ -2922,6 +3207,8 @@ export async function handleToParquetCall(
       `✅ Successfully converted CSV to Parquet with optimized schema\n\n` +
       `Input: ${inputFile}\n` +
       `Output: ${resolvedOutputFile}${fileSizeInfo}\n` +
+      `Engine: ${engine}\n` +
+      `Stats: ${statsFile}\n` +
       `Schema: ${schemaFile}\n` +
       `Duration: ${duration}ms\n\n` +
       `Stats cache: ${statsStatus}\n` +

@@ -1948,7 +1948,7 @@ async function ensurePolarsSchema(
   }
 
   // Step 2.5: Patch schema for AM/PM date formats that Polars can't parse
-  // Always run — idempotent and ensures pre-existing schemas get patched
+  // Always run — idempotent; covers schemas generated before AM/PM patching was introduced
   await patchSchemaAndLog(inputFile, schemaFile);
 
   return { needSchema, schemaFile };

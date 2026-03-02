@@ -654,7 +654,8 @@ async function parseStatsCsv(statsFile: string): Promise<Map<string, { type: str
 
 /**
  * Build DuckDB SQL for CSV→Parquet conversion using the stats cache for tight type casting.
- * Returns null if the stats file cannot be read (caller should fall back to sqlp).
+ * Returns null if the stats file cannot be read, parsed, or validated, or if the
+ * input/output paths fail validation (e.g., contain null bytes); caller should fall back to sqlp.
  */
 async function buildDuckDbParquetSql(
   inputFile: string,
@@ -693,15 +694,20 @@ async function buildDuckDbParquetSql(
 
   const selectClause = selectParts.length > 0 ? selectParts.join(", ") : "*";
 
+  // Detect delimiter for non-comma-delimited files (.tsv/.tab/.ssv)
+  const delimiter = detectDelimiter(inputFile);
+  const delimArg = delimiter !== "," ? `, delim='${delimiter === "\t" ? "\\t" : delimiter}'` : "";
+
   const sql =
-    `CREATE OR REPLACE TABLE "${tableName}" AS SELECT ${selectClause} FROM read_csv('${normInput}', auto_detect=true); ` +
+    `CREATE OR REPLACE TABLE "${tableName}" AS SELECT ${selectClause} FROM read_csv('${normInput}', auto_detect=true${delimArg}); ` +
     `COPY "${tableName}" TO '${normOutput}' (FORMAT PARQUET, COMPRESSION ZSTD);`;
 
   return sql;
 }
 
 /**
- * Spawn a DuckDB process to execute SQL commands against a persistent database.
+ * Spawn a DuckDB process to execute SQL commands against the specified database path
+ * (either a persistent database file or ':memory:' for an in-memory database).
  * Integrates with the activeProcesses set for graceful shutdown.
  */
 async function spawnDuckDbCommands(
@@ -797,7 +803,9 @@ async function convertCsvToParquet(
     if (sql !== null) {
       const dbPath = ":memory:";
       console.error(`[MCP Tools] Step 3: Converting to Parquet via DuckDB (ZSTD) [in-memory]`);
-      console.error(`[MCP Tools] DuckDB SQL: ${sql}`);
+      // Truncate SQL log for wide CSVs (one CAST per column can get very large)
+      const sqlPreview = sql.length > 500 ? `${sql.slice(0, 500)}... (${sql.length} chars total)` : sql;
+      console.error(`[MCP Tools] DuckDB SQL: ${sqlPreview}`);
 
       try {
         await spawnDuckDbCommands(state.binPath, dbPath, sql);
@@ -808,14 +816,20 @@ async function convertCsvToParquet(
         console.error(`[MCP Tools] DuckDB runtime failure, falling back to sqlp: ${getErrorMessage(error)}`);
       }
     }
-    // sql === null means stats cache unreadable — fall through to sqlp
-    console.error(`[MCP Tools] DuckDB: stats cache unreadable, falling back to sqlp`);
+    // sql === null means stats cache unreadable/unparseable or path validation failed — fall through to sqlp
+    console.error(`[MCP Tools] DuckDB: stats cache unreadable or unparseable, falling back to sqlp`);
   }
 
   // Fallback: sqlp with Snappy compression
   console.error(`[MCP Tools] Step 3: Converting to Parquet via sqlp (Snappy)`);
   const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, parquetPath);
-  await runQsvWithTimeout(config.qsvBinPath, conversionArgs);
+  try {
+    await runQsvWithTimeout(config.qsvBinPath, conversionArgs);
+  } catch (error: unknown) {
+    // Clean up partial parquet on sqlp failure
+    try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
+    throw error;
+  }
   return { engine: "qsv sqlp (Snappy)" };
 }
 

@@ -62,8 +62,8 @@ Examples:
   qsv pragmastat --misrate 1e-6 data.csv
 
 Full Pragmastat manual:
-https://github.com/AndreyAkinshin/pragmastat/releases/download/v10.0.0/pragmastat-v10.0.0.pdf
-https://pragmastat.dev/ (latest version)
+  https://github.com/AndreyAkinshin/pragmastat/releases/download/v11.0.0/pragmastat-v11.0.0.pdf
+  https://pragmastat.dev/ (latest version)
 
 Usage:
     qsv pragmastat [options] [<input>]
@@ -324,10 +324,10 @@ fn compute_one_sample<'a>(name: &'a str, values: &[f64], misrate: f64) -> OneSam
         };
     }
 
-    let center = pragmastat::center(values).ok();
-    let spread = pragmastat::spread(values).ok();
-    let center_bounds = pragmastat::center_bounds(values, misrate).ok();
-    let spread_bounds = pragmastat::spread_bounds(values, misrate).ok();
+    let center = pragmastat::estimators::raw::center(values).ok();
+    let spread = pragmastat::estimators::raw::spread(values).ok();
+    let center_bounds = pragmastat::estimators::raw::center_bounds(values, misrate).ok();
+    let spread_bounds = pragmastat::estimators::raw::spread_bounds(values, misrate).ok();
 
     OneSampleResult {
         field: name,
@@ -369,10 +369,10 @@ fn compute_two_sample<'a>(
         };
     }
 
-    let shift = pragmastat::shift(x, y).ok();
-    let shift_bounds = pragmastat::shift_bounds(x, y, misrate).ok();
-    let disparity = pragmastat::disparity(x, y).ok();
-    let disparity_bounds = pragmastat::disparity_bounds(x, y, misrate).ok();
+    let shift = pragmastat::estimators::raw::shift(x, y).ok();
+    let shift_bounds = pragmastat::estimators::raw::shift_bounds(x, y, misrate).ok();
+    let disparity = pragmastat::estimators::raw::disparity(x, y).ok();
+    let disparity_bounds = pragmastat::estimators::raw::disparity_bounds(x, y, misrate).ok();
 
     // Share log-transformed data between ratio and ratio_bounds to avoid a redundant
     // O(n) allocation and two O(n log n) sort passes that would occur if ratio() and
@@ -381,8 +381,10 @@ fn compute_two_sample<'a>(
     let (ratio, ratio_lower, ratio_upper) = if all_positive {
         let log_x: Vec<f64> = x.iter().map(|v| v.ln()).collect();
         let log_y: Vec<f64> = y.iter().map(|v| v.ln()).collect();
-        let ratio = pragmastat::shift(&log_x, &log_y).ok().map(f64::exp);
-        let ratio_bounds = pragmastat::shift_bounds(&log_x, &log_y, misrate)
+        let ratio = pragmastat::estimators::raw::shift(&log_x, &log_y)
+            .ok()
+            .map(f64::exp);
+        let ratio_bounds = pragmastat::estimators::raw::shift_bounds(&log_x, &log_y, misrate)
             .ok()
             .map(|b| (b.lower.exp(), b.upper.exp()));
         (

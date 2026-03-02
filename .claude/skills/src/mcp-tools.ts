@@ -709,6 +709,8 @@ async function spawnDuckDbCommands(
 
   return new Promise((resolve, reject) => {
     const proc = spawn(binPath, [dbPath, "-c", sql], {
+      // stdout ignored: COPY ... TO produces no result set; prevents backpressure hangs.
+      // If future SQL returns rows, change to "pipe" and consume the stream.
       stdio: ["ignore", "ignore", "pipe"],
       cwd: config.workingDir,
     });
@@ -801,8 +803,8 @@ async function convertCsvToParquet(
       }
     }
     if (sql === null) {
-      // stats cache unreadable/unparseable or path validation failed — fall through to sqlp
-      console.error(`[MCP Tools] DuckDB: stats cache unreadable or unparseable, falling back to sqlp`);
+      // SQL generation failed (stats cache unreadable, path validation, or delimiter issue) — fall through to sqlp
+      console.error(`[MCP Tools] DuckDB: SQL generation failed (see earlier log for details), falling back to sqlp`);
     }
   }
 

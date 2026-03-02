@@ -553,10 +553,18 @@ function statsTypeToDuckDb(statsType: string, minStr: string, maxStr: string): s
         return "BIGINT";
       }
       if (min >= 0n) {
+        // DuckDB unsigned integer ranges
         if (max <= 255n) return "UTINYINT";
         if (max <= 65535n) return "USMALLINT";
         if (max <= 4294967295n) return "UINTEGER";
-        return "BIGINT";
+        // DuckDB signed BIGINT max:  2^63 - 1
+        const BIGINT_MAX = 9223372036854775807n;
+        // DuckDB unsigned UBIGINT max: 2^64 - 1
+        const UBIGINT_MAX = 18446744073709551615n;
+        if (max <= BIGINT_MAX) return "BIGINT";
+        if (max <= UBIGINT_MAX) return "UBIGINT";
+        // Values larger than UBIGINT cannot be safely cast to an integer type
+        return null;
       }
       // signed
       if (min >= -128n && max <= 127n) return "TINYINT";
@@ -742,7 +750,7 @@ async function spawnDuckDbCommands(
       }
     });
 
-    proc.on("close", (exitCode) => {
+    proc.on("close", (exitCode, signal) => {
       if (timer) clearTimeout(timer);
       if (killTimer) clearTimeout(killTimer);
       activeProcesses.delete(proc);
@@ -752,7 +760,8 @@ async function spawnDuckDbCommands(
         return;
       }
       if (exitCode !== 0) {
-        reject(new Error(`DuckDB Parquet conversion failed (exit ${exitCode}): ${stderr}`));
+        const exitInfo = exitCode !== null ? `exit ${exitCode}` : `killed by signal ${signal ?? "unknown"}`;
+        reject(new Error(`DuckDB Parquet conversion failed (${exitInfo}): ${stderr}`));
         return;
       }
       resolve();
@@ -816,7 +825,12 @@ async function convertCsvToParquet(
   } catch (error: unknown) {
     // Clean up partial parquet on sqlp failure
     try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
-    throw error;
+    const message = `Parquet conversion failed for ${inputFile} \u2192 ${parquetPath}: ${getErrorMessage(error)}`;
+    // Wrap the original error to add context while preserving it as the cause when available
+    if (error instanceof Error) {
+      throw new Error(message, { cause: error });
+    }
+    throw new Error(message);
   }
   return { engine: "qsv sqlp (Snappy)" };
 }

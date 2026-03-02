@@ -537,26 +537,6 @@ export function buildConversionArgs(
 }
 
 /**
- * Sanitize an input filename into a valid DuckDB table name.
- * Strips extensions, replaces non-alphanumeric runs with `_`, and ensures
- * the name is a valid SQL identifier.
- */
-function sanitizeTableName(inputFile: string): string {
-  // Extract basename and strip all extensions (.csv, .csv.sz, etc.)
-  let stem = basename(inputFile);
-  while (/\.\w+$/.test(stem)) {
-    stem = stem.replace(/\.\w+$/, "");
-  }
-  // Replace non-alphanumeric runs with underscore, trim leading/trailing
-  stem = stem.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  // Prefix with t_ if starts with digit
-  if (/^\d/.test(stem)) {
-    stem = `t_${stem}`;
-  }
-  return stem || "data";
-}
-
-/**
  * Map a qsv stats `type` + min/max range to the tightest DuckDB SQL type.
  * Returns null for types that should remain VARCHAR (String, NULL, unknown).
  */
@@ -665,8 +645,6 @@ async function buildDuckDbParquetSql(
   const statsMap = await parseStatsCsv(statsFile);
   if (statsMap === null) return null;
 
-  const tableName = sanitizeTableName(inputFile);
-
   // Build SELECT columns with CASTs where needed
   const selectParts: string[] = [];
   for (const [colName, colStats] of statsMap) {
@@ -698,9 +676,10 @@ async function buildDuckDbParquetSql(
   const delimiter = detectDelimiter(inputFile);
   const delimArg = delimiter !== "," ? `, delim='${delimiter === "\t" ? "\\t" : delimiter}'` : "";
 
+  // Stream directly via COPY (SELECT ...) TO ... to avoid materializing an intermediate table
   const sql =
-    `CREATE OR REPLACE TABLE "${tableName}" AS SELECT ${selectClause} FROM read_csv('${normInput}', auto_detect=true${delimArg}); ` +
-    `COPY "${tableName}" TO '${normOutput}' (FORMAT PARQUET, COMPRESSION ZSTD);`;
+    `COPY (SELECT ${selectClause} FROM read_csv('${normInput}', auto_detect=true${delimArg})) ` +
+    `TO '${normOutput}' (FORMAT PARQUET, COMPRESSION ZSTD);`;
 
   return sql;
 }
@@ -725,7 +704,7 @@ async function spawnDuckDbCommands(
 
   return new Promise((resolve, reject) => {
     const proc = spawn(binPath, [dbPath, "-c", sql], {
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", "ignore", "pipe"],
       cwd: config.workingDir,
     });
 

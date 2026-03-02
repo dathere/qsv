@@ -745,6 +745,67 @@ test('createLogTool returns valid tool definition', () => {
   ]);
 });
 
+test('handleLogCall rejects missing params entirely', async () => {
+  const result = await handleLogCall({}, tmpdir());
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('entry_type is required'));
+});
+
+test('handleLogCall rejects missing entry_type', async () => {
+  const result = await handleLogCall({ message: 'hello' }, tmpdir());
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('entry_type is required'));
+});
+
+test('handleLogCall rejects missing message', async () => {
+  const result = await handleLogCall({ entry_type: 'note' }, tmpdir());
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('message is required'));
+});
+
+test('handleLogCall rejects newline-only message', async () => {
+  const result = await handleLogCall(
+    { entry_type: 'note', message: '\n\n' },
+    tmpdir(),
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('non-empty string'));
+});
+
+test('handleLogCall coerces non-string types via String()', async () => {
+  // entry_type as number should be coerced to string and rejected as invalid
+  const result = await handleLogCall(
+    { entry_type: 123, message: true },
+    tmpdir(),
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('Invalid entry_type'));
+  assert.ok(result.content[0].text?.includes('123'));
+});
+
+test('handleLogCall coerces non-string message via String()', async (t) => {
+  if (!config.qsvValidation.valid) {
+    t.skip('qsv binary not available');
+    return;
+  }
+
+  // valid entry_type + numeric message should be coerced to "42" and pass validation
+  const result = await handleLogCall(
+    { entry_type: 'note', message: 42 },
+    tmpdir(),
+  );
+
+  // Should not be rejected as invalid input — it passes validation and execution
+  assert.ok(!result.isError);
+  assert.ok(result.content[0].text?.includes('Logged note entry'));
+  assert.ok(!result.content[0].text?.includes('warning'), 'Should succeed without warning');
+});
+
 test('handleLogCall rejects invalid entry_type', async () => {
   const result = await handleLogCall(
     { entry_type: 'invalid_type', message: 'test message' },
@@ -836,4 +897,23 @@ test('handleLogCall truncates messages over MAX_LOG_MESSAGE_LEN', async (t) => {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('handleLogCall returns success with warning when qsv write fails', async (t) => {
+  if (!config.qsvValidation.valid) {
+    t.skip('qsv binary not available');
+    return;
+  }
+
+  // Use a non-existent directory so qsv log cannot create the log file
+  const result = await handleLogCall(
+    { entry_type: 'note', message: 'this should fail to write' },
+    '/nonexistent/path/that/does/not/exist',
+  );
+
+  // The catch block should swallow the error and return success with warning
+  assert.ok(!result.isError, 'Should not be marked as error');
+  assert.ok(result.content[0].text?.includes('Log write failed'), 'Should indicate write failed');
+  assert.ok(result.content[0].text?.includes('non-fatal'), 'Should indicate non-fatal');
+  assert.ok(result.content[0].text?.includes('Workflow continues'), 'Should indicate workflow continues');
 });

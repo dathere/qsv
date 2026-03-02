@@ -3301,7 +3301,7 @@ export function createLogTool(): McpToolDefinition {
 - result_summary — Outcome of a completed workflow
 - note — Free-form annotation
 
-⚠️ CAUTION: Keep messages concise. Max ${MAX_LOG_MESSAGE_LEN} chars (truncated silently). Logging never fails the workflow.`,
+⚠️ CAUTION: Keep messages concise. Max ${MAX_LOG_MESSAGE_LEN} chars (truncated silently). Newlines are collapsed to spaces. Logging never fails the workflow.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -3330,8 +3330,16 @@ export async function handleLogCall(
   params: Record<string, unknown>,
   workingDir: string,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
-  const entryType = String(params.entry_type ?? "");
-  const rawMessage = String(params.message ?? "");
+  // Validate required params before coercing
+  if (params.entry_type == null) {
+    return errorResult("entry_type is required.");
+  }
+  if (params.message == null) {
+    return errorResult("message is required.");
+  }
+
+  const entryType = String(params.entry_type);
+  const rawMessage = String(params.message);
 
   // Validate entry_type
   if (!LOG_ENTRY_TYPES.has(entryType)) {
@@ -3345,11 +3353,19 @@ export async function handleLogCall(
     return errorResult("message must be a non-empty string.");
   }
 
-  // Truncate if needed
-  const message =
-    rawMessage.length > MAX_LOG_MESSAGE_LEN
-      ? rawMessage.slice(0, MAX_LOG_MESSAGE_LEN)
-      : rawMessage;
+  // Trim, strip newlines, and truncate if needed (use Array.from for Unicode-safe truncation)
+  const sanitized = rawMessage.trim().replace(/[\r\n]+/g, " ");
+  // Fast path: if UTF-16 length is within limit, codepoint count is too
+  let message: string;
+  if (sanitized.length <= MAX_LOG_MESSAGE_LEN) {
+    message = sanitized;
+  } else {
+    const codepoints = Array.from(sanitized);
+    message =
+      codepoints.length > MAX_LOG_MESSAGE_LEN
+        ? codepoints.slice(0, MAX_LOG_MESSAGE_LEN).join("")
+        : sanitized;
+  }
 
   const logId = `u-${randomUUID()}`;
 
@@ -3363,10 +3379,10 @@ export async function handleLogCall(
       timeoutMs: 5_000,
       cwd: workingDir,
     });
-  } catch {
-    // Swallow — logging must never fail the workflow
-    // Return success with a warning so the agent knows
-    return successResult(`Logged ${entryType} entry (warning: write may have failed).`);
+  } catch (err) {
+    const errMsg = getErrorMessage(err);
+    console.error(`[qsv_log] write failed: ${errMsg}`);
+    return successResult(`Log write failed (non-fatal): ${errMsg.slice(0, 100)}. Workflow continues.`);
   }
 
   return successResult(`Logged ${entryType} entry.`);

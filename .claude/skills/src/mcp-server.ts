@@ -35,9 +35,11 @@ import {
   createListFilesTool,
   createSetWorkingDirTool,
   createGetWorkingDirTool,
+  createLogTool,
   handleConfigTool,
   handleSearchToolsCall,
   handleToParquetCall,
+  handleLogCall,
   initiateShutdown,
   killAllProcesses,
   getActiveProcessCount,
@@ -56,6 +58,7 @@ const CORE_TOOLS = [
   "qsv_set_working_dir",
   "qsv_get_working_dir",
   "qsv_list_files",
+  "qsv_log",
   "qsv_command",
   "qsv_to_parquet",
   "qsv_index",
@@ -90,7 +93,9 @@ CACHE AWARENESS: Before running commands, check for existing caches to save time
 
 MEMORY LIMITS: Commands dedup, sort, reverse, table, transpose, pragmastat load entire files into memory. For files >1GB, prefer extdedup/extsort alternatives via qsv_command. Check column cardinality with qsv_stats before running frequency or pivotp to avoid huge output.
 
-OPERATION TIMEOUT: qsv operations can take significant time, especially on larger files. The MCP server's default operation timeout is 10 minutes (configurable via QSV_MCP_OPERATION_TIMEOUT_MS, max 30 minutes). Do NOT use a shorter client-side timeout — allow operations to run to completion or until the server's configured timeout. Check the current timeout setting with qsv_config. CONCURRENT OPERATIONS: Parallel tool calls are automatically queued. For optimal throughput in Claude Cowork, execute pipeline steps sequentially (index → stats → analysis).`;
+OPERATION TIMEOUT: qsv operations can take significant time, especially on larger files. The MCP server's default operation timeout is 10 minutes (configurable via QSV_MCP_OPERATION_TIMEOUT_MS, max 30 minutes). Do NOT use a shorter client-side timeout — allow operations to run to completion or until the server's configured timeout. Check the current timeout setting with qsv_config. CONCURRENT OPERATIONS: Parallel tool calls are automatically queued. For optimal throughput in Claude Cowork, execute pipeline steps sequentially (index → stats → analysis).
+
+REPRODUCIBILITY LOG: Use qsv_log to create a verifiable audit trail. Log each user prompt (entry_type: "user_prompt") as it arrives, key decisions (entry_type: "agent_reasoning"), actions taken (entry_type: "agent_action"), and outcomes (entry_type: "result_summary"). The log file (qsvmcp.log) records both automatic tool invocations (s-/e- prefixed) and your explicit entries (u- prefixed). Keep entries concise but sufficient for a third party to reproduce your workflow. Avoid excessive logging — for simple interactions, a single user_prompt + result_summary pair is enough. Reserve agent_reasoning for non-obvious decisions.`;
 
 /**
  * Resolved server instructions: uses custom instructions from
@@ -513,6 +518,9 @@ class QsvMcpServer {
         tools.push(createSetWorkingDirTool());
         tools.push(createGetWorkingDirTool());
 
+        // Add logging tool
+        tools.push(createLogTool());
+
         console.error(`[Server] Registered ${tools.length} tools`);
         if (!this.toolsListedOnce) {
           console.error(
@@ -566,7 +574,9 @@ class QsvMcpServer {
       // Start entries only at "info" level; "error" level only logs failures
       // Safe to capture once: config is immutable after initialization
       const auditLogEnabled = config.mcpLogLevel !== "off";
-      if (config.mcpLogLevel === "info") {
+      // Skip automatic audit logging for qsv_log to avoid recursive noise
+      const skipAuditLog = name === "qsv_log";
+      if (config.mcpLogLevel === "info" && !skipAuditLog) {
         runQsvSimple(config.qsvBinPath, ["log", name, `s-${invocationId}`, startMsg], {
           timeoutMs: 5_000,
           cwd: this.filesystemProvider.getWorkingDirectory(),
@@ -580,6 +590,11 @@ class QsvMcpServer {
         // would require a uniform interface wrapper with no real benefit.
         // Order: filesystem → generic command → config → search →
         //        to_parquet → skill-based (qsv_*) → unknown tool error.
+
+        // Handle log tool (before filesystem tools so it's fast)
+        if (name === "qsv_log") {
+          return await handleLogCall(toolArgs || {}, this.filesystemProvider.getWorkingDirectory());
+        }
 
         // Handle filesystem tools
         if (name === "qsv_list_files") {
@@ -705,7 +720,7 @@ class QsvMcpServer {
         // Log end with elapsed time
         const elapsedSecs = ((Date.now() - startTime) / 1000).toFixed(2);
         const isError = "isError" in result && result.isError === true;
-        if (auditLogEnabled && (config.mcpLogLevel === "info" || isError)) {
+        if (auditLogEnabled && !skipAuditLog && (config.mcpLogLevel === "info" || isError)) {
           const endMsg = isError
             ? `error(${elapsedSecs}s): tool returned error`
             : `ok(${elapsedSecs}s)`;
@@ -718,7 +733,7 @@ class QsvMcpServer {
         return result;
       } catch (error: unknown) {
         // Log error end with elapsed time (always log errors unless fully off)
-        if (auditLogEnabled) {
+        if (auditLogEnabled && !skipAuditLog) {
           const elapsedSecs = ((Date.now() - startTime) / 1000).toFixed(2);
           const errMsg = getErrorMessage(error);
           const truncatedErr = errMsg.length > MAX_ARGS_LOG_LEN

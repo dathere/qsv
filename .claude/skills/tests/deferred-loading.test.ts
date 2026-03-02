@@ -24,6 +24,7 @@ const CORE_TOOLS = [
   "qsv_set_working_dir",
   "qsv_get_working_dir",
   "qsv_list_files",
+  "qsv_log",
   "qsv_command",
   "qsv_to_parquet",
   "qsv_index",
@@ -34,8 +35,8 @@ const CORE_TOOLS = [
 // Core Tools Count Verification
 // ============================================================================
 
-test('CORE_TOOLS has exactly 9 tools', () => {
-  assert.strictEqual(CORE_TOOLS.length, 9, 'Should have exactly 9 core tools');
+test('CORE_TOOLS has exactly 10 tools', () => {
+  assert.strictEqual(CORE_TOOLS.length, 10, 'Should have exactly 10 core tools');
 });
 
 test('CORE_TOOLS includes all required utility tools', () => {
@@ -45,6 +46,7 @@ test('CORE_TOOLS includes all required utility tools', () => {
     'qsv_set_working_dir',
     'qsv_get_working_dir',
     'qsv_list_files',
+    'qsv_log',
     'qsv_command',
     'qsv_to_parquet',
     'qsv_index',

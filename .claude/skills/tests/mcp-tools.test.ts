@@ -19,6 +19,9 @@ import {
   detectDelimiter,
   isDateDtype,
   patchSchemaAmPmDates,
+  createLogTool,
+  handleLogCall,
+  MAX_LOG_MESSAGE_LEN,
 } from '../src/mcp-tools.js';
 import { SkillLoader } from '../src/loader.js';
 import { SkillExecutor } from '../src/executor.js';
@@ -590,7 +593,7 @@ test('isDateDtype rejects non-date types', () => {
 // patchSchemaAmPmDates Tests
 // ============================================================================
 
-import { writeFile, mkdir, rm } from 'node:fs/promises';
+import { writeFile, readFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -716,4 +719,208 @@ test('patchSchemaAmPmDates handles CSV without trailing newline', async () => {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// ============================================================================
+// qsv_log Tests
+// ============================================================================
+
+import { config } from '../src/config.js';
+
+test('createLogTool returns valid tool definition', () => {
+  const toolDef = createLogTool();
+
+  assert.strictEqual(toolDef.name, 'qsv_log');
+  assert.ok(toolDef.description.includes('audit log'));
+  assert.strictEqual(toolDef.inputSchema.type, 'object');
+  assert.ok('entry_type' in toolDef.inputSchema.properties);
+  assert.ok('message' in toolDef.inputSchema.properties);
+  assert.deepStrictEqual(toolDef.inputSchema.required, ['entry_type', 'message']);
+
+  // Verify enum values
+  const entryTypeProp = toolDef.inputSchema.properties.entry_type as { enum: string[] };
+  assert.ok(Array.isArray(entryTypeProp.enum));
+  assert.deepStrictEqual(entryTypeProp.enum, [
+    'user_prompt', 'agent_reasoning', 'agent_action', 'result_summary', 'note',
+  ]);
+});
+
+test('handleLogCall rejects missing params entirely', async () => {
+  const result = await handleLogCall({}, tmpdir());
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('entry_type is required'));
+});
+
+test('handleLogCall rejects missing entry_type', async () => {
+  const result = await handleLogCall({ message: 'hello' }, tmpdir());
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('entry_type is required'));
+});
+
+test('handleLogCall rejects missing message', async () => {
+  const result = await handleLogCall({ entry_type: 'note' }, tmpdir());
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('message is required'));
+});
+
+test('handleLogCall rejects newline-only message', async () => {
+  const result = await handleLogCall(
+    { entry_type: 'note', message: '\n\n' },
+    tmpdir(),
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('non-empty string'));
+});
+
+test('handleLogCall coerces non-string types via String()', async () => {
+  // entry_type as number should be coerced to string and rejected as invalid
+  const result = await handleLogCall(
+    { entry_type: 123, message: true },
+    tmpdir(),
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('Invalid entry_type'));
+  assert.ok(result.content[0].text?.includes('123'));
+});
+
+test('handleLogCall coerces non-string message via String()', async (t) => {
+  if (!config.qsvValidation.valid) {
+    t.skip('qsv binary not available');
+    return;
+  }
+
+  const dir = join(tmpdir(), `qsv-test-coerce-msg-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+
+    // valid entry_type + numeric message should be coerced to "42" and pass validation
+    const result = await handleLogCall(
+      { entry_type: 'note', message: 42 },
+      dir,
+    );
+
+    // Should not be rejected as invalid input — it passes validation and execution
+    assert.ok(!result.isError);
+    assert.ok(result.content[0].text?.includes('Logged note entry'));
+    assert.ok(!result.content[0].text?.includes('warning'), 'Should succeed without warning');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('handleLogCall rejects invalid entry_type', async () => {
+  const result = await handleLogCall(
+    { entry_type: 'invalid_type', message: 'test message' },
+    tmpdir(),
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('Invalid entry_type'));
+  assert.ok(result.content[0].text?.includes('invalid_type'));
+});
+
+test('handleLogCall rejects empty message', async () => {
+  const result = await handleLogCall(
+    { entry_type: 'note', message: '' },
+    tmpdir(),
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('non-empty'));
+});
+
+test('handleLogCall rejects whitespace-only message', async () => {
+  const result = await handleLogCall(
+    { entry_type: 'note', message: '   ' },
+    tmpdir(),
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('non-empty'));
+});
+
+test('handleLogCall succeeds with valid params and writes to log', async (t) => {
+  if (!config.qsvValidation.valid) {
+    t.skip('qsv binary not available');
+    return;
+  }
+
+  const dir = join(tmpdir(), `qsv-test-log-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+
+    const result = await handleLogCall(
+      { entry_type: 'note', message: 'test log entry from unit test' },
+      dir,
+    );
+
+    assert.strictEqual(result.isError, false);
+    assert.ok(result.content[0].text?.includes('Logged note entry'));
+
+    // Verify the log file was created and contains the entry
+    const logFile = join(dir, 'qsvmcp.log');
+    const logContent = await readFile(logFile, 'utf-8');
+    assert.ok(logContent.includes('u-'), 'Log entry should have u- prefix');
+    assert.ok(logContent.includes('[note]'), 'Log entry should contain [note] tag');
+    assert.ok(logContent.includes('test log entry from unit test'), 'Log entry should contain the message');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('handleLogCall truncates messages over MAX_LOG_MESSAGE_LEN', async (t) => {
+  if (!config.qsvValidation.valid) {
+    t.skip('qsv binary not available');
+    return;
+  }
+
+  const dir = join(tmpdir(), `qsv-test-log-trunc-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+
+    // Create a message longer than MAX_LOG_MESSAGE_LEN
+    const longMessage = 'x'.repeat(MAX_LOG_MESSAGE_LEN + 500);
+    const result = await handleLogCall(
+      { entry_type: 'user_prompt', message: longMessage },
+      dir,
+    );
+
+    assert.strictEqual(result.isError, false);
+    assert.ok(result.content[0].text?.includes('Logged user_prompt entry'));
+
+    // Verify the log file was created but message was truncated
+    const logFile = join(dir, 'qsvmcp.log');
+    const logContent = await readFile(logFile, 'utf-8');
+    assert.ok(logContent.includes('u-'), 'Log entry should have u- prefix');
+    assert.ok(logContent.includes('[user_prompt]'), 'Log entry should contain [user_prompt] tag');
+    // The truncated message should not contain the full length
+    // (log line overhead + truncated message should be shorter than the full message)
+    assert.ok(logContent.length < longMessage.length, 'Log content should be shorter than the full message');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('handleLogCall returns success with warning when qsv write fails', async (t) => {
+  if (!config.qsvValidation.valid) {
+    t.skip('qsv binary not available');
+    return;
+  }
+
+  // Use a non-existent directory so qsv log cannot create the log file
+  const result = await handleLogCall(
+    { entry_type: 'note', message: 'this should fail to write' },
+    '/nonexistent/path/that/does/not/exist',
+  );
+
+  // The catch block should swallow the error and return success with warning
+  assert.ok(!result.isError, 'Should not be marked as error');
+  assert.ok(result.content[0].text?.includes('Log write failed'), 'Should indicate write failed');
+  assert.ok(result.content[0].text?.includes('non-fatal'), 'Should indicate non-fatal');
+  assert.ok(result.content[0].text?.includes('Workflow continues'), 'Should indicate workflow continues');
 });

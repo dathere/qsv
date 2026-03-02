@@ -826,11 +826,8 @@ async function convertCsvToParquet(
     // Clean up partial parquet on sqlp failure
     try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
     const message = `Parquet conversion failed for ${inputFile} \u2192 ${parquetPath}: ${getErrorMessage(error)}`;
-    // Wrap the original error to add context while preserving it as the cause when available
-    if (error instanceof Error) {
-      throw new Error(message, { cause: error });
-    }
-    throw new Error(message);
+    // Wrap the original error to add context while preserving it as the cause
+    throw new Error(message, { cause: error });
   }
   return { engine: "qsv sqlp (Snappy)" };
 }

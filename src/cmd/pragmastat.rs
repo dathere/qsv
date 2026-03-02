@@ -324,35 +324,20 @@ fn compute_one_sample<'a>(name: &'a str, values: &[f64], misrate: f64) -> OneSam
         };
     }
 
-    // safety: values are already filtered to finite-only; Sample::new only fails on
-    // empty or non-finite, so this should always succeed when n > 0.
-    let sample = pragmastat::Sample::new(values.to_vec());
-    let Ok(ref sample) = sample else {
-        return OneSampleResult {
-            field: name,
-            n,
-            center: None,
-            spread: None,
-            center_lower: None,
-            center_upper: None,
-            spread_lower: None,
-            spread_upper: None,
-        };
-    };
-    let center = pragmastat::center(sample).ok().map(|m| m.value);
-    let spread = pragmastat::spread(sample).ok().map(|m| m.value);
-    let center_bounds = pragmastat::center_bounds(sample, misrate).ok();
-    let spread_bounds = pragmastat::spread_bounds(sample, misrate).ok();
+    let center = pragmastat::estimators::raw::center(values).ok();
+    let spread = pragmastat::estimators::raw::spread(values).ok();
+    let center_bounds = pragmastat::estimators::raw::center_bounds(values, misrate).ok();
+    let spread_bounds = pragmastat::estimators::raw::spread_bounds(values, misrate).ok();
 
     OneSampleResult {
         field: name,
         n,
         center,
         spread,
-        center_lower: center_bounds.as_ref().map(|b| b.lower),
-        center_upper: center_bounds.as_ref().map(|b| b.upper),
-        spread_lower: spread_bounds.as_ref().map(|b| b.lower),
-        spread_upper: spread_bounds.as_ref().map(|b| b.upper),
+        center_lower: center_bounds.map(|b| b.lower),
+        center_upper: center_bounds.map(|b| b.upper),
+        spread_lower: spread_bounds.map(|b| b.lower),
+        spread_upper: spread_bounds.map(|b| b.upper),
     }
 }
 
@@ -384,32 +369,10 @@ fn compute_two_sample<'a>(
         };
     }
 
-    // safety: values are already filtered to finite-only; Sample::new only fails on
-    // empty or non-finite, so this should always succeed when n > 0.
-    let sx = pragmastat::Sample::new(x.to_vec());
-    let sy = pragmastat::Sample::new(y.to_vec());
-    let (Ok(ref sx), Ok(ref sy)) = (sx, sy) else {
-        return TwoSampleResult {
-            field_x: name_x,
-            field_y: name_y,
-            n_x,
-            n_y,
-            shift: None,
-            ratio: None,
-            disparity: None,
-            shift_lower: None,
-            shift_upper: None,
-            ratio_lower: None,
-            ratio_upper: None,
-            disparity_lower: None,
-            disparity_upper: None,
-        };
-    };
-
-    let shift = pragmastat::shift(sx, sy).ok().map(|m| m.value);
-    let shift_bounds = pragmastat::shift_bounds(sx, sy, misrate).ok();
-    let disparity = pragmastat::disparity(sx, sy).ok().map(|m| m.value);
-    let disparity_bounds = pragmastat::disparity_bounds(sx, sy, misrate).ok();
+    let shift = pragmastat::estimators::raw::shift(x, y).ok();
+    let shift_bounds = pragmastat::estimators::raw::shift_bounds(x, y, misrate).ok();
+    let disparity = pragmastat::estimators::raw::disparity(x, y).ok();
+    let disparity_bounds = pragmastat::estimators::raw::disparity_bounds(x, y, misrate).ok();
 
     // Share log-transformed data between ratio and ratio_bounds to avoid a redundant
     // O(n) allocation and two O(n log n) sort passes that would occur if ratio() and
@@ -418,23 +381,17 @@ fn compute_two_sample<'a>(
     let (ratio, ratio_lower, ratio_upper) = if all_positive {
         let log_x: Vec<f64> = x.iter().map(|v| v.ln()).collect();
         let log_y: Vec<f64> = y.iter().map(|v| v.ln()).collect();
-        let log_sx = pragmastat::Sample::new(log_x);
-        let log_sy = pragmastat::Sample::new(log_y);
-        if let (Ok(ref log_sx), Ok(ref log_sy)) = (log_sx, log_sy) {
-            let ratio = pragmastat::shift(log_sx, log_sy)
-                .ok()
-                .map(|m| m.value.exp());
-            let ratio_bounds = pragmastat::shift_bounds(log_sx, log_sy, misrate)
-                .ok()
-                .map(|b| (b.lower.exp(), b.upper.exp()));
-            (
-                ratio,
-                ratio_bounds.map(|(lo, _)| lo),
-                ratio_bounds.map(|(_, hi)| hi),
-            )
-        } else {
-            (None, None, None)
-        }
+        let ratio = pragmastat::estimators::raw::shift(&log_x, &log_y)
+            .ok()
+            .map(f64::exp);
+        let ratio_bounds = pragmastat::estimators::raw::shift_bounds(&log_x, &log_y, misrate)
+            .ok()
+            .map(|b| (b.lower.exp(), b.upper.exp()));
+        (
+            ratio,
+            ratio_bounds.map(|(lo, _)| lo),
+            ratio_bounds.map(|(_, hi)| hi),
+        )
     } else {
         (None, None, None)
     };
@@ -447,12 +404,12 @@ fn compute_two_sample<'a>(
         shift,
         ratio,
         disparity,
-        shift_lower: shift_bounds.as_ref().map(|b| b.lower),
-        shift_upper: shift_bounds.as_ref().map(|b| b.upper),
+        shift_lower: shift_bounds.map(|b| b.lower),
+        shift_upper: shift_bounds.map(|b| b.upper),
         ratio_lower,
         ratio_upper,
-        disparity_lower: disparity_bounds.as_ref().map(|b| b.lower),
-        disparity_upper: disparity_bounds.as_ref().map(|b| b.upper),
+        disparity_lower: disparity_bounds.map(|b| b.lower),
+        disparity_upper: disparity_bounds.map(|b| b.upper),
     }
 }
 

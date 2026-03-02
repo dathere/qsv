@@ -559,19 +559,25 @@ function sanitizeTableName(inputFile: string): string {
 function statsTypeToDuckDb(statsType: string, minStr: string, maxStr: string): string | null {
   switch (statsType) {
     case "Integer": {
-      const min = Number(minStr);
-      const max = Number(maxStr);
-      if (!Number.isFinite(min) || !Number.isFinite(max)) return "BIGINT";
-      if (min >= 0) {
-        if (max <= 255) return "UTINYINT";
-        if (max <= 65535) return "USMALLINT";
-        if (max <= 4294967295) return "UINTEGER";
+      // Use BigInt to avoid precision loss for values beyond Number.MAX_SAFE_INTEGER
+      let min: bigint;
+      let max: bigint;
+      try {
+        min = BigInt(minStr);
+        max = BigInt(maxStr);
+      } catch {
+        return "BIGINT";
+      }
+      if (min >= 0n) {
+        if (max <= 255n) return "UTINYINT";
+        if (max <= 65535n) return "USMALLINT";
+        if (max <= 4294967295n) return "UINTEGER";
         return "BIGINT";
       }
       // signed
-      if (min >= -128 && max <= 127) return "TINYINT";
-      if (min >= -32768 && max <= 32767) return "SMALLINT";
-      if (min >= -2147483648 && max <= 2147483647) return "INTEGER";
+      if (min >= -128n && max <= 127n) return "TINYINT";
+      if (min >= -32768n && max <= 32767n) return "SMALLINT";
+      if (min >= -2147483648n && max <= 2147483647n) return "INTEGER";
       return "BIGINT";
     }
     case "Float":
@@ -589,6 +595,11 @@ function statsTypeToDuckDb(statsType: string, minStr: string, maxStr: string): s
 /**
  * Parse a qsv stats cache CSV file into a map of column stats.
  * Returns null on any read/parse failure.
+ *
+ * NOTE: Uses line-by-line parsing which doesn't handle embedded newlines in
+ * quoted fields. This is acceptable because qsv stats output column names
+ * come from CSV headers which rarely contain newlines, but if they do, this
+ * parser will produce incorrect results and return null (falling back to sqlp).
  */
 async function parseStatsCsv(statsFile: string): Promise<Map<string, { type: string; min: string; max: string }> | null> {
   let content: string;
@@ -664,9 +675,17 @@ async function buildDuckDbParquetSql(
     }
   }
 
-  // Normalize paths for SQL (Windows backslashes → forward slashes)
-  const normInput = inputFile.replace(/\\/g, "/").replace(/'/g, "''");
-  const normOutput = outputFile.replace(/\\/g, "/").replace(/'/g, "''");
+  // Validate file paths don't contain characters that could break SQL escaping.
+  // Reject null bytes and backslash sequences that DuckDB might interpret specially.
+  const dangerousPathPattern = /[\x00\\]/;
+  if (dangerousPathPattern.test(inputFile) || dangerousPathPattern.test(outputFile)) {
+    console.error(`[MCP Tools] DuckDB Parquet: Rejecting paths with dangerous characters`);
+    return null;
+  }
+
+  // Normalize paths for SQL (single-quote escaping for SQL string literals)
+  const normInput = inputFile.replace(/'/g, "''");
+  const normOutput = outputFile.replace(/'/g, "''");
 
   const selectClause = selectParts.length > 0 ? selectParts.join(", ") : "*";
 
@@ -769,17 +788,17 @@ async function convertCsvToParquet(
     // Try DuckDB path
     const sql = await buildDuckDbParquetSql(inputFile, parquetPath, statsFile);
     if (sql !== null) {
-      const dbPath = join(config.workingDir, "qsvmcp.duckdb");
-      console.error(`[MCP Tools] Step 3: Converting to Parquet via DuckDB (ZSTD) → ${dbPath}`);
+      const dbPath = ":memory:";
+      console.error(`[MCP Tools] Step 3: Converting to Parquet via DuckDB (ZSTD) [in-memory]`);
       console.error(`[MCP Tools] DuckDB SQL: ${sql}`);
 
       try {
         await spawnDuckDbCommands(state.binPath, dbPath, sql);
         return { engine: `DuckDB v${state.version} (ZSTD)` };
       } catch (error: unknown) {
-        // Clean up partial parquet on DuckDB failure
+        // Clean up partial parquet on DuckDB failure, then fall through to sqlp
         try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
-        throw new Error(`DuckDB Parquet conversion failed: ${getErrorMessage(error)}`);
+        console.error(`[MCP Tools] DuckDB runtime failure, falling back to sqlp: ${getErrorMessage(error)}`);
       }
     }
     // sql === null means stats cache unreadable — fall through to sqlp
@@ -3146,7 +3165,7 @@ export async function handleToParquetCall(
 
   try {
     // Steps 1-2.5: Ensure stats cache and Polars schema are up-to-date
-    const { needStats, needSchema, statsFile } = await ensureStatsAndSchema(inputFile);
+    const { needStats, needSchema, statsFile, schemaFile } = await ensureStatsAndSchema(inputFile);
 
     // Step 3: Convert to Parquet (DuckDB with ZSTD when available, sqlp with Snappy otherwise)
     const { engine } = await convertCsvToParquet(inputFile, resolvedOutputFile, statsFile);
@@ -3170,6 +3189,7 @@ export async function handleToParquetCall(
       `Output: ${resolvedOutputFile}${fileSizeInfo}\n` +
       `Engine: ${engine}\n` +
       `Stats: ${statsFile}\n` +
+      `Schema: ${schemaFile}\n` +
       `Duration: ${duration}ms\n\n` +
       `Stats cache: ${statsStatus}\n` +
       `Polars schema: ${schemaStatus}\n` +

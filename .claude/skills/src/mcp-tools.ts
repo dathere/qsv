@@ -675,17 +675,17 @@ async function buildDuckDbParquetSql(
     }
   }
 
-  // Validate file paths don't contain characters that could break SQL escaping.
-  // Reject null bytes and backslash sequences that DuckDB might interpret specially.
-  const dangerousPathPattern = /[\x00\\]/;
+  // Validate file paths don't contain null bytes that could break SQL escaping.
+  const dangerousPathPattern = /\x00/;
   if (dangerousPathPattern.test(inputFile) || dangerousPathPattern.test(outputFile)) {
-    console.error(`[MCP Tools] DuckDB Parquet: Rejecting paths with dangerous characters`);
+    console.error(`[MCP Tools] DuckDB Parquet: Rejecting paths with null bytes`);
     return null;
   }
 
-  // Normalize paths for SQL (single-quote escaping for SQL string literals)
-  const normInput = inputFile.replace(/'/g, "''");
-  const normOutput = outputFile.replace(/'/g, "''");
+  // Normalize paths for SQL: backslash to forward slash (Windows compat),
+  // then single-quote escaping for SQL string literals.
+  const normInput = inputFile.replace(/\\/g, "/").replace(/'/g, "''");
+  const normOutput = outputFile.replace(/\\/g, "/").replace(/'/g, "''");
 
   const selectClause = selectParts.length > 0 ? selectParts.join(", ") : "*";
 
@@ -3165,7 +3165,7 @@ export async function handleToParquetCall(
 
   try {
     // Steps 1-2.5: Ensure stats cache and Polars schema are up-to-date
-    const { needStats, needSchema, statsFile, schemaFile } = await ensureStatsAndSchema(inputFile);
+    const { needStats, needSchema, statsFile, schemaFile = "N/A" } = await ensureStatsAndSchema(inputFile);
 
     // Step 3: Convert to Parquet (DuckDB with ZSTD when available, sqlp with Snappy otherwise)
     const { engine } = await convertCsvToParquet(inputFile, resolvedOutputFile, statsFile);

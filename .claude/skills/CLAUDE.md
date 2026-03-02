@@ -136,7 +136,8 @@ npm run mcpb:package
 - `MAX_ROOTS_SYNC_RETRIES`: 3 — max retries for roots directory sync
 - `SHUTDOWN_TIMEOUT_MS`: 2000 — graceful shutdown timeout (ms)
 - `UPDATE_CHECK_TIMEOUT_MS`: 30_000 — background update check timeout (ms)
-- `skipAuditLog`: guards `s-`/`e-` audit log calls — set to `true` for `qsv_log` to prevent recursive logging
+
+**Recursive logging prevention**: The `CallToolRequestSchema` handler sets a local `skipAuditLog` flag for `qsv_log` calls, guarding all three `s-`/`e-` audit log write points to prevent recursive noise.
 
 **Key Functions**:
 ```typescript

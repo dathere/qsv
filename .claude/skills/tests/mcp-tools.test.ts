@@ -741,7 +741,7 @@ test('createLogTool returns valid tool definition', () => {
   const entryTypeProp = toolDef.inputSchema.properties.entry_type as { enum: string[] };
   assert.ok(Array.isArray(entryTypeProp.enum));
   assert.deepStrictEqual(entryTypeProp.enum, [
-    'user_prompt', 'agent_action', 'agent_reasoning', 'result_summary', 'note',
+    'user_prompt', 'agent_reasoning', 'agent_action', 'result_summary', 'note',
   ]);
 });
 
@@ -794,16 +794,23 @@ test('handleLogCall coerces non-string message via String()', async (t) => {
     return;
   }
 
-  // valid entry_type + numeric message should be coerced to "42" and pass validation
-  const result = await handleLogCall(
-    { entry_type: 'note', message: 42 },
-    tmpdir(),
-  );
+  const dir = join(tmpdir(), `qsv-test-coerce-msg-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
 
-  // Should not be rejected as invalid input — it passes validation and execution
-  assert.ok(!result.isError);
-  assert.ok(result.content[0].text?.includes('Logged note entry'));
-  assert.ok(!result.content[0].text?.includes('warning'), 'Should succeed without warning');
+    // valid entry_type + numeric message should be coerced to "42" and pass validation
+    const result = await handleLogCall(
+      { entry_type: 'note', message: 42 },
+      dir,
+    );
+
+    // Should not be rejected as invalid input — it passes validation and execution
+    assert.ok(!result.isError);
+    assert.ok(result.content[0].text?.includes('Logged note entry'));
+    assert.ok(!result.content[0].text?.includes('warning'), 'Should succeed without warning');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('handleLogCall rejects invalid entry_type', async () => {

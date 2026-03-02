@@ -3270,8 +3270,8 @@ export async function handleToParquetCall(
 /** Valid entry types for qsv_log */
 const LOG_ENTRY_TYPES = new Set([
   "user_prompt",
-  "agent_action",
   "agent_reasoning",
+  "agent_action",
   "result_summary",
   "note",
 ]);
@@ -3307,7 +3307,7 @@ export function createLogTool(): McpToolDefinition {
       properties: {
         entry_type: {
           type: "string",
-          enum: ["user_prompt", "agent_action", "agent_reasoning", "result_summary", "note"],
+          enum: ["user_prompt", "agent_reasoning", "agent_action", "result_summary", "note"],
           description: "Category of log entry.",
         },
         message: {

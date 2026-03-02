@@ -1919,7 +1919,7 @@ async function ensurePolarsSchema(
   const qsvBin = config.qsvBinPath;
   const schemaFile = inputFile + ".pschema.json";
 
-  // Input file existence was already verified by ensureStatsCache; only stat the schema file.
+  // Stat input file for mtime comparison and schema file for freshness check.
   const [inputFileStats, existingSchema] = await Promise.all([
     statOrNull(inputFile),
     statOrNull(schemaFile),

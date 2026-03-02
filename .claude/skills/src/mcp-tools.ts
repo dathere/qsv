@@ -4,7 +4,7 @@
 
 import { spawn, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
-import { stat, access, readFile, writeFile, open, unlink, rename, copyFile, readdir } from "fs/promises";
+import { stat, access, readFile, writeFile, open, unlink, rename, copyFile, readdir, mkdir } from "fs/promises";
 import { constants } from "fs";
 import { basename, dirname, join } from "path";
 import { tmpdir } from "os";
@@ -483,6 +483,10 @@ async function runQsvWithTimeout(
     throw new Error("Server is shutting down, operation rejected");
   }
 
+  // Ensure working directory exists before spawning (CWD ENOENT causes
+  // a misleading "binary not found" error from Node.js spawn).
+  await mkdir(config.workingDir, { recursive: true });
+
   await runQsvSimple(qsvBin, args, {
     timeoutMs,
     cwd: config.workingDir,
@@ -709,6 +713,9 @@ async function spawnDuckDbCommands(
   if (isShuttingDown) {
     throw new Error("Server is shutting down, operation rejected");
   }
+
+  // Ensure working directory exists before spawning
+  await mkdir(config.workingDir, { recursive: true });
 
   return new Promise((resolve, reject) => {
     const proc = spawn(binPath, [dbPath, "-c", sql], {

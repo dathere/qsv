@@ -91,7 +91,7 @@ qsv pragmastat --misrate 1e-6 data.csv
 ```
 
 Full Pragmastat manual:
-<https://github.com/AndreyAkinshin/pragmastat/releases/download/v10.0.0/pragmastat-v10.0.0.pdf>
+<https://github.com/AndreyAkinshin/pragmastat/releases/download/v11.0.0/pragmastat-v11.0.0.pdf>
 <https://pragmastat.dev/> (latest version)
 
 <a name="usage"></a>

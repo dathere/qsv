@@ -807,7 +807,7 @@ async function convertCsvToParquet(
     const sql = await buildDuckDbParquetSql(inputFile, parquetPath, statsFile);
     if (sql !== null) {
       const dbPath = ":memory:";
-      console.error(`[MCP Tools] Step 3: Converting to Parquet via DuckDB (ZSTD) [in-memory]`);
+      console.error(`[MCP Tools] Converting to Parquet via DuckDB (ZSTD) [in-memory]`);
       // Truncate SQL log for wide CSVs (one CAST per column can get very large)
       const sqlPreview = sql.length > 500 ? `${sql.slice(0, 500)}... (${sql.length} chars total)` : sql;
       console.error(`[MCP Tools] DuckDB SQL: ${sqlPreview}`);
@@ -830,7 +830,7 @@ async function convertCsvToParquet(
   // Fallback: generate Polars schema (Steps 2 + 2.5), then run sqlp
   const { needSchema, schemaFile } = await ensurePolarsSchema(inputFile);
 
-  console.error(`[MCP Tools] Step 3: Converting to Parquet via sqlp (Snappy)`);
+  console.error(`[MCP Tools] Fallback: Converting to Parquet via sqlp (Snappy)`);
   const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, parquetPath);
   try {
     await runQsvWithTimeout(config.qsvBinPath, conversionArgs);
@@ -1948,12 +1948,8 @@ async function ensurePolarsSchema(
   }
 
   // Step 2.5: Patch schema for AM/PM date formats that Polars can't parse
-  // Only needed when the schema was freshly generated
-  if (needSchema) {
-    await patchSchemaAndLog(inputFile, schemaFile);
-  } else {
-    console.error(`[MCP Tools] Step 2.5: Skipping AM/PM patch (schema reused)`);
-  }
+  // Always run — idempotent and ensures pre-existing schemas get patched
+  await patchSchemaAndLog(inputFile, schemaFile);
 
   return { needSchema, schemaFile };
 }

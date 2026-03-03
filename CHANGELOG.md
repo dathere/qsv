@@ -4,93 +4,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [17.0.0] - 2026-03-03 **_"The User 🧑🏻 and Agent 🤖 Experience (UAX) Release"_**
 
-## What's Changed
-* build(deps): bump pragmastat from 8.0.0 to 9.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3479
-* feat(help): emoji legend tooltips by @jqnatividad in https://github.com/dathere/qsv/pull/3481
-* build(deps): bump toon-format from 0.4.1 to 0.4.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3480
-* feat(mcp): add duckdb support by @jqnatividad in https://github.com/dathere/qsv/pull/3483
-* feat(help): Example section improvements by @jqnatividad in https://github.com/dathere/qsv/pull/3484
-* build(deps): bump toml from 1.0.1+spec-1.1.0 to 1.0.2+spec-1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3485
-* fix (mcp): add polars schema datetime fallback handling by @jqnatividad in https://github.com/dathere/qsv/pull/3487
-* build(deps): bump jsonschema from 0.42.0 to 0.42.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3488
-* tests(mcp): more DuckDB support/integration tests by @jqnatividad in https://github.com/dathere/qsv/pull/3489
-* chore(mcp): v16.1.1 release by @jqnatividad in https://github.com/dathere/qsv/pull/3490
-* build(deps): bump ajv from 8.17.1 to 8.18.0 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3491
-* refactor(mcp): skills optimization by @jqnatividad in https://github.com/dathere/qsv/pull/3493
-* refactor(mcp): more robust cowork working folder integration by @jqnatividad in https://github.com/dathere/qsv/pull/3494
-* fix(mcp): address Copilot review - harden roots sync error handling a… by @jqnatividad in https://github.com/dathere/qsv/pull/3495
-* feat(mcp): v16.1.2 by @jqnatividad in https://github.com/dathere/qsv/pull/3496
-* build(deps): bump pyo3 from 0.28.1 to 0.28.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3497
-* build(deps): bump actix-web from 4.12.1 to 4.13.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3498
-* tests(frequency): more property tests by @jqnatividad in https://github.com/dathere/qsv/pull/3499
-* build(deps): bump redis from 1.0.3 to 1.0.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3500
-* build(deps): bump toml from 1.0.2+spec-1.1.0 to 1.0.3+spec-1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3501
-* feat(pragmastat): upgrade to v10.0.0  by @AndreyAkinshin in https://github.com/dathere/qsv/pull/3502
-* build(deps): bump hono from 4.11.7 to 4.12.0 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3505
-* build(deps): bump qsv-stats from 0.45.0 to 0.46.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3504
-* build(deps): bump pragmastat from 9.0.0 to 10.0.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3503
-* perf(frequency): various microoptimizations by @jqnatividad in https://github.com/dathere/qsv/pull/3506
-* chore(audit): after running documentation-audit skill by @jqnatividad in https://github.com/dathere/qsv/pull/3510
-* build(deps): bump pragmastat from 10.0.2 to 10.0.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3509
-* build(deps): bump minijinja from 2.15.1 to 2.16.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3507
-* build(deps): bump minijinja-contrib from 2.15.1 to 2.16.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3508
-* build(deps): bump qsv-dateparser from 0.13.0 to 0.14.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3511
-* build(deps): bump serial_test from 3.3.1 to 3.4.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3512
-* build(deps): bump csv-nose from 0.8.0 to 1.0.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3513
-* build(deps): bump pragmastat from 10.0.5 to 10.0.6 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3514
-* perf(moarstats): Claude performance review by @jqnatividad in https://github.com/dathere/qsv/pull/3515
-* refactor(describegpt): use Claude code-simplifier skill by @jqnatividad in https://github.com/dathere/qsv/pull/3516
-* perf(stats): optimize to_record() output path and weighted_mad() by @jqnatividad in https://github.com/dathere/qsv/pull/3517
-* Documentation audit 202602 by @jqnatividad in https://github.com/dathere/qsv/pull/3518
-* docs(mcp): Claude documentation audit by @jqnatividad in https://github.com/dathere/qsv/pull/3519
-* build(deps): bump strum from 0.27.2 to 0.28.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3521
-* build(deps): bump strum_macros from 0.27.2 to 0.28.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3520
-* refactor(mcp): Claude Code Review by @jqnatividad in https://github.com/dathere/qsv/pull/3522
-* fix(mcp): Make output processing more Cowork friendly by @jqnatividad in https://github.com/dathere/qsv/pull/3524
-* build(deps): bump tempfile from 3.25.0 to 3.26.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3526
-* build(deps): bump chrono from 0.4.43 to 0.4.44 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3527
-* refactor(mcp): MCP server requires polars feature to be enabled by @jqnatividad in https://github.com/dathere/qsv/pull/3525
-* feat(mcp): init CLAUDE.md in Claude cowork working folder; Windows support by @jqnatividad in https://github.com/dathere/qsv/pull/3528
-* fix(sniff): sniff symlinks properly by @jqnatividad in https://github.com/dathere/qsv/pull/3530
-* feat(mcp): ensure SQL queries take stats and frequency tables into account by @jqnatividad in https://github.com/dathere/qsv/pull/3531
-* refactor(mcp): use TSV format as a default (configurable) for token efficiency and increased reliability by @jqnatividad in https://github.com/dathere/qsv/pull/3532
-* build(deps): bump hono from 4.12.0 to 4.12.2 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3533
-* fix(deps): update ort dependency to include tls-rustls feature and add new dependencies by @kulnor in https://github.com/dathere/qsv/pull/3534
-* feat: qsvmcp binary variant by @jqnatividad in https://github.com/dathere/qsv/pull/3535
-* build(deps): bump jsonschema from 0.42.1 to 0.42.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3536
-* feat(mcp): prefer qsvmcp binary with qsv fallback by @jqnatividad in https://github.com/dathere/qsv/pull/3537
-* feat(mcp): streamline skills to qsvmcp by @jqnatividad in https://github.com/dathere/qsv/pull/3538
-* refactor(mcp): cowork optimization by @jqnatividad in https://github.com/dathere/qsv/pull/3539
-* build(deps): bump actions/upload-artifact from 6 to 7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3540
-* build(deps): bump minimatch in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3541
-* fix(stats): stats cache handle non comma delimiter by @jqnatividad in https://github.com/dathere/qsv/pull/3542
-* feat(mcp): show complete cmdline in error messages to help agent diagnose error by @jqnatividad in https://github.com/dathere/qsv/pull/3543
-* refactor(mcp): moarstats guidance; reconcile CLAUDE.md references to stats and frequency caches by @jqnatividad in https://github.com/dathere/qsv/pull/3544
-* feat(mcp): reserved filenames guard by @jqnatividad in https://github.com/dathere/qsv/pull/3545
-* feat(mcp): auto-run cheap moarstats after stats by @jqnatividad in https://github.com/dathere/qsv/pull/3546
-* refactor(mcp): deduplicate utilities, extract shared pipeline, remove dead code by @jqnatividad in https://github.com/dathere/qsv/pull/3547
-* fix(stats): always write stats cache as CSV regardless of output format by @jqnatividad in https://github.com/dathere/qsv/pull/3548
-* fix(mcp): sqlp and DuckDB table aliasing with parquet input by @jqnatividad in https://github.com/dathere/qsv/pull/3549
-* feat(mcp): allow easy differentiation between polars and DuckDB SQL engine usage by @jqnatividad in https://github.com/dathere/qsv/pull/3550
-* build(deps): bump jsonschema from 0.42.2 to 0.43.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3551
-* feat(mcp): qsv MCP Server has its own dedicated logging to help with reproducibility by @jqnatividad in https://github.com/dathere/qsv/pull/3552
-* feat(mcp): When DuckDB is available, use it to convert CSV to parquet instead of sqlp by @jqnatividad in https://github.com/dathere/qsv/pull/3553
-* refactor(mcp): fine-tune parquet conversion by @jqnatividad in https://github.com/dathere/qsv/pull/3554
-* build(deps): bump jsonschema from 0.43.0 to 0.44.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3556
-* feat(mcp): comprehensive logging by @jqnatividad in https://github.com/dathere/qsv/pull/3555
-* build(deps): bump pragmastat from 10.0 to 11.0 by @jqnatividad in https://github.com/dathere/qsv/pull/3558
-* refactor(mcp): always use fully qualified filename for all file parameters for increased robustness by @jqnatividad in https://github.com/dathere/qsv/pull/3559
-* docs(mcp): audit by @jqnatividad in https://github.com/dathere/qsv/pull/3560
-* docs: audit by @jqnatividad in https://github.com/dathere/qsv/pull/3561
-* build(deps): bump sysinfo from 0.38.2 to 0.38.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3562
-* build(deps): bump pragmastat from 11.0.0 to 11.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3563
-* feat(mcp): add working dir elicitation by @jqnatividad in https://github.com/dathere/qsv/pull/3565
-* publish: add qsvmcp to distribution by @jqnatividad in https://github.com/dathere/qsv/pull/3566
+This release is all about getting Human Users and AI Agents working together in harmony to wrangle data faster and more effectively - whether you're a solo analyst or a data team using Claude Desktop/Cowork/Code or Gemini.
 
+The UAX theme introduced in 16.1.0 reaches full stride — the new `qsvmcp` binary variant gives AI agents a purpose-built, leaner binary; the MCP server levels up with better tool guidance, TSV output for token efficiency, reproducibility logging, DuckDB-powered Parquet conversion, automatic `moarstats` enrichment, SQL translation hardening, and interactive working directory elicitation. On the core CLI side, `stats` cache reliability improves across delimiters and output formats, `sniff` resolves symlinks correctly, and `moarstats` gets faster hot-path performance.
 
-**Full Changelog**: https://github.com/dathere/qsv/compare/16.1.0...17.0.0
+---
+
+### Major Features
+
+#### New `qsvmcp` Binary Variant
+A purpose-built binary optimized for use with the qsv MCP server, adding session logging while dispensing with unneeded features (like `apply`, `fetch`, `fetchpost`, `foreach`, `to`) for a faster, smaller build. The MCP server now prefers `qsvmcp` with automatic fallback to the full `qsv` binary. `qsvmcp` is now included in release distributions alongside `qsv`, `qsvlite`, and `qsvdp`.
+
+#### qsv MCP Server: Agent-Native Enhancements
+The MCP server (now v17.0.0) receives its biggest update yet, with features designed to make AI agents more effective at data wrangling:
+
+- **TSV Output Format** — Default output switched to TSV for ~30% token reduction in agent responses, configurable via `QSV_MCP_OUTPUT_FORMAT`
+- **Session Logging** — New `qsv_log` tool and automatic `qsvmcp.log` audit trail for reproducibility, with configurable log levels via `QSV_MCP_LOG_LEVEL`
+- **DuckDB Parquet Conversion** — When DuckDB is available, CSV-to-Parquet conversion uses DuckDB instead of `sqlp` for faster, more reliable conversion
+- **Auto-moarstats** — `moarstats` automatically runs after `stats` execution for richer statistical context at minimal cost
+- **SQL Translation Hardening** — Major `translateSql` overhaul: unique table aliases (`_tbl_N`), string literal protection, user-provided alias preservation, and pre-scan qualified ref fixing
+- **Working Directory Elicitation** — Interactive directory picker via MCP Elicitation protocol for first-time setup
+- **Reserved Cache Filename Guard** — Prevents accidental `--output` overwrites of `.stats.csv` and `.freq.csv` cache files
+- **Cache-Aware SQL Guidance** — Server instructions now guide agents to leverage stats and frequency caches when composing `sqlp`, `joinp`, and `pivotp` queries
+- **Polars SQL Engine Header** — Clear engine indicator differentiates Polars SQL vs DuckDB query results
+- **Absolute Path Resolution** — All file-path arguments now resolved to absolute paths for robustness
+- **Cowork CLAUDE.md Auto-Deploy** — Automatically deploys project `CLAUDE.md` to Claude Cowork working folder on session start (cross-platform Node.js implementation)
+
+Detailed MCP changes are documented in the [MCP CHANGELOG](https://github.com/dathere/qsv/blob/master/.claude/skills/CHANGELOG.md).
+
+---
+
+### Added
+
+- feat: `qsvmcp` binary variant — purpose-built for MCP server usage, included in release distributions
+
+### Changed
+
+- perf(moarstats): fix outlier key bug and optimize hot-path allocations
+- perf(stats): optimize `to_record()` output path and `weighted_mad()`
+- refactor(describegpt): simplify code for clarity and reduce redundancy
+- deps: bump pragmastat from 10.0 to 11.1.0
+- deps: bump polars to latest upstream (rev 802550b)
+- deps: bump Luau from 0.708 to 0.709
+- deps: bump chrono from 0.4.43 to 0.4.44
+- deps: bump csv-nose from 0.8.0 to 1.0.1
+- deps: bump jsonschema from 0.42 to 0.44.0
+- deps: bump strum/strum_macros from 0.27.2 to 0.28.0
+- deps: bump tempfile from 3.25.0 to 3.26.0
+- deps: bump serial_test from 3.3.1 to 3.4.0
+- deps: bump actions/upload-artifact from 6 to 7
+- deps: switch csvlens to patched fork using csv-nose 1.0.1
+- deps: update ort dependency to include tls-rustls feature (by @kulnor)
+- applied select clippy suggestions
+
+### Fixed
+
+- fix(stats): always write stats cache as CSV regardless of output format (Snappy, TSV, etc.)
+- fix(stats): decouple Snappy compression from cache — cache files always use comma delimiter
+- fix(sniff): resolve symlinks before MIME detection and metadata lookup (#3529)
+- fix(moarstats): harden outlier test assertion and fix comment inconsistency
+- fix(describegpt): restore error logging in Redis connection failure
+- docs: fix ~70 false claims found by documentation audits across qsv and MCP server
+
+**Full Changelog**: [16.1.0...17.0.0](https://github.com/dathere/qsv/compare/16.1.0...17.0.0)
 
 ---
 

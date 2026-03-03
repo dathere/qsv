@@ -20,7 +20,7 @@ Claude will understand your request and perform the operations automatically usi
 ### Step 1: Download
 
 Download the extension file:
-- Go to: https://github.com/dathere/qsv/releases/download/16.1.0/qsv-mcp-server-16.1.2.mcpb
+- Go to: https://github.com/dathere/qsv/releases/latest
 - Save the `.mcpb` file to your Downloads folder
 
 ### Step 2: Install in Claude Desktop
@@ -217,7 +217,7 @@ Need assistance?
 
 Learn more about qsv's capabilities:
 - [QSV Documentation](https://github.com/dathere/qsv) - Full command reference
-- [MCP Server README](./README-MCP.md) - Technical details about the extension
+- [MCP Server README](../../README-MCP.md) - Technical details about the extension
 - [QSV Performance Guide](https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md) - Optimization tips
 
 ---
@@ -254,7 +254,7 @@ qsv-mcp-server.mcpb
                │ stdio (JSON-RPC 2.0)
 ┌──────────────▼──────────────────────┐
 │  QSV MCP Server (Node.js/TypeScript)│
-│  • Tool definitions (20 tools)      │
+│  • Tool definitions (10 core + 51)  │
 │  • Parameter validation            │
 │  • File conversion manager         │
 │  • Format auto-detection           │
@@ -304,7 +304,6 @@ The extension is configured via environment variables in Claude Desktop's MCP se
 
 **Template variable expansion:**
 - `$HOME` and `${HOME}` expand to user's home directory
-- `$USER` and `${USER}` expand to current username
 - Works in `QSV_MCP_BIN_PATH`, `QSV_MCP_WORKING_DIR`, and `QSV_MCP_ALLOWED_DIRS`
 
 ## Security Considerations

@@ -88,7 +88,7 @@ Get statistics about loaded skills.
 const stats = loader.getStats();
 console.log(stats);
 // {
-//   total: 56,
+//   total: 51,
 //   byCategory: { selection: 5, aggregation: 8, ... },
 //   totalExamples: 200,
 //   totalOptions: 450,
@@ -103,7 +103,7 @@ Executes qsv skills by spawning qsv processes.
 #### Constructor
 
 ```typescript
-const executor = new SkillExecutor('qsv'); // Optional: custom binary path
+const executor = new SkillExecutor('/usr/local/bin/qsv', '/path/to/working/dir');
 ```
 
 #### Methods
@@ -318,7 +318,7 @@ Check the skills directory:
 
 ```bash
 ls -la .claude/skills/qsv/
-# Should show 56 .json files
+# Should show 51 .json files
 ```
 
 ## License

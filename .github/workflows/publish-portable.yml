@@ -184,6 +184,16 @@ jobs:
         use-cross: ${{ matrix.job.use-cross }}
         toolchain: ${{ matrix.rust }}
         args: --release --locked --bin qsvdp --features=datapusher_plus,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+    - name: Build qsvmcp
+      if: ${{ matrix.job.target != 'x86_64-unknown-linux-musl' && matrix.job.target != 'aarch64-unknown-linux-gnu' }}
+      env:
+        RUSTFLAGS: ${{ matrix.job.addl-rustflags }}
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        use-cross: ${{ matrix.job.use-cross }}
+        toolchain: ${{ matrix.rust }}
+        args: --release --locked --bin qsvmcp --features=qsvmcp --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |
@@ -194,6 +204,7 @@ jobs:
         mv qsv qsvp
         mv qsvlite qsvplite
         mv qsvdp qsvpdp
+        if [ -f qsvmcp ]; then mv qsvmcp qsvpmcp; fi
         cd ..
     - name: Create README
       shell: bash

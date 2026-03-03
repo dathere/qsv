@@ -92,6 +92,16 @@ jobs:
         use-cross: false
         toolchain: ${{ matrix.rust }}
         args: --profile release-nightly --bin qsvlite -Z build-std=std --features=lite,self_update,nightly,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+    - name: Build qsvmcp-nightly
+      if: ${{ matrix.job.target != 'x86_64-unknown-linux-musl' }}
+      env:
+        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        use-cross: false
+        toolchain: ${{ matrix.rust }}
+        args: --profile release-nightly --bin qsvmcp -Z build-std=std --features=qsvmcp,nightly --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     # TODO: Add qsvdp-nightly build back in after v5.0.3, be sure to copy qsvdp binaries below
     # - name: Build qsvdp-nightly
     #   env:
@@ -112,9 +122,11 @@ jobs:
         if [ "$RUNNER_OS" == "Windows"]; then
              mv qsv.exe qsv_nightly.exe
              mv qsvlite.exe qsvlite_nightly.exe
+             if [ -f qsvmcp.exe ]; then mv qsvmcp.exe qsvmcp_nightly.exe; fi
         else
              mv qsv qsv_nightly
              mv qsvlite qsvlite_nightly
+             if [ -f qsvmcp ]; then mv qsvmcp qsvmcp_nightly; fi
         fi
         rustup show > qsv_nightly_rust_version_info.txt
         cd ..

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Current Version**: 16.1.0 | **MSRV**: Rust 1.93
+**Current Version**: 17.0.0 | **MSRV**: Rust 1.93
 
 qsv is a blazingly-fast command-line CSV data-wrangling toolkit written in Rust. It's a fork of xsv with extensive additional functionality, focusing on performance, reliability, and comprehensive data manipulation capabilities.
 It's the data-wrangling, analysis and FAIRification engine of several datHere products - qsv pro and Datapusher+, in particular.

@@ -44,8 +44,7 @@ pub fn find_repo_root() -> Option<PathBuf> {
 /// Extract the `static USAGE` string from a qsv command source file.
 /// Handles both `r#"..."#` and `r##"..."##` raw string delimiters.
 fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
-    let content =
-        fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {e}"))?;
+    let content = fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {e}"))?;
 
     // Find the first `static USAGE` declaration in the file.
     // Using `find()` returns the first occurrence, which is always the actual
@@ -151,7 +150,7 @@ fn build_command_from_usage(command_name: &str, usage_text: &str) -> Result<Comm
                 // processing the corresponding Atom::Long entry.
                 // SynonymMap.iter() typically doesn't yield Short atoms,
                 // but if it does, we ignore them here to avoid duplicates.
-            }
+            },
             Atom::Long(name) => {
                 // Skip --help (clap adds it automatically) and invalid names
                 if name == "help" || !is_valid_long_flag(name) {
@@ -181,17 +180,17 @@ fn build_command_from_usage(command_name: &str, usage_text: &str) -> Result<Comm
                 };
 
                 args.push(arg);
-            }
+            },
             Atom::Positional(_) => {
                 // Shell completions don't define positional args --
                 // they default to file-path completion in most shells.
-            }
+            },
             Atom::Command(cmd_name) => {
                 // Collect subcommand names; skip the main command itself and "--"
                 if cmd_name != command_name && cmd_name != "--" {
                     subcommands.push(cmd_name.clone());
                 }
-            }
+            },
         }
     }
 
@@ -246,7 +245,7 @@ pub fn build_cli(repo_root: &Path) -> Command {
             None => {
                 eprintln!("Warning: skipping {}: no file stem", path.display());
                 continue;
-            }
+            },
         };
 
         // Extract USAGE text
@@ -255,7 +254,7 @@ pub fn build_cli(repo_root: &Path) -> Command {
             Err(e) => {
                 eprintln!("Warning: skipping {file_stem}: {e}");
                 continue;
-            }
+            },
         };
 
         // Determine the actual CLI command name
@@ -266,7 +265,7 @@ pub fn build_cli(repo_root: &Path) -> Command {
             Ok(cmd) => commands.push(cmd),
             Err(e) => {
                 eprintln!("Warning: skipping {command_name}: {e}");
-            }
+            },
         }
     }
 
@@ -283,9 +282,7 @@ pub fn build_cli(repo_root: &Path) -> Command {
             Arg::new("envlist")
                 .long("envlist")
                 .action(ArgAction::SetTrue),
-            Arg::new("update")
-                .long("update")
-                .action(ArgAction::SetTrue),
+            Arg::new("update").long("update").action(ArgAction::SetTrue),
             Arg::new("updatenow")
                 .long("updatenow")
                 .action(ArgAction::SetTrue),

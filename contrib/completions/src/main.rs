@@ -37,8 +37,8 @@ fn main() {
 
     let repo_root = usage_parser::find_repo_root().unwrap_or_else(|| {
         eprintln!(
-            "Error: Must be run from within the qsv repository \
-             (where Cargo.toml and src/cmd/ exist)."
+            "Error: Must be run from within the qsv repository (where Cargo.toml and src/cmd/ \
+             exist)."
         );
         exit(1);
     });

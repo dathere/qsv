@@ -243,7 +243,12 @@ impl Workdir {
         self.dir.join(name)
     }
 
-    #[cfg(feature = "feature_capable")]
+    #[cfg(feature = "qsvmcp")]
+    pub fn qsv_bin(&self) -> PathBuf {
+        self.root.join("qsvmcp")
+    }
+
+    #[cfg(all(feature = "feature_capable", not(feature = "qsvmcp")))]
     pub fn qsv_bin(&self) -> PathBuf {
         self.root.join("qsv")
     }

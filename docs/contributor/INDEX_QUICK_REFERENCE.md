@@ -9,7 +9,7 @@ The `index` command builds random-access sidecar files (`.csv.idx`) so other com
 - **Avoid stdin/snappy pitfalls** by limiting operation to regular, seekable CSV files
 
 ## File Location
-`src/cmd/index.rs` (69 lines)
+`src/cmd/index.rs` (~77 lines)
 
 ## Key Entry Points
 
@@ -63,7 +63,7 @@ Flush writer → ready-to-use .idx sidecar
 - **Snappy guard**: refuses `.sz` inputs because random seeking is impossible on compressed frames.
 - **Auto-index ecosystem**: Other commands call `Config::index_files()`; if `QSV_AUTOINDEX_SIZE` is set and file size exceeds it, an index is built automatically—no manual `index` run needed.
 - **Stale index recovery**: The next indexed command will transparently rebuild via `autoindex_file()` if CSV mtime is newer than `.idx`.
-- **Warning threshold**: When no index exists and file size ≥ `NO_INDEX_WARNING_FILESIZE` (~10 MB), qsv warns that performance may suffer.
+- **Warning threshold**: When no index exists and file size ≥ `NO_INDEX_WARNING_FILESIZE` (100 MB), qsv warns that performance may suffer.
 
 ## Testing
 

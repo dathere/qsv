@@ -189,7 +189,7 @@ qsv cat rows file1.csv file2.csv
 
 **Stats Cache**:
 - `stats` command creates `.stats.csv` and `.stats.csv.data.jsonl` cache files (via `--stats-jsonl`)
-- Other "smart" commands (`describegpt`, `frequency`, `joinp`, `pivotp`, `sample`, `schema`, `sqlp`, `stats`, `tojsonl`) use the stats cache to optimize processing
+- Other "smart" commands (`describegpt`, `frequency`, `joinp`, `moarstats`, `pivotp`, `sample`, `schema`, `sqlp`, `stats`, `tojsonl`) use the stats cache to optimize processing
 - Cache validity checked via file modification times
 
 **Frequency Cache**:

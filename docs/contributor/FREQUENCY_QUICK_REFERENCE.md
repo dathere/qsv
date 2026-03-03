@@ -10,7 +10,7 @@ The `frequency` command produces exact frequency distribution tables that:
 - **Handle data normalization** with trimming, case folding, NULL handling, and whitespace visualization options
 
 ## File Location
-`src/cmd/frequency.rs` (~1,024 lines)
+`src/cmd/frequency.rs` (~3,875 lines)
 
 ## Key Entry Points
 
@@ -19,7 +19,7 @@ The `frequency` command produces exact frequency distribution tables that:
 | `run(argv)` | Main entry point; parses args, wires sequential/parallel paths, dispatches CSV vs JSON output |
 | `sequential_ftables()` | Builds frequency tables in a single thread when no index or jobs=1 |
 | `parallel_ftables(idx)` | Uses the CSV index plus a thread pool to partition work |
-| `ftables(sel, it, nchunks)` | Core loop that tallies values into `Frequencies` structs |
+| `ftables_unweighted()` / `ftables_weighted_internal()` | Core loops that tally values into `Frequencies` structs |
 | `process_frequencies(...)` | Normalizes raw counts into percentages/ranks and applies limits |
 | `output_json(...)` | Formats nested JSON output, enriching with stats cache metadata |
 | `get_unique_headers(...)` | Reads stats cache to detect all-unique columns and stash cardinalities |
@@ -32,7 +32,7 @@ Config::indexed()? → Some(idx) & jobs>1 → parallel_ftables()
     │                                       (ThreadPool + crossbeam channels)
     └─ None / jobs=1 → sequential_ftables()
             ↓
-ftables(): iterate rows → tally values per selected column
+ftables_unweighted()/ftables_weighted_internal(): iterate rows → tally values per selected column
             ↓
 process_frequencies(): apply limits, rank, percentage formatting
             ↓
@@ -45,7 +45,7 @@ Writer flush        output_json(): enrich with stats cache → pretty JSON
 
 | Struct | Role |
 |--------|------|
-| `Frequencies<Vec<u8>>` | Foldhash-backed frequency table per column |
+| `Frequencies<Vec<u8>>` | Frequency table per column (from the `stats` crate; auxiliary hashmaps use foldhash) |
 | `ProcessedFrequency` | Shared result struct for CSV/JSON containing value/count/percentage/rank |
 | `FrequencyField` | JSON output node combining column metadata, stats, and rows |
 | `OnceLock` statics | `UNIQUE_COLUMNS_VEC`, `COL_CARDINALITY_VEC`, `FREQ_ROW_COUNT`, `STATS_RECORDS` |

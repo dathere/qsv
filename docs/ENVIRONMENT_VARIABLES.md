@@ -33,7 +33,7 @@
 | `QSV_TERMWIDTH` | overrides the detected terminal width for the `color` command. Must be a value between 1 and 1000. If not set, the terminal width is automatically detected or defaults to 80 when output is redirected. |
 | `QSV_POLARS_FLOAT_PRECISION` | The precision to use when converting Polars-enabled formats (Avro,Arrow,Parquet,JSON,JSONL and gz,zlib & zst compressed files) to CSV. If set, this will also override the --float-precision option of the `sqlp` command. |
 | `QSV_POLARS_DECIMAL_SCALE`  | The scale to use when using the Polars Decimal type. If not set, this defaults to 5. |
-| `QSV_PREFER_DMY` | if set, date parsing will use DMY format. Otherwise, use MDY format (used with `datefmt`, `schema`, `sniff` & `stats` commands). |
+| `QSV_PREFER_DMY` | if set, date parsing will use DMY format. Otherwise, use MDY format (used with `datefmt`, `frequency`, `joinp`, `moarstats`, `pivotp`, `sample`, `schema`, `sniff`, `stats` & `tojsonl` commands). |
 | `QSV_REGEX_UNICODE` | if set, makes `search`, `searchset` & `replace` commands unicode-aware. For increased performance, these commands are not unicode-aware by default & will ignore unicode values when matching & will abort when unicode characters are used in the regex. Note that the `apply operations regex_replace` operation is always unicode-aware. |
 | `QSV_RDR_BUFFER_CAPACITY` | reader buffer size (default - 128k (bytes): 131072) |
 | `QSV_SKIP_FORMAT_CHECK` | if set, skips mime-type checking of input files. Set this when optimizing for performance and when encountering false positives as a format check involves scanning the input file to infer the mime-type/format. |
@@ -54,7 +54,7 @@
 | `QSV_REDIS_TTL_SECS` | set time-to-live of Redis cached values (default (seconds): 2419200 (28 days)). |
 | `QSV_REDIS_TTL_REFRESH`| if set, enables cache hits to refresh TTL of Redis cached values. |
 | `QSV_TIMEOUT`| for commands with a --timeout option (`fetch`, `fetchpost`, `luau`, `sniff` and `validate`), the number of seconds before a web request times out (default: 30). |
-| `QSV_USER_AGENT`| the user-agent to use for web requests. When specifying a custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME and $QSV_KIND. Try to conform to the [IETF RFC 72321 standard](https://tools.ietf.org/html/rfc7231#section-5.5.3). See [here](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent) for examples.<br>(default: $QSV_BIN_NAME/$QSV_VERSION ($QSV_TARGET; $QSV_KIND; https://github.com/dathere/qsv) - e.g.<br>`qsv/0.105.0 (x86_64-unknown-linux; prebuilt; https://github.com/dathere/qsv)`).|
+| `QSV_USER_AGENT`| the user-agent to use for web requests. When specifying a custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to conform to the [IETF RFC 72321 standard](https://tools.ietf.org/html/rfc7231#section-5.5.3). See [here](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent) for examples.<br>(default: $QSV_BIN_NAME/$QSV_VERSION ($QSV_TARGET; $QSV_KIND; https://github.com/dathere/qsv) - e.g.<br>`qsv/0.105.0 (x86_64-unknown-linux; prebuilt; https://github.com/dathere/qsv)`).|
 | `QSV_GEOIP2_FILENAME` | the filename of the GeoIP2 database to use for the `geocode` command. (default: `GeoLite2-City.mmdb`) |
 | `QSV_GEOCODE_INDEX_FILENAME` | The filename of the Geonames index file to use for the `geocode` command. If not set, the default index file for that qsv version is downloaded and saved to `QSV_CACHE_DIR`. Set this only if you have a custom Geonames index file. |
 
@@ -69,7 +69,7 @@ Several dependencies also have environment variables that influence qsv's perfor
   qsv uses reqwest and will honor [proxy settings](https://docs.rs/reqwest/latest/reqwest/index.html#proxies) set through the `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` & `NO_PROXY` environment variables.
 
 * Polars   
-  qsv uses [polars](https://github.com/pola.rs/polars) for several commands - currently `color`, `count`, `joinp`, `lens`, `pivotp`, `schema` and `sqlp`. Polars has its own set of environment variables that can be set to influence its behavior (see [here](https://github.com/pola-rs/polars/blob/dd1fc86b65ae39b741f46edc6da01d024bed50b6/crates/polars/src/lib.rs#L366-L408)). The most relevant ones are:
+  qsv uses [polars](https://github.com/pola.rs/polars) for several commands - currently `color`, `count`, `joinp`, `lens`, `pivotp`, `prompt`, `schema` and `sqlp`. Polars has its own set of environment variables that can be set to influence its behavior (see [here](https://github.com/pola-rs/polars/blob/dd1fc86b65ae39b741f46edc6da01d024bed50b6/crates/polars/src/lib.rs#L366-L408)). The most relevant ones are:
 
   * `POLARS_VERBOSE` - if set to 1, polars will output logging messages to stderr.
   * `POLARS_PANIC_ON_ERR` - if set to 1, panics on polars-related errors, instead of returning an error.
@@ -96,14 +96,25 @@ These environment variables configure the MCP server behavior:
 
 | Variable | Description | Default | Range |
 | --- | --- | --- | --- |
-| `QSV_MCP_TIMEOUT_MS` | Command timeout in milliseconds. Used by Desktop extension mode. | 300,000 (5 min) | 10,000 - 3,600,000 |
 | `QSV_MCP_OPERATION_TIMEOUT_MS` | Operation timeout in milliseconds. Used by legacy MCP mode. | 120,000 (2 min) | 1,000 - 1,800,000 |
 | `QSV_MCP_MAX_OUTPUT_SIZE` | Maximum output size in bytes before results are automatically saved to disk. | 52,428,800 (50 MB) | 1,048,576 - 104,857,600 |
 | `QSV_MCP_CONVERTED_LIFO_SIZE_GB` | Maximum size for the converted file cache (Excel→CSV, JSONL→CSV) in GB. Uses LIFO eviction. | 1.0 | 0.1 - 100.0 |
 | `QSV_MCP_MAX_FILES_PER_LISTING` | Maximum number of files returned in a single directory listing. | 1,000 | 1 - 100,000 |
-| `QSV_MCP_MAX_PIPELINE_STEPS` | Maximum number of steps allowed in a single pipeline execution. | 50 | 1 - 1,000 |
 | `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | Maximum number of concurrent qsv operations. | 10 | 1 - 100 |
 | `QSV_MCP_MAX_EXAMPLES` | Maximum number of examples to include in MCP tool descriptions. Set to 0 to disable examples. | 5 | 0 - 20 |
+
+### Advanced Configuration
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `QSV_MCP_LOG_LEVEL` | MCP audit log level controlling the `qsvmcp.log` audit trail. Valid values: `"info"` (log all tool invocations), `"error"` (log only failed invocations), `"off"` (disable audit logging). This is separate from the Rust binary's `QSV_LOG_LEVEL`. | `info` |
+| `QSV_MCP_PLUGIN_MODE` | Override for plugin mode detection. Set to `true` when using non-Claude AI CLI agents (e.g., Gemini CLI) to relax directory security (since the host environment provides filesystem isolation). | Auto-detect |
+| `QSV_MCP_CONCURRENCY_WAIT_TIMEOUT_MS` | Timeout in milliseconds when waiting for a concurrency slot. If all concurrent operation slots are in use, new requests wait up to this duration before being rejected. Set to 0 for immediate rejection. | 120,000 (2 min) |
+| `QSV_MCP_SERVER_INSTRUCTIONS` | Custom server instructions that override built-in workflow guidance. Leave empty to use built-in defaults. | `""` (empty) |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | When set to `true`, expose all tools at startup instead of using deferred loading (core tools only). Useful for AI clients that don't support deferred tool loading. | Auto-detect |
+| `QSV_MCP_DUCKDB_BIN_PATH` | Full path to the DuckDB binary. If not set, auto-detects from PATH. | `""` (auto-detect) |
+| `QSV_MCP_USE_DUCKDB` | Enable DuckDB for SQL queries when available. When `false`, always uses `sqlp` (Polars SQL). | `false` |
+| `QSV_MCP_OUTPUT_FORMAT` | Output format for qsv command results. Valid values: `"tsv"` or `"csv"`. | `tsv` |
 
 ### Update Checking
 
@@ -146,7 +157,6 @@ The following template variables can be used in `QSV_MCP_WORKING_DIR` and `QSV_M
         "QSV_MCP_BIN_PATH": "/usr/local/bin/qsv",
         "QSV_MCP_WORKING_DIR": "${DOWNLOADS}",
         "QSV_MCP_ALLOWED_DIRS": "${DOCUMENTS}:${DESKTOP}",
-        "QSV_MCP_TIMEOUT_MS": "300000",
         "QSV_MCP_CHECK_UPDATES_ON_STARTUP": "true"
       }
     }

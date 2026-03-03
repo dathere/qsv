@@ -121,7 +121,7 @@ class QsvMcpServer {
   private toolsListedOnce: boolean = false;
   private manuallySetWorkingDir = false;
   private workingDirConfirmed = false;
-  private elicitingWorkingDir = false;
+  private elicitationPromise: Promise<void> | null = null;
   private syncingRoots = false;
   private pendingRootsSync = false;
   private rootsSyncRetries = 0;
@@ -593,24 +593,32 @@ class QsvMcpServer {
       // First-tool-use working directory prompt: if the working directory has not
       // been confirmed (via roots sync, manual set, or elicitation), prompt the
       // user to select one before the first data-processing tool call.
-      if (!this.workingDirConfirmed && !this.elicitingWorkingDir && !QsvMcpServer.ELICITATION_EXEMPT_TOOLS.has(name)) {
-        // Set guard before awaiting to prevent concurrent elicitation attempts
-        this.elicitingWorkingDir = true;
-        try {
-          const elicitResult = await this.elicitWorkingDirectory();
-          if (elicitResult.directory) {
-            this.updateWorkingDirectory(elicitResult.directory);
-            this.manuallySetWorkingDir = true;
-            this.workingDirConfirmed = true;
-            console.error(`[Elicitation] Working directory set to: ${elicitResult.directory}`);
-          } else {
-            // User declined/cancelled or client doesn't support elicitation —
-            // mark as confirmed to avoid repeated prompts
-            this.workingDirConfirmed = true;
-            console.error("[Elicitation] Working directory not selected; using default");
-          }
-        } finally {
-          this.elicitingWorkingDir = false;
+      if (!this.workingDirConfirmed && !QsvMcpServer.ELICITATION_EXEMPT_TOOLS.has(name)) {
+        // If elicitation is already in progress, await the existing promise
+        // so concurrent tool calls wait for the result instead of proceeding
+        // with an unconfirmed working directory.
+        if (this.elicitationPromise) {
+          await this.elicitationPromise;
+        } else {
+          this.elicitationPromise = (async () => {
+            try {
+              const elicitResult = await this.elicitWorkingDirectory();
+              if (elicitResult.directory) {
+                this.updateWorkingDirectory(elicitResult.directory);
+                this.manuallySetWorkingDir = true;
+                this.workingDirConfirmed = true;
+                console.error(`[Elicitation] Working directory set to: ${elicitResult.directory}`);
+              } else {
+                // User declined/cancelled or client doesn't support elicitation —
+                // mark as confirmed to avoid repeated prompts
+                this.workingDirConfirmed = true;
+                console.error("[Elicitation] Working directory not selected; using default");
+              }
+            } finally {
+              this.elicitationPromise = null;
+            }
+          })();
+          await this.elicitationPromise;
         }
       }
 
@@ -977,7 +985,7 @@ class QsvMcpServer {
         if (chosenDir) {
           // Validate the chosen directory exists and is actually a directory
           try {
-            const stat = statSync(chosenDir);
+            const stat = await fsStat(chosenDir);
             if (!stat.isDirectory()) {
               return {
                 fallback: `"${chosenDir}" is not a directory. Please call qsv_set_working_dir with a valid directory path.`,

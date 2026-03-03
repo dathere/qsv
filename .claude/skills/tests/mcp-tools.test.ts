@@ -789,8 +789,8 @@ test('handleLogCall coerces non-string types via String()', async () => {
 });
 
 test('handleLogCall coerces non-string message via String()', async (t) => {
-  if (!config.qsvValidation.valid) {
-    t.skip('qsv binary not available');
+  if (!config.qsvValidation.valid || !config.qsvValidation.availableCommands?.includes('log')) {
+    t.skip('qsv binary not available or missing log command');
     return;
   }
 
@@ -845,8 +845,8 @@ test('handleLogCall rejects whitespace-only message', async () => {
 });
 
 test('handleLogCall succeeds with valid params and writes to log', async (t) => {
-  if (!config.qsvValidation.valid) {
-    t.skip('qsv binary not available');
+  if (!config.qsvValidation.valid || !config.qsvValidation.availableCommands?.includes('log')) {
+    t.skip('qsv binary not available or missing log command');
     return;
   }
 
@@ -874,8 +874,8 @@ test('handleLogCall succeeds with valid params and writes to log', async (t) => 
 });
 
 test('handleLogCall truncates messages over MAX_LOG_MESSAGE_LEN', async (t) => {
-  if (!config.qsvValidation.valid) {
-    t.skip('qsv binary not available');
+  if (!config.qsvValidation.valid || !config.qsvValidation.availableCommands?.includes('log')) {
+    t.skip('qsv binary not available or missing log command');
     return;
   }
 

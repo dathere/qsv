@@ -661,13 +661,13 @@ For input `mydata.csv`, stats creates three files:
 ```
 mydata.csv              (original input)
 mydata.stats.csv        (computed statistics - CSV format)
-mydata.stats.csv.json   (metadata about how stats were computed)
+mydata.stats.csv.jsonl  (metadata about how stats were computed)
 mydata.stats.csv.data.jsonl (optional: statistics in JSONL format)
 ```
 
 ### 2. **StatsArgs Structure**
 
-Metadata stored in `.stats.csv.json`:
+Metadata stored in `.stats.csv.jsonl`:
 
 ```rust
 struct StatsArgs {

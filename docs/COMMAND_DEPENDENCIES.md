@@ -9,14 +9,26 @@ Many commands in `qsv` are "index-aware." While most can function without an ind
 *   **`count`**: Provides an O(1) row count if an index is present.
 *   **`slice`**: Uses the index to jump directly to a specific row offset.
 *   **`sample`**: Uses the index to perform efficient random sampling (the "indexed" sampling method).
-*   **`split` / `partition`**: Uses the index to efficiently slice pieces of the file.
+*   **`split`**: Uses the index to efficiently slice pieces of the file.
 *   **`luau`**: Can trigger "Random Access Mode" if a script uses the `_INDEX` variable, which requires an index file. It also provides a `qsv_autoindex()` helper to create one on the fly.
 *   **`search` / `searchset`**: Uses the index to speed up searches when combined with specific options.
+*   **`replace`**: Uses the index to parallelize replace operations.
+*   **`extsort`**: Requires an index when sorting CSV files (as opposed to text mode).
+*   **`pragmastat`**: Uses the index for row count estimation.
 *   **`stats` / `frequency` / `moarstats`**: Can use the index to parallelize processing or resume/speed up calculations.
 
 ## 2. Dependency on `stats` (created via `qsv stats`)
+The following "smart" commands (🪄) use the stats cache (`stats.csv.data.jsonl`) to optimize processing. They use the `get_stats_records()` utility function or run `stats` as a subprocess.
+
 *   **`schema`**: Reuses the `stats.csv.data.jsonl` cache file if it exists and is current (generated with `--cardinality` and `--infer-dates`). If not present, it internally runs `stats` to generate this data.
-*   **`describegpt`**: Uses summary statistics to provide context to the LLM. It can explicitly read an existing stats file via the `--stats-options "file:<path>"` option.
+*   **`describegpt`**: Uses summary statistics to provide context to the LLM. It can explicitly read an existing stats file via the `--stats-options "file:<path>"` option. Runs `stats` as a subprocess.
+*   **`frequency`**: Uses `get_stats_records()` to optimize processing by detecting column cardinality and unique columns.
+*   **`sample`**: Uses `get_stats_records()` for smart sampling decisions.
+*   **`joinp`**: Uses `get_stats_records()` with `StatsMode::PolarsSchema` for Polars schema inference.
+*   **`pivotp`**: Uses `get_stats_records()` with `StatsMode::FrequencyForceStats` for smart aggregation.
+*   **`sqlp`**: Indirectly uses the stats cache via `util::infer_polars_schema()` for data type inference.
+*   **`tojsonl`**: Uses the stats cache via `infer_schema_from_stats` for JSON data type inference.
+*   **`moarstats`**: Reads `.stats.csv` files to add extended statistics.
 
 ## 3. Dependency on `frequency` (created via `qsv frequency`)
 *   **`schema`**: Uses frequency distributions internally to identify "low cardinality" columns and automatically build `enum` constraints for the generated JSON Schema.

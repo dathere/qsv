@@ -598,9 +598,16 @@ class QsvMcpServer {
         // so concurrent tool calls wait for the result instead of proceeding
         // with an unconfirmed working directory.
         if (this.elicitationPromise) {
-          await this.elicitationPromise;
+          try {
+            await this.elicitationPromise;
+          } catch {
+            // Elicitation failed in the originating call; fall through to use
+            // the default directory rather than surfacing an unhandled rejection.
+            this.workingDirConfirmed = true;
+            console.error("[Elicitation] Concurrent wait failed; using default");
+          }
         } else {
-          this.elicitationPromise = (async () => {
+          const promise = (async () => {
             try {
               const elicitResult = await this.elicitWorkingDirectory();
               if (elicitResult.directory) {
@@ -618,7 +625,8 @@ class QsvMcpServer {
               this.elicitationPromise = null;
             }
           })();
-          await this.elicitationPromise;
+          this.elicitationPromise = promise;
+          await promise;
         }
       }
 

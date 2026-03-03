@@ -2780,17 +2780,18 @@ export function createSetWorkingDirTool(): McpToolDefinition {
 
 🔒 SECURITY: Only allowed directories can be set (configured in server settings).
 
-💡 TIP: Set working directory once at session start, then use simple filenames like "data.csv" instead of full paths.`,
+💡 TIP: Set working directory once at session start, then use simple filenames like "data.csv" instead of full paths.
+Call without arguments to show an interactive directory picker (when supported by the MCP client).`,
     inputSchema: {
       type: "object",
       properties: {
         directory: {
           type: "string",
           description:
-            "New working directory path (absolute or relative). Must be within allowed directories for security.",
+            'New working directory path (absolute or relative). Must be within allowed directories for security. Omit to show an interactive directory picker.',
         },
       },
-      required: ["directory"],
+      required: [],
     },
   };
 }

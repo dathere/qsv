@@ -14,9 +14,13 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
   RootsListChangedNotificationSchema,
+  type ElicitResult,
 } from "@modelcontextprotocol/sdk/types.js";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { existsSync } from "node:fs";
 import { access, stat as fsStat } from "node:fs/promises";
 
 import { SkillLoader } from "./loader.js";
@@ -116,6 +120,7 @@ class QsvMcpServer {
   private loggedToolMode: boolean = false;
   private toolsListedOnce: boolean = false;
   private manuallySetWorkingDir = false;
+  private workingDirConfirmed = false;
   private syncingRoots = false;
   private pendingRootsSync = false;
   private rootsSyncRetries = 0;
@@ -584,6 +589,24 @@ class QsvMcpServer {
         }).catch(() => {});
       }
 
+      // First-tool-use working directory prompt: if the working directory has not
+      // been confirmed (via roots sync, manual set, or elicitation), prompt the
+      // user to select one before the first data-processing tool call.
+      if (!this.workingDirConfirmed && !QsvMcpServer.ELICITATION_EXEMPT_TOOLS.has(name)) {
+        const elicitResult = await this.elicitWorkingDirectory();
+        if (elicitResult.directory) {
+          this.updateWorkingDirectory(elicitResult.directory);
+          this.manuallySetWorkingDir = true;
+          this.workingDirConfirmed = true;
+          console.error(`[Elicitation] Working directory set to: ${elicitResult.directory}`);
+        } else {
+          // User declined/cancelled or client doesn't support elicitation —
+          // mark as confirmed to avoid repeated prompts
+          this.workingDirConfirmed = true;
+          console.error("[Elicitation] Working directory not selected; using default");
+        }
+      }
+
       // Dispatch tool and log result
       const dispatch = async () => {
         // Tool dispatch chain: ordered from most specific to most general.
@@ -619,7 +642,16 @@ class QsvMcpServer {
             typeof toolArgs?.directory !== "string" ||
             toolArgs.directory.trim().length === 0
           ) {
-            return errorResult("Invalid or missing 'directory' argument for qsv_set_working_dir. Please provide a non-empty string path.");
+            // No directory provided — try interactive elicitation or show suggestions
+            const elicitResult = await this.elicitWorkingDirectory();
+            if (elicitResult.directory) {
+              const newDir = this.updateWorkingDirectory(elicitResult.directory);
+              this.manuallySetWorkingDir = true;
+              this.workingDirConfirmed = true;
+              return successResult(`Working directory set to: ${newDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
+            }
+            // Return suggestions as success so the agent can pick a directory
+            return successResult(elicitResult.fallback || "No directory selected. Please call qsv_set_working_dir with an explicit directory path.");
           }
 
           const directory = toolArgs.directory.trim();
@@ -635,6 +667,7 @@ class QsvMcpServer {
               await this.syncWorkingDirFromRoots();
               // Only mark auto-sync as enabled if the sync completed successfully
               this.manuallySetWorkingDir = false;
+              this.workingDirConfirmed = true;
               autoSyncEnabled = true;
               currentDir = this.filesystemProvider.getWorkingDirectory();
             } catch (syncError: unknown) {
@@ -663,6 +696,7 @@ class QsvMcpServer {
 
           const newWorkingDir = this.updateWorkingDirectory(directory);
           this.manuallySetWorkingDir = true;
+          this.workingDirConfirmed = true;
 
           return successResult(`Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
         }
@@ -792,6 +826,161 @@ class QsvMcpServer {
   }
 
   /**
+   * Tools that should NOT trigger the first-use working directory elicitation.
+   * These are configuration, discovery, and logging tools.
+   */
+  private static readonly ELICITATION_EXEMPT_TOOLS = new Set([
+    "qsv_config",
+    "qsv_log",
+    "qsv_search_tools",
+    "qsv_set_working_dir",
+    "qsv_get_working_dir",
+  ]);
+
+  /**
+   * Discover well-known directories that exist on the user's system.
+   * Used by both the elicitation form and the fallback suggestion list.
+   */
+  private discoverDirectories(): Array<{ path: string; label: string }> {
+    const home = homedir();
+    const candidates: Array<{ path: string; label: string }> = [];
+
+    const wellKnown = [
+      { path: join(home, "Downloads"), label: "Downloads" },
+      { path: join(home, "Documents"), label: "Documents" },
+      { path: join(home, "Desktop"), label: "Desktop" },
+      { path: home, label: "Home" },
+    ];
+
+    const currentDir = this.filesystemProvider.getWorkingDirectory();
+    const cwd = process.cwd();
+
+    for (const candidate of wellKnown) {
+      if (existsSync(candidate.path)) {
+        candidates.push(candidate);
+      }
+    }
+
+    // Add process cwd if not already covered
+    if (existsSync(cwd) && !candidates.some((c) => c.path === cwd)) {
+      candidates.push({ path: cwd, label: "Current Directory" });
+    }
+
+    // Add current working dir if not already covered
+    if (existsSync(currentDir) && !candidates.some((c) => c.path === currentDir)) {
+      candidates.push({ path: currentDir, label: "qsv Working Dir" });
+    }
+
+    return candidates;
+  }
+
+  /**
+   * Build a directory suggestion list for when elicitation is not available.
+   * Returns a formatted string showing discovered directories that the agent
+   * can use to call qsv_set_working_dir with an explicit path.
+   */
+  private buildDirectorySuggestions(): string {
+    const candidates = this.discoverDirectories();
+    const currentDir = this.filesystemProvider.getWorkingDirectory();
+
+    const suggestions = candidates
+      .map((c) => `  - ${c.label}: ${c.path}`)
+      .join("\n");
+
+    return (
+      `No directory specified. Current working directory: ${currentDir}\n\n` +
+      `Available directories:\n${suggestions}\n\n` +
+      `Call qsv_set_working_dir with one of these paths (e.g. directory: "${candidates[0]?.path || currentDir}"), ` +
+      `or provide any other accessible directory path.`
+    );
+  }
+
+  /**
+   * Present an interactive directory picker via MCP elicitation (form mode).
+   * When the client doesn't support elicitation, returns a suggestion list
+   * of discovered directories instead.
+   *
+   * @returns Object with either `directory` (user selected) or `fallback` (text message)
+   */
+  private async elicitWorkingDirectory(): Promise<{ directory?: string; fallback?: string }> {
+    // Check if client supports form elicitation
+    const capabilities = this.server.getClientCapabilities();
+    if (!capabilities?.elicitation?.form) {
+      return { fallback: this.buildDirectorySuggestions() };
+    }
+
+    // Discover directories for the form
+    const candidates = this.discoverDirectories();
+
+    // Build enum values for the form
+    const enumValues = candidates.map((c) => c.path);
+    const enumLabels = candidates.map((c) => ({
+      const: c.path,
+      title: `${c.label} — ${c.path}`,
+    }));
+
+    try {
+      const result: ElicitResult = await this.server.elicitInput({
+        mode: "form",
+        message: "Select a working directory for qsv file operations:",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            selected_directory: {
+              type: "string",
+              title: "Directory",
+              description: "Choose from common directories",
+              enum: enumValues,
+              oneOf: enumLabels,
+            },
+            custom_path: {
+              type: "string",
+              title: "Custom Path (optional)",
+              description: "Or type a custom directory path (overrides selection above)",
+            },
+          },
+        },
+      });
+
+      if (result.action === "accept" && result.content) {
+        // Custom path takes priority over enum selection
+        const customPath =
+          typeof result.content.custom_path === "string"
+            ? result.content.custom_path.trim()
+            : "";
+        const selectedDir =
+          typeof result.content.selected_directory === "string"
+            ? result.content.selected_directory.trim()
+            : "";
+
+        const chosenDir = customPath || selectedDir;
+
+        if (chosenDir) {
+          return { directory: chosenDir };
+        }
+
+        return {
+          fallback: "No directory was selected. Please call qsv_set_working_dir with a directory path.",
+        };
+      }
+
+      if (result.action === "decline") {
+        return {
+          fallback: "Directory selection was declined. The working directory remains unchanged. You can call qsv_set_working_dir with an explicit path.",
+        };
+      }
+
+      // cancel or other
+      return {
+        fallback: "Directory selection was cancelled. The working directory remains unchanged.",
+      };
+    } catch (error: unknown) {
+      console.error("[Elicitation] Failed to elicit working directory:", getErrorMessage(error));
+      return { fallback: this.buildDirectorySuggestions() };
+    }
+  }
+
+  /**
    * Auto-sync working directory from MCP client roots.
    * Used when the client communicates its root directory (e.g., Claude Cowork's "Work in a folder").
    */
@@ -833,6 +1022,7 @@ class QsvMcpServer {
         return;
       }
       const resolved = this.updateWorkingDirectory(rootPath);
+      this.workingDirConfirmed = true;
       console.error(`[Roots] Auto-set working directory to: ${resolved}`);
       if (roots.length > 1) {
         console.error(`[Roots] Note: ${roots.length - 1} additional root(s) ignored; only the first file:// root is used`);

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Interactive directory picker via MCP Elicitation**: Call `qsv_set_working_dir` without arguments to show a form-based directory picker (when the MCP client supports elicitation)
+  - Discovers well-known directories (Downloads, Documents, Desktop, Home) and offers them as selectable options
+  - Includes a custom path field for arbitrary directory entry
+  - First-tool-use trigger: automatically prompts for directory selection before the first data-processing tool call when no working directory has been confirmed
+  - Gracefully falls back to existing behavior when the client doesn't support elicitation
+
 ### Changed
 - **Optimize skills for qsvmcp binary**: Removed 5 non-qsvmcp commands (`apply`, `fetch`, `fetchpost`, `foreach`, `to`) from skill generation and TypeScript hardcoded references, reducing skill count from 56 to 51
 - Rust skill generator now auto-cleans stale `qsv-*.json` files after generation

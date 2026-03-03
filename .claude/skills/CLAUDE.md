@@ -155,7 +155,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 
 **Key Constants**:
 - `COMMON_COMMANDS`: 11 frequently-used commands (select, moarstats, search, frequency, headers, count, slice, sqlp, joinp, cat, geocode)
-- `ALWAYS_FILE_COMMANDS`: 32 commands that always output to files
+- `ALWAYS_FILE_COMMANDS`: 33 commands that always output to files
 - `METADATA_COMMANDS`: 4 commands returning metadata (count, headers, index, sniff)
 - `NON_TABULAR_COMMANDS`: 8 commands whose output is not tabular (skips TSV formatting)
 - `BINARY_OUTPUT_FORMATS`: Set of binary formats (parquet, arrow, avro)
@@ -791,9 +791,9 @@ The plugin layer (`.claude-plugin/`, `.mcp.json`, `commands/`, `agents/`, `skill
 
 ---
 
-**Document Version**: 2.3
-**Last Updated**: 2026-02-25
-**Target qsv Version**: 16.x
+**Document Version**: 2.4
+**Last Updated**: 2026-03-03
+**Target qsv Version**: 17.x
 **Node.js Version**: >=18.0.0
 **MCP SDK Version**: ^1.26.0
 **Maintainer**: Joel Natividad

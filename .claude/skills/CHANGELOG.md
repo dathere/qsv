@@ -5,19 +5,49 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [17.0.0] - 2026-03-03
 
 ### Added
+- **TSV output format** for token-efficient agent responses (configurable via `QSV_MCP_OUTPUT_FORMAT`)
+- **`qsv_log` tool** and comprehensive audit logging with `QSV_MCP_LOG_LEVEL` env var
+- **DuckDB-powered CSV-to-Parquet conversion** when DuckDB binary available
+- **Auto-run `moarstats`** after `stats` execution for enriched statistical context
+- **Reserved cache filename guard** prevents `--output` from overwriting `.stats.csv` and `.freq.csv` cache files
 - **Interactive directory picker via MCP Elicitation**: Call `qsv_set_working_dir` without arguments to show a form-based directory picker (when the MCP client supports elicitation)
   - Discovers well-known directories (Downloads, Documents, Desktop, Home) and offers them as selectable options
   - Includes a custom path field for arbitrary directory entry
   - First-tool-use trigger: automatically prompts for directory selection before the first data-processing tool call when no working directory has been confirmed
   - Gracefully falls back to existing behavior when the client doesn't support elicitation
+- **Stats/frequency cache-aware guidance** for `sqlp`, `joinp`, `pivotp`
+- **Asof join guidance** for `joinp` command
+- **Polars SQL engine header** for clear engine differentiation
+- **Auto-deploy CLAUDE.md** to Cowork working folder on session start
+- **Require Polars feature** in qsv binary validation
+- **Operation timeout guidance** in server instructions
+- **Show complete command line** in error messages for agent diagnostics
 
 ### Changed
 - **Optimize skills for qsvmcp binary**: Removed 5 non-qsvmcp commands (`apply`, `fetch`, `fetchpost`, `foreach`, `to`) from skill generation and TypeScript hardcoded references, reducing skill count from 56 to 51
 - Rust skill generator now auto-cleans stale `qsv-*.json` files after generation
 - Updated `qsv_command` generic tool description to reference `luau` instead of `apply`
+- **Deduplicate utilities**, extract shared pipeline, remove dead code
+- **SQL translation hardening** — unique `_tbl_N` aliases, string literal protection, pre-scan qualified refs
+- **Fine-tune Parquet conversion logic**
+- **Comprehensive logging** across all tool handlers
+- **Absolute path resolution** for all file-path arguments
+
+### Fixed
+- `translateSql` — remove double-parens, prevent alias collision, protect string literals
+- Accept `"input"`/`"output"` as aliases for `input_file`/`output_file` parameters
+- Correct server instructions and tool guidance inaccuracies
+- Ensure CWD is set to qsv Working Directory for `runQsvSimple` helper
+- Harden TSV output logic and skip binary output formats
+- Harden moarstats auto-run with null checks and robust content lookup
+- Make `QsvSkill.examples` optional and strengthen type guard
+- Consistent engine header ordering for sqlp results
+
+### Removed
+- 5 non-qsvmcp commands from skill generation (`apply`, `fetch`, `fetchpost`, `foreach`, `to`)
 
 ## [16.1.2] - 2026-02-18
 

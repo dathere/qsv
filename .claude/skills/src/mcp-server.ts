@@ -20,7 +20,6 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { statSync } from "node:fs";
 import { access, stat as fsStat } from "node:fs/promises";
 
 import { SkillLoader } from "./loader.js";
@@ -611,10 +610,26 @@ class QsvMcpServer {
             try {
               const elicitResult = await this.elicitWorkingDirectory();
               if (elicitResult.directory) {
-                this.updateWorkingDirectory(elicitResult.directory);
-                this.manuallySetWorkingDir = true;
-                this.workingDirConfirmed = true;
-                console.error(`[Elicitation] Working directory set to: ${elicitResult.directory}`);
+                try {
+                  this.updateWorkingDirectory(elicitResult.directory);
+                  this.manuallySetWorkingDir = true;
+                  this.workingDirConfirmed = true;
+                  console.error(
+                    `[Elicitation] Working directory set to: ${elicitResult.directory}`,
+                  );
+                } catch (err) {
+                  console.error(
+                    `[Elicitation] Failed to set working directory to ${elicitResult.directory}: ${getErrorMessage(
+                      err,
+                    )}`,
+                  );
+                  // Fall back to the default working directory to avoid crashing the request.
+                  // Mark as confirmed to prevent repeated prompts for an invalid directory.
+                  this.workingDirConfirmed = true;
+                  console.error(
+                    "[Elicitation] Working directory not applied; using default instead",
+                  );
+                }
               } else {
                 // User declined/cancelled or client doesn't support elicitation —
                 // mark as confirmed to avoid repeated prompts
@@ -863,10 +878,10 @@ class QsvMcpServer {
   /**
    * Discover well-known directories that exist on the user's system.
    * Used by both the elicitation form and the fallback suggestion list.
+   * Async to avoid blocking the event loop with synchronous stat calls.
    */
-  private discoverDirectories(): Array<{ path: string; label: string }> {
+  private async discoverDirectories(): Promise<Array<{ path: string; label: string }>> {
     const home = homedir();
-    const candidates: Array<{ path: string; label: string }> = [];
 
     const wellKnown = [
       { path: join(home, "Downloads"), label: "Downloads" },
@@ -878,32 +893,31 @@ class QsvMcpServer {
     const currentDir = this.filesystemProvider.getWorkingDirectory();
     const cwd = process.cwd();
 
-    for (const candidate of wellKnown) {
-      try {
-        if (statSync(candidate.path).isDirectory()) {
-          candidates.push(candidate);
+    // Check all candidates in parallel
+    const allCandidates = [
+      ...wellKnown,
+      { path: cwd, label: "Current Directory" },
+      { path: currentDir, label: "qsv Working Dir" },
+    ];
+
+    const results = await Promise.allSettled(
+      allCandidates.map(async (candidate) => {
+        const s = await fsStat(candidate.path);
+        return s.isDirectory() ? candidate : null;
+      }),
+    );
+
+    // Collect successful directory checks, deduplicating by path
+    const seen = new Set<string>();
+    const candidates: Array<{ path: string; label: string }> = [];
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value) {
+        const { path } = result.value;
+        if (!seen.has(path)) {
+          seen.add(path);
+          candidates.push(result.value);
         }
-      } catch {
-        // Path doesn't exist or isn't accessible — skip
       }
-    }
-
-    // Add process cwd if not already covered
-    try {
-      if (statSync(cwd).isDirectory() && !candidates.some((c) => c.path === cwd)) {
-        candidates.push({ path: cwd, label: "Current Directory" });
-      }
-    } catch {
-      // skip
-    }
-
-    // Add current working dir if not already covered
-    try {
-      if (statSync(currentDir).isDirectory() && !candidates.some((c) => c.path === currentDir)) {
-        candidates.push({ path: currentDir, label: "qsv Working Dir" });
-      }
-    } catch {
-      // skip
     }
 
     return candidates;
@@ -914,8 +928,8 @@ class QsvMcpServer {
    * Returns a formatted string showing discovered directories that the agent
    * can use to call qsv_set_working_dir with an explicit path.
    */
-  private buildDirectorySuggestions(): string {
-    const candidates = this.discoverDirectories();
+  private async buildDirectorySuggestions(): Promise<string> {
+    const candidates = await this.discoverDirectories();
     const currentDir = this.filesystemProvider.getWorkingDirectory();
 
     const suggestions = candidates
@@ -941,11 +955,11 @@ class QsvMcpServer {
     // Check if client supports form elicitation
     const capabilities = this.server.getClientCapabilities();
     if (!capabilities?.elicitation?.form) {
-      return { fallback: this.buildDirectorySuggestions() };
+      return { fallback: await this.buildDirectorySuggestions() };
     }
 
     // Discover directories for the form
-    const candidates = this.discoverDirectories();
+    const candidates = await this.discoverDirectories();
 
     // Build enum values for the form
     const enumValues = candidates.map((c) => c.path);
@@ -1024,7 +1038,7 @@ class QsvMcpServer {
       };
     } catch (error: unknown) {
       console.error("[Elicitation] Failed to elicit working directory:", getErrorMessage(error));
-      return { fallback: this.buildDirectorySuggestions() };
+      return { fallback: await this.buildDirectorySuggestions() };
     }
   }
 

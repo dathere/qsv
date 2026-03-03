@@ -16,17 +16,17 @@ import { describe, test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { statSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { createTestDir, cleanupTestDir } from "./test-helpers.js";
 
 /**
  * Discover well-known directories that exist on the user's system.
- * Mirrors discoverDirectories() from mcp-server.ts — uses statSync
- * to verify candidates are actual directories (not files).
+ * Mirrors discoverDirectories() from mcp-server.ts — uses async stat
+ * via Promise.allSettled to avoid blocking the event loop.
  */
-function discoverDirectories(currentWorkingDir: string): Array<{ path: string; label: string }> {
+async function discoverDirectories(currentWorkingDir: string): Promise<Array<{ path: string; label: string }>> {
   const home = homedir();
-  const candidates: Array<{ path: string; label: string }> = [];
 
   const wellKnown = [
     { path: join(home, "Downloads"), label: "Downloads" },
@@ -37,30 +37,29 @@ function discoverDirectories(currentWorkingDir: string): Array<{ path: string; l
 
   const cwd = process.cwd();
 
-  for (const candidate of wellKnown) {
-    try {
-      if (statSync(candidate.path).isDirectory()) {
-        candidates.push(candidate);
+  const allCandidates = [
+    ...wellKnown,
+    { path: cwd, label: "Current Directory" },
+    { path: currentWorkingDir, label: "qsv Working Dir" },
+  ];
+
+  const results = await Promise.allSettled(
+    allCandidates.map(async (candidate) => {
+      const s = await stat(candidate.path);
+      return s.isDirectory() ? candidate : null;
+    }),
+  );
+
+  const seen = new Set<string>();
+  const candidates: Array<{ path: string; label: string }> = [];
+  for (const result of results) {
+    if (result.status === "fulfilled" && result.value) {
+      const { path } = result.value;
+      if (!seen.has(path)) {
+        seen.add(path);
+        candidates.push(result.value);
       }
-    } catch {
-      // skip
     }
-  }
-
-  try {
-    if (statSync(cwd).isDirectory() && !candidates.some((c) => c.path === cwd)) {
-      candidates.push({ path: cwd, label: "Current Directory" });
-    }
-  } catch {
-    // skip
-  }
-
-  try {
-    if (statSync(currentWorkingDir).isDirectory() && !candidates.some((c) => c.path === currentWorkingDir)) {
-      candidates.push({ path: currentWorkingDir, label: "qsv Working Dir" });
-    }
-  } catch {
-    // skip
   }
 
   return candidates;
@@ -70,8 +69,8 @@ function discoverDirectories(currentWorkingDir: string): Array<{ path: string; l
  * Build a directory suggestion list for when elicitation is not available.
  * Mirrors buildDirectorySuggestions() from mcp-server.ts.
  */
-function buildDirectorySuggestions(currentWorkingDir: string): string {
-  const candidates = discoverDirectories(currentWorkingDir);
+async function buildDirectorySuggestions(currentWorkingDir: string): Promise<string> {
+  const candidates = await discoverDirectories(currentWorkingDir);
 
   const suggestions = candidates
     .map((c) => `  - ${c.label}: ${c.path}`)
@@ -100,11 +99,11 @@ async function elicitWorkingDirectory(options: {
 }): Promise<{ directory?: string; fallback?: string }> {
   const capabilities = options.getClientCapabilities();
   if (!capabilities?.elicitation?.form) {
-    return { fallback: buildDirectorySuggestions(options.currentWorkingDir) };
+    return { fallback: await buildDirectorySuggestions(options.currentWorkingDir) };
   }
 
   // Discover directories for the form
-  const candidates = discoverDirectories(options.currentWorkingDir);
+  const candidates = await discoverDirectories(options.currentWorkingDir);
 
   const enumValues = candidates.map((c) => c.path);
   const enumLabels = candidates.map((c) => ({
@@ -150,8 +149,8 @@ async function elicitWorkingDirectory(options: {
       if (chosenDir) {
         // Validate the chosen directory exists and is actually a directory
         try {
-          const stat = statSync(chosenDir);
-          if (!stat.isDirectory()) {
+          const s = await stat(chosenDir);
+          if (!s.isDirectory()) {
             return {
               fallback: `"${chosenDir}" is not a directory. Please call qsv_set_working_dir with a valid directory path.`,
             };
@@ -179,7 +178,7 @@ async function elicitWorkingDirectory(options: {
       fallback: "Directory selection was cancelled. The working directory remains unchanged.",
     };
   } catch {
-    return { fallback: buildDirectorySuggestions(options.currentWorkingDir) };
+    return { fallback: await buildDirectorySuggestions(options.currentWorkingDir) };
   }
 }
 

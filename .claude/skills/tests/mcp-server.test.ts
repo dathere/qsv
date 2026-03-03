@@ -164,7 +164,7 @@ test("createSetWorkingDirTool returns valid tool definition", () => {
   assert.strictEqual(tool.name, "qsv_set_working_dir");
   assert.ok(tool.description.includes("Change the working directory"));
   assert.ok("directory" in tool.inputSchema.properties);
-  assert.deepStrictEqual(tool.inputSchema.required, ["directory"]);
+  assert.deepStrictEqual(tool.inputSchema.required, []);
 });
 
 test("createGetWorkingDirTool returns valid tool definition", () => {

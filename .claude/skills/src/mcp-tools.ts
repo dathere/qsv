@@ -6,7 +6,7 @@ import { spawn, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
 import { stat, access, readFile, writeFile, open, unlink, rename, copyFile, readdir, mkdir } from "fs/promises";
 import { constants } from "fs";
-import { basename, dirname, join } from "path";
+import { basename, dirname, isAbsolute, join } from "path";
 import { tmpdir } from "os";
 import { ConvertedFileManager } from "./converted-file-manager.js";
 import {
@@ -51,6 +51,33 @@ const statOrNull = (path: string) =>
  * Auto-indexing threshold in MB
  */
 const AUTO_INDEX_SIZE_MB = 10;
+
+/**
+ * Dynamic working directory that tracks runtime changes from qsv_set_working_dir.
+ * Initialized from config.workingDir; updated via setToolsWorkingDir().
+ */
+let currentWorkingDir: string = config.workingDir;
+
+/**
+ * Update the module-level working directory.
+ * Called from mcp-server.ts when the user changes the working directory at runtime.
+ * Expects an already-validated absolute path from the caller.
+ */
+export function setToolsWorkingDir(dir: string): void {
+  const trimmed = typeof dir === 'string' ? dir.trim() : '';
+  if (!trimmed || !isAbsolute(trimmed)) {
+    throw new Error(`setToolsWorkingDir: expected an absolute path, got "${dir}"`);
+  }
+  currentWorkingDir = trimmed;
+}
+
+/**
+ * Return the current module-level working directory.
+ * Useful for testing and diagnostics.
+ */
+export function getToolsWorkingDir(): string {
+  return currentWorkingDir;
+}
 
 /**
  * Maximum length for qsv_log messages (in characters).
@@ -112,6 +139,30 @@ const NON_TABULAR_COMMANDS = new Set([
 
 /** Binary output formats from sqlp that should never get a .tsv extension */
 const BINARY_OUTPUT_FORMATS = new Set(["parquet", "arrow", "avro"]);
+
+/**
+ * Options that accept file paths as input (read from).
+ * Values are resolved to absolute paths via filesystemProvider.resolvePath().
+ */
+const FILE_PATH_INPUT_OPTIONS = new Set([
+  "--prompt-file",
+  "--tag-vocab",
+  "--template-file",
+  "--globals-json",
+]);
+
+/**
+ * Options that accept file paths as output (written to).
+ * Values are resolved to absolute paths via filesystemProvider.resolvePath()
+ * and checked against reserved cache paths.
+ */
+const FILE_PATH_OUTPUT_OPTIONS = new Set([
+  "--dupes-output",
+  "--keys-output",
+  "--unmatched-output",
+  "--sql-results",
+  "--export-prompt",
+]);
 
 /**
  * Check if the command+params produce binary output (not tabular text).
@@ -499,13 +550,16 @@ async function runQsvWithTimeout(
     throw new Error("Server is shutting down, operation rejected");
   }
 
+  // Snapshot the working directory to avoid TOCTOU issues if it changes mid-execution.
+  const workDir = currentWorkingDir;
+
   // Ensure working directory exists before spawning (CWD ENOENT causes
   // a misleading "binary not found" error from Node.js spawn).
-  await mkdir(config.workingDir, { recursive: true });
+  await mkdir(workDir, { recursive: true });
 
   await runQsvSimple(qsvBin, args, {
     timeoutMs,
-    cwd: config.workingDir,
+    cwd: workDir,
     onSpawn: (proc) => activeProcesses.add(proc),
     onExit: (proc) => activeProcesses.delete(proc),
   });
@@ -728,15 +782,18 @@ async function spawnDuckDbCommands(
     throw new Error("Server is shutting down, operation rejected");
   }
 
+  // Snapshot the working directory to avoid TOCTOU issues if it changes mid-execution.
+  const workDir = currentWorkingDir;
+
   // Ensure working directory exists before spawning
-  await mkdir(config.workingDir, { recursive: true });
+  await mkdir(workDir, { recursive: true });
 
   return new Promise((resolve, reject) => {
     const proc = spawn(binPath, [dbPath, "-c", sql], {
       // stdout ignored: COPY ... TO produces no result set; prevents backpressure hangs.
       // If future SQL returns rows, change to "pipe" and consume the stream.
       stdio: ["ignore", "ignore", "pipe"],
-      cwd: config.workingDir,
+      cwd: workDir,
     });
 
     activeProcesses.add(proc);
@@ -1608,6 +1665,108 @@ async function buildFileNotFoundError(
 }
 
 /**
+ * Convert a param key to CLI flag format.
+ * e.g. "dupes_output" -> "--dupes-output", "--already-flagged" -> "--already-flagged"
+ */
+export function paramKeyToFlag(key: string): string {
+  return key.startsWith("-") ? key : `--${key.replace(/_/g, "-")}`;
+}
+
+/**
+ * Check whether a value looks like a file path (as opposed to inline script text).
+ * Used for ambiguous options like luau --begin/--end that accept both scripts and file paths.
+ *
+ * Only treats `/` as a path indicator when there are strong path signals:
+ * - Starts with `/`, `./`, or `../`
+ * - Contains 2+ slashes (multi-segment like `path/to/file` — unlikely to be Luau division)
+ * Bare `a/b` (single slash, no prefix) is NOT treated as a path to avoid false positives
+ * on inline Luau arithmetic.
+ *
+ * Backslash `\` is only treated as a path indicator with Windows path signals:
+ * drive letter prefix (`C:\`), `.\`, or `..\`.
+ */
+export function looksLikeFilePath(value: string): boolean {
+  const v = value.trim();
+  // Multi-segment forward-slash path: 2+ slashes makes division very unlikely.
+  // Note: single-slash bare paths like `dir/file.txt` are rejected to avoid false positives
+  // on Luau division, but `dir/file.lua` is still caught by the .lua/.luau extension check.
+  const firstSlash = v.indexOf("/");
+  const multiSegmentSlash = firstSlash !== -1 && v.indexOf("/", firstSlash + 1) !== -1;
+  // Windows-style backslash path: require drive letter, .\ or ..\ prefix
+  const windowsPath = /^[A-Za-z]:\\/.test(v) || v.startsWith(".\\") || v.startsWith("..\\");
+  return (
+    v.startsWith("file:") ||
+    v.endsWith(".lua") ||
+    v.endsWith(".luau") ||
+    windowsPath ||
+    v.startsWith("~") ||
+    v.startsWith("/") ||
+    v.startsWith("./") ||
+    v.startsWith("../") ||
+    multiSegmentSlash
+  );
+}
+
+/**
+ * Resolve file-path parameters (positional args and options) to absolute paths.
+ * This handles all file-type args beyond input/output which are already resolved.
+ *
+ * - Positional args with type "file" (excluding "input") are resolved
+ * - Options in FILE_PATH_INPUT_OPTIONS and FILE_PATH_OUTPUT_OPTIONS are resolved
+ * - Luau --begin/--end are resolved only when the value looks like a file path
+ *
+ * On resolution failure, logs a warning but doesn't block execution.
+ */
+async function resolveFilePathParams(
+  params: Record<string, unknown>,
+  skill: QsvSkill,
+  filesystemProvider: FilesystemProviderExtended,
+): Promise<void> {
+  // 1. Resolve positional args with type "file" (excluding "input", already handled)
+  for (const arg of skill.command.args) {
+    if (arg.type === "file" && arg.name !== "input" && params[arg.name]) {
+      const rawValue = String(params[arg.name]);
+      try {
+        const resolved = await filesystemProvider.resolvePath(rawValue);
+        if (resolved !== rawValue) {
+          console.error(`[MCP Tools] Resolved arg '${arg.name}': ${rawValue} -> ${resolved}`);
+          params[arg.name] = resolved;
+        }
+      } catch (error: unknown) {
+        console.error(`[MCP Tools] Warning: failed to resolve arg '${arg.name}' path '${rawValue}':`, getErrorMessage(error));
+      }
+    }
+  }
+
+  // 2. Resolve option values that are file paths
+  for (const [key, value] of Object.entries(params)) {
+    if (!value || typeof value !== "string") continue;
+
+    // Convert param key to flag format (e.g. "dupes_output" -> "--dupes-output")
+    const flag = paramKeyToFlag(key);
+
+    const isFilePathOption = FILE_PATH_INPUT_OPTIONS.has(flag) || FILE_PATH_OUTPUT_OPTIONS.has(flag);
+
+    // Special case: luau --begin/--end accept both inline scripts and file paths
+    const isAmbiguousFileOption = (flag === "--begin" || flag === "--end")
+      && skill.name === "luau"
+      && looksLikeFilePath(value);
+
+    if (isFilePathOption || isAmbiguousFileOption) {
+      try {
+        const resolved = await filesystemProvider.resolvePath(value);
+        if (resolved !== value) {
+          console.error(`[MCP Tools] Resolved option '${flag}': ${value} -> ${resolved}`);
+          params[key] = resolved;
+        }
+      } catch (error: unknown) {
+        console.error(`[MCP Tools] Warning: failed to resolve option '${flag}' path '${value}':`, getErrorMessage(error));
+      }
+    }
+  }
+}
+
+/**
  * Build args and options for skill execution from MCP tool params
  */
 function buildSkillExecParams(
@@ -1681,6 +1840,9 @@ async function formatToolResult(
   autoCreatedTempFile: boolean,
   params: Record<string, unknown>,
 ) {
+  // Snapshot the working directory to avoid TOCTOU issues if it changes mid-execution.
+  const workDir = currentWorkingDir;
+
   let responseText = "";
 
   if (outputFile) {
@@ -1700,7 +1862,7 @@ async function formatToolResult(
             .split(".")[0];
           const savedExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) && !isBinaryOutputFormat(commandName, params) ? "tsv" : "csv";
           const savedFileName = `qsv-${commandName}-${timestamp}.${savedExt}`;
-          const savedPath = join(config.workingDir, savedFileName);
+          const savedPath = join(workDir, savedFileName);
 
           try {
             await rename(outputFile, savedPath);
@@ -1717,7 +1879,7 @@ async function formatToolResult(
 
           responseText = `✅ Large output saved to file (too large to display in chat)\n\n`;
           responseText += `File: ${savedFileName}\n`;
-          responseText += `Location: ${config.workingDir}\n`;
+          responseText += `Location: ${workDir}\n`;
           responseText += `Size: ${formatBytes(tempFileStats.size)}\n`;
           responseText += `Duration: ${result.metadata.duration}ms\n\n`;
           responseText += `The file is now available in your working directory and can be processed with additional qsv commands.`;
@@ -2243,9 +2405,21 @@ export async function handleToolCall(
       }
     }
 
-    // Prevent overwriting reserved cache files
+    // Resolve additional file-path parameters (positional args and options beyond input/output)
+    if (filesystemProvider && !isHelpRequest) {
+      await resolveFilePathParams(params, skill, filesystemProvider);
+    }
+
+    // Prevent overwriting reserved cache files (output_file and file-path output options)
     if (outputFile && isReservedCachePath(outputFile)) {
       return errorResult(reservedCachePathError(outputFile));
+    }
+    for (const [key, value] of Object.entries(params)) {
+      if (!value || typeof value !== "string") continue;
+      const flag = paramKeyToFlag(key);
+      if (FILE_PATH_OUTPUT_OPTIONS.has(flag) && isReservedCachePath(value)) {
+        return errorResult(reservedCachePathError(value));
+      }
     }
 
     // DuckDB/Parquet-first interception for sqlp queries

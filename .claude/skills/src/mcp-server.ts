@@ -43,6 +43,7 @@ import {
   initiateShutdown,
   killAllProcesses,
   getActiveProcessCount,
+  setToolsWorkingDir,
 } from "./mcp-tools.js";
 import { VERSION } from "./version.js";
 import { getErrorMessage, errorResult, successResult } from "./utils.js";
@@ -786,6 +787,7 @@ class QsvMcpServer {
     this.filesystemProvider.setWorkingDirectory(directory);
     const resolved = this.filesystemProvider.getWorkingDirectory();
     this.executor.setWorkingDirectory(resolved);
+    setToolsWorkingDir(resolved);
     return resolved;
   }
 

@@ -164,7 +164,7 @@ The extension provides direct access to your local CSV, Excel, and JSONL files:
 Show me the first few rows of ~/Downloads/data.csv
 ```
 
-Claude will use `qsv_get_file_preview` to display the file contents.
+Claude will use `qsv_slice` or `qsv_command` to display the file contents.
 
 ### Running qsv Commands
 
@@ -194,14 +194,14 @@ The extension provides MCP tools covering:
 - **Statistics**: stats, moarstats, frequency
 - **Filtering**: search, searchset, dedup
 - **Transformation**: apply, rename, replace
-- **Aggregation**: groupby, pivot
+- **Aggregation**: pivotp, pragmastat
 - **Joining**: join, joinp
 - **Validation**: validate, schema, safenames
 - **Conversion**: excel, json, jsonl, to
 - **Formatting**: fmt, table, fixlengths
-- **Filesystem**: list_files, get_file_preview, set_working_dir
+- **Filesystem**: list_files, set_working_dir, get_working_dir
 
-For complete documentation, see [README.md](./README.md).
+For complete documentation, see [README.md](../../README-MCP.md).
 
 ---
 
@@ -463,7 +463,7 @@ All three installation methods provide **identical qsv functionality** but diffe
 
 **From Desktop Extension to Legacy MCP Server**:
 1. Remove extension: Settings → Extensions → qsv → Remove
-2. Follow instructions in [README.md](./README.md#installation)
+2. Follow instructions in [README.md](../../README-MCP.md#installation)
 
 **Using Multiple Methods Simultaneously**:
 You can use Desktop Extension and Claude Code at the same time - they use separate config files and don't conflict.

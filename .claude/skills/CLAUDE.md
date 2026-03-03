@@ -155,9 +155,9 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 
 **Key Constants**:
 - `COMMON_COMMANDS`: 11 frequently-used commands (select, moarstats, search, frequency, headers, count, slice, sqlp, joinp, cat, geocode)
-- `ALWAYS_FILE_COMMANDS`: 34 commands that always output to files
+- `ALWAYS_FILE_COMMANDS`: 32 commands that always output to files
 - `METADATA_COMMANDS`: 4 commands returning metadata (count, headers, index, sniff)
-- `NON_TABULAR_COMMANDS`: 9 commands whose output is not tabular (skips TSV formatting)
+- `NON_TABULAR_COMMANDS`: 8 commands whose output is not tabular (skips TSV formatting)
 - `BINARY_OUTPUT_FORMATS`: Set of binary formats (parquet, arrow, avro)
 - `COMMAND_GUIDANCE`: `Record<string, CommandGuidance>` — Unified per-command guidance map consolidating when-to-use, common patterns, error prevention, complementary servers, and memory/index/mistake warnings into a single structure
 - `LARGE_FILE_THRESHOLD_BYTES`: 10MB — files larger than this are auto-indexed (replaces `AUTO_INDEX_SIZE_MB`)
@@ -223,7 +223,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - File locking to prevent race conditions
 - Change detection via mtime, size, inode, and optional hash
 - Cache corruption recovery with validation
-- UUID-derived temp file names (16-char random hex) for security
+- UUID-derived temp file names (full `randomUUID()`) for security
 - Secure permissions (0o600)
 - **Windows EPERM retry logic**: Exponential backoff for file locking errors
 
@@ -340,42 +340,47 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 
 When qsv adds a new command or you need to expose an existing one:
 
-1. **Update `mcp-tools.ts`**:
+1. **Add the command to `COMMON_COMMANDS`** in `mcp-tools.ts` (for common commands) or create a dedicated tool definition function (for specialized tools):
    ```typescript
-   // Add to TOOL_DEFINITIONS array
-   {
-     name: "qsv_yourcommand",
-     description: `Brief description from qsv usage text
+   // For common commands, add to COMMON_COMMANDS array:
+   export const COMMON_COMMANDS = [
+     "select",
+     // ... existing commands
+     "yourcommand",  // Add here
+   ];
+
+   // For specialized tools, create a definition function:
+   export function createYourCommandTool(): ToolDefinition {
+     return {
+       name: "qsv_yourcommand",
+       description: `Brief description from qsv usage text
 
 💡 USE WHEN: Specific use case guidance.
 
 📋 COMMON PATTERN: How this fits into workflows.
 
 ⚠️ CAUTION: Any warnings about memory, performance, etc.`,
-     inputSchema: {
-       type: "object",
-       properties: {
-         input_file: {
-           type: "string",
-           description: "Input CSV file path"
-         },
-         your_parameter: {
-           type: "string",
-           description: "Parameter description"
-         }
-       },
-       required: ["input_file"]
-     }
+       inputSchema: { ... }
+     };
    }
    ```
 
-2. **Add handler in `handleToolCall()`**:
+2. **Add guidance** in `COMMAND_GUIDANCE` map:
+   ```typescript
+   yourcommand: {
+     useWhen: "When you need to ...",
+     commonPattern: "Typical workflow description",
+     caution: "Any warnings about memory, performance, etc."
+   }
+   ```
+
+3. **For specialized tools, add handler in `handleToolCall()`**:
    ```typescript
    case "qsv_yourcommand":
      return await handleYourCommand(args);
    ```
 
-3. **Implement handler function**:
+4. **Implement handler function** (specialized tools only — common commands use `handleGenericCommand` automatically):
    ```typescript
    async function handleYourCommand(args: Record<string, unknown>): Promise<ToolResult> {
      validateFileExists(args.input_file);
@@ -605,7 +610,7 @@ This project depends on:
 ### Version Synchronization
 
 - `package.json` version tracks qsv version
-- `version.ts` reads qsv binary version at runtime
+- `version.ts` reads the MCP server version from `package.json` at runtime
 - `update-checker.ts` compares versions and suggests updates
 - CI checks ensure compatibility
 

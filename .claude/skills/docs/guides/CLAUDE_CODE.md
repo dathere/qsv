@@ -86,14 +86,14 @@ npm run mcp:install
 This will:
 1. Detect Claude Code installation
 2. Prompt for configuration (qsv path, allowed directories, etc.)
-3. Create or update `~/.config/claude-code/mcp_settings.json`
+3. Create or update `~/.claude/.mcp.json`
 4. Verify the configuration
 
 **Option B: Manual Configuration**
 
 1. **Find your Claude Code config location**:
-   - macOS/Linux: `~/.config/claude-code/mcp_settings.json`
-   - Windows: `%APPDATA%\Claude Code\mcp_settings.json`
+   - macOS/Linux: `~/.claude/.mcp.json`
+   - Windows: `%USERPROFILE%\.claude\.mcp.json`
 
 2. **Create or edit the file**:
 
@@ -338,7 +338,7 @@ All environment variables from the legacy MCP server are supported:
 | **Installation** | Edit JSON config file | Install `.mcpb` bundle or JSON config |
 | **Interface** | Terminal-based | GUI application |
 | **File access** | Current directory + allowed dirs | Configured directories only |
-| **Configuration** | `mcp_settings.json` | GUI settings or JSON config |
+| **Configuration** | `.mcp.json` | GUI settings or JSON config |
 | **Updates** | Manual (git pull + rebuild) | Automatic via marketplace |
 | **Best for** | Developers, automation, remote work | General users, visual workflows |
 | **Scriptability** | Highly scriptable | Limited to GUI |
@@ -377,13 +377,13 @@ All environment variables from the legacy MCP server are supported:
 **Solutions**:
 1. **Check config file exists**:
    ```bash
-   ls -la ~/.config/claude-code/mcp_settings.json
-   # or on Windows: dir "%APPDATA%\Claude Code\mcp_settings.json"
+   ls -la ~/.claude/.mcp.json
+   # or on Windows: dir "%USERPROFILE%\.claude\.mcp.json"
    ```
 
 2. **Validate JSON syntax**:
    ```bash
-   cat ~/.config/claude-code/mcp_settings.json | jq .
+   cat ~/.claude/.mcp.json | jq .
    # Should pretty-print without errors
    ```
 
@@ -396,10 +396,10 @@ All environment variables from the legacy MCP server are supported:
 4. **Check Claude Code logs**:
    ```bash
    # macOS/Linux
-   tail -f ~/.config/claude-code/logs/*.log
+   tail -f ~/.claude/logs/*.log
 
    # Windows
-   type "%APPDATA%\Claude Code\logs\*.log"
+   type "%USERPROFILE%\.claude\logs\*.log"
    ```
 
 ### "qsv binary not found"
@@ -732,8 +732,7 @@ Use different configs per project:
 
 ```bash
 # In project root
-echo '{"mcpServers": {"qsv": {...}}}' > .claude/mcp_settings.json
-export CLAUDE_MCP_CONFIG=.claude/mcp_settings.json
+echo '{"mcpServers": {"qsv": {...}}}' > .mcp.json
 claude
 ```
 
@@ -744,7 +743,7 @@ claude
 ### Can I use Claude Code and Claude Desktop simultaneously?
 
 Yes! They use separate configuration files:
-- Claude Code: `~/.config/claude-code/mcp_settings.json`
+- Claude Code: `~/.claude/.mcp.json`
 - Claude Desktop: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 You can even point them to the same MCP server instance.
@@ -802,8 +801,8 @@ The MCP server will fail validation and show an error. Use `qsv_config` to see d
 ### Logs
 
 **Claude Code logs**:
-- macOS/Linux: `~/.config/claude-code/logs/`
-- Windows: `%APPDATA%\Claude Code\logs\`
+- macOS/Linux: `~/.claude/logs/`
+- Windows: `%USERPROFILE%\.claude\logs\`
 
 **MCP Server logs**:
 - Look for `[qsv]` prefixed messages in Claude Code logs
@@ -820,7 +819,7 @@ Once you're comfortable with basic usage, explore:
 4. **Integration Scripts** - Build data processing automation
 5. **Remote Workflows** - Process data on remote servers
 
-Check out the [examples directory](./examples/) for inspiration!
+Check out the [examples directory](../../examples/) for inspiration!
 
 ---
 

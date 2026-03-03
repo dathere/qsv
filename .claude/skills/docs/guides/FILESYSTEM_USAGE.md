@@ -130,9 +130,9 @@ For legacy MCP server installations, add the QSV MCP server to your Claude Deskt
 #### `QSV_MCP_EXPOSE_ALL_TOOLS`
 - **Description**: Controls how tools are exposed to the agent
 - **Options**:
-  - `true`: Expose all 56+ tools immediately (no deferred loading)
-  - `false`: Expose only 7 core tools (disables search-additions)
-  - `unset` (Default): **Deferred Loading** - 7 core tools initially, others added as they are found via `qsv_search_tools`
+  - `true`: Expose all 51+ tools immediately (no deferred loading)
+  - `false`: Expose only 10 core tools (disables search-additions)
+  - `unset` (Default): **Deferred Loading** - 10 core tools initially, others added as they are found via `qsv_search_tools`
 - **Example**: `"true"`
 
 ## Usage Examples
@@ -340,11 +340,7 @@ Configure `QSV_MCP_ALLOWED_DIRS` to explicitly whitelist directories:
 
 ## Resources Browser
 
-The MCP server also exposes local CSV files as browsable resources in Claude Desktop's resource panel:
-
-1. CSV files in your working directory appear as resources
-2. Click on a resource to see file info and preview
-3. Use the file path shown in the resource to reference it in commands
+> **Note**: Resource browsing is not currently implemented. The MCP server registers an empty resource list. Use `qsv_list_files` to discover tabular data files in your working directory instead.
 
 ## Troubleshooting
 

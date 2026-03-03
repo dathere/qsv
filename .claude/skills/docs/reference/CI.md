@@ -16,13 +16,14 @@ Tests run across multiple environments to ensure broad compatibility:
 - ✅ Windows (x86_64)
 
 ### Node.js Versions
+- ✅ Node.js 20
 - ✅ Node.js 22 (current)
+- ✅ Node.js 24
 
-**Total**: 3 test combinations (3 OS × 1 Node version)
+**Total**: 9 test combinations (3 OS × 3 Node versions)
 
 **Note**:
 - macOS tests run on ARM64 (Apple Silicon) runners to match available qsv builds
-- Testing on Node.js 22 only for faster CI runs; package.json still specifies `"engines": {"node": ">=18.0.0"}`
 
 ## What Gets Tested
 
@@ -31,7 +32,7 @@ Each combination runs:
 1. **qsv Installation**: Downloads and installs latest qsv binary for the platform
 2. **Dependency Installation**: `npm ci` for clean install
 3. **TypeScript Compilation**: `npm run build` to verify code compiles
-4. **Integration Tests**: `npm test` runs all 28 tests including:
+4. **Integration Tests**: `npm test` runs all tests including:
    - Unit tests for config, filesystem, tools
    - Integration tests for qsv commands (count, headers, select, search, etc.)
    - Metadata caching and deduplication tests

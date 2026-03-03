@@ -202,10 +202,10 @@ The update checker stores version information in `.qsv-mcp-versions.json`:
 
 ```json
 {
-  "qsvBinaryVersion": "0.133.0",
-  "skillsGeneratedWithVersion": "0.133.0",
-  "mcpServerVersion": "13.0.0",
-  "lastChecked": "2026-01-07T14:30:00.000Z"
+  "qsvBinaryVersion": "16.1.0",
+  "skillsGeneratedWithVersion": "16.1.0",
+  "mcpServerVersion": "16.1.2",
+  "lastChecked": "2026-03-02T14:30:00.000Z"
 }
 ```
 

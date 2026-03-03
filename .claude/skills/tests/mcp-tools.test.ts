@@ -22,6 +22,10 @@ import {
   createLogTool,
   handleLogCall,
   MAX_LOG_MESSAGE_LEN,
+  getToolsWorkingDir,
+  setToolsWorkingDir,
+  paramKeyToFlag,
+  looksLikeFilePath,
 } from '../src/mcp-tools.js';
 import { SkillLoader } from '../src/loader.js';
 import { SkillExecutor } from '../src/executor.js';
@@ -923,4 +927,147 @@ test('handleLogCall returns success with warning when qsv write fails', async (t
   assert.ok(result.content[0].text?.includes('Log write failed'), 'Should indicate write failed');
   assert.ok(result.content[0].text?.includes('non-fatal'), 'Should indicate non-fatal');
   assert.ok(result.content[0].text?.includes('Workflow continues'), 'Should indicate workflow continues');
+});
+
+// ============================================================================
+// getToolsWorkingDir / setToolsWorkingDir Tests
+// ============================================================================
+
+test('getToolsWorkingDir returns the value set by setToolsWorkingDir', () => {
+  const original = getToolsWorkingDir();
+  try {
+    setToolsWorkingDir('/tmp/test-dir');
+    assert.strictEqual(getToolsWorkingDir(), '/tmp/test-dir');
+  } finally {
+    // Restore original to avoid side effects on other tests
+    setToolsWorkingDir(original);
+  }
+});
+
+test('setToolsWorkingDir throws on relative path', () => {
+  assert.throws(
+    () => setToolsWorkingDir('relative/path'),
+    /expected an absolute path/,
+  );
+});
+
+test('setToolsWorkingDir throws on empty string', () => {
+  assert.throws(
+    () => setToolsWorkingDir(''),
+    /expected an absolute path/,
+  );
+});
+
+test('setToolsWorkingDir throws on whitespace-only string', () => {
+  assert.throws(
+    () => setToolsWorkingDir('   '),
+    /expected an absolute path/,
+  );
+});
+
+test('setToolsWorkingDir trims leading/trailing whitespace from valid path', () => {
+  const original = getToolsWorkingDir();
+  try {
+    setToolsWorkingDir('  /tmp/trimmed  ');
+    assert.strictEqual(getToolsWorkingDir(), '/tmp/trimmed');
+  } finally {
+    setToolsWorkingDir(original);
+  }
+});
+
+// ============================================================================
+// paramKeyToFlag Tests
+// ============================================================================
+
+test('paramKeyToFlag converts underscore param keys to flag format', () => {
+  assert.strictEqual(paramKeyToFlag('dupes_output'), '--dupes-output');
+  assert.strictEqual(paramKeyToFlag('keys_output'), '--keys-output');
+  assert.strictEqual(paramKeyToFlag('unmatched_output'), '--unmatched-output');
+});
+
+test('paramKeyToFlag passes through already-flagged keys', () => {
+  assert.strictEqual(paramKeyToFlag('--dupes-output'), '--dupes-output');
+  assert.strictEqual(paramKeyToFlag('-o'), '-o');
+});
+
+test('paramKeyToFlag handles simple keys without underscores', () => {
+  assert.strictEqual(paramKeyToFlag('output'), '--output');
+  assert.strictEqual(paramKeyToFlag('format'), '--format');
+});
+
+// ============================================================================
+// looksLikeFilePath Tests
+// ============================================================================
+
+test('looksLikeFilePath detects file: prefix', () => {
+  assert.strictEqual(looksLikeFilePath('file:script.luau'), true);
+  assert.strictEqual(looksLikeFilePath('file:/path/to/script.lua'), true);
+});
+
+test('looksLikeFilePath detects .lua and .luau extensions', () => {
+  assert.strictEqual(looksLikeFilePath('script.lua'), true);
+  assert.strictEqual(looksLikeFilePath('myscript.luau'), true);
+});
+
+test('looksLikeFilePath detects path separators in file paths', () => {
+  assert.strictEqual(looksLikeFilePath('./script.lua'), true);
+  assert.strictEqual(looksLikeFilePath('../scripts/init.lua'), true);
+  assert.strictEqual(looksLikeFilePath('/absolute/path/to/file'), true);
+  // Windows-style paths require drive letter, .\ or ..\ prefix
+  assert.strictEqual(looksLikeFilePath('.\\dir\\file.lua'), true);
+  assert.strictEqual(looksLikeFilePath('..\\dir\\file.lua'), true);
+  assert.strictEqual(looksLikeFilePath('C:\\Users\\file.lua'), true);
+});
+
+test('looksLikeFilePath detects tilde home directory', () => {
+  assert.strictEqual(looksLikeFilePath('~/scripts/init.lua'), true);
+  assert.strictEqual(looksLikeFilePath('~'), true);
+});
+
+test('looksLikeFilePath rejects inline Luau scripts with division', () => {
+  assert.strictEqual(looksLikeFilePath('col1 / col2'), false);
+  assert.strictEqual(looksLikeFilePath('a / b + c'), false);
+  assert.strictEqual(looksLikeFilePath('total / count'), false);
+  // Division without spaces — bare `a/b` is NOT treated as a path
+  assert.strictEqual(looksLikeFilePath('a/b'), false);
+  assert.strictEqual(looksLikeFilePath('a/b + c'), false);
+});
+
+test('looksLikeFilePath accepts paths starting with /, ./, or ../', () => {
+  assert.strictEqual(looksLikeFilePath('/absolute/path'), true);
+  assert.strictEqual(looksLikeFilePath('./relative/path'), true);
+  assert.strictEqual(looksLikeFilePath('../parent/path'), true);
+  assert.strictEqual(looksLikeFilePath('/usr/local/bin/script'), true);
+});
+
+test('looksLikeFilePath detects multi-segment relative paths (2+ slashes)', () => {
+  // Multi-segment paths like `path/to/file` (2+ slashes) are detected —
+  // very unlikely to be Luau division expressions
+  assert.strictEqual(looksLikeFilePath('path/to/file'), true);
+  assert.strictEqual(looksLikeFilePath('a/b/c/d'), true);
+  assert.strictEqual(looksLikeFilePath('scripts/init/setup.luau'), true);
+  // But single-slash bare paths are still rejected (could be division)
+  assert.strictEqual(looksLikeFilePath('dir/file.txt'), false);
+});
+
+test('looksLikeFilePath rejects bare backslash without Windows path signals', () => {
+  // Bare backslash without drive letter or .\ prefix is not treated as a path
+  assert.strictEqual(looksLikeFilePath('dir\\file'), false);
+  assert.strictEqual(looksLikeFilePath('a\\b'), false);
+  // But dir\\file.lua still matches via .lua extension (not backslash)
+  assert.strictEqual(looksLikeFilePath('dir\\file.lua'), true);
+  // Windows multi-segment path with drive letter (no recognized extension)
+  assert.strictEqual(looksLikeFilePath('C:\\Users\\scripts\\init'), true);
+});
+
+test('looksLikeFilePath rejects plain identifiers and inline scripts', () => {
+  assert.strictEqual(looksLikeFilePath('myscript'), false);
+  assert.strictEqual(looksLikeFilePath('some_identifier'), false);
+  assert.strictEqual(looksLikeFilePath('col1 + col2'), false);
+  assert.strictEqual(looksLikeFilePath('return x * 2'), false);
+});
+
+test('looksLikeFilePath handles whitespace-padded values', () => {
+  assert.strictEqual(looksLikeFilePath('  script.lua  '), true);
+  assert.strictEqual(looksLikeFilePath('  myscript  '), false);
 });

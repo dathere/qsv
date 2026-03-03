@@ -6,11 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [17.0.0]
-
 ## What's Changed
-* perf: `frequency` — eliminate per-field `Vec<u8>` allocations in hot path using borrowed-key lookups; use `partition_point` (binary search) instead of linear search for null insertion
-* **BREAKING**: `frequency --null-sorted` — in ascending order, null entries with tied counts/weights are now placed *before* equal non-null entries (previously *after*); descending behavior is unchanged
 * build(deps): bump pragmastat from 8.0.0 to 9.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3479
 * feat(help): emoji legend tooltips by @jqnatividad in https://github.com/dathere/qsv/pull/3481
 * build(deps): bump toon-format from 0.4.1 to 0.4.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3480
@@ -57,9 +53,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * build(deps): bump chrono from 0.4.43 to 0.4.44 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3527
 * refactor(mcp): MCP server requires polars feature to be enabled by @jqnatividad in https://github.com/dathere/qsv/pull/3525
 * feat(mcp): init CLAUDE.md in Claude cowork working folder; Windows support by @jqnatividad in https://github.com/dathere/qsv/pull/3528
+* fix(sniff): sniff symlinks properly by @jqnatividad in https://github.com/dathere/qsv/pull/3530
+* feat(mcp): ensure SQL queries take stats and frequency tables into account by @jqnatividad in https://github.com/dathere/qsv/pull/3531
+* refactor(mcp): use TSV format as a default (configurable) for token efficiency and increased reliability by @jqnatividad in https://github.com/dathere/qsv/pull/3532
+* build(deps): bump hono from 4.12.0 to 4.12.2 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3533
+* fix(deps): update ort dependency to include tls-rustls feature and add new dependencies by @kulnor in https://github.com/dathere/qsv/pull/3534
+* feat: qsvmcp binary variant by @jqnatividad in https://github.com/dathere/qsv/pull/3535
+* build(deps): bump jsonschema from 0.42.1 to 0.42.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3536
+* feat(mcp): prefer qsvmcp binary with qsv fallback by @jqnatividad in https://github.com/dathere/qsv/pull/3537
+* feat(mcp): streamline skills to qsvmcp by @jqnatividad in https://github.com/dathere/qsv/pull/3538
+* refactor(mcp): cowork optimization by @jqnatividad in https://github.com/dathere/qsv/pull/3539
+* build(deps): bump actions/upload-artifact from 6 to 7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3540
+* build(deps): bump minimatch in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3541
+* fix(stats): stats cache handle non comma delimiter by @jqnatividad in https://github.com/dathere/qsv/pull/3542
+* feat(mcp): show complete cmdline in error messages to help agent diagnose error by @jqnatividad in https://github.com/dathere/qsv/pull/3543
+* refactor(mcp): moarstats guidance; reconcile CLAUDE.md references to stats and frequency caches by @jqnatividad in https://github.com/dathere/qsv/pull/3544
+* feat(mcp): reserved filenames guard by @jqnatividad in https://github.com/dathere/qsv/pull/3545
+* feat(mcp): auto-run cheap moarstats after stats by @jqnatividad in https://github.com/dathere/qsv/pull/3546
+* refactor(mcp): deduplicate utilities, extract shared pipeline, remove dead code by @jqnatividad in https://github.com/dathere/qsv/pull/3547
+* fix(stats): always write stats cache as CSV regardless of output format by @jqnatividad in https://github.com/dathere/qsv/pull/3548
+* fix(mcp): sqlp and DuckDB table aliasing with parquet input by @jqnatividad in https://github.com/dathere/qsv/pull/3549
+* feat(mcp): allow easy differentiation between polars and DuckDB SQL engine usage by @jqnatividad in https://github.com/dathere/qsv/pull/3550
+* build(deps): bump jsonschema from 0.42.2 to 0.43.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3551
+* feat(mcp): qsv MCP Server has its own dedicated logging to help with reproducibility by @jqnatividad in https://github.com/dathere/qsv/pull/3552
+* feat(mcp): When DuckDB is available, use it to convert CSV to parquet instead of sqlp by @jqnatividad in https://github.com/dathere/qsv/pull/3553
+* refactor(mcp): fine-tune parquet conversion by @jqnatividad in https://github.com/dathere/qsv/pull/3554
+* build(deps): bump jsonschema from 0.43.0 to 0.44.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3556
+* feat(mcp): comprehensive logging by @jqnatividad in https://github.com/dathere/qsv/pull/3555
+* build(deps): bump pragmastat from 10.0 to 11.0 by @jqnatividad in https://github.com/dathere/qsv/pull/3558
+* refactor(mcp): always use fully qualified filename for all file parameters for increased robustness by @jqnatividad in https://github.com/dathere/qsv/pull/3559
+* docs(mcp): audit by @jqnatividad in https://github.com/dathere/qsv/pull/3560
+* docs: audit by @jqnatividad in https://github.com/dathere/qsv/pull/3561
+* build(deps): bump sysinfo from 0.38.2 to 0.38.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3562
+* build(deps): bump pragmastat from 11.0.0 to 11.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3563
+* feat(mcp): add working dir elicitation by @jqnatividad in https://github.com/dathere/qsv/pull/3565
+* publish: add qsvmcp to distribution by @jqnatividad in https://github.com/dathere/qsv/pull/3566
 
 
-**Full Changelog**: https://github.com/dathere/qsv/compare/16.1.0...16.2.0
+**Full Changelog**: https://github.com/dathere/qsv/compare/16.1.0...17.0.0
 
 ---
 

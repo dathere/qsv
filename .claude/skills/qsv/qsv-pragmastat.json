@@ -1,6 +1,6 @@
 {
   "name": "qsv-pragmastat",
-  "version": "16.1.0",
+  "version": "17.0.0",
   "description": "Compute pragmatic statistics using the Pragmastat library.",
   "category": "aggregation",
   "command": {

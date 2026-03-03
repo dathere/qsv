@@ -6,18 +6,23 @@
  * tool handler logic. Since elicitation depends on the Server instance
  * and client capabilities, we test the logic in isolation by extracting
  * the relevant patterns.
+ *
+ * NOTE: The helper functions below mirror the production code in mcp-server.ts.
+ * They must be kept in sync with the server implementation. If these tests
+ * diverge from production, bugs may go undetected.
  */
 
 import { describe, test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { existsSync } from "node:fs";
+import { statSync, writeFileSync } from "node:fs";
 import { createTestDir, cleanupTestDir } from "./test-helpers.js";
 
 /**
  * Discover well-known directories that exist on the user's system.
- * Mirrors discoverDirectories() from mcp-server.ts.
+ * Mirrors discoverDirectories() from mcp-server.ts — uses statSync
+ * to verify candidates are actual directories (not files).
  */
 function discoverDirectories(currentWorkingDir: string): Array<{ path: string; label: string }> {
   const home = homedir();
@@ -33,17 +38,29 @@ function discoverDirectories(currentWorkingDir: string): Array<{ path: string; l
   const cwd = process.cwd();
 
   for (const candidate of wellKnown) {
-    if (existsSync(candidate.path)) {
-      candidates.push(candidate);
+    try {
+      if (statSync(candidate.path).isDirectory()) {
+        candidates.push(candidate);
+      }
+    } catch {
+      // skip
     }
   }
 
-  if (existsSync(cwd) && !candidates.some((c) => c.path === cwd)) {
-    candidates.push({ path: cwd, label: "Current Directory" });
+  try {
+    if (statSync(cwd).isDirectory() && !candidates.some((c) => c.path === cwd)) {
+      candidates.push({ path: cwd, label: "Current Directory" });
+    }
+  } catch {
+    // skip
   }
 
-  if (existsSync(currentWorkingDir) && !candidates.some((c) => c.path === currentWorkingDir)) {
-    candidates.push({ path: currentWorkingDir, label: "qsv Working Dir" });
+  try {
+    if (statSync(currentWorkingDir).isDirectory() && !candidates.some((c) => c.path === currentWorkingDir)) {
+      candidates.push({ path: currentWorkingDir, label: "qsv Working Dir" });
+    }
+  } catch {
+    // skip
   }
 
   return candidates;
@@ -131,6 +148,19 @@ async function elicitWorkingDirectory(options: {
       const chosenDir = customPath || selectedDir;
 
       if (chosenDir) {
+        // Validate the chosen directory exists and is actually a directory
+        try {
+          const stat = statSync(chosenDir);
+          if (!stat.isDirectory()) {
+            return {
+              fallback: `"${chosenDir}" is not a directory. Please call qsv_set_working_dir with a valid directory path.`,
+            };
+          }
+        } catch {
+          return {
+            fallback: `Directory "${chosenDir}" does not exist or is not accessible. Please call qsv_set_working_dir with a valid directory path.`,
+          };
+        }
         return { directory: chosenDir };
       }
 
@@ -328,6 +358,39 @@ describe("elicitWorkingDirectory", () => {
     assert.ok(props.custom_path);
     assert.ok(Array.isArray(props.selected_directory.enum));
     assert.ok((props.selected_directory.enum as string[]).length > 0);
+  });
+
+  test("returns fallback when custom_path points to a non-existent directory", async () => {
+    const result = await elicitWorkingDirectory({
+      getClientCapabilities: () => ({ elicitation: { form: true } }),
+      elicitInput: async () => ({
+        action: "accept",
+        content: { custom_path: "/nonexistent/path/that/does/not/exist" },
+      }),
+      currentWorkingDir: testDir,
+    });
+
+    assert.strictEqual(result.directory, undefined);
+    assert.ok(result.fallback);
+    assert.ok(result.fallback!.includes("does not exist"));
+  });
+
+  test("returns fallback when custom_path points to a file instead of a directory", async () => {
+    const filePath = join(testDir, "not-a-directory.txt");
+    writeFileSync(filePath, "test content");
+
+    const result = await elicitWorkingDirectory({
+      getClientCapabilities: () => ({ elicitation: { form: true } }),
+      elicitInput: async () => ({
+        action: "accept",
+        content: { custom_path: filePath },
+      }),
+      currentWorkingDir: testDir,
+    });
+
+    assert.strictEqual(result.directory, undefined);
+    assert.ok(result.fallback);
+    assert.ok(result.fallback!.includes("is not a directory"));
   });
 });
 

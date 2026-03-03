@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { access, stat as fsStat } from "node:fs/promises";
 
 import { SkillLoader } from "./loader.js";
@@ -121,6 +121,7 @@ class QsvMcpServer {
   private toolsListedOnce: boolean = false;
   private manuallySetWorkingDir = false;
   private workingDirConfirmed = false;
+  private elicitingWorkingDir = false;
   private syncingRoots = false;
   private pendingRootsSync = false;
   private rootsSyncRetries = 0;
@@ -592,18 +593,24 @@ class QsvMcpServer {
       // First-tool-use working directory prompt: if the working directory has not
       // been confirmed (via roots sync, manual set, or elicitation), prompt the
       // user to select one before the first data-processing tool call.
-      if (!this.workingDirConfirmed && !QsvMcpServer.ELICITATION_EXEMPT_TOOLS.has(name)) {
-        const elicitResult = await this.elicitWorkingDirectory();
-        if (elicitResult.directory) {
-          this.updateWorkingDirectory(elicitResult.directory);
-          this.manuallySetWorkingDir = true;
-          this.workingDirConfirmed = true;
-          console.error(`[Elicitation] Working directory set to: ${elicitResult.directory}`);
-        } else {
-          // User declined/cancelled or client doesn't support elicitation —
-          // mark as confirmed to avoid repeated prompts
-          this.workingDirConfirmed = true;
-          console.error("[Elicitation] Working directory not selected; using default");
+      if (!this.workingDirConfirmed && !this.elicitingWorkingDir && !QsvMcpServer.ELICITATION_EXEMPT_TOOLS.has(name)) {
+        // Set guard before awaiting to prevent concurrent elicitation attempts
+        this.elicitingWorkingDir = true;
+        try {
+          const elicitResult = await this.elicitWorkingDirectory();
+          if (elicitResult.directory) {
+            this.updateWorkingDirectory(elicitResult.directory);
+            this.manuallySetWorkingDir = true;
+            this.workingDirConfirmed = true;
+            console.error(`[Elicitation] Working directory set to: ${elicitResult.directory}`);
+          } else {
+            // User declined/cancelled or client doesn't support elicitation —
+            // mark as confirmed to avoid repeated prompts
+            this.workingDirConfirmed = true;
+            console.error("[Elicitation] Working directory not selected; using default");
+          }
+        } finally {
+          this.elicitingWorkingDir = false;
         }
       }
 
@@ -856,19 +863,31 @@ class QsvMcpServer {
     const cwd = process.cwd();
 
     for (const candidate of wellKnown) {
-      if (existsSync(candidate.path)) {
-        candidates.push(candidate);
+      try {
+        if (statSync(candidate.path).isDirectory()) {
+          candidates.push(candidate);
+        }
+      } catch {
+        // Path doesn't exist or isn't accessible — skip
       }
     }
 
     // Add process cwd if not already covered
-    if (existsSync(cwd) && !candidates.some((c) => c.path === cwd)) {
-      candidates.push({ path: cwd, label: "Current Directory" });
+    try {
+      if (statSync(cwd).isDirectory() && !candidates.some((c) => c.path === cwd)) {
+        candidates.push({ path: cwd, label: "Current Directory" });
+      }
+    } catch {
+      // skip
     }
 
     // Add current working dir if not already covered
-    if (existsSync(currentDir) && !candidates.some((c) => c.path === currentDir)) {
-      candidates.push({ path: currentDir, label: "qsv Working Dir" });
+    try {
+      if (statSync(currentDir).isDirectory() && !candidates.some((c) => c.path === currentDir)) {
+        candidates.push({ path: currentDir, label: "qsv Working Dir" });
+      }
+    } catch {
+      // skip
     }
 
     return candidates;
@@ -956,6 +975,19 @@ class QsvMcpServer {
         const chosenDir = customPath || selectedDir;
 
         if (chosenDir) {
+          // Validate the chosen directory exists and is actually a directory
+          try {
+            const stat = statSync(chosenDir);
+            if (!stat.isDirectory()) {
+              return {
+                fallback: `"${chosenDir}" is not a directory. Please call qsv_set_working_dir with a valid directory path.`,
+              };
+            }
+          } catch {
+            return {
+              fallback: `Directory "${chosenDir}" does not exist or is not accessible. Please call qsv_set_working_dir with a valid directory path.`,
+            };
+          }
           return { directory: chosenDir };
         }
 

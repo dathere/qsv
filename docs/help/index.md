@@ -1,6 +1,6 @@
 # index
 
-> Create an index for a CSV. This is very quick (even the 15gb, 28m row NYC 311 dataset takes all of 14 seconds to index) & provides constant time indexing/random access into the CSV. With an index, `count`, `sample` & `slice` work instantaneously; random access mode is enabled in `luau`; and multithreading is enabled for the `frequency`, `split`, `stats`, `schema` & `tojsonl` commands.
+> Create an index for a CSV. This is very quick (even the 15gb, 28m row NYC 311 dataset takes all of 14 seconds to index) & provides constant time indexing/random access into the CSV. With an index, `count`, `sample` & `slice` work instantaneously; random access mode is enabled in `luau`; and multithreading is enabled for the `frequency`, `split`, `stats` & `schema` commands.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/index.rs](https://github.com/dathere/qsv/blob/master/src/cmd/index.rs)**
 

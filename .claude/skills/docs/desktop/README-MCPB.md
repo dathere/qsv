@@ -1,20 +1,24 @@
 # QSV MCP Desktop Extension
 
-The easiest way to add tabular data-wrangling capabilities to Claude Desktop.
+The easiest way to give Claude Desktop/Cowork, blazing-fast, powerful tabular data-wrangling capabilities.
 
 ## What Is This?
 
-The QSV MCP Desktop Extension is a plugin that teaches Claude Desktop how to work with tabular data files (spreadsheets, CSV, TSV, Excel, and more). Once installed, you can ask Claude to analyze, clean, transform, and summarize your data using natural language - no technical knowledge required.
+The QSV MCP Desktop Extension teaches Claude Desktop to work with tabular data — CSV, TSV, Excel, Parquet, JSONL, and more. Once installed, just ask Claude to analyze, clean, transform, or summarize your data in plain English. No code. No technical knowledge required.
 
-**What you can do:**
-- "Show me statistics for the revenue column in sales.csv"
-- "Remove duplicate rows from contacts.xlsx"
-- "Sort products.tsv by price, highest to lowest"
-- "Find all rows in data.jsonl where status is 'pending'"
-- "Create a report summarizing this spreadsheet"
-- "Find the top 10 complaints, grouped by borough, for each month in the past two years"
+Under the hood, it's powered by **qsv**: a purpose-built CLI tool written in highly-optimized Rust for wrangling real-world, messy data. It's exponentially faster than Python-based tools like Pandas — processing millions of rows in seconds through multi-threading, streaming algorithms, vectorized query engines (Polars and DuckDB) and automatic metadata compilation that continuously optimizes every operation.
 
-Claude will understand your request and perform the operations automatically using qsvmcp (or qsv). The **qsvmcp** binary is the preferred variant — it's optimized for MCP server use with only the 51 commands needed by the MCP server, with the added ability to log sessions for increased reproducibility.
+**Ask Claude things like:**
+- *"Show me statistics for the revenue column in sales.csv"*
+- *"Remove duplicate rows from contacts.xlsx"*
+- *"Sort products.tsv by price, highest to lowest"*
+- *"Find all rows in data.jsonl where status is 'pending'"*
+- *"Summarize this spreadsheet as a report"*
+- *"Top 10 complaints by borough, grouped by month, for the past two years"*
+
+Claude handles the rest automatically — no commands to remember, no syntax to learn.
+
+The extension uses **qsvmcp**, a streamlined variant of qsv purpose-built for MCP server use. It ships with exactly the 51 commands the MCP server needs, plus built-in session logging for increased reproducibility.
 
 ## Installation (Simple)
 

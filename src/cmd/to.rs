@@ -294,6 +294,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "--table name must contain only alphanumeric characters and underscores."
             );
         }
+        // PostgreSQL limits identifiers to 63 bytes; cap table names accordingly
+        if table_name.len() > 63 {
+            return fail_incorrectusage_clierror!(
+                "--table name must not exceed 63 characters (PostgreSQL identifier limit)."
+            );
+        }
     }
 
     if args.cmd_postgres {
@@ -435,16 +441,27 @@ fn apply_table_rename(
     tmpdir: &tempfile::TempDir,
 ) -> CliResult<()> {
     if let Some(ref table_name) = *flag_table {
-        if arg_input.len() > 1 {
+        if arg_input.len() != 1 {
             return fail_incorrectusage_clierror!(
                 "--table can only be used with a single input file."
             );
         }
-        if let Some(path) = arg_input.first_mut() {
-            let new_path = tmpdir.path().join(format!("{table_name}.csv"));
-            std::fs::copy(&*path, &new_path)?;
-            *path = new_path;
-        }
+        let path = &mut arg_input[0];
+        let extension = path
+            .extension()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let new_path = tmpdir.path().join(format!(
+            "{table_name}.{}",
+            if extension.is_empty() {
+                "csv"
+            } else {
+                &extension
+            }
+        ));
+        std::fs::copy(&*path, &new_path)?;
+        *path = new_path;
     }
     Ok(())
 }

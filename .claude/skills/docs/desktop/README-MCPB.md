@@ -12,8 +12,9 @@ The QSV MCP Desktop Extension is a plugin that teaches Claude Desktop how to wor
 - "Sort products.tsv by price, highest to lowest"
 - "Find all rows in data.jsonl where status is 'pending'"
 - "Create a report summarizing this spreadsheet"
+- "Find the top 10 complaints, grouped by borough, for each month in the past two years"
 
-Claude will understand your request and perform the operations automatically using qsvmcp (or qsv), a professional-grade tabular data-wrangling toolkit. The **qsvmcp** binary is the preferred variant — it's optimized for MCP server use with only the 51 commands needed by the MCP server, while the full **qsv** binary (68 commands) also works.
+Claude will understand your request and perform the operations automatically using qsvmcp (or qsv). The **qsvmcp** binary is the preferred variant — it's optimized for MCP server use with only the 51 commands needed by the MCP server, with the added ability to log sessions for increased reproducibility.
 
 ## Installation (Simple)
 
@@ -25,9 +26,9 @@ Download the extension file:
 
 ### Step 2: Install in Claude Desktop
 
-- Double-click the downloaded `qsv-mcp-server.mcpb` file. This should automatically open Claude Desktop and prompt you to install the extension.
+Double-click the downloaded `qsv-mcp-server-<version>.mcpb` file. This should automatically open Claude Desktop and prompt you to install the extension.
 
-### Step 3: Configure
+### Step 3: Configure (Optional)
 
 After installation, you can optionally configure the extension in Claude Desktop's settings:
 

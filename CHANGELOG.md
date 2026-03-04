@@ -70,6 +70,9 @@ Detailed MCP changes are documented in the [MCP CHANGELOG](https://github.com/da
 
 **Full Changelog**: [16.1.0...17.0.0](https://github.com/dathere/qsv/compare/16.1.0...17.0.0)
 
+> [!NOTE]
+> qsv 17.0.0 is not published to crates.io. qsv depends on an unreleased git revision of Polars (rev = 802550b), and cargo publish strips [patch.crates-io] entries, causing dependency resolution to fail against the published Polars v0.53.0 on crates.io (which caps chrono <=0.4.41, incompatible with chrono 0.4.44). This will be resolved once Polars publishes a new crates.io release with updated chrono support. In the meantime, install qsv via the prebuilt binaries, Homebrew, or by building from source.
+
 ---
 
 ## [16.1.0] - 2026-02-15 📊 **_"The Accelerated Civic Intelligence (ACI) Release"_** 📊

@@ -530,6 +530,266 @@ fn to_ods_dir() {
     wrk.assert_success(&mut cmd);
 }
 
+#[test]
+fn to_table_error_xlsx() {
+    // --table should fail with xlsx subcommand
+    let wrk = Workdir::new("to_table_error_xlsx");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let xlsx_file = wrk.path("test.xlsx").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("xlsx")
+        .arg("--table")
+        .arg("custom_name")
+        .arg(xlsx_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table can only be used with postgres or sqlite"),
+        "Expected unsupported subcommand error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_error_ods() {
+    // --table should fail with ods subcommand
+    let wrk = Workdir::new("to_table_error_ods");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let ods_file = wrk.path("test.ods").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("ods")
+        .arg("--table")
+        .arg("custom_name")
+        .arg(ods_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table can only be used with postgres or sqlite"),
+        "Expected unsupported subcommand error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_error_datapackage() {
+    // --table should fail with datapackage subcommand
+    let wrk = Workdir::new("to_table_error_dp");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let dp_file = wrk.path("dp.json").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("datapackage")
+        .arg("--table")
+        .arg("custom_name")
+        .arg(dp_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table can only be used with postgres or sqlite"),
+        "Expected unsupported subcommand error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_error_empty_name() {
+    // --table with empty name should fail
+    let wrk = Workdir::new("to_table_error_empty");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let sqlite_file = wrk.path("test.db").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("")
+        .arg(sqlite_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table name must not be empty"),
+        "Expected empty name error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_error_invalid_chars() {
+    // --table with special characters should fail
+    let wrk = Workdir::new("to_table_error_chars");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let sqlite_file = wrk.path("test.db").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("my table!@#")
+        .arg(sqlite_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table name must contain only alphanumeric"),
+        "Expected invalid chars error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_error_multiple_inputs() {
+    // --table with multiple input files should fail
+    let wrk = Workdir::new("to_table_error_multi");
+    wrk.create("in1.csv", vec![svec!["col1"], svec!["a"]]);
+    wrk.create("in2.csv", vec![svec!["col1"], svec!["b"]]);
+
+    let sqlite_file = wrk.path("test.db").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("custom_name")
+        .arg(sqlite_file)
+        .arg("in1.csv")
+        .arg("in2.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table can only be used with a single input file"),
+        "Expected multiple inputs error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_sqlite_happy_path() {
+    // --table with sqlite should use the custom table name
+    let wrk = Workdir::new("to_table_sqlite_happy");
+    wrk.create(
+        "in.csv",
+        vec![svec!["city", "state"], svec!["Boston", "MA"]],
+    );
+
+    let dump_file = wrk.path("dump.sql").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("my_custom_table")
+        .arg("--dump")
+        .arg(dump_file.clone())
+        .arg("in.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    // Verify the dump file references the custom table name
+    let dump_content = std::fs::read_to_string(&dump_file).unwrap();
+    assert!(
+        dump_content.contains("my_custom_table"),
+        "Expected dump to contain custom table name 'my_custom_table', got:\n{dump_content}"
+    );
+    // Ensure the original filename-based table name is NOT used (check multiple quoting styles:
+    // double-quoted, single-quoted, backtick-quoted, and unquoted)
+    assert!(
+        !dump_content.contains("CREATE TABLE \"in\"")
+            && !dump_content.contains("CREATE TABLE 'in'")
+            && !dump_content.contains("CREATE TABLE `in`")
+            && !dump_content.contains("CREATE TABLE in(")
+            && !dump_content.contains("CREATE TABLE in ")
+            && !dump_content.contains("CREATE TABLE in\n"),
+        "Dump should not contain original table name 'in', got:\n{dump_content}"
+    );
+}
+
+#[test]
+fn to_table_error_leading_digit() {
+    // --table with a name starting with a digit should fail
+    let wrk = Workdir::new("to_table_error_digit");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let sqlite_file = wrk.path("test.db").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("123table")
+        .arg(sqlite_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table name must start with a letter or underscore"),
+        "Expected leading digit error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_error_hyphen() {
+    // --table with hyphens should fail (invalid SQL identifier)
+    let wrk = Workdir::new("to_table_error_hyphen");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let sqlite_file = wrk.path("test.db").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("my-table")
+        .arg(sqlite_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table name must contain only alphanumeric"),
+        "Expected hyphen error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_underscore_prefix() {
+    // --table with underscore-prefixed name should succeed
+    let wrk = Workdir::new("to_table_underscore_prefix");
+    wrk.create(
+        "data.csv",
+        vec![svec!["city", "state"], svec!["Boston", "MA"]],
+    );
+
+    let dump_file = wrk.path("dump.sql").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("_staging")
+        .arg("--dump")
+        .arg(dump_file)
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn to_table_preserves_original_file() {
+    // --table should not rename/modify the user's original file
+    let wrk = Workdir::new("to_table_preserves_file");
+    wrk.create(
+        "original.csv",
+        vec![svec!["city", "state"], svec!["Boston", "MA"]],
+    );
+
+    let original_path = wrk.path("original.csv");
+    assert!(original_path.exists(), "original file should exist before");
+
+    let dump_file = wrk.path("dump.sql").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("custom_name")
+        .arg("--dump")
+        .arg(dump_file)
+        .arg("original.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    // The original file must still exist with its original name
+    assert!(
+        original_path.exists(),
+        "original file should still exist after --table"
+    );
+}
+
 // #[test]
 // #[ignore = "Testing postgres support requires a running, properly configured postgres server, \
 //             which is not available on CI"]

@@ -33,7 +33,7 @@ export function successResult(text: string) {
  * Compare two semantic version strings.
  * Strips pre-release (-alpha.1) and build metadata (+build.123) before comparing.
  * Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2.
- * Returns NaN if either version string is unparseable.
+ * Returns NaN if either version string is unparsable.
  */
 export function compareVersions(v1: string, v2: string): number {
   // Strip pre-release and build metadata (e.g., "1.2.3-alpha.1+build" -> "1.2.3")

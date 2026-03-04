@@ -124,7 +124,7 @@
 ## Installation Options
 
 > [!NOTE]
-> To install the qsv MCP Server, go [here](.claude/skills/README-MCP.md).
+> To install the qsv MCP Server, go [here](.claude/skills/docs/desktop/README-MCPB.md).
 
 ### Option 0: qsv pro
 

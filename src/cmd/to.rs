@@ -294,7 +294,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "--table name must contain only alphanumeric characters and underscores."
             );
         }
-        // PostgreSQL limits identifiers to 63 bytes; cap table names accordingly
+        // PostgreSQL limits identifiers to 63 characters; cap table names accordingly
         if table_name.len() > 63 {
             return fail_incorrectusage_clierror!(
                 "--table name must not exceed 63 characters (PostgreSQL identifier limit)."
@@ -449,17 +449,8 @@ fn apply_table_rename(
         let path = &mut arg_input[0];
         let extension = path
             .extension()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-        let new_path = tmpdir.path().join(format!(
-            "{table_name}.{}",
-            if extension.is_empty() {
-                "csv"
-            } else {
-                &extension
-            }
-        ));
+            .map_or("csv", |ext| ext.to_str().unwrap_or("csv"));
+        let new_path = tmpdir.path().join(format!("{table_name}.{extension}"));
         std::fs::copy(&*path, &new_path)?;
         *path = new_path;
     }

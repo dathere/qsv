@@ -215,6 +215,7 @@ qsv to --help
 | &nbsp;`-d,`<br>`--drop`&nbsp; | flag | Drop tables before loading new data into them (postgres/sqlite only). |  |
 | &nbsp;`-e,`<br>`--evolve`&nbsp; | flag | If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only). |  |
 | &nbsp;`-i,`<br>`--pipe`&nbsp; | flag | Adjust output format for piped data (omits row counts and field format columns). |  |
+| &nbsp;`-t,`<br>`--table`&nbsp; | string | Use this as the table name (postgres/sqlite only). Overrides the default table name derived from the input filename. When reading from stdin, the default table name is "stdin". Only valid with a single input file. Table name must start with a letter or underscore, and contain only alphanumeric characters and underscores. |  |
 | &nbsp;`-p,`<br>`--separator`&nbsp; | string | For xlsx, use this character to help truncate xlsx sheet names. Defaults to space. |  |
 | &nbsp;`-A,`<br>`--all-strings`&nbsp; | flag | Convert all fields to strings. |  |
 | &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |

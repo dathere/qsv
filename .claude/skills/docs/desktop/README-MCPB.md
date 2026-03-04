@@ -13,7 +13,7 @@ The QSV MCP Desktop Extension is a plugin that teaches Claude Desktop how to wor
 - "Find all rows in data.jsonl where status is 'pending'"
 - "Create a report summarizing this spreadsheet"
 
-Claude will understand your request and perform the operations automatically using qsv, a professional-grade tabular data-wrangling toolkit.
+Claude will understand your request and perform the operations automatically using qsvmcp (or qsv), a professional-grade tabular data-wrangling toolkit. The **qsvmcp** binary is the preferred variant — it's optimized for MCP server use with only the 51 commands needed by the MCP server, while the full **qsv** binary (68 commands) also works.
 
 ## Installation (Simple)
 
@@ -48,9 +48,10 @@ After installation, you'll be prompted to configure:
 - Leave blank to allow access to all folders
 
 **QSV Binary Path** (Usually auto-detected)
-- The extension will try to find qsv automatically
-- If it can't find it, you'll be prompted to download it
-- You can also specify a custom path if you have qsv installed elsewhere
+- The extension will try to find **qsvmcp** first, then fall back to **qsv**
+- If it can't find either, you'll be prompted to download it
+- You can also specify a custom path if you have qsvmcp/qsv installed elsewhere
+- qsvmcp is preferred as it's optimized for MCP server use
 
 ### Step 4: Restart
 
@@ -131,13 +132,15 @@ Claude: [Performs all three operations in sequence]
 ### "qsv binary not found" error
 
 **Solution:**
-1. The extension needs the qsv tool to be installed on your computer
-2. Download qsv from: https://github.com/dathere/qsv/releases
+1. The extension needs **qsvmcp** (preferred) or **qsv** to be installed on your computer
+2. Download from: https://github.com/dathere/qsv/releases (prebuilt binaries include qsvmcp)
 3. After downloading:
-   - **Mac**: Install using Homebrew (`brew install qsv`) or place in `/usr/local/bin/`
-   - **Windows**: Place `qsv.exe` in a folder in your PATH, or specify the full path in settings
+   - **Mac**: Install using Homebrew (`brew install qsv`) or place qsvmcp/qsv in `/usr/local/bin/`
+   - **Windows**: Place `qsvmcp.exe` (or `qsv.exe`) in a folder in your PATH, or specify the full path in settings
    - **Linux**: Place in `/usr/local/bin/` or specify the full path in settings
 4. Restart Claude Desktop
+
+> **Note**: qsvmcp is the recommended binary — it includes only the 51 commands needed by the MCP server and is smaller and faster than the full qsv binary.
 
 ### "Permission denied" or "Access denied" errors
 
@@ -261,9 +264,9 @@ qsv-mcp-server.mcpb
 └──────────────┬──────────────────────┘
                │ spawn (streaming, secure)
 ┌──────────────▼──────────────────────┐
-│        qsv binary (Rust)            │
+│   qsvmcp binary (preferred) / qsv   │
 │  • Tabular data processing         │
-│  • 67 commands                      │
+│  • 51 commands (qsvmcp) / 68 (qsv) │
 │  • High-performance operations      │
 │  • Multi-format support             │
 └─────────────────────────────────────┘
@@ -279,7 +282,7 @@ The extension is configured via environment variables in Claude Desktop's MCP se
   "command": "node",
   "args": ["/path/to/dist/mcp-server.js"],
   "env": {
-    "QSV_MCP_BIN_PATH": "/usr/local/bin/qsv",
+    "QSV_MCP_BIN_PATH": "/usr/local/bin/qsvmcp",
     "QSV_MCP_WORKING_DIR": "/Users/you/Documents",
     "QSV_MCP_ALLOWED_DIRS": "/Users/you/Downloads:/Users/you/Documents"
   }
@@ -290,7 +293,7 @@ The extension is configured via environment variables in Claude Desktop's MCP se
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `QSV_MCP_BIN_PATH` | `qsv` | Path to qsv binary (supports template vars) |
+| `QSV_MCP_BIN_PATH` | `qsvmcp` (falls back to `qsv`) | Path to qsvmcp/qsv binary (supports template vars) |
 | `QSV_MCP_WORKING_DIR` | Current dir | Default directory for relative paths |
 | `QSV_MCP_ALLOWED_DIRS` | None | Colon-separated (`:`) allowed directories (semicolon `;` on Windows) |
 | `QSV_MCP_CONVERTED_LIFO_SIZE_GB` | `1` | Max cache size for converted files (0.1-100 GB) |
@@ -357,12 +360,14 @@ The MCP server enforces limits to prevent DoS attacks and resource exhaustion:
 
 ### Binary Trust
 
-**CRITICAL**: The `QSV_MCP_BIN_PATH` must point to a trusted qsv binary:
+**CRITICAL**: The `QSV_MCP_BIN_PATH` must point to a trusted qsvmcp or qsv binary:
 
-- Only use official qsv releases from https://github.com/dathere/qsv/releases
+- Only use official releases from https://github.com/dathere/qsv/releases
+- The **qsvmcp** binary is recommended — it's optimized for MCP server use with only the 51 commands needed
 - Verify binary integrity (checksums provided in releases)
 - Ensure binary path is not writable by untrusted users
-- Do not use qsv binaries from unknown sources
+- Do not use binaries from unknown sources
+- **qsvlite** and **qsvdp** are not supported — they lack required features (Polars, etc.)
 
 ## File Conversion System
 

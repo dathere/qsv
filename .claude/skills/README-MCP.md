@@ -1,6 +1,6 @@
 # QSV MCP Server
 
-Model Context Protocol (MCP) server that exposes 51 of qsv's tabular data-wrangling commands to Claude Desktop.
+Model Context Protocol (MCP) server that exposes qsv's tabular data-wrangling commands to Claude Desktop. The server works with **qsvmcp** (preferred) or the full **qsv** binary, exposing 51 commands optimized for AI agent workflows.
 
 ## Overview
 
@@ -11,6 +11,26 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
 - **Intelligent Guidance**: Enhanced tool descriptions help Claude make optimal decisions
+
+## Recommended Binary: qsvmcp
+
+The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 51 commands needed by the MCP server (vs 68 in the full qsv binary), resulting in a smaller, faster binary.
+
+**Features included in qsvmcp**: Polars, Luau scripting, geocoding, self-update, MCP skill generation (`--update-mcp-skills`), and the `log` command for MCP audit logging.
+
+**Commands excluded from qsvmcp** (not needed for MCP): `apply`, `fetch`, `fetchpost`, `foreach`, `lens`, `prompt`, `python`, and others — 17 commands total.
+
+| Binary | Commands | MCP Server Support | Notes |
+|--------|----------|-------------------|-------|
+| **qsvmcp** | 51 | Preferred | Optimized for MCP, smaller binary |
+| **qsv** | 68 | Supported | Full-featured, includes extra commands not used by MCP |
+| qsvlite | — | Not supported | Missing Polars and other required features |
+| qsvdp | — | Not supported | DataPusher+ variant, missing required features |
+
+To build qsvmcp from source:
+```bash
+cargo build --locked --bin qsvmcp -F qsvmcp
+```
 
 ## Supported File Formats
 
@@ -45,7 +65,7 @@ The **MCP Desktop Extension** (MCPB) provides the easiest installation experienc
 5. Restart Claude Desktop
 
 The Desktop Extension:
-- **Auto-detects qsv** - Finds your qsv installation or offers to download it
+- **Auto-detects qsvmcp/qsv** - Finds your qsvmcp or qsv installation, or offers to download it
 - **Cross-platform** - Works on macOS, Windows, and Linux
 - **Secure** - Uses `spawn` with array arguments to prevent command injection
 - **Template Variables** - Supports `$HOME`, `${HOME}` in config paths
@@ -72,15 +92,18 @@ This script will:
 
 #### Prerequisites
 
-1. **qsv** must be installed:
+1. **qsvmcp** (preferred) or **qsv** must be installed:
    ```bash
-   # macOS
+   # macOS (installs qsv with all variants including qsvmcp)
    brew install qsv
 
    # Or use mise (https://mise.jdx.dev)
    mise use -g ubi:dathere/qsv
 
    # Or download from https://github.com/dathere/qsv/releases
+
+   # Or build qsvmcp from source
+   cargo build --locked --bin qsvmcp -F qsvmcp
    ```
 
 2. **Node.js** >= 18.0.0
@@ -106,7 +129,7 @@ This script will:
          "command": "node",
          "args": ["/absolute/path/to/qsv/.claude/skills/dist/mcp-server.js"],
          "env": {
-           "QSV_MCP_BIN_PATH": "/usr/local/bin/qsv",
+           "QSV_MCP_BIN_PATH": "/usr/local/bin/qsvmcp",
            "QSV_MCP_WORKING_DIR": "/Users/your-username/Downloads",
            "QSV_MCP_ALLOWED_DIRS": "/Users/your-username/Downloads:/Users/your-username/Documents",
            "QSV_MCP_CONVERTED_LIFO_SIZE_GB": "1",
@@ -126,9 +149,9 @@ This script will:
 > **NOTE**: You can further customize qsv's behavior by taking advantage of the "env" section
 > in "mcpServers" to add more QSV environment variables.
 
-> **SECURITY**: The `QSV_MCP_BIN_PATH` environment variable should only point to a trusted qsv binary.
+> **SECURITY**: The `QSV_MCP_BIN_PATH` environment variable should only point to a trusted qsvmcp or qsv binary.
 > The MCP server executes this binary with user-provided file paths, so ensure it points to the
-> official qsv installation and is not writable by untrusted users.
+> official installation and is not writable by untrusted users.
 
 3. **Restart Claude Desktop**
 
@@ -136,7 +159,7 @@ This script will:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `QSV_MCP_BIN_PATH` | `qsv` | Path to qsv binary |
+| `QSV_MCP_BIN_PATH` | `qsvmcp` (falls back to `qsv`) | Path to qsvmcp/qsv binary |
 | `QSV_MCP_WORKING_DIR` | Current directory | Working directory for relative paths |
 | `QSV_MCP_ALLOWED_DIRS` | None | Colon-separated (semicolon on Windows) list of allowed directories |
 | `QSV_MCP_CONVERTED_LIFO_SIZE_GB` | `1` | Maximum size for converted file cache (0.1-100 GB) |
@@ -371,7 +394,7 @@ Result: Parquet file created with optimized data types (data.parquet)
 └──────────────────┬──────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────┐
-│          qsv Binary                         │
+│     qsvmcp Binary (preferred) / qsv         │
 │  (Tabular data processing on local         │
 │   filesystem: CSV, TSV, SSV, Excel, JSONL) │
 └─────────────────────────────────────────────┘
@@ -410,16 +433,16 @@ When running `qsv_stats`, the MCP server automatically enables `--stats-jsonl` t
 
 ## Skills Auto-Update
 
-MCP Skills stay in sync with qsv commands via `qsv --update-mcp-skills`:
+MCP Skills stay in sync with qsv commands via `qsvmcp --update-mcp-skills` (or `qsv --update-mcp-skills`):
 
-- **Integrated Tool** - No separate binary needed (requires `mcp` feature flag)
+- **Integrated Tool** - No separate binary needed (requires `mcp` feature flag, included in qsvmcp)
 - **Auto-Generation** - Parses qsv USAGE text to generate skill definitions
 - **Performance Hints** - Extracts emoji legends (📇 indexed, 🤯 memory-intensive) from README
 - **Token Optimized** - Concise descriptions extracted from README command table
 
-To regenerate skills after updating qsv:
+To regenerate skills after updating qsvmcp/qsv:
 ```bash
-qsv --update-mcp-skills
+qsvmcp --update-mcp-skills   # or: qsv --update-mcp-skills
 cd .claude/skills && npm run build
 ```
 
@@ -446,7 +469,7 @@ tail -f ~/Library/Logs/Claude/mcp*.log
 ```
 
 **Common issues:**
-- qsv binary not in PATH → Set `QSV_MCP_BIN_PATH` env var
+- qsvmcp/qsv binary not in PATH → Set `QSV_MCP_BIN_PATH` env var (qsvmcp preferred)
 - TypeScript not built → Run `npm run build`
 - File permissions → Ensure qsv has read access to CSV files
 
@@ -539,7 +562,7 @@ npm test
 - **User Control**: Claude Desktop prompts before executing tools
 - **Secure Execution**: Uses `spawn` with array arguments to prevent command injection
 - **Sandboxing**: Consider running in restricted environment for untrusted data
-- **Binary Trust**: The `QSV_MCP_BIN_PATH` environment variable should only point to a trusted qsv binary from the official installation. Ensure the binary path is not writable by untrusted users.
+- **Binary Trust**: The `QSV_MCP_BIN_PATH` environment variable should only point to a trusted qsvmcp or qsv binary from the official installation. Ensure the binary path is not writable by untrusted users.
 
 ## Future Enhancements
 

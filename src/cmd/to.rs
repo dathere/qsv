@@ -175,6 +175,12 @@ To options:
   -d, --drop              Drop tables before loading new data into them (postgres/sqlite only).
   -e, --evolve            If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only).
   -i, --pipe              Adjust output format for piped data (omits row counts and field format columns).
+  -t, --table <name>      Use this as the table name (postgres/sqlite only).
+                          Overrides the default table name derived from the input filename.
+                          When reading from stdin, the default table name is "stdin".
+                          Only valid with a single input file. Table name must start with
+                          a letter or underscore, and contain only alphanumeric characters
+                          and underscores.
   -p, --separator <arg>   For xlsx, use this character to help truncate xlsx sheet names.
                           Defaults to space.
   -A, --all-strings       Convert all fields to strings.
@@ -227,6 +233,7 @@ struct Args {
     flag_stats:         bool,
     flag_stats_csv:     Option<String>,
     flag_jobs:          Option<usize>,
+    flag_table:         Option<String>,
     flag_print_package: bool,
     flag_quiet:         bool,
     flag_pipe:          bool,
@@ -267,9 +274,32 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut arg_input = args.arg_input.clone();
     let tmpdir = tempfile::tempdir()?;
 
+    // validate --table option
+    if let Some(ref table_name) = args.flag_table {
+        if args.cmd_xlsx || args.cmd_ods || args.cmd_datapackage {
+            return fail_incorrectusage_clierror!(
+                "--table can only be used with postgres or sqlite subcommands."
+            );
+        }
+        if table_name.is_empty() {
+            return fail_incorrectusage_clierror!("--table name must not be empty.");
+        }
+        if !table_name.starts_with(|c: char| c.is_alphabetic() || c == '_') {
+            return fail_incorrectusage_clierror!(
+                "--table name must start with a letter or underscore."
+            );
+        }
+        if !table_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return fail_incorrectusage_clierror!(
+                "--table name must contain only alphanumeric characters and underscores."
+            );
+        }
+    }
+
     if args.cmd_postgres {
         debug!("converting to PostgreSQL");
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
+        apply_table_rename(&args.flag_table, &mut arg_input, &tmpdir)?;
         if args.flag_dump {
             options.dump_file = args.arg_postgres.expect("checked above");
             output = csvs_to_postgres_with_options(String::new(), arg_input, options)?;
@@ -284,6 +314,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else if args.cmd_sqlite {
         debug!("converting to SQLite");
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
+        apply_table_rename(&args.flag_table, &mut arg_input, &tmpdir)?;
         if args.flag_dump {
             options.dump_file = args.arg_sqlite.expect("checked above");
             output = csvs_to_sqlite_with_options(String::new(), arg_input, options)?;
@@ -392,5 +423,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         writeln!(&mut stdout)?;
     }
 
+    Ok(())
+}
+
+/// If `--table` is set, copy the input file to a temp directory with the desired name
+/// so that the downstream library derives the desired table name from the filename.
+/// We copy instead of rename to avoid modifying the user's original file.
+fn apply_table_rename(
+    flag_table: &Option<String>,
+    arg_input: &mut [std::path::PathBuf],
+    tmpdir: &tempfile::TempDir,
+) -> CliResult<()> {
+    if let Some(ref table_name) = *flag_table {
+        if arg_input.len() > 1 {
+            return fail_incorrectusage_clierror!(
+                "--table can only be used with a single input file."
+            );
+        }
+        if let Some(path) = arg_input.first_mut() {
+            let new_path = tmpdir.path().join(format!("{table_name}.csv"));
+            std::fs::copy(&*path, &new_path)?;
+            *path = new_path;
+        }
+    }
     Ok(())
 }

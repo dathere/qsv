@@ -25,18 +25,13 @@ Download the extension file:
 
 ### Step 2: Install in Claude Desktop
 
-1. Open Claude Desktop
-2. Click on your profile icon → **Settings**
-3. Go to the **Extensions** tab
-4. Click **"Install from file"**
-5. Select the `qsv-mcp-server.mcpb` file you downloaded
-6. Click **Install**
+- Double-click the downloaded `qsv-mcp-server.mcpb` file. This should automatically open Claude Desktop and prompt you to install the extension.
 
 ### Step 3: Configure
 
-After installation, you'll be prompted to configure:
+After installation, you can optionally configure the extension in Claude Desktop's settings:
 
-**Working Directory** (Required)
+**Working Directory** (Required - defaults to your Downloads (Mac) or home folder (Windows))
 - Where Claude will look for your data files (CSV, Excel, TSV, JSONL, etc.)
 - Example: `/Users/yourname/Documents` (Mac) or `C:\Users\yourname\Documents` (Windows)
 - You can use `$HOME` or `${HOME}` as shortcuts for your home folder
@@ -52,6 +47,9 @@ After installation, you'll be prompted to configure:
 - If it can't find either, you'll be prompted to download it
 - You can also specify a custom path if you have qsvmcp/qsv installed elsewhere
 - qsvmcp is preferred as it's optimized for MCP server use
+
+**DuckDB Options** (Optional)
+- If you have DuckDB installed, you can enable it so qsv will use it instead of Polars for SQL queries. Though Polars is fast, built-in, and a dialect of PostgreSQL, DuckDB offers additional features, may perform better on certain queries and is more well-known to AI models, which may lead to better query generation.
 
 ### Step 4: Restart
 

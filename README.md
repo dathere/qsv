@@ -124,7 +124,8 @@
 
 ## Installation Options
 
-> **_NOTE:_** To install the qsv MCP Server, go [here](.claude/skills/README-MCP.md).
+> [!NOTE]
+> To install the qsv MCP Server, go [here](.claude/skills/README-MCP.md).
 
 ### Option 0: qsv pro
 
@@ -170,7 +171,8 @@ xattr -d com.apple.quarantine qsv
 
 An additional benefit of using the prebuilt binaries is that they have the `self_update` feature enabled, allowing you to quickly update qsv to the latest version with a simple `qsv --update`. For further security, the `self_update` feature only fetches [releases from this GitHub repo](https://github.com/dathere/qsv/releases) and automatically verifies the signature of the downloaded zip archive before installing the update.
 
-> ℹ️ **_NOTE:_** The `luau` feature is not available in `musl` prebuilt binaries[^3].
+> [!NOTE]
+> The `luau` feature is not available in `musl` prebuilt binaries[^3].
 
 #### Manually verifying the Integrity of the Prebuilt Binaries Zip Archives
 All prebuilt binaries zip archives are signed with [zipsign](https://github.com/Kijewski/zipsign#zipsign) with the following public key [qsv-zipsign-public.key](https://github.com/dathere/qsv/raw/master/src/qsv-zipsign-public.key). To verify the integrity of the downloaded zip archives:
@@ -277,7 +279,8 @@ For example, if you use Ubuntu, you can install the `build-essential` package. O
 For Windows, this means installing [Visual Studio 2022](https://visualstudio.microsoft.com/downloads/). When prompted for workloads, include "Desktop Development with C++",
 the Windows 10 or 11 SDK & the English language pack, along with any other language packs your require.
 
-> ℹ️ **_NOTE:_** To build with Rust nightly, see [Nightly Release Builds](docs/PERFORMANCE.md#nightly-release-builds).
+> [!NOTE]
+> To build with Rust nightly, see [Nightly Release Builds](docs/PERFORMANCE.md#nightly-release-builds).
 The `feature_capable`, `qsvmcp`, `lite` and `datapusher_plus` are MUTUALLY EXCLUSIVE features. See [Special Build Features](docs/FEATURES.md#special-features-for-building-qsv-binary-variants) for more info.
 
 ### Variants
@@ -290,7 +293,8 @@ There are five binary variants of qsv:
 * `qsvlite` - all features disabled (~13% of the size of `qsv`). If you are migrating from [xsv](https://github.com/BurntSushi/xsv) and want the same experience and feature set, this is the variant for you.
 * `qsvdp` - optimized for use with [DataPusher+](https://github.com/dathere/datapusher-plus) with only DataPusher+ relevant commands; an embedded [`luau`](#luau_deeplink) interpreter; [`applydp`](#applydp_deeplink), a slimmed-down version of the `apply` feature; the `--progressbar` option disabled; and the self-update only checking for new releases, requiring an explicit `--update` (~12% of the the size of `qsv`).
 
-> ℹ️ **_NOTE:_** There are "portable" subvariants of qsv available with the "p" suffix - `qsvp`, `qsvplite` and `qsvpdp`. These subvariants are compiled without any CPU features enabled. Use these subvariants if you have an old CPU architecture or getting "Illegal instruction (SIGILL)" errors when running the regular qsv binaries.
+> [!NOTE]
+> There are "portable" subvariants of qsv available with the "p" suffix - `qsvp`, `qsvplite` and `qsvpdp`. These subvariants are compiled without any CPU features enabled. Use these subvariants if you have an old CPU architecture or getting "Illegal instruction (SIGILL)" errors when running the regular qsv binaries.
 
 [^3]: The `luau`feature is NOT enabled by default on the prebuilt binaries for musl platforms. This is because we cross-compile using GitHub Action Runners using Ubuntu 20.04 LTS with the [musl libc](https://musl.libc.org/) toolchain. However, Ubuntu is a glibc-based, not a musl-based distro. We get around this by [cross-compiling](https://blog.logrocket.com/guide-cross-compilation-rust/).   
 Unfortunately, this prevents us from cross-compiling binaries with the `luau` feature enabled as doing so requires statically linking the host OS libc library. If you need the `luau` feature on `musl`, you will need to compile from source on your own musl-based Linux Distro (e.g. Alpine, Void, [etc.](https://wiki.musl-libc.org/projects-using-musl)).  
@@ -353,7 +357,8 @@ The `sniff` command can also detect the mime type of any file with the `--no-inf
 It can detect more than 130 file formats, including MS Office/Open Document files, JSON, XML, PDF, PNG, JPEG and specialized geospatial formats like GPX, GML, KML, TML, TMX, TSX, TTML.
 Click [here](https://docs.rs/file-format/latest/file_format/#reader-features) for a complete list.
 
-> ℹ️ **_NOTE:_** When the `polars` feature is enabled, qsv can also natively read `.parquet`, `.ipc`, `.arrow`, `.json` & `.jsonl` files.
+> [!NOTE]
+> When the `polars` feature is enabled, qsv can also natively read `.parquet`, `.ipc`, `.arrow`, `.json` & `.jsonl` files.
 
 ### Extended Input Support
 
@@ -387,7 +392,8 @@ Using the `snappy` command, we can compress NYC's 311 data (15gb, 28m rows) to 4
 
 Compare that to [zip 3.0](https://infozip.sourceforge.net/Zip.html), which compressed the same file to 2.9 gb in _248.3 seconds on the same machine - 43x slower at 0.06 gb/sec_ with a 0.19 (5.17:1) compression ratio - for just an additional 14% (2.45 gb) of saved space. zip also took 4.3x longer to roundtrip decompress the same file in _72 seconds_ - _0.20 gb/sec_.
 
-> ℹ️ **_NOTE:_** qsv has additional compression support beyond Snappy:
+> [!NOTE]
+> qsv has additional compression support beyond Snappy:
 >
 > The `sqlp` command can:
 > - Automatically decompress gzip, zstd and zlib compressed input files

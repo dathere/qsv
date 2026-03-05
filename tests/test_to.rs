@@ -553,6 +553,10 @@ fn to_table_xlsx_happy_path() {
         stdout.contains("My Sheet"),
         "Expected sheet name 'My Sheet' in output, got: {stdout}"
     );
+    assert!(
+        wrk.path("test.xlsx").exists(),
+        "Expected output file test.xlsx to exist"
+    );
 }
 
 #[test]
@@ -586,15 +590,14 @@ fn to_table_error_xlsx_too_long() {
     let mut cmd = wrk.command("to");
     cmd.arg("xlsx")
         .arg("--table")
-        .arg("a]".repeat(16))
+        .arg("a".repeat(32))
         .arg(xlsx_file)
         .arg("in.csv");
 
     let stderr = wrk.output_stderr(&mut cmd);
     assert!(
-        stderr.contains("must not exceed 31 characters")
-            || stderr.contains("sheet name cannot contain"),
-        "Expected length or invalid char error, got: {stderr}"
+        stderr.contains("must not exceed 31 characters"),
+        "Expected length error, got: {stderr}"
     );
 }
 
@@ -641,6 +644,10 @@ fn to_table_ods_happy_path() {
     assert!(
         stdout.contains("My Sheet"),
         "Expected sheet name 'My Sheet' in output, got: {stdout}"
+    );
+    assert!(
+        wrk.path("test.ods").exists(),
+        "Expected output file test.ods to exist"
     );
 }
 

@@ -310,9 +310,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     "--table sheet name must not exceed 31 characters for xlsx/ods."
                 );
             }
-            if table_name.contains(&['\\', '/', '*', '[', ']', ':', '?'][..]) {
+            // Also ensure the sheet name is valid when used as a filesystem filename
+            // (Windows-invalid filename characters: < > : \" / \\ | ? *)
+            if table_name.contains(&['\\', '/', '*', '[', ']', ':', '?', '<', '>', '"', '|'][..]) {
                 return fail_incorrectusage_clierror!(
-                    "--table sheet name cannot contain \\ / * [ ] : ? characters."
+                    "--table sheet name cannot contain \\ / * [ ] : ? < > \" | characters."
                 );
             }
         } else {

@@ -109,6 +109,14 @@ Load files listed in the 'ourdata.infile-list' into xlsx file.
 
   $ qsv to xlsx output.xlsx ourdata.infile-list
 
+Load a single CSV into xlsx with a custom sheet name.
+
+  $ qsv to xlsx output.xlsx --table "Sales Data" file1.csv
+
+Load from stdin with a custom sheet name.
+
+  $ cat data.csv | qsv to xlsx output.xlsx --table "Monthly Report" -
+
 ODS
 ===
 Convert to new ODS (Open Document Spreadsheet) file.
@@ -128,6 +136,14 @@ Load all files in dir1 into ODS file.
 Load files listed in the 'ourdata.infile-list' into ODS file.
 
   $ qsv to ods output.ods ourdata.infile-list
+
+Load a single CSV into ODS with a custom sheet name.
+
+  $ qsv to ods output.ods --table "Sales Data" file1.csv
+
+Load from stdin with a custom sheet name.
+
+  $ cat data.csv | qsv to ods output.ods --table "Monthly Report" -
 
 DATA PACKAGE
 ============
@@ -175,12 +191,14 @@ To options:
   -d, --drop              Drop tables before loading new data into them (postgres/sqlite only).
   -e, --evolve            If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only).
   -i, --pipe              Adjust output format for piped data (omits row counts and field format columns).
-  -t, --table <name>      Use this as the table name (postgres/sqlite only).
-                          Overrides the default table name derived from the input filename.
+  -t, --table <name>      Use this as the table/sheet name (postgres/sqlite/xlsx/ods).
+                          Overrides the default name derived from the input filename.
                           When reading from stdin, the default table name is "stdin".
-                          Only valid with a single input file. Table name must start with
-                          a letter or underscore, and contain only alphanumeric characters
-                          and underscores.
+                          Only valid with a single input file.
+                          For postgres/sqlite: must start with a letter or underscore,
+                          contain only alphanumeric characters and underscores (max 63).
+                          For xlsx/ods: used as sheet name (max 31 chars,
+                          cannot contain \ / * [ ] : ?).
   -p, --separator <arg>   For xlsx, use this character to help truncate xlsx sheet names.
                           Defaults to space.
   -A, --all-strings       Convert all fields to strings.
@@ -276,29 +294,47 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // validate --table option
     if let Some(ref table_name) = args.flag_table {
-        if args.cmd_xlsx || args.cmd_ods || args.cmd_datapackage {
+        if args.cmd_datapackage {
             return fail_incorrectusage_clierror!(
-                "--table can only be used with postgres or sqlite subcommands."
+                "--table cannot be used with the datapackage subcommand."
             );
         }
         if table_name.is_empty() {
             return fail_incorrectusage_clierror!("--table name must not be empty.");
         }
-        if !table_name.starts_with(|c: char| c.is_alphabetic() || c == '_') {
-            return fail_incorrectusage_clierror!(
-                "--table name must start with a letter or underscore."
-            );
-        }
-        if !table_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-            return fail_incorrectusage_clierror!(
-                "--table name must contain only alphanumeric characters and underscores."
-            );
-        }
-        // PostgreSQL limits identifiers to 63 characters; cap table names accordingly
-        if table_name.len() > 63 {
-            return fail_incorrectusage_clierror!(
-                "--table name must not exceed 63 characters (PostgreSQL identifier limit)."
-            );
+        if args.cmd_xlsx || args.cmd_ods {
+            // xlsx/ods sheet name validation
+            // Both xlsx (Excel) and ods (ODS) enforce a 31-character limit on sheet names
+            if table_name.chars().count() > 31 {
+                return fail_incorrectusage_clierror!(
+                    "--table sheet name must not exceed 31 characters for xlsx/ods."
+                );
+            }
+            // Also ensure the sheet name is valid when used as a filesystem filename
+            // (Windows-invalid filename characters: < > : \" / \\ | ? *)
+            if table_name.contains(&['\\', '/', '*', '[', ']', ':', '?', '<', '>', '"', '|'][..]) {
+                return fail_incorrectusage_clierror!(
+                    "--table sheet name cannot contain \\ / * [ ] : ? < > \" | characters."
+                );
+            }
+        } else {
+            // postgres/sqlite table name validation
+            if !table_name.starts_with(|c: char| c.is_alphabetic() || c == '_') {
+                return fail_incorrectusage_clierror!(
+                    "--table name must start with a letter or underscore."
+                );
+            }
+            if !table_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                return fail_incorrectusage_clierror!(
+                    "--table name must contain only alphanumeric characters and underscores."
+                );
+            }
+            // PostgreSQL limits identifiers to 63 characters; cap table names accordingly
+            if table_name.len() > 63 {
+                return fail_incorrectusage_clierror!(
+                    "--table name must not exceed 63 characters (PostgreSQL identifier limit)."
+                );
+            }
         }
     }
 
@@ -335,6 +371,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else if args.cmd_xlsx {
         debug!("converting to Excel XLSX");
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
+        apply_table_rename(&args.flag_table, &mut arg_input, &tmpdir)?;
 
         output =
             csvs_to_xlsx_with_options(args.arg_xlsx.expect("checked above"), arg_input, options)?;
@@ -342,6 +379,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else if args.cmd_ods {
         debug!("converting to ODS");
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
+        apply_table_rename(&args.flag_table, &mut arg_input, &tmpdir)?;
 
         output =
             csvs_to_ods_with_options(args.arg_ods.expect("checked above"), arg_input, options)?;

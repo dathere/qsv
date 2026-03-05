@@ -135,6 +135,16 @@ Load files listed in the 'ourdata.infile-list' into xlsx file.
 qsv to xlsx output.xlsx ourdata.infile-list
 ```
 
+Load a single CSV into xlsx with a custom sheet name.
+```console
+qsv to xlsx output.xlsx --table "Sales Data" file1.csv
+```
+
+Load from stdin with a custom sheet name.
+```console
+cat data.csv | qsv to xlsx output.xlsx --table "Monthly Report" -
+```
+
 ### ODS
 
 Convert to new ODS (Open Document Spreadsheet) file.
@@ -154,6 +164,16 @@ qsv to ods output.ods dir1
 Load files listed in the 'ourdata.infile-list' into ODS file.
 ```console
 qsv to ods output.ods ourdata.infile-list
+```
+
+Load a single CSV into ODS with a custom sheet name.
+```console
+qsv to ods output.ods --table "Sales Data" file1.csv
+```
+
+Load from stdin with a custom sheet name.
+```console
+cat data.csv | qsv to ods output.ods --table "Monthly Report" -
 ```
 
 ### Data Package
@@ -215,7 +235,7 @@ qsv to --help
 | &nbsp;`-d,`<br>`--drop`&nbsp; | flag | Drop tables before loading new data into them (postgres/sqlite only). |  |
 | &nbsp;`-e,`<br>`--evolve`&nbsp; | flag | If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only). |  |
 | &nbsp;`-i,`<br>`--pipe`&nbsp; | flag | Adjust output format for piped data (omits row counts and field format columns). |  |
-| &nbsp;`-t,`<br>`--table`&nbsp; | string | Use this as the table name (postgres/sqlite only). Overrides the default table name derived from the input filename. When reading from stdin, the default table name is "stdin". Only valid with a single input file. Table name must start with a letter or underscore, and contain only alphanumeric characters and underscores. |  |
+| &nbsp;`-t,`<br>`--table`&nbsp; | string | Use this as the table/sheet name (postgres/sqlite/xlsx/ods). Overrides the default name derived from the input filename. When reading from stdin, the default table name is "stdin". Only valid with a single input file. For postgres/sqlite: must start with a letter or underscore, contain only alphanumeric characters and underscores (max 63). For xlsx/ods: used as sheet name (max 31 chars, cannot contain \ / * [ ] : ?). |  |
 | &nbsp;`-p,`<br>`--separator`&nbsp; | string | For xlsx, use this character to help truncate xlsx sheet names. Defaults to space. |  |
 | &nbsp;`-A,`<br>`--all-strings`&nbsp; | flag | Convert all fields to strings. |  |
 | &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |

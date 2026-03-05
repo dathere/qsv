@@ -341,7 +341,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.cmd_postgres {
         debug!("converting to PostgreSQL");
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
-        apply_table_rename(&args.flag_table, &mut arg_input, &tmpdir)?;
+        apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
         if args.flag_dump {
             options.dump_file = args.arg_postgres.expect("checked above");
             output = csvs_to_postgres_with_options(String::new(), arg_input, options)?;
@@ -356,7 +356,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else if args.cmd_sqlite {
         debug!("converting to SQLite");
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
-        apply_table_rename(&args.flag_table, &mut arg_input, &tmpdir)?;
+        apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
         if args.flag_dump {
             options.dump_file = args.arg_sqlite.expect("checked above");
             output = csvs_to_sqlite_with_options(String::new(), arg_input, options)?;
@@ -371,7 +371,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else if args.cmd_xlsx {
         debug!("converting to Excel XLSX");
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
-        apply_table_rename(&args.flag_table, &mut arg_input, &tmpdir)?;
+        apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
 
         output =
             csvs_to_xlsx_with_options(args.arg_xlsx.expect("checked above"), arg_input, options)?;
@@ -379,7 +379,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else if args.cmd_ods {
         debug!("converting to ODS");
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
-        apply_table_rename(&args.flag_table, &mut arg_input, &tmpdir)?;
+        apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
 
         output =
             csvs_to_ods_with_options(args.arg_ods.expect("checked above"), arg_input, options)?;
@@ -474,11 +474,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 /// so that the downstream library derives the desired table name from the filename.
 /// We copy instead of rename to avoid modifying the user's original file.
 fn apply_table_rename(
-    flag_table: &Option<String>,
+    flag_table: Option<&String>,
     arg_input: &mut [std::path::PathBuf],
     tmpdir: &tempfile::TempDir,
 ) -> CliResult<()> {
-    if let Some(ref table_name) = *flag_table {
+    if let Some(table_name) = flag_table {
         if arg_input.len() != 1 {
             return fail_incorrectusage_clierror!(
                 "--table can only be used with a single input file."

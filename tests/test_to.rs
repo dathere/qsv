@@ -547,8 +547,12 @@ fn to_table_xlsx_happy_path() {
         .arg(&xlsx_file)
         .arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
     let output = wrk.output(&mut cmd);
+    assert!(
+        output.status.success(),
+        "Command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("My Sheet"),
@@ -640,9 +644,12 @@ fn to_table_ods_happy_path() {
         .arg(&ods_file)
         .arg("in.csv");
 
-    wrk.assert_success(&mut cmd);
-
     let output = wrk.output(&mut cmd);
+    assert!(
+        output.status.success(),
+        "Command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("My Sheet"),

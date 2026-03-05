@@ -599,6 +599,27 @@ fn to_table_error_xlsx_too_long() {
 }
 
 #[test]
+fn to_table_error_ods_too_long() {
+    // --table with sheet name > 31 chars should fail for ods
+    let wrk = Workdir::new("to_table_error_ods_long");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let ods_file = wrk.path("test.ods").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("ods")
+        .arg("--table")
+        .arg("a".repeat(32))
+        .arg(ods_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("must not exceed 31 characters"),
+        "Expected length error, got: {stderr}"
+    );
+}
+
+#[test]
 fn to_table_ods_happy_path() {
     // --table with ods should use the custom sheet name
     let wrk = Workdir::new("to_table_ods_happy");

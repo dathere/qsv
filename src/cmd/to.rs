@@ -197,7 +197,7 @@ To options:
                           Only valid with a single input file.
                           For postgres/sqlite: must start with a letter or underscore,
                           contain only alphanumeric characters and underscores (max 63).
-                          For xlsx/ods: used as sheet name (max 31 chars for xlsx,
+                          For xlsx/ods: used as sheet name (max 31 chars,
                           cannot contain \ / * [ ] : ?).
   -p, --separator <arg>   For xlsx, use this character to help truncate xlsx sheet names.
                           Defaults to space.
@@ -304,9 +304,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         if args.cmd_xlsx || args.cmd_ods {
             // xlsx/ods sheet name validation
-            if args.cmd_xlsx && table_name.len() > 31 {
+            // Both xlsx (Excel) and ods (ODF) enforce a 31-character limit on sheet names
+            if table_name.chars().count() > 31 {
                 return fail_incorrectusage_clierror!(
-                    "--table sheet name must not exceed 31 characters for xlsx."
+                    "--table sheet name must not exceed 31 characters for xlsx/ods."
                 );
             }
             if table_name.contains(&['\\', '/', '*', '[', ']', ':', '?'][..]) {

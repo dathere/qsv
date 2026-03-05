@@ -304,7 +304,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         if args.cmd_xlsx || args.cmd_ods {
             // xlsx/ods sheet name validation
-            // Both xlsx (Excel) and ods (ODF) enforce a 31-character limit on sheet names
+            // Both xlsx (Excel) and ods (ODS) enforce a 31-character limit on sheet names
             if table_name.chars().count() > 31 {
                 return fail_incorrectusage_clierror!(
                     "--table sheet name must not exceed 31 characters for xlsx/ods."

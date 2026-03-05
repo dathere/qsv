@@ -547,6 +547,7 @@ fn to_table_xlsx_happy_path() {
         .arg(&xlsx_file)
         .arg("in.csv");
 
+    wrk.assert_success(&mut cmd);
     let output = wrk.output(&mut cmd);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -638,6 +639,8 @@ fn to_table_ods_happy_path() {
         .arg("My Sheet")
         .arg(&ods_file)
         .arg("in.csv");
+
+    wrk.assert_success(&mut cmd);
 
     let output = wrk.output(&mut cmd);
     let stdout = String::from_utf8_lossy(&output.stdout);

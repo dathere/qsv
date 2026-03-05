@@ -30,13 +30,13 @@ Download the extension file:
 
 ### Step 2: Install in Claude Desktop
 
-Double-click the downloaded `qsv-mcp-server-<version>.mcpb` file. This should automatically open Claude Desktop and prompt you to install the extension.
+Double-click the downloaded `qsv-mcp-server-<version>.mcpb` file. This automatically opens Claude Desktop and prompts you to install the extension.
 
-### Step 3: Configure (Optional)
+### Step 3: There is no step 3! The extension is ready to use. Just restart Claude Desktop and start asking Claude about your data files.
 
 After installation, you can optionally configure the extension in Claude Desktop's settings:
 
-**Working Directory** (Required - defaults to your Downloads (Mac) or home folder (Windows))
+**Working Directory** (defaults to your Downloads (Mac) or home folder (Windows))
 - Where Claude will look for your data files (CSV, Excel, TSV, JSONL, etc.)
 - Example: `/Users/yourname/Documents` (Mac) or `C:\Users\yourname\Documents` (Windows)
 - You can use `$HOME` or `${HOME}` as shortcuts for your home folder
@@ -55,10 +55,6 @@ After installation, you can optionally configure the extension in Claude Desktop
 
 **DuckDB Options** (Optional)
 - If you have DuckDB installed, you can enable it so qsv will use it instead of Polars for SQL queries. Though Polars is fast, built-in, and a dialect of PostgreSQL, DuckDB offers additional features, may perform better on certain queries and is more well-known to AI models, which may lead to better query generation.
-
-### Step 4: Restart
-
-Close and reopen Claude Desktop for the extension to take effect.
 
 ## Verifying Installation
 
@@ -193,13 +189,13 @@ To remove the extension:
 ## Privacy & Security
 
 **What the extension does:**
-- Reads and writes CSV files on your local computer
+- Reads and writes data files on your local computer
 - Only accesses folders you explicitly allow
-- Never sends your data over the internet
+- Never sends your raw data over the internet. Only sends summarized metadata (column names, data types, statistics) to the Model for analysis and decision-making
 - All processing happens locally on your machine
 
 **What the extension doesn't do:**
-- Never uploads your CSV data to external servers
+- Never uploads your data to external servers
 - Never makes network requests (except to check for qsv updates)
 - Never accesses files outside your allowed directories
 - Never modifies files unless you explicitly ask

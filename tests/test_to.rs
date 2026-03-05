@@ -531,44 +531,116 @@ fn to_ods_dir() {
 }
 
 #[test]
-fn to_table_error_xlsx() {
-    // --table should fail with xlsx subcommand
-    let wrk = Workdir::new("to_table_error_xlsx");
+fn to_table_xlsx_happy_path() {
+    // --table with xlsx should use the custom sheet name
+    let wrk = Workdir::new("to_table_xlsx_happy");
+    wrk.create(
+        "in.csv",
+        vec![svec!["city", "state"], svec!["Boston", "MA"]],
+    );
+
+    let xlsx_file = wrk.path("test.xlsx").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("xlsx")
+        .arg("--table")
+        .arg("My Sheet")
+        .arg(&xlsx_file)
+        .arg("in.csv");
+
+    let output = wrk.output(&mut cmd);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("My Sheet"),
+        "Expected sheet name 'My Sheet' in output, got: {stdout}"
+    );
+}
+
+#[test]
+fn to_table_error_xlsx_invalid_chars() {
+    // --table with invalid sheet name characters should fail for xlsx
+    let wrk = Workdir::new("to_table_error_xlsx_chars");
     wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
 
     let xlsx_file = wrk.path("test.xlsx").to_string_lossy().to_string();
     let mut cmd = wrk.command("to");
     cmd.arg("xlsx")
         .arg("--table")
-        .arg("custom_name")
+        .arg("bad[name")
         .arg(xlsx_file)
         .arg("in.csv");
 
     let stderr = wrk.output_stderr(&mut cmd);
     assert!(
-        stderr.contains("--table can only be used with postgres or sqlite"),
-        "Expected unsupported subcommand error, got: {stderr}"
+        stderr.contains("sheet name cannot contain"),
+        "Expected invalid chars error, got: {stderr}"
     );
 }
 
 #[test]
-fn to_table_error_ods() {
-    // --table should fail with ods subcommand
-    let wrk = Workdir::new("to_table_error_ods");
+fn to_table_error_xlsx_too_long() {
+    // --table with sheet name > 31 chars should fail for xlsx
+    let wrk = Workdir::new("to_table_error_xlsx_long");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let xlsx_file = wrk.path("test.xlsx").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("xlsx")
+        .arg("--table")
+        .arg("a]".repeat(16))
+        .arg(xlsx_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("must not exceed 31 characters")
+            || stderr.contains("sheet name cannot contain"),
+        "Expected length or invalid char error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_ods_happy_path() {
+    // --table with ods should use the custom sheet name
+    let wrk = Workdir::new("to_table_ods_happy");
+    wrk.create(
+        "in.csv",
+        vec![svec!["city", "state"], svec!["Boston", "MA"]],
+    );
+
+    let ods_file = wrk.path("test.ods").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("ods")
+        .arg("--table")
+        .arg("My Sheet")
+        .arg(&ods_file)
+        .arg("in.csv");
+
+    let output = wrk.output(&mut cmd);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("My Sheet"),
+        "Expected sheet name 'My Sheet' in output, got: {stdout}"
+    );
+}
+
+#[test]
+fn to_table_error_ods_invalid_chars() {
+    // --table with invalid sheet name characters should fail for ods
+    let wrk = Workdir::new("to_table_error_ods_chars");
     wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
 
     let ods_file = wrk.path("test.ods").to_string_lossy().to_string();
     let mut cmd = wrk.command("to");
     cmd.arg("ods")
         .arg("--table")
-        .arg("custom_name")
+        .arg("bad:name")
         .arg(ods_file)
         .arg("in.csv");
 
     let stderr = wrk.output_stderr(&mut cmd);
     assert!(
-        stderr.contains("--table can only be used with postgres or sqlite"),
-        "Expected unsupported subcommand error, got: {stderr}"
+        stderr.contains("sheet name cannot contain"),
+        "Expected invalid chars error, got: {stderr}"
     );
 }
 
@@ -588,7 +660,7 @@ fn to_table_error_datapackage() {
 
     let stderr = wrk.output_stderr(&mut cmd);
     assert!(
-        stderr.contains("--table can only be used with postgres or sqlite"),
+        stderr.contains("--table cannot be used with the datapackage subcommand"),
         "Expected unsupported subcommand error, got: {stderr}"
     );
 }

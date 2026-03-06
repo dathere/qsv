@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/describegpt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/describegpt.rs)** | [🌐](TableOfContents.md#legend "has web-aware options.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")[🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")[🗃️](TableOfContents.md#legend "Limited Extended input support.")[📚](TableOfContents.md#legend "has lookup table support, enabling runtime \"lookups\" against local or remote reference CSVs.")[⛩️](TableOfContents.md#legend "uses Mini Jinja template engine.") [![CKAN](../images/ckan.png)](TableOfContents.md#legend "has CKAN-aware integration options.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Data Analysis/Inferencing Options](#data-analysis/inferencing-options) | [Dictionary Options](#dictionary-options) | [Tag Options](#tag-options) | [Stats/Frequency Options](#stats/frequency-options) | [Custom Prompt Options](#custom-prompt-options) | [LLM API Options](#llm-api-options) | [Caching Options](#caching-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Data Analysis/Inferencing Options](#data-analysis/inferencing-options) | [Dictionary Options](#dictionary-options) | [Tag Options](#tag-options) | [Stats/Frequency Options](#stats/frequency-options) | [Custom Prompt Options](#custom-prompt-options) | [LLM API Options](#llm-api-options) | [Caching Options](#caching-options) | [MCP Sampling Options](#mcp-sampling-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -189,6 +189,8 @@ see <https://github.com/dathere/qsv/blob/master/docs/Describegpt.md>
 
 ```console
 qsv describegpt [options] [<input>]
+qsv describegpt --prepare-context [options] [<input>]
+qsv describegpt --process-response [options]
 qsv describegpt (--redis-cache) (--flush-cache)
 qsv describegpt --help
 ```
@@ -279,6 +281,15 @@ qsv describegpt --help
 | &nbsp;`--fresh`&nbsp; | flag | Send a fresh request to the LLM API, refreshing a cached response if it exists. When a --prompt SQL query fails, you can also use this option to request the LLM to generate a new SQL query. |  |
 | &nbsp;`--forget`&nbsp; | flag | Remove a cached response if it exists and then exit. |  |
 | &nbsp;`--flush-cache`&nbsp; | flag | Flush the current cache entries on startup. WARNING: This operation is irreversible. |  |
+
+<a name="mcp-sampling-options"></a>
+
+## MCP Sampling Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`--prepare-context`&nbsp; | flag | Output the prompt context as JSON to stdout without calling the LLM. JSON includes system/user prompts, cache state, and analysis results for each inference phase. Useful for inspecting prompts or piping to custom LLM integrations. Used by the MCP server for sampling mode. |  |
+| &nbsp;`--process-response`&nbsp; | flag | Process LLM responses provided as JSON via stdin. Takes the output format from --prepare-context with LLM responses filled in, and produces the final output (dictionary, description, tags, or prompt results). Used by the MCP server for sampling mode. |  |
 
 <a name="common-options"></a>
 

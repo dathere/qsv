@@ -4827,9 +4827,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         const MAX_STDIN_SIZE: u64 = 50 * 1024 * 1024;
         let stdin_data = {
             let mut buf = String::new();
-            std::io::Read::take(std::io::stdin(), MAX_STDIN_SIZE).read_to_string(&mut buf)?;
+            std::io::stdin()
+                .take(MAX_STDIN_SIZE)
+                .read_to_string(&mut buf)?;
             buf
         };
+        if stdin_data.len() as u64 >= MAX_STDIN_SIZE {
+            return fail_clierror!(
+                "--process-response input exceeds {MAX_STDIN_SIZE} byte limit. Provide smaller \
+                 JSON input on stdin."
+            );
+        }
         let input: ProcessResponseInput = serde_json::from_str(&stdin_data).map_err(|e| {
             CliError::Other(format!(
                 "Failed to parse --process-response JSON from stdin: {e}"

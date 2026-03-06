@@ -99,6 +99,9 @@ function runQsvCapture(
         proc.stdin!.once("drain", () => {
           proc.stdin!.end();
         });
+        proc.stdin!.once("error", () => {
+          proc.stdin!.end();
+        });
       }
     } else {
       proc.stdin!.end();

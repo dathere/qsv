@@ -1915,15 +1915,15 @@ fn describegpt_process_response_produces_output() {
     // Use std::process::Command with stdin piping
     use std::{io::Write, process::Stdio};
 
-    let mut cmd2 = wrk.command("describegpt");
-    cmd2.arg("--process-response")
+    let mut cmd_2 = wrk.command("describegpt");
+    cmd_2.arg("--process-response")
         .arg("--description")
         .arg("--no-cache")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = cmd2.spawn().unwrap();
+    let mut child = cmd_2.spawn().unwrap();
     child
         .stdin
         .as_mut()

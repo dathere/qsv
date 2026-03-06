@@ -964,7 +964,7 @@ fn format_description(lines: &[String]) -> String {
 /// Known acronyms that should be preserved as all-uppercase in title-cased headings
 const ACRONYMS: &[&str] = &[
     "API", "CKAN", "CSV", "CV", "HTTP", "HTTPS", "ID", "IP", "IPC", "IQR", "JSON", "JSONL", "LLM",
-    "NLP", "ODS", "RAG", "SEM", "SQL", "SSV", "TOML", "TOON", "TSV", "URL", "UUID", "XLSX",
+    "MCP", "NLP", "ODS", "RAG", "SEM", "SQL", "SSV", "TOML", "TOON", "TSV", "URL", "UUID", "XLSX",
 ];
 
 /// Title-case a single part (word fragment), preserving known acronyms

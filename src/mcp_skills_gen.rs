@@ -107,7 +107,16 @@ impl UsageParser {
 
         let hints = self.extract_hints();
         let category = self.infer_category();
-        let examples = self.extract_examples();
+        // Skip examples for commands whose CLI examples reference MCP-stripped options
+        // (e.g., describegpt examples use --api-key, --base-url, --prompt which are
+        // not available in MCP mode). Empty examples lets the guidance hints in
+        // mcp-tools.ts drive agent behavior instead.
+        let skip_examples = ["describegpt"];
+        let examples = if skip_examples.contains(&self.command_name.as_str()) {
+            Vec::new()
+        } else {
+            self.extract_examples()
+        };
 
         Ok(SkillDefinition {
             name: format!("qsv-{}", self.command_name),
@@ -178,6 +187,8 @@ impl UsageParser {
                 "--timeout",
                 "--addl-props",
                 "--export-prompt",
+                "--prepare-context",
+                "--process-response",
                 "--prompt-file",
                 "--ckan-api",
                 "--cache-dir",

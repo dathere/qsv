@@ -2598,6 +2598,17 @@ export async function handleToolCall(
         );
       }
 
+      // Block LLM API options that don't apply in MCP mode (sampling handles these)
+      const blockedLlmParams = ["base_url", "api_key", "model", "max_tokens"];
+      for (const param of blockedLlmParams) {
+        if (params[param] !== undefined) {
+          return errorResult(
+            `The --${param.replace(/_/g, "-")} option is not needed in MCP server mode.\n` +
+            `describegpt uses the connected LLM automatically via MCP sampling — no API configuration required.`,
+          );
+        }
+      }
+
       const capabilities = server.getClientCapabilities();
       if (capabilities?.sampling) {
         // Build original CLI args from the resolved params

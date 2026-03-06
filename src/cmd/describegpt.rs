@@ -125,6 +125,8 @@ see https://github.com/dathere/qsv/blob/master/docs/Describegpt.md
 
 Usage:
     qsv describegpt [options] [<input>]
+    qsv describegpt --prepare-context [options] [<input>]
+    qsv describegpt --process-response [options]
     qsv describegpt (--redis-cache) (--flush-cache)
     qsv describegpt --help
 
@@ -317,6 +319,16 @@ describegpt options:
     --flush-cache          Flush the current cache entries on startup.
                            WARNING: This operation is irreversible.
 
+                           MCP SAMPLING OPTIONS:
+    --prepare-context      Output the prompt context as JSON to stdout without calling the LLM.
+                           JSON includes system/user prompts, cache state, and analysis results
+                           for each inference phase. Useful for inspecting prompts or piping to
+                           custom LLM integrations. Used by the MCP server for sampling mode.
+    --process-response     Process LLM responses provided as JSON via stdin. Takes the output
+                           format from --prepare-context with LLM responses filled in, and
+                           produces the final output (dictionary, description, tags, or prompt
+                           results). Used by the MCP server for sampling mode.
+
 Common options:
     -h, --help             Display this message
     --format <format>      Output format: Markdown, TSV, JSON, or TOON.
@@ -425,6 +437,8 @@ struct Args {
     flag_fresh:            bool,
     flag_forget:           bool,
     flag_flush_cache:      bool,
+    flag_prepare_context:  bool,
+    flag_process_response: bool,
     flag_format:           Option<String>,
     flag_output:           Option<String>,
     flag_quiet:            bool,
@@ -535,6 +549,45 @@ struct AnalysisResults {
     headers:   String,
     file_hash: String,
     delimiter: char,
+}
+
+/// JSON interchange format for --prepare-context output.
+/// Contains all prompts and cache state for each inference phase.
+#[derive(Debug, Serialize, Deserialize)]
+struct PrepareContextOutput {
+    phases:           Vec<PhaseContext>,
+    analysis_results: AnalysisResults,
+    model:            String,
+    max_tokens:       u32,
+}
+
+/// Context for a single inference phase (dictionary, description, tags, or prompt).
+#[derive(Debug, Serialize, Deserialize)]
+struct PhaseContext {
+    kind:            String,
+    system_prompt:   String,
+    user_prompt:     String,
+    max_tokens:      u32,
+    cache_key:       String,
+    cached_response: Option<CompletionResponse>,
+}
+
+/// JSON interchange format for --process-response input (read from stdin).
+/// Contains LLM responses for each phase that needed inference.
+#[derive(Debug, Serialize, Deserialize)]
+struct ProcessResponseInput {
+    phases:           Vec<PhaseResponse>,
+    analysis_results: AnalysisResults,
+    model:            String,
+}
+
+/// Response for a single inference phase from the MCP server.
+#[derive(Debug, Serialize, Deserialize)]
+struct PhaseResponse {
+    kind:        String,
+    response:    String,
+    reasoning:   String,
+    token_usage: TokenUsage,
 }
 
 // Data structures for neuro-procedural dictionary generation
@@ -2639,6 +2692,32 @@ fn get_redis_analysis(
     Ok(Return::new(perform_analysis(args, input_path)?))
 }
 
+/// Look up a cached completion response without triggering an API call.
+/// Returns Some(CompletionResponse) on cache hit, None on cache miss.
+fn lookup_cache(cache_type: &CacheType, cache_key: &str) -> Option<CompletionResponse> {
+    let key = cache_key.to_string();
+    match cache_type {
+        CacheType::Disk | CacheType::Fresh => {
+            GET_DISKCACHE_COMPLETION.cache_get(&key).ok().flatten()
+        },
+        CacheType::Redis => GET_REDIS_COMPLETION.cache_get(&key).ok().flatten(),
+        CacheType::None => None,
+    }
+}
+
+/// Update cache with a completion response.
+fn update_cache(cache_type: &CacheType, cache_key: &str, completion: &CompletionResponse) {
+    match cache_type {
+        CacheType::Disk | CacheType::Fresh => {
+            let _ = GET_DISKCACHE_COMPLETION.cache_set(cache_key.to_string(), completion.clone());
+        },
+        CacheType::Redis => {
+            let _ = GET_REDIS_COMPLETION.cache_set(cache_key.to_string(), completion.clone());
+        },
+        CacheType::None => {},
+    }
+}
+
 // Get output format (markdown is default)
 fn get_output_format(args: &Args) -> CliResult<OutputFormat> {
     // Command-line flags take precedence over prompt file settings
@@ -2713,6 +2792,333 @@ fn get_cached_completion(
         },
         CacheType::None => get_completion(args, client, model, api_key, messages, kind),
     }
+}
+
+/// Process the output of a single inference phase.
+/// Extracted from run_inference_options::process_output for reuse by --process-response.
+#[allow(clippy::too_many_arguments)]
+fn process_phase_output(
+    kind: PromptType,
+    completion_response: &CompletionResponse,
+    total_json_output: &mut serde_json::Value,
+    args: &Args,
+    analysis_results: &AnalysisResults,
+    model: &str,
+    base_url: &str,
+    output_format: OutputFormat,
+) -> CliResult<()> {
+    // Skip outputting dictionary when using --prompt (but still generate it for context)
+    if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
+        let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
+        let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
+        let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
+        let addl_cols = determine_addl_cols(args, &avail_cols);
+        let code_entries = generate_code_based_dictionary(
+            &stats_records,
+            &frequency_records,
+            args.flag_enum_threshold,
+            args.flag_num_examples,
+            args.flag_truncate_str,
+            &addl_cols,
+        );
+        let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
+        let llm_labels_descriptions =
+            parse_llm_dictionary_response(&completion_response.response, &field_names)
+                .unwrap_or_default();
+        let combined_entries = combine_dictionary_entries(code_entries, &llm_labels_descriptions);
+        let mut dictionary_json = format_dictionary_json(&combined_entries, args);
+        if let Some(attribution) = dictionary_json.get_mut("attribution")
+            && let Some(attr_str) = attribution.as_str()
+        {
+            *attribution = json!(replace_attribution_placeholder(
+                attr_str,
+                args,
+                model,
+                base_url,
+                AttributionFormat::Markdown,
+                PromptType::Dictionary
+            ));
+        }
+        DATA_DICTIONARY_JSON
+            .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+        return Ok(());
+    }
+
+    // Handle Dictionary type with neuro-procedural approach
+    if kind == PromptType::Dictionary {
+        let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
+        let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
+        let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
+        let addl_cols = determine_addl_cols(args, &avail_cols);
+        let code_entries = generate_code_based_dictionary(
+            &stats_records,
+            &frequency_records,
+            args.flag_enum_threshold,
+            args.flag_num_examples,
+            args.flag_truncate_str,
+            &addl_cols,
+        );
+        let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
+        let llm_labels_descriptions =
+            parse_llm_dictionary_response(&completion_response.response, &field_names)
+                .unwrap_or_default();
+        let combined_entries = combine_dictionary_entries(code_entries, &llm_labels_descriptions);
+
+        if output_format == OutputFormat::Json || output_format == OutputFormat::Toon {
+            let mut dictionary_json = format_dictionary_json(&combined_entries, args);
+            if let Some(attribution) = dictionary_json.get_mut("attribution")
+                && let Some(attr_str) = attribution.as_str()
+            {
+                *attribution = json!(replace_attribution_placeholder(
+                    attr_str,
+                    args,
+                    model,
+                    base_url,
+                    AttributionFormat::Markdown,
+                    PromptType::Dictionary
+                ));
+            }
+            total_json_output[kind.to_string()] = json!({
+                "response": dictionary_json,
+                "reasoning": completion_response.reasoning,
+                "token_usage": completion_response.token_usage,
+            });
+            DATA_DICTIONARY_JSON
+                .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+        } else if output_format == OutputFormat::Tsv {
+            let mut tsv_output = format_dictionary_tsv(&combined_entries);
+            tsv_output.push_str(&format_token_usage_comments(
+                &completion_response.reasoning,
+                &completion_response.token_usage,
+            ));
+            let dictionary_json = format_dictionary_json(&combined_entries, args);
+            DATA_DICTIONARY_JSON
+                .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+            if let Some(output) = &args.flag_output {
+                let tsv_path = get_tsv_output_path(output, kind);
+                fs::write(&tsv_path, tsv_output.as_bytes())?;
+            } else {
+                print!("{tsv_output}");
+            }
+        } else {
+            // Markdown
+            let mut markdown_output = format_dictionary_markdown(&combined_entries);
+            markdown_output = replace_attribution_placeholder(
+                &markdown_output,
+                args,
+                model,
+                base_url,
+                AttributionFormat::Markdown,
+                PromptType::Dictionary,
+            );
+            let formatted_output = format!(
+                "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
+                kind,
+                markdown_output,
+                completion_response.reasoning,
+                completion_response.token_usage
+            );
+            let dictionary_json = format_dictionary_json(&combined_entries, args);
+            DATA_DICTIONARY_JSON
+                .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+            if let Some(output) = &args.flag_output {
+                fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(output)?
+                    .write_all(formatted_output.as_bytes())?;
+            } else {
+                println!("{formatted_output}");
+            }
+        }
+        return Ok(());
+    }
+
+    // For non-dictionary types, format output
+    fn format_output_str(str: &str) -> String {
+        str.replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace("\\\"", "\"")
+            .replace("\\'", "'")
+            .replace("\\`", "`")
+            + "\n\n"
+    }
+
+    let is_sql_response = kind == PromptType::Prompt
+        && args.flag_sql_results.is_some()
+        && completion_response.response.contains("```sql");
+
+    if output_format == OutputFormat::Json && !is_sql_response {
+        total_json_output[kind.to_string()] = if kind == PromptType::Description
+            || kind == PromptType::Prompt
+        {
+            json!({
+                "response": completion_response.response,
+                "reasoning": completion_response.reasoning,
+                "token_usage": completion_response.token_usage,
+            })
+        } else {
+            let mut output_value =
+                if let Ok(json_value) = extract_json_from_output(&completion_response.response) {
+                    json!({
+                        "response": json_value,
+                        "reasoning": completion_response.reasoning,
+                        "token_usage": completion_response.token_usage,
+                    })
+                } else {
+                    json!({
+                        "response": completion_response.response,
+                        "reasoning": completion_response.reasoning,
+                        "token_usage": completion_response.token_usage,
+                    })
+                };
+            if kind == PromptType::Tags
+                && let Some(obj) = output_value.as_object_mut()
+            {
+                obj.insert("num_tags".to_string(), json!(args.flag_num_tags));
+                obj.insert(
+                    "tag_vocab".to_string(),
+                    match &args.flag_tag_vocab {
+                        Some(path) => json!(path.as_str()),
+                        None => serde_json::Value::Null,
+                    },
+                );
+            }
+            output_value
+        };
+    } else if output_format == OutputFormat::Tsv && !is_sql_response {
+        let tsv_output = if kind == PromptType::Description {
+            format_description_tsv(
+                &completion_response.response,
+                &completion_response.reasoning,
+                &completion_response.token_usage,
+            )
+        } else if kind == PromptType::Prompt {
+            format_prompt_tsv(
+                &completion_response.response,
+                &completion_response.reasoning,
+                &completion_response.token_usage,
+            )
+        } else if kind == PromptType::Tags {
+            let tags_json = match extract_json_from_output(&completion_response.response) {
+                Ok(json_value) => json_value,
+                Err(_) => json!({"tags": []}),
+            };
+            format_tags_tsv(
+                &tags_json,
+                &completion_response.reasoning,
+                &completion_response.token_usage,
+            )
+        } else {
+            format_description_tsv(
+                &completion_response.response,
+                &completion_response.reasoning,
+                &completion_response.token_usage,
+            )
+        };
+        if let Some(output) = &args.flag_output {
+            let tsv_path = get_tsv_output_path(output, kind);
+            fs::write(&tsv_path, tsv_output.as_bytes())?;
+        } else {
+            print!("{tsv_output}");
+        }
+    } else if output_format == OutputFormat::Toon && !is_sql_response {
+        total_json_output[kind.to_string()] =
+            if kind == PromptType::Description || kind == PromptType::Prompt {
+                json!({
+                    "response": completion_response.response,
+                    "reasoning": completion_response.reasoning,
+                    "token_usage": completion_response.token_usage,
+                })
+            } else {
+                let mut response_value = completion_response.response.clone();
+                let mut attribution_value = serde_json::Value::Null;
+                if kind == PromptType::Tags {
+                    if let Some(attr_start) = response_value.find("Generated by") {
+                        let attribution_text = response_value[attr_start..].trim().to_string();
+                        response_value = response_value[..attr_start].trim().to_string();
+                        attribution_value = json!(attribution_text);
+                    } else if response_value.contains("{GENERATED_BY_SIGNATURE}") {
+                        let attribution_text = replace_attribution_placeholder(
+                            "{GENERATED_BY_SIGNATURE}",
+                            args,
+                            model,
+                            base_url,
+                            AttributionFormat::Markdown,
+                            PromptType::Tags,
+                        );
+                        response_value = response_value
+                            .replace("{GENERATED_BY_SIGNATURE}", "")
+                            .trim()
+                            .to_string();
+                        attribution_value = json!(attribution_text);
+                    }
+                }
+                let mut output_value =
+                    if let Ok(json_value) = extract_json_from_output(&response_value) {
+                        json!({
+                            "response": json_value,
+                            "reasoning": completion_response.reasoning,
+                            "token_usage": completion_response.token_usage,
+                        })
+                    } else {
+                        json!({
+                            "response": response_value,
+                            "reasoning": completion_response.reasoning,
+                            "token_usage": completion_response.token_usage,
+                        })
+                    };
+                if kind == PromptType::Tags
+                    && let Some(obj) = output_value.as_object_mut()
+                {
+                    obj.insert("num_tags".to_string(), json!(args.flag_num_tags));
+                    obj.insert(
+                        "tag_vocab".to_string(),
+                        match &args.flag_tag_vocab {
+                            Some(path) => json!(path.as_str()),
+                            None => serde_json::Value::Null,
+                        },
+                    );
+                    if attribution_value != serde_json::Value::Null {
+                        obj.insert("attribution".to_string(), attribution_value);
+                    }
+                }
+                output_value
+            };
+    } else {
+        // Markdown / plaintext
+        let mut formatted_output = format_output_str(&completion_response.response);
+        if kind == PromptType::Prompt && is_sql_response {
+            formatted_output = {
+                let input_path = args.arg_input.as_deref().unwrap_or("input.csv");
+                if READ_CSV_AUTO_REGEX.is_match(&formatted_output) {
+                    let escaped_path = escape_sql_string(input_path);
+                    READ_CSV_AUTO_REGEX
+                        .replace_all(
+                            &formatted_output,
+                            format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
+                        )
+                        .into_owned()
+                } else {
+                    formatted_output.replace(INPUT_TABLE_NAME, "_t_1")
+                }
+            };
+        }
+        formatted_output = format!(
+            "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
+            kind, formatted_output, completion_response.reasoning, completion_response.token_usage
+        );
+        if let Some(output) = &args.flag_output {
+            fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(output)?
+                .write_all(formatted_output.as_bytes())?;
+        } else {
+            println!("{formatted_output}");
+        }
+    }
+    Ok(())
 }
 
 // Generates output for all inference options
@@ -4820,6 +5226,80 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
     log::info!("Cache Type: {cache_type:?}");
 
+    // Validate MCP sampling flags
+    if args.flag_prepare_context && args.flag_process_response {
+        return fail_incorrectusage_clierror!(
+            "--prepare-context and --process-response are mutually exclusive."
+        );
+    }
+
+    // --process-response mode: read LLM responses from stdin, process and output results
+    // This branch is early because it doesn't need an input file or analysis step.
+    if args.flag_process_response {
+        let stdin_data = std::io::read_to_string(std::io::stdin())?;
+        let input: ProcessResponseInput = serde_json::from_str(&stdin_data).map_err(|e| {
+            CliError::Other(format!(
+                "Failed to parse --process-response JSON from stdin: {e}"
+            ))
+        })?;
+
+        let prompt_file = get_prompt_file(&args)?;
+        let base_url = prompt_file.base_url.clone();
+        let model = &input.model;
+        let output_format = get_output_format(&args)?;
+
+        let mut total_json_output: serde_json::Value = json!({});
+
+        for phase in &input.phases {
+            let kind: PromptType = phase
+                .kind
+                .parse()
+                .map_err(|_| CliError::Other(format!("Unknown phase kind: {}", phase.kind)))?;
+
+            let completion = CompletionResponse {
+                response:    phase.response.clone(),
+                reasoning:   phase.reasoning.clone(),
+                token_usage: phase.token_usage.clone(),
+            };
+
+            // Update cache with the response
+            let cache_key = get_cache_key(&args, kind, model);
+            update_cache(&cache_type, &cache_key, &completion);
+
+            // Process the output for this phase
+            process_phase_output(
+                kind,
+                &completion,
+                &mut total_json_output,
+                &args,
+                &input.analysis_results,
+                model,
+                &base_url,
+                output_format,
+            )?;
+        }
+
+        // Write accumulated JSON/TOON output
+        if output_format == OutputFormat::Json {
+            let json_str = serde_json::to_string_pretty(&total_json_output)?;
+            if let Some(output) = &args.flag_output {
+                fs::write(output, json_str.as_bytes())?;
+            } else {
+                println!("{json_str}");
+            }
+        } else if output_format == OutputFormat::Toon {
+            let toon_str = encode(&total_json_output, &EncodeOptions::new())
+                .map_err(|e| CliError::Other(format!("TOON encoding error: {e}")))?;
+            if let Some(output) = &args.flag_output {
+                fs::write(output, toon_str.as_bytes())?;
+            } else {
+                println!("{toon_str}");
+            }
+        }
+
+        return Ok(());
+    }
+
     // Initialize tag vocabulary cache directory and CKAN settings if tag vocabulary is used
     #[cfg(feature = "feature_capable")]
     if args.flag_tag_vocab.is_some() {
@@ -5027,6 +5507,92 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     print_status("Analyzed data.", Some(analysis_start.elapsed()));
+
+    // --prepare-context mode: output prompts and cache state as JSON, then exit
+    if args.flag_prepare_context {
+        let prompt_file = get_prompt_file(&args)?;
+        let model = args
+            .flag_model
+            .clone()
+            .unwrap_or_else(|| prompt_file.model.clone());
+        let cache_key_model = &model;
+
+        let mut phases = Vec::new();
+
+        // Determine which phases to run
+        let run_dictionary = args.flag_dictionary || args.flag_all || args.flag_prompt.is_some();
+        let run_description = args.flag_description || args.flag_all;
+        let run_tags = args.flag_tags || args.flag_all;
+        let run_prompt = args.flag_prompt.is_some();
+
+        if run_dictionary {
+            let (user_prompt, system_prompt) =
+                get_prompt(PromptType::Dictionary, Some(&analysis_results), &args)?;
+            let cache_key = get_cache_key(&args, PromptType::Dictionary, cache_key_model);
+            let cached = lookup_cache(&cache_type, &cache_key);
+            phases.push(PhaseContext {
+                kind: PromptType::Dictionary.to_string(),
+                system_prompt,
+                user_prompt,
+                max_tokens: args.flag_max_tokens,
+                cache_key,
+                cached_response: cached,
+            });
+        }
+        if run_description {
+            let (user_prompt, system_prompt) =
+                get_prompt(PromptType::Description, Some(&analysis_results), &args)?;
+            let cache_key = get_cache_key(&args, PromptType::Description, cache_key_model);
+            let cached = lookup_cache(&cache_type, &cache_key);
+            phases.push(PhaseContext {
+                kind: PromptType::Description.to_string(),
+                system_prompt,
+                user_prompt,
+                max_tokens: args.flag_max_tokens,
+                cache_key,
+                cached_response: cached,
+            });
+        }
+        if run_tags {
+            let (user_prompt, system_prompt) =
+                get_prompt(PromptType::Tags, Some(&analysis_results), &args)?;
+            let cache_key = get_cache_key(&args, PromptType::Tags, cache_key_model);
+            let cached = lookup_cache(&cache_type, &cache_key);
+            phases.push(PhaseContext {
+                kind: PromptType::Tags.to_string(),
+                system_prompt,
+                user_prompt,
+                max_tokens: args.flag_max_tokens,
+                cache_key,
+                cached_response: cached,
+            });
+        }
+        if run_prompt {
+            let (user_prompt, system_prompt) =
+                get_prompt(PromptType::Prompt, Some(&analysis_results), &args)?;
+            let cache_key = get_cache_key(&args, PromptType::Prompt, cache_key_model);
+            let cached = lookup_cache(&cache_type, &cache_key);
+            phases.push(PhaseContext {
+                kind: PromptType::Prompt.to_string(),
+                system_prompt,
+                user_prompt,
+                max_tokens: args.flag_max_tokens,
+                cache_key,
+                cached_response: cached,
+            });
+        }
+
+        let output = PrepareContextOutput {
+            phases,
+            analysis_results: analysis_results.clone(),
+            model,
+            max_tokens: args.flag_max_tokens,
+        };
+
+        let json_output = serde_json::to_string_pretty(&output)?;
+        println!("{json_output}");
+        return Ok(());
+    }
 
     print_status("\nInteracting with LLM...", None);
 

@@ -780,6 +780,7 @@ class QsvMcpServer {
             this.executor,
             this.loader,
             this.filesystemProvider,
+            this.server,
           );
         }
 

@@ -1770,3 +1770,213 @@ value,3,1,33.33,1
         "Literal 'Other' value should not have '…' suffix.\nGot: {got}"
     );
 }
+
+// ====== MCP Sampling Mode Tests ======
+// These tests verify the --prepare-context and --process-response flags
+// without requiring an LLM.
+
+#[test]
+fn describegpt_prepare_context_dictionary() {
+    let wrk = Workdir::new("describegpt_prepare_context_dict");
+    wrk.create_indexed(
+        "data.csv",
+        vec![svec!["name", "age", "city"], svec!["Alice", "30", "NYC"]],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("--prepare-context")
+        .arg("--dictionary")
+        .arg("--no-cache")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value = serde_json::from_str(&got).unwrap();
+
+    // Verify top-level structure
+    assert!(json.get("phases").is_some(), "Should have phases");
+    assert!(
+        json.get("analysis_results").is_some(),
+        "Should have analysis_results"
+    );
+    assert!(json.get("model").is_some(), "Should have model");
+    assert!(json.get("max_tokens").is_some(), "Should have max_tokens");
+
+    // Verify phase structure
+    let phases = json["phases"].as_array().unwrap();
+    assert_eq!(phases.len(), 1, "Should have 1 phase for --dictionary");
+    assert_eq!(phases[0]["kind"], "Dictionary");
+    assert!(
+        phases[0]["system_prompt"].is_string(),
+        "Should have system_prompt"
+    );
+    assert!(
+        phases[0]["user_prompt"].is_string(),
+        "Should have user_prompt"
+    );
+    assert!(phases[0]["cache_key"].is_string(), "Should have cache_key");
+    assert!(
+        phases[0]["cached_response"].is_null(),
+        "Should have null cached_response with --no-cache"
+    );
+}
+
+#[test]
+fn describegpt_prepare_context_all() {
+    let wrk = Workdir::new("describegpt_prepare_context_all");
+    wrk.create_indexed(
+        "data.csv",
+        vec![
+            svec!["name", "age"],
+            svec!["Alice", "30"],
+            svec!["Bob", "25"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("--prepare-context")
+        .arg("--all")
+        .arg("--no-cache")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value = serde_json::from_str(&got).unwrap();
+
+    let phases = json["phases"].as_array().unwrap();
+    assert_eq!(phases.len(), 3, "Should have 3 phases for --all");
+
+    let kinds: Vec<&str> = phases.iter().map(|p| p["kind"].as_str().unwrap()).collect();
+    assert!(kinds.contains(&"Dictionary"), "Should include Dictionary");
+    assert!(kinds.contains(&"Description"), "Should include Description");
+    assert!(kinds.contains(&"Tags"), "Should include Tags");
+}
+
+#[test]
+fn describegpt_prepare_context_and_process_response_mutually_exclusive() {
+    let wrk = Workdir::new("describegpt_mutual_exclusive");
+    wrk.create_indexed("data.csv", vec![svec!["a", "b"], svec!["1", "2"]]);
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("--prepare-context")
+        .arg("--process-response")
+        .arg("--dictionary")
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn describegpt_process_response_produces_output() {
+    let wrk = Workdir::new("describegpt_process_response");
+    wrk.create_indexed(
+        "data.csv",
+        vec![
+            svec!["name", "age", "city"],
+            svec!["Alice", "30", "NYC"],
+            svec!["Bob", "25", "LA"],
+        ],
+    );
+
+    // Phase 1: Get prepare-context output
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("--prepare-context")
+        .arg("--description")
+        .arg("--no-cache")
+        .arg("data.csv");
+
+    let prep_json: String = wrk.stdout(&mut cmd);
+    let prep: serde_json::Value = serde_json::from_str(&prep_json).unwrap();
+
+    // Build process-response input with mock LLM responses
+    let phases: Vec<serde_json::Value> = prep["phases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "kind": p["kind"],
+                "response": if p["kind"] == "Dictionary" {
+                    "Field: name\nLabel: Name\nDescription: Person name\n\nField: age\nLabel: Age\nDescription: Person age\n\nField: city\nLabel: City\nDescription: City name"
+                } else {
+                    "This dataset contains demographic information about people."
+                },
+                "reasoning": "Test reasoning",
+                "token_usage": {"prompt": 100, "completion": 50, "total": 150, "elapsed": 500}
+            })
+        })
+        .collect();
+
+    let process_input = serde_json::json!({
+        "phases": phases,
+        "analysis_results": prep["analysis_results"],
+        "model": prep["model"]
+    });
+
+    // Phase 2: Run --process-response with mock data via stdin
+    // Use std::process::Command with stdin piping
+    use std::{io::Write, process::Stdio};
+
+    let mut cmd2 = wrk.command("describegpt");
+    cmd2.arg("--process-response")
+        .arg("--description")
+        .arg("--no-cache")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd2.spawn().unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(process_input.to_string().as_bytes())
+        .unwrap();
+
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "process-response should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!stdout.is_empty(), "Should produce output");
+    assert!(
+        stdout.contains("Description") || stdout.contains("dataset"),
+        "Output should contain description content. Got: {stdout}"
+    );
+}
+
+#[test]
+fn describegpt_prepare_context_analysis_results_structure() {
+    let wrk = Workdir::new("describegpt_prep_analysis");
+    wrk.create_indexed(
+        "data.csv",
+        vec![svec!["x", "y"], svec!["1", "2"], svec!["3", "4"]],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("--prepare-context")
+        .arg("--dictionary")
+        .arg("--no-cache")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value = serde_json::from_str(&got).unwrap();
+
+    let ar = &json["analysis_results"];
+    assert!(
+        ar["stats"].is_string(),
+        "analysis_results should have stats"
+    );
+    assert!(
+        ar["frequency"].is_string(),
+        "analysis_results should have frequency"
+    );
+    assert!(
+        ar["headers"].is_string(),
+        "analysis_results should have headers"
+    );
+    assert!(
+        ar["file_hash"].is_string(),
+        "analysis_results should have file_hash"
+    );
+}

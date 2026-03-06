@@ -1916,7 +1916,8 @@ fn describegpt_process_response_produces_output() {
     use std::{io::Write, process::Stdio};
 
     let mut cmd_2 = wrk.command("describegpt");
-    cmd_2.arg("--process-response")
+    cmd_2
+        .arg("--process-response")
         .arg("--description")
         .arg("--no-cache")
         .stdin(Stdio::piped())

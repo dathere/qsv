@@ -23,6 +23,8 @@ import type {
 } from "./types.js";
 import { runQsvSimple } from "./executor.js";
 import type { SkillExecutor } from "./executor.js";
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { executeDescribegptWithSampling } from "./mcp-sampling.js";
 import type { SkillLoader } from "./loader.js";
 import { config, getDetectionDiagnostics } from "./config.js";
 import { formatBytes, findSimilarFiles, errorResult, successResult, isReservedCachePath, reservedCachePathError, getErrorMessage, isNodeError } from "./utils.js";
@@ -415,6 +417,11 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   pseudo: {
     whenToUse:
       "Pseudonymize column values with incremental IDs. For de-identification or anonymization before sharing data.",
+  },
+  describegpt: {
+    whenToUse: "Generate data dictionaries, descriptions, tags, or ask natural language questions about CSV data using LLM inference.",
+    commonPattern: "Through MCP: no API key needed — uses the connected LLM automatically via sampling. Direct CLI: requires --base-url and --api-key. Run stats first for best results.",
+    errorPrevention: "LLM results may be inaccurate. SQL RAG queries should be verified. Run stats first for best results.",
   },
 };
 
@@ -2328,6 +2335,77 @@ function resolveParamAliases(params: Record<string, unknown>): {
 }
 
 /**
+ * Build CLI args for describegpt from MCP tool params.
+ * Translates MCP parameter names back to qsv CLI flags.
+ */
+function buildDescribegptArgs(
+  params: Record<string, unknown>,
+  inputFile: string,
+  outputFile?: string,
+): string[] {
+  const args: string[] = [];
+
+  // Map known params to CLI flags
+  const flagMap: Record<string, string> = {
+    dictionary: "--dictionary",
+    description: "--description",
+    tags: "--tags",
+    all: "--all",
+    prompt: "--prompt",
+    base_url: "--base-url",
+    model: "--model",
+    api_key: "--api-key",
+    max_tokens: "--max-tokens",
+    format: "--format",
+    num_tags: "--num-tags",
+    tag_vocab: "--tag-vocab",
+    num_examples: "--num-examples",
+    truncate_str: "--truncate-str",
+    stats_options: "--stats-options",
+    freq_options: "--freq-options",
+    enum_threshold: "--enum-threshold",
+    prompt_file: "--prompt-file",
+    sample_size: "--sample-size",
+    sql_results: "--sql-results",
+    language: "--language",
+    addl_props: "--addl-props",
+    timeout: "--timeout",
+    user_agent: "--user-agent",
+    addl_cols: "--addl-cols",
+    addl_cols_list: "--addl-cols-list",
+    session: "--session",
+    session_len: "--session-len",
+    no_cache: "--no-cache",
+    disk_cache_dir: "--disk-cache-dir",
+    redis_cache: "--redis-cache",
+    fresh: "--fresh",
+    quiet: "--quiet",
+    fewshot_examples: "--fewshot-examples",
+    delimiter: "--delimiter",
+    no_headers: "--no-headers",
+  };
+
+  for (const [param, flag] of Object.entries(flagMap)) {
+    const value = params[param];
+    if (value === undefined || value === null || value === false) continue;
+    if (value === true) {
+      args.push(flag);
+    } else {
+      args.push(flag, String(value));
+    }
+  }
+
+  if (outputFile) {
+    args.push("--output", outputFile);
+  }
+
+  // Input file goes last
+  args.push(inputFile);
+
+  return args;
+}
+
+/**
  * Handle execution of a qsv tool
  */
 export async function handleToolCall(
@@ -2336,6 +2414,7 @@ export async function handleToolCall(
   executor: SkillExecutor,
   loader: SkillLoader,
   filesystemProvider?: FilesystemProviderExtended,
+  server?: Server,
 ) {
   // Acquire concurrency slot (queue if all slots are busy)
   const acquired = await acquireSlot(config.concurrencyWaitTimeoutMs);
@@ -2506,6 +2585,22 @@ export async function handleToolCall(
       `[MCP Tools] Executing skill with options:`,
       JSON.stringify(options),
     );
+
+    // Intercept describegpt: use MCP sampling when the client supports it
+    if (commandName === "describegpt" && server && inputFile) {
+      const capabilities = server.getClientCapabilities();
+      if (capabilities?.sampling) {
+        // Build original CLI args from the resolved params
+        const cliArgs = buildDescribegptArgs(params, inputFile, outputFile);
+        return await executeDescribegptWithSampling(
+          server,
+          config.qsvBinPath,
+          cliArgs,
+          currentWorkingDir,
+        );
+      }
+      // Fall through to normal execution if sampling not supported
+    }
 
     // Execute the skill
     const result = await executor.execute(skill, { args, options });

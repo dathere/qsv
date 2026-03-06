@@ -161,6 +161,30 @@ impl UsageParser {
         // Also parse manually to get descriptions
         let manual_descriptions = self.extract_descriptions_from_text();
 
+        // Per-command option skip list for MCP
+        // These options are not relevant when using the command through MCP
+        let command_skip_options: HashMap<&str, &[&str]> = HashMap::from_iter([(
+            "describegpt",
+            [
+                "--prompt",
+                "--sql-results",
+                "--session",
+                "--session-len",
+                "--fewshot-examples",
+                "--sample-size",
+                "--base-url",
+                "--model",
+                "--max-tokens",
+                "--timeout",
+                "--addl-props",
+                "--export-prompt",
+                "--prompt-file",
+                "--ckan-api",
+                "--cache-dir",
+            ]
+            .as_slice(),
+        )]);
+
         // Iterate over parsed atoms from docopt
         for (atom, opts) in parser.descs.iter() {
             match atom {
@@ -219,6 +243,14 @@ impl UsageParser {
                     if (flag_str == "-q" && long_flag.as_deref() == Some("--quiet"))
                         || (flag_str == "-h" && long_flag.as_deref() == Some("--help"))
                         || (flag_str == "-j" && long_flag.as_deref() == Some("--jobs"))
+                    {
+                        continue;
+                    }
+
+                    // Skip per-command options not relevant for MCP
+                    if command_skip_options
+                        .get(self.command_name.as_str())
+                        .is_some_and(|skips| skips.contains(&primary_flag.as_str()))
                     {
                         continue;
                     }
@@ -291,6 +323,14 @@ impl UsageParser {
                             | "--api-key"
                             | "--ckan-token"
                     ) {
+                        continue;
+                    }
+
+                    // Skip per-command options not relevant for MCP
+                    if command_skip_options
+                        .get(self.command_name.as_str())
+                        .is_some_and(|skips| skips.contains(&flag_str.as_str()))
+                    {
                         continue;
                     }
 

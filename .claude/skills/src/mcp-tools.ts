@@ -419,9 +419,9 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
       "Pseudonymize column values with incremental IDs. For de-identification or anonymization before sharing data.",
   },
   describegpt: {
-    whenToUse: "Generate data dictionaries, descriptions, tags, or ask natural language questions about CSV data using LLM inference.",
-    commonPattern: "Through MCP: no API key needed — uses the connected LLM automatically via sampling. Direct CLI: requires --base-url and --api-key. Run stats first for best results.",
-    errorPrevention: "LLM results may be inaccurate. SQL RAG queries should be verified. Run stats first for best results.",
+    whenToUse: "Generate data dictionaries, descriptions, and tags for CSV data using LLM inference.",
+    commonPattern: "Through MCP: no API key needed — uses the connected LLM automatically via sampling. Use --dictionary, --description, --tags, or --all. For natural language questions, use sqlp or other qsv tools directly instead of --prompt.",
+    errorPrevention: "In MCP mode: do NOT use --prompt (SQL RAG mode) — ask the LLM directly instead. Do NOT pass --base-url or --api-key. LLM results may be inaccurate. Run stats first for best results.",
   },
 };
 
@@ -2588,6 +2588,16 @@ export async function handleToolCall(
 
     // Intercept describegpt: use MCP sampling when the client supports it
     if (commandName === "describegpt" && server && inputFile) {
+      // Block SQL RAG mode (--prompt) in MCP server mode
+      if (params.prompt) {
+        return errorResult(
+          `The --prompt option (SQL RAG chat mode) is not supported in MCP server mode.\n\n` +
+          `In MCP mode, use describegpt for data dictionaries, descriptions, and tags only (--dictionary, --description, --tags, --all).\n` +
+          `For natural language questions about your data, ask the connected LLM directly — ` +
+          `it can use other qsv tools (sqlp, frequency, stats) to answer your question.`,
+        );
+      }
+
       const capabilities = server.getClientCapabilities();
       if (capabilities?.sampling) {
         // Build original CLI args from the resolved params
@@ -2599,7 +2609,12 @@ export async function handleToolCall(
           currentWorkingDir,
         );
       }
-      // Fall through to normal execution if sampling not supported
+      return errorResult(
+        `describegpt requires MCP sampling support, but the connected MCP client does not advertise it.\n\n` +
+        `To use describegpt:\n` +
+        `  - Through Claude Desktop or Claude Code: ensure your client supports MCP sampling\n` +
+        `  - From CLI directly: run 'qsv describegpt --base-url <URL> --api-key <KEY> ...' outside the MCP server`,
+      );
     }
 
     // Execute the skill
@@ -2699,6 +2714,7 @@ export async function handleGenericCommand(
   executor: SkillExecutor,
   loader: SkillLoader,
   filesystemProvider?: FilesystemProviderExtended,
+  server?: Server,
 ) {
   try {
     const commandName = params.command as string | undefined;
@@ -2747,6 +2763,7 @@ export async function handleGenericCommand(
       executor,
       loader,
       filesystemProvider,
+      server,
     );
   } catch (error: unknown) {
     return errorResult(`Unexpected error: ${getErrorMessage(error)}`);

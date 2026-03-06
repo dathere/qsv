@@ -2589,7 +2589,7 @@ export async function handleToolCall(
     // Intercept describegpt: use MCP sampling when the client supports it
     if (commandName === "describegpt" && server && inputFile) {
       // Block SQL RAG mode (--prompt) in MCP server mode
-      if (params.prompt) {
+      if (params.prompt !== undefined) {
         return errorResult(
           `The --prompt option (SQL RAG chat mode) is not supported in MCP server mode.\n\n` +
           `In MCP mode, use describegpt for data dictionaries, descriptions, and tags only (--dictionary, --description, --tags, --all).\n` +

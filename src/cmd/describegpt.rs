@@ -2705,19 +2705,6 @@ fn lookup_cache(cache_type: &CacheType, cache_key: &str) -> Option<CompletionRes
     }
 }
 
-/// Update cache with a completion response.
-fn update_cache(cache_type: &CacheType, cache_key: &str, completion: &CompletionResponse) {
-    match cache_type {
-        CacheType::Disk | CacheType::Fresh => {
-            let _ = GET_DISKCACHE_COMPLETION.cache_set(cache_key.to_string(), completion.clone());
-        },
-        CacheType::Redis => {
-            let _ = GET_REDIS_COMPLETION.cache_set(cache_key.to_string(), completion.clone());
-        },
-        CacheType::None => {},
-    }
-}
-
 // Get output format (markdown is default)
 fn get_output_format(args: &Args) -> CliResult<OutputFormat> {
     // Command-line flags take precedence over prompt file settings
@@ -4867,9 +4854,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 token_usage: phase.token_usage.clone(),
             };
 
-            // Update cache with the response
-            let cache_key = get_cache_key(&args, kind, model);
-            update_cache(&cache_type, &cache_key, &completion);
+            // In --process-response mode, FILE_HASH is not initialized, so updating the cache
+            // here would use an inconsistent cache key. We intentionally skip cache updates
+            // in this mode; the MCP server can re-run the full flow when needed.
 
             // Process the output for this phase
             process_phase_output(

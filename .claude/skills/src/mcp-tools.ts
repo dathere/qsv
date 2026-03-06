@@ -2381,6 +2381,8 @@ function buildDescribegptArgs(
     fresh: "--fresh",
     quiet: "--quiet",
     fewshot_examples: "--fewshot-examples",
+    delimiter: "--delimiter",
+    no_headers: "--no-headers",
   };
 
   for (const [param, flag] of Object.entries(flagMap)) {

@@ -343,7 +343,7 @@ Common options:
 
 use std::{
     env, fs,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
     sync::OnceLock,
@@ -3240,17 +3240,8 @@ fn run_inference_options(
 
         json!(messages)
     }
-    // Format output by replacing escape characters & adding two newlines
-    fn format_output(str: &str) -> String {
-        str.replace("\\n", "\n")
-            .replace("\\t", "\t")
-            .replace("\\\"", "\"")
-            .replace("\\'", "'")
-            .replace("\\`", "`")
-            + "\n\n"
-    }
-
-    // Generate the plaintext and/or JSON output of an inference option
+    // Generate the plaintext and/or JSON output of an inference option.
+    // Delegates to process_phase_output to keep a single source of truth.
     fn process_output(
         kind: PromptType,
         completion_response: &CompletionResponse,
@@ -3260,421 +3251,17 @@ fn run_inference_options(
         model: &str,
         base_url: &str,
     ) -> CliResult<()> {
-        // Skip outputting dictionary when using --prompt (but still generate it for context)
-        if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
-            // Still store the dictionary in DATA_DICTIONARY_JSON for context, but don't output it
-            // For --prompt mode, we still need to generate the full dictionary for context
-            let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
-            let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
-
-            // Determine which additional columns to include
-            // Build IndexSet from ordered_column_names to preserve CSV order
-            let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
-            let addl_cols = determine_addl_cols(args, &avail_cols);
-
-            let code_entries = generate_code_based_dictionary(
-                &stats_records,
-                &frequency_records,
-                args.flag_enum_threshold,
-                args.flag_num_examples,
-                args.flag_truncate_str,
-                &addl_cols,
-            );
-
-            let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
-            let llm_labels_descriptions =
-                parse_llm_dictionary_response(&completion_response.response, &field_names)
-                    .unwrap_or_default();
-
-            let combined_entries =
-                combine_dictionary_entries(code_entries, &llm_labels_descriptions);
-            let mut dictionary_json = format_dictionary_json(&combined_entries, args);
-            // Replace attribution placeholder in JSON
-            if let Some(attribution) = dictionary_json.get_mut("attribution")
-                && let Some(attr_str) = attribution.as_str()
-            {
-                *attribution = json!(replace_attribution_placeholder(
-                    attr_str,
-                    args,
-                    model,
-                    base_url,
-                    AttributionFormat::Markdown,
-                    PromptType::Dictionary
-                ));
-            }
-
-            DATA_DICTIONARY_JSON
-                .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
-            // Don't add to total_json_output and don't output anything
-            return Ok(());
-        }
-
         let output_format = get_output_format(args)?;
-
-        // Handle Dictionary type with neuro-procedural approach
-        if kind == PromptType::Dictionary {
-            // Parse stats and frequency data
-            let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
-            let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
-
-            // Determine which additional columns to include
-            // Build IndexSet from ordered_column_names to preserve CSV order
-            let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
-            let addl_cols = determine_addl_cols(args, &avail_cols);
-
-            // Generate code-based dictionary entries
-            let code_entries = generate_code_based_dictionary(
-                &stats_records,
-                &frequency_records,
-                args.flag_enum_threshold,
-                args.flag_num_examples,
-                args.flag_truncate_str,
-                &addl_cols,
-            );
-
-            // Parse LLM response to get Label and Description
-            let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
-            let llm_labels_descriptions =
-                parse_llm_dictionary_response(&completion_response.response, &field_names)
-                    .unwrap_or_default();
-
-            // Combine code-generated and LLM-generated fields
-            let combined_entries =
-                combine_dictionary_entries(code_entries, &llm_labels_descriptions);
-
-            // Format output
-            if output_format == OutputFormat::Json {
-                let mut dictionary_json = format_dictionary_json(&combined_entries, args);
-                // Replace attribution placeholder in JSON
-                if let Some(attribution) = dictionary_json.get_mut("attribution")
-                    && let Some(attr_str) = attribution.as_str()
-                {
-                    *attribution = json!(replace_attribution_placeholder(
-                        attr_str,
-                        args,
-                        model,
-                        base_url,
-                        AttributionFormat::Markdown,
-                        PromptType::Dictionary
-                    ));
-                }
-                total_json_output[kind.to_string()] = json!({
-                    "response": dictionary_json,
-                    "reasoning": completion_response.reasoning,
-                    "token_usage": completion_response.token_usage,
-                });
-                DATA_DICTIONARY_JSON
-                    .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
-            } else if output_format == OutputFormat::Tsv {
-                // TSV output
-                let mut tsv_output = format_dictionary_tsv(&combined_entries);
-                // Add comment lines for token usage and reasoning after the last TSV record
-                tsv_output.push_str(&format_token_usage_comments(
-                    &completion_response.reasoning,
-                    &completion_response.token_usage,
-                ));
-
-                // Store in DATA_DICTIONARY_JSON for use by other prompts
-                let dictionary_json = format_dictionary_json(&combined_entries, args);
-                DATA_DICTIONARY_JSON
-                    .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
-
-                // Write output to separate file per kind
-                if let Some(output) = &args.flag_output {
-                    let tsv_path = get_tsv_output_path(output, kind);
-                    fs::write(&tsv_path, tsv_output.as_bytes())?;
-                } else {
-                    // This should not happen due to validation, but handle gracefully
-                    print!("{tsv_output}");
-                }
-            } else if output_format == OutputFormat::Toon {
-                // TOON output - accumulate in total_json_output like JSON format
-                let mut dictionary_json = format_dictionary_json(&combined_entries, args);
-                // Replace attribution placeholder in JSON (same as JSON format)
-                if let Some(attribution) = dictionary_json.get_mut("attribution")
-                    && let Some(attr_str) = attribution.as_str()
-                {
-                    *attribution = json!(replace_attribution_placeholder(
-                        attr_str,
-                        args,
-                        model,
-                        base_url,
-                        AttributionFormat::Markdown,
-                        PromptType::Dictionary
-                    ));
-                }
-                total_json_output[kind.to_string()] = json!({
-                    "response": dictionary_json,
-                    "reasoning": completion_response.reasoning,
-                    "token_usage": completion_response.token_usage,
-                });
-                DATA_DICTIONARY_JSON
-                    .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
-            } else {
-                // Markdown output
-                let mut markdown_output = format_dictionary_markdown(&combined_entries);
-                // Replace attribution placeholder in markdown
-                markdown_output = replace_attribution_placeholder(
-                    &markdown_output,
-                    args,
-                    model,
-                    base_url,
-                    AttributionFormat::Markdown,
-                    PromptType::Dictionary,
-                );
-                let formatted_output = format!(
-                    "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
-                    kind,
-                    markdown_output,
-                    completion_response.reasoning,
-                    completion_response.token_usage
-                );
-
-                // Store in DATA_DICTIONARY_JSON for use by other prompts
-                let dictionary_json = format_dictionary_json(&combined_entries, args);
-                DATA_DICTIONARY_JSON
-                    .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
-
-                // Write output
-                if let Some(output) = &args.flag_output {
-                    fs::OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(output)?
-                        .write_all(formatted_output.as_bytes())?;
-                } else {
-                    println!("{formatted_output}");
-                }
-            }
-            return Ok(());
-        }
-
-        // Check if this is a custom prompt response that contains SQL code
-        let is_sql_response = kind == PromptType::Prompt
-            && args.flag_sql_results.is_some()
-            && completion_response.response.contains("```sql");
-
-        // Process JSON output if expected
-        if output_format == OutputFormat::Json && !is_sql_response {
-            total_json_output[kind.to_string()] = if kind == PromptType::Description
-                || kind == PromptType::Prompt
-            {
-                // For description and prompt, create an object
-                // with both response, reasoning, and token usage
-                json!({
-                    "response": completion_response.response,
-                    "reasoning": completion_response.reasoning,
-                    "token_usage": completion_response.token_usage,
-                })
-            } else {
-                // For dictionary and tags, try to extract JSON from response, but include reasoning
-                let mut output_value = if let Ok(json_value) =
-                    extract_json_from_output(&completion_response.response)
-                {
-                    // Create a structured object with data and reasoning
-                    json!({
-                        "response": json_value,
-                        "reasoning": completion_response.reasoning,
-                        "token_usage": completion_response.token_usage,
-                    })
-                } else {
-                    // Fall back to string format with reasoning
-                    json!({
-                        "response": completion_response.response,
-                        "reasoning": completion_response.reasoning,
-                        "token_usage": completion_response.token_usage,
-                    })
-                };
-                // Add metadata properties for Tags at the top level (always present)
-                if kind == PromptType::Tags
-                    && let Some(obj) = output_value.as_object_mut()
-                {
-                    obj.insert("num_tags".to_string(), json!(args.flag_num_tags));
-                    obj.insert(
-                        "tag_vocab".to_string(),
-                        match &args.flag_tag_vocab {
-                            Some(path) => json!(path.as_str()),
-                            None => serde_json::Value::Null,
-                        },
-                    );
-                }
-
-                output_value
-            };
-            if kind == PromptType::Dictionary {
-                DATA_DICTIONARY_JSON.get_or_init(|| {
-                    serde_json::to_string_pretty(&total_json_output["dictionary"]["response"])
-                        .unwrap()
-                });
-            }
-        }
-        // Process TSV output
-        else if output_format == OutputFormat::Tsv && !is_sql_response {
-            let tsv_output = if kind == PromptType::Description {
-                format_description_tsv(
-                    &completion_response.response,
-                    &completion_response.reasoning,
-                    &completion_response.token_usage,
-                )
-            } else if kind == PromptType::Prompt {
-                format_prompt_tsv(
-                    &completion_response.response,
-                    &completion_response.reasoning,
-                    &completion_response.token_usage,
-                )
-            } else if kind == PromptType::Tags {
-                // Extract tags JSON from response
-                let tags_json = match extract_json_from_output(&completion_response.response) {
-                    Ok(json_value) => json_value,
-                    Err(_) => json!({"tags": []}),
-                };
-                format_tags_tsv(
-                    &tags_json,
-                    &completion_response.reasoning,
-                    &completion_response.token_usage,
-                )
-            } else {
-                // Should not happen for TSV (Dictionary is handled separately above)
-                // Fallback to description format
-                format_description_tsv(
-                    &completion_response.response,
-                    &completion_response.reasoning,
-                    &completion_response.token_usage,
-                )
-            };
-
-            // Write output to separate file per kind
-            if let Some(output) = &args.flag_output {
-                let tsv_path = get_tsv_output_path(output, kind);
-                fs::write(&tsv_path, tsv_output.as_bytes())?;
-            } else {
-                // This should not happen due to validation, but handle gracefully
-                print!("{tsv_output}");
-            }
-        }
-        // Process TOON output - accumulate in total_json_output like JSON format
-        else if output_format == OutputFormat::Toon && !is_sql_response {
-            total_json_output[kind.to_string()] = if kind == PromptType::Description
-                || kind == PromptType::Prompt
-            {
-                // For description and prompt, create an object
-                // with both response, reasoning, and token usage
-                json!({
-                    "response": completion_response.response,
-                    "reasoning": completion_response.reasoning,
-                    "token_usage": completion_response.token_usage,
-                })
-            } else {
-                // For tags, try to extract JSON from response, but include reasoning
-                let mut response_value = completion_response.response.clone();
-                let mut attribution_value = serde_json::Value::Null;
-
-                // For Tags, extract attribution from response if embedded
-                if kind == PromptType::Tags {
-                    // Look for attribution pattern: "Generated by..." or "{GENERATED_BY_SIGNATURE}"
-                    if let Some(attr_start) = response_value.find("Generated by") {
-                        // Extract attribution and remove from response
-                        let attribution_text = response_value[attr_start..].trim().to_string();
-                        response_value = response_value[..attr_start].trim().to_string();
-                        attribution_value = json!(attribution_text);
-                    } else if response_value.contains("{GENERATED_BY_SIGNATURE}") {
-                        // Replace placeholder with actual attribution
-                        let attribution_text = replace_attribution_placeholder(
-                            "{GENERATED_BY_SIGNATURE}",
-                            args,
-                            model,
-                            base_url,
-                            AttributionFormat::Markdown,
-                            PromptType::Tags,
-                        );
-                        response_value = response_value
-                            .replace("{GENERATED_BY_SIGNATURE}", "")
-                            .trim()
-                            .to_string();
-                        attribution_value = json!(attribution_text);
-                    }
-                }
-
-                let mut output_value =
-                    if let Ok(json_value) = extract_json_from_output(&response_value) {
-                        // Create a structured object with data and reasoning
-                        json!({
-                            "response": json_value,
-                            "reasoning": completion_response.reasoning,
-                            "token_usage": completion_response.token_usage,
-                        })
-                    } else {
-                        // Fall back to string format with reasoning
-                        json!({
-                            "response": response_value,
-                            "reasoning": completion_response.reasoning,
-                            "token_usage": completion_response.token_usage,
-                        })
-                    };
-                // Add metadata properties for Tags at the top level (always present)
-                if kind == PromptType::Tags
-                    && let Some(obj) = output_value.as_object_mut()
-                {
-                    obj.insert("num_tags".to_string(), json!(args.flag_num_tags));
-                    obj.insert(
-                        "tag_vocab".to_string(),
-                        match &args.flag_tag_vocab {
-                            Some(path) => json!(path.as_str()),
-                            None => serde_json::Value::Null,
-                        },
-                    );
-                    // Add attribution as separate top-level key
-                    if attribution_value != serde_json::Value::Null {
-                        obj.insert("attribution".to_string(), attribution_value);
-                    }
-                }
-
-                output_value
-            };
-        }
-        // Process plaintext output
-        else {
-            let mut formatted_output = format_output(&completion_response.response);
-            if kind == PromptType::Prompt && is_sql_response {
-                // replace INPUT_TABLE_NAME with input_path
-                formatted_output = {
-                    let input_path = args.arg_input.as_deref().unwrap_or("input.csv");
-                    if READ_CSV_AUTO_REGEX.is_match(&formatted_output) {
-                        // DuckDB with read_csv_auto so replace with quoted path
-                        // Escape single quotes in path to prevent SQL injection
-                        let escaped_path = escape_sql_string(input_path);
-                        READ_CSV_AUTO_REGEX
-                            .replace_all(
-                                &formatted_output,
-                                format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
-                            )
-                            .into_owned()
-                    } else {
-                        // Polars SQL - use table alias _t_1
-                        formatted_output.replace(INPUT_TABLE_NAME, "_t_1")
-                    }
-                };
-            }
-            // append the reasoning to the output as a separate markdown section
-            formatted_output = format!(
-                "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
-                kind,
-                formatted_output,
-                completion_response.reasoning,
-                completion_response.token_usage
-            );
-            // If --output is used, append plaintext to file, do not overwrite
-            if let Some(output) = &args.flag_output {
-                fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(output)?
-                    .write_all(formatted_output.as_bytes())?;
-            } else {
-                println!("{formatted_output}");
-            }
-        }
-        Ok(())
+        process_phase_output(
+            kind,
+            completion_response,
+            total_json_output,
+            args,
+            analysis_results,
+            model,
+            base_url,
+            output_format,
+        )
     }
 
     // Get completion from API
@@ -5236,7 +4823,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // --process-response mode: read LLM responses from stdin, process and output results
     // This branch is early because it doesn't need an input file or analysis step.
     if args.flag_process_response {
-        let stdin_data = std::io::read_to_string(std::io::stdin())?;
+        // 50 MB limit to prevent unbounded memory usage from malformed input
+        const MAX_STDIN_SIZE: u64 = 50 * 1024 * 1024;
+        let stdin_data = {
+            let mut buf = String::new();
+            std::io::Read::take(std::io::stdin(), MAX_STDIN_SIZE).read_to_string(&mut buf)?;
+            buf
+        };
         let input: ProcessResponseInput = serde_json::from_str(&stdin_data).map_err(|e| {
             CliError::Other(format!(
                 "Failed to parse --process-response JSON from stdin: {e}"
@@ -5244,7 +4837,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         })?;
 
         let prompt_file = get_prompt_file(&args)?;
-        let base_url = prompt_file.base_url.clone();
+        let base_url = if prompt_file.base_url.is_empty() {
+            "MCP sampling (no direct API call)".to_string()
+        } else {
+            prompt_file.base_url.clone()
+        };
         let model = &input.model;
         let output_format = get_output_format(&args)?;
 

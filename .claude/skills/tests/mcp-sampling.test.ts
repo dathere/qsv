@@ -9,7 +9,7 @@ import { createTestDir, cleanupTestDir, createTestCSV, QSV_AVAILABLE } from "./t
 import { config } from "../src/config.js";
 
 // Check if the qsv binary supports --prepare-context (requires v17+)
-function hasPreparContextSupport(): boolean {
+function hasPrepareContextSupport(): boolean {
   if (!QSV_AVAILABLE) return false;
   try {
     // Try running with --prepare-context to see if the flag is recognized
@@ -24,7 +24,7 @@ function hasPreparContextSupport(): boolean {
   }
 }
 
-const SAMPLING_AVAILABLE = hasPreparContextSupport();
+const SAMPLING_AVAILABLE = hasPrepareContextSupport();
 
 describe("describegpt MCP sampling support", () => {
   test("--prepare-context outputs valid JSON", { skip: !SAMPLING_AVAILABLE }, async () => {
@@ -225,9 +225,7 @@ describe("describegpt MCP sampling support", () => {
     }
   });
 
-  test("buildDescribegptArgs creates correct CLI args", async () => {
-    // This tests the internal utility function indirectly through the module
-    // We can verify the function exists and the module loads correctly
+  test("describegpt MCP tool handler is exported and loadable", async () => {
     const module = await import("../src/mcp-tools.js");
     assert.ok(module.handleToolCall, "handleToolCall should be exported");
   });

@@ -92,9 +92,14 @@ function runQsvCapture(
 
     // Write stdin data if provided, then close stdin
     if (options?.stdinData) {
-      proc.stdin!.write(options.stdinData, () => {
+      const canContinue = proc.stdin!.write(options.stdinData);
+      if (canContinue) {
         proc.stdin!.end();
-      });
+      } else {
+        proc.stdin!.once("drain", () => {
+          proc.stdin!.end();
+        });
+      }
     } else {
       proc.stdin!.end();
     }

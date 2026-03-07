@@ -6,6 +6,9 @@
 - Test: `npm test` (builds with test config automatically)
 - Run specific test file: `node --test dist/tests/<module>.test.js`
 - Filter tests: `node --test --test-name-pattern="pattern" dist/tests/`
+- Watch mode: `npm run test:watch`
+- Coverage: `npm run test:coverage`
+- Example scripts: `npm run test:examples`
 - Regenerate skill JSONs after qsv update: `qsv --update-mcp-skills` from repo root, then `npm run build` here
 
 ## Workflow requirements
@@ -22,7 +25,7 @@ Both types need a `COMMAND_GUIDANCE` entry with `useWhen`, `commonPattern`, and 
 - `COMMON PATTERN` — how this tool fits into workflows
 - `CAUTION` — memory limits, file size constraints, feature requirements
 - `PERFORMANCE` — index acceleration tips, cache strategies
-- `stats` emoji marks stats-related guidance
+- 📊 marks stats-related guidance
 
 Stats-aware guidance — run `qsv stats --cardinality --stats-jsonl` first, then read `.stats.csv` (not `.data.jsonl`):
 
@@ -37,6 +40,18 @@ Stats-aware guidance — run `qsv stats --cardinality --stats-jsonl` first, then
 ### Cache reading preference
 
 Prefer reading `.stats.csv` and `.freq.csv` directly over their `.data.jsonl` counterparts — standard CSV is far more token-efficient. The `.data.jsonl` files exist for programmatic use by qsv's "smart" commands internally.
+
+## Operational limits (quick reference)
+
+| Constant | Value | Location |
+|----------|-------|----------|
+| `MAX_MCP_RESPONSE_SIZE` | 850 KB | `mcp-tools.ts` — safe for Claude Desktop (< 1MB) |
+| `LARGE_FILE_THRESHOLD_BYTES` | 10 MB | `mcp-tools.ts` — triggers large-file handling |
+| `MAX_LOG_MESSAGE_LEN` | 4096 chars | `mcp-tools.ts` — silently truncated beyond this |
+| `MAX_OUTPUT_SIZE` | 50 MB | `executor.ts` — stdout/stderr cap per execution |
+| Default timeout | 10 min | `executor.ts` — configurable via params or config |
+
+See `config.ts` for the full configuration system (`QSV_MCP_*` env vars).
 
 ## Project-specific context
 

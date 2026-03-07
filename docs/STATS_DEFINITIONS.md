@@ -481,7 +481,7 @@ See: [Outlier](https://en.wikipedia.org/wiki/Outlier)
 
 ## `pragmastat`
 
-The `pragmastat` command computes robust, median-of-pairwise statistics using the [Pragmastat library](https://pragmastat.dev/) (v10.0.0). Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
+The `pragmastat` command computes robust, median-of-pairwise statistics using the [Pragmastat library](https://pragmastat.dev/) (v11.0.0). Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
 
 Sourced from `src/cmd/pragmastat.rs`.
 
@@ -533,6 +533,8 @@ Output columns: `field_x, field_y, n_x, n_y, shift, ratio, disparity, shift_lowe
 | `--output <file>` / `-o` | stdout | Write output to file instead of stdout. |
 | `--delimiter <c>` / `-d` | `,` | Field delimiter for reading/writing CSV data. |
 | `--no-headers` / `-n` | off | When set, the first row will not be treated as headers. |
+| `--jobs <arg>` / `-j` | number of CPUs | The number of jobs to run in parallel. When not set, defaults to the number of CPUs detected. |
+| `--memcheck` | off | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. Not valid for stdin. |
 
 ### When Values Are Blank
 
@@ -542,7 +544,7 @@ Cells are empty (blank) when:
 - **Sparity required:** `spread`, `spread_lower`, `spread_upper`, `disparity`, `disparity_lower`, and `disparity_upper` need real variability (not tie-dominant data)
 - **Insufficient data for bounds:** All bounds columns need enough data for the requested misrate; try a higher misrate or more data
 
-See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/releases/download/v10.0.0/pragmastat-v10.0.0.pdf), [pragmastat.dev](https://pragmastat.dev/)
+See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/releases/download/v11.0.0/pragmastat-v11.0.0.pdf), [pragmastat.dev](https://pragmastat.dev/)
 
 ## `frequency`
 
@@ -677,6 +679,35 @@ qsv stats --cardinality --stats-jsonl data.csv
 # Or create with all stats
 qsv stats --everything --stats-jsonl data.csv
 ```
+
+### Frequency Cache
+
+The `--frequency-jsonl` flag writes a complete frequency distribution as a JSONL cache file (`FILESTEM.freq.csv.data.jsonl`). When a valid (fresh) cache exists, subsequent `frequency` runs automatically reuse it instead of recomputing from the CSV.
+
+**Cache Options:**
+
+| Option | Default | Description |
+|:---|:---|:---|
+| `--frequency-jsonl` | off | Write the frequency distribution as a JSONL cache. Requires a file input (not stdin). |
+| `--high-card-threshold <arg>` | `100` | Absolute cardinality threshold for `<HIGH_CARDINALITY>` classification. Can also be set with `QSV_FREQ_HIGH_CARD_THRESHOLD` env var (env var takes precedence when CLI value equals the default). |
+| `--high-card-pct <arg>` | `90` | Percentage of rowcount threshold for `<HIGH_CARDINALITY>` classification. Must be between 1 and 100. Can also be set with `QSV_FREQ_HIGH_CARD_PCT` env var (env var takes precedence when CLI value equals the default). |
+| `--force` | off | Force recomputation and cache regeneration even when a valid frequency cache exists. |
+
+**HIGH_CARDINALITY Sentinel:**
+Columns whose cardinality exceeds the smaller of `--high-card-threshold` and `--high-card-pct` percent of rowcount are classified as HIGH_CARDINALITY. These get a single `<HIGH_CARDINALITY>` sentinel entry (count = rowcount, percentage = 100%, rank = 0), analogous to the `<ALL_UNIQUE>` sentinel for ID columns.
+
+**Cache Validation:**
+- The cache is considered valid when the CSV file's mtime is older than the cache file's mtime
+- Metadata compatibility is checked: `--no-nulls`, `--no-headers`, and `--delimiter` must match the cached settings
+
+**Incompatibilities:**
+The `--frequency-jsonl` flag produces an error when combined with:
+- `--ignore-case` — case folding changes computed values
+- `--no-trim` — whitespace handling changes computed values
+- `--weight` — weighted frequencies change computed values
+
+**Partial Cache Hits:**
+When the cache is valid, columns with full cached data are served directly from the cache. HIGH_CARDINALITY columns (which store only a sentinel) are recomputed via parallel processing against the original CSV.
 
 ### JSON/TOON Output
 

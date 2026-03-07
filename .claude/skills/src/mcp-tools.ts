@@ -2335,6 +2335,33 @@ function resolveParamAliases(params: Record<string, unknown>): {
   return { inputFile, outputFile };
 }
 
+/** Token usage from a describegpt cached response. */
+interface DescribegptTokenUsage {
+  prompt: number;
+  completion: number;
+  total: number;
+  elapsed: number;
+}
+
+/** A single phase from describegpt --prepare-context output. */
+interface DescribegptPhase {
+  kind: string;
+  system_prompt?: string;
+  user_prompt?: string;
+  cached_response: {
+    response: string;
+    reasoning: string;
+    token_usage: DescribegptTokenUsage;
+  } | null;
+}
+
+/** Output structure of describegpt --prepare-context. */
+interface DescribegptPrepareOutput {
+  phases: DescribegptPhase[];
+  analysis_results: unknown;
+  model: string;
+}
+
 /**
  * Run --prepare-context and return prompts to the agent for LLM inference.
  * Used when MCP sampling is not available (e.g., Claude Desktop).
@@ -2361,7 +2388,7 @@ async function prepareContextForAgent(
     return errorResult(`describegpt --prepare-context failed:\n${result.stderr}`);
   }
 
-  let prepareOutput: { phases: Array<{ kind: string; system_prompt: string; user_prompt: string; cached_response: unknown | null }>; analysis_results: unknown; model: string };
+  let prepareOutput: DescribegptPrepareOutput;
   try {
     prepareOutput = JSON.parse(result.stdout);
   } catch {
@@ -2437,7 +2464,7 @@ async function processAgentResponses(
     return errorResult(`describegpt --prepare-context failed:\n${phase1.stderr}`);
   }
 
-  let prepareOutput: { phases: Array<{ kind: string; cached_response: { response: string; reasoning: string; token_usage: { prompt: number; completion: number; total: number; elapsed: number } } | null }>; analysis_results: unknown; model: string };
+  let prepareOutput: DescribegptPrepareOutput;
   try {
     prepareOutput = JSON.parse(phase1.stdout);
   } catch {
@@ -2784,7 +2811,13 @@ export async function handleToolCall(
       if (rawLlmResponses !== undefined) {
         if (typeof rawLlmResponses === "string") {
           try {
-            llmResponses = JSON.parse(rawLlmResponses);
+            const parsed: unknown = JSON.parse(rawLlmResponses);
+            if (!Array.isArray(parsed)) {
+              return errorResult(
+                `_llm_responses must be a JSON array, got ${typeof parsed}.`,
+              );
+            }
+            llmResponses = parsed as Array<{ kind: string; response: string }>;
           } catch {
             return errorResult(
               `Failed to parse _llm_responses JSON string. Expected an array of {kind, response} objects.`,
@@ -2804,10 +2837,13 @@ export async function handleToolCall(
         );
       }
 
-      // Require at least one inference option (only for new requests, not _llm_responses callbacks)
-      const hasInferenceOption = ["dictionary", "description", "tags", "all"].some(
-        (opt) => params[opt] === true || params[`--${opt}`] === true,
-      );
+      // Require at least one inference option (only for new requests, not _llm_responses callbacks).
+      // Normalize keys the same way buildDescribegptArgs does: strip leading --, convert - to _.
+      const inferenceOptions = new Set(["dictionary", "description", "tags", "all"]);
+      const hasInferenceOption = Object.entries(params).some(([rawKey, value]) => {
+        const normalized = rawKey.replace(/^--/, "").replace(/-/g, "_");
+        return inferenceOptions.has(normalized) && value === true;
+      });
       if (!hasInferenceOption) {
         return errorResult(
           `describegpt requires at least one inference option: --dictionary, --description, --tags, or --all.\n\n` +

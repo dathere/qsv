@@ -2889,6 +2889,7 @@ export async function handleToolCall(
         outputFile = join(inputDir, `${inputBasename}.describegpt.md`);
       }
 
+
       const capabilities = server.getClientCapabilities();
       if (capabilities?.sampling) {
         // Build original CLI args from the resolved params

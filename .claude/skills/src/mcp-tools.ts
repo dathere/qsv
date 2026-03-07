@@ -2363,6 +2363,14 @@ interface DescribegptPrepareOutput {
   model: string;
 }
 
+/** A single phase response (cached or agent-provided) for describegpt --process-response. */
+interface PhaseResponse {
+  kind: string;
+  response: string;
+  reasoning: string;
+  token_usage: DescribegptTokenUsage;
+}
+
 /**
  * Run --prepare-context and return prompts to the agent for LLM inference.
  * Used when MCP sampling is not available (e.g., Claude Desktop).
@@ -2473,12 +2481,6 @@ async function processAgentResponses(
   }
 
   // Build phase responses: cached + agent-provided
-  interface PhaseResponse {
-    kind: string;
-    response: string;
-    reasoning: string;
-    token_usage: DescribegptTokenUsage;
-  }
   const phaseResponses: PhaseResponse[] = [];
   for (const phase of prepareOutput.phases) {
     if (phase.cached_response) {

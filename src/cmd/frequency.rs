@@ -2253,9 +2253,9 @@ impl Args {
             );
             debug_assert!(
                 if self.flag_asc {
-                    counts_final.windows(2).all(|w| w[0].1 <= w[1].1)
+                    counts_final.array_windows::<2>().all(|[a, b]| a.1 <= b.1)
                 } else {
-                    counts_final.windows(2).all(|w| w[0].1 >= w[1].1)
+                    counts_final.array_windows::<2>().all(|[a, b]| a.1 >= b.1)
                 },
                 "counts_final must be sorted by weight for partition_point"
             );
@@ -2401,9 +2401,9 @@ impl Args {
             // which holds because counts_final is sorted and counts are u64 (always finite).
             debug_assert!(
                 if self.flag_asc {
-                    counts_final.windows(2).all(|w| w[0].1 <= w[1].1)
+                    counts_final.array_windows::<2>().all(|[a, b]| a.1 <= b.1)
                 } else {
-                    counts_final.windows(2).all(|w| w[0].1 >= w[1].1)
+                    counts_final.array_windows::<2>().all(|[a, b]| a.1 >= b.1)
                 },
                 "counts_final must be sorted by count for partition_point"
             );

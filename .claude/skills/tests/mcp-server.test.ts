@@ -77,8 +77,8 @@ test("CORE_TOOLS has no duplicates", () => {
 // COMMON_COMMANDS Tests
 // ============================================================================
 
-test("COMMON_COMMANDS has 11 entries", () => {
-  assert.strictEqual(COMMON_COMMANDS.length, 11);
+test("COMMON_COMMANDS has 12 entries", () => {
+  assert.strictEqual(COMMON_COMMANDS.length, 12);
 });
 
 test("COMMON_COMMANDS does not include stats or index (moved to CORE_TOOLS)", () => {

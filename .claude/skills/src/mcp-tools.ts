@@ -24,7 +24,7 @@ import type {
 import { runQsvSimple } from "./executor.js";
 import type { SkillExecutor } from "./executor.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { executeDescribegptWithSampling } from "./mcp-sampling.js";
+import { executeDescribegptWithSampling, runQsvCapture } from "./mcp-sampling.js";
 import type { SkillLoader } from "./loader.js";
 import { config, getDetectionDiagnostics } from "./config.js";
 import { formatBytes, findSimilarFiles, errorResult, successResult, isReservedCachePath, reservedCachePathError, getErrorMessage, isNodeError } from "./utils.js";
@@ -420,7 +420,7 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   },
   describegpt: {
     whenToUse: "Generate data dictionaries, descriptions, and tags for CSV data using LLM inference.",
-    commonPattern: "Through MCP: no API key needed — uses the connected LLM automatically via sampling. Use --dictionary, --description, --tags, or --all. For natural language questions, use sqlp or other qsv tools directly instead of --prompt.",
+    commonPattern: "Through MCP: no API key needed — uses the connected LLM automatically. Use --dictionary, --description, --tags, or --all. May require two tool calls (first returns prompts, second processes your responses via _llm_responses). For natural language questions, use sqlp or other qsv tools directly instead of --prompt.",
     errorPrevention: "In MCP mode: do NOT use --prompt (SQL RAG mode) — ask the LLM directly instead. Do NOT pass --base-url or --api-key. LLM results may be inaccurate. Run stats first for best results.",
   },
 };
@@ -1254,6 +1254,7 @@ export const COMMON_COMMANDS = [
   "joinp", // High-performance joins (Polars engine)
   "cat", // Concatenate CSV files (rows/columns)
   "geocode", // Geocoding operations
+  "describegpt", // AI-powered data description and documentation
 ] as const;
 
 /**
@@ -2335,6 +2336,160 @@ function resolveParamAliases(params: Record<string, unknown>): {
 }
 
 /**
+ * Run --prepare-context and return prompts to the agent for LLM inference.
+ * Used when MCP sampling is not available (e.g., Claude Desktop).
+ * The agent answers the prompts, then calls the tool again with _llm_responses.
+ */
+async function prepareContextForAgent(
+  params: Record<string, unknown>,
+  inputFile: string,
+  outputFile: string | undefined,
+  workingDir: string,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  // Ensure output_file is fully qualified so --process-response writes to the right place
+  const resolvedOutput = outputFile && !isAbsolute(outputFile)
+    ? join(workingDir, outputFile)
+    : outputFile;
+  const cliArgs = buildDescribegptArgs(params, inputFile, resolvedOutput);
+  const prepareArgs = [...cliArgs, "--prepare-context"];
+  const result = await runQsvCapture(config.qsvBinPath, ["describegpt", ...prepareArgs], {
+    cwd: workingDir,
+    timeoutMs: 300_000,
+  });
+
+  if (result.exitCode !== 0) {
+    return errorResult(`describegpt --prepare-context failed:\n${result.stderr}`);
+  }
+
+  let prepareOutput: { phases: Array<{ kind: string; system_prompt: string; user_prompt: string; cached_response: unknown | null }>; analysis_results: unknown; model: string };
+  try {
+    prepareOutput = JSON.parse(result.stdout);
+  } catch {
+    return errorResult(`Failed to parse --prepare-context JSON output:\n${result.stdout.slice(0, 500)}`);
+  }
+
+  // Build prompt sections for uncached phases
+  const promptSections: string[] = [];
+  const cachedPhases: string[] = [];
+
+  for (const phase of prepareOutput.phases) {
+    if (phase.cached_response) {
+      cachedPhases.push(phase.kind);
+      continue;
+    }
+    promptSections.push(
+      `## Phase: ${phase.kind}\n\n` +
+      `**System prompt:**\n${phase.system_prompt}\n\n` +
+      `**User prompt:**\n${phase.user_prompt}`,
+    );
+  }
+
+  if (promptSections.length === 0) {
+    // All phases cached — process directly
+    return await processAgentResponses([], params, inputFile, outputFile, workingDir);
+  }
+
+  const cachedNote = cachedPhases.length > 0
+    ? `\n\nCached (no response needed): ${cachedPhases.join(", ")}`
+    : "";
+
+  const uncachedKinds = prepareOutput.phases
+    .filter((p) => !p.cached_response)
+    .map((p) => `{"kind": "${p.kind}", "response": "<your response>"}`)
+    .join(", ");
+
+  return successResult(
+    `describegpt needs LLM inference for ${promptSections.length} phase(s).${cachedNote}\n\n` +
+    `Please respond to each prompt below, then call this tool again with the SAME parameters ` +
+    `plus \`_llm_responses\` containing your answers.\n\n` +
+    promptSections.join("\n\n---\n\n") +
+    `\n\n---\n\n` +
+    `**To complete:** Call qsv_describegpt again with the same options plus:\n` +
+    `\`_llm_responses\`: [${uncachedKinds}]`,
+  );
+}
+
+/**
+ * Process agent-provided LLM responses for describegpt.
+ * Re-runs --prepare-context to get cached responses, merges with agent responses,
+ * then runs --process-response.
+ */
+async function processAgentResponses(
+  llmResponses: Array<{ kind: string; response: string }>,
+  params: Record<string, unknown>,
+  inputFile: string,
+  outputFile: string | undefined,
+  workingDir: string,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  // Ensure output_file is fully qualified so --process-response writes to the right place
+  const resolvedOutput = outputFile && !isAbsolute(outputFile)
+    ? join(workingDir, outputFile)
+    : outputFile;
+  // Re-run prepare-context to get analysis_results and cached responses
+  const cliArgs = buildDescribegptArgs(params, inputFile, resolvedOutput);
+  const prepareArgs = [...cliArgs, "--prepare-context"];
+  const phase1 = await runQsvCapture(config.qsvBinPath, ["describegpt", ...prepareArgs], {
+    cwd: workingDir,
+    timeoutMs: 300_000,
+  });
+
+  if (phase1.exitCode !== 0) {
+    return errorResult(`describegpt --prepare-context failed:\n${phase1.stderr}`);
+  }
+
+  let prepareOutput: { phases: Array<{ kind: string; cached_response: { response: string; reasoning: string; token_usage: { prompt: number; completion: number; total: number; elapsed: number } } | null }>; analysis_results: unknown; model: string };
+  try {
+    prepareOutput = JSON.parse(phase1.stdout);
+  } catch {
+    return errorResult(`Failed to parse --prepare-context JSON output:\n${phase1.stdout.slice(0, 500)}`);
+  }
+
+  // Build phase responses: cached + agent-provided
+  const phaseResponses = [];
+  for (const phase of prepareOutput.phases) {
+    if (phase.cached_response) {
+      phaseResponses.push({
+        kind: phase.kind,
+        response: phase.cached_response.response,
+        reasoning: phase.cached_response.reasoning,
+        token_usage: phase.cached_response.token_usage,
+      });
+    } else {
+      const agentResponse = llmResponses.find((r) => r.kind === phase.kind);
+      if (!agentResponse) {
+        return errorResult(`Missing response for phase "${phase.kind}"`);
+      }
+      phaseResponses.push({
+        kind: phase.kind,
+        response: agentResponse.response,
+        reasoning: "",
+        token_usage: { prompt: 0, completion: 0, total: 0, elapsed: 0 },
+      });
+    }
+  }
+
+  // Run process-response
+  const processInput = {
+    phases: phaseResponses,
+    analysis_results: prepareOutput.analysis_results,
+    model: prepareOutput.model,
+  };
+
+  const processArgs = [...cliArgs, "--process-response"];
+  const phase3 = await runQsvCapture(config.qsvBinPath, ["describegpt", ...processArgs], {
+    cwd: workingDir,
+    stdinData: JSON.stringify(processInput),
+    timeoutMs: 300_000,
+  });
+
+  if (phase3.exitCode !== 0) {
+    return errorResult(`describegpt --process-response failed:\n${phase3.stderr}`);
+  }
+
+  return successResult(phase3.stdout);
+}
+
+/**
  * Build CLI args for describegpt from MCP tool params.
  * Translates MCP parameter names back to qsv CLI flags.
  */
@@ -2385,8 +2540,18 @@ function buildDescribegptArgs(
     no_headers: "--no-headers",
   };
 
+  // Build a reverse lookup: normalized param name → CLI flag
+  // This handles params passed as "dictionary", "--dictionary", or "—dictionary"
+  const reverseLookup = new Map<string, string>();
   for (const [param, flag] of Object.entries(flagMap)) {
-    const value = params[param];
+    reverseLookup.set(param, flag);
+  }
+
+  for (const [rawParam, value] of Object.entries(params)) {
+    // Normalize: strip leading --, convert - to _
+    const normalized = rawParam.replace(/^--/, "").replace(/-/g, "_");
+    const flag = reverseLookup.get(normalized);
+    if (!flag) continue;
     if (value === undefined || value === null || value === false) continue;
     if (value === true) {
       args.push(flag);
@@ -2450,7 +2615,7 @@ export async function handleToolCall(
     const { inputFile: rawInputFile, outputFile: rawOutputFile } = resolveParamAliases(params);
     let inputFile = rawInputFile;
     let outputFile = rawOutputFile;
-    const isHelpRequest = params.help === true;
+    const isHelpRequest = params.help === true || params["--help"] === true;
 
     if (!inputFile && !isHelpRequest) {
       return errorResult("Error: input_file parameter is required (unless using help=true to view command documentation)");
@@ -2586,10 +2751,11 @@ export async function handleToolCall(
       JSON.stringify(options),
     );
 
-    // Intercept describegpt: use MCP sampling when the client supports it
-    if (commandName === "describegpt" && server && inputFile) {
+    // Intercept describegpt: use MCP sampling or agent-as-LLM fallback
+    // Skip for help requests — let them fall through to normal execution
+    if (commandName === "describegpt" && server && inputFile && !isHelpRequest) {
       // Block SQL RAG mode (--prompt) in MCP server mode
-      if (params.prompt !== undefined) {
+      if (params.prompt !== undefined || params["--prompt"] !== undefined) {
         return errorResult(
           `The --prompt option (SQL RAG chat mode) is not supported in MCP server mode.\n\n` +
           `In MCP mode, use describegpt for data dictionaries, descriptions, and tags only (--dictionary, --description, --tags, --all).\n` +
@@ -2601,12 +2767,52 @@ export async function handleToolCall(
       // Block LLM API options that don't apply in MCP mode (sampling handles these)
       const blockedLlmParams = ["base_url", "api_key", "model", "max_tokens"];
       for (const param of blockedLlmParams) {
-        if (params[param] !== undefined) {
+        const dashParam = `--${param.replace(/_/g, "-")}`;
+        if (params[param] !== undefined || params[dashParam] !== undefined) {
           return errorResult(
             `The --${param.replace(/_/g, "-")} option is not needed in MCP server mode.\n` +
             `describegpt uses the connected LLM automatically via MCP sampling — no API configuration required.`,
           );
         }
+      }
+
+      // Check if this is a Phase 3 callback with agent-provided LLM responses.
+      // The value may arrive as a JSON string (when passed through a typed schema that
+      // doesn't declare it) or as an already-parsed array.
+      let llmResponses: Array<{ kind: string; response: string }> | undefined;
+      const rawLlmResponses = params._llm_responses;
+      if (rawLlmResponses !== undefined) {
+        if (typeof rawLlmResponses === "string") {
+          try {
+            llmResponses = JSON.parse(rawLlmResponses);
+          } catch {
+            return errorResult(
+              `Failed to parse _llm_responses JSON string. Expected an array of {kind, response} objects.`,
+            );
+          }
+        } else if (Array.isArray(rawLlmResponses)) {
+          llmResponses = rawLlmResponses as Array<{ kind: string; response: string }>;
+        } else {
+          return errorResult(
+            `Invalid _llm_responses format. Expected a JSON array or string, got ${typeof rawLlmResponses}.`,
+          );
+        }
+      }
+      if (llmResponses) {
+        return await processAgentResponses(
+          llmResponses, params, inputFile, outputFile, currentWorkingDir,
+        );
+      }
+
+      // Require at least one inference option (only for new requests, not _llm_responses callbacks)
+      const hasInferenceOption = ["dictionary", "description", "tags", "all"].some(
+        (opt) => params[opt] === true || params[`--${opt}`] === true,
+      );
+      if (!hasInferenceOption) {
+        return errorResult(
+          `describegpt requires at least one inference option: --dictionary, --description, --tags, or --all.\n\n` +
+          `Example: qsv_describegpt(input_file="data.csv", all=true)`,
+        );
       }
 
       const capabilities = server.getClientCapabilities();
@@ -2620,12 +2826,9 @@ export async function handleToolCall(
           currentWorkingDir,
         );
       }
-      return errorResult(
-        `describegpt requires MCP sampling support, but the connected MCP client does not advertise it.\n\n` +
-        `To use describegpt:\n` +
-        `  - Through Claude Desktop or Claude Code: ensure your client supports MCP sampling\n` +
-        `  - From CLI directly: run 'qsv describegpt --base-url <URL> --api-key <KEY> ...' outside the MCP server`,
-      );
+
+      // No sampling available — return prompts for agent-as-LLM fallback
+      return await prepareContextForAgent(params, inputFile, outputFile, currentWorkingDir);
     }
 
     // Execute the skill

@@ -33,10 +33,10 @@
   ],
   "server": {
     "type": "node",
-    "entry_point": "server/mcp-server.js",
+    "entry_point": "dist/mcp-server.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/server/mcp-server.js"],
+      "args": ["${__dirname}/dist/mcp-server.js"],
       "env": {
         "QSV_MCP_BIN_PATH": "${user_config.qsv_path}",
         "QSV_MCP_ALLOWED_DIRS": "${user_config.allowed_dirs}",

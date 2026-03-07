@@ -43,6 +43,8 @@ Prefer reading `.stats.csv` and `.freq.csv` directly over their `.data.jsonl` co
 
 ## Operational limits (quick reference)
 
+> Values verified 2026-03-07. If in doubt, grep the source files below for current values.
+
 | Constant | Value | Location |
 |----------|-------|----------|
 | `MAX_MCP_RESPONSE_SIZE` | 850 KB | `mcp-tools.ts` — safe for Claude Desktop (< 1MB) |

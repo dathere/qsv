@@ -2473,7 +2473,13 @@ async function processAgentResponses(
   }
 
   // Build phase responses: cached + agent-provided
-  const phaseResponses = [];
+  interface PhaseResponse {
+    kind: string;
+    response: string;
+    reasoning: string;
+    token_usage: DescribegptTokenUsage;
+  }
+  const phaseResponses: PhaseResponse[] = [];
   for (const phase of prepareOutput.phases) {
     if (phase.cached_response) {
       phaseResponses.push({
@@ -2647,6 +2653,12 @@ export async function handleToolCall(
     let inputFile = rawInputFile;
     let outputFile = rawOutputFile;
     const isHelpRequest = params.help === true || params["--help"] === true;
+
+    // Normalize help flags: once we've interpreted "--help", remove it so it
+    // is not forwarded as a duplicate CLI option alongside options.help=true.
+    if ("--help" in params) {
+      delete params["--help"];
+    }
 
     if (!inputFile && !isHelpRequest) {
       return errorResult("Error: input_file parameter is required (unless using help=true to view command documentation)");

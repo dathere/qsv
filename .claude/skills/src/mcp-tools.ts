@@ -2823,6 +2823,14 @@ export async function handleToolCall(
                 `_llm_responses must be a JSON array, got ${typeof parsed}.`,
               );
             }
+            if (parsed.length > 0) {
+              const first = parsed[0] as Record<string, unknown>;
+              if (typeof first.kind !== "string" || typeof first.response !== "string") {
+                return errorResult(
+                  `_llm_responses elements must have "kind" and "response" string fields.`,
+                );
+              }
+            }
             llmResponses = parsed as Array<{ kind: string; response: string }>;
           } catch {
             return errorResult(
@@ -2830,6 +2838,14 @@ export async function handleToolCall(
             );
           }
         } else if (Array.isArray(rawLlmResponses)) {
+          if (rawLlmResponses.length > 0) {
+            const first = rawLlmResponses[0] as Record<string, unknown>;
+            if (typeof first.kind !== "string" || typeof first.response !== "string") {
+              return errorResult(
+                `_llm_responses elements must have "kind" and "response" string fields.`,
+              );
+            }
+          }
           llmResponses = rawLlmResponses as Array<{ kind: string; response: string }>;
         } else {
           return errorResult(

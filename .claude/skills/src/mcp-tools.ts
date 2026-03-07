@@ -2813,6 +2813,18 @@ export async function handleToolCall(
       // doesn't declare it) or as an already-parsed array.
       let llmResponses: Array<{ kind: string; response: string }> | undefined;
       const rawLlmResponses = params._llm_responses;
+
+      // Validate that every element in the array has the required shape.
+      const validateLlmResponseElements = (arr: unknown[]): string | null => {
+        for (let i = 0; i < arr.length; i++) {
+          const el = arr[i] as Record<string, unknown>;
+          if (typeof el.kind !== "string" || typeof el.response !== "string") {
+            return `_llm_responses[${i}] must have "kind" and "response" string fields.`;
+          }
+        }
+        return null;
+      };
+
       if (rawLlmResponses !== undefined) {
         if (typeof rawLlmResponses === "string") {
           try {
@@ -2822,13 +2834,9 @@ export async function handleToolCall(
                 `_llm_responses must be a JSON array, got ${typeof parsed}.`,
               );
             }
-            if (parsed.length > 0) {
-              const first = parsed[0] as Record<string, unknown>;
-              if (typeof first.kind !== "string" || typeof first.response !== "string") {
-                return errorResult(
-                  `_llm_responses elements must have "kind" and "response" string fields.`,
-                );
-              }
+            const validationError = validateLlmResponseElements(parsed);
+            if (validationError) {
+              return errorResult(validationError);
             }
             llmResponses = parsed as Array<{ kind: string; response: string }>;
           } catch {
@@ -2837,13 +2845,9 @@ export async function handleToolCall(
             );
           }
         } else if (Array.isArray(rawLlmResponses)) {
-          if (rawLlmResponses.length > 0) {
-            const first = rawLlmResponses[0] as Record<string, unknown>;
-            if (typeof first.kind !== "string" || typeof first.response !== "string") {
-              return errorResult(
-                `_llm_responses elements must have "kind" and "response" string fields.`,
-              );
-            }
+          const validationError = validateLlmResponseElements(rawLlmResponses);
+          if (validationError) {
+            return errorResult(validationError);
           }
           llmResponses = rawLlmResponses as Array<{ kind: string; response: string }>;
         } else {

@@ -2817,8 +2817,12 @@ export async function handleToolCall(
       // Validate that every element in the array has the required shape.
       const validateLlmResponseElements = (arr: unknown[]): string | null => {
         for (let i = 0; i < arr.length; i++) {
-          const el = arr[i] as Record<string, unknown>;
-          if (typeof el.kind !== "string" || typeof el.response !== "string") {
+          const el = arr[i];
+          if (el === null || typeof el !== "object" || Array.isArray(el)) {
+            return `_llm_responses[${i}] must be an object with "kind" and "response" string fields, got ${el === null ? "null" : Array.isArray(el) ? "array" : typeof el}.`;
+          }
+          const obj = el as Record<string, unknown>;
+          if (typeof obj.kind !== "string" || typeof obj.response !== "string") {
             return `_llm_responses[${i}] must have "kind" and "response" string fields.`;
           }
         }

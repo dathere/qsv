@@ -52,7 +52,7 @@ interface ProcessResponseInput {
 /**
  * Run a qsv command and capture stdout, with optional stdin data.
  */
-function runQsvCapture(
+export function runQsvCapture(
   binPath: string,
   args: string[],
   options?: { cwd?: string; stdinData?: string; timeoutMs?: number },
@@ -212,5 +212,9 @@ export async function executeDescribegptWithSampling(
     );
   }
 
-  return successResult(phase3.stdout);
+  const outputPath = originalArgs.find((_: string, i: number, arr: string[]) => arr[i - 1] === "--output") ?? "";
+  const resultText = phase3.stdout.trim()
+    ? phase3.stdout
+    : `describegpt output written to: ${outputPath}`;
+  return successResult(resultText);
 }

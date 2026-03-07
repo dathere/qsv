@@ -6,7 +6,7 @@ import { spawn, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
 import { stat, access, readFile, writeFile, open, unlink, rename, copyFile, readdir, mkdir } from "fs/promises";
 import { constants } from "fs";
-import { basename, dirname, isAbsolute, join } from "path";
+import { basename, dirname, extname, isAbsolute, join } from "path";
 import { tmpdir } from "os";
 import { ConvertedFileManager } from "./converted-file-manager.js";
 import {
@@ -137,6 +137,7 @@ const NON_TABULAR_COMMANDS = new Set([
   "template",            // Free-form text
   "schema",              // JSON Schema output
   "validate",            // Validation messages, not CSV data
+  "describegpt",         // Markdown output (data dictionaries, descriptions, tags)
 ]);
 
 /** Binary output formats from sqlp that should never get a .tsv extension */
@@ -2513,7 +2514,11 @@ async function processAgentResponses(
     return errorResult(`describegpt --process-response failed:\n${phase3.stderr}`);
   }
 
-  return successResult(phase3.stdout);
+  const outputPath = cliArgs.find((_: string, i: number, arr: string[]) => arr[i - 1] === "--output") ?? "";
+  const resultText = phase3.stdout.trim()
+    ? phase3.stdout
+    : `describegpt output written to: ${outputPath}`;
+  return successResult(resultText);
 }
 
 /**
@@ -2750,6 +2755,7 @@ export async function handleToolCall(
       !outputFile &&
       !isHelpRequest &&
       inputFile &&
+      commandName !== "describegpt" &&
       !isBinaryOutputFormat(commandName, params) &&
       (await shouldUseTempFile(commandName, inputFile))
     ) {
@@ -2849,6 +2855,15 @@ export async function handleToolCall(
           `describegpt requires at least one inference option: --dictionary, --description, --tags, or --all.\n\n` +
           `Example: qsv_describegpt(input_file="data.csv", all=true)`,
         );
+      }
+
+      // Auto-generate output file if not specified.
+      // describegpt output (data dictionaries, descriptions, tags) should always persist to a file.
+      // Default format is Markdown, so use .md extension. Place alongside the input file.
+      if (!outputFile) {
+        const inputBasename = basename(inputFile, extname(inputFile));
+        const inputDir = dirname(inputFile);
+        outputFile = join(inputDir, `${inputBasename}.describegpt.md`);
       }
 
       const capabilities = server.getClientCapabilities();

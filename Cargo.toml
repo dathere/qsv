@@ -96,7 +96,7 @@ cached = { version = "0.56", features = [
     "disk_store",
     "redis_ahash",
 ] }
-calamine = { version = "0.33", features = ["chrono"] }
+calamine = { version = "0.34", features = ["chrono"] }
 censor = { version = "0.3", optional = true }
 chrono = { version = "0.4.44", default-features = false }
 chrono-tz = "0.10"

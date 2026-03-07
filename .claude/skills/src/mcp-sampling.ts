@@ -10,7 +10,7 @@
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { CreateMessageResult } from "@modelcontextprotocol/sdk/types.js";
 import { spawn } from "child_process";
-import { errorResult, successResult } from "./utils.js";
+import { errorResult, successResult, describegptFallbackResult } from "./utils.js";
 
 /** Phase context from --prepare-context output */
 interface PhaseContext {
@@ -52,7 +52,7 @@ interface ProcessResponseInput {
 /**
  * Run a qsv command and capture stdout, with optional stdin data.
  */
-function runQsvCapture(
+export function runQsvCapture(
   binPath: string,
   args: string[],
   options?: { cwd?: string; stdinData?: string; timeoutMs?: number },
@@ -212,5 +212,8 @@ export async function executeDescribegptWithSampling(
     );
   }
 
-  return successResult(phase3.stdout);
+  const resultText = phase3.stdout.trim()
+    ? phase3.stdout
+    : describegptFallbackResult(originalArgs);
+  return successResult(resultText);
 }

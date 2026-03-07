@@ -50,3 +50,4 @@ scripts/benchmark_data.*
 .roborev.toml
 /.claude/skills/docs/diagnosis
 /docs/audits
+/.claude/skills/docs/audits

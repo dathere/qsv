@@ -154,13 +154,13 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => { ... })
 - **Tool filtering** based on available qsv commands at runtime
 
 **Key Constants**:
-- `COMMON_COMMANDS`: 11 frequently-used commands (select, moarstats, search, frequency, headers, count, slice, sqlp, joinp, cat, geocode)
-- `ALWAYS_FILE_COMMANDS`: 33 commands that always output to files
+- `COMMON_COMMANDS`: 12 frequently-used commands (select, moarstats, search, frequency, headers, count, slice, sqlp, joinp, cat, geocode, describegpt)
+- `ALWAYS_FILE_COMMANDS`: 32 commands that always output to files
 - `METADATA_COMMANDS`: 4 commands returning metadata (count, headers, index, sniff)
-- `NON_TABULAR_COMMANDS`: 8 commands whose output is not tabular (skips TSV formatting)
+- `NON_TABULAR_COMMANDS`: 9 commands whose output is not tabular (skips TSV formatting)
 - `BINARY_OUTPUT_FORMATS`: Set of binary formats (parquet, arrow, avro)
 - `COMMAND_GUIDANCE`: `Record<string, CommandGuidance>` — Unified per-command guidance map consolidating when-to-use, common patterns, error prevention, complementary servers, and memory/index/mistake warnings into a single structure
-- `LARGE_FILE_THRESHOLD_BYTES`: 10MB — files larger than this are auto-indexed (replaces `AUTO_INDEX_SIZE_MB`)
+- `LARGE_FILE_THRESHOLD_BYTES`: 10MB — files larger than this are auto-indexed (supplements `AUTO_INDEX_SIZE_MB`)
 - `MAX_MCP_RESPONSE_SIZE`: 850KB — responses exceeding this are saved to file instead of returned inline
 - `MAX_LOG_MESSAGE_LEN`: 4096 — max characters for `qsv_log` messages (truncated silently)
 
@@ -791,8 +791,8 @@ The plugin layer (`.claude-plugin/`, `.mcp.json`, `commands/`, `agents/`, `skill
 
 ---
 
-**Document Version**: 2.4
-**Last Updated**: 2026-03-03
+**Document Version**: 2.5
+**Last Updated**: 2026-03-07
 **Target qsv Version**: 17.x
 **Node.js Version**: >=18.0.0
 **MCP SDK Version**: ^1.26.0

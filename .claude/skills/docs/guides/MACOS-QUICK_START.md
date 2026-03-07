@@ -106,7 +106,7 @@ This downloads a DMG file containing the qsv binary.
    qsv --version
    ```
 
-   You should see something like `qsv 16.1.0`.
+   You should see something like `qsv 17.0.0`.
 
 5. **Eject the DMG** in Finder (drag it to Trash or right-click > Eject).
 
@@ -118,7 +118,7 @@ The qsv MCP server lets Claude read, analyze, and transform your local data file
 
 ### Download the MCPB Bundle
 
-Go to: **<https://github.com/dathere/qsv/releases/download/16.1.2/qsv-mcp-server-16.1.2.mcpb>**
+Go to: **<https://github.com/dathere/qsv/releases/download/17.0.0/qsv-mcp-server-17.0.0.mcpb>**
 
 Save the `.mcpb` file to your Downloads folder.
 
@@ -128,7 +128,7 @@ Save the `.mcpb` file to your Downloads folder.
 2. Click your **profile icon** (bottom-left) > **Settings**
 3. Go to the **Extensions** tab
 4. Click **"Install from file"**
-5. Select the `qsv-mcp-server-16.1.2.mcpb` file you downloaded
+5. Select the `qsv-mcp-server-17.0.0.mcpb` file you downloaded
 6. Click **Install**
 
 ### Configure
@@ -466,4 +466,4 @@ Now that everything is set up, here are some things you can try:
 
 ---
 
-*Last updated: 2026-02-18 | qsv MCP Server v16.1.2*
+*Last updated: 2026-03-07 | qsv MCP Server v17.0.0*

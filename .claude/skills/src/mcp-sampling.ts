@@ -10,7 +10,7 @@
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { CreateMessageResult } from "@modelcontextprotocol/sdk/types.js";
 import { spawn } from "child_process";
-import { errorResult, successResult } from "./utils.js";
+import { errorResult, successResult, describegptFallbackResult } from "./utils.js";
 
 /** Phase context from --prepare-context output */
 interface PhaseContext {
@@ -212,9 +212,8 @@ export async function executeDescribegptWithSampling(
     );
   }
 
-  const outputPath = originalArgs.find((_: string, i: number, arr: string[]) => arr[i - 1] === "--output") ?? "";
   const resultText = phase3.stdout.trim()
     ? phase3.stdout
-    : `describegpt output written to: ${outputPath}`;
+    : describegptFallbackResult(originalArgs);
   return successResult(resultText);
 }

@@ -135,6 +135,34 @@ export function findSimilarFiles(
 }
 
 /**
+ * Find the --output path from a CLI args array.
+ * Handles both `["--output", "path"]` (two elements) and `["--output=path"]` (single element) forms.
+ * Returns the path string, or empty string if not found.
+ */
+export function findOutputPath(args: string[]): string {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--output" && i + 1 < args.length) {
+      return args[i + 1];
+    }
+    if (args[i].startsWith("--output=")) {
+      return args[i].slice("--output=".length);
+    }
+  }
+  return "";
+}
+
+/**
+ * Build a fallback result message for describegpt when stdout is empty.
+ * Points the user to the output file where describegpt persisted its results.
+ */
+export function describegptFallbackResult(args: string[]): string {
+  const outputPath = findOutputPath(args);
+  return outputPath
+    ? `describegpt output written to: ${outputPath}`
+    : "describegpt completed but produced no output.";
+}
+
+/**
  * Reserved cache file suffixes that must not be used as --output targets.
  * These are auto-generated sidecar files managed by qsv's smart commands.
  */

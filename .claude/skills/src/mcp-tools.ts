@@ -27,7 +27,7 @@ import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { executeDescribegptWithSampling, runQsvCapture } from "./mcp-sampling.js";
 import type { SkillLoader } from "./loader.js";
 import { config, getDetectionDiagnostics } from "./config.js";
-import { formatBytes, findSimilarFiles, errorResult, successResult, isReservedCachePath, reservedCachePathError, getErrorMessage, isNodeError } from "./utils.js";
+import { formatBytes, findSimilarFiles, errorResult, successResult, isReservedCachePath, reservedCachePathError, getErrorMessage, isNodeError, describegptFallbackResult } from "./utils.js";
 import {
   detectDuckDb,
   getDuckDbStatus,
@@ -2514,10 +2514,9 @@ async function processAgentResponses(
     return errorResult(`describegpt --process-response failed:\n${phase3.stderr}`);
   }
 
-  const outputPath = cliArgs.find((_: string, i: number, arr: string[]) => arr[i - 1] === "--output") ?? "";
   const resultText = phase3.stdout.trim()
     ? phase3.stdout
-    : `describegpt output written to: ${outputPath}`;
+    : describegptFallbackResult(cliArgs);
   return successResult(resultText);
 }
 
@@ -2876,7 +2875,7 @@ export async function handleToolCall(
       // Auto-generate output file if not specified.
       // describegpt output (data dictionaries, descriptions, tags) should always persist to a file.
       // Default format is Markdown, so use .md extension. Place alongside the input file.
-      if (!outputFile) {
+      if (!outputFile && inputFile) {
         const inputBasename = basename(inputFile, extname(inputFile));
         const inputDir = dirname(inputFile);
         outputFile = join(inputDir, `${inputBasename}.describegpt.md`);

@@ -1750,7 +1750,7 @@ dependencies = [
 [[package]]
 name = "csv"
 version = "1.4.0"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#0bd1b34a01f28883f35b021e3b7ebf362ba05b5d"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#a7c96973a4ed6ef8dcfa97a57edb357f57908b5b"
 dependencies = [
  "csv-core",
  "itoa",
@@ -1762,7 +1762,7 @@ dependencies = [
 [[package]]
 name = "csv-core"
 version = "0.1.13"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#0bd1b34a01f28883f35b021e3b7ebf362ba05b5d"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#a7c96973a4ed6ef8dcfa97a57edb357f57908b5b"
 dependencies = [
  "memchr",
  "simdutf8",
@@ -1786,7 +1786,7 @@ dependencies = [
 [[package]]
 name = "csv-index"
 version = "0.1.6"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#0bd1b34a01f28883f35b021e3b7ebf362ba05b5d"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#a7c96973a4ed6ef8dcfa97a57edb357f57908b5b"
 dependencies = [
  "byteorder",
  "csv",
@@ -7313,9 +7313,9 @@ dependencies = [
 
 [[package]]
 name = "spreadsheet-ods"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0163c56fb6220cbcc043af3146b8b069efb843d2d9be1c85df19150836018526"
+checksum = "4780b08ec2e6ef83ef212b66e640163035b0b75e51f3a6a95c7eb9498a26d17d"
 dependencies = [
  "base64",
  "chrono",

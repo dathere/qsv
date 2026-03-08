@@ -61,6 +61,31 @@ misrate is the probability that bounds miss the true value (lower => wider bound
 1e-3    Everyday analysis [default]
 1e-6    Critical decisions
 
+COMPARE1 OUTPUT (--compare1, one-sample confirmatory analysis)
+field, n, metric, threshold, estimate, lower, upper, verdict
+
+Tests one-sample estimates (center/spread) against user-defined thresholds.
+Each threshold produces one row per column with a verdict:
+less          Estimate is statistically less than the threshold.
+greater       Estimate is statistically greater than the threshold.
+inconclusive  Not enough evidence to decide (interval contains threshold).
+
+COMPARE2 OUTPUT (--compare2, two-sample confirmatory analysis)
+field_x, field_y, n_x, n_y, metric, threshold, estimate, lower, upper, verdict
+
+Tests two-sample estimates (shift/ratio/disparity) against user-defined thresholds.
+Each threshold produces one row per column pair with the same verdict semantics.
+
+### Threshold Format
+
+Both compare flags accept a comma-separated list of metric:value pairs.
+compare1 center:42.0             Single threshold
+compare1 center:42.0,spread:0.5  Multiple thresholds
+compare2 shift:0,disparity:0.8   Two-sample thresholds
+
+Valid metrics for compare1: center, spread
+Valid metrics for compare2: shift, ratio, disparity
+
 
 <a name="examples"></a>
 
@@ -90,8 +115,26 @@ qsv pragmastat --twosample --select latency_ms,price data.csv
 qsv pragmastat --misrate 1e-6 data.csv
 ```
 
+> Compare one-sample center against a threshold
+
+```console
+qsv pragmastat --compare1 center:42.0 --select latitude data.csv
+```
+
+> Compare one-sample center and spread against thresholds
+
+```console
+qsv pragmastat --compare1 center:42.0,spread:0.5 --select latitude data.csv
+```
+
+> Compare two-sample shift and disparity against thresholds
+
+```console
+qsv pragmastat --compare2 shift:0,disparity:0.8 --select latency_ms,price data.csv
+```
+
 Full Pragmastat manual:
-<https://github.com/AndreyAkinshin/pragmastat/releases/download/v11.0.0/pragmastat-v11.0.0.pdf>
+<https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.0.0/pragmastat-v12.0.0.pdf>
 <https://pragmastat.dev/> (latest version)
 
 <a name="usage"></a>
@@ -110,6 +153,8 @@ qsv pragmastat --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-t,`<br>`--twosample`&nbsp; | flag | Compute two-sample estimators for all column pairs. |  |
+| &nbsp;`--compare1`&nbsp; | string | One-sample confirmatory analysis. Test center/spread against thresholds. Format: metric:value[,metric:value,...]. Mutually exclusive with --twosample and --compare2. |  |
+| &nbsp;`--compare2`&nbsp; | string | Two-sample confirmatory analysis. Test shift/ratio/disparity against thresholds. Format: metric:value[,metric:value,...]. Mutually exclusive with --twosample and --compare1. |  |
 | &nbsp;`-s,`<br>`--select`&nbsp; | string | Select columns for analysis. Uses qsv's column selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed. |  |
 | &nbsp;`-m,`<br>`--misrate`&nbsp; | string | Probability that bounds fail to contain the true parameter. Lower values produce wider bounds. Must be achievable for the given sample size. | `0.001` |
 

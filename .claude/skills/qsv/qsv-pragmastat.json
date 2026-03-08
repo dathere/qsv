@@ -15,6 +15,16 @@
     ],
     "options": [
       {
+        "flag": "--compare1",
+        "type": "string",
+        "description": "One-sample confirmatory analysis. Test center/spread against thresholds. Format: metric:value[,metric:value,...]. Mutually exclusive with --twosample and --compare2."
+      },
+      {
+        "flag": "--compare2",
+        "type": "string",
+        "description": "Two-sample confirmatory analysis. Test shift/ratio/disparity against thresholds. Format: metric:value[,metric:value,...]. Mutually exclusive with --twosample and --compare1."
+      },
+      {
         "flag": "--delimiter",
         "type": "string",
         "description": "The field delimiter for reading/writing CSV data. Must be a single character. (default: ,)"
@@ -73,6 +83,18 @@
     {
       "description": "One-sample statistics with very tight bounds (lower misrate)",
       "command": "qsv pragmastat --misrate 1e-6 data.csv"
+    },
+    {
+      "description": "Compare one-sample center against a threshold",
+      "command": "qsv pragmastat --compare1 center:42.0 --select latitude data.csv"
+    },
+    {
+      "description": "Compare one-sample center and spread against thresholds",
+      "command": "qsv pragmastat --compare1 center:42.0,spread:0.5 --select latitude data.csv"
+    },
+    {
+      "description": "Compare two-sample shift and disparity against thresholds",
+      "command": "qsv pragmastat --compare2 shift:0,disparity:0.8 --select latency_ms,price data.csv"
     }
   ]
 }

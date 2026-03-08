@@ -646,9 +646,31 @@ fn pragmastat_mutual_exclusivity() {
     let wrk = Workdir::new("pragmastat_mutual_exclusivity");
     let test_file = wrk.load_test_file("boston311-100.csv");
 
+    // --compare1 + --twosample
     let mut cmd = wrk.command("pragmastat");
     cmd.arg("--compare1")
         .arg("center:0")
+        .arg("--twosample")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+    wrk.assert_err(&mut cmd);
+
+    // --compare1 + --compare2
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare1")
+        .arg("center:0")
+        .arg("--compare2")
+        .arg("shift:0")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+    wrk.assert_err(&mut cmd);
+
+    // --compare2 + --twosample
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare2")
+        .arg("shift:0")
         .arg("--twosample")
         .arg("--select")
         .arg("latitude")

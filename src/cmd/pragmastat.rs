@@ -651,36 +651,23 @@ fn compute_compare1<'a>(
 ) -> Vec<Compare1Result<'a>> {
     let n = values.len();
 
+    let fallback = |t: &pragmastat::Threshold| Compare1Result {
+        field: name,
+        n,
+        metric: t.metric().as_str(),
+        threshold: t.value().value,
+        estimate: None,
+        lower: None,
+        upper: None,
+        verdict: "",
+    };
+
     if n == 0 {
-        return thresholds
-            .iter()
-            .map(|t| Compare1Result {
-                field: name,
-                n,
-                metric: t.metric().as_str(),
-                threshold: t.value().value,
-                estimate: None,
-                lower: None,
-                upper: None,
-                verdict: "",
-            })
-            .collect();
+        return thresholds.iter().map(fallback).collect();
     }
 
     let Ok(sample) = pragmastat::Sample::new(values.to_vec()) else {
-        return thresholds
-            .iter()
-            .map(|t| Compare1Result {
-                field: name,
-                n,
-                metric: t.metric().as_str(),
-                threshold: t.value().value,
-                estimate: None,
-                lower: None,
-                upper: None,
-                verdict: "",
-            })
-            .collect();
+        return thresholds.iter().map(fallback).collect();
     };
 
     match pragmastat::compare1(&sample, thresholds) {
@@ -700,19 +687,7 @@ fn compute_compare1<'a>(
                 }
             })
             .collect(),
-        Err(_) => thresholds
-            .iter()
-            .map(|t| Compare1Result {
-                field: name,
-                n,
-                metric: t.metric().as_str(),
-                threshold: t.value().value,
-                estimate: None,
-                lower: None,
-                upper: None,
-                verdict: "",
-            })
-            .collect(),
+        Err(_) => thresholds.iter().map(fallback).collect(),
     }
 }
 
@@ -726,43 +701,28 @@ fn compute_compare2<'a>(
     let n_x = x.len();
     let n_y = y.len();
 
+    let fallback = |t: &pragmastat::Threshold| Compare2Result {
+        field_x: name_x,
+        field_y: name_y,
+        n_x,
+        n_y,
+        metric: t.metric().as_str(),
+        threshold: t.value().value,
+        estimate: None,
+        lower: None,
+        upper: None,
+        verdict: "",
+    };
+
     if n_x == 0 || n_y == 0 {
-        return thresholds
-            .iter()
-            .map(|t| Compare2Result {
-                field_x: name_x,
-                field_y: name_y,
-                n_x,
-                n_y,
-                metric: t.metric().as_str(),
-                threshold: t.value().value,
-                estimate: None,
-                lower: None,
-                upper: None,
-                verdict: "",
-            })
-            .collect();
+        return thresholds.iter().map(fallback).collect();
     }
 
     let (Ok(sample_x), Ok(sample_y)) = (
         pragmastat::Sample::new(x.to_vec()),
         pragmastat::Sample::new(y.to_vec()),
     ) else {
-        return thresholds
-            .iter()
-            .map(|t| Compare2Result {
-                field_x: name_x,
-                field_y: name_y,
-                n_x,
-                n_y,
-                metric: t.metric().as_str(),
-                threshold: t.value().value,
-                estimate: None,
-                lower: None,
-                upper: None,
-                verdict: "",
-            })
-            .collect();
+        return thresholds.iter().map(fallback).collect();
     };
 
     match pragmastat::compare2(&sample_x, &sample_y, thresholds) {
@@ -784,21 +744,7 @@ fn compute_compare2<'a>(
                 }
             })
             .collect(),
-        Err(_) => thresholds
-            .iter()
-            .map(|t| Compare2Result {
-                field_x: name_x,
-                field_y: name_y,
-                n_x,
-                n_y,
-                metric: t.metric().as_str(),
-                threshold: t.value().value,
-                estimate: None,
-                lower: None,
-                upper: None,
-                verdict: "",
-            })
-            .collect(),
+        Err(_) => thresholds.iter().map(fallback).collect(),
     }
 }
 

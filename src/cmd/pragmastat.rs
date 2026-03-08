@@ -608,6 +608,8 @@ fn parse_thresholds(
                 "Invalid threshold format \"{part}\". Expected metric:value (e.g. center:42.0).",
             )));
         };
+        let metric_str = metric_str.trim();
+        let value_str = value_str.trim();
         let metric_lower = metric_str.to_ascii_lowercase();
         if !valid_metrics.contains(&metric_lower.as_str()) {
             return Err(CliError::IncorrectUsage(format!(
@@ -620,6 +622,11 @@ fn parse_thresholds(
                 "Invalid threshold value \"{value_str}\". Expected a number.",
             ))
         })?;
+        if !value.is_finite() {
+            return Err(CliError::IncorrectUsage(format!(
+                "Invalid threshold value \"{value_str}\". Thresholds must be finite real numbers.",
+            )));
+        }
 
         let metric = match metric_lower.as_str() {
             "center" => pragmastat::Metric::Center,
@@ -856,6 +863,15 @@ fn write_compare2_results(
     let k = col_names.len();
     if k < 2 {
         return Ok(());
+    }
+    let num_pairs = k * (k - 1) / 2;
+    let num_rows = num_pairs * thresholds.len();
+    if num_rows > 100 {
+        winfo!(
+            "computing {num_pairs} column pairs x {} thresholds = {num_rows} rows. Use --select \
+             to limit columns for faster results.",
+            thresholds.len()
+        );
     }
 
     let pairs: Vec<(usize, usize)> = (0..k)

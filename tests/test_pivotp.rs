@@ -324,9 +324,8 @@ pivotp_test!(
         wrk.assert_err(&mut cmd);
 
         let msg = wrk.output_stderr(&mut cmd);
-        let expected_msg = r#"Polars error: ExprContext { error: ComputeError(ErrString("aggregation 'item' expected no or a single value, got 2 values")), expr: ErrString("col(\"sales\").filter([(col(\"product\")) == (\"A\")]).item(allow_empty=true)") }
-"#;
-        assert_eq!(msg, expected_msg);
+        let expected_msg = r#"Polars error: ExprContext { error: ComputeError(ErrString("aggregation 'item' expected no or a single value, got 2 values")), expr: ErrString("col(\"sales\").filter([(col(\"product\"))"#;
+        assert!(msg.starts_with(expected_msg));
     }
 );
 

@@ -387,3 +387,271 @@ fn pragmastat_invalid_misrate() {
         .arg(wrk.path("data.csv").to_str().unwrap());
     wrk.assert_err(&mut cmd);
 }
+
+// ---------------------------------------------------------------------------
+// Compare1 tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pragmastat_compare1_basic() {
+    let wrk = Workdir::new("pragmastat_compare1_basic");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare1")
+        .arg("center:42.0")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Header
+    assert_eq!(
+        got[0],
+        svec![
+            "field",
+            "n",
+            "metric",
+            "threshold",
+            "estimate",
+            "lower",
+            "upper",
+            "verdict",
+        ]
+    );
+
+    // One data row
+    assert_eq!(got.len(), 2);
+    let row = &got[1];
+    assert_eq!(row[0], "latitude");
+    assert_eq!(row[1], "100");
+    assert_eq!(row[2], "center");
+    assert_eq!(row[3], "42");
+    assert!(!row[4].is_empty(), "estimate should be non-empty");
+    assert!(!row[5].is_empty(), "lower should be non-empty");
+    assert!(!row[6].is_empty(), "upper should be non-empty");
+    // Verdict should be one of the valid values
+    assert!(
+        row[7] == "less" || row[7] == "greater" || row[7] == "inconclusive",
+        "verdict should be less/greater/inconclusive, got: {}",
+        row[7]
+    );
+}
+
+#[test]
+fn pragmastat_compare1_multiple_thresholds() {
+    let wrk = Workdir::new("pragmastat_compare1_multiple_thresholds");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare1")
+        .arg("center:42.0,spread:0.5")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Header + 2 rows (one per threshold)
+    assert_eq!(got.len(), 3);
+    assert_eq!(got[1][2], "center");
+    assert_eq!(got[2][2], "spread");
+}
+
+#[test]
+fn pragmastat_compare1_select() {
+    let wrk = Workdir::new("pragmastat_compare1_select");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare1")
+        .arg("center:42.0")
+        .arg("--select")
+        .arg("latitude,longitude")
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Header + 2 rows (one per column)
+    assert_eq!(got.len(), 3);
+    assert_eq!(got[1][0], "latitude");
+    assert_eq!(got[2][0], "longitude");
+}
+
+#[test]
+fn pragmastat_compare1_non_numeric() {
+    let wrk = Workdir::new("pragmastat_compare1_non_numeric");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare1")
+        .arg("center:0")
+        .arg("--select")
+        .arg("case_status")
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert_eq!(got.len(), 2);
+    assert_eq!(got[1][0], "case_status");
+    assert_eq!(got[1][1], "0");
+    // estimate, lower, upper should be empty
+    assert!(got[1][4].is_empty(), "estimate should be empty for n=0");
+    assert!(got[1][5].is_empty(), "lower should be empty for n=0");
+    assert!(got[1][6].is_empty(), "upper should be empty for n=0");
+    // verdict should be empty
+    assert!(got[1][7].is_empty(), "verdict should be empty for n=0");
+}
+
+// ---------------------------------------------------------------------------
+// Compare2 tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pragmastat_compare2_basic() {
+    let wrk = Workdir::new("pragmastat_compare2_basic");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare2")
+        .arg("shift:0")
+        .arg("--select")
+        .arg("latitude,longitude")
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Header
+    assert_eq!(
+        got[0],
+        svec![
+            "field_x",
+            "field_y",
+            "n_x",
+            "n_y",
+            "metric",
+            "threshold",
+            "estimate",
+            "lower",
+            "upper",
+            "verdict",
+        ]
+    );
+
+    // One data row (one pair)
+    assert_eq!(got.len(), 2);
+    let row = &got[1];
+    assert_eq!(row[0], "latitude");
+    assert_eq!(row[1], "longitude");
+    assert_eq!(row[2], "100");
+    assert_eq!(row[3], "100");
+    assert_eq!(row[4], "shift");
+    assert_eq!(row[5], "0");
+    assert!(!row[6].is_empty(), "estimate should be non-empty");
+    assert!(
+        row[9] == "less" || row[9] == "greater" || row[9] == "inconclusive",
+        "verdict should be less/greater/inconclusive, got: {}",
+        row[9]
+    );
+}
+
+#[test]
+fn pragmastat_compare2_multiple_thresholds() {
+    let wrk = Workdir::new("pragmastat_compare2_multiple_thresholds");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare2")
+        .arg("shift:0,disparity:0.8")
+        .arg("--select")
+        .arg("latitude,longitude")
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Header + 2 rows (one per threshold for the single pair)
+    assert_eq!(got.len(), 3);
+    assert_eq!(got[1][4], "shift");
+    assert_eq!(got[2][4], "disparity");
+}
+
+#[test]
+fn pragmastat_compare2_single_column() {
+    let wrk = Workdir::new("pragmastat_compare2_single_column");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare2")
+        .arg("shift:0")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Only header row; k < 2 guard prevents any pair computation
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0][0], "field_x");
+}
+
+// ---------------------------------------------------------------------------
+// Error tests for compare
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pragmastat_compare1_invalid_metric() {
+    let wrk = Workdir::new("pragmastat_compare1_invalid_metric");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare1")
+        .arg("shift:0")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn pragmastat_compare2_invalid_metric() {
+    let wrk = Workdir::new("pragmastat_compare2_invalid_metric");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare2")
+        .arg("center:42")
+        .arg("--select")
+        .arg("latitude,longitude")
+        .arg(&test_file);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn pragmastat_compare_bad_format() {
+    let wrk = Workdir::new("pragmastat_compare_bad_format");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare1")
+        .arg("center")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn pragmastat_mutual_exclusivity() {
+    let wrk = Workdir::new("pragmastat_mutual_exclusivity");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare1")
+        .arg("center:0")
+        .arg("--twosample")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+    wrk.assert_err(&mut cmd);
+}

@@ -320,6 +320,9 @@ serial_test = { version = "3.4", features = ["file_locks"] }
 # replace byte-by-byte loop in csv-core's scan_and_copy with
 # memchr-based SIMD scanning and copy_from_slice bulk copy;
 # Add the scan_and_copy fast-path to read_field_dfa (previously only in read_record_dfa);
+# create single `DfaTransition` struct, reducing lookup by 1 in hot `get_output` path.
+# replaced 8-way unrolled table lookup in `needs_quotes` with memchr-based SIMD scanning;
+# derive Copy for `Position`, eliminating clone overhead;
 # and various clippy lint suggestions applied
 csv       = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
 csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }

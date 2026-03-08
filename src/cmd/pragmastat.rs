@@ -48,6 +48,30 @@ MISRATE PARAMETER
     1e-3    Everyday analysis [default]
     1e-6    Critical decisions
 
+COMPARE1 OUTPUT (--compare1, one-sample confirmatory analysis)
+  field, n, metric, threshold, estimate, lower, upper, verdict
+
+  Tests one-sample estimates (center/spread) against user-defined thresholds.
+  Each threshold produces one row per column with a verdict:
+    less          Estimate is statistically less than the threshold.
+    greater       Estimate is statistically greater than the threshold.
+    inconclusive  Not enough evidence to decide (interval contains threshold).
+
+COMPARE2 OUTPUT (--compare2, two-sample confirmatory analysis)
+  field_x, field_y, n_x, n_y, metric, threshold, estimate, lower, upper, verdict
+
+  Tests two-sample estimates (shift/ratio/disparity) against user-defined thresholds.
+  Each threshold produces one row per column pair with the same verdict semantics.
+
+THRESHOLD FORMAT
+  Both compare flags accept a comma-separated list of metric:value pairs.
+    compare1 center:42.0             Single threshold
+    compare1 center:42.0,spread:0.5  Multiple thresholds
+    compare2 shift:0,disparity:0.8   Two-sample thresholds
+
+  Valid metrics for compare1: center, spread
+  Valid metrics for compare2: shift, ratio, disparity
+
 Examples:
   # Basic one-sample statistics
   qsv pragmastat data.csv
@@ -61,8 +85,17 @@ Examples:
   # One-sample statistics with very tight bounds (lower misrate)
   qsv pragmastat --misrate 1e-6 data.csv
 
+  # Compare one-sample center against a threshold
+  qsv pragmastat --compare1 center:42.0 --select latitude data.csv
+
+  # Compare one-sample center and spread against thresholds
+  qsv pragmastat --compare1 center:42.0,spread:0.5 --select latitude data.csv
+
+  # Compare two-sample shift and disparity against thresholds
+  qsv pragmastat --compare2 shift:0,disparity:0.8 --select latency_ms,price data.csv
+
 Full Pragmastat manual:
-  https://github.com/AndreyAkinshin/pragmastat/releases/download/v11.0.0/pragmastat-v11.0.0.pdf
+  https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.0.0/pragmastat-v12.0.0.pdf
   https://pragmastat.dev/ (latest version)
 
 Usage:
@@ -71,6 +104,12 @@ Usage:
 
 pragmastat options:
     -t, --twosample        Compute two-sample estimators for all column pairs.
+        --compare1 <spec>  One-sample confirmatory analysis. Test center/spread against
+                           thresholds. Format: metric:value[,metric:value,...].
+                           Mutually exclusive with --twosample and --compare2.
+        --compare2 <spec>  Two-sample confirmatory analysis. Test shift/ratio/disparity
+                           against thresholds. Format: metric:value[,metric:value,...].
+                           Mutually exclusive with --twosample and --compare1.
     -s, --select <cols>    Select columns for analysis. Uses qsv's column selection
                            syntax. Non-numeric columns appear with n=0.
                            In two-sample mode, all pairs of selected columns are computed.
@@ -107,6 +146,8 @@ use crate::{
 struct Args {
     arg_input:       Option<String>,
     flag_twosample:  bool,
+    flag_compare1:   Option<String>,
+    flag_compare2:   Option<String>,
     flag_select:     Option<SelectColumns>,
     flag_misrate:    f64,
     flag_output:     Option<String>,
@@ -146,6 +187,17 @@ struct TwoSampleResult<'a> {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     validate_misrate(args.flag_misrate)?;
+
+    // Mutual exclusivity: at most one mode flag
+    let mode_count = usize::from(args.flag_twosample)
+        + usize::from(args.flag_compare1.is_some())
+        + usize::from(args.flag_compare2.is_some());
+    if mode_count > 1 {
+        return Err(CliError::IncorrectUsage(
+            "--twosample, --compare1, and --compare2 are mutually exclusive.".to_string(),
+        ));
+    }
+
     util::njobs(args.flag_jobs);
     let (col_names, col_values) = read_columns(&args)?;
     write_results(&args, &col_names, &col_values)?;
@@ -200,7 +252,13 @@ fn write_results(args: &Args, col_names: &[String], col_values: &[Vec<f64>]) -> 
         .delimiter(args.flag_delimiter)
         .writer()?;
 
-    if args.flag_twosample {
+    if let Some(ref spec) = args.flag_compare1 {
+        let thresholds = parse_thresholds(spec, args.flag_misrate, true)?;
+        write_compare1_results(&mut wtr, col_names, col_values, &thresholds)?;
+    } else if let Some(ref spec) = args.flag_compare2 {
+        let thresholds = parse_thresholds(spec, args.flag_misrate, false)?;
+        write_compare2_results(&mut wtr, col_names, col_values, &thresholds)?;
+    } else if args.flag_twosample {
         write_twosample_results(&mut wtr, col_names, col_values, args.flag_misrate)?;
     } else {
         write_onesample_results(&mut wtr, col_names, col_values, args.flag_misrate)?;
@@ -495,5 +553,348 @@ fn write_twosample_row(
         &fmt_opt(r.disparity_lower),
         &fmt_opt(r.disparity_upper),
     ])?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Compare1 / Compare2 — confirmatory analysis
+// ---------------------------------------------------------------------------
+
+struct Compare1Result<'a> {
+    field:     &'a str,
+    n:         usize,
+    metric:    &'static str,
+    threshold: f64,
+    estimate:  Option<f64>,
+    lower:     Option<f64>,
+    upper:     Option<f64>,
+    verdict:   &'static str,
+}
+
+struct Compare2Result<'a> {
+    field_x:   &'a str,
+    field_y:   &'a str,
+    n_x:       usize,
+    n_y:       usize,
+    metric:    &'static str,
+    threshold: f64,
+    estimate:  Option<f64>,
+    lower:     Option<f64>,
+    upper:     Option<f64>,
+    verdict:   &'static str,
+}
+
+fn parse_thresholds(
+    spec: &str,
+    misrate: f64,
+    is_compare1: bool,
+) -> CliResult<Vec<pragmastat::Threshold>> {
+    let valid_metrics: &[&str] = if is_compare1 {
+        &["center", "spread"]
+    } else {
+        &["shift", "ratio", "disparity"]
+    };
+    let mode = if is_compare1 {
+        "--compare1"
+    } else {
+        "--compare2"
+    };
+
+    let mut thresholds = Vec::new();
+    for part in spec.split(',') {
+        let part = part.trim();
+        let Some((metric_str, value_str)) = part.split_once(':') else {
+            return Err(CliError::IncorrectUsage(format!(
+                "Invalid threshold format \"{part}\". Expected metric:value (e.g. center:42.0).",
+            )));
+        };
+        let metric_str = metric_str.trim();
+        let value_str = value_str.trim();
+        let metric_lower = metric_str.to_ascii_lowercase();
+        if !valid_metrics.contains(&metric_lower.as_str()) {
+            return Err(CliError::IncorrectUsage(format!(
+                "Invalid metric \"{metric_str}\" for {mode}. Valid metrics: {}.",
+                valid_metrics.join(", "),
+            )));
+        }
+        let value: f64 = value_str.parse().map_err(|_| {
+            CliError::IncorrectUsage(format!(
+                "Invalid threshold value \"{value_str}\". Expected a number.",
+            ))
+        })?;
+        if !value.is_finite() {
+            return Err(CliError::IncorrectUsage(format!(
+                "Invalid threshold value \"{value_str}\". Thresholds must be finite real numbers.",
+            )));
+        }
+
+        let metric = match metric_lower.as_str() {
+            "center" => pragmastat::Metric::Center,
+            "spread" => pragmastat::Metric::Spread,
+            "shift" => pragmastat::Metric::Shift,
+            "ratio" => pragmastat::Metric::Ratio,
+            "disparity" => pragmastat::Metric::Disparity,
+            _ => unreachable!(),
+        };
+
+        let threshold =
+            pragmastat::Threshold::new(metric, pragmastat::Measurement::number(value), misrate)
+                .map_err(|e| CliError::IncorrectUsage(format!("Threshold error: {e}")))?;
+        thresholds.push(threshold);
+    }
+
+    if thresholds.is_empty() {
+        return Err(CliError::IncorrectUsage(
+            "At least one threshold must be specified.".to_string(),
+        ));
+    }
+    Ok(thresholds)
+}
+
+fn compute_compare1<'a>(
+    name: &'a str,
+    values: &[f64],
+    thresholds: &[pragmastat::Threshold],
+) -> Vec<Compare1Result<'a>> {
+    let n = values.len();
+
+    let fallback = |t: &pragmastat::Threshold| Compare1Result {
+        field: name,
+        n,
+        metric: t.metric().as_str(),
+        threshold: t.value().value,
+        estimate: None,
+        lower: None,
+        upper: None,
+        verdict: "",
+    };
+
+    if n == 0 {
+        return thresholds.iter().map(fallback).collect();
+    }
+
+    let Ok(sample) = pragmastat::Sample::new(values.to_vec()) else {
+        return thresholds.iter().map(fallback).collect();
+    };
+
+    match pragmastat::compare1(&sample, thresholds) {
+        Ok(projections) => projections
+            .iter()
+            .map(|p| {
+                let est = p.estimate().value;
+                Compare1Result {
+                    field: name,
+                    n,
+                    metric: p.threshold().metric().as_str(),
+                    threshold: p.threshold().value().value,
+                    estimate: Some(est),
+                    lower: Some(p.bounds().lower),
+                    upper: Some(p.bounds().upper),
+                    verdict: p.verdict().as_str(),
+                }
+            })
+            .collect(),
+        Err(_) => thresholds.iter().map(fallback).collect(),
+    }
+}
+
+fn compute_compare2<'a>(
+    name_x: &'a str,
+    name_y: &'a str,
+    x: &[f64],
+    y: &[f64],
+    thresholds: &[pragmastat::Threshold],
+) -> Vec<Compare2Result<'a>> {
+    let n_x = x.len();
+    let n_y = y.len();
+
+    let fallback = |t: &pragmastat::Threshold| Compare2Result {
+        field_x: name_x,
+        field_y: name_y,
+        n_x,
+        n_y,
+        metric: t.metric().as_str(),
+        threshold: t.value().value,
+        estimate: None,
+        lower: None,
+        upper: None,
+        verdict: "",
+    };
+
+    if n_x == 0 || n_y == 0 {
+        return thresholds.iter().map(fallback).collect();
+    }
+
+    let (Ok(sample_x), Ok(sample_y)) = (
+        pragmastat::Sample::new(x.to_vec()),
+        pragmastat::Sample::new(y.to_vec()),
+    ) else {
+        return thresholds.iter().map(fallback).collect();
+    };
+
+    match pragmastat::compare2(&sample_x, &sample_y, thresholds) {
+        Ok(projections) => projections
+            .iter()
+            .map(|p| {
+                let est = p.estimate().value;
+                Compare2Result {
+                    field_x: name_x,
+                    field_y: name_y,
+                    n_x,
+                    n_y,
+                    metric: p.threshold().metric().as_str(),
+                    threshold: p.threshold().value().value,
+                    estimate: Some(est),
+                    lower: Some(p.bounds().lower),
+                    upper: Some(p.bounds().upper),
+                    verdict: p.verdict().as_str(),
+                }
+            })
+            .collect(),
+        Err(_) => thresholds.iter().map(fallback).collect(),
+    }
+}
+
+fn write_compare1_header(
+    wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
+) -> CliResult<()> {
+    wtr.write_record([
+        "field",
+        "n",
+        "metric",
+        "threshold",
+        "estimate",
+        "lower",
+        "upper",
+        "verdict",
+    ])?;
+    Ok(())
+}
+
+fn write_compare1_row(
+    wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
+    r: &Compare1Result,
+) -> CliResult<()> {
+    let mut itoa_buf = itoa::Buffer::new();
+    wtr.write_record([
+        r.field,
+        itoa_buf.format(r.n),
+        r.metric,
+        &util::round_num(r.threshold, 4),
+        &fmt_opt(r.estimate),
+        &fmt_opt(r.lower),
+        &fmt_opt(r.upper),
+        r.verdict,
+    ])?;
+    Ok(())
+}
+
+fn write_compare2_header(
+    wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
+) -> CliResult<()> {
+    wtr.write_record([
+        "field_x",
+        "field_y",
+        "n_x",
+        "n_y",
+        "metric",
+        "threshold",
+        "estimate",
+        "lower",
+        "upper",
+        "verdict",
+    ])?;
+    Ok(())
+}
+
+fn write_compare2_row(
+    wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
+    r: &Compare2Result,
+) -> CliResult<()> {
+    let mut itoa_buf_x = itoa::Buffer::new();
+    let mut itoa_buf_y = itoa::Buffer::new();
+    let n_x_str = itoa_buf_x.format(r.n_x);
+    let n_y_str = itoa_buf_y.format(r.n_y);
+    wtr.write_record([
+        r.field_x,
+        r.field_y,
+        n_x_str,
+        n_y_str,
+        r.metric,
+        &util::round_num(r.threshold, 4),
+        &fmt_opt(r.estimate),
+        &fmt_opt(r.lower),
+        &fmt_opt(r.upper),
+        r.verdict,
+    ])?;
+    Ok(())
+}
+
+fn write_compare1_results(
+    wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
+    col_names: &[String],
+    col_values: &[Vec<f64>],
+    thresholds: &[pragmastat::Threshold],
+) -> CliResult<()> {
+    write_compare1_header(wtr)?;
+
+    let all_results: Vec<Vec<Compare1Result>> = col_names
+        .par_iter()
+        .enumerate()
+        .map(|(i, name)| compute_compare1(name, &col_values[i], thresholds))
+        .collect();
+
+    for results in &all_results {
+        for r in results {
+            write_compare1_row(wtr, r)?;
+        }
+    }
+    Ok(())
+}
+
+fn write_compare2_results(
+    wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
+    col_names: &[String],
+    col_values: &[Vec<f64>],
+    thresholds: &[pragmastat::Threshold],
+) -> CliResult<()> {
+    write_compare2_header(wtr)?;
+
+    let k = col_names.len();
+    if k < 2 {
+        return Ok(());
+    }
+    let num_pairs = k * (k - 1) / 2;
+    let num_rows = num_pairs * thresholds.len();
+    if num_rows > 100 {
+        winfo!(
+            "computing {num_pairs} column pairs x {} thresholds = {num_rows} rows. Use --select \
+             to limit columns for faster results.",
+            thresholds.len()
+        );
+    }
+
+    let pairs: Vec<(usize, usize)> = (0..k)
+        .flat_map(|i| ((i + 1)..k).map(move |j| (i, j)))
+        .collect();
+
+    let all_results: Vec<Vec<Compare2Result>> = pairs
+        .par_iter()
+        .map(|&(i, j)| {
+            compute_compare2(
+                &col_names[i],
+                &col_names[j],
+                &col_values[i],
+                &col_values[j],
+                thresholds,
+            )
+        })
+        .collect();
+
+    for results in &all_results {
+        for r in results {
+            write_compare2_row(wtr, r)?;
+        }
+    }
     Ok(())
 }

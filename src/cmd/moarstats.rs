@@ -1399,9 +1399,9 @@ fn update_correlation_state(state: &mut CorrelationState, x: f64, y: f64) {
     let delta_x_new = x - state.mean_x;
     let delta_y_new = y - state.mean_y;
 
-    state.m2_x += delta_x * delta_x_new;
-    state.m2_y += delta_y * delta_y_new;
-    state.cxy += delta_x * delta_y_new;
+    state.m2_x = delta_x.mul_add(delta_x_new, state.m2_x);
+    state.m2_y = delta_y.mul_add(delta_y_new, state.m2_y);
+    state.cxy = delta_x.mul_add(delta_y_new, state.cxy);
 }
 
 /// Merge two correlation states (for aggregating across chunks)
@@ -1734,7 +1734,7 @@ fn compute_mutual_information_from_counts(
         let p_y = y_counts.get(y_val).copied().unwrap_or(0) as f64 / total_f64;
 
         if p_x > 0.0 && p_y > 0.0 && p_xy > 0.0 {
-            mi += p_xy * (p_xy / (p_x * p_y)).log2();
+            mi = p_xy.mul_add((p_xy / (p_x * p_y)).log2(), mi);
         }
     }
 
@@ -1756,7 +1756,7 @@ fn compute_entropy_from_counts(counts: &HashMap<String, u64>, total: u64) -> Opt
     for count in counts.values() {
         if *count > 0 {
             let p = *count as f64 / total_f64;
-            entropy -= p * p.log2();
+            entropy = p.mul_add(-p.log2(), entropy);
         }
     }
 
@@ -1877,7 +1877,8 @@ where
                     .max_winsorized
                     .map_or(winsorized_val, |m| m.max(winsorized_val)),
             );
-            stats.sum_squares_winsorized += winsorized_val * winsorized_val;
+            stats.sum_squares_winsorized =
+                winsorized_val.mul_add(winsorized_val, stats.sum_squares_winsorized);
 
             // For trimmed mean, only include values within thresholds
             if val >= field_info.lower_threshold && val <= field_info.upper_threshold {
@@ -1886,7 +1887,7 @@ where
                 // Track trimmed min/max and sum of squares
                 stats.min_trimmed = Some(stats.min_trimmed.map_or(val, |m| m.min(val)));
                 stats.max_trimmed = Some(stats.max_trimmed.map_or(val, |m| m.max(val)));
-                stats.sum_squares_trimmed += val * val;
+                stats.sum_squares_trimmed = val.mul_add(val, stats.sum_squares_trimmed);
             }
 
             // Count outliers and track statistics based on fence comparisons
@@ -1894,34 +1895,34 @@ where
                 stats.counts[0] += 1; // extreme_lower
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
-                stats.sum_squares_outliers += val * val;
+                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else if val < field_info.lower_inner {
                 stats.counts[1] += 1; // mild_lower
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
-                stats.sum_squares_outliers += val * val;
+                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else if val <= field_info.upper_inner {
                 stats.counts[2] += 1; // normal
                 stats.sum_normal += val;
-                stats.sum_squares_normal += val * val;
+                stats.sum_squares_normal = val.mul_add(val, stats.sum_squares_normal);
                 stats.min_normal = Some(stats.min_normal.map_or(val, |m| m.min(val)));
                 stats.max_normal = Some(stats.max_normal.map_or(val, |m| m.max(val)));
             } else if val <= field_info.upper_outer {
                 stats.counts[3] += 1; // mild_upper
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
-                stats.sum_squares_outliers += val * val;
+                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else {
                 stats.counts[4] += 1; // extreme_upper
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
-                stats.sum_squares_outliers += val * val;
+                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             }
@@ -2332,7 +2333,8 @@ fn count_all_outliers_from_reader(
                     .max_winsorized
                     .map_or(winsorized_val, |m| m.max(winsorized_val)),
             );
-            stats.sum_squares_winsorized += winsorized_val * winsorized_val;
+            stats.sum_squares_winsorized =
+                winsorized_val.mul_add(winsorized_val, stats.sum_squares_winsorized);
 
             // For trimmed mean, only include values within thresholds
             if val >= field_info.lower_threshold && val <= field_info.upper_threshold {
@@ -2341,7 +2343,7 @@ fn count_all_outliers_from_reader(
                 // Track trimmed min/max and sum of squares
                 stats.min_trimmed = Some(stats.min_trimmed.map_or(val, |m| m.min(val)));
                 stats.max_trimmed = Some(stats.max_trimmed.map_or(val, |m| m.max(val)));
-                stats.sum_squares_trimmed += val * val;
+                stats.sum_squares_trimmed = val.mul_add(val, stats.sum_squares_trimmed);
             }
 
             // Count outliers and track statistics based on fence comparisons
@@ -2349,34 +2351,34 @@ fn count_all_outliers_from_reader(
                 stats.counts[0] += 1; // extreme_lower
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
-                stats.sum_squares_outliers += val * val;
+                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else if val < field_info.lower_inner {
                 stats.counts[1] += 1; // mild_lower
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
-                stats.sum_squares_outliers += val * val;
+                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else if val <= field_info.upper_inner {
                 stats.counts[2] += 1; // normal
                 stats.sum_normal += val;
-                stats.sum_squares_normal += val * val;
+                stats.sum_squares_normal = val.mul_add(val, stats.sum_squares_normal);
                 stats.min_normal = Some(stats.min_normal.map_or(val, |m| m.min(val)));
                 stats.max_normal = Some(stats.max_normal.map_or(val, |m| m.max(val)));
             } else if val <= field_info.upper_outer {
                 stats.counts[3] += 1; // mild_upper
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
-                stats.sum_squares_outliers += val * val;
+                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else {
                 stats.counts[4] += 1; // extreme_upper
                 stats.counts[5] += 1; // total
                 stats.sum_outliers += val;
-                stats.sum_squares_outliers += val * val;
+                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             }

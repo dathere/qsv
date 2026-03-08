@@ -2663,13 +2663,13 @@ impl WeightedOnlineStats {
         self.sum_weights += w;
 
         let delta = x - self.weighted_mean;
-        self.weighted_mean += (w / self.sum_weights) * delta;
+        self.weighted_mean = (w / self.sum_weights).mul_add(delta, self.weighted_mean);
         let delta2 = x - self.weighted_mean;
-        self.sum_squared_diffs += w * delta * delta2;
+        self.sum_squared_diffs = (w * delta).mul_add(delta2, self.sum_squared_diffs);
 
         // Accumulate weighted logs for geometric mean (only if x > 0)
         if x > 0.0 {
-            self.sum_weighted_logs += w * x.ln();
+            self.sum_weighted_logs = w.mul_add(x.ln(), self.sum_weighted_logs);
             self.sum_weights_positive += w;
         }
 

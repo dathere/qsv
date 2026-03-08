@@ -375,7 +375,7 @@ impl<R: io::Read + io::Seek, W: io::Write> IoState<R, W> {
         let mut row1 = csv::ByteRecord::new();
         let rdr2_has_headers = self.rdr2.has_headers();
         while self.rdr1.read_byte_record(&mut row1)? {
-            self.rdr2.seek(pos.clone())?;
+            self.rdr2.seek(pos)?;
             if rdr2_has_headers {
                 // Read and skip the header row, since CSV readers disable
                 // the header skipping logic after being seeked.

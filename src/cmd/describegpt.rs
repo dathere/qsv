@@ -2794,6 +2794,16 @@ fn process_phase_output(
     base_url: &str,
     output_format: OutputFormat,
 ) -> CliResult<()> {
+    // For non-dictionary types, format output
+    fn format_output_str(str: &str) -> String {
+        str.replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace("\\\"", "\"")
+            .replace("\\'", "'")
+            .replace("\\`", "`")
+            + "\n\n"
+    }
+
     // Skip outputting dictionary when using --prompt (but still generate it for context)
     if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
         let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
@@ -2919,16 +2929,6 @@ fn process_phase_output(
             }
         }
         return Ok(());
-    }
-
-    // For non-dictionary types, format output
-    fn format_output_str(str: &str) -> String {
-        str.replace("\\n", "\n")
-            .replace("\\t", "\t")
-            .replace("\\\"", "\"")
-            .replace("\\'", "'")
-            .replace("\\`", "`")
-            + "\n\n"
     }
 
     let is_sql_response = kind == PromptType::Prompt
@@ -5176,7 +5176,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         let output = PrepareContextOutput {
             phases,
-            analysis_results: analysis_results.clone(),
+            analysis_results,
             model,
             max_tokens: args.flag_max_tokens,
         };

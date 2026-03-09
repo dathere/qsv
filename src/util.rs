@@ -822,6 +822,7 @@ macro_rules! update_cache_info {
             #[allow(clippy::cast_precision_loss)]
             let hit_ratio = (hits as f64 / (hits + misses) as f64) * 100.0;
             let capacity = cache.cache_capacity();
+            drop(cache);
             $progress.set_message(format!(
                 " of {} records. Cache {:.2}% entries: {} capacity: {}.",
                 HumanCount($progress.length().unwrap()),

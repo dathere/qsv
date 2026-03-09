@@ -6,7 +6,7 @@ fn pragmastat_onesample_basic() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("pragmastat");
-    cmd.arg(&test_file);
+    cmd.arg("--standalone").arg(&test_file);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -88,7 +88,8 @@ fn pragmastat_onesample_select() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("pragmastat");
-    cmd.arg("--select")
+    cmd.arg("--standalone")
+        .arg("--select")
         .arg("latitude,longitude")
         .arg(&test_file);
 
@@ -107,12 +108,17 @@ fn pragmastat_onesample_custom_misrate() {
 
     // Run with default misrate (0.001)
     let mut cmd_default = wrk.command("pragmastat");
-    cmd_default.arg("--select").arg("latitude").arg(&test_file);
+    cmd_default
+        .arg("--standalone")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
     let got_default: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_default);
 
     // Run with stricter misrate (1e-6)
     let mut cmd_strict = wrk.command("pragmastat");
     cmd_strict
+        .arg("--standalone")
         .arg("--select")
         .arg("latitude")
         .arg("--misrate")
@@ -270,7 +276,10 @@ fn pragmastat_non_numeric_columns() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("pragmastat");
-    cmd.arg("--select").arg("case_status").arg(&test_file);
+    cmd.arg("--standalone")
+        .arg("--select")
+        .arg("case_status")
+        .arg(&test_file);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -292,7 +301,8 @@ fn pragmastat_empty_input() {
     wrk.create("empty.csv", vec![svec!["a", "b", "c"]]);
 
     let mut cmd = wrk.command("pragmastat");
-    cmd.arg(wrk.path("empty.csv").to_str().unwrap());
+    cmd.arg("--standalone")
+        .arg(wrk.path("empty.csv").to_str().unwrap());
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -317,7 +327,8 @@ fn pragmastat_no_headers() {
     );
 
     let mut cmd = wrk.command("pragmastat");
-    cmd.arg("--no-headers")
+    cmd.arg("--standalone")
+        .arg("--no-headers")
         .arg(wrk.path("data.csv").to_str().unwrap());
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -694,7 +705,7 @@ fn pragmastat_stats_cache_filters_nonnumeric() {
 
     // Run pragmastat without --select; cache should filter to numeric columns only
     let mut cmd = wrk.command("pragmastat");
-    cmd.arg(&test_file);
+    cmd.arg("--standalone").arg(&test_file);
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
     // No row should have a non-numeric column like "ontime" or "case_status"
@@ -736,7 +747,10 @@ fn pragmastat_stats_cache_ignored_with_select() {
     // Run pragmastat with --select including a non-numeric column;
     // explicit selection should bypass cache filtering
     let mut cmd = wrk.command("pragmastat");
-    cmd.arg("--select").arg("latitude,ontime").arg(&test_file);
+    cmd.arg("--standalone")
+        .arg("--select")
+        .arg("latitude,ontime")
+        .arg(&test_file);
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
     // Header + 2 data rows
@@ -761,9 +775,12 @@ fn pragmastat_date_columns_formatted() {
     stats_cmd.args([&test_file, "-E", "--infer-dates", "--stats-jsonl"]);
     wrk.assert_success(&mut stats_cmd);
 
-    // Run pragmastat selecting a date column
+    // Run pragmastat selecting a date column (standalone mode for stdout)
     let mut cmd = wrk.command("pragmastat");
-    cmd.arg("--select").arg("open_dt").arg(&test_file);
+    cmd.arg("--standalone")
+        .arg("--select")
+        .arg("open_dt")
+        .arg(&test_file);
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
     assert_eq!(got.len(), 2); // header + 1 row
@@ -842,7 +859,8 @@ fn pragmastat_parallel_reading() {
 
     // Run with --jobs 1 to force single-threaded parallel path (deterministic order)
     let mut cmd = wrk.command("pragmastat");
-    cmd.arg("--select")
+    cmd.arg("--standalone")
+        .arg("--select")
         .arg("a,b")
         .arg("--jobs")
         .arg("1")
@@ -885,7 +903,8 @@ fn pragmastat_parallel_reading_no_headers() {
     wrk.run(&mut idx_cmd);
 
     let mut cmd = wrk.command("pragmastat");
-    cmd.arg("--no-headers")
+    cmd.arg("--standalone")
+        .arg("--no-headers")
         .arg("--select")
         .arg("1,2")
         .arg("--jobs")
@@ -898,4 +917,341 @@ fn pragmastat_parallel_reading_no_headers() {
     assert_eq!(got[1][1], "12000"); // n
     assert_eq!(got[2][0], "2");
     assert_eq!(got[2][1], "12000");
+}
+
+// ---------------------------------------------------------------------------
+// Cache append tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pragmastat_cache_append_basic() {
+    let wrk = Workdir::new("pragmastat_cache_append_basic");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache first
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--infer-dates", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run pragmastat (default = cache append mode)
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Read the stats CSV and verify ps_* columns were appended
+    let stats_csv_path = std::path::Path::new(&test_file)
+        .with_extension("")
+        .with_file_name(format!(
+            "{}.stats.csv",
+            std::path::Path::new(&test_file)
+                .file_stem()
+                .unwrap()
+                .to_string_lossy()
+        ));
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(&stats_csv_path)
+        .unwrap();
+    let headers = rdr.headers().unwrap().clone();
+
+    // Check that all 7 ps_* columns exist
+    let ps_cols = [
+        "ps_n",
+        "ps_center",
+        "ps_spread",
+        "ps_center_lower",
+        "ps_center_upper",
+        "ps_spread_lower",
+        "ps_spread_upper",
+    ];
+    for col in &ps_cols {
+        assert!(
+            headers.iter().any(|h| h == *col),
+            "Header '{}' not found in stats CSV. Headers: {:?}",
+            col,
+            headers.iter().collect::<Vec<_>>()
+        );
+    }
+
+    // Verify latitude has numeric ps_* values
+    let records: Vec<csv::StringRecord> = rdr.records().map(|r| r.unwrap()).collect();
+    let field_idx = headers.iter().position(|h| h == "field").unwrap();
+    let ps_n_idx = headers.iter().position(|h| h == "ps_n").unwrap();
+    let ps_center_idx = headers.iter().position(|h| h == "ps_center").unwrap();
+
+    let lat_record = records
+        .iter()
+        .find(|r| r.get(field_idx) == Some("latitude"))
+        .unwrap();
+    let lat_n: usize = lat_record.get(ps_n_idx).unwrap().parse().unwrap();
+    assert_eq!(lat_n, 100, "latitude should have ps_n=100");
+    let lat_center: f64 = lat_record.get(ps_center_idx).unwrap().parse().unwrap();
+    assert!(
+        (lat_center - 42.3405).abs() < 0.001,
+        "latitude ps_center should be ~42.3405, got {lat_center}"
+    );
+
+    // Verify non-numeric column has empty ps_* fields
+    let type_idx = headers.iter().position(|h| h == "type").unwrap();
+    let string_record = records
+        .iter()
+        .find(|r| r.get(type_idx) == Some("String"))
+        .unwrap();
+    assert!(
+        string_record.get(ps_n_idx).unwrap().is_empty(),
+        "String column should have empty ps_n"
+    );
+    assert!(
+        string_record.get(ps_center_idx).unwrap().is_empty(),
+        "String column should have empty ps_center"
+    );
+}
+
+#[test]
+fn pragmastat_cache_append_auto_stats() {
+    let wrk = Workdir::new("pragmastat_cache_append_auto_stats");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Do NOT generate stats cache first — pragmastat should auto-generate it
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Verify the stats CSV was created with ps_* columns
+    let stats_csv_path = std::path::Path::new(&test_file)
+        .with_extension("")
+        .with_file_name(format!(
+            "{}.stats.csv",
+            std::path::Path::new(&test_file)
+                .file_stem()
+                .unwrap()
+                .to_string_lossy()
+        ));
+    assert!(
+        stats_csv_path.exists(),
+        "Stats CSV should have been auto-generated"
+    );
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(&stats_csv_path)
+        .unwrap();
+    let headers = rdr.headers().unwrap().clone();
+    assert!(
+        headers.iter().any(|h| h == "ps_center"),
+        "ps_center should exist in auto-generated stats CSV"
+    );
+}
+
+#[test]
+fn pragmastat_cache_append_idempotent() {
+    let wrk = Workdir::new("pragmastat_cache_append_idempotent");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // First run
+    let mut cmd1 = wrk.command("pragmastat");
+    cmd1.arg(&test_file);
+    wrk.assert_success(&mut cmd1);
+
+    // Read the stats CSV after first run
+    let stats_csv_path = std::path::Path::new(&test_file)
+        .with_extension("")
+        .with_file_name(format!(
+            "{}.stats.csv",
+            std::path::Path::new(&test_file)
+                .file_stem()
+                .unwrap()
+                .to_string_lossy()
+        ));
+    let content1 = std::fs::read_to_string(&stats_csv_path).unwrap();
+
+    // Second run — should skip (ps_* already present)
+    let mut cmd2 = wrk.command("pragmastat");
+    cmd2.arg(&test_file);
+    wrk.assert_success(&mut cmd2);
+
+    let content2 = std::fs::read_to_string(&stats_csv_path).unwrap();
+    assert_eq!(content1, content2, "Second run should not modify the file");
+}
+
+#[test]
+fn pragmastat_cache_append_force() {
+    let wrk = Workdir::new("pragmastat_cache_append_force");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // First run
+    let mut cmd1 = wrk.command("pragmastat");
+    cmd1.arg(&test_file);
+    wrk.assert_success(&mut cmd1);
+
+    // Force recompute — should succeed and rewrite the file
+    let mut cmd2 = wrk.command("pragmastat");
+    cmd2.arg("--force").arg(&test_file);
+    wrk.assert_success(&mut cmd2);
+
+    // Verify ps_* columns still exist and there's no duplication
+    let stats_csv_path = std::path::Path::new(&test_file)
+        .with_extension("")
+        .with_file_name(format!(
+            "{}.stats.csv",
+            std::path::Path::new(&test_file)
+                .file_stem()
+                .unwrap()
+                .to_string_lossy()
+        ));
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(&stats_csv_path)
+        .unwrap();
+    let headers = rdr.headers().unwrap().clone();
+
+    // Count ps_center occurrences — should be exactly 1
+    let ps_center_count = headers.iter().filter(|h| *h == "ps_center").count();
+    assert_eq!(
+        ps_center_count, 1,
+        "ps_center should appear exactly once after --force"
+    );
+}
+
+#[test]
+fn pragmastat_standalone_flag() {
+    let wrk = Workdir::new("pragmastat_standalone_flag");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Run with --standalone — should produce old standalone CSV output
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--standalone")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Standalone output has the old header format
+    assert_eq!(
+        got[0],
+        svec![
+            "field",
+            "n",
+            "center",
+            "spread",
+            "center_lower",
+            "center_upper",
+            "spread_lower",
+            "spread_upper",
+        ]
+    );
+    assert_eq!(got[1][0], "latitude");
+    assert_eq!(got[1][1], "100");
+}
+
+#[test]
+fn pragmastat_cache_append_select() {
+    let wrk = Workdir::new("pragmastat_cache_append_select");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run pragmastat with --select for only latitude
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--select").arg("latitude").arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Read stats CSV — latitude should have ps_* values, longitude should be empty
+    let stats_csv_path = std::path::Path::new(&test_file)
+        .with_extension("")
+        .with_file_name(format!(
+            "{}.stats.csv",
+            std::path::Path::new(&test_file)
+                .file_stem()
+                .unwrap()
+                .to_string_lossy()
+        ));
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(&stats_csv_path)
+        .unwrap();
+    let headers = rdr.headers().unwrap().clone();
+    let records: Vec<csv::StringRecord> = rdr.records().map(|r| r.unwrap()).collect();
+
+    let field_idx = headers.iter().position(|h| h == "field").unwrap();
+    let ps_n_idx = headers.iter().position(|h| h == "ps_n").unwrap();
+
+    let lat = records
+        .iter()
+        .find(|r| r.get(field_idx) == Some("latitude"))
+        .unwrap();
+    assert_eq!(
+        lat.get(ps_n_idx).unwrap(),
+        "100",
+        "latitude should have ps_n=100"
+    );
+
+    let lon = records
+        .iter()
+        .find(|r| r.get(field_idx) == Some("longitude"))
+        .unwrap();
+    assert!(
+        lon.get(ps_n_idx).unwrap().is_empty(),
+        "longitude should have empty ps_n since it was not selected"
+    );
+}
+
+#[test]
+fn pragmastat_cache_with_moarstats() {
+    let wrk = Workdir::new("pragmastat_cache_with_moarstats");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--infer-dates", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats first
+    let mut moarstats_cmd = wrk.command("moarstats");
+    moarstats_cmd.arg(&test_file);
+    wrk.assert_success(&mut moarstats_cmd);
+
+    // Then run pragmastat — should coexist with moarstats columns
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    // Read stats CSV — verify both moarstats and pragmastat columns exist
+    let stats_csv_path = std::path::Path::new(&test_file)
+        .with_extension("")
+        .with_file_name(format!(
+            "{}.stats.csv",
+            std::path::Path::new(&test_file)
+                .file_stem()
+                .unwrap()
+                .to_string_lossy()
+        ));
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(&stats_csv_path)
+        .unwrap();
+    let headers = rdr.headers().unwrap().clone();
+
+    // moarstats adds columns like "pearson_skewness"
+    assert!(
+        headers.iter().any(|h| h == "pearson_skewness"),
+        "moarstats pearson_skewness column should still be present"
+    );
+    assert!(
+        headers.iter().any(|h| h == "ps_center"),
+        "pragmastat ps_center column should be present"
+    );
 }

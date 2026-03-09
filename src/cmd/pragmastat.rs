@@ -8,6 +8,10 @@ This is a "smart" command that uses the stats cache to work smarter & faster.
 When a stats cache is available, non-numeric columns are automatically filtered out
 (unless --select is explicitly provided) and Date/DateTime columns are supported.
 
+By default, one-sample mode appends 7 ps_* columns to the .stats.csv cache file
+(like moarstats). Use --standalone for the old standalone CSV output. Two-sample,
+compare1, and compare2 modes always produce standalone output.
+
 Input handling
   * Only finite numeric values are used; non-numeric/NaN/Inf are ignored.
   * Date/DateTime columns are supported when a stats cache is available
@@ -81,8 +85,11 @@ THRESHOLD FORMAT
   Valid metrics for compare2: shift, ratio, disparity
 
 Examples:
-  # Basic one-sample statistics
+  # Append pragmastat columns to stats cache (default one-sample behavior)
   qsv pragmastat data.csv
+
+  # Standalone one-sample output (old behavior)
+  qsv pragmastat --standalone data.csv
 
   # One-sample statistics with selected columns
   qsv pragmastat --select latency_ms,price data.csv
@@ -125,6 +132,17 @@ pragmastat options:
                            Lower values produce wider bounds.
                            Must be achievable for the given sample size.
                            [default: 0.001]
+        --standalone       Output one-sample results as standalone CSV instead of
+                           appending to the stats cache.
+        --stats-options <arg>  Options to pass to the stats command if baseline stats need
+                           to be generated. The options are passed as a single string
+                           that will be split by whitespace.
+                           [default: --infer-dates --infer-boolean --mad --quartiles --force --stats-jsonl]
+        --round <n>        Round statistics to <n> decimal places. Rounding follows
+                           Midpoint Nearest Even (Bankers Rounding) rule.
+                           [default: 4]
+        --force            Force recomputing ps_* columns even if they already exist
+                           in the stats cache.
 
 Common options:
     -h, --help             Display this message
@@ -168,17 +186,21 @@ enum ColType {
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input:       Option<String>,
-    flag_twosample:  bool,
-    flag_compare1:   Option<String>,
-    flag_compare2:   Option<String>,
-    flag_select:     Option<SelectColumns>,
-    flag_misrate:    f64,
-    flag_output:     Option<String>,
-    flag_delimiter:  Option<Delimiter>,
-    flag_no_headers: bool,
-    flag_jobs:       Option<usize>,
-    flag_memcheck:   bool,
+    arg_input:          Option<String>,
+    flag_twosample:     bool,
+    flag_compare1:      Option<String>,
+    flag_compare2:      Option<String>,
+    flag_select:        Option<SelectColumns>,
+    flag_misrate:       f64,
+    flag_standalone:    bool,
+    flag_stats_options: String,
+    flag_round:         u32,
+    flag_force:         bool,
+    flag_output:        Option<String>,
+    flag_delimiter:     Option<Delimiter>,
+    flag_no_headers:    bool,
+    flag_jobs:          Option<usize>,
+    flag_memcheck:      bool,
 }
 
 struct OneSampleResult<'a> {
@@ -222,10 +244,190 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         ));
     }
 
+    let is_onesample =
+        !args.flag_twosample && args.flag_compare1.is_none() && args.flag_compare2.is_none();
+
+    if is_onesample && !args.flag_standalone && args.arg_input.is_some() {
+        run_cache_append(&args)
+    } else {
+        util::njobs(args.flag_jobs);
+        let (col_names, col_values, col_types) = read_columns(&args)?;
+        write_results(&args, &col_names, &col_values, &col_types)?;
+        Ok(())
+    }
+}
+
+/// The 7 column names appended to the stats cache.
+const PS_COLUMNS: [&str; 7] = [
+    "ps_n",
+    "ps_center",
+    "ps_spread",
+    "ps_center_lower",
+    "ps_center_upper",
+    "ps_spread_lower",
+    "ps_spread_upper",
+];
+
+/// Append pragmastat one-sample columns to the .stats.csv cache file.
+fn run_cache_append(args: &Args) -> CliResult<()> {
+    use csv::{ReaderBuilder, WriterBuilder};
+
+    let input_path_str = args.arg_input.as_ref().unwrap();
+    let input_path = std::path::Path::new(input_path_str);
+    let stats_csv_path = util::get_stats_csv_path(input_path)?;
+
+    // Auto-generate stats if missing or --force
+    if args.flag_force || !stats_csv_path.exists() {
+        if args.flag_force {
+            winfo!("Force flag set: recomputing stats...");
+        } else {
+            wwarn!(
+                "Stats CSV file not found: {}\nComputing baseline stats...",
+                stats_csv_path.display()
+            );
+        }
+        let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
+        let _ = util::run_qsv_cmd(
+            "stats",
+            &stats_args_vec,
+            input_path_str,
+            "Ran stats command to generate baseline stats...",
+        )?;
+        if !stats_csv_path.exists() {
+            return fail_clierror!(
+                "Stats CSV file was not created: {}",
+                stats_csv_path.display()
+            );
+        }
+    }
+
+    // Read the stats CSV
+    let stats_csv_content = std::fs::read_to_string(&stats_csv_path)?;
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_csv_content.as_bytes());
+
+    let headers = rdr.headers()?.clone();
+    let records: Vec<csv::StringRecord> = rdr.records().collect::<Result<_, _>>()?;
+
+    // Find required column indices
+    let field_idx = headers.iter().position(|h| h == "field");
+    let type_idx = headers.iter().position(|h| h == "type");
+
+    // Check if ps_* columns already exist
+    let already_exists = headers.iter().any(|h| h == "ps_center");
+    if already_exists && !args.flag_force {
+        winfo!(
+            "ps_* columns already exist in {}. Use --force to recompute.",
+            stats_csv_path.display()
+        );
+        return Ok(());
+    }
+
+    // Read original CSV data and compute one-sample results
     util::njobs(args.flag_jobs);
-    let (col_names, col_values, col_types) = read_columns(&args)?;
-    write_results(&args, &col_names, &col_values, &col_types)?;
+    let (col_names, col_values, col_types) = read_columns(args)?;
+
+    // Compute one-sample results in parallel
+    let results: Vec<OneSampleResult> = col_names
+        .par_iter()
+        .enumerate()
+        .map(|(i, name)| compute_one_sample(name, &col_values[i], args.flag_misrate))
+        .collect();
+
+    // Build a lookup map: field_name -> (result_index, col_type)
+    let result_map: std::collections::HashMap<&str, (usize, ColType)> = col_names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (name.as_str(), (i, col_types[i])))
+        .collect();
+
+    // Prepare output
+    let output_path = args
+        .flag_output
+        .as_ref()
+        .map_or_else(|| stats_csv_path.clone(), std::path::PathBuf::from);
+    let mut wtr = WriterBuilder::new()
+        .has_headers(true)
+        .from_path(&output_path)?;
+
+    // Write headers: strip existing ps_* columns if --force, then append new ones
+    let mut header_record = csv::StringRecord::new();
+    let mut skip_indices: Vec<usize> = Vec::new();
+    for (i, h) in headers.iter().enumerate() {
+        if already_exists && h.starts_with("ps_") {
+            skip_indices.push(i);
+        } else {
+            header_record.push_field(h);
+        }
+    }
+    for col in &PS_COLUMNS {
+        header_record.push_field(col);
+    }
+    wtr.write_record(&header_record)?;
+
+    // Process each record
+    let round = args.flag_round;
+    for record in &records {
+        let field_name = field_idx.and_then(|idx| record.get(idx)).unwrap_or("");
+        let field_type_str = type_idx.and_then(|idx| record.get(idx)).unwrap_or("");
+
+        // Write existing fields (skipping old ps_* columns if --force)
+        for (i, field) in record.iter().enumerate() {
+            if !skip_indices.contains(&i) {
+                wtr.write_field(field)?;
+            }
+        }
+
+        // Determine if this is a numeric/date type
+        let is_numeric_type = matches!(field_type_str, "Integer" | "Float" | "Date" | "DateTime");
+
+        if is_numeric_type && let Some(&(result_idx, ct)) = result_map.get(field_name) {
+            let r = &results[result_idx];
+            let mut itoa_buf = itoa::Buffer::new();
+            wtr.write_field(itoa_buf.format(r.n))?;
+            wtr.write_field(&fmt_point_round(r.center, ct, round))?;
+            wtr.write_field(&fmt_spread_round(r.spread, ct, round))?;
+            wtr.write_field(&fmt_point_round(r.center_lower, ct, round))?;
+            wtr.write_field(&fmt_point_round(r.center_upper, ct, round))?;
+            wtr.write_field(&fmt_spread_round(r.spread_lower, ct, round))?;
+            wtr.write_field(&fmt_spread_round(r.spread_upper, ct, round))?;
+        } else {
+            // Non-numeric or not in result map: empty ps_* fields
+            for _ in 0..7 {
+                wtr.write_field("")?;
+            }
+        }
+        wtr.write_record(None::<&[u8]>)?;
+    }
+
+    wtr.flush()?;
+
+    winfo!(
+        "Added {} pragmastat columns to {}",
+        PS_COLUMNS.len(),
+        output_path.display()
+    );
+
     Ok(())
+}
+
+/// Format a point estimate with configurable rounding.
+fn fmt_point_round(val: Option<f64>, ct: ColType, round: u32) -> String {
+    if ct == ColType::Numeric {
+        val.map_or_else(String::new, |v| util::round_num(v, round))
+    } else {
+        fmt_timestamp(val, ct)
+    }
+}
+
+/// Format a spread/shift value with configurable rounding.
+fn fmt_spread_round(val: Option<f64>, ct: ColType, round: u32) -> String {
+    if ct == ColType::Numeric {
+        val.map_or_else(String::new, |v| util::round_num(v, round))
+    } else {
+        fmt_days(val)
+    }
 }
 
 fn validate_misrate(misrate: f64) -> CliResult<()> {

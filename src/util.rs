@@ -3655,6 +3655,25 @@ pub fn print_status(msg: &str, elapsed: Option<std::time::Duration>) {
     }
 }
 
+/// Get the stats CSV file path for a given input CSV path.
+/// Returns an absolute path like `/path/to/input.stats.csv`.
+pub fn get_stats_csv_path(input_path: &std::path::Path) -> crate::CliResult<std::path::PathBuf> {
+    let parent = input_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let fstem = input_path.file_stem().ok_or_else(|| {
+        crate::clitypes::CliError::Other("Invalid input path: no file name".to_string())
+    })?;
+
+    let stats_filename = format!("{}.stats.csv", fstem.to_string_lossy());
+    let result = parent.join(stats_filename);
+    if result.is_absolute() {
+        Ok(result)
+    } else {
+        Ok(std::env::current_dir()?.join(result))
+    }
+}
+
 // Helper function to run qsv commands with consistent error handling and timing
 pub fn run_qsv_cmd(
     command: &str,

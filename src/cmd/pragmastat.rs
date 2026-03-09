@@ -152,8 +152,9 @@ use crate::{
 
 /// Milliseconds per day — used to convert epoch-ms spreads/shifts to days.
 const MS_IN_DAY: f64 = 86_400_000.0;
-/// Decimal places for day-valued outputs (5 = millisecond precision).
-const DAY_DECIMAL_PLACES: u32 = 5;
+/// Decimal places for day-valued outputs (8 ≈ millisecond precision;
+/// 1 ms / 86_400_000 ms-per-day ≈ 1.16e-8).
+const DAY_DECIMAL_PLACES: u32 = 8;
 
 /// Tracks whether a column holds plain numbers or parsed dates so we can
 /// format output appropriately (dates as RFC3339, spreads/shifts as days).
@@ -307,9 +308,16 @@ fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usi
     let file = std::fs::File::open(&cache_path).ok()?;
     let reader = std::io::BufReader::new(file);
 
+    let lines: Vec<String> = reader.lines().collect::<Result<_, _>>().ok()?;
+
+    // Validate that the cache has exactly as many records as the CSV has columns.
+    // If it doesn't match (e.g. cache was generated with --select), ignore it.
+    if lines.len() != headers.len() {
+        return None;
+    }
+
     let mut result = Vec::new();
-    for (i, line) in reader.lines().enumerate() {
-        let curr_line = line.ok()?;
+    for (i, curr_line) in lines.iter().enumerate() {
         let mut s_slice = curr_line.as_bytes().to_vec();
 
         #[cfg(target_endian = "big")]
@@ -328,10 +336,7 @@ fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usi
             "DateTime" => ColType::DateTime,
             _ => continue,
         };
-        // The JSONL line index `i` directly corresponds to column `i` in the CSV headers.
-        if i < headers.len() {
-            result.push((i, col_type));
-        }
+        result.push((i, col_type));
     }
 
     if result.is_empty() {
@@ -662,7 +667,7 @@ fn fmt_timestamp(val: Option<f64>, ct: ColType) -> String {
         None => String::new(),
         Some(v) => {
             #[allow(clippy::cast_possible_truncation)]
-            let ts = v as i64;
+            let ts = v.round() as i64;
             match chrono::DateTime::from_timestamp_millis(ts) {
                 None => String::new(),
                 Some(dt) => {

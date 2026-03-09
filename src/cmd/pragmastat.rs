@@ -141,6 +141,7 @@ Common options:
 
 use rayon::prelude::*;
 use serde::Deserialize;
+use threadpool::ThreadPool;
 
 use crate::{
     CliResult,
@@ -245,7 +246,8 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>, Vec<ColTy
         util::mem_file_check(path, false, args.flag_memcheck)?;
     }
 
-    let row_count = rconfig.indexed()?.map_or(1024, |idx| idx.count() as usize);
+    let idx_count = rconfig.indexed()?.map(|idx| idx.count() as usize);
+    let row_count = idx_count.unwrap_or(1024);
 
     let mut rdr = rconfig.reader()?;
     let headers = rdr.byte_headers()?.clone();
@@ -269,14 +271,29 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>, Vec<ColTy
     // Build per-column type map from cache info
     let col_type_map: Vec<(usize, ColType)> = cache_info.unwrap_or_default();
 
-    collect_numeric_values(
-        &mut rdr,
-        &headers,
-        &selected,
-        &col_type_map,
-        rconfig.no_headers,
-        row_count,
-    )
+    // Use indexed parallel reading for large files (>= 10k rows)
+    if let Some(count) = idx_count
+        && count >= 10_000
+        && rconfig.path.is_some()
+    {
+        collect_numeric_values_parallel(
+            &rconfig,
+            &headers,
+            &selected,
+            &col_type_map,
+            count,
+            args.flag_jobs,
+        )
+    } else {
+        collect_numeric_values(
+            &mut rdr,
+            &headers,
+            &selected,
+            &col_type_map,
+            rconfig.no_headers,
+            row_count,
+        )
+    }
 }
 
 /// Try to read the stats cache and return `(column_index, ColType)` pairs for columns
@@ -448,6 +465,19 @@ fn write_twosample_results(
         );
     }
 
+    // Pre-compute log-transformed arrays for ratio computation.
+    // Each column participates in k-1 pairs, so this avoids redundant O(n) ln() passes.
+    let log_values: Vec<Option<Vec<f64>>> = col_values
+        .par_iter()
+        .map(|vals| {
+            if vals.iter().all(|&v| v > 0.0) {
+                Some(vals.iter().map(|v| v.ln()).collect())
+            } else {
+                None
+            }
+        })
+        .collect();
+
     let pairs: Vec<(usize, usize)> = (0..k)
         .flat_map(|i| ((i + 1)..k).map(move |j| (i, j)))
         .collect();
@@ -460,6 +490,8 @@ fn write_twosample_results(
                 &col_names[j],
                 &col_values[i],
                 &col_values[j],
+                log_values[i].as_deref(),
+                log_values[j].as_deref(),
                 misrate,
             )
         })
@@ -550,6 +582,139 @@ fn collect_numeric_values(
     Ok((col_names, col_values, col_types))
 }
 
+/// Parallel CSV reading for indexed files with >= 10k rows.
+/// Splits the file into chunks, each read by a separate thread, then merges.
+fn collect_numeric_values_parallel(
+    rconfig: &Config,
+    headers: &csv::ByteRecord,
+    selected: &[usize],
+    col_type_map: &[(usize, ColType)],
+    idx_count: usize,
+    flag_jobs: Option<usize>,
+) -> CliResult<(Vec<String>, Vec<Vec<f64>>, Vec<ColType>)> {
+    let col_names: Vec<String> = selected
+        .iter()
+        .map(|&i| {
+            if rconfig.no_headers {
+                (i + 1).to_string()
+            } else {
+                String::from_utf8_lossy(&headers[i]).into_owned()
+            }
+        })
+        .collect();
+
+    let col_types: Vec<ColType> = selected
+        .iter()
+        .map(|idx| {
+            col_type_map
+                .iter()
+                .find(|(ci, _)| ci == idx)
+                .map_or(ColType::Numeric, |&(_, ct)| ct)
+        })
+        .collect();
+
+    let njobs = util::njobs(flag_jobs);
+    let chunk_size = util::chunk_size(idx_count, njobs);
+    let nchunks = util::num_of_chunks(idx_count, chunk_size);
+
+    let pool = ThreadPool::new(njobs);
+    let (send, recv) = crossbeam_channel::bounded(nchunks);
+
+    let input_path_string = rconfig
+        .path
+        .as_ref()
+        .unwrap()
+        .to_str()
+        .unwrap_or("")
+        .to_string();
+    let selected_vec = selected.to_vec();
+    let col_types_vec = col_types.clone();
+    let delimiter = Delimiter(rconfig.get_delimiter());
+    let no_headers = rconfig.no_headers;
+
+    for chunk_idx in 0..nchunks {
+        let send = send.clone();
+        let input_path_string = input_path_string.clone();
+        let selected = selected_vec.clone();
+        let col_types = col_types_vec.clone();
+        let num_cols = selected.len();
+        let records_in_chunk = if chunk_idx == nchunks - 1 {
+            idx_count - chunk_idx * chunk_size
+        } else {
+            chunk_size
+        };
+
+        pool.execute(move || {
+            let rconfig_chunk = Config::new(Some(&input_path_string))
+                .delimiter(Some(delimiter))
+                .no_headers_flag(no_headers);
+            let Ok(Some(mut idx)) = rconfig_chunk.indexed() else {
+                let _ = send.send(Err(CliError::Other(
+                    "Failed to open index for parallel reading".to_string(),
+                )));
+                return;
+            };
+
+            if let Err(e) = idx.seek((chunk_idx * chunk_size) as u64) {
+                let _ = send.send(Err(CliError::Other(format!("Seek failed: {e}"))));
+                return;
+            }
+
+            let mut chunk_values: Vec<Vec<f64>> =
+                vec![Vec::with_capacity(records_in_chunk); num_cols];
+
+            for result in idx.byte_records().take(records_in_chunk) {
+                let Ok(record) = result else {
+                    continue;
+                };
+                for (col_pos, &col_idx) in selected.iter().enumerate() {
+                    if let Some(field) = record.get(col_idx) {
+                        match col_types[col_pos] {
+                            ColType::Date | ColType::DateTime => {
+                                if let Ok(s) = simdutf8::basic::from_utf8(field)
+                                    && !s.is_empty()
+                                    && let Ok(dt) = qsv_dateparser::parse_with_preference(s, false)
+                                {
+                                    #[allow(clippy::cast_precision_loss)]
+                                    chunk_values[col_pos].push(dt.timestamp_millis() as f64);
+                                }
+                            },
+                            ColType::Numeric => {
+                                if let Ok(val) = fast_float2::parse::<f64, _>(field)
+                                    && val.is_finite()
+                                {
+                                    chunk_values[col_pos].push(val);
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+
+            let _ = send.send(Ok((chunk_idx, chunk_values)));
+        });
+    }
+
+    drop(send);
+
+    // Collect chunk results, then merge in chunk-index order to preserve row ordering
+    let mut chunks: Vec<(usize, Vec<Vec<f64>>)> = Vec::with_capacity(nchunks);
+    for chunk_result in &recv {
+        let (idx, values) = chunk_result?;
+        chunks.push((idx, values));
+    }
+    chunks.sort_unstable_by_key(|(idx, _)| *idx);
+
+    let mut col_values: Vec<Vec<f64>> = vec![Vec::with_capacity(idx_count); selected.len()];
+    for (_chunk_idx, chunk_values) in chunks {
+        for (col_pos, chunk_col) in chunk_values.into_iter().enumerate() {
+            col_values[col_pos].extend(chunk_col);
+        }
+    }
+
+    Ok((col_names, col_values, col_types))
+}
+
 fn compute_one_sample<'a>(name: &'a str, values: &[f64], misrate: f64) -> OneSampleResult<'a> {
     let n = values.len();
 
@@ -588,6 +753,8 @@ fn compute_two_sample<'a>(
     name_y: &'a str,
     x: &[f64],
     y: &[f64],
+    log_x: Option<&[f64]>,
+    log_y: Option<&[f64]>,
     misrate: f64,
 ) -> TwoSampleResult<'a> {
     let n_x = x.len();
@@ -616,17 +783,13 @@ fn compute_two_sample<'a>(
     let disparity = pragmastat::estimators::raw::disparity(x, y).ok();
     let disparity_bounds = pragmastat::estimators::raw::disparity_bounds(x, y, misrate).ok();
 
-    // Share log-transformed data between ratio and ratio_bounds to avoid a redundant
-    // O(n) allocation and two O(n log n) sort passes that would occur if ratio() and
-    // ratio_bounds() were called independently on the original data.
-    let all_positive = x.iter().all(|&v| v > 0.0) && y.iter().all(|&v| v > 0.0);
-    let (ratio, ratio_lower, ratio_upper) = if all_positive {
-        let log_x: Vec<f64> = x.iter().map(|v| v.ln()).collect();
-        let log_y: Vec<f64> = y.iter().map(|v| v.ln()).collect();
-        let ratio = pragmastat::estimators::raw::shift(&log_x, &log_y)
+    // Use pre-computed log-transformed slices for ratio computation.
+    // Both must be Some (all values > 0) for ratio to be valid.
+    let (ratio, ratio_lower, ratio_upper) = if let (Some(lx), Some(ly)) = (log_x, log_y) {
+        let ratio = pragmastat::estimators::raw::shift(lx, ly)
             .ok()
             .map(f64::exp);
-        let ratio_bounds = pragmastat::estimators::raw::shift_bounds(&log_x, &log_y, misrate)
+        let ratio_bounds = pragmastat::estimators::raw::shift_bounds(lx, ly, misrate)
             .ok()
             .map(|b| (b.lower.exp(), b.upper.exp()));
         (

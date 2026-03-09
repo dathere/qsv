@@ -65,7 +65,7 @@
 | [moarstats](docs/help/moarstats.md)<br>📇🏎️ | Add dozens of additional statistics, including extended outlier, robust & bivariate statistics to an existing stats CSV file. ([example](docs/moarstats/NYC_311_SR_2010-2020-sample-1M.stats.csv)).|
 | [partition](docs/help/partition.md)<br>👆 | Partition a CSV based on a column value. |
 | [pivotp](docs/help/pivotp.md)✨<br>🚀🐻‍❄️🪄 | Pivot CSV data. Features "smart" aggregation auto-selection based on data type & stats. |
-| [pragmastat](docs/help/pragmastat.md)<br>📇🤯 | Compute pragmatic statistics using the [Pragmastat](https://pragmastat.dev/) library. |
+| [pragmastat](docs/help/pragmastat.md)<br>📇🤯🪄 | Compute pragmatic statistics using the [Pragmastat](https://pragmastat.dev/) library. Uses the stats cache to auto-filter non-numeric columns and support Date/DateTime columns. |
 | [pro](docs/help/pro.md) | Interact with the [qsv pro](https://qsvpro.dathere.com) API. |
 | [prompt](docs/help/prompt.md)✨<br>🐻‍❄️🖥️ | Open a file dialog to either pick a file as input or save output to a file. |
 | [pseudo](docs/help/pseudo.md)<br>🔣👆 | [Pseudonymise](https://en.wikipedia.org/wiki/Pseudonymization) the value of the given column by replacing them with an incremental identifier.  |

@@ -44,6 +44,7 @@ Over time, we realized that the cached stats can be used to make other commands 
 - `sqlp` and `joinp` uses the cache to create a Polars Schema, short-circuiting Polars' schema inferencing - which is not as reliable as it depends on sampling the first N rows of a CSV, which may lead to wrong type inferences if the sample size is not large enough (which if set too large, slows down the Polars engine). As the data type inferences of `stats` are guaranteed, its not only faster, it works all the time!
 - `pivotp` uses the cache extensively to automatically infer the best aggregation function to use based on the attributes of the pivot and value columns.
 - `sample` uses the cache to skip unnecessary scanning and to inform its sampling strategies.
+- `pragmastat` uses the cache to automatically filter out non-numeric columns and to support Date/DateTime columns by converting them to epoch milliseconds for analysis.
 
 For the most part, the default caching behavior works transparently, though you will notice several files with the same file stem will start appearing in the same location as your CSV files. As metadata is tiny by nature and very useful on its own, a conscious decision was made not to hide them.
 

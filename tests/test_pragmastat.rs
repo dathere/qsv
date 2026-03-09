@@ -677,3 +677,150 @@ fn pragmastat_mutual_exclusivity() {
         .arg(&test_file);
     wrk.assert_err(&mut cmd);
 }
+
+// ---------------------------------------------------------------------------
+// Stats cache integration tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pragmastat_stats_cache_filters_nonnumeric() {
+    let wrk = Workdir::new("pragmastat_stats_cache_filters");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run pragmastat without --select; cache should filter to numeric columns only
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg(&test_file);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // No row should have a non-numeric column like "ontime" or "case_status"
+    let fields: Vec<&str> = got.iter().skip(1).map(|r| r[0].as_str()).collect();
+    assert!(
+        !fields.contains(&"ontime"),
+        "non-numeric column 'ontime' should be filtered by stats cache"
+    );
+    assert!(
+        !fields.contains(&"case_status"),
+        "non-numeric column 'case_status' should be filtered by stats cache"
+    );
+
+    // All rows should have n > 0
+    for row in &got[1..] {
+        let n: usize = row[1].parse().unwrap();
+        assert!(
+            n > 0,
+            "all columns should be numeric with n > 0, got field={}",
+            row[0]
+        );
+    }
+
+    // latitude and longitude should still be present
+    assert!(fields.contains(&"latitude"), "latitude should be present");
+    assert!(fields.contains(&"longitude"), "longitude should be present");
+}
+
+#[test]
+fn pragmastat_stats_cache_ignored_with_select() {
+    let wrk = Workdir::new("pragmastat_stats_cache_select");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run pragmastat with --select including a non-numeric column;
+    // explicit selection should bypass cache filtering
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--select").arg("latitude,ontime").arg(&test_file);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Header + 2 data rows
+    assert_eq!(got.len(), 3);
+    assert_eq!(got[1][0], "latitude");
+    assert_eq!(got[1][1], "100");
+    assert_eq!(got[2][0], "ontime");
+    assert_eq!(got[2][1], "0"); // non-numeric => n=0
+}
+
+// ---------------------------------------------------------------------------
+// Date/DateTime support tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pragmastat_date_columns_formatted() {
+    let wrk = Workdir::new("pragmastat_date_columns");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache WITH date inference so open_dt/closed_dt are typed as DateTime
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--infer-dates", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run pragmastat selecting a date column
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--select").arg("open_dt").arg(&test_file);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert_eq!(got.len(), 2); // header + 1 row
+    assert_eq!(got[1][0], "open_dt");
+    let n: usize = got[1][1].parse().unwrap();
+    assert!(n > 0, "date column should have parsed values");
+
+    // center (col 2) should look like an RFC3339 date/datetime
+    let center = &got[1][2];
+    assert!(
+        center.contains('T') || center.contains('-'),
+        "center should be a date/datetime string, got: {center}"
+    );
+
+    // spread (col 3) should be a numeric days value (no 'T', no '-' prefix)
+    let spread = &got[1][3];
+    let spread_val: f64 = spread
+        .parse()
+        .expect("spread should be a numeric days value");
+    assert!(spread_val > 0.0, "spread should be positive days");
+}
+
+#[test]
+fn pragmastat_twosample_date_shift_as_days() {
+    let wrk = Workdir::new("pragmastat_date_shift");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache with date inference
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--infer-dates", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Two-sample with two date columns
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--twosample")
+        .arg("--select")
+        .arg("open_dt,closed_dt")
+        .arg(&test_file);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert_eq!(got.len(), 2); // header + 1 pair
+    assert_eq!(got[1][0], "open_dt");
+    assert_eq!(got[1][1], "closed_dt");
+
+    // shift (col 4) should be numeric days
+    let shift = &got[1][4];
+    assert!(
+        !shift.is_empty(),
+        "shift should be non-empty for date columns"
+    );
+    let _shift_val: f64 = shift.parse().expect("shift should be a numeric days value");
+
+    // disparity (col 6) should be numeric (dimensionless)
+    let disparity = &got[1][6];
+    if !disparity.is_empty() {
+        let _disp_val: f64 = disparity
+            .parse()
+            .expect("disparity should be a numeric value");
+    }
+}

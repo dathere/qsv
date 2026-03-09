@@ -143,7 +143,7 @@ use crate::{
     clitypes::CliError,
     config::{Config, Delimiter},
     select::SelectColumns,
-    util::{self, SchemaArgs, StatsMode, get_stats_records},
+    util,
 };
 
 /// Milliseconds per day — used to convert epoch-ms spreads/shifts to days.
@@ -279,6 +279,8 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>, Vec<ColTy
 /// Returns `None` if the cache is unavailable or stale.
 /// This is purely opportunistic — it never triggers a stats run.
 fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usize, ColType)>> {
+    use std::io::BufRead;
+
     use filetime::FileTime;
 
     // Only attempt if we have a file path (not stdin)
@@ -296,39 +298,43 @@ fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usi
         return None;
     }
 
-    let schema_args = SchemaArgs {
-        arg_input:            args.arg_input.clone(),
-        flag_no_headers:      args.flag_no_headers,
-        flag_delimiter:       args.flag_delimiter,
-        flag_jobs:            args.flag_jobs,
-        flag_polars:          false,
-        flag_memcheck:        false,
-        flag_force:           false,
-        flag_prefer_dmy:      false,
-        flag_dates_whitelist: String::new(),
-        flag_enum_threshold:  0,
-        flag_ignore_case:     false,
-        flag_strict_dates:    false,
-        flag_strict_formats:  false,
-        flag_pattern_columns: SelectColumns::parse("").ok()?,
-        flag_stdout:          false,
-        flag_output:          None,
-    };
+    // Read the JSONL cache directly — no routing through get_stats_records,
+    // so we truly never trigger a stats run.
+    let file = std::fs::File::open(&cache_path).ok()?;
+    let reader = std::io::BufReader::new(file);
 
-    let (csv_fields, csv_stats) = get_stats_records(&schema_args, StatsMode::Frequency).ok()?;
-    if csv_stats.is_empty() {
-        return None;
-    }
+    // We also need the column names from the CSV headers in the input file
+    // to map stats records back to column indices.
+    let rconfig = Config::new(Some(input_path))
+        .delimiter(args.flag_delimiter)
+        .no_headers_flag(args.flag_no_headers);
+    let mut rdr = rconfig.reader().ok()?;
+    let csv_fields = rdr.byte_headers().ok()?.clone();
+    drop(rdr);
 
     let mut result = Vec::new();
-    for (i, stats_record) in csv_stats.iter().enumerate() {
-        let col_type = match stats_record.r#type.as_str() {
+    for (i, line) in reader.lines().enumerate() {
+        let curr_line = line.ok()?;
+        let mut s_slice = curr_line.as_bytes().to_vec();
+
+        #[cfg(target_endian = "big")]
+        let parse_result = serde_json::from_slice::<CacheRecord>(&s_slice);
+        #[cfg(target_endian = "little")]
+        let parse_result = simd_json::from_slice::<CacheRecord>(&mut s_slice);
+
+        let record = match parse_result {
+            Ok(r) => r,
+            Err(_) => return None, // corrupt cache — give up
+        };
+
+        let col_type = match record.r#type.as_str() {
             "Integer" | "Float" => ColType::Numeric,
             "Date" => ColType::Date,
             "DateTime" => ColType::DateTime,
             _ => continue,
         };
-        // Find this column's index in the original headers
+        // Find this column's index in the original headers.
+        // Note: if duplicate column names exist, only the first occurrence is matched.
         if let Some(field_bytes) = csv_fields.get(i) {
             for (h_idx, header) in headers.iter().enumerate() {
                 if header == field_bytes {
@@ -338,7 +344,18 @@ fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usi
             }
         }
     }
-    Some(result)
+
+    if result.is_empty() {
+        None
+    } else {
+        Some(result)
+    }
+}
+
+/// Minimal struct to deserialize only the `type` field from a stats cache JSONL record.
+#[derive(Deserialize)]
+struct CacheRecord {
+    r#type: String,
 }
 
 fn resolve_columns(

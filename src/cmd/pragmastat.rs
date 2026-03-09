@@ -409,17 +409,15 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
             }
         }
 
-        // Derive ColType from the stats CSV "type" column — this is authoritative
-        // and avoids issues when the JSONL cache is missing or --stats-jsonl was omitted.
-        let ct = match field_type_str {
-            "Date" => ColType::Date,
-            "DateTime" => ColType::DateTime,
-            "Integer" | "Float" => ColType::Numeric,
-            _ => ColType::Numeric, // fallback, won't be used for non-numeric
-        };
         let is_numeric_type = matches!(field_type_str, "Integer" | "Float" | "Date" | "DateTime");
 
         if is_numeric_type && let Some(&(result_idx, _)) = result_map.get(field_name) {
+            // Derive ColType only when needed for numeric formatting
+            let ct = match field_type_str {
+                "Date" => ColType::Date,
+                "DateTime" => ColType::DateTime,
+                _ => ColType::Numeric,
+            };
             let r = &results[result_idx];
             let mut itoa_buf = itoa::Buffer::new();
             out_record.push_field(itoa_buf.format(r.n));
@@ -446,10 +444,16 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
         #[cfg(windows)]
         {
             // On Windows, std::fs::rename will not overwrite an existing file.
+            // Use a backup strategy: rename original to .bak, rename .tmp to target,
+            // then delete .bak. If we crash after removing .bak but before renaming
+            // .tmp, the .bak file still exists as a recovery point.
+            let bak_path = output_path.with_extension("stats.csv.bak");
             if output_path.exists() {
-                std::fs::remove_file(&output_path)?;
+                std::fs::rename(&output_path, &bak_path)?;
             }
             std::fs::rename(&write_target, &output_path)?;
+            // Clean up backup; non-fatal if this fails
+            let _ = std::fs::remove_file(&bak_path);
         }
         #[cfg(not(windows))]
         {

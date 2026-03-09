@@ -630,6 +630,7 @@ fn collect_numeric_values_parallel(
     let selected_vec = selected.to_vec();
     let col_types_vec = col_types.clone();
     let delimiter = Delimiter(rconfig.get_delimiter());
+    let no_headers = rconfig.no_headers;
 
     for chunk_idx in 0..nchunks {
         let send = send.clone();
@@ -644,7 +645,9 @@ fn collect_numeric_values_parallel(
         };
 
         pool.execute(move || {
-            let rconfig_chunk = Config::new(Some(&input_path_string)).delimiter(Some(delimiter));
+            let rconfig_chunk = Config::new(Some(&input_path_string))
+                .delimiter(Some(delimiter))
+                .no_headers_flag(no_headers);
             let Ok(Some(mut idx)) = rconfig_chunk.indexed() else {
                 let _ = send.send(Err(CliError::Other(
                     "Failed to open index for parallel reading".to_string(),

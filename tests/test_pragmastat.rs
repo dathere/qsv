@@ -824,3 +824,78 @@ fn pragmastat_twosample_date_shift_as_days() {
             .expect("disparity should be a numeric value");
     }
 }
+
+#[test]
+fn pragmastat_parallel_reading() {
+    // Generate a CSV with >10k rows to trigger the indexed parallel reading path
+    let wrk = Workdir::new("pragmastat_parallel_reading");
+    let mut data = String::from("a,b\n");
+    for i in 0..15_000 {
+        data.push_str(&format!("{},{}\n", i as f64 * 0.1, (i as f64 * 0.3) + 1.0));
+    }
+    wrk.create_from_string("data.csv", &data);
+
+    // Build an index so the parallel path is triggered
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg(wrk.path("data.csv"));
+    wrk.run(&mut idx_cmd);
+
+    // Run with --jobs 1 to force single-threaded parallel path (deterministic order)
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--select")
+        .arg("a,b")
+        .arg("--jobs")
+        .arg("1")
+        .arg(wrk.path("data.csv"));
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert_eq!(got.len(), 3); // header + 2 columns
+    assert_eq!(got[1][0], "a");
+    assert_eq!(got[1][1], "15000"); // n
+    assert_eq!(got[2][0], "b");
+    assert_eq!(got[2][1], "15000");
+
+    // Verify center values are reasonable
+    let center_a: f64 = got[1][2].parse().expect("center for a should be numeric");
+    let center_b: f64 = got[2][2].parse().expect("center for b should be numeric");
+    // a ranges 0..1499.9, center should be near 750
+    assert!(
+        (center_a - 750.0).abs() < 1.0,
+        "center_a ({center_a}) should be near 750"
+    );
+    // b ranges 1..4501, center should be near 2251
+    assert!(
+        (center_b - 2251.0).abs() < 1.0,
+        "center_b ({center_b}) should be near 2251"
+    );
+}
+
+#[test]
+fn pragmastat_parallel_reading_no_headers() {
+    // Same test but with --no-headers to verify header handling in parallel path
+    let wrk = Workdir::new("pragmastat_parallel_no_headers");
+    let mut data = String::new();
+    for i in 0..12_000 {
+        data.push_str(&format!("{},{}\n", i as f64 * 0.1, (i as f64 * 0.3) + 1.0));
+    }
+    wrk.create_from_string("data.csv", &data);
+
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg(wrk.path("data.csv"));
+    wrk.run(&mut idx_cmd);
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--no-headers")
+        .arg("--select")
+        .arg("1,2")
+        .arg("--jobs")
+        .arg("1")
+        .arg(wrk.path("data.csv"));
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert_eq!(got.len(), 3); // header + 2 columns
+    assert_eq!(got[1][0], "1"); // column named "1" (no-headers mode)
+    assert_eq!(got[1][1], "12000"); // n
+    assert_eq!(got[2][0], "2");
+    assert_eq!(got[2][1], "12000");
+}

@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/describegpt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/describegpt.rs)** | [🌐](TableOfContents.md#legend "has web-aware options.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")[🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")[🗃️](TableOfContents.md#legend "Limited Extended input support.")[📚](TableOfContents.md#legend "has lookup table support, enabling runtime \"lookups\" against local or remote reference CSVs.")[⛩️](TableOfContents.md#legend "uses Mini Jinja template engine.") [![CKAN](../images/ckan.png)](TableOfContents.md#legend "has CKAN-aware integration options.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Data Analysis/Inferencing Options](#data-analysis/inferencing-options) | [Dictionary Options](#dictionary-options) | [Tag Options](#tag-options) | [Stats/Frequency Options](#stats/frequency-options) | [Custom Prompt Options](#custom-prompt-options) | [LLM API Options](#llm-api-options) | [Caching Options](#caching-options) | [MCP Sampling Options](#mcp-sampling-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Data Analysis/Inferencing Options](#data-analysis/inferencing-options) | [Dictionary Options](#dictionary-options) | [Tag Options](#tag-options) | [Stats/Frequency Options](#stats/frequency-options) | [Custom Prompt Options](#custom-prompt-options) | [LLM API Options](#llm-api-options) | [Caching Options](#caching-options) | [Mcp Sampling Options](#mcp-sampling-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -284,7 +284,7 @@ qsv describegpt --help
 
 <a name="mcp-sampling-options"></a>
 
-## MCP Sampling Options [↩](#nav)
+## Mcp Sampling Options [↩](#nav)
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|

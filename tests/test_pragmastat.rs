@@ -677,3 +677,72 @@ fn pragmastat_mutual_exclusivity() {
         .arg(&test_file);
     wrk.assert_err(&mut cmd);
 }
+
+// ---------------------------------------------------------------------------
+// Stats cache integration tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pragmastat_stats_cache_filters_nonnumeric() {
+    let wrk = Workdir::new("pragmastat_stats_cache_filters");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run pragmastat without --select; cache should filter to numeric columns only
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg(&test_file);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // No row should have a non-numeric column like "ontime" or "case_status"
+    let fields: Vec<&str> = got.iter().skip(1).map(|r| r[0].as_str()).collect();
+    assert!(
+        !fields.contains(&"ontime"),
+        "non-numeric column 'ontime' should be filtered by stats cache"
+    );
+    assert!(
+        !fields.contains(&"case_status"),
+        "non-numeric column 'case_status' should be filtered by stats cache"
+    );
+
+    // All rows should have n > 0
+    for row in &got[1..] {
+        let n: usize = row[1].parse().unwrap();
+        assert!(
+            n > 0,
+            "all columns should be numeric with n > 0, got field={}",
+            row[0]
+        );
+    }
+
+    // latitude and longitude should still be present
+    assert!(fields.contains(&"latitude"), "latitude should be present");
+    assert!(fields.contains(&"longitude"), "longitude should be present");
+}
+
+#[test]
+fn pragmastat_stats_cache_ignored_with_select() {
+    let wrk = Workdir::new("pragmastat_stats_cache_select");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run pragmastat with --select including a non-numeric column;
+    // explicit selection should bypass cache filtering
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--select").arg("latitude,ontime").arg(&test_file);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Header + 2 data rows
+    assert_eq!(got.len(), 3);
+    assert_eq!(got[1][0], "latitude");
+    assert_eq!(got[1][1], "100");
+    assert_eq!(got[2][0], "ontime");
+    assert_eq!(got[2][1], "0"); // non-numeric => n=0
+}

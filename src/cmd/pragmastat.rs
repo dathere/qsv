@@ -139,7 +139,7 @@ use crate::{
     clitypes::CliError,
     config::{Config, Delimiter},
     select::SelectColumns,
-    util,
+    util::{self, SchemaArgs, StatsMode, get_stats_records},
 };
 
 #[derive(Deserialize)]
@@ -226,8 +226,86 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
 
     let mut rdr = rconfig.reader()?;
     let headers = rdr.byte_headers()?.clone();
-    let selected = resolve_columns(&rconfig, &headers, args.flag_select.as_ref())?;
+    let mut selected = resolve_columns(&rconfig, &headers, args.flag_select.as_ref())?;
+
+    // If the user didn't explicitly select columns, use the stats cache to
+    // filter out columns that are known to be non-numeric (String, Date, etc.).
+    if args.flag_select.is_none() {
+        if let Some(numeric_cols) = numeric_columns_from_cache(args, &headers) {
+            let before = selected.len();
+            selected.retain(|idx| numeric_cols.contains(idx));
+            let skipped = before - selected.len();
+            if skipped > 0 {
+                winfo!("skipped {skipped} non-numeric column(s) via stats cache.");
+            }
+        }
+    }
+
     collect_numeric_values(&mut rdr, &headers, &selected, rconfig.no_headers, row_count)
+}
+
+/// Try to read the stats cache and return the set of column indices that are numeric
+/// (Integer or Float). Returns `None` if the cache is unavailable or stale.
+/// This is purely opportunistic — it never triggers a stats run.
+fn numeric_columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<usize>> {
+    use filetime::FileTime;
+
+    // Only attempt if we have a file path (not stdin)
+    let input_path = args.arg_input.as_ref()?;
+    let canonical = std::path::Path::new(input_path).canonicalize().ok()?;
+    let cache_path = canonical.with_extension("stats.csv.data.jsonl");
+
+    // Only use if cache exists and is newer than input
+    if !cache_path.exists() {
+        return None;
+    }
+    let cache_mtime = FileTime::from_last_modification_time(&std::fs::metadata(&cache_path).ok()?);
+    let input_mtime = FileTime::from_last_modification_time(&std::fs::metadata(input_path).ok()?);
+    if cache_mtime <= input_mtime {
+        return None;
+    }
+
+    let schema_args = SchemaArgs {
+        arg_input:            args.arg_input.clone(),
+        flag_no_headers:      args.flag_no_headers,
+        flag_delimiter:       args.flag_delimiter,
+        flag_jobs:            args.flag_jobs,
+        flag_polars:          false,
+        flag_memcheck:        false,
+        flag_force:           false,
+        flag_prefer_dmy:      false,
+        flag_dates_whitelist: String::new(),
+        flag_enum_threshold:  0,
+        flag_ignore_case:     false,
+        flag_strict_dates:    false,
+        flag_strict_formats:  false,
+        flag_pattern_columns: SelectColumns::parse("").ok()?,
+        flag_stdout:          false,
+        flag_output:          None,
+    };
+
+    let (csv_fields, csv_stats) = get_stats_records(&schema_args, StatsMode::Frequency).ok()?;
+    if csv_stats.is_empty() {
+        return None;
+    }
+
+    // Build a set of column indices whose type is Integer or Float
+    let mut numeric_indices = Vec::new();
+    for (i, stats_record) in csv_stats.iter().enumerate() {
+        let col_type = stats_record.r#type.as_str();
+        if col_type == "Integer" || col_type == "Float" {
+            // Find this column's index in the original headers
+            if let Some(field_bytes) = csv_fields.get(i) {
+                for (h_idx, header) in headers.iter().enumerate() {
+                    if header == field_bytes {
+                        numeric_indices.push(h_idx);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    Some(numeric_indices)
 }
 
 fn resolve_columns(

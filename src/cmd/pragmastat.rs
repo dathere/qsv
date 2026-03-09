@@ -276,7 +276,9 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
     let input_path = std::path::Path::new(input_path_str);
     let stats_csv_path = util::get_stats_csv_path(input_path)?;
 
-    // Auto-generate stats if missing or --force
+    // Auto-generate stats if missing or --force.
+    // Note: --force always regenerates the full baseline stats (without ps_* columns),
+    // then recomputes and appends fresh ps_* columns below.
     if args.flag_force || !stats_csv_path.exists() {
         if args.flag_force {
             winfo!("Force flag set: recomputing stats...");
@@ -310,9 +312,15 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
     let headers = rdr.headers()?.clone();
     let records: Vec<csv::StringRecord> = rdr.records().collect::<Result<_, _>>()?;
 
-    // Find required column indices
-    let field_idx = headers.iter().position(|h| h == "field");
-    let type_idx = headers.iter().position(|h| h == "type");
+    // Find required column indices — these must exist in any valid stats CSV
+    let field_idx = headers
+        .iter()
+        .position(|h| h == "field")
+        .ok_or_else(|| "Stats CSV is missing required 'field' column")?;
+    let type_idx = headers
+        .iter()
+        .position(|h| h == "type")
+        .ok_or_else(|| "Stats CSV is missing required 'type' column")?;
 
     // Check if ps_* columns already exist
     let already_exists = headers.iter().any(|h| h == "ps_center");
@@ -342,14 +350,22 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
         .map(|(i, name)| (name.as_str(), (i, col_types[i])))
         .collect();
 
-    // Prepare output
+    // Prepare output — when writing back to the stats cache (no --output),
+    // write to a temp file first then rename for atomicity, so a partial
+    // failure (e.g. disk full) doesn't corrupt the cache.
     let output_path = args
         .flag_output
         .as_ref()
         .map_or_else(|| stats_csv_path.clone(), std::path::PathBuf::from);
+    let writing_in_place = output_path == stats_csv_path;
+    let write_target = if writing_in_place {
+        output_path.with_extension("stats.csv.tmp")
+    } else {
+        output_path.clone()
+    };
     let mut wtr = WriterBuilder::new()
         .has_headers(true)
-        .from_path(&output_path)?;
+        .from_path(&write_target)?;
 
     // Write headers: strip existing ps_* columns if --force, then append new ones
     let mut header_record = csv::StringRecord::new();
@@ -369,13 +385,14 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
     // Process each record
     let round = args.flag_round;
     for record in &records {
-        let field_name = field_idx.and_then(|idx| record.get(idx)).unwrap_or("");
-        let field_type_str = type_idx.and_then(|idx| record.get(idx)).unwrap_or("");
+        let field_name = record.get(field_idx).unwrap_or("");
+        let field_type_str = record.get(type_idx).unwrap_or("");
 
-        // Write existing fields (skipping old ps_* columns if --force)
+        // Build output record: existing fields (skipping old ps_* columns) + new ps_* fields
+        let mut out_record = csv::StringRecord::new();
         for (i, field) in record.iter().enumerate() {
             if !skip_indices.contains(&i) {
-                wtr.write_field(field)?;
+                out_record.push_field(field);
             }
         }
 
@@ -385,23 +402,29 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
         if is_numeric_type && let Some(&(result_idx, ct)) = result_map.get(field_name) {
             let r = &results[result_idx];
             let mut itoa_buf = itoa::Buffer::new();
-            wtr.write_field(itoa_buf.format(r.n))?;
-            wtr.write_field(&fmt_point_round(r.center, ct, round))?;
-            wtr.write_field(&fmt_spread_round(r.spread, ct, round))?;
-            wtr.write_field(&fmt_point_round(r.center_lower, ct, round))?;
-            wtr.write_field(&fmt_point_round(r.center_upper, ct, round))?;
-            wtr.write_field(&fmt_spread_round(r.spread_lower, ct, round))?;
-            wtr.write_field(&fmt_spread_round(r.spread_upper, ct, round))?;
+            out_record.push_field(itoa_buf.format(r.n));
+            out_record.push_field(&fmt_point_round(r.center, ct, round));
+            out_record.push_field(&fmt_spread_round(r.spread, ct, round));
+            out_record.push_field(&fmt_point_round(r.center_lower, ct, round));
+            out_record.push_field(&fmt_point_round(r.center_upper, ct, round));
+            out_record.push_field(&fmt_spread_round(r.spread_lower, ct, round));
+            out_record.push_field(&fmt_spread_round(r.spread_upper, ct, round));
         } else {
             // Non-numeric or not in result map: empty ps_* fields
             for _ in 0..7 {
-                wtr.write_field("")?;
+                out_record.push_field("");
             }
         }
-        wtr.write_record(None::<&[u8]>)?;
+        wtr.write_record(&out_record)?;
     }
 
     wtr.flush()?;
+    drop(wtr);
+
+    // Atomically replace the original file if writing in place
+    if writing_in_place {
+        std::fs::rename(&write_target, &output_path)?;
+    }
 
     winfo!(
         "Added {} pragmastat columns to {}",

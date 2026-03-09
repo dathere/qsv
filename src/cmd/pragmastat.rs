@@ -646,7 +646,9 @@ fn collect_numeric_values_parallel(
         pool.execute(move || {
             let rconfig_chunk = Config::new(Some(&input_path_string)).delimiter(Some(delimiter));
             let Ok(Some(mut idx)) = rconfig_chunk.indexed() else {
-                let _ = send.send(Ok(vec![Vec::new(); num_cols]));
+                let _ = send.send(Err(CliError::Other(
+                    "Failed to open index for parallel reading".to_string(),
+                )));
                 return;
             };
 
@@ -686,17 +688,22 @@ fn collect_numeric_values_parallel(
                 }
             }
 
-            let _ = send.send(Ok(chunk_values));
+            let _ = send.send(Ok((chunk_idx, chunk_values)));
         });
     }
 
     drop(send);
 
-    // Merge chunk results — pre-allocate based on idx_count
-    let mut col_values: Vec<Vec<f64>> = vec![Vec::with_capacity(idx_count); selected.len()];
-
+    // Collect chunk results, then merge in chunk-index order to preserve row ordering
+    let mut chunks: Vec<(usize, Vec<Vec<f64>>)> = Vec::with_capacity(nchunks);
     for chunk_result in &recv {
-        let chunk_values = chunk_result?;
+        let (idx, values) = chunk_result?;
+        chunks.push((idx, values));
+    }
+    chunks.sort_unstable_by_key(|(idx, _)| *idx);
+
+    let mut col_values: Vec<Vec<f64>> = vec![Vec::with_capacity(idx_count); selected.len()];
+    for (_chunk_idx, chunk_values) in chunks {
         for (col_pos, chunk_col) in chunk_values.into_iter().enumerate() {
             col_values[col_pos].extend(chunk_col);
         }

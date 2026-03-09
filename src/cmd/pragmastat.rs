@@ -255,14 +255,14 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>, Vec<ColTy
     // is not given, and (b) detect Date/DateTime columns for date-aware formatting.
     let cache_info = columns_from_cache(args, &headers);
 
-    if args.flag_select.is_none() {
-        if let Some(ref info) = cache_info {
-            let before = selected.len();
-            selected.retain(|idx| info.iter().any(|(ci, _)| ci == idx));
-            let skipped = before - selected.len();
-            if skipped > 0 {
-                winfo!("skipped {skipped} non-numeric column(s) via stats cache.");
-            }
+    if args.flag_select.is_none()
+        && let Some(ref info) = cache_info
+    {
+        let before = selected.len();
+        selected.retain(|idx| info.iter().any(|(ci, _)| ci == idx));
+        let skipped = before - selected.len();
+        if skipped > 0 {
+            winfo!("skipped {skipped} non-numeric column(s) via stats cache.");
         }
     }
 
@@ -325,9 +325,8 @@ fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usi
         #[cfg(target_endian = "little")]
         let parse_result = simd_json::from_slice::<CacheRecord>(&mut s_slice);
 
-        let record = match parse_result {
-            Ok(r) => r,
-            Err(_) => return None, // corrupt cache — give up
+        let Ok(record) = parse_result else {
+            return None;
         };
 
         let col_type = match record.r#type.as_str() {

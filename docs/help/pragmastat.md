@@ -1,8 +1,8 @@
 # pragmastat
 
-> Compute pragmatic statistics using the [Pragmastat](https://pragmastat.dev/) library.
+> Compute pragmatic statistics using the [Pragmastat](https://pragmastat.dev/) library. Uses the stats cache to auto-filter non-numeric columns and support Date/DateTime columns.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pragmastat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pragmastat.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🤯](TableOfContents.md#legend "loads entire CSV into memory, though `dedup`, `stats` & `transpose` have \"streaming\" modes as well.")
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/pragmastat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/pragmastat.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🤯](TableOfContents.md#legend "loads entire CSV into memory, though `dedup`, `stats` & `transpose` have \"streaming\" modes as well.")[🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Pragmastat Options](#pragmastat-options) | [Common Options](#common-options)
@@ -16,8 +16,16 @@ Pragmatic statistical toolkit.
 Compute robust, median-of-pairwise statistics from the Pragmastat library.
 Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
 
+This is a "smart" command that uses the stats cache to work smarter & faster.
+When a stats cache is available, non-numeric columns are automatically filtered out
+(unless --select is explicitly provided) and Date/DateTime columns are supported.
+
 Input handling
 * Only finite numeric values are used; non-numeric/NaN/Inf are ignored.
+* Date/DateTime columns are supported when a stats cache is available
+(run "qsv stats -E --infer-dates --stats-jsonl" first). Dates are converted to epoch
+milliseconds for analysis, then center/bounds are formatted as dates and spread/shift
+as days.
 * Each column is treated as its own sample (two-sample compares columns, not rows).
 * Non-numeric columns appear with n=0 and empty estimator cells.
 * NOTE: This command loads all numeric values into memory.

@@ -474,11 +474,19 @@ fn write_twosample_results(
 
     for (pi, result) in results.iter().enumerate() {
         let (i, j) = pairs[pi];
-        // If either column is a date type, use the "more specific" one for formatting
         let pair_type = match (col_types[i], col_types[j]) {
             (ColType::Date, ColType::Date) => ColType::Date,
             (ColType::DateTime | ColType::Date, ColType::DateTime | ColType::Date) => {
                 ColType::DateTime
+            },
+            (ColType::Date | ColType::DateTime, ColType::Numeric)
+            | (ColType::Numeric, ColType::Date | ColType::DateTime) => {
+                wwarn!(
+                    "skipping mixed Date/Numeric pair ({}, {}) — comparison is not meaningful",
+                    col_names[i],
+                    col_names[j]
+                );
+                continue;
             },
             _ => ColType::Numeric,
         };
@@ -659,19 +667,22 @@ fn fmt_opt(val: Option<f64>) -> String {
 }
 
 /// Format an epoch-ms value as a date or datetime string.
+/// Returns an empty string for out-of-range timestamps.
 fn fmt_timestamp(val: Option<f64>, ct: ColType) -> String {
     match val {
         None => String::new(),
         Some(v) => {
             #[allow(clippy::cast_possible_truncation)]
             let ts = v as i64;
-            let dt = chrono::DateTime::from_timestamp_millis(ts)
-                .unwrap_or_default()
-                .to_rfc3339();
-            if ct == ColType::Date {
-                dt[..10].to_string()
-            } else {
-                dt
+            match chrono::DateTime::from_timestamp_millis(ts) {
+                None => String::new(),
+                Some(dt) => {
+                    if ct == ColType::Date {
+                        dt.format("%Y-%m-%d").to_string()
+                    } else {
+                        dt.to_rfc3339()
+                    }
+                },
             }
         },
     }
@@ -1148,6 +1159,15 @@ fn write_compare2_results(
             (ColType::Date, ColType::Date) => ColType::Date,
             (ColType::DateTime | ColType::Date, ColType::DateTime | ColType::Date) => {
                 ColType::DateTime
+            },
+            (ColType::Date | ColType::DateTime, ColType::Numeric)
+            | (ColType::Numeric, ColType::Date | ColType::DateTime) => {
+                wwarn!(
+                    "skipping mixed Date/Numeric pair ({}, {}) — comparison is not meaningful",
+                    col_names[i],
+                    col_names[j]
+                );
+                continue;
             },
             _ => ColType::Numeric,
         };

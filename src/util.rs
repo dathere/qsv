@@ -814,25 +814,21 @@ macro_rules! update_cache_info {
         use cached::Cached;
         use indicatif::HumanCount;
 
-        match $cache_instance.lock() {
-            Ok(cache) => {
-                let size = cache.cache_size();
-                if size > 0 {
-                    let hits = cache.cache_hits().unwrap_or_default();
-                    let misses = cache.cache_misses().unwrap_or(1);
-                    #[allow(clippy::cast_precision_loss)]
-                    let hit_ratio = (hits as f64 / (hits + misses) as f64) * 100.0;
-                    let capacity = cache.cache_capacity();
-                    $progress.set_message(format!(
-                        " of {} records. Cache {:.2}% entries: {} capacity: {}.",
-                        HumanCount($progress.length().unwrap()),
-                        hit_ratio,
-                        HumanCount(size as u64),
-                        HumanCount(capacity.unwrap() as u64),
-                    ));
-                }
-            },
-            _ => {},
+        let cache = $cache_instance.lock();
+        let size = cache.cache_size();
+        if size > 0 {
+            let hits = cache.cache_hits().unwrap_or_default();
+            let misses = cache.cache_misses().unwrap_or(1);
+            #[allow(clippy::cast_precision_loss)]
+            let hit_ratio = (hits as f64 / (hits + misses) as f64) * 100.0;
+            let capacity = cache.cache_capacity();
+            $progress.set_message(format!(
+                " of {} records. Cache {:.2}% entries: {} capacity: {}.",
+                HumanCount($progress.length().unwrap()),
+                hit_ratio,
+                HumanCount(size as u64),
+                HumanCount(capacity.unwrap() as u64),
+            ));
         }
     };
     ($progress:expr_2021, $cache_hits:expr_2021, $num_rows:expr_2021) => {

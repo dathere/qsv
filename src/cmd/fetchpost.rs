@@ -907,7 +907,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     final_response = intermediate_value.value;
                     was_cached = intermediate_value.was_cached;
                     if !args.flag_cache_error && final_response.status_code != 200 {
-                        let mut cache = GET_CACHED_RESPONSE.lock().unwrap();
+                        let mut cache = GET_CACHED_RESPONSE.lock();
                         cache.cache_remove(&url);
                     }
                 },

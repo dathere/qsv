@@ -437,20 +437,10 @@ impl BivariateStatsConfig {
     }
 }
 
-/// Get the absolute stats CSV file path for a given input CSV path
+/// Get the absolute stats CSV file path for a given input CSV path.
+/// Delegates to the shared implementation in `util::get_stats_csv_path`.
 fn get_stats_csv_path(input_path: &Path) -> CliResult<PathBuf> {
-    let parent = input_path.parent().unwrap_or_else(|| Path::new("."));
-    let fstem = input_path
-        .file_stem()
-        .ok_or_else(|| CliError::Other("Invalid input path: no file name".to_string()))?;
-
-    let stats_filename = format!("{}.stats.csv", fstem.to_string_lossy());
-    let result = parent.join(stats_filename);
-    if result.is_absolute() {
-        Ok(result)
-    } else {
-        Ok(std::env::current_dir()?.join(result))
-    }
+    util::get_stats_csv_path(input_path)
 }
 
 /// Get the absolute bivariate CSV file path for a given input CSV path

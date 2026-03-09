@@ -8,6 +8,10 @@ This is a "smart" command that uses the stats cache to work smarter & faster.
 When a stats cache is available, non-numeric columns are automatically filtered out
 (unless --select is explicitly provided) and Date/DateTime columns are supported.
 
+By default, one-sample mode appends 7 ps_* columns to the .stats.csv cache file
+(like moarstats). Use --standalone for the old standalone CSV output. Two-sample,
+compare1, and compare2 modes always produce standalone output.
+
 Input handling
   * Only finite numeric values are used; non-numeric/NaN/Inf are ignored.
   * Date/DateTime columns are supported when a stats cache is available
@@ -81,8 +85,11 @@ THRESHOLD FORMAT
   Valid metrics for compare2: shift, ratio, disparity
 
 Examples:
-  # Basic one-sample statistics
+  # Append pragmastat columns to stats cache (default one-sample behavior)
   qsv pragmastat data.csv
+
+  # Standalone one-sample output (old behavior)
+  qsv pragmastat --standalone data.csv
 
   # One-sample statistics with selected columns
   qsv pragmastat --select latency_ms,price data.csv
@@ -125,6 +132,17 @@ pragmastat options:
                            Lower values produce wider bounds.
                            Must be achievable for the given sample size.
                            [default: 0.001]
+        --standalone       Output one-sample results as standalone CSV instead of
+                           appending to the stats cache.
+        --stats-options <arg>  Options to pass to the stats command if baseline stats need
+                           to be generated. The options are passed as a single string
+                           that will be split by whitespace.
+                           [default: --infer-dates --infer-boolean --mad --quartiles --force --stats-jsonl]
+        --round <n>        Round statistics to <n> decimal places. Rounding follows
+                           Midpoint Nearest Even (Bankers Rounding) rule.
+                           [default: 4]
+        --force            Force recomputing ps_* columns even if they already exist
+                           in the stats cache.
 
 Common options:
     -h, --help             Display this message
@@ -168,17 +186,21 @@ enum ColType {
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input:       Option<String>,
-    flag_twosample:  bool,
-    flag_compare1:   Option<String>,
-    flag_compare2:   Option<String>,
-    flag_select:     Option<SelectColumns>,
-    flag_misrate:    f64,
-    flag_output:     Option<String>,
-    flag_delimiter:  Option<Delimiter>,
-    flag_no_headers: bool,
-    flag_jobs:       Option<usize>,
-    flag_memcheck:   bool,
+    arg_input:          Option<String>,
+    flag_twosample:     bool,
+    flag_compare1:      Option<String>,
+    flag_compare2:      Option<String>,
+    flag_select:        Option<SelectColumns>,
+    flag_misrate:       f64,
+    flag_standalone:    bool,
+    flag_stats_options: String,
+    flag_round:         u32,
+    flag_force:         bool,
+    flag_output:        Option<String>,
+    flag_delimiter:     Option<Delimiter>,
+    flag_no_headers:    bool,
+    flag_jobs:          Option<usize>,
+    flag_memcheck:      bool,
 }
 
 struct OneSampleResult<'a> {
@@ -222,9 +244,229 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         ));
     }
 
+    let is_onesample =
+        !args.flag_twosample && args.flag_compare1.is_none() && args.flag_compare2.is_none();
+
+    if is_onesample && !args.flag_standalone && args.arg_input.is_some() {
+        run_cache_append(&args)
+    } else {
+        util::njobs(args.flag_jobs);
+        let (col_names, col_values, col_types) = read_columns(&args)?;
+        write_results(&args, &col_names, &col_values, &col_types)?;
+        Ok(())
+    }
+}
+
+/// The 7 column names appended to the stats cache.
+const PS_COLUMNS: [&str; 7] = [
+    "ps_n",
+    "ps_center",
+    "ps_spread",
+    "ps_center_lower",
+    "ps_center_upper",
+    "ps_spread_lower",
+    "ps_spread_upper",
+];
+
+/// Append pragmastat one-sample columns to the .stats.csv cache file.
+fn run_cache_append(args: &Args) -> CliResult<()> {
+    use csv::{ReaderBuilder, WriterBuilder};
+
+    let input_path_str = args.arg_input.as_ref().unwrap();
+    let input_path = std::path::Path::new(input_path_str);
+    let stats_csv_path = util::get_stats_csv_path(input_path)?;
+
+    // Auto-generate stats if missing (--force only recomputes ps_* columns,
+    // it does NOT regenerate the baseline stats to avoid clobbering moarstats columns).
+    if !stats_csv_path.exists() {
+        wwarn!(
+            "Stats CSV file not found: {}\nComputing baseline stats...",
+            stats_csv_path.display()
+        );
+        let mut stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
+        // Pass through input-shaping flags so the stats command matches the input format
+        let delim_str;
+        if let Some(ref delim) = args.flag_delimiter {
+            delim_str = String::from(delim.as_byte() as char);
+            stats_args_vec.push("--delimiter");
+            stats_args_vec.push(&delim_str);
+        }
+        if args.flag_no_headers {
+            stats_args_vec.push("--no-headers");
+        }
+        let _ = util::run_qsv_cmd(
+            "stats",
+            &stats_args_vec,
+            input_path_str,
+            "Ran stats command to generate baseline stats...",
+        )?;
+        if !stats_csv_path.exists() {
+            return fail_clierror!(
+                "Stats CSV file was not created: {}",
+                stats_csv_path.display()
+            );
+        }
+    }
+
+    // Read the stats CSV
+    let stats_csv_content = std::fs::read_to_string(&stats_csv_path)?;
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(stats_csv_content.as_bytes());
+
+    let headers = rdr.headers()?.clone();
+    let records: Vec<csv::StringRecord> = rdr.records().collect::<Result<_, _>>()?;
+
+    // Find required column indices — these must exist in any valid stats CSV
+    let field_idx = headers
+        .iter()
+        .position(|h| h == "field")
+        .ok_or_else(|| "Stats CSV is missing required 'field' column")?;
+    let type_idx = headers
+        .iter()
+        .position(|h| h == "type")
+        .ok_or_else(|| "Stats CSV is missing required 'type' column")?;
+
+    // Check if ps_* columns already exist
+    let already_exists = headers.iter().any(|h| h == "ps_center");
+    if already_exists && !args.flag_force {
+        winfo!(
+            "ps_* columns already exist in {}. Use --force to recompute.",
+            stats_csv_path.display()
+        );
+        return Ok(());
+    }
+
+    // Read original CSV data and compute one-sample results
     util::njobs(args.flag_jobs);
-    let (col_names, col_values, col_types) = read_columns(&args)?;
-    write_results(&args, &col_names, &col_values, &col_types)?;
+    let (col_names, col_values, col_types) = read_columns(args)?;
+
+    // Compute one-sample results in parallel
+    let results: Vec<OneSampleResult> = col_names
+        .par_iter()
+        .enumerate()
+        .map(|(i, name)| compute_one_sample(name, &col_values[i], args.flag_misrate))
+        .collect();
+
+    // Build a lookup map: field_name -> (result_index, col_type)
+    let result_map: std::collections::HashMap<&str, (usize, ColType)> = col_names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (name.as_str(), (i, col_types[i])))
+        .collect();
+
+    // Prepare output — when writing back to the stats cache (no --output),
+    // write to a temp file first then rename for atomicity, so a partial
+    // failure (e.g. disk full) doesn't corrupt the cache.
+    let output_path = args
+        .flag_output
+        .as_ref()
+        .map_or_else(|| stats_csv_path.clone(), std::path::PathBuf::from);
+    let writing_in_place = output_path == stats_csv_path;
+    let write_target = if writing_in_place {
+        // Append ".tmp" to the full filename (e.g. "data.stats.csv" -> "data.stats.csv.tmp")
+        let mut tmp_name = output_path
+            .file_name()
+            .map(std::ffi::OsString::from)
+            .unwrap_or_else(|| std::ffi::OsString::from("stats.csv"));
+        tmp_name.push(".tmp");
+        let mut tmp_path = output_path.clone();
+        tmp_path.set_file_name(tmp_name);
+        tmp_path
+    } else {
+        output_path.clone()
+    };
+    let mut wtr = WriterBuilder::new()
+        .has_headers(true)
+        .from_path(&write_target)?;
+
+    // Write headers: strip existing ps_* columns if --force, then append new ones
+    let mut header_record = csv::StringRecord::new();
+    let mut skip_indices: Vec<usize> = Vec::new();
+    for (i, h) in headers.iter().enumerate() {
+        if already_exists && h.starts_with("ps_") {
+            skip_indices.push(i);
+        } else {
+            header_record.push_field(h);
+        }
+    }
+    for col in &PS_COLUMNS {
+        header_record.push_field(col);
+    }
+    wtr.write_record(&header_record)?;
+
+    // Process each record
+    let round = args.flag_round;
+    for record in &records {
+        let field_name = record.get(field_idx).unwrap_or("");
+        let field_type_str = record.get(type_idx).unwrap_or("");
+
+        // Build output record: existing fields (skipping old ps_* columns) + new ps_* fields
+        let mut out_record = csv::StringRecord::new();
+        for (i, field) in record.iter().enumerate() {
+            if !skip_indices.contains(&i) {
+                out_record.push_field(field);
+            }
+        }
+
+        let is_numeric_type = matches!(field_type_str, "Integer" | "Float" | "Date" | "DateTime");
+
+        if is_numeric_type && let Some(&(result_idx, _)) = result_map.get(field_name) {
+            // Derive ColType only when needed for numeric formatting
+            let ct = match field_type_str {
+                "Date" => ColType::Date,
+                "DateTime" => ColType::DateTime,
+                _ => ColType::Numeric,
+            };
+            let r = &results[result_idx];
+            let mut itoa_buf = itoa::Buffer::new();
+            out_record.push_field(itoa_buf.format(r.n));
+            out_record.push_field(&fmt_point(r.center, ct, round));
+            out_record.push_field(&fmt_spread(r.spread, ct, round));
+            out_record.push_field(&fmt_point(r.center_lower, ct, round));
+            out_record.push_field(&fmt_point(r.center_upper, ct, round));
+            out_record.push_field(&fmt_spread(r.spread_lower, ct, round));
+            out_record.push_field(&fmt_spread(r.spread_upper, ct, round));
+        } else {
+            // Non-numeric or not in result map: empty ps_* fields
+            for _ in 0..7 {
+                out_record.push_field("");
+            }
+        }
+        wtr.write_record(&out_record)?;
+    }
+
+    wtr.flush()?;
+    drop(wtr);
+
+    // Atomically replace the original file if writing in place
+    if writing_in_place {
+        #[cfg(windows)]
+        {
+            // On Windows, std::fs::rename will not overwrite an existing file.
+            // Use a backup strategy: rename original to .bak, rename .tmp to target,
+            // then delete .bak. If we crash after removing .bak but before renaming
+            // .tmp, the .bak file still exists as a recovery point.
+            let bak_path = output_path.with_extension("stats.csv.bak");
+            if output_path.exists() {
+                std::fs::rename(&output_path, &bak_path)?;
+            }
+            std::fs::rename(&write_target, &output_path)?;
+            // Clean up backup; non-fatal if this fails
+            let _ = std::fs::remove_file(&bak_path);
+        }
+        #[cfg(not(windows))]
+        {
+            std::fs::rename(&write_target, &output_path)?;
+        }
+    }
+
+    winfo!(
+        "Added {} pragmastat columns to {}",
+        PS_COLUMNS.len(),
+        output_path.display()
+    );
+
     Ok(())
 }
 
@@ -394,13 +636,28 @@ fn write_results(
     let mut wtr = Config::new(args.flag_output.as_ref())
         .delimiter(args.flag_delimiter)
         .writer()?;
+    let round = args.flag_round;
 
     if let Some(ref spec) = args.flag_compare1 {
         let thresholds = parse_thresholds(spec, args.flag_misrate, true)?;
-        write_compare1_results(&mut wtr, col_names, col_values, col_types, &thresholds)?;
+        write_compare1_results(
+            &mut wtr,
+            col_names,
+            col_values,
+            col_types,
+            &thresholds,
+            round,
+        )?;
     } else if let Some(ref spec) = args.flag_compare2 {
         let thresholds = parse_thresholds(spec, args.flag_misrate, false)?;
-        write_compare2_results(&mut wtr, col_names, col_values, col_types, &thresholds)?;
+        write_compare2_results(
+            &mut wtr,
+            col_names,
+            col_values,
+            col_types,
+            &thresholds,
+            round,
+        )?;
     } else if args.flag_twosample {
         write_twosample_results(
             &mut wtr,
@@ -408,6 +665,7 @@ fn write_results(
             col_values,
             col_types,
             args.flag_misrate,
+            round,
         )?;
     } else {
         write_onesample_results(
@@ -416,6 +674,7 @@ fn write_results(
             col_values,
             col_types,
             args.flag_misrate,
+            round,
         )?;
     }
 
@@ -429,6 +688,7 @@ fn write_onesample_results(
     col_values: &[Vec<f64>],
     col_types: &[ColType],
     misrate: f64,
+    round: u32,
 ) -> CliResult<()> {
     write_onesample_header(wtr)?;
 
@@ -439,7 +699,7 @@ fn write_onesample_results(
         .collect();
 
     for (i, result) in results.iter().enumerate() {
-        write_onesample_row(wtr, result, col_types[i])?;
+        write_onesample_row(wtr, result, col_types[i], round)?;
     }
     Ok(())
 }
@@ -450,6 +710,7 @@ fn write_twosample_results(
     col_values: &[Vec<f64>],
     col_types: &[ColType],
     misrate: f64,
+    round: u32,
 ) -> CliResult<()> {
     write_twosample_header(wtr)?;
 
@@ -515,7 +776,7 @@ fn write_twosample_results(
             },
             _ => ColType::Numeric,
         };
-        write_twosample_row(wtr, result, pair_type)?;
+        write_twosample_row(wtr, result, pair_type, round)?;
     }
     Ok(())
 }
@@ -818,8 +1079,8 @@ fn compute_two_sample<'a>(
     }
 }
 
-fn fmt_opt(val: Option<f64>) -> String {
-    val.map_or_else(String::new, |v| util::round_num(v, 4))
+fn fmt_opt(val: Option<f64>, round: u32) -> String {
+    val.map_or_else(String::new, |v| util::round_num(v, round))
 }
 
 /// Format an epoch-ms value as a date or datetime string.
@@ -852,18 +1113,18 @@ fn fmt_days(val: Option<f64>) -> String {
 }
 
 /// Pick the right formatter for a "point estimate" (center, bounds).
-fn fmt_point(val: Option<f64>, ct: ColType) -> String {
+fn fmt_point(val: Option<f64>, ct: ColType, round: u32) -> String {
     if ct == ColType::Numeric {
-        fmt_opt(val)
+        fmt_opt(val, round)
     } else {
         fmt_timestamp(val, ct)
     }
 }
 
 /// Pick the right formatter for a "spread/shift" value (spread, shift, bounds).
-fn fmt_spread(val: Option<f64>, ct: ColType) -> String {
+fn fmt_spread(val: Option<f64>, ct: ColType, round: u32) -> String {
     if ct == ColType::Numeric {
-        fmt_opt(val)
+        fmt_opt(val, round)
     } else {
         fmt_days(val)
     }
@@ -889,17 +1150,18 @@ fn write_onesample_row(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     r: &OneSampleResult,
     ct: ColType,
+    round: u32,
 ) -> CliResult<()> {
     let mut itoa_buf = itoa::Buffer::new();
     wtr.write_record([
         r.field,
         itoa_buf.format(r.n),
-        &fmt_point(r.center, ct),
-        &fmt_spread(r.spread, ct),
-        &fmt_point(r.center_lower, ct),
-        &fmt_point(r.center_upper, ct),
-        &fmt_spread(r.spread_lower, ct),
-        &fmt_spread(r.spread_upper, ct),
+        &fmt_point(r.center, ct, round),
+        &fmt_spread(r.spread, ct, round),
+        &fmt_point(r.center_lower, ct, round),
+        &fmt_point(r.center_upper, ct, round),
+        &fmt_spread(r.spread_lower, ct, round),
+        &fmt_spread(r.spread_upper, ct, round),
     ])?;
     Ok(())
 }
@@ -929,6 +1191,7 @@ fn write_twosample_row(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     r: &TwoSampleResult,
     ct: ColType,
+    round: u32,
 ) -> CliResult<()> {
     let mut itoa_buf_x = itoa::Buffer::new();
     let mut itoa_buf_y = itoa::Buffer::new();
@@ -939,15 +1202,15 @@ fn write_twosample_row(
         r.field_y,
         n_x_str,
         n_y_str,
-        &fmt_spread(r.shift, ct), // shift is a difference → days for dates
-        &fmt_opt(r.ratio),        // ratio is dimensionless → always numeric
-        &fmt_opt(r.disparity),    // disparity is dimensionless → always numeric
-        &fmt_spread(r.shift_lower, ct),
-        &fmt_spread(r.shift_upper, ct),
-        &fmt_opt(r.ratio_lower),
-        &fmt_opt(r.ratio_upper),
-        &fmt_opt(r.disparity_lower),
-        &fmt_opt(r.disparity_upper),
+        &fmt_spread(r.shift, ct, round), // shift is a difference → days for dates
+        &fmt_opt(r.ratio, round),        // ratio is dimensionless → always numeric
+        &fmt_opt(r.disparity, round),    // disparity is dimensionless → always numeric
+        &fmt_spread(r.shift_lower, ct, round),
+        &fmt_spread(r.shift_upper, ct, round),
+        &fmt_opt(r.ratio_lower, round),
+        &fmt_opt(r.ratio_upper, round),
+        &fmt_opt(r.disparity_lower, round),
+        &fmt_opt(r.disparity_upper, round),
     ])?;
     Ok(())
 }
@@ -1171,14 +1434,15 @@ fn write_compare1_row(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     r: &Compare1Result,
     ct: ColType,
+    round: u32,
 ) -> CliResult<()> {
     // center metric → point estimate formatting; spread → dispersion formatting
     let is_center = r.metric == "center";
     let fmt_val = |v| {
         if is_center {
-            fmt_point(v, ct)
+            fmt_point(v, ct, round)
         } else {
-            fmt_spread(v, ct)
+            fmt_spread(v, ct, round)
         }
     };
     let mut itoa_buf = itoa::Buffer::new();
@@ -1217,14 +1481,15 @@ fn write_compare2_row(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     r: &Compare2Result,
     ct: ColType,
+    round: u32,
 ) -> CliResult<()> {
     // shift → days for dates; ratio/disparity → always numeric
     let is_shift = r.metric == "shift";
     let fmt_val = |v| {
         if is_shift {
-            fmt_spread(v, ct)
+            fmt_spread(v, ct, round)
         } else {
-            fmt_opt(v)
+            fmt_opt(v, round)
         }
     };
     let mut itoa_buf_x = itoa::Buffer::new();
@@ -1252,6 +1517,7 @@ fn write_compare1_results(
     col_values: &[Vec<f64>],
     col_types: &[ColType],
     thresholds: &[pragmastat::Threshold],
+    round: u32,
 ) -> CliResult<()> {
     write_compare1_header(wtr)?;
 
@@ -1263,7 +1529,7 @@ fn write_compare1_results(
 
     for (i, results) in all_results.iter().enumerate() {
         for r in results {
-            write_compare1_row(wtr, r, col_types[i])?;
+            write_compare1_row(wtr, r, col_types[i], round)?;
         }
     }
     Ok(())
@@ -1275,6 +1541,7 @@ fn write_compare2_results(
     col_values: &[Vec<f64>],
     col_types: &[ColType],
     thresholds: &[pragmastat::Threshold],
+    round: u32,
 ) -> CliResult<()> {
     write_compare2_header(wtr)?;
 
@@ -1328,7 +1595,7 @@ fn write_compare2_results(
             _ => ColType::Numeric,
         };
         for r in results {
-            write_compare2_row(wtr, r, pair_type)?;
+            write_compare2_row(wtr, r, pair_type, round)?;
         }
     }
     Ok(())

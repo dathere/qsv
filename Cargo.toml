@@ -91,7 +91,7 @@ bytemuck = { version = "1.24", features = [
 ], optional = true }
 byteorder = "1.5"
 bytes = "1"
-cached = { version = "0.56", features = [
+cached = { version = "0.58", features = [
     "ahash",
     "disk_store",
     "redis_ahash",
@@ -330,9 +330,6 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # csv = { path = "../rust-csv" }
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }
-
-# use fork with updated redis 1.0 dependency & client-side caching features
-cached = { git = "https://github.com/nihohit/cached", branch = "client-side-caching" }
 
 # use our patched fork to bump dependencies until our PR is merged
 csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "bump-deps-202602" }

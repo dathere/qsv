@@ -303,15 +303,6 @@ fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usi
     let file = std::fs::File::open(&cache_path).ok()?;
     let reader = std::io::BufReader::new(file);
 
-    // We also need the column names from the CSV headers in the input file
-    // to map stats records back to column indices.
-    let rconfig = Config::new(Some(input_path))
-        .delimiter(args.flag_delimiter)
-        .no_headers_flag(args.flag_no_headers);
-    let mut rdr = rconfig.reader().ok()?;
-    let csv_fields = rdr.byte_headers().ok()?.clone();
-    drop(rdr);
-
     let mut result = Vec::new();
     for (i, line) in reader.lines().enumerate() {
         let curr_line = line.ok()?;
@@ -333,15 +324,9 @@ fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usi
             "DateTime" => ColType::DateTime,
             _ => continue,
         };
-        // Find this column's index in the original headers.
-        // Note: if duplicate column names exist, only the first occurrence is matched.
-        if let Some(field_bytes) = csv_fields.get(i) {
-            for (h_idx, header) in headers.iter().enumerate() {
-                if header == field_bytes {
-                    result.push((h_idx, col_type));
-                    break;
-                }
-            }
+        // The JSONL line index `i` directly corresponds to column `i` in the CSV headers.
+        if i < headers.len() {
+            result.push((i, col_type));
         }
     }
 

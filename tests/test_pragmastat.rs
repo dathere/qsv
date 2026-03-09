@@ -1071,9 +1071,9 @@ fn pragmastat_cache_append_idempotent() {
     let content1 = std::fs::read_to_string(&stats_csv_path).unwrap();
 
     // Second run — should skip (ps_* already present)
-    let mut cmd2 = wrk.command("pragmastat");
-    cmd2.arg(&test_file);
-    wrk.assert_success(&mut cmd2);
+    let mut cmd_2 = wrk.command("pragmastat");
+    cmd_2.arg(&test_file);
+    wrk.assert_success(&mut cmd_2);
 
     let content2 = std::fs::read_to_string(&stats_csv_path).unwrap();
     assert_eq!(content1, content2, "Second run should not modify the file");
@@ -1095,9 +1095,9 @@ fn pragmastat_cache_append_force() {
     wrk.assert_success(&mut cmd1);
 
     // Force recompute — should succeed and rewrite the file
-    let mut cmd2 = wrk.command("pragmastat");
-    cmd2.arg("--force").arg(&test_file);
-    wrk.assert_success(&mut cmd2);
+    let mut cmd_2 = wrk.command("pragmastat");
+    cmd_2.arg("--force").arg(&test_file);
+    wrk.assert_success(&mut cmd_2);
 
     // Verify ps_* columns still exist and there's no duplication
     let stats_csv_path = std::path::Path::new(&test_file)

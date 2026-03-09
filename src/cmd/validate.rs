@@ -2552,7 +2552,7 @@ fn test_dyn_enum_validator() {
                 "ValidationError { repr: ValidationErrorRepr { instance: String(\"lanzones\"), \
                  kind: Custom { keyword: \"dynamicEnum\", message: \"\\\"lanzones\\\" is not a \
                  valid dynamicEnum value\" }, instance_path: Location(\"\"), schema_path: \
-                 Location(\"/dynamicEnum\"), .. } }"
+                 Location(\"/dynamicEnum\"), absolute_keyword_location: None, .. } }"
             );
         },
         _ => {

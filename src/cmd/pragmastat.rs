@@ -6,6 +6,10 @@ Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mi
 
 Input handling
   * Only finite numeric values are used; non-numeric/NaN/Inf are ignored.
+  * Date/DateTime columns are supported when a stats cache is available
+    (run "qsv stats -E --infer-dates --stats-jsonl" first). Dates are converted to epoch
+    milliseconds for analysis, then center/bounds are formatted as dates and spread/shift
+    as days.
   * Each column is treated as its own sample (two-sample compares columns, not rows).
   * Non-numeric columns appear with n=0 and empty estimator cells.
   * NOTE: This command loads all numeric values into memory.
@@ -142,6 +146,20 @@ use crate::{
     util::{self, SchemaArgs, StatsMode, get_stats_records},
 };
 
+/// Milliseconds per day — used to convert epoch-ms spreads/shifts to days.
+const MS_IN_DAY: f64 = 86_400_000.0;
+/// Decimal places for day-valued outputs (5 = millisecond precision).
+const DAY_DECIMAL_PLACES: u32 = 5;
+
+/// Tracks whether a column holds plain numbers or parsed dates so we can
+/// format output appropriately (dates as RFC3339, spreads/shifts as days).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ColType {
+    Numeric,
+    Date,
+    DateTime,
+}
+
 #[derive(Deserialize)]
 struct Args {
     arg_input:       Option<String>,
@@ -199,8 +217,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     util::njobs(args.flag_jobs);
-    let (col_names, col_values) = read_columns(&args)?;
-    write_results(&args, &col_names, &col_values)?;
+    let (col_names, col_values, col_types) = read_columns(&args)?;
+    write_results(&args, &col_names, &col_values, &col_types)?;
     Ok(())
 }
 
@@ -213,7 +231,7 @@ fn validate_misrate(misrate: f64) -> CliResult<()> {
     Ok(())
 }
 
-fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
+fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>, Vec<ColType>)> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers);
@@ -228,12 +246,14 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
     let headers = rdr.byte_headers()?.clone();
     let mut selected = resolve_columns(&rconfig, &headers, args.flag_select.as_ref())?;
 
-    // If the user didn't explicitly select columns, use the stats cache to
-    // filter out columns that are known to be non-numeric (String, Date, etc.).
+    // Try loading the stats cache to (a) filter non-numeric columns when --select
+    // is not given, and (b) detect Date/DateTime columns for date-aware formatting.
+    let cache_info = columns_from_cache(args, &headers);
+
     if args.flag_select.is_none() {
-        if let Some(numeric_cols) = numeric_columns_from_cache(args, &headers) {
+        if let Some(ref info) = cache_info {
             let before = selected.len();
-            selected.retain(|idx| numeric_cols.contains(idx));
+            selected.retain(|idx| info.iter().any(|(ci, _)| ci == idx));
             let skipped = before - selected.len();
             if skipped > 0 {
                 winfo!("skipped {skipped} non-numeric column(s) via stats cache.");
@@ -241,13 +261,24 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
         }
     }
 
-    collect_numeric_values(&mut rdr, &headers, &selected, rconfig.no_headers, row_count)
+    // Build per-column type map from cache info
+    let col_type_map: Vec<(usize, ColType)> = cache_info.unwrap_or_default();
+
+    collect_numeric_values(
+        &mut rdr,
+        &headers,
+        &selected,
+        &col_type_map,
+        rconfig.no_headers,
+        row_count,
+    )
 }
 
-/// Try to read the stats cache and return the set of column indices that are numeric
-/// (Integer or Float). Returns `None` if the cache is unavailable or stale.
+/// Try to read the stats cache and return `(column_index, ColType)` pairs for columns
+/// that pragmastat can analyse (Integer, Float, Date, DateTime).
+/// Returns `None` if the cache is unavailable or stale.
 /// This is purely opportunistic — it never triggers a stats run.
-fn numeric_columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<usize>> {
+fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usize, ColType)>> {
     use filetime::FileTime;
 
     // Only attempt if we have a file path (not stdin)
@@ -289,23 +320,25 @@ fn numeric_columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<
         return None;
     }
 
-    // Build a set of column indices whose type is Integer or Float
-    let mut numeric_indices = Vec::new();
+    let mut result = Vec::new();
     for (i, stats_record) in csv_stats.iter().enumerate() {
-        let col_type = stats_record.r#type.as_str();
-        if col_type == "Integer" || col_type == "Float" {
-            // Find this column's index in the original headers
-            if let Some(field_bytes) = csv_fields.get(i) {
-                for (h_idx, header) in headers.iter().enumerate() {
-                    if header == field_bytes {
-                        numeric_indices.push(h_idx);
-                        break;
-                    }
+        let col_type = match stats_record.r#type.as_str() {
+            "Integer" | "Float" => ColType::Numeric,
+            "Date" => ColType::Date,
+            "DateTime" => ColType::DateTime,
+            _ => continue,
+        };
+        // Find this column's index in the original headers
+        if let Some(field_bytes) = csv_fields.get(i) {
+            for (h_idx, header) in headers.iter().enumerate() {
+                if header == field_bytes {
+                    result.push((h_idx, col_type));
+                    break;
                 }
             }
         }
     }
-    Some(numeric_indices)
+    Some(result)
 }
 
 fn resolve_columns(
@@ -325,21 +358,38 @@ fn resolve_columns(
     }
 }
 
-fn write_results(args: &Args, col_names: &[String], col_values: &[Vec<f64>]) -> CliResult<()> {
+fn write_results(
+    args: &Args,
+    col_names: &[String],
+    col_values: &[Vec<f64>],
+    col_types: &[ColType],
+) -> CliResult<()> {
     let mut wtr = Config::new(args.flag_output.as_ref())
         .delimiter(args.flag_delimiter)
         .writer()?;
 
     if let Some(ref spec) = args.flag_compare1 {
         let thresholds = parse_thresholds(spec, args.flag_misrate, true)?;
-        write_compare1_results(&mut wtr, col_names, col_values, &thresholds)?;
+        write_compare1_results(&mut wtr, col_names, col_values, col_types, &thresholds)?;
     } else if let Some(ref spec) = args.flag_compare2 {
         let thresholds = parse_thresholds(spec, args.flag_misrate, false)?;
-        write_compare2_results(&mut wtr, col_names, col_values, &thresholds)?;
+        write_compare2_results(&mut wtr, col_names, col_values, col_types, &thresholds)?;
     } else if args.flag_twosample {
-        write_twosample_results(&mut wtr, col_names, col_values, args.flag_misrate)?;
+        write_twosample_results(
+            &mut wtr,
+            col_names,
+            col_values,
+            col_types,
+            args.flag_misrate,
+        )?;
     } else {
-        write_onesample_results(&mut wtr, col_names, col_values, args.flag_misrate)?;
+        write_onesample_results(
+            &mut wtr,
+            col_names,
+            col_values,
+            col_types,
+            args.flag_misrate,
+        )?;
     }
 
     wtr.flush()?;
@@ -350,6 +400,7 @@ fn write_onesample_results(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     col_names: &[String],
     col_values: &[Vec<f64>],
+    col_types: &[ColType],
     misrate: f64,
 ) -> CliResult<()> {
     write_onesample_header(wtr)?;
@@ -360,8 +411,8 @@ fn write_onesample_results(
         .map(|(i, name)| compute_one_sample(name, &col_values[i], misrate))
         .collect();
 
-    for result in &results {
-        write_onesample_row(wtr, result)?;
+    for (i, result) in results.iter().enumerate() {
+        write_onesample_row(wtr, result, col_types[i])?;
     }
     Ok(())
 }
@@ -370,6 +421,7 @@ fn write_twosample_results(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     col_names: &[String],
     col_values: &[Vec<f64>],
+    col_types: &[ColType],
     misrate: f64,
 ) -> CliResult<()> {
     write_twosample_header(wtr)?;
@@ -403,8 +455,17 @@ fn write_twosample_results(
         })
         .collect();
 
-    for result in &results {
-        write_twosample_row(wtr, result)?;
+    for (pi, result) in results.iter().enumerate() {
+        let (i, j) = pairs[pi];
+        // If either column is a date type, use the "more specific" one for formatting
+        let pair_type = match (col_types[i], col_types[j]) {
+            (ColType::Date, ColType::Date) => ColType::Date,
+            (ColType::DateTime | ColType::Date, ColType::DateTime | ColType::Date) => {
+                ColType::DateTime
+            },
+            _ => ColType::Numeric,
+        };
+        write_twosample_row(wtr, result, pair_type)?;
     }
     Ok(())
 }
@@ -413,9 +474,10 @@ fn collect_numeric_values(
     rdr: &mut csv::Reader<Box<dyn std::io::Read + Send + 'static>>,
     headers: &csv::ByteRecord,
     selected: &[usize],
+    col_type_map: &[(usize, ColType)],
     no_headers: bool,
     row_count: usize,
-) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
+) -> CliResult<(Vec<String>, Vec<Vec<f64>>, Vec<ColType>)> {
     let col_names: Vec<String> = selected
         .iter()
         .map(|&i| {
@@ -427,21 +489,47 @@ fn collect_numeric_values(
         })
         .collect();
 
+    // Resolve per-selected-column type from the cache map
+    let col_types: Vec<ColType> = selected
+        .iter()
+        .map(|idx| {
+            col_type_map
+                .iter()
+                .find(|(ci, _)| ci == idx)
+                .map_or(ColType::Numeric, |&(_, ct)| ct)
+        })
+        .collect();
+
     let mut col_values: Vec<Vec<f64>> = vec![Vec::with_capacity(row_count); selected.len()];
 
     for result in rdr.byte_records() {
         let record = result?;
         for (idx, &col_idx) in selected.iter().enumerate() {
-            if let Some(field) = record.get(col_idx)
-                && let Ok(val) = fast_float2::parse::<f64, _>(field)
-                && val.is_finite()
-            {
-                col_values[idx].push(val);
+            if let Some(field) = record.get(col_idx) {
+                match col_types[idx] {
+                    ColType::Date | ColType::DateTime => {
+                        // Parse date string → epoch milliseconds
+                        if let Ok(s) = simdutf8::basic::from_utf8(field)
+                            && !s.is_empty()
+                            && let Ok(dt) = qsv_dateparser::parse_with_preference(s, false)
+                        {
+                            #[allow(clippy::cast_precision_loss)]
+                            col_values[idx].push(dt.timestamp_millis() as f64);
+                        }
+                    },
+                    ColType::Numeric => {
+                        if let Ok(val) = fast_float2::parse::<f64, _>(field)
+                            && val.is_finite()
+                        {
+                            col_values[idx].push(val);
+                        }
+                    },
+                }
             }
         }
     }
 
-    Ok((col_names, col_values))
+    Ok((col_names, col_values, col_types))
 }
 
 fn compute_one_sample<'a>(name: &'a str, values: &[f64], misrate: f64) -> OneSampleResult<'a> {
@@ -553,6 +641,50 @@ fn fmt_opt(val: Option<f64>) -> String {
     val.map_or_else(String::new, |v| util::round_num(v, 4))
 }
 
+/// Format an epoch-ms value as a date or datetime string.
+fn fmt_timestamp(val: Option<f64>, ct: ColType) -> String {
+    match val {
+        None => String::new(),
+        Some(v) => {
+            #[allow(clippy::cast_possible_truncation)]
+            let ts = v as i64;
+            let dt = chrono::DateTime::from_timestamp_millis(ts)
+                .unwrap_or_default()
+                .to_rfc3339();
+            if ct == ColType::Date {
+                dt[..10].to_string()
+            } else {
+                dt
+            }
+        },
+    }
+}
+
+/// Format an epoch-ms difference as days with millisecond precision.
+fn fmt_days(val: Option<f64>) -> String {
+    val.map_or_else(String::new, |v| {
+        util::round_num(v / MS_IN_DAY, DAY_DECIMAL_PLACES)
+    })
+}
+
+/// Pick the right formatter for a "point estimate" (center, bounds).
+fn fmt_point(val: Option<f64>, ct: ColType) -> String {
+    if ct == ColType::Numeric {
+        fmt_opt(val)
+    } else {
+        fmt_timestamp(val, ct)
+    }
+}
+
+/// Pick the right formatter for a "spread/shift" value (spread, shift, bounds).
+fn fmt_spread(val: Option<f64>, ct: ColType) -> String {
+    if ct == ColType::Numeric {
+        fmt_opt(val)
+    } else {
+        fmt_days(val)
+    }
+}
+
 fn write_onesample_header(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
 ) -> CliResult<()> {
@@ -572,17 +704,18 @@ fn write_onesample_header(
 fn write_onesample_row(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     r: &OneSampleResult,
+    ct: ColType,
 ) -> CliResult<()> {
     let mut itoa_buf = itoa::Buffer::new();
     wtr.write_record([
         r.field,
         itoa_buf.format(r.n),
-        &fmt_opt(r.center),
-        &fmt_opt(r.spread),
-        &fmt_opt(r.center_lower),
-        &fmt_opt(r.center_upper),
-        &fmt_opt(r.spread_lower),
-        &fmt_opt(r.spread_upper),
+        &fmt_point(r.center, ct),
+        &fmt_spread(r.spread, ct),
+        &fmt_point(r.center_lower, ct),
+        &fmt_point(r.center_upper, ct),
+        &fmt_spread(r.spread_lower, ct),
+        &fmt_spread(r.spread_upper, ct),
     ])?;
     Ok(())
 }
@@ -611,6 +744,7 @@ fn write_twosample_header(
 fn write_twosample_row(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     r: &TwoSampleResult,
+    ct: ColType,
 ) -> CliResult<()> {
     let mut itoa_buf_x = itoa::Buffer::new();
     let mut itoa_buf_y = itoa::Buffer::new();
@@ -621,11 +755,11 @@ fn write_twosample_row(
         r.field_y,
         n_x_str,
         n_y_str,
-        &fmt_opt(r.shift),
-        &fmt_opt(r.ratio),
-        &fmt_opt(r.disparity),
-        &fmt_opt(r.shift_lower),
-        &fmt_opt(r.shift_upper),
+        &fmt_spread(r.shift, ct), // shift is a difference → days for dates
+        &fmt_opt(r.ratio),        // ratio is dimensionless → always numeric
+        &fmt_opt(r.disparity),    // disparity is dimensionless → always numeric
+        &fmt_spread(r.shift_lower, ct),
+        &fmt_spread(r.shift_upper, ct),
         &fmt_opt(r.ratio_lower),
         &fmt_opt(r.ratio_upper),
         &fmt_opt(r.disparity_lower),
@@ -852,16 +986,26 @@ fn write_compare1_header(
 fn write_compare1_row(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     r: &Compare1Result,
+    ct: ColType,
 ) -> CliResult<()> {
+    // center metric → point estimate formatting; spread → dispersion formatting
+    let is_center = r.metric == "center";
+    let fmt_val = |v| {
+        if is_center {
+            fmt_point(v, ct)
+        } else {
+            fmt_spread(v, ct)
+        }
+    };
     let mut itoa_buf = itoa::Buffer::new();
     wtr.write_record([
         r.field,
         itoa_buf.format(r.n),
         r.metric,
-        &util::round_num(r.threshold, 4),
-        &fmt_opt(r.estimate),
-        &fmt_opt(r.lower),
-        &fmt_opt(r.upper),
+        &fmt_val(Some(r.threshold)),
+        &fmt_val(r.estimate),
+        &fmt_val(r.lower),
+        &fmt_val(r.upper),
         r.verdict,
     ])?;
     Ok(())
@@ -888,7 +1032,17 @@ fn write_compare2_header(
 fn write_compare2_row(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     r: &Compare2Result,
+    ct: ColType,
 ) -> CliResult<()> {
+    // shift → days for dates; ratio/disparity → always numeric
+    let is_shift = r.metric == "shift";
+    let fmt_val = |v| {
+        if is_shift {
+            fmt_spread(v, ct)
+        } else {
+            fmt_opt(v)
+        }
+    };
     let mut itoa_buf_x = itoa::Buffer::new();
     let mut itoa_buf_y = itoa::Buffer::new();
     let n_x_str = itoa_buf_x.format(r.n_x);
@@ -899,10 +1053,10 @@ fn write_compare2_row(
         n_x_str,
         n_y_str,
         r.metric,
-        &util::round_num(r.threshold, 4),
-        &fmt_opt(r.estimate),
-        &fmt_opt(r.lower),
-        &fmt_opt(r.upper),
+        &fmt_val(Some(r.threshold)),
+        &fmt_val(r.estimate),
+        &fmt_val(r.lower),
+        &fmt_val(r.upper),
         r.verdict,
     ])?;
     Ok(())
@@ -912,6 +1066,7 @@ fn write_compare1_results(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     col_names: &[String],
     col_values: &[Vec<f64>],
+    col_types: &[ColType],
     thresholds: &[pragmastat::Threshold],
 ) -> CliResult<()> {
     write_compare1_header(wtr)?;
@@ -922,9 +1077,9 @@ fn write_compare1_results(
         .map(|(i, name)| compute_compare1(name, &col_values[i], thresholds))
         .collect();
 
-    for results in &all_results {
+    for (i, results) in all_results.iter().enumerate() {
         for r in results {
-            write_compare1_row(wtr, r)?;
+            write_compare1_row(wtr, r, col_types[i])?;
         }
     }
     Ok(())
@@ -934,6 +1089,7 @@ fn write_compare2_results(
     wtr: &mut csv::Writer<Box<dyn std::io::Write + 'static>>,
     col_names: &[String],
     col_values: &[Vec<f64>],
+    col_types: &[ColType],
     thresholds: &[pragmastat::Threshold],
 ) -> CliResult<()> {
     write_compare2_header(wtr)?;
@@ -969,9 +1125,17 @@ fn write_compare2_results(
         })
         .collect();
 
-    for results in &all_results {
+    for (pi, results) in all_results.iter().enumerate() {
+        let (i, j) = pairs[pi];
+        let pair_type = match (col_types[i], col_types[j]) {
+            (ColType::Date, ColType::Date) => ColType::Date,
+            (ColType::DateTime | ColType::Date, ColType::DateTime | ColType::Date) => {
+                ColType::DateTime
+            },
+            _ => ColType::Numeric,
+        };
         for r in results {
-            write_compare2_row(wtr, r)?;
+            write_compare2_row(wtr, r, pair_type)?;
         }
     }
     Ok(())

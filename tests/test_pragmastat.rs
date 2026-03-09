@@ -746,3 +746,81 @@ fn pragmastat_stats_cache_ignored_with_select() {
     assert_eq!(got[2][0], "ontime");
     assert_eq!(got[2][1], "0"); // non-numeric => n=0
 }
+
+// ---------------------------------------------------------------------------
+// Date/DateTime support tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pragmastat_date_columns_formatted() {
+    let wrk = Workdir::new("pragmastat_date_columns");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache WITH date inference so open_dt/closed_dt are typed as DateTime
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--infer-dates", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run pragmastat selecting a date column
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--select").arg("open_dt").arg(&test_file);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert_eq!(got.len(), 2); // header + 1 row
+    assert_eq!(got[1][0], "open_dt");
+    let n: usize = got[1][1].parse().unwrap();
+    assert!(n > 0, "date column should have parsed values");
+
+    // center (col 2) should look like an RFC3339 date/datetime
+    let center = &got[1][2];
+    assert!(
+        center.contains('T') || center.contains('-'),
+        "center should be a date/datetime string, got: {center}"
+    );
+
+    // spread (col 3) should be a numeric days value (no 'T', no '-' prefix)
+    let spread = &got[1][3];
+    let spread_val: f64 = spread
+        .parse()
+        .expect("spread should be a numeric days value");
+    assert!(spread_val > 0.0, "spread should be positive days");
+}
+
+#[test]
+fn pragmastat_twosample_date_shift_as_days() {
+    let wrk = Workdir::new("pragmastat_date_shift");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache with date inference
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--infer-dates", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Two-sample with two date columns
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--twosample")
+        .arg("--select")
+        .arg("open_dt,closed_dt")
+        .arg(&test_file);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert_eq!(got.len(), 2); // header + 1 pair
+    assert_eq!(got[1][0], "open_dt");
+    assert_eq!(got[1][1], "closed_dt");
+
+    // shift (col 4) should be numeric days
+    let shift = &got[1][4];
+    assert!(
+        !shift.is_empty(),
+        "shift should be non-empty for date columns"
+    );
+    let _shift_val: f64 = shift.parse().expect("shift should be a numeric days value");
+
+    // disparity (col 6) should be numeric (dimensionless)
+    let disparity = &got[1][6];
+    if !disparity.is_empty() {
+        let _disp_val: f64 = disparity
+            .parse()
+            .expect("disparity should be a numeric value");
+    }
+}

@@ -4,6 +4,10 @@ Pragmatic statistical toolkit.
 Compute robust, median-of-pairwise statistics from the Pragmastat library.
 Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
 
+This is a "smart" command that uses the stats cache to work smarter & faster.
+When a stats cache is available, non-numeric columns are automatically filtered out
+(unless --select is explicitly provided) and Date/DateTime columns are supported.
+
 Input handling
   * Only finite numeric values are used; non-numeric/NaN/Inf are ignored.
   * Date/DateTime columns are supported when a stats cache is available

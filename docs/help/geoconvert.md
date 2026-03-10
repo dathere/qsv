@@ -59,7 +59,7 @@ qsv geoconvert --help
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | The spatial file to convert. To use stdin instead, use a dash "-". Note: SHP input must be a path to a .shp file and cannot use stdin. |
 | &nbsp;`<input-format>`&nbsp; | Valid values are "geojson", "shp", and "csv" |
-| &nbsp;`<output-format>`&nbsp; | Valid values are: |
+| &nbsp;`<output-format>`&nbsp; | Valid values are:<ul><li>For GeoJSON input: "csv", "svg", and "geojsonl"</li><li>For SHP input: "csv", "geojson", and "geojsonl"</li><li>For CSV input: "geojson", "geojsonl", "csv", and "svg"</li></ul> |
 
 <a name="geoconvert-options"></a>
 

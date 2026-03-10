@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/describegpt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/describegpt.rs)** | [🌐](TableOfContents.md#legend "has web-aware options.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")[🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")[🗃️](TableOfContents.md#legend "Limited Extended input support.")[📚](TableOfContents.md#legend "has lookup table support, enabling runtime \"lookups\" against local or remote reference CSVs.")[⛩️](TableOfContents.md#legend "uses Mini Jinja template engine.") [![CKAN](../images/ckan.png)](TableOfContents.md#legend "has CKAN-aware integration options.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Data Analysis/Inferencing Options](#data-analysis/inferencing-options) | [Dictionary Options](#dictionary-options) | [Tag Options](#tag-options) | [Stats/Frequency Options](#stats/frequency-options) | [Custom Prompt Options](#custom-prompt-options) | [LLM API Options](#llm-api-options) | [Caching Options](#caching-options) | [Mcp Sampling Options](#mcp-sampling-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Data Analysis/Inferencing Options](#data-analysis/inferencing-options) | [Dictionary Options](#dictionary-options) | [Tag Options](#tag-options) | [Stats/Frequency Options](#stats/frequency-options) | [Custom Prompt Options](#custom-prompt-options) | [LLM API Options](#llm-api-options) | [Caching Options](#caching-options) | [MCP Sampling Options](#mcp-sampling-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -276,7 +276,7 @@ qsv describegpt --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--no-cache`&nbsp; | flag | Disable default disk cache. |  |
-| &nbsp;`--disk-cache-dir`&nbsp; | string | The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different describegpt jobs (e.g. one for a data portal, another for internal data exchange, etc.) | `~/.qsv/cache/describegpt` |
+| &nbsp;`--disk-cache-dir`&nbsp; | string | The directory to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different describegpt jobs (e.g. one for a data portal, another for internal data exchange). | `~/.qsv/cache/describegpt` |
 | &nbsp;`--redis-cache`&nbsp; | flag | Use Redis instead of the default disk cache to cache LLM completions. It connects to "redis://127.0.0.1:6379/3" by default, with a connection pool size of 20, with a TTL of 28 days, and cache hits NOT refreshing an existing cached value's TTL. This option automatically disables the disk cache. |  |
 | &nbsp;`--fresh`&nbsp; | flag | Send a fresh request to the LLM API, refreshing a cached response if it exists. When a --prompt SQL query fails, you can also use this option to request the LLM to generate a new SQL query. |  |
 | &nbsp;`--forget`&nbsp; | flag | Remove a cached response if it exists and then exit. |  |
@@ -284,7 +284,7 @@ qsv describegpt --help
 
 <a name="mcp-sampling-options"></a>
 
-## Mcp Sampling Options [↩](#nav)
+## MCP Sampling Options [↩](#nav)
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|

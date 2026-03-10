@@ -301,11 +301,10 @@ describegpt options:
 
                            CACHING OPTIONS:
     --no-cache             Disable default disk cache.
-  --disk-cache-dir <dir>   The directory <dir> to store the disk cache. Note that if the directory
-                           does not exist, it will be created. If the directory exists, it will be used as is,
-                           and will not be flushed. This option allows you to maintain several disk caches
-                           for different describegpt jobs (e.g. one for a data portal, another for internal
-                           data exchange, etc.)
+  --disk-cache-dir <dir>   The directory to store the disk cache. Note that if the directory does not exist,
+                           it will be created. If the directory exists, it will be used as is, and will not
+                           be flushed. This option allows you to maintain several disk caches for different
+                           describegpt jobs (e.g. one for a data portal, another for internal data exchange).
                            [default: ~/.qsv/cache/describegpt]
     --redis-cache          Use Redis instead of the default disk cache to cache LLM completions.
                            It connects to "redis://127.0.0.1:6379/3" by default, with a connection pool

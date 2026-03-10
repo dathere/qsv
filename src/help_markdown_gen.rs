@@ -1228,20 +1228,53 @@ fn parse_arguments_section(lines: &[String]) -> Vec<ParsedArgument> {
 
             // Collect multi-line description
             let mut j = i + 1;
+            let mut in_list = false;
+            let mut bullet_indent: usize = 0;
             while j < lines.len() {
                 let next = lines[j].trim();
                 if next.is_empty()
                     || next.starts_with('<')
-                    || next.starts_with('-')
+                    || (next.starts_with('-') && !next.starts_with("- "))
                     || next.ends_with(':')
                 {
                     break;
                 }
                 if !description.is_empty() {
-                    description.push(' ');
+                    if next.starts_with("* ") || next.starts_with("- ") {
+                        if !in_list {
+                            description.push_str("<ul>");
+                            in_list = true;
+                            bullet_indent = lines[j].len() - lines[j].trim_start().len();
+                        }
+                        let item_text = next[2..].trim_end();
+                        description.push_str("<li>");
+                        description.push_str(item_text);
+                        description.push_str("</li>");
+                    } else if in_list {
+                        let current_indent = lines[j].len() - lines[j].trim_start().len();
+                        if current_indent <= bullet_indent {
+                            description.push_str("</ul> ");
+                            in_list = false;
+                            description.push_str(next);
+                        } else if description.ends_with("</li>") {
+                            description.truncate(description.len() - 5);
+                            description.push(' ');
+                            let trimmed_next = next.trim_end();
+                            description.push_str(trimmed_next);
+                            description.push_str("</li>");
+                        }
+                    } else if next.starts_with('\u{200E}') {
+                        description.push_str("<br>");
+                        description.push_str(next.trim_start_matches('\u{200E}').trim_start());
+                    } else {
+                        description.push(' ');
+                        description.push_str(next);
+                    }
                 }
-                description.push_str(next);
                 j += 1;
+            }
+            if in_list {
+                description.push_str("</ul>");
             }
 
             args.push(ParsedArgument {
@@ -1584,9 +1617,11 @@ fn parse_option_line(
 
     // Collect full description
     let mut description = desc_part.to_string();
+    let mut in_list = false;
+    let mut bullet_indent: usize = 0;
     for line in remaining_lines {
         let next = line.trim();
-        if next.is_empty() || next.starts_with('-') {
+        if next.is_empty() || (next.starts_with('-') && !next.starts_with("- ")) {
             break;
         }
         if next.ends_with(':')
@@ -1596,8 +1631,47 @@ fn parse_option_line(
         {
             break;
         }
-        description.push(' ');
-        description.push_str(next);
+        if next.starts_with("* ") || next.starts_with("- ") {
+            if !in_list {
+                description.push_str("<ul>");
+                in_list = true;
+                bullet_indent = line.len() - line.trim_start().len();
+            }
+            let item_text = next[2..].trim_end();
+            description.push_str("<li>");
+            description.push_str(item_text);
+            description.push_str("</li>");
+        } else if in_list {
+            let current_indent = line.len() - line.trim_start().len();
+            if current_indent <= bullet_indent {
+                // Line is at or shallower than bullet indent — close the list
+                // and treat as post-list text
+                description.push_str("</ul> ");
+                in_list = false;
+                description.push_str(next);
+            } else {
+                // Continuation line of the current list item — append to last <li>
+                // Remove the closing </li> and append the continuation text
+                if description.ends_with("</li>") {
+                    description.truncate(description.len() - 5);
+                    description.push(' ');
+                    let trimmed_next = next.trim_end();
+                    description.push_str(trimmed_next);
+                    description.push_str("</li>");
+                }
+            }
+        } else if next.starts_with('\u{200E}') {
+            // U+200E (Left-to-Right Mark) is used to prevent docopt from
+            // parsing negative numbers as option flags — treat as a line break
+            description.push_str("<br>");
+            description.push_str(next.trim_start_matches('\u{200E}').trim_start());
+        } else {
+            description.push(' ');
+            description.push_str(next);
+        }
+    }
+    if in_list {
+        description.push_str("</ul>");
     }
 
     // Get type and default from docopt if available

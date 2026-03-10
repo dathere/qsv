@@ -5528,8 +5528,9 @@ dependencies = [
 
 [[package]]
 name = "pragmastat"
-version = "12.0.0"
-source = "git+https://github.com/jqnatividad/pragmastat?branch=rust-perf#099018d8e9ef8320a6354bcf61dffec50ec6262f"
+version = "12.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6ebb44af06f973d55473c776031f6aa2dd06a06af996dade2a1715f0bbdf404"
 
 [[package]]
 name = "precomputed-hash"

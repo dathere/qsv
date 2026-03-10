@@ -350,9 +350,6 @@ kiddo = { git = "https://github.com/sdd/kiddo.git", rev = "2056051"}
 # use upstream of mimalloc with unreleased fixes
 mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "7daf67f", optional = true }
 
-# use our patched fork of pragmastat with various perf improvements until our PR is merged
-pragmastat = { git = "https://github.com/jqnatividad/pragmastat", branch = "rust-perf" }
-
 # use our patched fork of self_update with bumped dependencies at older revision
 # the latest upstream has replaced reqwest which breaks our build
 self_update = { git = "https://github.com/jaemk/self_update", rev = "62b93c6", optional = true }

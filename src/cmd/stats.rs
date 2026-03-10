@@ -3223,7 +3223,8 @@ impl Stats {
         // typesonly + infer_boolean: only need minmax + cardinality for boolean inference
         if self.which.typesonly {
             // safety: MinMax is enabled because range=true is set for infer_boolean.
-            // The guard at line 3201 ensures we only reach here when infer_boolean is true.
+            // The preceding `if self.which.typesonly && !infer_boolean { return; }` guard
+            // ensures we only reach here when infer_boolean is true.
             debug_assert!(
                 self.minmax.is_some(),
                 "minmax must be enabled for typesonly+infer_boolean"

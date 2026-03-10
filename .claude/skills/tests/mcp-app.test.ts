@@ -66,7 +66,10 @@ describe("clientSupportsApps detection", () => {
   type GetUiCapability = (caps: unknown) => UiCapability | undefined;
 
   async function loadExtApps(): Promise<{ getUiCapability: GetUiCapability; RESOURCE_MIME_TYPE: string; EXTENSION_ID: string }> {
-    // Use the package exports path (./server) — works at runtime with Node.js ESM
+    // Workaround: TypeScript with moduleResolution: "node" rejects subpath
+    // exports like "@modelcontextprotocol/ext-apps/server" at compile time.
+    // Function() creates a dynamic import outside the TS compiler's scope.
+    // This may break under strict CSP or certain bundler configs.
     return (await Function('return import("@modelcontextprotocol/ext-apps/server")')()) as {
       getUiCapability: GetUiCapability;
       RESOURCE_MIME_TYPE: string;
@@ -140,7 +143,7 @@ describe("RESOURCE_MIME_TYPE", () => {
   });
 });
 
-describe("qsv_browse_directory handler", () => {
+describe("scanDirectory (extracted from qsv_browse_directory handler)", () => {
   let testDir: string;
 
   beforeEach(async () => {
@@ -154,6 +157,7 @@ describe("qsv_browse_directory handler", () => {
     //     subdir/
     //   empty/
     //   .hidden/
+    //     secret.csv
     //   readme.txt
     //   prices.csv
 
@@ -164,6 +168,7 @@ describe("qsv_browse_directory handler", () => {
 
     writeFileSync(join(testDir, "data", "sales.csv"), "a,b\n1,2\n");
     writeFileSync(join(testDir, "data", "report.xlsx"), "fake");
+    writeFileSync(join(testDir, ".hidden", "secret.csv"), "x\n1\n");
     writeFileSync(join(testDir, "readme.txt"), "hello");
     writeFileSync(join(testDir, "prices.csv"), "x,y\n3,4\n");
   });
@@ -172,65 +177,73 @@ describe("qsv_browse_directory handler", () => {
     await cleanupTestDir(testDir);
   });
 
-  // The browse handler is a private method on QsvMcpServer, so we test it
-  // by importing the server module and verifying the expected behavior through
-  // its tool handler. Since that requires a full server instance, we instead
-  // test the logic by importing the filesystem reading utilities and verifying
-  // the directory scanning patterns used by the handler.
+  test("returns correct subdirectories and tabular file count", async () => {
+    const { scanDirectory } = await import("../src/browse-directory.js");
+    const result = await scanDirectory(testDir);
 
-  test("readdir can scan the test directory structure", async () => {
-    const { readdir } = await import("node:fs/promises");
-    const entries = await readdir(testDir, { withFileTypes: true });
+    assert.strictEqual(result.currentPath, testDir);
+    assert.ok(result.parent !== null, "non-root dir should have a parent");
 
-    const dirNames = entries.filter(e => e.isDirectory()).map(e => e.name).sort();
-    // Should include data and empty, but not .hidden (hidden dirs are filtered by the handler)
-    assert.ok(dirNames.includes("data"), "should include data directory");
-    assert.ok(dirNames.includes("empty"), "should include empty directory");
-    assert.ok(dirNames.includes(".hidden"), "readdir returns hidden dirs (handler filters them)");
+    // Top-level tabular files: prices.csv (readme.txt is not tabular)
+    assert.strictEqual(result.tabularFileCount, 1, "should count 1 tabular file at top level");
 
-    const fileNames = entries.filter(e => e.isFile()).map(e => e.name).sort();
-    assert.ok(fileNames.includes("prices.csv"), "should include csv file");
-    assert.ok(fileNames.includes("readme.txt"), "should include txt file");
+    // Visible subdirectories: data, empty  (.hidden is filtered out)
+    const dirNames = result.subdirectories.map(d => d.name).sort();
+    assert.deepStrictEqual(dirNames, ["data", "empty"]);
+    assert.ok(!dirNames.includes(".hidden"), ".hidden should be filtered out");
   });
 
-  test("tabular extensions are detected correctly", async () => {
-    const { extname } = await import("node:path");
+  test("counts tabular files and subdirs inside subdirectories", async () => {
+    const { scanDirectory } = await import("../src/browse-directory.js");
+    const result = await scanDirectory(testDir);
 
-    const TABULAR_EXTS = new Set([
-      ".csv", ".tsv", ".tab", ".ssv", ".parquet", ".pqt",
-      ".jsonl", ".ndjson", ".json", ".xlsx", ".xls",
-    ]);
+    const dataDir = result.subdirectories.find(d => d.name === "data");
+    assert.ok(dataDir, "should include data directory");
+    assert.strictEqual(dataDir!.tabularFileCount, 2, "data/ has sales.csv and report.xlsx");
+    assert.strictEqual(dataDir!.subdirCount, 1, "data/ has subdir/");
 
-    assert.ok(TABULAR_EXTS.has(extname("sales.csv").toLowerCase()));
-    assert.ok(TABULAR_EXTS.has(extname("report.xlsx").toLowerCase()));
-    assert.ok(!TABULAR_EXTS.has(extname("readme.txt").toLowerCase()));
-    assert.ok(TABULAR_EXTS.has(extname("data.parquet").toLowerCase()));
-    assert.ok(TABULAR_EXTS.has(extname("stream.jsonl").toLowerCase()));
+    const emptyDir = result.subdirectories.find(d => d.name === "empty");
+    assert.ok(emptyDir, "should include empty directory");
+    assert.strictEqual(emptyDir!.tabularFileCount, 0);
+    assert.strictEqual(emptyDir!.subdirCount, 0);
   });
 
-  test("subdirectory scanning counts tabular files and subdirs", async () => {
-    const { readdir } = await import("node:fs/promises");
-    const { extname, join: pathJoin } = await import("node:path");
+  test("subdirectories are sorted alphabetically (case-insensitive)", async () => {
+    mkdirSync(join(testDir, "Zebra"));
+    mkdirSync(join(testDir, "alpha"));
 
-    const TABULAR_EXTS = new Set([
-      ".csv", ".tsv", ".tab", ".ssv", ".parquet", ".pqt",
-      ".jsonl", ".ndjson", ".json", ".xlsx", ".xls",
-    ]);
+    const { scanDirectory } = await import("../src/browse-directory.js");
+    const result = await scanDirectory(testDir);
 
-    // Scan the "data" subdirectory like the handler does
-    const dataDir = pathJoin(testDir, "data");
-    const subEntries = await readdir(dataDir, { withFileTypes: true });
+    const names = result.subdirectories.map(d => d.name);
+    // Expected order: alpha, data, empty, Zebra
+    assert.strictEqual(names[0], "alpha");
+    assert.strictEqual(names[names.length - 1], "Zebra");
+  });
 
-    let tabularCount = 0;
-    let subdirCount = 0;
-    for (const entry of subEntries) {
-      if (entry.name.startsWith(".")) continue;
-      if (entry.isDirectory()) subdirCount++;
-      else if (TABULAR_EXTS.has(extname(entry.name).toLowerCase())) tabularCount++;
+  test("throws for non-existent directory", async () => {
+    const { scanDirectory } = await import("../src/browse-directory.js");
+    await assert.rejects(
+      () => scanDirectory(join(testDir, "nonexistent")),
+      /no such file|not accessible|ENOENT/i,
+    );
+  });
+
+  test("throws for a file path (not a directory)", async () => {
+    const { scanDirectory } = await import("../src/browse-directory.js");
+    await assert.rejects(
+      () => scanDirectory(join(testDir, "readme.txt")),
+      /not a directory/i,
+    );
+  });
+
+  test("TABULAR_EXTS covers expected extensions", async () => {
+    const { TABULAR_EXTS } = await import("../src/browse-directory.js");
+    for (const ext of [".csv", ".tsv", ".tab", ".ssv", ".parquet", ".pqt", ".jsonl", ".ndjson", ".json", ".xlsx", ".xls"]) {
+      assert.ok(TABULAR_EXTS.has(ext), `should include ${ext}`);
     }
-
-    assert.strictEqual(tabularCount, 2, "data/ should have 2 tabular files (sales.csv, report.xlsx)");
-    assert.strictEqual(subdirCount, 1, "data/ should have 1 subdirectory (subdir/)");
+    assert.ok(!TABULAR_EXTS.has(".txt"), "should not include .txt");
+    assert.ok(!TABULAR_EXTS.has(".pdf"), "should not include .pdf");
   });
 });
 

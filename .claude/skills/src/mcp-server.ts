@@ -19,8 +19,8 @@ import {
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { dirname, extname, join } from "node:path";
-import { access, readdir, stat as fsStat } from "node:fs/promises";
+import { join } from "node:path";
+import { access, stat as fsStat } from "node:fs/promises";
 
 import { SkillLoader } from "./loader.js";
 import { SkillExecutor, runQsvSimple } from "./executor.js";
@@ -54,6 +54,7 @@ import {
   RESOURCE_MIME_TYPE,
 } from "@modelcontextprotocol/ext-apps/dist/src/server/index.js";
 import { getDirectoryPickerHtml } from "./ui/directory-picker-html.js";
+import { scanDirectory } from "./browse-directory.js";
 import { VERSION } from "./version.js";
 import { getErrorMessage, errorResult, successResult } from "./utils.js";
 import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
@@ -530,7 +531,10 @@ class QsvMcpServer {
         tools.push(createListFilesTool());
         tools.push(createSetWorkingDirTool());
         tools.push(createGetWorkingDirTool());
-        tools.push(createBrowseDirectoryTool());
+        // Only expose the browse directory tool to App-capable clients
+        if (this.clientSupportsApps()) {
+          tools.push(createBrowseDirectoryTool());
+        }
 
         // Add logging tool
         tools.push(createLogTool());
@@ -694,13 +698,16 @@ class QsvMcpServer {
             if (this.clientSupportsApps()) {
               const candidates = await this.discoverDirectories();
               const currentDir = this.filesystemProvider.getWorkingDirectory();
+              // structuredContent is an MCP Apps extension not yet in the SDK's
+              // CallToolResult type.  Cast to satisfy the compiler while still
+              // delivering the payload to App-capable clients.
               return {
                 content: [{ type: "text" as const, text: "Opening interactive directory picker..." }],
                 structuredContent: {
                   currentPath: currentDir,
                   knownDirs: candidates,
                 },
-              };
+              } as { content: Array<{ type: "text"; text: string }> };
             }
 
             // 2. Try interactive elicitation form
@@ -925,78 +932,11 @@ class QsvMcpServer {
         ? args.directory.trim()
         : this.filesystemProvider.getWorkingDirectory();
 
-    // Validate directory exists and is accessible
     try {
-      const dirStat = await fsStat(targetDir);
-      if (!dirStat.isDirectory()) {
-        return errorResult(`"${targetDir}" is not a directory.`);
-      }
-    } catch {
-      return errorResult(`Directory "${targetDir}" does not exist or is not accessible.`);
-    }
-
-    // Tabular file extensions (matching mcp-filesystem.ts patterns)
-    const TABULAR_EXTS = new Set([
-      ".csv", ".tsv", ".tab", ".ssv", ".parquet", ".pqt",
-      ".jsonl", ".ndjson", ".json", ".xlsx", ".xls",
-    ]);
-
-    try {
-      const entries = await readdir(targetDir, { withFileTypes: true });
-      const subdirectories: Array<{
-        name: string;
-        path: string;
-        tabularFileCount: number;
-        subdirCount: number;
-      }> = [];
-
-      let tabularFileCount = 0;
-
-      for (const entry of entries) {
-        // Skip hidden entries
-        if (entry.name.startsWith(".")) continue;
-
-        if (entry.isDirectory()) {
-          // Quick peek inside the subdirectory for counts
-          let subTabular = 0;
-          let subDirs = 0;
-          try {
-            const subEntries = await readdir(join(targetDir, entry.name), { withFileTypes: true });
-            for (const sub of subEntries) {
-              if (sub.name.startsWith(".")) continue;
-              if (sub.isDirectory()) subDirs++;
-              else if (TABULAR_EXTS.has(extname(sub.name).toLowerCase())) subTabular++;
-            }
-          } catch {
-            // Permission denied or other error — just skip counts
-          }
-
-          subdirectories.push({
-            name: entry.name,
-            path: join(targetDir, entry.name),
-            tabularFileCount: subTabular,
-            subdirCount: subDirs,
-          });
-        } else if (TABULAR_EXTS.has(extname(entry.name).toLowerCase())) {
-          tabularFileCount++;
-        }
-      }
-
-      // Sort directories alphabetically (case-insensitive)
-      subdirectories.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-
-      // Parent path
-      const parent = dirname(targetDir);
-      const hasParent = parent !== targetDir; // root has no parent
-
-      return successResult(JSON.stringify({
-        currentPath: targetDir,
-        parent: hasParent ? parent : null,
-        subdirectories,
-        tabularFileCount,
-      }));
+      const result = await scanDirectory(targetDir);
+      return successResult(JSON.stringify(result));
     } catch (err) {
-      return errorResult(`Failed to read directory "${targetDir}": ${getErrorMessage(err)}`);
+      return errorResult(getErrorMessage(err));
     }
   }
 

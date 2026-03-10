@@ -356,32 +356,31 @@ function updateSelectedState(path) {
 
 function renderBreadcrumbs(path) {
   breadcrumbsEl.innerHTML = "";
-  const sep = path.includes("\\\\") ? "\\\\" : "/";
-  const parts = path.split(sep).filter(Boolean);
+  // Server uses Node.js path.join() which always returns POSIX paths
+  const parts = path.split("/").filter(Boolean);
 
   // Root
   const rootEl = document.createElement("span");
   rootEl.className = "breadcrumb-item";
-  rootEl.textContent = sep === "/" ? "/" : parts[0] + "\\\\";
-  rootEl.onclick = () => navigate(sep === "/" ? "/" : parts[0] + "\\\\");
+  rootEl.textContent = "/";
+  rootEl.onclick = () => navigate("/");
   breadcrumbsEl.appendChild(rootEl);
 
-  let accumulated = sep === "/" ? "" : "";
-  for (let i = sep === "/" ? 0 : 1; i < parts.length; i++) {
+  let accumulated = "";
+  for (let i = 0; i < parts.length; i++) {
     const sepEl = document.createElement("span");
     sepEl.className = "breadcrumb-sep";
     sepEl.textContent = ">";
     breadcrumbsEl.appendChild(sepEl);
 
-    accumulated += sep + parts[i];
-    const fullPath = sep === "/" ? accumulated : parts[0] + accumulated;
+    accumulated += "/" + parts[i];
 
     const crumb = document.createElement("span");
     crumb.textContent = parts[i];
     const isLast = i === parts.length - 1;
     crumb.className = "breadcrumb-item" + (isLast ? " current" : "");
     if (!isLast) {
-      const p = fullPath;
+      const p = accumulated;
       crumb.onclick = () => navigate(p);
     }
     breadcrumbsEl.appendChild(crumb);

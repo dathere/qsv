@@ -3177,6 +3177,23 @@ impl Stats {
     /// # Safety
     ///
     /// * Uses unsafe code for performance-critical operations
+    /// Updates modes/cardinality trackers with a sample value.
+    /// Weighted modes and unweighted modes are mutually exclusive.
+    #[inline(always)]
+    fn update_modes(&mut self, sample: &[u8], weight: f64) {
+        if let Some(ref mut wm) = self.weighted_modes {
+            // Weighted modes: accumulate weights per value
+            // Use get_mut first to avoid heap-allocating sample.to_vec() when key already exists
+            if let Some(val) = wm.get_mut(sample) {
+                *val += weight;
+            } else {
+                wm.insert(sample.to_vec(), weight);
+            }
+        } else if let Some(v) = self.modes.as_mut() {
+            v.add_bytes(sample);
+        }
+    }
+
     /// * Assumes valid UTF-8 input for string operations
     /// * Bounds checking is avoided where safe
     #[allow(clippy::inline_always)]
@@ -3206,22 +3223,19 @@ impl Stats {
 
         // typesonly + infer_boolean: only need minmax + cardinality for boolean inference
         if self.which.typesonly {
-            // safety: MinMax enabled (range=true for infer_boolean)
+            // safety: MinMax is enabled because range=true is set for infer_boolean.
+            // The guard at line 3201 ensures we only reach here when infer_boolean is true.
+            debug_assert!(
+                self.minmax.is_some(),
+                "minmax must be enabled for typesonly+infer_boolean"
+            );
             unsafe {
                 self.minmax
                     .as_mut()
                     .unwrap_unchecked()
                     .add_with_parsed(t, sample, float_val, int_val);
             }
-            if let Some(ref mut wm) = self.weighted_modes {
-                if let Some(val) = wm.get_mut(sample) {
-                    *val += weight;
-                } else {
-                    wm.insert(sample.to_vec(), weight);
-                }
-            } else if let Some(v) = self.modes.as_mut() {
-                v.add_bytes(sample);
-            }
+            self.update_modes(sample, weight);
             if sample_type == TNull {
                 self.nullcount += 1;
             }
@@ -3259,17 +3273,7 @@ impl Stats {
         // Modes/cardinality less common but still frequent
         // These are mutually exclusive: weighted_modes is used when weights are active,
         // otherwise the unweighted modes (Unsorted) tracker is used.
-        if let Some(ref mut wm) = self.weighted_modes {
-            // Weighted modes: accumulate weights per value
-            // Use get_mut first to avoid heap-allocating sample.to_vec() when key already exists
-            if let Some(val) = wm.get_mut(sample) {
-                *val += weight;
-            } else {
-                wm.insert(sample.to_vec(), weight);
-            }
-        } else if let Some(v) = self.modes.as_mut() {
-            v.add_bytes(sample);
-        }
+        self.update_modes(sample, weight);
 
         if t == TString {
             // safety: online_len is always enabled when t == TString

@@ -49,10 +49,8 @@ import {
   getActiveProcessCount,
   setToolsWorkingDir,
 } from "./mcp-tools.js";
-import {
-  getUiCapability,
-  RESOURCE_MIME_TYPE,
-} from "@modelcontextprotocol/ext-apps/dist/src/server/index.js";
+// @ts-ignore — moduleResolution:"node" can't resolve exports-mapped subpath; runtime resolves fine
+import { getUiCapability, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { getDirectoryPickerHtml } from "./ui/directory-picker-html.js";
 import { scanDirectory } from "./browse-directory.js";
 import { VERSION } from "./version.js";

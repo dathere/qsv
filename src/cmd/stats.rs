@@ -1670,55 +1670,54 @@ impl Args {
         let needs_memory_aware_chunking =
             which_stats.needs_memory_aware_chunking() && max_chunk_memory_mb.is_some();
 
-        let (chunking_mode_info, chunk_size) =
-            if max_chunk_memory_mb.is_some() || needs_memory_aware_chunking {
-                // Sample records for memory estimation
-                let sample_records = util::sample_records(&self.rconfig(), 1000);
+        let (chunking_mode_info, chunk_size) = if needs_memory_aware_chunking {
+            // Sample records for memory estimation
+            let sample_records = util::sample_records(&self.rconfig(), 1000);
 
-                // Calculate memory-aware chunk size
-                let chunk_size = calculate_memory_aware_chunk_size(
-                    idx_count,
-                    njobs,
-                    max_chunk_memory_mb,
-                    &which_stats,
-                    sample_records.as_deref(),
-                );
-                // Estimate average record size from samples if available
-                let avg_record_size = if let Some(samples) = sample_records {
-                    calculate_avg_record_size(&samples, &which_stats)
-                } else {
-                    1024
-                };
-
-                let estimated_memory_mb =
-                    estimate_chunk_memory(chunk_size, avg_record_size, &which_stats, headers.len())
-                        / (1024 * 1024);
-
-                let chunking_mode = if let Some(limit_mb) = max_chunk_memory_mb {
-                    if limit_mb == 0 {
-                        "dynamic (auto)"
-                    } else {
-                        "fixed limit"
-                    }
-                } else {
-                    "dynamic (auto)"
-                };
-
-                (
-                    format!(
-                        "Memory-aware chunking ({chunking_mode}): chunk_size={chunk_size}, \
-                         estimated_memory_mb={estimated_memory_mb:.2}"
-                    ),
-                    chunk_size,
-                )
+            // Calculate memory-aware chunk size
+            let chunk_size = calculate_memory_aware_chunk_size(
+                idx_count,
+                njobs,
+                max_chunk_memory_mb,
+                &which_stats,
+                sample_records.as_deref(),
+            );
+            // Estimate average record size from samples if available
+            let avg_record_size = if let Some(samples) = sample_records {
+                calculate_avg_record_size(&samples, &which_stats)
             } else {
-                // CPU-based chunking
-                let chunk_size = util::chunk_size(idx_count as usize, njobs);
-                (
-                    format!("CPU-based chunking: chunk_size={chunk_size}"),
-                    chunk_size,
-                )
+                1024
             };
+
+            let estimated_memory_mb =
+                estimate_chunk_memory(chunk_size, avg_record_size, &which_stats, headers.len())
+                    / (1024 * 1024);
+
+            let chunking_mode = if let Some(limit_mb) = max_chunk_memory_mb {
+                if limit_mb == 0 {
+                    "dynamic (auto)"
+                } else {
+                    "fixed limit"
+                }
+            } else {
+                "dynamic (auto)"
+            };
+
+            (
+                format!(
+                    "Memory-aware chunking ({chunking_mode}): chunk_size={chunk_size}, \
+                     estimated_memory_mb={estimated_memory_mb:.2}"
+                ),
+                chunk_size,
+            )
+        } else {
+            // CPU-based chunking
+            let chunk_size = util::chunk_size(idx_count as usize, njobs);
+            (
+                format!("CPU-based chunking: chunk_size={chunk_size}"),
+                chunk_size,
+            )
+        };
 
         let nchunks = util::num_of_chunks(idx_count as usize, chunk_size);
         log::info!("({chunking_mode_info}) nchunks={nchunks}");
@@ -2307,9 +2306,14 @@ fn calculate_memory_aware_chunk_size(
         },
         Some(0) => {
             // Dynamic sizing: sample records to estimate average size
-            util::calculate_dynamic_chunk_size(idx_count, njobs, sample_records, |record| {
-                estimate_record_memory(record, which_stats)
-            })
+            if needs_memory_aware_chunking {
+                util::calculate_dynamic_chunk_size(idx_count, njobs, sample_records, |record| {
+                    estimate_record_memory(record, which_stats)
+                })
+            } else {
+                // Streaming stats only, use CPU-based chunking
+                util::chunk_size(idx_count as usize, njobs)
+            }
         },
         Some(limit_mb) => {
             // Fixed memory limit per chunk

@@ -1194,11 +1194,9 @@ where
         let cpu_based_chunks = num_of_chunks(idx_count as usize, cpu_based_chunk_size);
 
         // Prefer CPU-based chunking if:
-        // 1. It creates more chunks (better parallelization), OR
-        // 2. Memory allows for CPU-based chunks (memory_based_chunk_size >= cpu_based_chunk_size)
-        //    and CPU-based creates at least as many chunks as CPUs
-        if (cpu_based_chunks > memory_based_chunks)
-            || (memory_based_chunk_size >= cpu_based_chunk_size && cpu_based_chunks >= njobs)
+        // 1. Memory-based chunk size is smaller than CPU-based (degenerate/low memory), OR
+        // 2. It creates more chunks (better parallelization)
+        if memory_based_chunk_size <= cpu_based_chunk_size || cpu_based_chunks > memory_based_chunks
         {
             cpu_based_chunk_size
         } else {

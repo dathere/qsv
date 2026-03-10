@@ -20,6 +20,10 @@ This is a "smart" command that uses the stats cache to work smarter & faster.
 When a stats cache is available, non-numeric columns are automatically filtered out
 (unless --select is explicitly provided) and Date/DateTime columns are supported.
 
+By default, one-sample mode appends 7 ps_* columns to the .stats.csv cache file
+(like moarstats). Use --standalone for the old standalone CSV output. Two-sample,
+compare1, and compare2 modes always produce standalone output.
+
 Input handling
 * Only finite numeric values are used; non-numeric/NaN/Inf are ignored.
 * Date/DateTime columns are supported when a stats cache is available
@@ -99,10 +103,16 @@ Valid metrics for compare2: shift, ratio, disparity
 
 ## Examples [↩](#nav)
 
-> Basic one-sample statistics
+> Append pragmastat columns to stats cache (default one-sample behavior)
 
 ```console
 qsv pragmastat data.csv
+```
+
+> Standalone one-sample output (old behavior)
+
+```console
+qsv pragmastat --standalone data.csv
 ```
 
 > One-sample statistics with selected columns
@@ -158,13 +168,17 @@ qsv pragmastat --help
 
 ## Pragmastat Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-t,`<br>`--twosample`&nbsp; | flag | Compute two-sample estimators for all column pairs. |  |
 | &nbsp;`--compare1`&nbsp; | string | One-sample confirmatory analysis. Test center/spread against thresholds. Format: metric:value[,metric:value,...]. Mutually exclusive with --twosample and --compare2. |  |
 | &nbsp;`--compare2`&nbsp; | string | Two-sample confirmatory analysis. Test shift/ratio/disparity against thresholds. Format: metric:value[,metric:value,...]. Mutually exclusive with --twosample and --compare1. |  |
 | &nbsp;`-s,`<br>`--select`&nbsp; | string | Select columns for analysis. Uses qsv's column selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed. |  |
 | &nbsp;`-m,`<br>`--misrate`&nbsp; | string | Probability that bounds fail to contain the true parameter. Lower values produce wider bounds. Must be achievable for the given sample size. | `0.001` |
+| &nbsp;`--standalone`&nbsp; | flag | Output one-sample results as standalone CSV instead of appending to the stats cache. |  |
+| &nbsp;`--stats-options`&nbsp; | string | Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace. | `--infer-dates --infer-boolean --mad --quartiles --force --stats-jsonl` |
+| &nbsp;`--round`&nbsp; | string | Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule. | `4` |
+| &nbsp;`--force`&nbsp; | flag | Force recomputing ps_* columns even if they already exist in the stats cache. |  |
 
 <a name="common-options"></a>
 

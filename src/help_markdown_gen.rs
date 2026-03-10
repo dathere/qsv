@@ -1232,15 +1232,20 @@ fn parse_arguments_section(lines: &[String]) -> Vec<ParsedArgument> {
                 let next = lines[j].trim();
                 if next.is_empty()
                     || next.starts_with('<')
-                    || next.starts_with('-')
+                    || (next.starts_with('-') && !next.starts_with("- "))
                     || next.ends_with(':')
                 {
                     break;
                 }
                 if !description.is_empty() {
-                    description.push(' ');
+                    if next.starts_with("* ") || next.starts_with("- ") {
+                        description.push_str("<br>• ");
+                        description.push_str(&next[2..]);
+                    } else {
+                        description.push(' ');
+                        description.push_str(next);
+                    }
                 }
-                description.push_str(next);
                 j += 1;
             }
 
@@ -1586,7 +1591,7 @@ fn parse_option_line(
     let mut description = desc_part.to_string();
     for line in remaining_lines {
         let next = line.trim();
-        if next.is_empty() || next.starts_with('-') {
+        if next.is_empty() || (next.starts_with('-') && !next.starts_with("- ")) {
             break;
         }
         if next.ends_with(':')
@@ -1596,8 +1601,13 @@ fn parse_option_line(
         {
             break;
         }
-        description.push(' ');
-        description.push_str(next);
+        if next.starts_with("* ") || next.starts_with("- ") {
+            description.push_str("<br>• ");
+            description.push_str(&next[2..]);
+        } else {
+            description.push(' ');
+            description.push_str(next);
+        }
     }
 
     // Get type and default from docopt if available

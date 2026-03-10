@@ -1229,6 +1229,7 @@ fn parse_arguments_section(lines: &[String]) -> Vec<ParsedArgument> {
             // Collect multi-line description
             let mut j = i + 1;
             let mut in_list = false;
+            let mut bullet_indent: usize = 0;
             while j < lines.len() {
                 let next = lines[j].trim();
                 if next.is_empty()
@@ -1243,15 +1244,23 @@ fn parse_arguments_section(lines: &[String]) -> Vec<ParsedArgument> {
                         if !in_list {
                             description.push_str("<ul>");
                             in_list = true;
+                            bullet_indent = lines[j].len() - lines[j].trim_start().len();
                         }
+                        let item_text = next[2..].trim_end();
                         description.push_str("<li>");
-                        description.push_str(&next[2..]);
+                        description.push_str(item_text);
                         description.push_str("</li>");
                     } else if in_list {
-                        if description.ends_with("</li>") {
+                        let current_indent = lines[j].len() - lines[j].trim_start().len();
+                        if current_indent <= bullet_indent {
+                            description.push_str("</ul> ");
+                            in_list = false;
+                            description.push_str(next);
+                        } else if description.ends_with("</li>") {
                             description.truncate(description.len() - 5);
                             description.push(' ');
-                            description.push_str(next);
+                            let trimmed_next = next.trim_end();
+                            description.push_str(trimmed_next);
                             description.push_str("</li>");
                         }
                     } else {
@@ -1606,6 +1615,7 @@ fn parse_option_line(
     // Collect full description
     let mut description = desc_part.to_string();
     let mut in_list = false;
+    let mut bullet_indent: usize = 0;
     for line in remaining_lines {
         let next = line.trim();
         if next.is_empty() || (next.starts_with('-') && !next.starts_with("- ")) {
@@ -1622,18 +1632,30 @@ fn parse_option_line(
             if !in_list {
                 description.push_str("<ul>");
                 in_list = true;
+                bullet_indent = line.len() - line.trim_start().len();
             }
+            let item_text = next[2..].trim_end();
             description.push_str("<li>");
-            description.push_str(&next[2..]);
+            description.push_str(item_text);
             description.push_str("</li>");
         } else if in_list {
-            // Continuation line of the current list item — append to last <li>
-            // Remove the closing </li> and append the continuation text
-            if description.ends_with("</li>") {
-                description.truncate(description.len() - 5);
-                description.push(' ');
+            let current_indent = line.len() - line.trim_start().len();
+            if current_indent <= bullet_indent {
+                // Line is at or shallower than bullet indent — close the list
+                // and treat as post-list text
+                description.push_str("</ul> ");
+                in_list = false;
                 description.push_str(next);
-                description.push_str("</li>");
+            } else {
+                // Continuation line of the current list item — append to last <li>
+                // Remove the closing </li> and append the continuation text
+                if description.ends_with("</li>") {
+                    description.truncate(description.len() - 5);
+                    description.push(' ');
+                    let trimmed_next = next.trim_end();
+                    description.push_str(trimmed_next);
+                    description.push_str("</li>");
+                }
             }
         } else {
             description.push(' ');

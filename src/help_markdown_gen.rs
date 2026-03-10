@@ -1263,6 +1263,9 @@ fn parse_arguments_section(lines: &[String]) -> Vec<ParsedArgument> {
                             description.push_str(trimmed_next);
                             description.push_str("</li>");
                         }
+                    } else if next.starts_with('\u{200E}') {
+                        description.push_str("<br>");
+                        description.push_str(next.trim_start_matches('\u{200E}').trim_start());
                     } else {
                         description.push(' ');
                         description.push_str(next);
@@ -1657,6 +1660,11 @@ fn parse_option_line(
                     description.push_str("</li>");
                 }
             }
+        } else if next.starts_with('\u{200E}') {
+            // U+200E (Left-to-Right Mark) is used to prevent docopt from
+            // parsing negative numbers as option flags — treat as a line break
+            description.push_str("<br>");
+            description.push_str(next.trim_start_matches('\u{200E}').trim_start());
         } else {
             description.push(' ');
             description.push_str(next);

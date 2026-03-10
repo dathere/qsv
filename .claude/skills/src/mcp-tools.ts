@@ -3207,6 +3207,37 @@ Call without arguments to show an interactive directory picker (when supported b
       },
       required: [],
     },
+    _meta: {
+      ui: {
+        resourceUri: "ui://qsv/directory-picker",
+      },
+    },
+  };
+}
+
+/**
+ * Create qsv_browse_directory tool definition (App-only helper).
+ * Hidden from the LLM — only callable by the directory picker App.
+ */
+export function createBrowseDirectoryTool(): McpToolDefinition {
+  return {
+    name: "qsv_browse_directory",
+    description: "Browse a directory's contents for the directory picker App. Returns subdirectories with tabular file counts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        directory: {
+          type: "string",
+          description: "Absolute path to browse. Defaults to the current working directory.",
+        },
+      },
+      required: [],
+    },
+    _meta: {
+      ui: {
+        visibility: ["app"],
+      },
+    },
   };
 }
 

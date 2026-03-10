@@ -111,6 +111,7 @@ export interface McpToolDefinition {
     properties: Record<string, McpToolProperty>;
     required?: string[];
   };
+  _meta?: Record<string, unknown>;
 }
 
 export interface McpToolResult {

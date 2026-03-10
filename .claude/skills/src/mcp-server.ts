@@ -19,8 +19,8 @@ import {
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { access, stat as fsStat } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
+import { access, readdir, stat as fsStat } from "node:fs/promises";
 
 import { SkillLoader } from "./loader.js";
 import { SkillExecutor, runQsvSimple } from "./executor.js";
@@ -38,6 +38,7 @@ import {
   createListFilesTool,
   createSetWorkingDirTool,
   createGetWorkingDirTool,
+  createBrowseDirectoryTool,
   createLogTool,
   handleConfigTool,
   handleSearchToolsCall,
@@ -48,6 +49,11 @@ import {
   getActiveProcessCount,
   setToolsWorkingDir,
 } from "./mcp-tools.js";
+import {
+  getUiCapability,
+  RESOURCE_MIME_TYPE,
+} from "@modelcontextprotocol/ext-apps/dist/src/server/index.js";
+import { getDirectoryPickerHtml } from "./ui/directory-picker-html.js";
 import { VERSION } from "./version.js";
 import { getErrorMessage, errorResult, successResult } from "./utils.js";
 import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
@@ -61,6 +67,7 @@ const CORE_TOOLS = [
   "qsv_config",
   "qsv_set_working_dir",
   "qsv_get_working_dir",
+  "qsv_browse_directory",
   "qsv_list_files",
   "qsv_log",
   "qsv_command",
@@ -523,6 +530,7 @@ class QsvMcpServer {
         tools.push(createListFilesTool());
         tools.push(createSetWorkingDirTool());
         tools.push(createGetWorkingDirTool());
+        tools.push(createBrowseDirectoryTool());
 
         // Add logging tool
         tools.push(createLogTool());
@@ -680,7 +688,22 @@ class QsvMcpServer {
             typeof toolArgs?.directory !== "string" ||
             toolArgs.directory.trim().length === 0
           ) {
-            // No directory provided — try interactive elicitation or show suggestions
+            // No directory provided — try App UI, elicitation, or text suggestions (in priority order)
+
+            // 1. If client supports MCP Apps, return structuredContent for the App to render
+            if (this.clientSupportsApps()) {
+              const candidates = await this.discoverDirectories();
+              const currentDir = this.filesystemProvider.getWorkingDirectory();
+              return {
+                content: [{ type: "text" as const, text: "Opening interactive directory picker..." }],
+                structuredContent: {
+                  currentPath: currentDir,
+                  knownDirs: candidates,
+                },
+              };
+            }
+
+            // 2. Try interactive elicitation form
             const elicitResult = await this.elicitWorkingDirectory();
             if (elicitResult.directory) {
               const newDir = this.updateWorkingDirectory(elicitResult.directory);
@@ -688,7 +711,7 @@ class QsvMcpServer {
               this.workingDirConfirmed = true;
               return successResult(`Working directory set to: ${newDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
             }
-            // Return suggestions as success so the agent can pick a directory
+            // 3. Return suggestions as success so the agent can pick a directory
             return successResult(elicitResult.fallback || "No directory selected. Please call qsv_set_working_dir with an explicit directory path.");
           }
 
@@ -741,6 +764,11 @@ class QsvMcpServer {
 
         if (name === "qsv_get_working_dir") {
           return successResult(`Current working directory: ${this.filesystemProvider.getWorkingDirectory()}`);
+        }
+
+        // Handle browse directory tool (App-only helper for directory picker)
+        if (name === "qsv_browse_directory") {
+          return await this.handleBrowseDirectory(toolArgs || {});
         }
 
         // Handle generic command tool
@@ -830,17 +858,23 @@ class QsvMcpServer {
    * Register MCP resource handlers
    */
   private registerResourceHandlers(): void {
-    // List resources handler - no file resources exposed
+    // List resources handler — expose the directory picker App resource
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
       console.error("Listing resources...");
-      console.error("Returning 0 resources (file resources disabled)");
 
       return {
-        resources: [],
+        resources: [
+          {
+            uri: "ui://qsv/directory-picker",
+            name: "Directory Picker",
+            description: "Interactive directory browser for selecting the qsv working directory",
+            mimeType: RESOURCE_MIME_TYPE,
+          },
+        ],
       };
     });
 
-    // Read resource handler - minimal implementation since no resources are exposed
+    // Read resource handler — serves App HTML for ui:// resources
     this.server.setRequestHandler(
       ReadResourceRequestSchema,
       async (request) => {
@@ -848,9 +882,122 @@ class QsvMcpServer {
 
         console.error(`Reading resource: ${uri}`);
 
+        if (uri === "ui://qsv/directory-picker") {
+          return {
+            contents: [
+              {
+                uri,
+                mimeType: RESOURCE_MIME_TYPE,
+                text: getDirectoryPickerHtml(),
+              },
+            ],
+          };
+        }
+
         throw new Error(`Resource not found: ${uri}. Use qsv_list_files tool to browse available files.`);
       },
     );
+  }
+
+  /**
+   * Check if the connected MCP client supports MCP Apps (interactive UI rendering).
+   * Returns true when the client advertises the `io.modelcontextprotocol/ui` extension
+   * with the required MIME type.
+   */
+  private clientSupportsApps(): boolean {
+    const capabilities = this.server.getClientCapabilities() as
+      | (ReturnType<typeof this.server.getClientCapabilities> & { extensions?: Record<string, unknown> })
+      | undefined;
+    const uiCap = getUiCapability(capabilities ?? null);
+    return Boolean(uiCap?.mimeTypes?.includes(RESOURCE_MIME_TYPE));
+  }
+
+  /**
+   * Handle qsv_browse_directory tool call.
+   * Returns subdirectories with tabular file counts, breadcrumbs, and parent path.
+   * Used by the directory picker App to navigate the filesystem.
+   */
+  private async handleBrowseDirectory(
+    args: Record<string, unknown>,
+  ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
+    const targetDir =
+      typeof args.directory === "string" && args.directory.trim().length > 0
+        ? args.directory.trim()
+        : this.filesystemProvider.getWorkingDirectory();
+
+    // Validate directory exists and is accessible
+    try {
+      const dirStat = await fsStat(targetDir);
+      if (!dirStat.isDirectory()) {
+        return errorResult(`"${targetDir}" is not a directory.`);
+      }
+    } catch {
+      return errorResult(`Directory "${targetDir}" does not exist or is not accessible.`);
+    }
+
+    // Tabular file extensions (matching mcp-filesystem.ts patterns)
+    const TABULAR_EXTS = new Set([
+      ".csv", ".tsv", ".tab", ".ssv", ".parquet", ".pqt",
+      ".jsonl", ".ndjson", ".json", ".xlsx", ".xls",
+    ]);
+
+    try {
+      const entries = await readdir(targetDir, { withFileTypes: true });
+      const subdirectories: Array<{
+        name: string;
+        path: string;
+        tabularFileCount: number;
+        subdirCount: number;
+      }> = [];
+
+      let tabularFileCount = 0;
+
+      for (const entry of entries) {
+        // Skip hidden entries
+        if (entry.name.startsWith(".")) continue;
+
+        if (entry.isDirectory()) {
+          // Quick peek inside the subdirectory for counts
+          let subTabular = 0;
+          let subDirs = 0;
+          try {
+            const subEntries = await readdir(join(targetDir, entry.name), { withFileTypes: true });
+            for (const sub of subEntries) {
+              if (sub.name.startsWith(".")) continue;
+              if (sub.isDirectory()) subDirs++;
+              else if (TABULAR_EXTS.has(extname(sub.name).toLowerCase())) subTabular++;
+            }
+          } catch {
+            // Permission denied or other error — just skip counts
+          }
+
+          subdirectories.push({
+            name: entry.name,
+            path: join(targetDir, entry.name),
+            tabularFileCount: subTabular,
+            subdirCount: subDirs,
+          });
+        } else if (TABULAR_EXTS.has(extname(entry.name).toLowerCase())) {
+          tabularFileCount++;
+        }
+      }
+
+      // Sort directories alphabetically (case-insensitive)
+      subdirectories.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+
+      // Parent path
+      const parent = dirname(targetDir);
+      const hasParent = parent !== targetDir; // root has no parent
+
+      return successResult(JSON.stringify({
+        currentPath: targetDir,
+        parent: hasParent ? parent : null,
+        subdirectories,
+        tabularFileCount,
+      }));
+    } catch (err) {
+      return errorResult(`Failed to read directory "${targetDir}": ${getErrorMessage(err)}`);
+    }
   }
 
   /**
@@ -875,6 +1022,7 @@ class QsvMcpServer {
     "qsv_search_tools",
     "qsv_set_working_dir",
     "qsv_get_working_dir",
+    "qsv_browse_directory",
   ]);
 
   /**

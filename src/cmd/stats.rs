@@ -2026,9 +2026,9 @@ impl Args {
     fn which_stats(&self) -> WhichStats {
         WhichStats {
             include_nulls:   self.flag_nulls,
-            sum:             !self.flag_typesonly || self.flag_infer_boolean,
+            sum:             !self.flag_typesonly,
             range:           !self.flag_typesonly || self.flag_infer_boolean,
-            dist:            !self.flag_typesonly || self.flag_infer_boolean,
+            dist:            !self.flag_typesonly,
             cardinality:     self.flag_everything || self.flag_cardinality,
             median:          !self.flag_everything && self.flag_median && !self.flag_quartiles,
             mad:             self.flag_everything || self.flag_mad,
@@ -3203,6 +3203,30 @@ impl Stats {
         }
 
         let t = self.typ;
+
+        // typesonly + infer_boolean: only need minmax + cardinality for boolean inference
+        if self.which.typesonly {
+            // safety: MinMax enabled (range=true for infer_boolean)
+            unsafe {
+                self.minmax
+                    .as_mut()
+                    .unwrap_unchecked()
+                    .add_with_parsed(t, sample, float_val, int_val);
+            }
+            if let Some(ref mut wm) = self.weighted_modes {
+                if let Some(val) = wm.get_mut(sample) {
+                    *val += weight;
+                } else {
+                    wm.insert(sample.to_vec(), weight);
+                }
+            } else if let Some(v) = self.modes.as_mut() {
+                v.add_bytes(sample);
+            }
+            if sample_type == TNull {
+                self.nullcount += 1;
+            }
+            return;
+        }
 
         // Update total weight for weighted statistics
         // Skip entirely when weights aren't active (the common case)

@@ -1693,14 +1693,12 @@ impl Args {
                 estimate_chunk_memory(chunk_size, avg_record_size, &which_stats, headers.len())
                     / (1024 * 1024);
 
-            let chunking_mode = if let Some(limit_mb) = max_chunk_memory_mb {
-                if limit_mb == 0 {
-                    "dynamic (auto)"
-                } else {
-                    "fixed limit"
-                }
-            } else {
+            // Safety: max_chunk_memory_mb is guaranteed Some(...) here since
+            // needs_memory_aware_chunking requires max_chunk_memory_mb.is_some()
+            let chunking_mode = if max_chunk_memory_mb.unwrap_or(0) == 0 {
                 "dynamic (auto)"
+            } else {
+                "fixed limit"
             };
 
             (
@@ -2306,14 +2304,11 @@ fn calculate_memory_aware_chunk_size(
         },
         Some(0) => {
             // Dynamic sizing: sample records to estimate average size
-            if needs_memory_aware_chunking {
-                util::calculate_dynamic_chunk_size(idx_count, njobs, sample_records, |record| {
-                    estimate_record_memory(record, which_stats)
-                })
-            } else {
-                // Streaming stats only, use CPU-based chunking
-                util::chunk_size(idx_count as usize, njobs)
-            }
+            // Note: caller already gates on needs_memory_aware_chunking, so we always
+            // use dynamic sizing here. The None arm has its own guard for direct callers.
+            util::calculate_dynamic_chunk_size(idx_count, njobs, sample_records, |record| {
+                estimate_record_memory(record, which_stats)
+            })
         },
         Some(limit_mb) => {
             // Fixed memory limit per chunk

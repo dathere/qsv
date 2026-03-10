@@ -1238,10 +1238,8 @@ class QsvMcpServer {
     // The SDK schema doesn't include `extensions` (no .passthrough()), so
     // getClientCapabilities() loses the `io.modelcontextprotocol/ui` field
     // that Claude Desktop sends for MCP Apps support.
-    const origOnMessage = transport.onmessage;
     Object.defineProperty(transport, "onmessage", {
       set: (handler: ((msg: unknown) => void) | undefined) => {
-        origOnMessage; // suppress unused warning
         const wrapper = (msg: unknown) => {
           const m = msg as { method?: string; params?: { capabilities?: { extensions?: Record<string, unknown> } } };
           if (m?.method === "initialize" && m.params?.capabilities?.extensions) {
@@ -1259,6 +1257,10 @@ class QsvMcpServer {
 
     await this.server.connect(transport);
     console.error("QSV MCP Server running on stdio");
+
+    if (this.rawClientExtensions === undefined) {
+      console.error("Warning: rawClientExtensions not captured during initialize — MCP Apps detection may not work");
+    }
 
     // Auto-sync working directory from MCP client roots
     await this.syncWorkingDirFromRoots();

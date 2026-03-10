@@ -131,6 +131,8 @@ class QsvMcpServer {
   private pendingRootsSync = false;
   private rootsSyncRetries = 0;
   private static readonly MAX_ROOTS_SYNC_RETRIES = 3;
+  /** Raw client extensions captured before Zod strips them from capabilities */
+  private rawClientExtensions: Record<string, unknown> | undefined;
 
   /**
    * Track which tools have been loaded via search (for deferred loading).
@@ -545,9 +547,7 @@ class QsvMcpServer {
           this.toolsListedOnce = true;
         }
 
-        const response = { tools };
-
-        return response;
+        return { tools };
       });
       console.error("[Server] Tool handlers registered successfully");
     } catch (error: unknown) {
@@ -865,7 +865,6 @@ class QsvMcpServer {
   private registerResourceHandlers(): void {
     // List resources handler — expose the directory picker App resource
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
-      console.error("Listing resources...");
 
       return {
         resources: [
@@ -885,8 +884,6 @@ class QsvMcpServer {
       async (request) => {
         const { uri } = request.params;
 
-        console.error(`Reading resource: ${uri}`);
-
         if (uri === "ui://qsv/directory-picker") {
           return {
             contents: [
@@ -894,6 +891,15 @@ class QsvMcpServer {
                 uri,
                 mimeType: RESOURCE_MIME_TYPE,
                 text: getDirectoryPickerHtml(),
+                _meta: {
+                  ui: {
+                    csp: {
+                      // The App HTML loads the ext-apps SDK from esm.sh CDN
+                      resourceDomains: ["https://esm.sh"],
+                      connectDomains: ["https://esm.sh"],
+                    },
+                  },
+                },
               },
             ],
           };
@@ -910,10 +916,12 @@ class QsvMcpServer {
    * with the required MIME type.
    */
   private clientSupportsApps(): boolean {
-    const capabilities = this.server.getClientCapabilities() as
-      | (ReturnType<typeof this.server.getClientCapabilities> & { extensions?: Record<string, unknown> })
-      | undefined;
-    const uiCap = getUiCapability(capabilities ?? null);
+    // Build a capabilities-like object with the raw extensions we captured
+    // before the SDK's Zod parsing stripped them.
+    const capsWithExtensions = this.rawClientExtensions
+      ? { extensions: this.rawClientExtensions }
+      : null;
+    const uiCap = getUiCapability(capsWithExtensions);
     return Boolean(uiCap?.mimeTypes?.includes(RESOURCE_MIME_TYPE));
   }
 
@@ -1224,6 +1232,28 @@ class QsvMcpServer {
    */
   async start(): Promise<void> {
     const transport = new StdioServerTransport();
+
+    // Intercept the transport to capture raw client extensions before the
+    // MCP SDK's Zod parsing strips them from ClientCapabilities.
+    // The SDK schema doesn't include `extensions` (no .passthrough()), so
+    // getClientCapabilities() loses the `io.modelcontextprotocol/ui` field
+    // that Claude Desktop sends for MCP Apps support.
+    const origOnMessage = transport.onmessage;
+    Object.defineProperty(transport, "onmessage", {
+      set: (handler: ((msg: unknown) => void) | undefined) => {
+        origOnMessage; // suppress unused warning
+        const wrapper = (msg: unknown) => {
+          const m = msg as { method?: string; params?: { capabilities?: { extensions?: Record<string, unknown> } } };
+          if (m?.method === "initialize" && m.params?.capabilities?.extensions) {
+            this.rawClientExtensions = m.params.capabilities.extensions;
+          }
+          handler?.(msg);
+        };
+        (transport as unknown as { _onmessage?: typeof wrapper })._onmessage = wrapper;
+      },
+      get: () => (transport as unknown as { _onmessage?: (msg: unknown) => void })._onmessage,
+      configurable: true,
+    });
 
     console.error("Starting QSV MCP Server...");
 

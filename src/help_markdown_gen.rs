@@ -1228,6 +1228,7 @@ fn parse_arguments_section(lines: &[String]) -> Vec<ParsedArgument> {
 
             // Collect multi-line description
             let mut j = i + 1;
+            let mut in_list = false;
             while j < lines.len() {
                 let next = lines[j].trim();
                 if next.is_empty()
@@ -1239,14 +1240,29 @@ fn parse_arguments_section(lines: &[String]) -> Vec<ParsedArgument> {
                 }
                 if !description.is_empty() {
                     if next.starts_with("* ") || next.starts_with("- ") {
-                        description.push_str("<br>• ");
+                        if !in_list {
+                            description.push_str("<ul>");
+                            in_list = true;
+                        }
+                        description.push_str("<li>");
                         description.push_str(&next[2..]);
+                        description.push_str("</li>");
+                    } else if in_list {
+                        if description.ends_with("</li>") {
+                            description.truncate(description.len() - 5);
+                            description.push(' ');
+                            description.push_str(next);
+                            description.push_str("</li>");
+                        }
                     } else {
                         description.push(' ');
                         description.push_str(next);
                     }
                 }
                 j += 1;
+            }
+            if in_list {
+                description.push_str("</ul>");
             }
 
             args.push(ParsedArgument {
@@ -1589,6 +1605,7 @@ fn parse_option_line(
 
     // Collect full description
     let mut description = desc_part.to_string();
+    let mut in_list = false;
     for line in remaining_lines {
         let next = line.trim();
         if next.is_empty() || (next.starts_with('-') && !next.starts_with("- ")) {
@@ -1602,12 +1619,29 @@ fn parse_option_line(
             break;
         }
         if next.starts_with("* ") || next.starts_with("- ") {
-            description.push_str("<br>• ");
+            if !in_list {
+                description.push_str("<ul>");
+                in_list = true;
+            }
+            description.push_str("<li>");
             description.push_str(&next[2..]);
+            description.push_str("</li>");
+        } else if in_list {
+            // Continuation line of the current list item — append to last <li>
+            // Remove the closing </li> and append the continuation text
+            if description.ends_with("</li>") {
+                description.truncate(description.len() - 5);
+                description.push(' ');
+                description.push_str(next);
+                description.push_str("</li>");
+            }
         } else {
             description.push(' ');
             description.push_str(next);
         }
+    }
+    if in_list {
+        description.push_str("</ul>");
     }
 
     // Get type and default from docopt if available

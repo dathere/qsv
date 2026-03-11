@@ -1065,14 +1065,9 @@ class QsvMcpServer {
   private async showNativeFolderPicker(): Promise<string | null> {
     if (process.platform !== "darwin") return null;
 
-    // Skip native picker in headless/SSH sessions where Finder is unavailable.
-    // Note: this heuristic isn't airtight — on macOS, a GUI session launched
-    // outside a terminal (e.g., launchd/Automator) may not set TERM_PROGRAM,
-    // and DISPLAY is an X11 concept rarely set on native macOS. A more reliable
-    // check would be `pgrep -q WindowServer`, but that adds a subprocess call.
-    if (!process.env.TERM_PROGRAM && !process.env.DISPLAY) {
-      return null;
-    }
+    // No env-based headless check here — MCP servers are spawned by Claude
+    // Desktop/MCPB without TERM_PROGRAM or DISPLAY, yet Finder is available.
+    // If osascript fails (SSH, headless CI), the catch block returns null.
 
     try {
       const currentDir = this.filesystemProvider.getWorkingDirectory();

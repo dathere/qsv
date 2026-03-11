@@ -71,10 +71,9 @@ describe("McpToolDefinition _meta type", () => {
     const { createGetWorkingDirTool } = await import("../src/mcp-tools.js");
     const tool = createGetWorkingDirTool();
 
-    // _meta should be undefined for tools that don't declare it
-    // (or it may be present — either way, it shouldn't break)
-    assert.ok(true, "tool without _meta compiles and runs fine");
-    void tool;
+    // Tools that don't declare _meta should not have the property
+    const hasMeta = Object.prototype.hasOwnProperty.call(tool as object, "_meta");
+    assert.strictEqual(hasMeta, false, "tool without _meta should not define _meta at runtime");
   });
 });
 

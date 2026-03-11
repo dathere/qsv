@@ -787,6 +787,11 @@ class QsvMcpServer {
 
         // Handle browse directory tool (App-only helper for directory picker)
         if (name === "qsv_browse_directory") {
+          if (!(config.enableMcpApps && this.clientSupportsApps())) {
+            return errorResult(
+              "The qsv_browse_directory tool is only available when MCP Apps are enabled and supported by the client.",
+            );
+          }
           return await this.handleBrowseDirectory(toolArgs || {});
         }
 
@@ -1107,8 +1112,9 @@ class QsvMcpServer {
     // without advertising it in the initialize handshake).
     const capabilities = this.server.getClientCapabilities();
     if (capabilities && !capabilities.elicitation) {
-      // Client sent capabilities but elicitation is absent or explicitly opted out
-      // Covers undefined, null, false, and empty object
+      // Client sent capabilities but elicitation is falsy (undefined, null, or false).
+      // Note: an empty object {} is truthy — we intentionally allow that case
+      // since some clients (e.g. MCPB proxies) advertise the key without details.
       return { fallback: await this.buildDirectorySuggestions() };
     }
 

@@ -1065,11 +1065,20 @@ class QsvMcpServer {
   private async showNativeFolderPicker(): Promise<string | null> {
     if (process.platform !== "darwin") return null;
 
+    // Skip native picker in headless/SSH sessions where Finder is unavailable
+    if (!process.env.TERM_PROGRAM && !process.env.DISPLAY) {
+      return null;
+    }
+
     try {
       const currentDir = this.filesystemProvider.getWorkingDirectory();
+      // Escape backslashes and double quotes to prevent AppleScript injection
+      const escapedDir = currentDir
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, '\\"');
       const { stdout } = await execFile("osascript", [
         "-e",
-        `POSIX path of (choose folder with prompt "Select qsv working directory" default location POSIX file "${currentDir}")`,
+        `POSIX path of (choose folder with prompt "Select qsv working directory" default location POSIX file "${escapedDir}")`,
       ], { timeout: 60_000 });
 
       const selected = stdout.trim();
@@ -1091,9 +1100,15 @@ class QsvMcpServer {
    * @returns Object with either `directory` (user selected) or `fallback` (text message)
    */
   private async elicitWorkingDirectory(): Promise<{ directory?: string; fallback?: string }> {
-    // Always attempt elicitation — some clients (e.g., MCPB proxies) support it
-    // at runtime without advertising the capability in the initialize handshake.
-    // If elicitation fails, the catch block falls back to text suggestions.
+    // Fast path: if the client explicitly advertises no elicitation support, skip
+    // directly to the fallback. Only attempt elicitation when the capability is
+    // present or unknown (some clients like MCPB proxies support it at runtime
+    // without advertising it in the initialize handshake).
+    const capabilities = this.server.getClientCapabilities();
+    if (capabilities && capabilities.elicitation === undefined) {
+      // Client sent capabilities but elicitation is explicitly absent
+      return { fallback: await this.buildDirectorySuggestions() };
+    }
 
     // Discover directories for the form
     const candidates = await this.discoverDirectories();

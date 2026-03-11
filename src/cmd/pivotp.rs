@@ -438,20 +438,22 @@ fn suggest_agg_function(
                         Expr::Element.len()
                     } else if high_cardinality_pivot || high_cardinality_index {
                         if !quiet {
-                            eprintln!("Info: High cardinality detected, using Len");
+                            eprintln!("Info: High cardinality detected, using First");
                         }
-                        Expr::Element.len()
+                        Expr::Element.first()
                     } else {
+                        // Low entropy means few dominant values — First is more
+                        // informative than a count
                         if !quiet {
-                            eprintln!("Info: Using Len for String column");
+                            eprintln!("Info: Low entropy string column, using First");
                         }
-                        Expr::Element.len()
+                        Expr::Element.first()
                     }
                 } else if high_cardinality_pivot || high_cardinality_index {
                     if !quiet {
-                        eprintln!("Info: High cardinality detected, using Len");
+                        eprintln!("Info: High cardinality detected, using First");
                     }
-                    Expr::Element.len()
+                    Expr::Element.first()
                 } else {
                     if !quiet {
                         eprintln!("Info: Using Len for String column");

@@ -5281,7 +5281,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Regenerate the .stats.csv.data.jsonl so downstream "smart" commands
     // (pivotp, schema, etc.) can see moarstats columns
-    let output_path_str = output_path.to_str().unwrap_or_default();
+    let Some(output_path_str) = output_path.to_str() else {
+        wwarn!(
+            "Output path {:?} is not valid UTF-8, skipping JSONL cache regeneration",
+            output_path
+        );
+        return Ok(());
+    };
     let jsonl_path = PathBuf::from(format!("{output_path_str}.data.jsonl"));
     if let Err(e) = util::csv_to_jsonl(
         output_path_str,

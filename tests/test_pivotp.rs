@@ -854,8 +854,11 @@ fn pivotp_smart_moarstats_bimodal() {
     wrk.assert_success(&mut cmd);
 
     let stderr = wrk.output_stderr(&mut cmd);
-    // Bimodal data should trigger Len (central tendency is misleading)
-    // or Median if outlier/CV checks fire first
+    // Bimodal data: if moarstats computes bimodality_coefficient >= 0.555,
+    // the bimodal branch fires first and picks Len (central tendency is misleading).
+    // If bimodality_coefficient is below threshold or absent, the code falls through
+    // to suggest_numeric_after_bimodality which may pick Median (due to high CV or
+    // outlier fraction). Both are valid outcomes for this synthetic dataset.
     assert!(
         stderr.contains("Len") || stderr.contains("Median"),
         "Expected Len or Median for bimodal data with moarstats, got: {stderr}"

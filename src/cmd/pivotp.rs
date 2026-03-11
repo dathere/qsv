@@ -76,7 +76,7 @@ use std::{
 use csv::ByteRecord;
 use foldhash::HashSet;
 use indicatif::HumanCount;
-use polars::prelude::*;
+use polars::{frame::PivotColumnNaming, prelude::*};
 use serde::Deserialize;
 
 use crate::{
@@ -703,6 +703,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let on_selector = cols(on_cols.iter().map(std::string::String::as_str));
     let index_selector = cols(actual_index_cols.iter().map(std::string::String::as_str));
     let values_selector = cols(actual_value_cols.iter().map(std::string::String::as_str));
+    let column_naming = PivotColumnNaming::default(); // Use default column naming convention
 
     let mut pivot_result = lf
         .pivot(
@@ -713,6 +714,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             agg,
             args.flag_maintain_order,
             separator,
+            column_naming,
         )
         .collect()?;
 

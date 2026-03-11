@@ -1097,6 +1097,7 @@ class QsvMcpServer {
         // Escape single quotes for PowerShell string embedding
         const escapedDir = currentDir.replace(/'/g, "''");
         const psScript = [
+          "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
           "Add-Type -AssemblyName System.Windows.Forms",
           "$dlg = New-Object System.Windows.Forms.FolderBrowserDialog",
           "$dlg.Description = 'Select qsv working directory'",

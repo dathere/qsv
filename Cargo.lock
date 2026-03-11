@@ -1532,6 +1532,7 @@ dependencies = [
  "cookie",
  "document-features",
  "idna",
+ "indexmap",
  "log",
  "publicsuffix",
  "serde",
@@ -6912,10 +6913,11 @@ dependencies = [
 
 [[package]]
 name = "self_update"
-version = "0.42.0"
-source = "git+https://github.com/jaemk/self_update?rev=62b93c6#62b93c6cb86880fce8d14a6f44b2b571f1e5ccc8"
+version = "0.43.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6644febaa58f323b28f7321d04e24d0020d117c27619ab869d6abdf76be9aac6"
 dependencies = [
- "hyper",
+ "http 1.4.0",
  "indicatif",
  "log",
  "quick-xml 0.38.4",
@@ -6923,8 +6925,10 @@ dependencies = [
  "reqwest 0.12.28",
  "self-replace",
  "semver",
+ "serde",
  "serde_json",
  "tempfile",
+ "ureq",
  "urlencoding",
  "zip 6.0.0",
  "zipsign-api",
@@ -8236,10 +8240,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fdc97a28575b85cfedf2a7e7d3cc64b3e11bd8ac766666318003abbacc7a21fc"
 dependencies = [
  "base64",
+ "cookie_store",
+ "encoding_rs",
+ "flate2",
  "log",
  "percent-encoding",
  "rustls",
  "rustls-pki-types",
+ "serde",
+ "serde_json",
  "socks",
  "ureq-proto",
  "utf-8",

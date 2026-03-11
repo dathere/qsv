@@ -258,10 +258,10 @@ rfd = { version = "0.17", optional = true }
 rust_decimal = { version = "1.40", default-features = false }
 sanitize-filename = { version = "0.6", optional = true }
 simd-json = "0.17"
-self_update = { version = "0.42", features = [
+self_update = { version = "0.43", features = [
     "archive-zip",
     "compression-zip-deflate",
-    # "reqwest",
+    "reqwest",
     "rustls",
     "signatures",
 ], default-features = false, optional = true }
@@ -349,10 +349,6 @@ kiddo = { git = "https://github.com/sdd/kiddo.git", rev = "2056051"}
 
 # use upstream of mimalloc with unreleased fixes
 mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "7daf67f", optional = true }
-
-# use our patched fork of self_update with bumped dependencies at older revision
-# the latest upstream has replaced reqwest which breaks our build
-self_update = { git = "https://github.com/jaemk/self_update", rev = "62b93c6", optional = true }
 
 # use our patched fork of sled to get rid of unmaintained instant
 sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }

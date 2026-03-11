@@ -1067,34 +1067,57 @@ class QsvMcpServer {
   /**
    * Show a native OS folder picker dialog.
    * On macOS, uses osascript to display a Finder folder picker.
+   * On Windows, uses PowerShell to display a FolderBrowserDialog.
    * Returns the selected directory path or null if cancelled/unsupported.
    */
   private async showNativeFolderPicker(): Promise<string | null> {
-    if (process.platform !== "darwin") return null;
+    const platform = process.platform;
+    if (platform !== "darwin" && platform !== "win32") return null;
 
     // No env-based headless check here — MCP servers are spawned by Claude
-    // Desktop/MCPB without TERM_PROGRAM or DISPLAY, yet Finder is available.
-    // If osascript fails (SSH, headless CI), the catch block returns null.
+    // Desktop/MCPB without TERM_PROGRAM or DISPLAY, yet the desktop is available.
+    // If the native dialog fails (SSH, headless CI), the catch block returns null.
 
     try {
       const currentDir = this.filesystemProvider.getWorkingDirectory();
-      // Escape backslashes and double quotes to prevent AppleScript injection
-      const escapedDir = currentDir
-        .replace(/\\/g, "\\\\")
-        .replace(/"/g, '\\"');
-      const { stdout } = await execFile("osascript", [
-        "-e",
-        `POSIX path of (choose folder with prompt "Select qsv working directory" default location POSIX file "${escapedDir}")`,
-      ], { timeout: 60_000 });
+      let selected: string;
 
-      const selected = stdout.trim();
+      if (platform === "darwin") {
+        // Escape backslashes and double quotes to prevent AppleScript injection
+        const escapedDir = currentDir
+          .replace(/\\/g, "\\\\")
+          .replace(/"/g, '\\"');
+        const { stdout } = await execFile("osascript", [
+          "-e",
+          `POSIX path of (choose folder with prompt "Select qsv working directory" default location POSIX file "${escapedDir}")`,
+        ], { timeout: 60_000 });
+        selected = stdout.trim();
+      } else {
+        // Windows: use PowerShell FolderBrowserDialog
+        // Escape single quotes for PowerShell string embedding
+        const escapedDir = currentDir.replace(/'/g, "''");
+        const psScript = [
+          "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+          "Add-Type -AssemblyName System.Windows.Forms",
+          "$dlg = New-Object System.Windows.Forms.FolderBrowserDialog",
+          "$dlg.Description = 'Select qsv working directory'",
+          `$dlg.SelectedPath = '${escapedDir}'`,
+          "$dlg.ShowNewFolderButton = $true",
+          "if ($dlg.ShowDialog() -eq 'OK') { $dlg.SelectedPath } else { '' }",
+        ].join("; ");
+        const { stdout } = await execFile("powershell.exe", [
+          "-NoProfile", "-NonInteractive", "-Command", psScript,
+        ], { timeout: 60_000 });
+        selected = stdout.trim();
+      }
+
       if (!selected) return null;
 
       // Validate it's a directory
       const stat = await fsStat(selected);
       return stat.isDirectory() ? selected : null;
     } catch {
-      // User cancelled or osascript unavailable
+      // User cancelled or native dialog unavailable
       return null;
     }
   }

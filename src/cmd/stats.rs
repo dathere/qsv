@@ -510,54 +510,75 @@ impl StatsArgs {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Default, Debug)]
 pub struct StatsData {
-    pub field:                String,
+    pub field: String,
     // type is a reserved keyword in Rust
     // so we escape it as r#type
     // we need to do this for serde to work
-    pub r#type:               String,
+    pub r#type: String,
     #[serde(default)]
-    pub is_ascii:             bool,
-    pub sum:                  Option<f64>,
-    pub min:                  Option<String>,
-    pub max:                  Option<String>,
-    pub range:                Option<f64>,
-    pub sort_order:           Option<String>,
-    pub min_length:           Option<usize>,
-    pub max_length:           Option<usize>,
-    pub sum_length:           Option<usize>,
-    pub avg_length:           Option<f64>,
-    pub stddev_length:        Option<f64>,
-    pub variance_length:      Option<f64>,
-    pub cv_length:            Option<f64>,
-    pub mean:                 Option<f64>,
-    pub sem:                  Option<f64>,
-    pub stddev:               Option<f64>,
-    pub variance:             Option<f64>,
-    pub cv:                   Option<f64>,
-    pub nullcount:            u64,
-    pub n_negative:           Option<u64>,
-    pub n_zero:               Option<u64>,
-    pub n_positive:           Option<u64>,
-    pub max_precision:        Option<u32>,
-    pub sparsity:             Option<f64>,
-    pub mad:                  Option<f64>,
-    pub lower_outer_fence:    Option<f64>,
-    pub lower_inner_fence:    Option<f64>,
-    pub q1:                   Option<f64>,
-    pub q2_median:            Option<f64>,
-    pub q3:                   Option<f64>,
-    pub iqr:                  Option<f64>,
-    pub upper_inner_fence:    Option<f64>,
-    pub upper_outer_fence:    Option<f64>,
-    pub skewness:             Option<f64>,
-    pub cardinality:          u64,
-    pub uniqueness_ratio:     Option<f64>,
-    pub mode:                 Option<String>,
-    pub mode_count:           Option<u64>,
-    pub mode_occurrences:     Option<u64>,
-    pub antimode:             Option<String>,
-    pub antimode_count:       Option<u64>,
+    pub is_ascii: bool,
+    pub sum: Option<f64>,
+    pub min: Option<String>,
+    pub max: Option<String>,
+    pub range: Option<f64>,
+    pub sort_order: Option<String>,
+    pub min_length: Option<usize>,
+    pub max_length: Option<usize>,
+    pub sum_length: Option<usize>,
+    pub avg_length: Option<f64>,
+    pub stddev_length: Option<f64>,
+    pub variance_length: Option<f64>,
+    pub cv_length: Option<f64>,
+    pub mean: Option<f64>,
+    pub sem: Option<f64>,
+    pub stddev: Option<f64>,
+    pub variance: Option<f64>,
+    pub cv: Option<f64>,
+    pub nullcount: u64,
+    pub n_negative: Option<u64>,
+    pub n_zero: Option<u64>,
+    pub n_positive: Option<u64>,
+    pub max_precision: Option<u32>,
+    pub sparsity: Option<f64>,
+    pub mad: Option<f64>,
+    pub lower_outer_fence: Option<f64>,
+    pub lower_inner_fence: Option<f64>,
+    pub q1: Option<f64>,
+    pub q2_median: Option<f64>,
+    pub q3: Option<f64>,
+    pub iqr: Option<f64>,
+    pub upper_inner_fence: Option<f64>,
+    pub upper_outer_fence: Option<f64>,
+    pub skewness: Option<f64>,
+    pub cardinality: u64,
+    pub uniqueness_ratio: Option<f64>,
+    pub mode: Option<String>,
+    pub mode_count: Option<u64>,
+    pub mode_occurrences: Option<u64>,
+    pub antimode: Option<String>,
+    pub antimode_count: Option<u64>,
     pub antimode_occurrences: Option<u64>,
+    // moarstats fields (populated when moarstats has been run)
+    #[serde(default)]
+    pub kurtosis: Option<f64>,
+    #[serde(default)]
+    pub bimodality_coefficient: Option<f64>,
+    #[serde(default)]
+    pub pearson_skewness: Option<f64>,
+    #[serde(default)]
+    pub gini_coefficient: Option<f64>,
+    #[serde(default)]
+    pub quartile_coefficient_dispersion: Option<f64>,
+    #[serde(default)]
+    pub outliers_percentage: Option<f64>,
+    #[serde(default)]
+    pub outlier_impact_ratio: Option<f64>,
+    #[serde(default)]
+    pub mad_stddev_ratio: Option<f64>,
+    #[serde(default)]
+    pub median_mean_ratio: Option<f64>,
+    #[serde(default)]
+    pub normalized_entropy: Option<f64>,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -618,6 +639,17 @@ pub static STATSDATA_TYPES_MAP: phf::Map<&'static str, JsonTypes> = phf_map! {
     "antimode" => JsonTypes::String,
     "antimode_count" => JsonTypes::Int,
     "antimode_occurrences" => JsonTypes::Int,
+    // moarstats fields
+    "kurtosis" => JsonTypes::Float,
+    "bimodality_coefficient" => JsonTypes::Float,
+    "pearson_skewness" => JsonTypes::Float,
+    "gini_coefficient" => JsonTypes::Float,
+    "quartile_coefficient_dispersion" => JsonTypes::Float,
+    "outliers_percentage" => JsonTypes::Float,
+    "outlier_impact_ratio" => JsonTypes::Float,
+    "mad_stddev_ratio" => JsonTypes::Float,
+    "median_mean_ratio" => JsonTypes::Float,
+    "normalized_entropy" => JsonTypes::Float,
 };
 
 static INFER_DATE_FLAGS: OnceLock<SmallVec<[bool; 50]>> = OnceLock::new();

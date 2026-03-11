@@ -5279,6 +5279,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     );
     winfo!("Elapsed: {:.2}s", start_time.elapsed().as_secs_f64());
 
+    // Regenerate the .stats.csv.data.jsonl so downstream "smart" commands
+    // (pivotp, schema, etc.) can see moarstats columns
+    let output_path_str = output_path.to_str().unwrap_or_default();
+    let jsonl_path = PathBuf::from(format!("{output_path_str}.data.jsonl"));
+    if let Err(e) = util::csv_to_jsonl(
+        output_path_str,
+        &crate::cmd::stats::STATSDATA_TYPES_MAP,
+        &jsonl_path,
+        b',',
+    ) {
+        wwarn!("Failed to regenerate stats JSONL cache: {e}");
+    }
+
     // Clean up temporary joined file if it was created
     if let Some(ref temp_path) = temp_joined_path
         && temp_path.exists()

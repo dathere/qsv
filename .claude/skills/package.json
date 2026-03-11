@@ -37,6 +37,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.2.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "wink-bm25-text-search": "^3.0.0",
     "wink-nlp-utils": "^2.1.0"

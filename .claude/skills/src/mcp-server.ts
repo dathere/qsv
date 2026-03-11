@@ -21,6 +21,10 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { access, stat as fsStat } from "node:fs/promises";
+import { execFile as execFileCb } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFile = promisify(execFileCb);
 
 import { SkillLoader } from "./loader.js";
 import { SkillExecutor, runQsvSimple } from "./executor.js";
@@ -38,6 +42,7 @@ import {
   createListFilesTool,
   createSetWorkingDirTool,
   createGetWorkingDirTool,
+  createBrowseDirectoryTool,
   createLogTool,
   handleConfigTool,
   handleSearchToolsCall,
@@ -48,6 +53,10 @@ import {
   getActiveProcessCount,
   setToolsWorkingDir,
 } from "./mcp-tools.js";
+// @ts-ignore — moduleResolution:"node" can't resolve exports-mapped subpath; runtime resolves fine
+import { getUiCapability, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
+import { getDirectoryPickerHtml } from "./ui/directory-picker-html.js";
+import { scanDirectory } from "./browse-directory.js";
 import { VERSION } from "./version.js";
 import { getErrorMessage, errorResult, successResult } from "./utils.js";
 import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
@@ -61,6 +70,7 @@ const CORE_TOOLS = [
   "qsv_config",
   "qsv_set_working_dir",
   "qsv_get_working_dir",
+  "qsv_browse_directory",
   "qsv_list_files",
   "qsv_log",
   "qsv_command",
@@ -125,6 +135,8 @@ class QsvMcpServer {
   private pendingRootsSync = false;
   private rootsSyncRetries = 0;
   private static readonly MAX_ROOTS_SYNC_RETRIES = 3;
+  /** Raw client extensions captured before Zod strips them from capabilities */
+  private rawClientExtensions: Record<string, unknown> | undefined;
 
   /**
    * Track which tools have been loaded via search (for deferred loading).
@@ -523,6 +535,10 @@ class QsvMcpServer {
         tools.push(createListFilesTool());
         tools.push(createSetWorkingDirTool());
         tools.push(createGetWorkingDirTool());
+        // Only expose the browse directory tool when MCP Apps are enabled
+        if (config.enableMcpApps && this.clientSupportsApps()) {
+          tools.push(createBrowseDirectoryTool());
+        }
 
         // Add logging tool
         tools.push(createLogTool());
@@ -535,9 +551,7 @@ class QsvMcpServer {
           this.toolsListedOnce = true;
         }
 
-        const response = { tools };
-
-        return response;
+        return { tools };
       });
       console.error("[Server] Tool handlers registered successfully");
     } catch (error: unknown) {
@@ -680,7 +694,34 @@ class QsvMcpServer {
             typeof toolArgs?.directory !== "string" ||
             toolArgs.directory.trim().length === 0
           ) {
-            // No directory provided — try interactive elicitation or show suggestions
+            // No directory provided — try App UI, elicitation, or text suggestions
+
+            // 1. If MCP Apps are enabled and client supports them, return structuredContent
+            if (config.enableMcpApps && this.clientSupportsApps()) {
+              const candidates = await this.discoverDirectories();
+              const currentDir = this.filesystemProvider.getWorkingDirectory();
+              // structuredContent is an MCP Apps extension not yet in the SDK's
+              // CallToolResult type. Cast to satisfy the compiler while still
+              // delivering the payload to App-capable clients.
+              return {
+                content: [{ type: "text" as const, text: "Opening interactive directory picker..." }],
+                structuredContent: {
+                  currentPath: currentDir,
+                  knownDirs: candidates,
+                },
+              } as { content: Array<{ type: "text"; text: string }> };
+            }
+
+            // 2. Try native OS folder picker (macOS Finder dialog)
+            const nativePick = await this.showNativeFolderPicker();
+            if (nativePick) {
+              const newDir = this.updateWorkingDirectory(nativePick);
+              this.manuallySetWorkingDir = true;
+              this.workingDirConfirmed = true;
+              return successResult(`Working directory set to: ${newDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
+            }
+
+            // 3. Try interactive elicitation form
             const elicitResult = await this.elicitWorkingDirectory();
             if (elicitResult.directory) {
               const newDir = this.updateWorkingDirectory(elicitResult.directory);
@@ -688,7 +729,8 @@ class QsvMcpServer {
               this.workingDirConfirmed = true;
               return successResult(`Working directory set to: ${newDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
             }
-            // Return suggestions as success so the agent can pick a directory
+
+            // 4. Return suggestions as success so the agent can pick a directory
             return successResult(elicitResult.fallback || "No directory selected. Please call qsv_set_working_dir with an explicit directory path.");
           }
 
@@ -741,6 +783,16 @@ class QsvMcpServer {
 
         if (name === "qsv_get_working_dir") {
           return successResult(`Current working directory: ${this.filesystemProvider.getWorkingDirectory()}`);
+        }
+
+        // Handle browse directory tool (App-only helper for directory picker)
+        if (name === "qsv_browse_directory") {
+          if (!(config.enableMcpApps && this.clientSupportsApps())) {
+            return errorResult(
+              "The qsv_browse_directory tool is only available when MCP Apps are enabled and supported by the client.",
+            );
+          }
+          return await this.handleBrowseDirectory(toolArgs || {});
         }
 
         // Handle generic command tool
@@ -830,27 +882,92 @@ class QsvMcpServer {
    * Register MCP resource handlers
    */
   private registerResourceHandlers(): void {
-    // List resources handler - no file resources exposed
+    // List resources handler — expose the directory picker App resource when enabled
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
-      console.error("Listing resources...");
-      console.error("Returning 0 resources (file resources disabled)");
+      const resources = config.enableMcpApps
+        ? [
+            {
+              uri: "ui://qsv/directory-picker",
+              name: "Directory Picker",
+              description: "Interactive directory browser for selecting the qsv working directory",
+              mimeType: RESOURCE_MIME_TYPE,
+            },
+          ]
+        : [];
 
-      return {
-        resources: [],
-      };
+      return { resources };
     });
 
-    // Read resource handler - minimal implementation since no resources are exposed
+    // Read resource handler — serves App HTML for ui:// resources
     this.server.setRequestHandler(
       ReadResourceRequestSchema,
       async (request) => {
         const { uri } = request.params;
 
-        console.error(`Reading resource: ${uri}`);
+        // Always serve the directory picker resource if requested — Claude Desktop
+        // may cache the URI from a previous session even when it's no longer listed.
+        if (uri === "ui://qsv/directory-picker") {
+          return {
+            contents: [
+              {
+                uri,
+                mimeType: RESOURCE_MIME_TYPE,
+                text: getDirectoryPickerHtml(),
+                _meta: {
+                  ui: {
+                    csp: {
+                      // The App HTML loads the ext-apps SDK from esm.sh CDN
+                      resourceDomains: ["https://esm.sh"],
+                      connectDomains: ["https://esm.sh"],
+                    },
+                  },
+                },
+              },
+            ],
+          };
+        }
 
         throw new Error(`Resource not found: ${uri}. Use qsv_list_files tool to browse available files.`);
       },
     );
+  }
+
+  /**
+   * Check if the connected MCP client supports MCP Apps (interactive UI rendering).
+   * Returns true when the client advertises the `io.modelcontextprotocol/ui` extension
+   * with the required MIME type.
+   */
+  private clientSupportsApps(): boolean {
+    // Build a capabilities-like object with the raw extensions we captured
+    // before the SDK's Zod parsing stripped them.
+    const capsWithExtensions = this.rawClientExtensions
+      ? { extensions: this.rawClientExtensions }
+      : null;
+    const uiCap = getUiCapability(capsWithExtensions);
+    return Boolean(uiCap?.mimeTypes?.includes(RESOURCE_MIME_TYPE));
+  }
+
+  /**
+   * Handle qsv_browse_directory tool call.
+   * Returns subdirectories with tabular file counts, breadcrumbs, and parent path.
+   * Used by the directory picker App to navigate the filesystem.
+   */
+  private async handleBrowseDirectory(
+    args: Record<string, unknown>,
+  ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
+    const rawDir =
+      typeof args.directory === "string" && args.directory.trim().length > 0
+        ? args.directory.trim()
+        : this.filesystemProvider.getWorkingDirectory();
+
+    try {
+      // Validate the directory is within allowed directories before scanning
+      const targetDir = await this.filesystemProvider.resolvePath(rawDir);
+      const result = await scanDirectory(targetDir);
+      return successResult(JSON.stringify(result));
+    } catch (err) {
+      return errorResult(getErrorMessage(err));
+    }
   }
 
   /**
@@ -875,6 +992,7 @@ class QsvMcpServer {
     "qsv_search_tools",
     "qsv_set_working_dir",
     "qsv_get_working_dir",
+    "qsv_browse_directory",
   ]);
 
   /**
@@ -947,16 +1065,56 @@ class QsvMcpServer {
   }
 
   /**
+   * Show a native OS folder picker dialog.
+   * On macOS, uses osascript to display a Finder folder picker.
+   * Returns the selected directory path or null if cancelled/unsupported.
+   */
+  private async showNativeFolderPicker(): Promise<string | null> {
+    if (process.platform !== "darwin") return null;
+
+    // No env-based headless check here — MCP servers are spawned by Claude
+    // Desktop/MCPB without TERM_PROGRAM or DISPLAY, yet Finder is available.
+    // If osascript fails (SSH, headless CI), the catch block returns null.
+
+    try {
+      const currentDir = this.filesystemProvider.getWorkingDirectory();
+      // Escape backslashes and double quotes to prevent AppleScript injection
+      const escapedDir = currentDir
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, '\\"');
+      const { stdout } = await execFile("osascript", [
+        "-e",
+        `POSIX path of (choose folder with prompt "Select qsv working directory" default location POSIX file "${escapedDir}")`,
+      ], { timeout: 60_000 });
+
+      const selected = stdout.trim();
+      if (!selected) return null;
+
+      // Validate it's a directory
+      const stat = await fsStat(selected);
+      return stat.isDirectory() ? selected : null;
+    } catch {
+      // User cancelled or osascript unavailable
+      return null;
+    }
+  }
+
+  /**
    * Present an interactive directory picker via MCP elicitation (form mode).
-   * When the client doesn't support elicitation, returns a suggestion list
-   * of discovered directories instead.
+   * When elicitation fails, falls back to text suggestions.
    *
    * @returns Object with either `directory` (user selected) or `fallback` (text message)
    */
   private async elicitWorkingDirectory(): Promise<{ directory?: string; fallback?: string }> {
-    // Check if client supports form elicitation
+    // Fast path: if the client explicitly advertises no elicitation support, skip
+    // directly to the fallback. Only attempt elicitation when the capability is
+    // present or unknown (some clients like MCPB proxies support it at runtime
+    // without advertising it in the initialize handshake).
     const capabilities = this.server.getClientCapabilities();
-    if (!capabilities?.elicitation?.form) {
+    if (capabilities && !capabilities.elicitation) {
+      // Client sent capabilities but elicitation is falsy (undefined, null, or false).
+      // Note: an empty object {} is truthy — we intentionally allow that case
+      // since some clients (e.g. MCPB proxies) advertise the key without details.
       return { fallback: await this.buildDirectorySuggestions() };
     }
 
@@ -1138,6 +1296,30 @@ class QsvMcpServer {
    */
   async start(): Promise<void> {
     const transport = new StdioServerTransport();
+
+    // Only intercept the transport when MCP Apps are enabled — the interception
+    // wraps the SDK's onmessage handler and may interfere with elicitation and
+    // other SDK-managed features in some clients (e.g., MCPB).
+    if (config.enableMcpApps) {
+      // Capture raw client extensions before the MCP SDK's Zod parsing strips them.
+      // The SDK schema doesn't include `extensions` (no .passthrough()), so
+      // getClientCapabilities() loses the `io.modelcontextprotocol/ui` field
+      // that Claude Desktop sends for MCP Apps support.
+      Object.defineProperty(transport, "onmessage", {
+        set: (handler: ((msg: unknown) => void) | undefined) => {
+          const wrapper = (msg: unknown) => {
+            const m = msg as { method?: string; params?: { capabilities?: { extensions?: Record<string, unknown> } } };
+            if (m?.method === "initialize" && m.params?.capabilities?.extensions) {
+              this.rawClientExtensions = m.params.capabilities.extensions;
+            }
+            handler?.(msg);
+          };
+          (transport as unknown as { _onmessage?: typeof wrapper })._onmessage = wrapper;
+        },
+        get: () => (transport as unknown as { _onmessage?: (msg: unknown) => void })._onmessage,
+        configurable: true,
+      });
+    }
 
     console.error("Starting QSV MCP Server...");
 

@@ -1065,7 +1065,11 @@ class QsvMcpServer {
   private async showNativeFolderPicker(): Promise<string | null> {
     if (process.platform !== "darwin") return null;
 
-    // Skip native picker in headless/SSH sessions where Finder is unavailable
+    // Skip native picker in headless/SSH sessions where Finder is unavailable.
+    // Note: this heuristic isn't airtight — on macOS, a GUI session launched
+    // outside a terminal (e.g., launchd/Automator) may not set TERM_PROGRAM,
+    // and DISPLAY is an X11 concept rarely set on native macOS. A more reliable
+    // check would be `pgrep -q WindowServer`, but that adds a subprocess call.
     if (!process.env.TERM_PROGRAM && !process.env.DISPLAY) {
       return null;
     }
@@ -1105,8 +1109,9 @@ class QsvMcpServer {
     // present or unknown (some clients like MCPB proxies support it at runtime
     // without advertising it in the initialize handshake).
     const capabilities = this.server.getClientCapabilities();
-    if (capabilities && capabilities.elicitation === undefined) {
-      // Client sent capabilities but elicitation is explicitly absent
+    if (capabilities && !capabilities.elicitation) {
+      // Client sent capabilities but elicitation is absent or explicitly opted out
+      // Covers undefined, null, false, and empty object
       return { fallback: await this.buildDirectorySuggestions() };
     }
 

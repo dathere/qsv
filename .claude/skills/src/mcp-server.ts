@@ -712,19 +712,19 @@ class QsvMcpServer {
               } as { content: Array<{ type: "text"; text: string }> };
             }
 
-            // 2. Try interactive elicitation form
-            const elicitResult = await this.elicitWorkingDirectory();
-            if (elicitResult.directory) {
-              const newDir = this.updateWorkingDirectory(elicitResult.directory);
+            // 2. Try native OS folder picker (macOS Finder dialog)
+            const nativePick = await this.showNativeFolderPicker();
+            if (nativePick) {
+              const newDir = this.updateWorkingDirectory(nativePick);
               this.manuallySetWorkingDir = true;
               this.workingDirConfirmed = true;
               return successResult(`Working directory set to: ${newDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
             }
 
-            // 3. Try native OS folder picker (macOS Finder dialog)
-            const nativePick = await this.showNativeFolderPicker();
-            if (nativePick) {
-              const newDir = this.updateWorkingDirectory(nativePick);
+            // 3. Try interactive elicitation form
+            const elicitResult = await this.elicitWorkingDirectory();
+            if (elicitResult.directory) {
+              const newDir = this.updateWorkingDirectory(elicitResult.directory);
               this.manuallySetWorkingDir = true;
               this.workingDirConfirmed = true;
               return successResult(`Working directory set to: ${newDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
@@ -950,12 +950,14 @@ class QsvMcpServer {
   private async handleBrowseDirectory(
     args: Record<string, unknown>,
   ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
-    const targetDir =
+    const rawDir =
       typeof args.directory === "string" && args.directory.trim().length > 0
         ? args.directory.trim()
         : this.filesystemProvider.getWorkingDirectory();
 
     try {
+      // Validate the directory is within allowed directories before scanning
+      const targetDir = await this.filesystemProvider.resolvePath(rawDir);
       const result = await scanDirectory(targetDir);
       return successResult(JSON.stringify(result));
     } catch (err) {

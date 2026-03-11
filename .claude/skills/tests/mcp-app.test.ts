@@ -15,14 +15,19 @@ import { join } from "node:path";
 import { createTestDir, cleanupTestDir } from "./test-helpers.js";
 
 describe("MCP App tool definitions", () => {
-  test("qsv_set_working_dir has _meta.ui.resourceUri", async () => {
+  test("qsv_set_working_dir _meta.ui.resourceUri depends on enableMcpApps config", async () => {
     const { createSetWorkingDirTool } = await import("../src/mcp-tools.js");
+    const { config } = await import("../src/config.js");
     const tool = createSetWorkingDirTool();
 
-    assert.ok(tool._meta, "tool should have _meta");
-    const ui = tool._meta!.ui as Record<string, unknown>;
-    assert.ok(ui, "tool._meta should have ui");
-    assert.strictEqual(ui.resourceUri, "ui://qsv/directory-picker");
+    if (config.enableMcpApps) {
+      assert.ok(tool._meta, "tool should have _meta when apps enabled");
+      const ui = tool._meta!.ui as Record<string, unknown>;
+      assert.ok(ui, "tool._meta should have ui");
+      assert.strictEqual(ui.resourceUri, "ui://qsv/directory-picker");
+    } else {
+      assert.strictEqual(tool._meta, undefined, "tool should not have _meta when apps disabled");
+    }
   });
 
   test("qsv_browse_directory has _meta.ui.visibility: ['app']", async () => {
@@ -239,7 +244,7 @@ describe("scanDirectory (extracted from qsv_browse_directory handler)", () => {
 
   test("TABULAR_EXTS covers expected extensions", async () => {
     const { TABULAR_EXTS } = await import("../src/browse-directory.js");
-    for (const ext of [".csv", ".tsv", ".tab", ".ssv", ".parquet", ".pqt", ".jsonl", ".ndjson", ".json", ".xlsx", ".xls"]) {
+    for (const ext of [".csv", ".tsv", ".tab", ".ssv", ".parquet", ".pq", ".jsonl", ".ndjson", ".json", ".xlsx", ".xls", ".xlsm", ".xlsb", ".ods"]) {
       assert.ok(TABULAR_EXTS.has(ext), `should include ${ext}`);
     }
     assert.ok(!TABULAR_EXTS.has(".txt"), "should not include .txt");

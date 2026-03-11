@@ -356,7 +356,7 @@ function updateSelectedState(path) {
 
 function renderBreadcrumbs(path) {
   breadcrumbsEl.innerHTML = "";
-  // Server uses Node.js path.join() which always returns POSIX paths
+  // Server returns POSIX-style paths (forward slashes) on macOS/Linux
   const parts = path.split("/").filter(Boolean);
 
   // Root

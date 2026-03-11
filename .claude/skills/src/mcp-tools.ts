@@ -3207,12 +3207,16 @@ Call without arguments to show an interactive directory picker (when supported b
       },
       required: [],
     },
-    _meta: {
-      "ui/resourceUri": "ui://qsv/directory-picker",
-      ui: {
-        resourceUri: "ui://qsv/directory-picker",
-      },
-    },
+    ...(config.enableMcpApps
+      ? {
+          _meta: {
+            "ui/resourceUri": "ui://qsv/directory-picker",
+            ui: {
+              resourceUri: "ui://qsv/directory-picker",
+            },
+          },
+        }
+      : {}),
   };
 }
 

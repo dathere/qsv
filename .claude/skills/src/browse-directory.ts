@@ -10,7 +10,7 @@ import { readdir, stat as fsStat } from "node:fs/promises";
 
 /** Tabular file extensions recognised by the directory scanner. */
 export const TABULAR_EXTS = new Set([
-  ".csv", ".tsv", ".tab", ".ssv", ".parquet", ".pq",
+  ".csv", ".tsv", ".tab", ".ssv", ".parquet", ".pq", ".pqt",
   ".jsonl", ".ndjson", ".json", ".xlsx", ".xls",
   ".xlsm", ".xlsb", ".ods",
 ]);

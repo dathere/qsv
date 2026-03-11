@@ -15,18 +15,34 @@ import { join } from "node:path";
 import { createTestDir, cleanupTestDir } from "./test-helpers.js";
 
 describe("MCP App tool definitions", () => {
-  test("qsv_set_working_dir _meta.ui.resourceUri depends on enableMcpApps config", async () => {
+  test("qsv_set_working_dir includes _meta.ui when enableMcpApps is true", async () => {
     const { createSetWorkingDirTool } = await import("../src/mcp-tools.js");
     const { config } = await import("../src/config.js");
-    const tool = createSetWorkingDirTool();
-
-    if (config.enableMcpApps) {
+    const mutableConfig = config as { -readonly [K in keyof typeof config]: (typeof config)[K] };
+    const original = mutableConfig.enableMcpApps;
+    try {
+      mutableConfig.enableMcpApps = true;
+      const tool = createSetWorkingDirTool();
       assert.ok(tool._meta, "tool should have _meta when apps enabled");
       const ui = tool._meta!.ui as Record<string, unknown>;
       assert.ok(ui, "tool._meta should have ui");
       assert.strictEqual(ui.resourceUri, "ui://qsv/directory-picker");
-    } else {
+    } finally {
+      mutableConfig.enableMcpApps = original;
+    }
+  });
+
+  test("qsv_set_working_dir omits _meta when enableMcpApps is false", async () => {
+    const { createSetWorkingDirTool } = await import("../src/mcp-tools.js");
+    const { config } = await import("../src/config.js");
+    const mutableConfig = config as { -readonly [K in keyof typeof config]: (typeof config)[K] };
+    const original = mutableConfig.enableMcpApps;
+    try {
+      mutableConfig.enableMcpApps = false;
+      const tool = createSetWorkingDirTool();
       assert.strictEqual(tool._meta, undefined, "tool should not have _meta when apps disabled");
+    } finally {
+      mutableConfig.enableMcpApps = original;
     }
   });
 
@@ -244,7 +260,7 @@ describe("scanDirectory (extracted from qsv_browse_directory handler)", () => {
 
   test("TABULAR_EXTS covers expected extensions", async () => {
     const { TABULAR_EXTS } = await import("../src/browse-directory.js");
-    for (const ext of [".csv", ".tsv", ".tab", ".ssv", ".parquet", ".pq", ".jsonl", ".ndjson", ".json", ".xlsx", ".xls", ".xlsm", ".xlsb", ".ods"]) {
+    for (const ext of [".csv", ".tsv", ".tab", ".ssv", ".parquet", ".pq", ".pqt", ".jsonl", ".ndjson", ".json", ".xlsx", ".xls", ".xlsm", ".xlsb", ".ods"]) {
       assert.ok(TABULAR_EXTS.has(ext), `should include ${ext}`);
     }
     assert.ok(!TABULAR_EXTS.has(".txt"), "should not include .txt");

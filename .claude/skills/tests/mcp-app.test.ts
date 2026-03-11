@@ -129,8 +129,8 @@ describe("directory picker HTML resource", () => {
     const html = getDirectoryPickerHtml();
 
     assert.ok(html.includes("app.connect()"), "should connect to host");
-    assert.ok(html.includes("app.ontoolinput"), "should handle tool input");
-    assert.ok(html.includes("app.callTool"), "should call server tools");
+    assert.ok(html.includes("app.ontoolresult"), "should handle tool result");
+    assert.ok(html.includes("app.callServerTool"), "should call server tools");
   });
 });
 

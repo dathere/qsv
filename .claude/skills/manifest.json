@@ -49,6 +49,7 @@
         "QSV_MCP_SERVER_INSTRUCTIONS": "${user_config.server_instructions}",
         "QSV_MCP_DUCKDB_BIN_PATH": "${user_config.duckdb_path}",
         "QSV_MCP_USE_DUCKDB": "${user_config.use_duckdb}",
+        "QSV_MCP_ENABLE_APPS": "${user_config.enable_mcp_apps}",
         "MCPB_EXTENSION_MODE": "true"
       },
       "platform_overrides": {
@@ -149,6 +150,13 @@
       "type": "boolean",
       "title": "Use DuckDB for SQL Queries",
       "description": "When enabled, SQL queries are automatically routed through DuckDB when available (faster, PostgreSQL-compatible). If DuckDB is not installed, queries automatically fall back to Polars SQL (sqlp). Disable to always use sqlp.",
+      "required": false,
+      "default": false
+    },
+    "enable_mcp_apps": {
+      "type": "boolean",
+      "title": "Enable MCP Apps (Experimental)",
+      "description": "Enable interactive MCP App UI for the directory picker. Requires Claude Desktop with HTTP transport support for MCP Apps. Leave disabled for standard behavior (native folder picker on macOS, elicitation form, or text suggestions).",
       "required": false,
       "default": false
     }

@@ -311,7 +311,7 @@ export function getDirectoryPickerHtml(): string {
 </div>
 
 <script type="module">
-import { App } from "https://esm.sh/@modelcontextprotocol/ext-apps@1.2.0/app";
+import { App } from "https://esm.sh/@modelcontextprotocol/ext-apps@1.2.0";
 import { applyDocumentTheme, applyHostStyleVariables } from "https://esm.sh/@modelcontextprotocol/ext-apps@1.2.0/styles";
 
 const app = new App({ name: "qsv-directory-picker", version: "1.0.0" });
@@ -442,7 +442,7 @@ async function navigate(path) {
   errorEl.style.display = "none";
 
   try {
-    const result = await app.callTool("qsv_browse_directory", { directory: path });
+    const result = await app.callServerTool({ name: "qsv_browse_directory", arguments: { directory: path } });
     const text = result?.content?.find(c => c.type === "text")?.text;
     if (!text) throw new Error("No response from server");
     const data = JSON.parse(text);
@@ -476,7 +476,7 @@ selectBtn.onclick = async () => {
   selectBtn.textContent = "Setting...";
 
   try {
-    const result = await app.callTool("qsv_set_working_dir", { directory: selectedPath });
+    const result = await app.callServerTool({ name: "qsv_set_working_dir", arguments: { directory: selectedPath } });
     const text = result?.content?.find(c => c.type === "text")?.text || "";
     if (text.toLowerCase().includes("error")) {
       showError(text);
@@ -500,15 +500,21 @@ function applyTheme(ctx) {
 
 app.onhostcontextchanged = (ctx) => applyTheme(ctx);
 
-// Handle tool input (initial data passed by the server)
-app.ontoolinput = (input) => {
-  const args = input?.arguments;
-  if (args?.currentPath) currentPath = args.currentPath;
-  if (args?.knownDirs) {
-    knownDirs = args.knownDirs;
-    renderQuickAccess(knownDirs);
+// Handle tool result (initial data passed by the server)
+app.ontoolresult = (result) => {
+  const text = result?.content?.find(c => c.type === "text")?.text;
+  if (!text) return;
+  try {
+    const data = JSON.parse(text);
+    if (data.currentPath) currentPath = data.currentPath;
+    if (data.knownDirs) {
+      knownDirs = data.knownDirs;
+      renderQuickAccess(knownDirs);
+    }
+    if (currentPath) navigate(currentPath);
+  } catch {
+    // Not JSON initial data — ignore
   }
-  if (currentPath) navigate(currentPath);
 };
 
 // Connect and initialize

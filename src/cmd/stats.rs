@@ -205,8 +205,8 @@ stats options:
                               Midpoint Nearest Even (aka "Bankers Rounding") rule.
                               https://docs.rs/rust_decimal/latest/rust_decimal/enum.RoundingStrategy.html
                               If set to the sentinel value 9999, no rounding is done.
-                              For dates - range, stddev & IQR are always at least 5 decimal places as
-                              they are reported in days, and 5 decimal places gives us sub-second precision.
+                              For dates - range, stddev & IQR are rounded to 1e-5 day precision
+                              (sub-second), with trailing zeros trimmed in the displayed output.
                               [default: 4]
     --nulls                   Include NULLs in the population size for computing
                               mean and standard deviation.

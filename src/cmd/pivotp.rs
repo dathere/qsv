@@ -42,6 +42,9 @@ pivotp options:
                               len - Count of values
                               item - Get single value from group. Raises error if there are multiple values.
                               smart - use value column data type & statistics to pick an aggregation.
+                                      When moarstats has been run, leverages outlier profile and
+                                      Pearson skewness for smarter selection. With moarstats --advanced,
+                                      also uses kurtosis, bimodality, entropy and Gini coefficient.
                                       Will only work if there is one value column, otherwise
                                       it falls back to `first`
                             [default: smart]
@@ -344,46 +347,37 @@ fn suggest_agg_function(
                         eprintln!("Info: \"{value_col}\" contains >50% NULL values, using Len");
                     }
                     Expr::Element.len()
-                } else if stats.cv > Some(1.0) {
-                    // High coefficient of variation suggests using median
-                    // for better central tendency
-                    if !quiet {
-                        eprintln!(
-                            "Info: High variability in values (CV > 1), using Median for more \
-                             robust central tendency"
-                        );
-                    }
-                    Expr::Element.median()
-                } else if high_cardinality_pivot && high_cardinality_index {
-                    if ordered_pivot && ordered_index {
-                        // With ordered high cardinality columns, mean might be more meaningful
+                } else if let Some(bc) = stats.bimodality_coefficient {
+                    if bc >= 0.555 {
+                        // Bimodal distribution — central tendency is misleading
                         if !quiet {
                             eprintln!(
-                                "Info: Ordered high cardinality columns detected, using Mean"
+                                "Info: Bimodal distribution detected (bimodality coefficient \
+                                 {bc:.3} >= 0.555), using Len"
                             );
                         }
-                        Expr::Element.mean()
+                        Expr::Element.len()
                     } else {
-                        // With unordered high cardinality, sum might be more appropriate
-                        if !quiet {
-                            eprintln!(
-                                "Info: High cardinality in pivot and index columns, using Sum"
-                            );
-                        }
-                        Expr::Element.sum()
-                    }
-                } else if let Some(skewness) = stats.skewness {
-                    if skewness.abs() > 2.0 {
-                        // Highly skewed data might benefit from median
-                        if !quiet {
-                            eprintln!("Info: Highly skewed numeric data detected, using Median");
-                        }
-                        Expr::Element.median()
-                    } else {
-                        Expr::Element.sum()
+                        suggest_numeric_after_bimodality(
+                            stats,
+                            quiet,
+                            value_col,
+                            high_cardinality_pivot,
+                            high_cardinality_index,
+                            ordered_pivot,
+                            ordered_index,
+                        )
                     }
                 } else {
-                    Expr::Element.sum()
+                    suggest_numeric_after_bimodality(
+                        stats,
+                        quiet,
+                        value_col,
+                        high_cardinality_pivot,
+                        high_cardinality_index,
+                        ordered_pivot,
+                        ordered_index,
+                    )
                 }
             },
             "Date" | "DateTime" => {
@@ -433,11 +427,33 @@ fn suggest_agg_function(
                         eprintln!("Info: Sparse data detected, using Len");
                     }
                     Expr::Element.len()
+                } else if let Some(ne) = stats.normalized_entropy {
+                    if ne > 0.9 {
+                        if !quiet {
+                            eprintln!(
+                                "Info: Near-uniform string distribution (normalized entropy \
+                                 {ne:.3} > 0.9), using Len"
+                            );
+                        }
+                        Expr::Element.len()
+                    } else if high_cardinality_pivot || high_cardinality_index {
+                        if !quiet {
+                            eprintln!("Info: High cardinality detected, using First");
+                        }
+                        Expr::Element.first()
+                    } else {
+                        // Low entropy means few dominant values — First is more
+                        // informative than a count
+                        if !quiet {
+                            eprintln!("Info: Low entropy string column, using First");
+                        }
+                        Expr::Element.first()
+                    }
                 } else if high_cardinality_pivot || high_cardinality_index {
                     if !quiet {
-                        eprintln!("Info: High cardinality detected, using Len");
+                        eprintln!("Info: High cardinality detected, using First");
                     }
-                    Expr::Element.len()
+                    Expr::Element.first()
                 } else {
                     if !quiet {
                         eprintln!("Info: Using Len for String column");
@@ -451,6 +467,128 @@ fn suggest_agg_function(
     } else {
         Ok(None)
     }
+}
+
+/// Helper for numeric aggregation decisions after the bimodality check.
+/// Contains the remaining moarstats-aware checks (outliers, kurtosis, Gini)
+/// followed by the original CV, cardinality, and skewness logic.
+#[allow(clippy::fn_params_excessive_bools)]
+fn suggest_numeric_after_bimodality(
+    stats: &StatsData,
+    quiet: bool,
+    value_col: &str,
+    high_cardinality_pivot: bool,
+    high_cardinality_index: bool,
+    ordered_pivot: bool,
+    ordered_index: bool,
+) -> Expr {
+    // moarstats: outlier impact ratio — mean shifted >20% by outliers
+    if let Some(oir) = stats.outlier_impact_ratio {
+        if oir > 0.2 {
+            if !quiet {
+                eprintln!(
+                    "Info: High outlier impact (ratio {oir:.3} > 0.2) shifts mean, using Median"
+                );
+            }
+            return Expr::Element.median();
+        }
+    }
+
+    // moarstats: >15% outlier contamination
+    if let Some(op) = stats.outliers_percentage {
+        if op > 15.0 {
+            if !quiet {
+                eprintln!("Info: High outlier percentage ({op:.1}% > 15%), using Median");
+            }
+            return Expr::Element.median();
+        }
+    }
+
+    // moarstats: leptokurtic / heavy-tailed distribution
+    if let Some(k) = stats.kurtosis {
+        if k > 3.0 {
+            if !quiet {
+                eprintln!("Info: Heavy-tailed distribution (kurtosis {k:.3} > 3.0), using Median");
+            }
+            return Expr::Element.median();
+        }
+    }
+
+    // moarstats: high inequality — few values dominate
+    if let Some(gc) = stats.gini_coefficient {
+        if gc > 0.6 {
+            if !quiet {
+                eprintln!("Info: High inequality (Gini coefficient {gc:.3} > 0.6), using Median");
+            }
+            return Expr::Element.median();
+        }
+    }
+
+    // Original: high CV
+    if stats.cv > Some(1.0) {
+        if !quiet {
+            eprintln!(
+                "Info: High variability in values (CV > 1), using Median for more robust central \
+                 tendency"
+            );
+        }
+        return Expr::Element.median();
+    }
+
+    // Original: high cardinality pivot + index
+    if high_cardinality_pivot && high_cardinality_index {
+        // moarstats: near-uniform distribution makes aggregation uninformative
+        if let Some(ne) = stats.normalized_entropy {
+            if ne > 0.9 {
+                if !quiet {
+                    eprintln!(
+                        "Info: Near-uniform distribution (normalized entropy {ne:.3} > 0.9), \
+                         using Len"
+                    );
+                }
+                return Expr::Element.len();
+            }
+        }
+        if ordered_pivot && ordered_index {
+            if !quiet {
+                eprintln!("Info: Ordered high cardinality columns detected, using Mean");
+            }
+            return Expr::Element.mean();
+        }
+        if !quiet {
+            eprintln!("Info: High cardinality in pivot and index columns, using Sum");
+        }
+        return Expr::Element.sum();
+    }
+
+    // Original: skewness check
+    if let Some(skewness) = stats.skewness {
+        if skewness.abs() > 2.0 {
+            if !quiet {
+                eprintln!("Info: Highly skewed numeric data detected, using Median");
+            }
+            return Expr::Element.median();
+        }
+    }
+
+    // moarstats: Pearson skewness as complementary measure
+    if let Some(ps) = stats.pearson_skewness {
+        if ps.abs() > 1.0 {
+            if !quiet {
+                eprintln!(
+                    "Info: Pearson skewness ({ps:.3}, |value| > 1.0) indicates asymmetry, using \
+                     Median"
+                );
+            }
+            return Expr::Element.median();
+        }
+    }
+
+    // Default for numeric
+    if !quiet {
+        eprintln!("Info: Using Sum for \"{value_col}\"");
+    }
+    Expr::Element.sum()
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {

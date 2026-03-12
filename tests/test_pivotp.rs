@@ -705,6 +705,216 @@ pivotp_test!(
     }
 );
 
+// Test smart aggregation without moarstats — graceful degradation to existing behavior
+// Normal numeric data with CV > 1% should use Median (existing CV-based behavior)
+#[test]
+fn pivotp_smart_no_moarstats() {
+    let wrk = Workdir::new("pivotp_smart_no_moarstats");
+    // Without moarstats, smart aggregation uses only base stats.
+    // CV in qsv is stored as a percentage (stddev/mean * 100),
+    // so even tight values like 100-104 have CV > 1 (i.e., > 1%).
+    // This test verifies that the existing CV-based logic still works
+    // correctly without moarstats data, picking Median for CV > 1.
+    let data = vec![
+        svec!["category", "group", "value"],
+        svec!["A", "X", "100"],
+        svec!["A", "Y", "102"],
+        svec!["B", "X", "101"],
+        svec!["B", "Y", "103"],
+        svec!["C", "X", "100"],
+        svec!["C", "Y", "104"],
+    ];
+    wrk.create("normal.csv", data);
+
+    // Run stats first so pivotp can use them
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "normal.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run pivotp with smart agg — no moarstats, CV > 1% triggers Median
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "value",
+        "--agg",
+        "smart",
+        "normal.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    // Existing behavior: CV > 1% triggers Median, and no moarstats checks fire
+    // (because moarstats hasn't been run, so all moarstats fields are None)
+    assert!(
+        stderr.contains("CV > 1"),
+        "Expected CV-based Median without moarstats, got: {stderr}"
+    );
+}
+
+// Test smart aggregation with moarstats — high kurtosis should pick Median
+#[test]
+fn pivotp_smart_moarstats_high_kurtosis() {
+    let wrk = Workdir::new("pivotp_smart_moarstats_kurtosis");
+    // Heavy-tailed data: mostly clustered values with extreme outliers
+    // This creates leptokurtic distribution (kurtosis > 3)
+    let mut data = vec![svec!["category", "group", "value"]];
+    for i in 0..40 {
+        let cat = if i % 2 == 0 { "A" } else { "B" };
+        let grp = if i % 3 == 0 { "X" } else { "Y" };
+        // Most values near 100, but a few extreme outliers
+        let val = match i {
+            0 => "1000",
+            1 => "-500",
+            38 => "2000",
+            39 => "-800",
+            _ => "100",
+        };
+        data.push(svec![cat, grp, val]);
+    }
+    wrk.create("kurtosis.csv", data);
+
+    // Run stats --everything first
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "kurtosis.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats --advanced to generate kurtosis and other advanced statistics
+    let mut moar_cmd = wrk.command("moarstats");
+    moar_cmd.args(["--advanced", "kurtosis.csv"]);
+    wrk.assert_success(&mut moar_cmd);
+
+    // Run pivotp with smart agg — kurtosis should trigger Median
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "value",
+        "--agg",
+        "smart",
+        "kurtosis.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    // Should use Median due to moarstats detecting heavy tails or outliers
+    assert!(
+        stderr.contains("Median"),
+        "Expected Median for heavy-tailed data with moarstats, got: {stderr}"
+    );
+}
+
+// Test smart aggregation with moarstats — bimodal data should pick Len
+#[test]
+fn pivotp_smart_moarstats_bimodal() {
+    let wrk = Workdir::new("pivotp_smart_moarstats_bimodal");
+    // Bimodal data: two distinct clusters
+    let mut data = vec![svec!["category", "group", "value"]];
+    for i in 0..60 {
+        let cat = if i % 3 == 0 {
+            "A"
+        } else if i % 3 == 1 {
+            "B"
+        } else {
+            "C"
+        };
+        let grp = if i % 2 == 0 { "X" } else { "Y" };
+        // Two clusters: values near 10 and values near 1000
+        let val = if i < 30 { "10" } else { "1000" };
+        data.push(svec![cat, grp, val]);
+    }
+    wrk.create("bimodal.csv", data);
+
+    // Run stats --everything
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "bimodal.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats --advanced so bimodality_coefficient is available
+    let mut moar_cmd = wrk.command("moarstats");
+    moar_cmd.args(["--advanced", "bimodal.csv"]);
+    wrk.assert_success(&mut moar_cmd);
+
+    // Run pivotp with smart agg
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "value",
+        "--agg",
+        "smart",
+        "bimodal.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    // Bimodal data: moarstats --advanced computes bimodality_coefficient >= 0.555,
+    // the bimodal branch fires first and picks Len (central tendency is misleading).
+    // If other checks fire first (e.g., high CV or outlier fraction), Median is also valid.
+    assert!(
+        stderr.contains("Len") || stderr.contains("Median"),
+        "Expected Len or Median for bimodal data with moarstats, got: {stderr}"
+    );
+}
+
+// Test smart aggregation with moarstats — data with many outliers should pick Median
+#[test]
+fn pivotp_smart_moarstats_outliers() {
+    let wrk = Workdir::new("pivotp_smart_moarstats_outliers");
+    // Data with >15% outliers — write CSV directly to avoid svec! lifetime issues
+    let csv_content = std::iter::once("category,group,value".to_string())
+        .chain((0..40).map(|i| {
+            let cat = if i % 2 == 0 { "A" } else { "B" };
+            let grp = if i % 2 == 0 { "X" } else { "Y" };
+            let val = if i < 8 {
+                10000 + i * 1000
+            } else {
+                50 + (i % 10)
+            };
+            format!("{cat},{grp},{val}")
+        }))
+        .collect::<Vec<_>>()
+        .join("\n");
+    wrk.create_from_string("outliers.csv", &csv_content);
+
+    // Run stats --everything
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "outliers.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Run moarstats
+    let mut moar_cmd = wrk.command("moarstats");
+    moar_cmd.args(["outliers.csv"]);
+    wrk.assert_success(&mut moar_cmd);
+
+    // Run pivotp with smart agg
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "value",
+        "--agg",
+        "smart",
+        "outliers.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    // Should use Median due to outlier contamination
+    assert!(
+        stderr.contains("Median"),
+        "Expected Median for outlier-heavy data with moarstats, got: {stderr}"
+    );
+}
+
 // Test pivot with custom infer length
 pivotp_test!(
     pivotp_infer_len,

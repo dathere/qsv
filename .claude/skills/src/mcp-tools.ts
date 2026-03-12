@@ -4025,7 +4025,7 @@ export function createSetupToolDefinition(): McpToolDefinition {
       ? "Homebrew (brew install qsv)"
       : process.platform === "win32"
         ? "Scoop (scoop install qsv)"
-        : "manual download from GitHub releases";
+        : "Homebrew on Linux when available (brew install qsv), or manual download from GitHub releases / cargo install";
 
   return {
     name: "qsv_setup",

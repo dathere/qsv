@@ -197,7 +197,7 @@ export function getManualInstructions(platform: NodeJS.Platform): InstallResult 
  *
  * On macOS: tries Homebrew, falls back to manual instructions.
  * On Windows: tries Scoop, falls back to manual instructions.
- * On Linux: returns manual instructions (no supported package manager).
+ * On Linux: tries Homebrew when available, otherwise returns manual instructions.
  */
 export async function installQsv(): Promise<InstallResult> {
   const pm = detectPackageManager();

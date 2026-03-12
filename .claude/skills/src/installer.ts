@@ -65,6 +65,7 @@ async function installViaHomebrew(): Promise<InstallResult> {
     const { stdout, stderr } = await execFile("brew", ["install", "qsv"], {
       encoding: "utf8",
       timeout: INSTALL_TIMEOUT_MS,
+      maxBuffer: 10 * 1024 * 1024,
     });
 
     const output = (stdout + "\n" + stderr).trim();
@@ -111,6 +112,7 @@ async function installViaScoop(): Promise<InstallResult> {
     const { stdout, stderr } = await execFile("scoop", ["install", "qsv"], {
       encoding: "utf8",
       timeout: INSTALL_TIMEOUT_MS,
+      maxBuffer: 10 * 1024 * 1024,
     });
 
     const output = (stdout + "\n" + stderr).trim();

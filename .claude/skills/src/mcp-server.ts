@@ -686,8 +686,12 @@ class QsvMcpServer {
           const setupResult = await handleSetupCall(toolArgs || {}, () => {
             const revalidation = revalidateQsvBinary();
             if (revalidation.validation.valid) {
-              // Reconstruct executor and update filesystem provider with new binary path
-              this.executor = new SkillExecutor(revalidation.path, config.workingDir);
+              // Reconstruct executor and update filesystem provider with new binary path.
+              // Use the current working directory rather than the possibly stale config.workingDir.
+              this.executor = new SkillExecutor(
+                revalidation.path,
+                this.filesystemProvider.getWorkingDirectory(),
+              );
               this.filesystemProvider.updateQsvBinPath(revalidation.path);
             }
             return revalidation;

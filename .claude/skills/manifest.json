@@ -241,6 +241,10 @@
     {
       "name": "qsv_to_parquet",
       "description": "Convert CSV to Parquet format"
+    },
+    {
+      "name": "qsv_setup",
+      "description": "Install qsv via package manager (Homebrew/Scoop) when binary not found"
     }
   ],
   "tools_generated": true,

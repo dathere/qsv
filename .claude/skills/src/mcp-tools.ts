@@ -26,7 +26,7 @@ import type { SkillExecutor } from "./executor.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { executeDescribegptWithSampling, runQsvCapture } from "./mcp-sampling.js";
 import type { SkillLoader } from "./loader.js";
-import { config, getDetectionDiagnostics } from "./config.js";
+import { config, getDetectionDiagnostics, MINIMUM_QSV_VERSION } from "./config.js";
 import { formatBytes, findSimilarFiles, errorResult, successResult, isReservedCachePath, reservedCachePathError, getErrorMessage, isNodeError, describegptFallbackResult } from "./utils.js";
 import {
   detectDuckDb,
@@ -4011,4 +4011,120 @@ export async function handleLogCall(
   }
 
   return successResult(`Logged ${entryType} entry.`);
+}
+
+// ─── qsv_setup tool ─────────────────────────────────────────────────────────
+
+/**
+ * Create the qsv_setup tool definition.
+ * Exposed when qsv binary is not found, so the LLM can offer to install it.
+ */
+export function createSetupToolDefinition(): McpToolDefinition {
+  const platformHint =
+    process.platform === "darwin"
+      ? "Homebrew (brew install qsv)"
+      : process.platform === "win32"
+        ? "Scoop (scoop install qsv)"
+        : "Homebrew on Linux when available (brew install qsv), or manual download from GitHub releases";
+
+  return {
+    name: "qsv_setup",
+    description:
+      `Install the qsv data-wrangling toolkit on this machine. ` +
+      `On this platform, installation uses: ${platformHint}. ` +
+      `Call this tool with confirm=true to proceed with installation.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        confirm: {
+          type: "boolean",
+          description:
+            "Must be true to proceed with installation. " +
+            "This ensures the user explicitly approves the install action.",
+        },
+      },
+      required: ["confirm"],
+    },
+  };
+}
+
+/**
+ * Result returned from handleSetupCall
+ */
+export interface SetupCallResult {
+  revalidated: boolean;
+  response: { content: Array<{ type: string; text: string }>; isError?: boolean };
+}
+
+/**
+ * Handle the qsv_setup tool call.
+ *
+ * @param args - Tool arguments (must include confirm: true)
+ * @param revalidateCallback - Called after successful install to refresh config.
+ *   Returns the revalidation result so the handler can check if the binary is now valid.
+ */
+export async function handleSetupCall(
+  args: Record<string, unknown>,
+  revalidateCallback: () => { path: string; validation: { valid: boolean; version?: string; error?: string } },
+): Promise<SetupCallResult> {
+  // Dynamic import to avoid loading installer.ts at startup
+  const { installQsv } = await import("./installer.js");
+
+  if (args.confirm !== true) {
+    return {
+      revalidated: false,
+      response: errorResult(
+        "Installation requires explicit confirmation. Call qsv_setup with confirm=true to proceed.",
+      ),
+    };
+  }
+
+  const result = await installQsv();
+
+  // Manual instructions — not an error, just guidance
+  if (result.method === "manual" && result.instructions) {
+    return {
+      revalidated: false,
+      response: successResult(
+        `No supported package manager found for automatic installation.\n\n${result.instructions}`,
+      ),
+    };
+  }
+
+  if (!result.success) {
+    return {
+      revalidated: false,
+      response: errorResult(
+        `Installation via ${result.method} failed:\n${result.error}\n\n` +
+        `You can try installing manually from https://github.com/dathere/qsv/releases/latest`,
+      ),
+    };
+  }
+
+  // Install succeeded — revalidate the binary
+  const revalidation = revalidateCallback();
+
+  if (revalidation.validation.valid) {
+    return {
+      revalidated: true,
+      response: successResult(
+        `qsv installed successfully via ${result.method}!\n\n` +
+        `Binary: ${revalidation.path}\n` +
+        `Version: ${revalidation.validation.version}\n\n` +
+        `The full qsv toolkit is now available. You can proceed with data tasks.`,
+      ),
+    };
+  }
+
+  // Installed but revalidation failed (version too old, missing Polars, etc.)
+  return {
+    revalidated: false,
+    response: errorResult(
+      `qsv was installed via ${result.method}, but validation failed:\n` +
+      `${revalidation.validation.error}\n\n` +
+      `The installed version may not meet the minimum requirements. ` +
+      `Please install qsv >= ${MINIMUM_QSV_VERSION} with Polars support ` +
+      `from https://github.com/dathere/qsv#installation`,
+    ),
+  };
 }

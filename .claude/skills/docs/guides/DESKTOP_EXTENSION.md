@@ -37,9 +37,6 @@ The qsv Desktop Extension packages the MCP Server as a `.mcpb` file (MCP Bundle)
 
    # Windows (Scoop)
    scoop install qsv
-
-   # From source (requires Rust)
-   cargo install qsv --features all_features
    ```
 
 3. **Verify qsv installation**:
@@ -544,7 +541,7 @@ No. Desktop Extensions only work with Claude Desktop. For Claude API integration
 ```bash
 qsv --update          # If qsv was installed via self-update
 brew upgrade qsv       # If installed via Homebrew
-cargo install qsv      # If installed via Cargo
+scoop update qsv       # If installed via Scoop
 ```
 
 After updating qsv, the extension will detect the version change and prompt you to regenerate skills (or do it automatically if enabled).

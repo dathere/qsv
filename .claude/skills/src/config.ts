@@ -7,7 +7,7 @@
 
 import { homedir, tmpdir } from "os";
 import { join } from "path";
-import { execSync, execFileSync } from "child_process";
+import { execFileSync } from "child_process";
 import { statSync } from "fs";
 import { compareVersions, getErrorMessage } from "./utils.js";
 
@@ -905,3 +905,23 @@ export const config = {
     return val as "csv" | "tsv";
   })(),
 } as const;
+
+/**
+ * Re-run qsv binary detection and validation.
+ * Called after a successful installation to refresh the config state.
+ * Returns the new path and validation result.
+ */
+export function revalidateQsvBinary(): {
+  path: string;
+  validation: QsvValidationResult;
+} {
+  const result = initializeQsvBinaryPath();
+
+  // Update config via type-cast assignment. This works because `as const`
+  // only produces a deeply-readonly TypeScript type — it does NOT call
+  // Object.freeze() at runtime, so the object remains mutable in JS.
+  (config as { qsvBinPath: string }).qsvBinPath = result.path;
+  (config as { qsvValidation: QsvValidationResult }).qsvValidation = result.validation;
+
+  return result;
+}

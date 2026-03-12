@@ -206,7 +206,7 @@ stats options:
                               https://docs.rs/rust_decimal/latest/rust_decimal/enum.RoundingStrategy.html
                               If set to the sentinel value 9999, no rounding is done.
                               For dates - range, stddev & IQR are always at least 5 decimal places as
-                              they are reported in days, and 5 places gives us millisecond precision.
+                              they are reported in days, and 5 decimal places gives us sub-second precision.
                               [default: 4]
     --nulls                   Include NULLs in the population size for computing
                               mean and standard deviation.
@@ -667,7 +667,7 @@ const UNDERFLOW_STRING: &str = "*UNDERFLOW*";
 const MS_IN_DAY: f64 = 86_400_000.0;
 const MS_IN_DAY_INT: i64 = 86_400_000;
 // number of decimal places when rounding days
-// 5 decimal places give us millisecond precision
+// 5 decimal places give us sub-second precision
 const DAY_DECIMAL_PLACES: u32 = 5;
 
 // maximum number of output columns
@@ -3365,7 +3365,7 @@ impl Stats {
             },
             TDateTime | TDate => {
                 // calculate date statistics by adding date samples as unix timestamps
-                // to the millisecond precision.
+                // to the sub-second precision.
                 #[allow(clippy::cast_precision_loss)]
                 let timestamp = int_val as f64;
                 self.add_numeric_value(timestamp, weight);
@@ -3887,7 +3887,7 @@ impl Stats {
                 record.push_field(&timestamp_ms_to_rfc3339(mean as i64, typ));
                 // instead of returning sem, stdev & variance as timestamps, return it in
                 // days as its more human readable and practical for real-world use cases
-                // Round to at least 5 decimal places, so we have millisecond precision
+                // Round to at least 5 decimal places, so we have sub-second precision
                 record.push_field(&util::round_num(
                     sem / MS_IN_DAY,
                     u32::max(round_places, DAY_DECIMAL_PLACES),
@@ -3939,7 +3939,7 @@ impl Stats {
                 record.push_field(&timestamp_ms_to_rfc3339(mean as i64, typ));
                 // instead of returning sem, stdev & variance as timestamps, return it in
                 // days as its more human readable and practical for real-world use cases
-                // Round to at least 5 decimal places, so we have millisecond precision
+                // Round to at least 5 decimal places, so we have sub-second precision
                 record.push_field(&util::round_num(
                     sem / MS_IN_DAY,
                     u32::max(round_places, DAY_DECIMAL_PLACES),

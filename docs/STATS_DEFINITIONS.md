@@ -100,7 +100,7 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 
 **Units:**
 - Date range, stddev, variance, MAD, and IQR are returned in **days** (not milliseconds)
-- These values are rounded to at least 5 decimal places to provide millisecond precision
+- These values are rounded to at least 5 decimal places to provide sub-second precision
 - Mean, geometric mean, and harmonic mean for dates/datetimes are returned in RFC3339 format
 
 **Date Column Selection:**
@@ -184,7 +184,7 @@ Computed using Welford's online algorithm for single-pass accuracy. When `--weig
 
 Requires loading data into memory and sorting. When `--weight <column>` is specified, weighted versions are computed using weighted nearest-rank method.
 
-**Note on Date/DateTime types:** For Date and DateTime types, range, stddev, variance, MAD, and IQR are returned in days (not milliseconds). These values are rounded to at least 5 decimal places to provide millisecond precision.
+**Note on Date/DateTime types:** For Date and DateTime types, range, stddev, variance, MAD, and IQR are returned in days (not milliseconds). These values are rounded to at least 5 decimal places to provide sub-second precision.
 
 **Requirements:**
 - `median` requires `--median` or `--everything` (unless `--quartiles` is specified, in which case `median` is not returned separately as it's the same as `q2_median`)

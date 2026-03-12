@@ -171,9 +171,9 @@ use crate::{
 
 /// Milliseconds per day — used to convert epoch-ms spreads/shifts to days.
 const MS_IN_DAY: f64 = 86_400_000.0;
-/// Decimal places for day-valued outputs (8 ≈ millisecond precision;
-/// 1 ms / 86_400_000 ms-per-day ≈ 1.16e-8).
-const DAY_DECIMAL_PLACES: u32 = 8;
+/// Decimal places for day-valued outputs (5 ≈ sub-second precision;
+/// 1e-5 days ≈ 0.864 seconds).
+const DAY_DECIMAL_PLACES: u32 = 5;
 
 /// Tracks whether a column holds plain numbers or parsed dates so we can
 /// format output appropriately (dates as RFC3339, spreads/shifts as days).
@@ -1105,7 +1105,7 @@ fn fmt_timestamp(val: Option<f64>, ct: ColType) -> String {
     }
 }
 
-/// Format an epoch-ms difference as days with millisecond precision.
+/// Format an epoch-ms difference as days with sub-second precision.
 fn fmt_days(val: Option<f64>) -> String {
     val.map_or_else(String::new, |v| {
         util::round_num(v / MS_IN_DAY, DAY_DECIMAL_PLACES)

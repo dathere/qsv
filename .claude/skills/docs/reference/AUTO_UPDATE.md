@@ -237,7 +237,7 @@ This file is automatically managed and helps track update history.
 **Cause**: The command must be run from within the qsv repository directory structure (where `Cargo.toml` and `src/cmd` exist). This is because the skill generation writes to `.claude/skills/qsv/` relative to the repository root.
 
 **Solution**:
-1. **If you installed qsv via package manager** (Homebrew, cargo install, etc.):
+1. **If you installed qsv via package manager** (Homebrew, Scoop, etc.):
    - Clone the qsv repository: `git clone https://github.com/dathere/qsv.git`
    - Navigate into it: `cd qsv`
    - Run: `qsv --update-mcp-skills`

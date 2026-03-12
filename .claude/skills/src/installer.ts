@@ -180,8 +180,9 @@ export function getManualInstructions(platform: NodeJS.Platform): InstallResult 
         `2. Download the Linux binary (qsv-*-x86_64-unknown-linux-gnu.zip)\n` +
         `3. Extract and install:\n` +
         `\`\`\`\nunzip qsv-*.zip\nsudo mv qsv /usr/local/bin/\n\`\`\`\n\n` +
-        `**Or build from source:**\n` +
-        `\`\`\`\ncargo install qsv --locked --features all_features\n\`\`\``;
+        `**Or install via Homebrew on Linux:**\n` +
+        `\`\`\`\nbrew install qsv\n\`\`\`\n\n` +
+        `For more options, visit ${baseUrl}`;
       break;
   }
 

@@ -41,15 +41,12 @@ Claude Code is Anthropic's official CLI for Claude - a powerful terminal-based i
    brew install qsv
 
    # macOS/Linux (pre-built binary)
-   curl -LO https://github.com/dathere/qsv/releases/latest/download/qsv-$(uname -s)-$(uname -m).zip
+   # Download from https://github.com/dathere/qsv/releases/latest
    unzip qsv-*.zip
    sudo mv qsv /usr/local/bin/
 
    # Windows (Scoop)
    scoop install qsv
-
-   # From source (requires Rust)
-   cargo install qsv --features all_features
    ```
 
 4. **Verify qsv installation**:

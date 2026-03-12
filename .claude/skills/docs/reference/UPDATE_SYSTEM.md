@@ -128,7 +128,7 @@ Created comprehensive documentation:
 
 ### 1. Why Three-Tier Strategy?
 
-**qsv binary**: Users manage via their preferred method (package manager, qsv --update, cargo install)
+**qsv binary**: Users manage via their preferred method (package manager, qsv --update, GitHub releases)
 **Skill definitions**: MCP server can regenerate by calling `qsv --update-mcp-skills` (uses prebuilt qsv binary, no Rust toolchain needed)
 **MCP server code**: Standard npm package updates
 

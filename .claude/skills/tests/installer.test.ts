@@ -50,8 +50,12 @@ test("getManualInstructions returns instructions for Linux", () => {
   assert.ok(result.instructions, "should have instructions");
   assert.ok(result.instructions!.includes("Linux"), "should mention Linux");
   assert.ok(
-    result.instructions!.includes("cargo install"),
-    "should include build from source option",
+    result.instructions!.includes("Homebrew on Linux"),
+    "should include Homebrew on Linux option",
+  );
+  assert.ok(
+    !result.instructions!.includes("cargo install"),
+    "should not reference cargo install",
   );
 });
 

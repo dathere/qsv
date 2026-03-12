@@ -42,9 +42,9 @@ pivotp options:
                               len - Count of values
                               item - Get single value from group. Raises error if there are multiple values.
                               smart - use value column data type & statistics to pick an aggregation.
-                                      When moarstats has been run on the input, leverages advanced
-                                      statistics (kurtosis, bimodality, outlier profile, entropy,
-                                      Gini coefficient) for smarter selection.
+                                      When moarstats has been run, leverages outlier profile and
+                                      Pearson skewness for smarter selection. With moarstats --advanced,
+                                      also uses kurtosis, bimodality, entropy and Gini coefficient.
                                       Will only work if there is one value column, otherwise
                                       it falls back to `first`
                             [default: smart]

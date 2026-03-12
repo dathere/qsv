@@ -706,7 +706,7 @@ pivotp_test!(
 );
 
 // Test smart aggregation without moarstats — graceful degradation to existing behavior
-// Normal numeric data with low CV should default to Sum
+// Normal numeric data with CV > 1% should use Median (existing CV-based behavior)
 #[test]
 fn pivotp_smart_no_moarstats() {
     let wrk = Workdir::new("pivotp_smart_no_moarstats");
@@ -781,9 +781,9 @@ fn pivotp_smart_moarstats_high_kurtosis() {
     stats_cmd.args(["--everything", "kurtosis.csv"]);
     wrk.assert_success(&mut stats_cmd);
 
-    // Run moarstats to generate advanced statistics
+    // Run moarstats --advanced to generate kurtosis and other advanced statistics
     let mut moar_cmd = wrk.command("moarstats");
-    moar_cmd.args(["kurtosis.csv"]);
+    moar_cmd.args(["--advanced", "kurtosis.csv"]);
     wrk.assert_success(&mut moar_cmd);
 
     // Run pivotp with smart agg — kurtosis should trigger Median
@@ -834,9 +834,9 @@ fn pivotp_smart_moarstats_bimodal() {
     stats_cmd.args(["--everything", "bimodal.csv"]);
     wrk.assert_success(&mut stats_cmd);
 
-    // Run moarstats
+    // Run moarstats --advanced so bimodality_coefficient is available
     let mut moar_cmd = wrk.command("moarstats");
-    moar_cmd.args(["bimodal.csv"]);
+    moar_cmd.args(["--advanced", "bimodal.csv"]);
     wrk.assert_success(&mut moar_cmd);
 
     // Run pivotp with smart agg
@@ -854,11 +854,9 @@ fn pivotp_smart_moarstats_bimodal() {
     wrk.assert_success(&mut cmd);
 
     let stderr = wrk.output_stderr(&mut cmd);
-    // Bimodal data: if moarstats computes bimodality_coefficient >= 0.555,
+    // Bimodal data: moarstats --advanced computes bimodality_coefficient >= 0.555,
     // the bimodal branch fires first and picks Len (central tendency is misleading).
-    // If bimodality_coefficient is below threshold or absent, the code falls through
-    // to suggest_numeric_after_bimodality which may pick Median (due to high CV or
-    // outlier fraction). Both are valid outcomes for this synthetic dataset.
+    // If other checks fire first (e.g., high CV or outlier fraction), Median is also valid.
     assert!(
         stderr.contains("Len") || stderr.contains("Median"),
         "Expected Len or Median for bimodal data with moarstats, got: {stderr}"

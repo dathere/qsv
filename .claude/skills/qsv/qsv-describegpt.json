@@ -43,7 +43,7 @@
       {
         "flag": "--disk-cache-dir",
         "type": "string",
-        "description": "The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different describegpt jobs (e.g. one for a data portal, another for internal data exchange, etc.)",
+        "description": "The directory to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different describegpt jobs (e.g. one for a data portal, another for internal data exchange).",
         "default": "~/.qsv/cache/describegpt"
       },
       {

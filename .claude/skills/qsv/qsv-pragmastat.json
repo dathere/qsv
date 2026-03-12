@@ -1,7 +1,7 @@
 {
   "name": "qsv-pragmastat",
   "version": "17.0.0",
-  "description": "Compute pragmatic statistics using the Pragmastat library.",
+  "description": "Compute pragmatic statistics using the Pragmastat library. Uses the stats cache to auto-filter non-numeric columns and support Date/DateTime columns.",
   "category": "aggregation",
   "command": {
     "subcommand": "pragmastat",
@@ -30,6 +30,11 @@
         "description": "The field delimiter for reading/writing CSV data. Must be a single character. (default: ,)"
       },
       {
+        "flag": "--force",
+        "type": "flag",
+        "description": "Force recomputing ps_* columns even if they already exist in the stats cache."
+      },
+      {
         "flag": "--memcheck",
         "type": "flag",
         "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. Not valid for stdin."
@@ -51,9 +56,26 @@
         "description": "Write output to <file> instead of stdout."
       },
       {
+        "flag": "--round",
+        "type": "string",
+        "description": "Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule.",
+        "default": "4"
+      },
+      {
         "flag": "--select",
         "type": "string",
         "description": "Select columns for analysis. Uses qsv's column selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed."
+      },
+      {
+        "flag": "--standalone",
+        "type": "flag",
+        "description": "Output one-sample results as standalone CSV instead of appending to the stats cache."
+      },
+      {
+        "flag": "--stats-options",
+        "type": "string",
+        "description": "Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace.",
+        "default": "--infer-dates --infer-boolean --mad --quartiles --force --stats-jsonl"
       },
       {
         "flag": "--twosample",
@@ -69,8 +91,12 @@
   },
   "examples": [
     {
-      "description": "Basic one-sample statistics",
+      "description": "Append pragmastat columns to stats cache (default one-sample behavior)",
       "command": "qsv pragmastat data.csv"
+    },
+    {
+      "description": "Standalone one-sample output (old behavior)",
+      "command": "qsv pragmastat --standalone data.csv"
     },
     {
       "description": "One-sample statistics with selected columns",

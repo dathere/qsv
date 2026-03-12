@@ -23,7 +23,7 @@
       {
         "flag": "--agg",
         "type": "string",
-        "description": "The aggregation function to use: first - First value encountered last - Last value encountered sum - Sum of values min - Minimum value max - Maximum value mean - Average value median - Median value len - Count of values item - Get single value from group. Raises error if there are multiple values. smart - use value column data type & statistics to pick an aggregation. Will only work if there is one value column, otherwise it falls back to `first`",
+        "description": "The aggregation function to use: first - First value encountered last - Last value encountered sum - Sum of values min - Minimum value max - Maximum value mean - Average value median - Median value len - Count of values item - Get single value from group. Raises error if there are multiple values. smart - use value column data type & statistics to pick an aggregation. When moarstats has been run, leverages outlier profile and Pearson skewness for smarter selection. With moarstats --advanced, also uses kurtosis, bimodality, entropy and Gini coefficient. Will only work if there is one value column, otherwise it falls back to `first`",
         "default": "smart"
       },
       {

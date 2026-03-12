@@ -121,7 +121,7 @@
       {
         "flag": "--round",
         "type": "string",
-        "description": "Round statistics to <decimal_places>. Rounding is done following Midpoint Nearest Even (aka \"Bankers Rounding\") rule. https://docs.rs/rust_decimal/latest/rust_decimal/enum.RoundingStrategy.html If set to the sentinel value 9999, no rounding is done. For dates - range, stddev & IQR are always at least 5 decimal places as they are reported in days, and 5 places gives us millisecond precision.",
+        "description": "Round statistics to <decimal_places>. Rounding is done following Midpoint Nearest Even (aka \"Bankers Rounding\") rule. https://docs.rs/rust_decimal/latest/rust_decimal/enum.RoundingStrategy.html If set to the sentinel value 9999, no rounding is done. For dates - range, stddev & IQR are rounded to 1e-5 day precision (sub-second), with trailing zeros trimmed in the displayed output.",
         "default": "4"
       },
       {

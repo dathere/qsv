@@ -29,7 +29,7 @@ const execFile = promisify(execFileCb);
 import { SkillLoader } from "./loader.js";
 import { SkillExecutor, runQsvSimple } from "./executor.js";
 import { FilesystemResourceProvider } from "./mcp-filesystem.js";
-import { config } from "./config.js";
+import { config, revalidateQsvBinary } from "./config.js";
 import {
   COMMON_COMMANDS,
   createToolDefinition,
@@ -44,6 +44,8 @@ import {
   createGetWorkingDirTool,
   createBrowseDirectoryTool,
   createLogTool,
+  createSetupToolDefinition,
+  handleSetupCall,
   handleConfigTool,
   handleSearchToolsCall,
   handleToParquetCall,
@@ -352,6 +354,18 @@ class QsvMcpServer {
       // List tools handler
       this.server.setRequestHandler(ListToolsRequestSchema, async () => {
         console.error("[Server] Handling tools/list request...");
+
+        // When qsv binary is not found/valid, only expose the setup tool + config diagnostic
+        if (!config.qsvValidation.valid) {
+          console.error("[Server] qsv binary not valid — exposing qsv_setup + qsv_config only");
+          return {
+            tools: [
+              createSetupToolDefinition(),
+              createConfigTool(),
+            ],
+          };
+        }
+
         const tools = [];
 
         // Get available commands from qsv binary
@@ -666,6 +680,24 @@ class QsvMcpServer {
         // would require a uniform interface wrapper with no real benefit.
         // Order: filesystem → generic command → config → search →
         //        to_parquet → skill-based (qsv_*) → unknown tool error.
+
+        // Handle setup tool (available even when qsv is not installed)
+        if (name === "qsv_setup") {
+          const setupResult = await handleSetupCall(toolArgs || {}, () => {
+            const revalidation = revalidateQsvBinary();
+            if (revalidation.validation.valid) {
+              // Reconstruct executor and update filesystem provider with new binary path
+              this.executor = new SkillExecutor(revalidation.path, config.workingDir);
+              this.filesystemProvider.updateQsvBinPath(revalidation.path);
+            }
+            return revalidation;
+          });
+          // Send tools/list_changed notification so the client re-fetches the full tool list
+          if (setupResult.revalidated) {
+            this.server.sendToolListChanged().catch(() => {});
+          }
+          return setupResult.response;
+        }
 
         // Handle log tool (before filesystem tools so it's fast)
         if (name === "qsv_log") {
@@ -988,6 +1020,7 @@ class QsvMcpServer {
    */
   private static readonly ELICITATION_EXEMPT_TOOLS = new Set([
     "qsv_config",
+    "qsv_setup",
     "qsv_log",
     "qsv_search_tools",
     "qsv_set_working_dir",

@@ -7,7 +7,7 @@
 
 import { homedir, tmpdir } from "os";
 import { join } from "path";
-import { execSync, execFileSync } from "child_process";
+import { execFileSync } from "child_process";
 import { statSync } from "fs";
 import { compareVersions, getErrorMessage } from "./utils.js";
 
@@ -905,3 +905,34 @@ export const config = {
     return val as "csv" | "tsv";
   })(),
 } as const;
+
+/**
+ * Mutable configuration fields that can change after initialization.
+ * These are separated from the frozen `config` object because they need
+ * to be updated when qsv is installed or the binary path changes at runtime.
+ */
+const mutableConfig = {
+  qsvBinPath: config.qsvBinPath,
+  qsvValidation: config.qsvValidation,
+};
+
+/**
+ * Re-run qsv binary detection and validation.
+ * Called after a successful installation to refresh the config state.
+ * Returns the new path and validation result.
+ */
+export function revalidateQsvBinary(): {
+  path: string;
+  validation: QsvValidationResult;
+} {
+  const result = initializeQsvBinaryPath();
+  mutableConfig.qsvBinPath = result.path;
+  mutableConfig.qsvValidation = result.validation;
+
+  // Update the config object's mutable fields via Object.defineProperty
+  // since the rest of config is frozen via `as const`
+  (config as { qsvBinPath: string }).qsvBinPath = result.path;
+  (config as { qsvValidation: QsvValidationResult }).qsvValidation = result.validation;
+
+  return result;
+}

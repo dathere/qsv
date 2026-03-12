@@ -172,6 +172,14 @@ export class FilesystemResourceProvider {
   }
 
   /**
+   * Update the qsv binary path at runtime (e.g. after installation).
+   */
+  updateQsvBinPath(newPath: string): void {
+    this.qsvBinPath = newPath;
+    console.error(`[Filesystem] QSV binary path updated to: ${newPath}`);
+  }
+
+  /**
    * Get the working directory
    */
   getWorkingDirectory(): string {

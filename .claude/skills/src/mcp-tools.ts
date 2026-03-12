@@ -26,7 +26,7 @@ import type { SkillExecutor } from "./executor.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { executeDescribegptWithSampling, runQsvCapture } from "./mcp-sampling.js";
 import type { SkillLoader } from "./loader.js";
-import { config, getDetectionDiagnostics } from "./config.js";
+import { config, getDetectionDiagnostics, MINIMUM_QSV_VERSION } from "./config.js";
 import { formatBytes, findSimilarFiles, errorResult, successResult, isReservedCachePath, reservedCachePathError, getErrorMessage, isNodeError, describegptFallbackResult } from "./utils.js";
 import {
   detectDuckDb,
@@ -4123,7 +4123,7 @@ export async function handleSetupCall(
       `qsv was installed via ${result.method}, but validation failed:\n` +
       `${revalidation.validation.error}\n\n` +
       `The installed version may not meet the minimum requirements. ` +
-      `Please install qsv ${config.qsvValidation.version ? ">= 17.0.0" : ""} with Polars support ` +
+      `Please install qsv >= ${MINIMUM_QSV_VERSION} with Polars support ` +
       `from https://github.com/dathere/qsv#installation`,
     ),
   };

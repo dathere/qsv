@@ -27,7 +27,7 @@ type PackageManager = "homebrew" | "scoop" | "none";
 /**
  * Detect available package manager for the current platform.
  */
-function detectPackageManager(): PackageManager {
+export function detectPackageManager(): PackageManager {
   const command = process.platform === "win32" ? "where" : "which";
 
   if (process.platform === "darwin" || process.platform === "linux") {
@@ -143,7 +143,7 @@ async function installViaScoop(): Promise<InstallResult> {
 /**
  * Return manual installation instructions when no supported package manager is available.
  */
-function getManualInstructions(platform: NodeJS.Platform): InstallResult {
+export function getManualInstructions(platform: NodeJS.Platform): InstallResult {
   const baseUrl = "https://github.com/dathere/qsv/releases/latest";
 
   let instructions: string;

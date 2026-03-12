@@ -694,7 +694,7 @@ class QsvMcpServer {
           });
           // Send tools/list_changed notification so the client re-fetches the full tool list
           if (setupResult.revalidated) {
-            this.server.sendToolListChanged().catch(() => {});
+            this.server.sendToolListChanged().catch((err: unknown) => console.error("[Server] Failed to send tools/list_changed:", err));
           }
           return setupResult.response;
         }

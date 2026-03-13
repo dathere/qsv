@@ -1255,3 +1255,232 @@ fn pragmastat_cache_with_moarstats() {
         "pragmastat ps_center column should be present"
     );
 }
+
+// --subsample tests
+
+#[test]
+fn pragmastat_subsample() {
+    let wrk = Workdir::new("pragmastat_subsample");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--standalone")
+        .arg("--subsample")
+        .arg("50")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let lat_row = &got[1];
+    assert_eq!(lat_row[0], "latitude");
+    // n should reflect subsampled count, not original 100
+    assert_eq!(lat_row[1], "50");
+    // center and spread should still be present
+    assert!(!lat_row[2].is_empty(), "center should be present");
+    assert!(!lat_row[3].is_empty(), "spread should be present");
+}
+
+#[test]
+fn pragmastat_subsample_reproducible() {
+    let wrk = Workdir::new("pragmastat_subsample_reproducible");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Run twice with same seed; use --round 10 to reduce rounding collisions
+    let mut cmd1 = wrk.command("pragmastat");
+    cmd1.arg("--standalone")
+        .arg("--subsample")
+        .arg("50")
+        .arg("--seed")
+        .arg("123")
+        .arg("--round")
+        .arg("10")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+    let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
+
+    let mut cmd_2 = wrk.command("pragmastat");
+    cmd_2
+        .arg("--standalone")
+        .arg("--subsample")
+        .arg("50")
+        .arg("--seed")
+        .arg("123")
+        .arg("--round")
+        .arg("10")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
+
+    // Same seed => same output
+    assert_eq!(got1[1][2], got2[1][2], "center should be identical");
+    assert_eq!(got1[1][3], got2[1][3], "spread should be identical");
+
+    // Different seed => different output (with very high probability on 100-row data)
+    let mut cmd3 = wrk.command("pragmastat");
+    cmd3.arg("--standalone")
+        .arg("--subsample")
+        .arg("50")
+        .arg("--seed")
+        .arg("999")
+        .arg("--round")
+        .arg("10")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+    let got3: Vec<Vec<String>> = wrk.read_stdout(&mut cmd3);
+
+    assert!(
+        got1[1][2] != got3[1][2] || got1[1][3] != got3[1][3],
+        "different seed should produce different results (center: {} vs {}, spread: {} vs {})",
+        got1[1][2],
+        got3[1][2],
+        got1[1][3],
+        got3[1][3]
+    );
+}
+
+#[test]
+fn pragmastat_subsample_larger_than_data() {
+    let wrk = Workdir::new("pragmastat_subsample_larger_than_data");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Subsample larger than data should have no effect
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--standalone")
+        .arg("--subsample")
+        .arg("10000")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let lat_row = &got[1];
+    // n should be original count since subsample > data size
+    assert_eq!(lat_row[1], "100");
+}
+
+// --no-bounds tests
+
+#[test]
+fn pragmastat_no_bounds() {
+    let wrk = Workdir::new("pragmastat_no_bounds");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--standalone")
+        .arg("--no-bounds")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let lat_row = &got[1];
+    assert_eq!(lat_row[0], "latitude");
+    assert_eq!(lat_row[1], "100");
+    // center and spread should be present
+    assert!(!lat_row[2].is_empty(), "center should be present");
+    assert!(!lat_row[3].is_empty(), "spread should be present");
+    // bounds should be empty
+    assert!(lat_row[4].is_empty(), "center_lower should be empty");
+    assert!(lat_row[5].is_empty(), "center_upper should be empty");
+    assert!(lat_row[6].is_empty(), "spread_lower should be empty");
+    assert!(lat_row[7].is_empty(), "spread_upper should be empty");
+}
+
+#[test]
+fn pragmastat_no_bounds_twosample() {
+    let wrk = Workdir::new("pragmastat_no_bounds_twosample");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--twosample")
+        .arg("--no-bounds")
+        .arg("--select")
+        .arg("latitude,longitude")
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let row = &got[1];
+    // shift should be present; ratio may be empty for non-positive values (indices 4, 5, 6)
+    assert!(!row[4].is_empty(), "shift should be present");
+    // bounds should be empty (indices 7-12)
+    assert!(row[7].is_empty(), "shift_lower should be empty");
+    assert!(row[8].is_empty(), "shift_upper should be empty");
+    assert!(row[9].is_empty(), "ratio_lower should be empty");
+    assert!(row[10].is_empty(), "ratio_upper should be empty");
+    assert!(row[11].is_empty(), "disparity_lower should be empty");
+    assert!(row[12].is_empty(), "disparity_upper should be empty");
+}
+
+#[test]
+fn pragmastat_no_bounds_compare_incompatible() {
+    let wrk = Workdir::new("pragmastat_no_bounds_compare_incompatible");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--standalone")
+        .arg("--no-bounds")
+        .arg("--compare1")
+        .arg("center:42.0")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn pragmastat_subsample_and_no_bounds() {
+    let wrk = Workdir::new("pragmastat_subsample_and_no_bounds");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--standalone")
+        .arg("--subsample")
+        .arg("50")
+        .arg("--no-bounds")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let lat_row = &got[1];
+    assert_eq!(lat_row[0], "latitude");
+    // n should reflect subsampled count
+    assert_eq!(lat_row[1], "50");
+    // center and spread present
+    assert!(!lat_row[2].is_empty(), "center should be present");
+    assert!(!lat_row[3].is_empty(), "spread should be present");
+    // bounds should be empty
+    assert!(lat_row[4].is_empty(), "center_lower should be empty");
+    assert!(lat_row[5].is_empty(), "center_upper should be empty");
+    assert!(lat_row[6].is_empty(), "spread_lower should be empty");
+    assert!(lat_row[7].is_empty(), "spread_upper should be empty");
+}
+
+#[test]
+fn pragmastat_no_bounds_cache_incompatible() {
+    let wrk = Workdir::new("pragmastat_no_bounds_cache_incompatible");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // --no-bounds without --standalone triggers cache mode, which should be rejected
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--no-bounds").arg(&test_file);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn pragmastat_subsample_cache_incompatible() {
+    let wrk = Workdir::new("pragmastat_subsample_cache_incompatible");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // --subsample without --standalone triggers cache mode, which should be rejected
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--subsample").arg("50").arg(&test_file);
+
+    wrk.assert_err(&mut cmd);
+}

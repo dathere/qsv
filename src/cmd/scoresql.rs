@@ -139,18 +139,15 @@ struct CacheStatus {
 // ── Parsed SQL info ────────────────────────────────────────────────────────
 
 struct SqlInfo {
-    has_select_star:    bool,
-    has_order_by:       bool,
-    has_limit:          bool,
-    _has_group_by:      bool,
-    has_join:           bool,
-    has_where:          bool,
-    has_subquery:       bool,
-    _referenced_tables: Vec<String>,
-    where_columns:      Vec<String>,
-    join_columns:       Vec<String>,
-    order_columns:      Vec<String>,
-    _select_columns:    Vec<String>,
+    has_select_star: bool,
+    has_order_by:    bool,
+    has_limit:       bool,
+    has_join:        bool,
+    has_where:       bool,
+    has_subquery:    bool,
+    where_columns:   Vec<String>,
+    join_columns:    Vec<String>,
+    order_columns:   Vec<String>,
 }
 
 // ── Cache data per input file ──────────────────────────────────────────────
@@ -221,7 +218,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // ── 2. Parse SQL for patterns ──────────────────────────────────────────
-    let sql_info = parse_sql(&args.arg_sql, &table_names);
+    let sql_info = parse_sql(&args.arg_sql);
 
     // ── 3. Load / generate caches ──────────────────────────────────────────
     let mut input_caches: Vec<InputCacheData> = Vec::with_capacity(args.arg_input.len());
@@ -367,7 +364,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 // SQL Parsing (lightweight, pattern-based)
 // ════════════════════════════════════════════════════════════════════════════
 
-fn parse_sql(sql: &str, table_names: &[String]) -> SqlInfo {
+fn parse_sql(sql: &str) -> SqlInfo {
     let upper = sql.to_ascii_uppercase();
     let tokens: Vec<&str> = upper.split_whitespace().collect();
 
@@ -376,40 +373,48 @@ fn parse_sql(sql: &str, table_names: &[String]) -> SqlInfo {
     let has_order_by = tokens.windows(2).any(|w| w[0] == "ORDER" && w[1] == "BY");
 
     let has_limit = tokens.contains(&"LIMIT");
-    let has_group_by = tokens.windows(2).any(|w| w[0] == "GROUP" && w[1] == "BY");
 
     let has_join = tokens.contains(&"JOIN");
     let has_where = tokens.contains(&"WHERE");
 
-    let has_subquery = upper.matches("SELECT").count() > 1;
-
-    // Identify referenced tables
-    let mut referenced_tables = Vec::new();
-    for tname in table_names {
-        if upper.contains(&tname.to_ascii_uppercase()) {
-            referenced_tables.push(tname.clone());
+    // Detect subqueries by looking for SELECT inside parentheses, which avoids
+    // false positives from "SELECT" appearing in string literals or comments.
+    let has_subquery = {
+        let mut depth = 0i32;
+        let mut found = false;
+        let bytes = upper.as_bytes();
+        let select_bytes = b"SELECT";
+        for (i, &b) in bytes.iter().enumerate() {
+            if b == b'(' {
+                depth += 1;
+            } else if b == b')' {
+                depth -= 1;
+            } else if depth > 0
+                && b == b'S'
+                && bytes.get(i..i + select_bytes.len()) == Some(select_bytes)
+            {
+                found = true;
+                break;
+            }
         }
-    }
+        found
+    };
 
     // Extract columns from WHERE clause (simplified)
     let where_columns = extract_columns_after_keyword(sql, "WHERE");
     let join_columns = extract_join_columns(sql);
     let order_columns = extract_columns_after_keyword(sql, "ORDER BY");
-    let select_columns = extract_select_columns(sql);
 
     SqlInfo {
         has_select_star,
         has_order_by,
         has_limit,
-        _has_group_by: has_group_by,
         has_join,
         has_where,
         has_subquery,
-        _referenced_tables: referenced_tables,
         where_columns,
         join_columns,
         order_columns,
-        _select_columns: select_columns,
     }
 }
 
@@ -506,45 +511,6 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
         }
     }
 
-    columns
-}
-
-fn extract_select_columns(sql: &str) -> Vec<String> {
-    let upper = sql.to_ascii_uppercase();
-    let Some(select_pos) = upper.find("SELECT") else {
-        return Vec::new();
-    };
-    let after_select = &sql[select_pos + 6..];
-    let Some(from_pos) = after_select.to_ascii_uppercase().find("FROM") else {
-        return Vec::new();
-    };
-    let select_clause = &after_select[..from_pos];
-
-    let mut columns = Vec::new();
-    for part in select_clause.split(',') {
-        let trimmed = part.trim();
-        if trimmed == "*" {
-            columns.push("*".to_string());
-            continue;
-        }
-        // Handle aliases: "col AS alias" -> col
-        let col = if let Some(as_pos) = trimmed.to_ascii_uppercase().find(" AS ") {
-            &trimmed[..as_pos]
-        } else {
-            trimmed
-        };
-        let col = col.trim();
-        // Strip table prefix
-        let col = if let Some(dot_pos) = col.rfind('.') {
-            &col[dot_pos + 1..]
-        } else {
-            col
-        };
-        // Skip function calls for now (contain parens)
-        if !col.is_empty() && !col.contains('(') {
-            columns.push(col.to_string());
-        }
-    }
     columns
 }
 
@@ -687,6 +653,10 @@ fn generate_stats_cache(input_path: &Path) -> CliResult<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         log::warn!("Stats cache generation failed: {stderr}");
+        wwarn!(
+            "Stats cache generation failed for {p} - scoring may be inaccurate: {stderr}",
+            p = input_path.display()
+        );
     }
     Ok(())
 }
@@ -700,6 +670,10 @@ fn generate_freq_cache(input_path: &Path) -> CliResult<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         log::warn!("Frequency cache generation failed: {stderr}");
+        wwarn!(
+            "Frequency cache generation failed for {p} - scoring may be inaccurate: {stderr}",
+            p = input_path.display()
+        );
     }
     Ok(())
 }
@@ -773,15 +747,23 @@ fn get_polars_plan(
 fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
     let duckdb_path = get_duckdb_path()?;
 
-    // Translate _t_N aliases to read_csv('path')
+    // Translate _t_N aliases and table names to read_csv('path').
+    // Process replacements longest-first to avoid partial matches
+    // (e.g., "data" matching inside "data2").
     let mut query = args.arg_sql.clone();
+    let mut replacements: Vec<(String, String)> = Vec::new();
     for (idx, input) in args.arg_input.iter().enumerate() {
         let alias = format!("_t_{}", idx + 1);
         let table_name = &table_names[idx];
         let escaped = input.to_string_lossy().replace('\'', "''");
         let read_csv = format!("read_csv_auto('{escaped}')");
-        query = query.replace(&alias, &read_csv);
-        query = query.replace(table_name, &read_csv);
+        replacements.push((alias, read_csv.clone()));
+        replacements.push((table_name.clone(), read_csv));
+    }
+    // Sort by length descending so longer names are replaced first
+    replacements.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    for (from, to) in &replacements {
+        query = query.replace(from, to);
     }
 
     let explain_query = format!("EXPLAIN {query}");

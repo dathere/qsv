@@ -1,149 +1,210 @@
 /**
  * Platform-specific qsv installation logic
  *
- * Detects the available package manager and installs qsv, or returns
- * manual installation instructions when no supported package manager is found.
+ * Downloads the qsv binary from GitHub Releases (latest), extracts only
+ * qsvmcp, and installs it to a discoverable location.
+ * Falls back to manual instructions for unsupported platforms.
  */
 
-import { execFile as execFileCb, execFileSync } from "child_process";
-import { promisify } from "util";
-
-const execFile = promisify(execFileCb);
-
-/** Timeout for package manager install commands (5 minutes) */
-const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
+import { execFileSync } from "child_process";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 
 export interface InstallResult {
   success: boolean;
-  method: "homebrew" | "scoop" | "manual";
+  method: "direct-download" | "manual";
   binaryPath?: string;
   output?: string;
   error?: string;
   instructions?: string;
 }
 
-type PackageManager = "homebrew" | "scoop" | "none";
+/**
+ * Asset filename suffixes for supported platforms.
+ * These match the GitHub release asset naming convention:
+ *   qsv-{version}-{suffix}.zip
+ */
+const ASSET_SUFFIXES: Record<string, string> = {
+  "darwin-arm64": "aarch64-apple-darwin",
+  "win32-x64": "x86_64-pc-windows-msvc",
+  "win32-arm64": "aarch64-pc-windows-msvc",
+};
+
+/** GitHub API URL for the latest qsv release */
+const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/dathere/qsv/releases/latest";
 
 /**
- * Detect available package manager for the current platform.
+ * Get the asset filename suffix for the current platform, or null if unsupported.
  */
-export function detectPackageManager(): PackageManager {
-  const command = process.platform === "win32" ? "where" : "which";
+export function getAssetSuffix(): string | null {
+  const key = `${process.platform}-${process.arch}`;
+  return ASSET_SUFFIXES[key] ?? null;
+}
 
-  if (process.platform === "darwin" || process.platform === "linux") {
-    try {
-      execFileSync(command, ["brew"], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-      return "homebrew";
-    } catch {
-      // brew not found
-    }
-  }
+/**
+ * Fetch the download URL for the latest qsv release for the current platform.
+ * Uses the GitHub Releases API to find the matching asset.
+ */
+export async function getDownloadUrl(): Promise<string | null> {
+  const suffix = getAssetSuffix();
+  if (!suffix) return null;
 
+  const response = await fetch(GITHUB_LATEST_RELEASE_URL, {
+    headers: { Accept: "application/vnd.github+json" },
+  });
+  if (!response.ok) return null;
+
+  const release = (await response.json()) as {
+    assets: Array<{ name: string; browser_download_url: string }>;
+  };
+
+  const asset = release.assets.find(
+    (a) => a.name.endsWith(`${suffix}.zip`),
+  );
+  return asset?.browser_download_url ?? null;
+}
+
+/**
+ * Get the target installation directory for the qsvmcp binary.
+ *
+ * macOS/Linux: /usr/local/bin if writable, else ~/.local/bin
+ * Windows: %LOCALAPPDATA%\Programs\qsv\
+ */
+export function getInstallDir(): string {
   if (process.platform === "win32") {
-    try {
-      execFileSync(command, ["scoop"], {
+    const localAppData = process.env.LOCALAPPDATA ?? join(process.env.USERPROFILE ?? "", "AppData", "Local");
+    return join(localAppData, "Programs", "qsv");
+  }
+
+  // macOS / Linux: prefer /usr/local/bin if writable
+  const systemDir = "/usr/local/bin";
+  try {
+    const testFile = join(systemDir, `.qsv-write-test-${Date.now()}`);
+    writeFileSync(testFile, "");
+    rmSync(testFile);
+    return systemDir;
+  } catch {
+    // Fall back to ~/.local/bin
+    const home = process.env.HOME ?? "/tmp";
+    return join(home, ".local", "bin");
+  }
+}
+
+/**
+ * Download and install the qsvmcp binary from the given URL.
+ */
+async function downloadAndInstall(url: string): Promise<InstallResult> {
+  const isWindows = process.platform === "win32";
+  const binaryName = isWindows ? "qsvmcp.exe" : "qsvmcp";
+  const tempDir = mkdtempSync(join(tmpdir(), "qsv-install-"));
+
+  try {
+    // 1. Download the zip file
+    const response = await fetch(url);
+    if (!response.ok) {
+      return {
+        success: false,
+        method: "direct-download",
+        error: `Download failed: HTTP ${response.status} ${response.statusText}`,
+      };
+    }
+
+    const zipPath = join(tempDir, "qsv.zip");
+    const buffer = Buffer.from(await response.arrayBuffer());
+    writeFileSync(zipPath, buffer);
+
+    // 2. Extract only the qsvmcp binary
+    if (isWindows) {
+      execFileSync("powershell", [
+        "-NoProfile",
+        "-Command",
+        `Expand-Archive -Path '${zipPath}' -DestinationPath '${tempDir}' -Force`,
+      ], { encoding: "utf8", timeout: 60_000 });
+    } else {
+      execFileSync("/usr/bin/unzip", ["-j", "-o", zipPath, binaryName, "-d", tempDir], {
         encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 60_000,
       });
-      return "scoop";
+    }
+
+    // Find the extracted binary
+    let extractedPath = join(tempDir, binaryName);
+    if (isWindows && !existsSync(extractedPath)) {
+      // PowerShell Expand-Archive may nest in a subdirectory — search for it
+      const findResult = execFileSync("powershell", [
+        "-NoProfile",
+        "-Command",
+        `(Get-ChildItem -Path '${tempDir}' -Recurse -Filter '${binaryName}' | Select-Object -First 1).FullName`,
+      ], { encoding: "utf8", timeout: 10_000 }).trim();
+      if (findResult) {
+        extractedPath = findResult;
+      }
+    }
+
+    if (!existsSync(extractedPath)) {
+      return {
+        success: false,
+        method: "direct-download",
+        error: `Could not find ${binaryName} in the downloaded archive`,
+      };
+    }
+
+    // 3. Install to target directory
+    const installDir = getInstallDir();
+    mkdirSync(installDir, { recursive: true });
+    const targetPath = join(installDir, binaryName);
+    copyFileSync(extractedPath, targetPath);
+
+    // 4. Set permissions on Unix
+    if (!isWindows) {
+      chmodSync(targetPath, 0o755);
+    }
+
+    // 5. On macOS: clear Gatekeeper quarantine flag
+    if (process.platform === "darwin") {
+      try {
+        execFileSync("xattr", ["-d", "com.apple.quarantine", targetPath], {
+          encoding: "utf8",
+          timeout: 10_000,
+        });
+      } catch {
+        // xattr removal is best-effort — may fail if no quarantine flag is set
+      }
+    }
+
+    return {
+      success: true,
+      method: "direct-download",
+      binaryPath: targetPath,
+      output: `Successfully installed ${binaryName} to ${targetPath}`,
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      method: "direct-download",
+      error: `Installation failed: ${message}`,
+    };
+  } finally {
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
     } catch {
-      // scoop not found
+      // Ignore cleanup errors
     }
-  }
-
-  return "none";
-}
-
-/**
- * Install qsv via Homebrew (macOS/Linux).
- */
-async function installViaHomebrew(): Promise<InstallResult> {
-  try {
-    const { stdout, stderr } = await execFile("brew", ["install", "qsv"], {
-      encoding: "utf8",
-      timeout: INSTALL_TIMEOUT_MS,
-      maxBuffer: 10 * 1024 * 1024,
-    });
-
-    const output = (stdout + "\n" + stderr).trim();
-
-    // "already installed" is a success case
-    if (output.includes("already installed")) {
-      return {
-        success: true,
-        method: "homebrew",
-        output,
-      };
-    }
-
-    return {
-      success: true,
-      method: "homebrew",
-      output,
-    };
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-
-    // Treat "already installed" errors as success
-    if (message.includes("already installed")) {
-      return {
-        success: true,
-        method: "homebrew",
-        output: message,
-      };
-    }
-
-    return {
-      success: false,
-      method: "homebrew",
-      error: message,
-    };
   }
 }
 
 /**
- * Install qsv via Scoop (Windows).
- */
-async function installViaScoop(): Promise<InstallResult> {
-  try {
-    const { stdout, stderr } = await execFile("scoop", ["install", "qsv"], {
-      encoding: "utf8",
-      timeout: INSTALL_TIMEOUT_MS,
-      maxBuffer: 10 * 1024 * 1024,
-    });
-
-    const output = (stdout + "\n" + stderr).trim();
-
-    return {
-      success: true,
-      method: "scoop",
-      output,
-    };
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-
-    // Treat "already installed" as success
-    if (message.includes("already installed") || message.includes("is already installed")) {
-      return {
-        success: true,
-        method: "scoop",
-        output: message,
-      };
-    }
-
-    return {
-      success: false,
-      method: "scoop",
-      error: message,
-    };
-  }
-}
-
-/**
- * Return manual installation instructions when no supported package manager is available.
+ * Return manual installation instructions when direct download is not available.
  */
 export function getManualInstructions(platform: NodeJS.Platform): InstallResult {
   const baseUrl = "https://github.com/dathere/qsv/releases/latest";
@@ -154,21 +215,17 @@ export function getManualInstructions(platform: NodeJS.Platform): InstallResult 
     case "darwin":
       instructions =
         `## Install qsv on macOS\n\n` +
-        `**Option 1: Install Homebrew first, then qsv**\n` +
-        `\`\`\`\n/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"\nbrew install qsv\n\`\`\`\n\n` +
-        `**Option 2: Download pre-built binary**\n` +
+        `**Download pre-built binary:**\n` +
         `1. Go to ${baseUrl}\n` +
         `2. Download the macOS binary (qsv-*-apple-darwin.zip)\n` +
         `3. Extract and move to /usr/local/bin/\n` +
-        `\`\`\`\nunzip qsv-*.zip\nsudo mv qsv /usr/local/bin/\n\`\`\``;
+        `\`\`\`\nunzip qsv-*.zip\nsudo mv qsvmcp /usr/local/bin/\n\`\`\``;
       break;
 
     case "win32":
       instructions =
         `## Install qsv on Windows\n\n` +
-        `**Option 1: Install Scoop first, then qsv**\n` +
-        `\`\`\`\nSet-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser\nirm get.scoop.sh | iex\nscoop install qsv\n\`\`\`\n\n` +
-        `**Option 2: Download pre-built binary**\n` +
+        `**Download pre-built binary:**\n` +
         `1. Go to ${baseUrl}\n` +
         `2. Download the Windows binary (qsv-*-x86_64-pc-windows-msvc.zip)\n` +
         `3. Extract and add to your PATH`;
@@ -181,9 +238,7 @@ export function getManualInstructions(platform: NodeJS.Platform): InstallResult 
         `1. Go to ${baseUrl}\n` +
         `2. Download the Linux binary (qsv-*-x86_64-unknown-linux-gnu.zip)\n` +
         `3. Extract and install:\n` +
-        `\`\`\`\nunzip qsv-*.zip\nsudo mv qsv /usr/local/bin/\n\`\`\`\n\n` +
-        `**Or install via Homebrew on Linux:**\n` +
-        `\`\`\`\nbrew install qsv\n\`\`\`\n\n` +
+        `\`\`\`\nunzip qsv-*.zip\nsudo mv qsvmcp /usr/local/bin/\n\`\`\`\n\n` +
         `For more options, visit ${baseUrl}`;
       break;
   }
@@ -198,21 +253,15 @@ export function getManualInstructions(platform: NodeJS.Platform): InstallResult 
 /**
  * Main entry point: install qsv using the best available method.
  *
- * On macOS: tries Homebrew, falls back to manual instructions.
- * On Windows: tries Scoop, falls back to manual instructions.
- * On Linux: tries Homebrew when available, otherwise returns manual instructions.
+ * On supported platforms (macOS ARM, Windows x64/ARM): downloads from GitHub Releases.
+ * On other platforms: returns manual installation instructions.
  */
 export async function installQsv(): Promise<InstallResult> {
-  const pm = detectPackageManager();
+  const url = await getDownloadUrl();
 
-  switch (pm) {
-    case "homebrew":
-      return await installViaHomebrew();
-
-    case "scoop":
-      return await installViaScoop();
-
-    case "none":
-      return getManualInstructions(process.platform);
+  if (url) {
+    return await downloadAndInstall(url);
   }
+
+  return getManualInstructions(process.platform);
 }

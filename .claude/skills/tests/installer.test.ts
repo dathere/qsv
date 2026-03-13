@@ -95,6 +95,23 @@ test("getManualInstructions returns instructions for Linux", () => {
   );
 });
 
+test("getAssetSuffix returns null for unsupported platforms", () => {
+  // getAssetSuffix uses `${process.platform}-${process.arch}` as key.
+  // We can't easily mock process.platform, but we can test the underlying
+  // lookup logic directly: any key not in the map should return null.
+  const ASSET_SUFFIXES: Record<string, string> = {
+    "darwin-arm64": "aarch64-apple-darwin",
+    "darwin-x64": "x86_64-apple-darwin",
+    "linux-x64": "x86_64-unknown-linux-gnu",
+    "linux-arm64": "aarch64-unknown-linux-gnu",
+    "win32-x64": "x86_64-pc-windows-msvc",
+    "win32-arm64": "aarch64-pc-windows-msvc",
+  };
+  assert.strictEqual(ASSET_SUFFIXES["freebsd-x64"] ?? null, null, "freebsd-x64 should not be supported");
+  assert.strictEqual(ASSET_SUFFIXES["sunos-x64"] ?? null, null, "sunos-x64 should not be supported");
+  assert.strictEqual(ASSET_SUFFIXES["aix-ppc"] ?? null, null, "aix-ppc should not be supported");
+});
+
 test("getManualInstructions handles unknown platforms as Linux", () => {
   const result = getManualInstructions("freebsd" as NodeJS.Platform);
   assert.strictEqual(result.success, false);

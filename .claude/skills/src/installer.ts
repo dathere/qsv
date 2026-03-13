@@ -158,7 +158,7 @@ async function downloadAndInstall(url: string): Promise<InstallResult> {
           encoding: "utf8",
           timeout: 10_000,
         }).trim().split("\n")[0];
-        if (findResult) {
+        if (findResult && findResult.length > 0) {
           extractedPath = findResult;
         }
       }

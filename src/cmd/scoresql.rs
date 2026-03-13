@@ -377,14 +377,24 @@ fn parse_sql(sql: &str) -> SqlInfo {
     let has_join = tokens.contains(&"JOIN");
     let has_where = tokens.contains(&"WHERE");
 
-    // Detect subqueries by looking for SELECT inside parentheses, which avoids
-    // false positives from "SELECT" appearing in string literals or comments.
+    // Detect subqueries by looking for SELECT inside parentheses.
+    // Tracks quote state to avoid false positives from string literals
+    // like `WHERE col = '(SELECT ...'`, and checks word boundaries to
+    // avoid matching identifiers like `SELECTIVITY`.
     let has_subquery = {
         let mut depth = 0i32;
+        let mut in_quote = false;
         let mut found = false;
         let bytes = upper.as_bytes();
         let select_bytes = b"SELECT";
         for (i, &b) in bytes.iter().enumerate() {
+            if b == b'\'' {
+                in_quote = !in_quote;
+                continue;
+            }
+            if in_quote {
+                continue;
+            }
             if b == b'(' {
                 depth += 1;
             } else if b == b')' {
@@ -393,8 +403,15 @@ fn parse_sql(sql: &str) -> SqlInfo {
                 && b == b'S'
                 && bytes.get(i..i + select_bytes.len()) == Some(select_bytes)
             {
-                found = true;
-                break;
+                // Check word boundary after SELECT
+                let after = i + select_bytes.len();
+                if after >= bytes.len()
+                    || bytes[after].is_ascii_whitespace()
+                    || bytes[after] == b'('
+                {
+                    found = true;
+                    break;
+                }
             }
         }
         found
@@ -758,10 +775,15 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
         let escaped = input.to_string_lossy().replace('\'', "''");
         let read_csv = format!("read_csv_auto('{escaped}')");
         replacements.push((alias, read_csv.clone()));
-        replacements.push((table_name.clone(), read_csv));
+        // Only add table_name replacement if it differs from the alias
+        if *table_name != format!("_t_{}", idx + 1) {
+            replacements.push((table_name.clone(), read_csv));
+        }
     }
     // Sort by length descending so longer names are replaced first
     replacements.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    // Deduplicate in case a table name equals an alias
+    replacements.dedup_by(|a, b| a.0 == b.0);
     for (from, to) in &replacements {
         query = query.replace(from, to);
     }

@@ -388,6 +388,8 @@ fn parse_sql(sql: &str) -> SqlInfo {
         let bytes = upper.as_bytes();
         let select_bytes = b"SELECT";
         for (i, &b) in bytes.iter().enumerate() {
+            // Toggle quote state; '' (SQL escaped quote) works correctly
+            // by toggle symmetry (on then off).
             if b == b'\'' {
                 in_quote = !in_quote;
                 continue;
@@ -401,9 +403,10 @@ fn parse_sql(sql: &str) -> SqlInfo {
                 depth -= 1;
             } else if depth > 0
                 && b == b'S'
+                && (i == 0 || !bytes[i - 1].is_ascii_alphanumeric())
                 && bytes.get(i..i + select_bytes.len()) == Some(select_bytes)
             {
-                // Check word boundary after SELECT
+                // Check word boundary before and after SELECT
                 let after = i + select_bytes.len();
                 if after >= bytes.len()
                     || bytes[after].is_ascii_whitespace()

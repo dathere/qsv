@@ -483,45 +483,43 @@ fn suggest_numeric_after_bimodality(
     ordered_index: bool,
 ) -> Expr {
     // moarstats: outlier impact ratio — mean shifted >20% by outliers
-    if let Some(oir) = stats.outlier_impact_ratio {
-        if oir > 0.2 {
-            if !quiet {
-                eprintln!(
-                    "Info: High outlier impact (ratio {oir:.3} > 0.2) shifts mean, using Median"
-                );
-            }
-            return Expr::Element.median();
+    if let Some(oir) = stats.outlier_impact_ratio
+        && oir > 0.2
+    {
+        if !quiet {
+            eprintln!("Info: High outlier impact (ratio {oir:.3} > 0.2) shifts mean, using Median");
         }
+        return Expr::Element.median();
     }
 
     // moarstats: >15% outlier contamination
-    if let Some(op) = stats.outliers_percentage {
-        if op > 15.0 {
-            if !quiet {
-                eprintln!("Info: High outlier percentage ({op:.1}% > 15%), using Median");
-            }
-            return Expr::Element.median();
+    if let Some(op) = stats.outliers_percentage
+        && op > 15.0
+    {
+        if !quiet {
+            eprintln!("Info: High outlier percentage ({op:.1}% > 15%), using Median");
         }
+        return Expr::Element.median();
     }
 
     // moarstats: leptokurtic / heavy-tailed distribution
-    if let Some(k) = stats.kurtosis {
-        if k > 3.0 {
-            if !quiet {
-                eprintln!("Info: Heavy-tailed distribution (kurtosis {k:.3} > 3.0), using Median");
-            }
-            return Expr::Element.median();
+    if let Some(k) = stats.kurtosis
+        && k > 3.0
+    {
+        if !quiet {
+            eprintln!("Info: Heavy-tailed distribution (kurtosis {k:.3} > 3.0), using Median");
         }
+        return Expr::Element.median();
     }
 
     // moarstats: high inequality — few values dominate
-    if let Some(gc) = stats.gini_coefficient {
-        if gc > 0.6 {
-            if !quiet {
-                eprintln!("Info: High inequality (Gini coefficient {gc:.3} > 0.6), using Median");
-            }
-            return Expr::Element.median();
+    if let Some(gc) = stats.gini_coefficient
+        && gc > 0.6
+    {
+        if !quiet {
+            eprintln!("Info: High inequality (Gini coefficient {gc:.3} > 0.6), using Median");
         }
+        return Expr::Element.median();
     }
 
     // Original: high CV
@@ -538,17 +536,17 @@ fn suggest_numeric_after_bimodality(
     // Original: high cardinality pivot + index
     if high_cardinality_pivot && high_cardinality_index {
         // moarstats: near-uniform distribution makes aggregation uninformative
-        if let Some(ne) = stats.normalized_entropy {
-            if ne > 0.9 {
-                if !quiet {
-                    eprintln!(
-                        "Info: Near-uniform distribution (normalized entropy {ne:.3} > 0.9), \
-                         using Len"
-                    );
-                }
-                return Expr::Element.len();
+        if let Some(ne) = stats.normalized_entropy
+            && ne > 0.9
+        {
+            if !quiet {
+                eprintln!(
+                    "Info: Near-uniform distribution (normalized entropy {ne:.3} > 0.9), using Len"
+                );
             }
+            return Expr::Element.len();
         }
+
         if ordered_pivot && ordered_index {
             if !quiet {
                 eprintln!("Info: Ordered high cardinality columns detected, using Mean");
@@ -562,26 +560,25 @@ fn suggest_numeric_after_bimodality(
     }
 
     // Original: skewness check
-    if let Some(skewness) = stats.skewness {
-        if skewness.abs() > 2.0 {
-            if !quiet {
-                eprintln!("Info: Highly skewed numeric data detected, using Median");
-            }
-            return Expr::Element.median();
+    if let Some(skewness) = stats.skewness
+        && skewness.abs() > 2.0
+    {
+        if !quiet {
+            eprintln!("Info: Highly skewed numeric data detected, using Median");
         }
+        return Expr::Element.median();
     }
 
     // moarstats: Pearson skewness as complementary measure
-    if let Some(ps) = stats.pearson_skewness {
-        if ps.abs() > 1.0 {
-            if !quiet {
-                eprintln!(
-                    "Info: Pearson skewness ({ps:.3}, |value| > 1.0) indicates asymmetry, using \
-                     Median"
-                );
-            }
-            return Expr::Element.median();
+    if let Some(ps) = stats.pearson_skewness
+        && ps.abs() > 1.0
+    {
+        if !quiet {
+            eprintln!(
+                "Info: Pearson skewness ({ps:.3}, |value| > 1.0) indicates asymmetry, using Median"
+            );
         }
+        return Expr::Element.median();
     }
 
     // Default for numeric

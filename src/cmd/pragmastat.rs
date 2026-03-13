@@ -321,11 +321,11 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
     let field_idx = headers
         .iter()
         .position(|h| h == "field")
-        .ok_or_else(|| "Stats CSV is missing required 'field' column")?;
+        .ok_or("Stats CSV is missing required 'field' column")?;
     let type_idx = headers
         .iter()
         .position(|h| h == "type")
-        .ok_or_else(|| "Stats CSV is missing required 'type' column")?;
+        .ok_or("Stats CSV is missing required 'type' column")?;
 
     // Check if ps_* columns already exist
     let already_exists = headers.iter().any(|h| h == "ps_center");
@@ -365,10 +365,10 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
     let writing_in_place = output_path == stats_csv_path;
     let write_target = if writing_in_place {
         // Append ".tmp" to the full filename (e.g. "data.stats.csv" -> "data.stats.csv.tmp")
-        let mut tmp_name = output_path
-            .file_name()
-            .map(std::ffi::OsString::from)
-            .unwrap_or_else(|| std::ffi::OsString::from("stats.csv"));
+        let mut tmp_name = output_path.file_name().map_or_else(
+            || std::ffi::OsString::from("stats.csv"),
+            std::ffi::OsString::from,
+        );
         tmp_name.push(".tmp");
         let mut tmp_path = output_path.clone();
         tmp_path.set_file_name(tmp_name);

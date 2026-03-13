@@ -110,16 +110,16 @@ Examples:
   qsv pragmastat --compare2 shift:0,disparity:0.8 --select latency_ms,price data.csv
 
   # Fast exploratory analysis with subsampling (~100x speedup on large datasets)
-  qsv pragmastat --subsample 10000 data.csv
+  qsv pragmastat --standalone --subsample 10000 data.csv
 
   # Reproducible subsampling with a specific seed
-  qsv pragmastat --subsample 10000 --seed 123 data.csv
+  qsv pragmastat --standalone --subsample 10000 --seed 123 data.csv
 
   # Skip confidence bounds for ~2x speedup
-  qsv pragmastat --no-bounds data.csv
+  qsv pragmastat --standalone --no-bounds data.csv
 
   # Combined: ~200x speedup for large datasets
-  qsv pragmastat --subsample 10000 --no-bounds data.csv
+  qsv pragmastat --standalone --subsample 10000 --no-bounds data.csv
 
 Full Pragmastat manual:
   https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.0.0/pragmastat-v12.0.0.pdf
@@ -158,7 +158,8 @@ pragmastat options:
         --subsample <N>    Randomly subsample N values per column before computing.
                            Speeds up large datasets while maintaining statistical
                            robustness. Recommended: 10000-50000 for exploratory analysis.
-        --seed <N>         Seed for reproducible subsampling. [default: 42]
+        --seed <N>         Seed for reproducible subsampling.
+                           If not specified, defaults to 42 when --subsample is used.
         --no-bounds        Skip confidence bounds computation (~2x faster).
                            Incompatible with --compare1/--compare2.
 
@@ -290,6 +291,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return Err(CliError::IncorrectUsage(
             "--no-bounds is incompatible with cache mode. Use --standalone with --no-bounds, or \
              omit --no-bounds when writing to the stats cache."
+                .to_string(),
+        ));
+    }
+
+    // --subsample is incompatible with cache mode (non-standalone one-sample).
+    // Approximate results from a subsample would be written to the stats cache
+    // and silently reused as if computed from the full dataset.
+    if args.flag_subsample.is_some() && is_onesample_cache {
+        return Err(CliError::IncorrectUsage(
+            "--subsample is incompatible with cache mode. Use --standalone with --subsample, or \
+             omit --subsample when writing to the stats cache."
                 .to_string(),
         ));
     }

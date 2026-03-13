@@ -1286,24 +1286,29 @@ fn pragmastat_subsample_reproducible() {
     let wrk = Workdir::new("pragmastat_subsample_reproducible");
     let test_file = wrk.load_test_file("boston311-100.csv");
 
-    // Run twice with same seed
+    // Run twice with same seed; use --round 10 to reduce rounding collisions
     let mut cmd1 = wrk.command("pragmastat");
     cmd1.arg("--standalone")
         .arg("--subsample")
         .arg("50")
         .arg("--seed")
         .arg("123")
+        .arg("--round")
+        .arg("10")
         .arg("--select")
         .arg("latitude")
         .arg(&test_file);
     let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
 
     let mut cmd_2 = wrk.command("pragmastat");
-    cmd_2.arg("--standalone")
+    cmd_2
+        .arg("--standalone")
         .arg("--subsample")
         .arg("50")
         .arg("--seed")
         .arg("123")
+        .arg("--round")
+        .arg("10")
         .arg("--select")
         .arg("latitude")
         .arg(&test_file);
@@ -1320,6 +1325,8 @@ fn pragmastat_subsample_reproducible() {
         .arg("50")
         .arg("--seed")
         .arg("999")
+        .arg("--round")
+        .arg("10")
         .arg("--select")
         .arg("latitude")
         .arg(&test_file);
@@ -1397,7 +1404,7 @@ fn pragmastat_no_bounds_twosample() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let row = &got[1];
-    // shift, ratio, disparity should be present (indices 4, 5, 6)
+    // shift should be present; ratio may be empty for non-positive values (indices 4, 5, 6)
     assert!(!row[4].is_empty(), "shift should be present");
     // bounds should be empty (indices 7-12)
     assert!(row[7].is_empty(), "shift_lower should be empty");
@@ -1462,6 +1469,18 @@ fn pragmastat_no_bounds_cache_incompatible() {
     // --no-bounds without --standalone triggers cache mode, which should be rejected
     let mut cmd = wrk.command("pragmastat");
     cmd.arg("--no-bounds").arg(&test_file);
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn pragmastat_subsample_cache_incompatible() {
+    let wrk = Workdir::new("pragmastat_subsample_cache_incompatible");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // --subsample without --standalone triggers cache mode, which should be rejected
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--subsample").arg("50").arg(&test_file);
 
     wrk.assert_err(&mut cmd);
 }

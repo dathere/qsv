@@ -76,7 +76,7 @@ export interface FilesystemConfig {
   previewLines?: number;
 
   /**
-   * Path to qsv binary (default: 'qsv')
+   * Path to qsv binary (default: auto-detected via config)
    */
   qsvBinPath?: string;
 

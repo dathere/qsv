@@ -4,20 +4,54 @@
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { detectPackageManager, getManualInstructions } from "../src/installer.js";
+import { ASSET_SUFFIXES, getAssetSuffix, getInstallDir, getManualInstructions } from "../src/installer.js";
 
-test("detectPackageManager returns a valid package manager type", () => {
-  const result = detectPackageManager();
+test("getAssetSuffix returns correct suffix for macOS ARM", { skip: process.platform !== "darwin" || process.arch !== "arm64" ? "not macOS ARM" : false }, () => {
+  assert.strictEqual(getAssetSuffix(), "aarch64-apple-darwin");
+});
+
+test("getAssetSuffix returns null for macOS x64 (not supported by Claude Desktop)", { skip: process.platform !== "darwin" || process.arch !== "x64" ? "not macOS x64" : false }, () => {
+  assert.strictEqual(getAssetSuffix(), null);
+});
+
+test("getAssetSuffix returns null for Linux x64 (not supported by Claude Desktop)", { skip: process.platform !== "linux" || process.arch !== "x64" ? "not Linux x64" : false }, () => {
+  assert.strictEqual(getAssetSuffix(), null);
+});
+
+test("getAssetSuffix returns null for Linux ARM64 (not supported by Claude Desktop)", { skip: process.platform !== "linux" || process.arch !== "arm64" ? "not Linux ARM64" : false }, () => {
+  assert.strictEqual(getAssetSuffix(), null);
+});
+
+test("getAssetSuffix returns correct suffix for Windows x64", { skip: process.platform !== "win32" || process.arch !== "x64" ? "not Windows x64" : false }, () => {
+  assert.strictEqual(getAssetSuffix(), "x86_64-pc-windows-msvc");
+});
+
+test("getAssetSuffix returns correct suffix for Windows ARM64", { skip: process.platform !== "win32" || process.arch !== "arm64" ? "not Windows ARM64" : false }, () => {
+  assert.strictEqual(getAssetSuffix(), "aarch64-pc-windows-msvc");
+});
+
+test("getAssetSuffix returns string or null", () => {
+  const result = getAssetSuffix();
   assert.ok(
-    result === "homebrew" || result === "scoop" || result === "none",
-    `Expected homebrew, scoop, or none but got: ${result}`,
+    result === null || typeof result === "string",
+    `Expected string or null but got: ${typeof result}`,
   );
 });
 
-test("detectPackageManager returns homebrew or none on non-Windows", () => {
-  if (process.platform !== "win32") {
-    const result = detectPackageManager();
-    assert.notStrictEqual(result, "scoop", "scoop should not be detected on non-Windows");
+test("getInstallDir returns a non-empty string", () => {
+  const result = getInstallDir();
+  assert.ok(typeof result === "string" && result.length > 0, "should return a non-empty path");
+});
+
+test("getInstallDir returns platform-appropriate path", () => {
+  const result = getInstallDir();
+  if (process.platform === "win32") {
+    assert.ok(result.includes("Programs") && result.includes("qsv"), "Windows path should include Programs\\qsv");
+  } else {
+    assert.ok(
+      result === "/usr/local/bin" || result.includes(".local/bin"),
+      "Unix path should be /usr/local/bin or ~/.local/bin",
+    );
   }
 });
 
@@ -27,10 +61,13 @@ test("getManualInstructions returns instructions for macOS", () => {
   assert.strictEqual(result.method, "manual");
   assert.ok(result.instructions, "should have instructions");
   assert.ok(result.instructions!.includes("macOS"), "should mention macOS");
-  assert.ok(result.instructions!.includes("Homebrew"), "should mention Homebrew");
   assert.ok(
     result.instructions!.includes("github.com/dathere/qsv/releases"),
     "should include releases URL",
+  );
+  assert.ok(
+    !result.instructions!.includes("Homebrew"),
+    "should not mention Homebrew",
   );
 });
 
@@ -40,7 +77,10 @@ test("getManualInstructions returns instructions for Windows", () => {
   assert.strictEqual(result.method, "manual");
   assert.ok(result.instructions, "should have instructions");
   assert.ok(result.instructions!.includes("Windows"), "should mention Windows");
-  assert.ok(result.instructions!.includes("Scoop"), "should mention Scoop");
+  assert.ok(
+    !result.instructions!.includes("Scoop"),
+    "should not mention Scoop",
+  );
 });
 
 test("getManualInstructions returns instructions for Linux", () => {
@@ -50,13 +90,17 @@ test("getManualInstructions returns instructions for Linux", () => {
   assert.ok(result.instructions, "should have instructions");
   assert.ok(result.instructions!.includes("Linux"), "should mention Linux");
   assert.ok(
-    result.instructions!.includes("Homebrew on Linux"),
-    "should include Homebrew on Linux option",
+    !result.instructions!.includes("Homebrew"),
+    "should not mention Homebrew",
   );
-  assert.ok(
-    !result.instructions!.includes("cargo install"),
-    "should not reference cargo install",
-  );
+});
+
+test("getAssetSuffix returns null for unsupported platforms", () => {
+  // Test against the real ASSET_SUFFIXES map exported from installer.ts
+  // to ensure unsupported platforms are not accidentally added.
+  assert.strictEqual(ASSET_SUFFIXES["freebsd-x64"] ?? null, null, "freebsd-x64 should not be supported");
+  assert.strictEqual(ASSET_SUFFIXES["sunos-x64"] ?? null, null, "sunos-x64 should not be supported");
+  assert.strictEqual(ASSET_SUFFIXES["aix-ppc"] ?? null, null, "aix-ppc should not be supported");
 });
 
 test("getManualInstructions handles unknown platforms as Linux", () => {

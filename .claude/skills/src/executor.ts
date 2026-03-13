@@ -168,7 +168,7 @@ export class SkillExecutor {
   private qsvBinary: string;
   private workingDirectory: string;
 
-  constructor(qsvBinary: string = "qsv", workingDirectory?: string) {
+  constructor(qsvBinary: string = config.qsvBinPath, workingDirectory?: string) {
     this.qsvBinary = qsvBinary;
     this.workingDirectory = workingDirectory || process.cwd();
   }

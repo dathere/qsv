@@ -14,7 +14,7 @@ import type {
   FileMetadata,
 } from "./types.js";
 import { formatBytes, getErrorMessage } from "./utils.js";
-import { config } from "./config.js";
+import { config as appConfig } from "./config.js";
 import { runQsvSimple } from "./executor.js";
 
 /**
@@ -76,7 +76,7 @@ export interface FilesystemConfig {
   previewLines?: number;
 
   /**
-   * Path to qsv binary (default: 'qsv')
+   * Path to qsv binary (default: auto-detected via config)
    */
   qsvBinPath?: string;
 
@@ -157,7 +157,7 @@ export class FilesystemResourceProvider {
     );
     this.maxPreviewSize = config.maxPreviewSize || 1024 * 1024; // 1MB
     this.previewLines = config.previewLines || 20;
-    this.qsvBinPath = config.qsvBinPath || "qsv";
+    this.qsvBinPath = config.qsvBinPath || appConfig.qsvBinPath;
     this.pluginMode = config.pluginMode || false;
     this.metadataCache = new Map();
     this.metadataCachePromises = new Map();
@@ -327,11 +327,11 @@ export class FilesystemResourceProvider {
       await this.scanDirectory(dir, resources, recursive);
 
       // Enforce file listing limit
-      if (resources.length > config.maxFilesPerListing) {
-        const limited = resources.slice(0, config.maxFilesPerListing);
+      if (resources.length > appConfig.maxFilesPerListing) {
+        const limited = resources.slice(0, appConfig.maxFilesPerListing);
         console.error(
           `Found ${resources.length} tabular data files in ${dir}, ` +
-          `but limit is ${config.maxFilesPerListing}. Returning first ${config.maxFilesPerListing} files.`,
+          `but limit is ${appConfig.maxFilesPerListing}. Returning first ${appConfig.maxFilesPerListing} files.`,
         );
         return { resources: limited };
       }

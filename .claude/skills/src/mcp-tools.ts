@@ -4021,11 +4021,9 @@ export async function handleLogCall(
  */
 export function createSetupToolDefinition(): McpToolDefinition {
   const platformHint =
-    process.platform === "darwin"
-      ? "Homebrew (brew install qsv)"
-      : process.platform === "win32"
-        ? "Scoop (scoop install qsv)"
-        : "Homebrew on Linux when available (brew install qsv), or manual download from GitHub releases";
+    process.platform === "darwin" || process.platform === "win32"
+      ? "direct download from GitHub Releases"
+      : "manual download from GitHub releases";
 
   return {
     name: "qsv_setup",

@@ -47,6 +47,9 @@ const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/dathere/qsv/rele
 /** Timeout for GitHub API and download requests (60 seconds) */
 const FETCH_TIMEOUT_MS = 60_000;
 
+/** Escape single quotes for PowerShell single-quoted strings */
+const psEscape = (s: string) => s.replace(/'/g, "''");
+
 /**
  * Get the asset filename suffix for the current platform, or null if unsupported.
  */
@@ -114,9 +117,6 @@ async function downloadAndInstall(url: string): Promise<InstallResult> {
   const tempDir = mkdtempSync(join(tmpdir(), "qsv-install-"));
 
   try {
-    // Helper to escape single quotes for PowerShell single-quoted strings
-    const psEscape = (s: string) => s.replace(/'/g, "''");
-
     // 1. Download the zip file
     const response = await fetch(url, {
       headers: { "User-Agent": "qsv-mcp-server" },
@@ -156,7 +156,7 @@ async function downloadAndInstall(url: string): Promise<InstallResult> {
         const findResult = execFileSync("powershell", [
           "-NoProfile",
           "-Command",
-          `(Get-ChildItem -Path '${psEscape(tempDir)}' -Recurse -Filter '${psEscape(binaryName)}' | Select-Object -First 1).FullName`,
+          `(Get-ChildItem -Path '${psEscape(tempDir)}' -Recurse -Filter '${binaryName}' | Select-Object -First 1).FullName`,
         ], { encoding: "utf8", timeout: 10_000 }).trim();
         if (findResult) {
           extractedPath = findResult;

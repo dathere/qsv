@@ -134,9 +134,10 @@ To prevent this, qsv has two memory check heuristics when running "non-streaming
 2. if the size of the CSV file is greater than TOTAL memory - HEADROOM (default: 20%), qsv will abort with an error
 
 #### CONSERVATIVE mode
-1. at startup, compute total available memory by adding the current available memory and free swap space 
-2. subtract a percentage headroom from the total available memory (default: 20%)
-3. if this adjusted total available memory is less than the size of the CSV file, qsv will abort with an error
+1. at startup, compute total available memory by adding the current available memory and free swap space
+2. apply a platform-specific multiplier (1.3x on macOS, 1.15x on Linux, 1.0x on Windows) to account for OS-level memory management differences
+3. subtract a percentage headroom from the adjusted total available memory (default: 20%)
+4. if this adjusted total available memory is less than the size of the CSV file, qsv will abort with an error
 
 The percentage headroom can be changed by setting the `QSV_FREEMEMORY_HEADROOM_PCT` environment variable to a value between 10 and 90 (default: 20).
 
@@ -265,7 +266,7 @@ cargo build --profile release-nightly --bin qsvdp -Z build-std=std,panic_abort \
   --features datapusher_plus,nightly --target x86_64-unknown-linux-gnu
 ```
 
-With that said, there are times that Rust Nightly/Unstable does "break" qsv. That's why we include `qsv_rust_version_info.txt` in the 
+With that said, there are times that Rust Nightly/Unstable does "break" qsv. That's why we include `qsv_nightly_rust_version_info.txt` in the
 nightly release build zip files, should you need to pin Rust to a specific nightly version when building locally.
 
 ## Benchmarking for Performance

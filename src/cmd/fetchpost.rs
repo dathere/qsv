@@ -47,7 +47,7 @@ By default, it will connect to a local Redis instance at redis://127.0.0.1:6379/
 with a cache expiry Time-to-Live (TTL) of 2,419,200 seconds (28 days),
 and cache hits NOT refreshing the TTL of cached values.
 
-Set the environment variables QSV_FP_REDIS_CONNSTR, QSV_REDIS_TTL_SECONDS and
+Set the environment variables QSV_FP_REDIS_CONNSTR, QSV_REDIS_TTL_SECS and
 QSV_REDIS_TTL_REFRESH to change default Redis settings.
 
 Note that the default values are the same as the fetch command, except fetchpost creates the
@@ -227,7 +227,7 @@ Fetchpost options:
     --redis-cache              Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/2"
                                with a connection pool size of 20, with a TTL of 28 days, and a cache hit
                                NOT renewing an entry's TTL.
-                               Adjust the QSV_FP_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS &
+                               Adjust the QSV_FP_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECS &
                                QSV_REDIS_TTL_REFRESH respectively to change Redis settings.
 
     --cache-error              Cache error responses even if a request fails. If an identical URL is requested,

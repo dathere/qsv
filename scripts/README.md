@@ -11,7 +11,7 @@ Usage: ./benchmarks.sh <argument>
   if <argument> is omitted, all benchmarks are executed.
 
   if <argument> is "reset", the benchmark data will be downloaded and prepared again.
-   though the results/benchmark_results.csv and resutls/run_info_history.tsv historical
+   though the results/benchmark_results.csv and results/run_info_history.tsv historical
    archives will be preserved.
   if <argument> is "clean", temporary files will be deleted.
   if <argument> is "setup", setup and install all the required tools.
@@ -26,7 +26,7 @@ so it be can run on hardware and workloads that reflect your requirements/enviro
 
 See [benchmarks.sh](benchmarks.sh) for more details.
 
-## misc/docopt-wonders.bash - optional qsv tab completion support
+## misc/docopt-wordlist.bash - optional qsv tab completion support
 qsv's command-line options are quite extensive. Thankfully, since it uses [docopt](http://docopt.org/) for CLI processing,
 we can take advantage of [docopt.rs' tab completion support](https://github.com/docopt/docopt.rs#tab-completion-support) to make it
 easier to use qsv at the command-line (currently, only bash shell is supported):
@@ -38,6 +38,6 @@ cargo install docopt
 # IMPORTANT: run these commands from the root directory of your qsv git repository
 # to setup bash qsv tab completion
 echo "DOCOPT_WORDLIST_BIN=\"$(which docopt-wordlist)"\" >> $HOME/.bash_completion
-echo "source \"$(pwd)/scripts/docopt-wordlist.bash\"" >> $HOME/.bash_completion
+echo "source \"$(pwd)/scripts/misc/docopt-wordlist.bash\"" >> $HOME/.bash_completion
 echo "complete -F _docopt_wordlist_commands qsv" >> $HOME/.bash_completion
 ```

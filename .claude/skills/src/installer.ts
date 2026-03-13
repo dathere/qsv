@@ -8,7 +8,9 @@
 
 import { execFileSync } from "child_process";
 import {
+  accessSync,
   chmodSync,
+  constants,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -35,6 +37,9 @@ export interface InstallResult {
  */
 const ASSET_SUFFIXES: Record<string, string> = {
   "darwin-arm64": "aarch64-apple-darwin",
+  "darwin-x64": "x86_64-apple-darwin",
+  "linux-x64": "x86_64-unknown-linux-gnu",
+  "linux-arm64": "aarch64-unknown-linux-gnu",
   "win32-x64": "x86_64-pc-windows-msvc",
   "win32-arm64": "aarch64-pc-windows-msvc",
 };
@@ -88,9 +93,7 @@ export function getInstallDir(): string {
   // macOS / Linux: prefer /usr/local/bin if writable
   const systemDir = "/usr/local/bin";
   try {
-    const testFile = join(systemDir, `.qsv-write-test-${Date.now()}`);
-    writeFileSync(testFile, "");
-    rmSync(testFile);
+    accessSync(systemDir, constants.W_OK);
     return systemDir;
   } catch {
     // Fall back to ~/.local/bin
@@ -130,23 +133,34 @@ async function downloadAndInstall(url: string): Promise<InstallResult> {
         `Expand-Archive -Path '${zipPath}' -DestinationPath '${tempDir}' -Force`,
       ], { encoding: "utf8", timeout: 60_000 });
     } else {
-      execFileSync("/usr/bin/unzip", ["-j", "-o", zipPath, binaryName, "-d", tempDir], {
+      // Extract entire archive, then search for the binary (handles nested directories)
+      execFileSync("/usr/bin/unzip", ["-o", zipPath, "-d", tempDir], {
         encoding: "utf8",
         timeout: 60_000,
       });
     }
 
-    // Find the extracted binary
+    // Find the extracted binary (may be nested in a subdirectory)
     let extractedPath = join(tempDir, binaryName);
-    if (isWindows && !existsSync(extractedPath)) {
-      // PowerShell Expand-Archive may nest in a subdirectory — search for it
-      const findResult = execFileSync("powershell", [
-        "-NoProfile",
-        "-Command",
-        `(Get-ChildItem -Path '${tempDir}' -Recurse -Filter '${binaryName}' | Select-Object -First 1).FullName`,
-      ], { encoding: "utf8", timeout: 10_000 }).trim();
-      if (findResult) {
-        extractedPath = findResult;
+    if (!existsSync(extractedPath)) {
+      if (isWindows) {
+        const findResult = execFileSync("powershell", [
+          "-NoProfile",
+          "-Command",
+          `(Get-ChildItem -Path '${tempDir}' -Recurse -Filter '${binaryName}' | Select-Object -First 1).FullName`,
+        ], { encoding: "utf8", timeout: 10_000 }).trim();
+        if (findResult) {
+          extractedPath = findResult;
+        }
+      } else {
+        // Use find to locate the binary in nested directories
+        const findResult = execFileSync("/usr/bin/find", [tempDir, "-name", binaryName, "-type", "f"], {
+          encoding: "utf8",
+          timeout: 10_000,
+        }).trim().split("\n")[0];
+        if (findResult) {
+          extractedPath = findResult;
+        }
       }
     }
 
@@ -253,7 +267,7 @@ export function getManualInstructions(platform: NodeJS.Platform): InstallResult 
 /**
  * Main entry point: install qsv using the best available method.
  *
- * On supported platforms (macOS ARM, Windows x64/ARM): downloads from GitHub Releases.
+ * On supported platforms (macOS, Linux, Windows): downloads from GitHub Releases.
  * On other platforms: returns manual installation instructions.
  */
 export async function installQsv(): Promise<InstallResult> {

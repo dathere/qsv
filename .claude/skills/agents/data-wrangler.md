@@ -48,8 +48,8 @@ Skip this if the user provides absolute file paths or if you're unsure of the wo
 
 ## Standard Workflow
 
-1. **Assess**: Use `qsv_sniff`, `qsv_count`, `qsv_headers` to understand input.
-2. **Index**: Run `qsv_index` for fast access.
+1. **Index**: Run `qsv_index` for fast access.
+2. **Assess**: Use `qsv_sniff`, `qsv_count`, `qsv_headers` to understand input.
 3. **Profile**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` to understand data characteristics before transforming.
 4. **Plan**: Determine the sequence of transformations needed.
 5. **Transform**: Execute transforms using individual tools, chaining operations sequentially.

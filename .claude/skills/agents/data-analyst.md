@@ -49,8 +49,8 @@ Skip this if the user provides absolute file paths or if you're unsure of the wo
 
 ## Standard Workflow
 
-1. **Orient**: Use `qsv_sniff` to detect format, then `qsv_count` and `qsv_headers` to understand structure.
-2. **Index**: Always run `qsv_index` early for fast access.
+1. **Index**: Always run `qsv_index` first for fast access.
+2. **Orient**: Use `qsv_sniff` to detect format, then `qsv_count` and `qsv_headers` to understand structure.
 3. **Profile**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` for comprehensive column statistics.
 4. **Explore**: Use `qsv_frequency` for distributions, `qsv_slice` for row samples, `qsv_search` for filtering.
 5. **Query**: Use `qsv_sqlp` for SQL-based analysis (GROUP BY, aggregations, window functions, joins). For CSV > 10MB, convert to Parquet first with `qsv_to_parquet` for dramatically faster SQL queries, then use `read_parquet('file.parquet')` as the table source in `sqlp`.

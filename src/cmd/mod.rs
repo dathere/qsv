@@ -87,6 +87,11 @@ pub mod safenames;
 pub mod sample;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod schema;
+#[cfg(all(
+    feature = "polars",
+    any(feature = "feature_capable", feature = "datapusher_plus")
+))]
+pub mod scoresql;
 pub mod search;
 pub mod searchset;
 pub mod select;

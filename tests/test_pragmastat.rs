@@ -1298,8 +1298,8 @@ fn pragmastat_subsample_reproducible() {
         .arg(&test_file);
     let got1: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
 
-    let mut cmd2 = wrk.command("pragmastat");
-    cmd2.arg("--standalone")
+    let mut cmd_2 = wrk.command("pragmastat");
+    cmd_2.arg("--standalone")
         .arg("--subsample")
         .arg("50")
         .arg("--seed")
@@ -1307,7 +1307,7 @@ fn pragmastat_subsample_reproducible() {
         .arg("--select")
         .arg("latitude")
         .arg(&test_file);
-    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // Same seed => same output
     assert_eq!(got1[1][2], got2[1][2], "center should be identical");

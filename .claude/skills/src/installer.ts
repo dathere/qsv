@@ -35,7 +35,7 @@ export interface InstallResult {
  * These match the GitHub release asset naming convention:
  *   qsv-{version}-{suffix}.zip
  */
-const ASSET_SUFFIXES: Record<string, string> = {
+export const ASSET_SUFFIXES: Record<string, string> = {
   "darwin-arm64": "aarch64-apple-darwin",
   "darwin-x64": "x86_64-apple-darwin",
   "linux-x64": "x86_64-unknown-linux-gnu",
@@ -158,7 +158,7 @@ async function downloadAndInstall(url: string): Promise<InstallResult> {
           encoding: "utf8",
           timeout: 10_000,
         }).trim().split("\n")[0];
-        if (findResult && findResult.length > 0) {
+        if (findResult) {
           extractedPath = findResult;
         }
       }

@@ -53,7 +53,7 @@ in a either a disk cache (default) or a Redis cache. It does so by calculating t
 input file and using it as the primary cache key along with the prompt type, model and other parameters
 as required.
 
-The default disk cache is stored in the ~/.qsv/cache/describegpt directory with a default TTL of 28 days
+The default disk cache is stored in the ~/.qsv-cache/describegpt directory with a default TTL of 28 days
 and cache hits NOT refreshing an existing cached value's TTL.
 Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars to change disk cache settings.
 
@@ -305,7 +305,7 @@ describegpt options:
                            it will be created. If the directory exists, it will be used as is, and will not
                            be flushed. This option allows you to maintain several disk caches for different
                            describegpt jobs (e.g. one for a data portal, another for internal data exchange).
-                           [default: ~/.qsv/cache/describegpt]
+                           [default: ~/.qsv-cache/describegpt]
     --redis-cache          Use Redis instead of the default disk cache to cache LLM completions.
                            It connects to "redis://127.0.0.1:6379/3" by default, with a connection pool
                            size of 20, with a TTL of 28 days, and cache hits NOT refreshing an existing
@@ -4624,7 +4624,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     } else {
         // Default disk cache directory
-        let default_dir = util::expand_tilde("~/.qsv/cache/describegpt").unwrap();
+        let default_dir = util::expand_tilde("~/.qsv-cache/describegpt").unwrap();
         default_dir.to_string_lossy().to_string()
     };
 

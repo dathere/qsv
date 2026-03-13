@@ -65,7 +65,7 @@ in a either a disk cache (default) or a Redis cache. It does so by calculating t
 input file and using it as the primary cache key along with the prompt type, model and other parameters
 as required.
 
-The default disk cache is stored in the ~/.qsv/cache/describegpt directory with a default TTL of 28 days
+The default disk cache is stored in the ~/.qsv-cache/describegpt directory with a default TTL of 28 days
 and cache hits NOT refreshing an existing cached value's TTL.
 Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars to change disk cache settings.
 
@@ -73,7 +73,7 @@ Alternatively a Redis cache can be used instead of the disk cache. This is espec
 to share the cache across the network with other users or computers.
 The Redis cache is stored in database 3 by default with a TTL of 28 days and cache hits NOT refreshing
 an existing cached value's TTL. Adjust the QSV_DG_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE,
-QSV_REDIS_TTL_SECONDS & QSV_REDIS_TTL_REFRESH env vars to change Redis cache settings.
+QSV_REDIS_TTL_SECS & QSV_REDIS_TTL_REFRESH env vars to change Redis cache settings.
 
 
 <a name="examples"></a>
@@ -276,7 +276,7 @@ qsv describegpt --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--no-cache`&nbsp; | flag | Disable default disk cache. |  |
-| &nbsp;`--disk-cache-dir`&nbsp; | string | The directory to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different describegpt jobs (e.g. one for a data portal, another for internal data exchange). | `~/.qsv/cache/describegpt` |
+| &nbsp;`--disk-cache-dir`&nbsp; | string | The directory to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different describegpt jobs (e.g. one for a data portal, another for internal data exchange). | `~/.qsv-cache/describegpt` |
 | &nbsp;`--redis-cache`&nbsp; | flag | Use Redis instead of the default disk cache to cache LLM completions. It connects to "redis://127.0.0.1:6379/3" by default, with a connection pool size of 20, with a TTL of 28 days, and cache hits NOT refreshing an existing cached value's TTL. This option automatically disables the disk cache. |  |
 | &nbsp;`--fresh`&nbsp; | flag | Send a fresh request to the LLM API, refreshing a cached response if it exists. When a --prompt SQL query fails, you can also use this option to request the LLM to generate a new SQL query. |  |
 | &nbsp;`--forget`&nbsp; | flag | Remove a cached response if it exists and then exit. |  |

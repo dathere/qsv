@@ -33,7 +33,7 @@ set the --mem-cache-size option.
 
 Disk Cache:
 For persistent, inter-session caching, a DiskCache can be enabled with the --disk-cache flag.
-By default, it will store the cache in the directory ~/.qsv/cache/fetch, with a cache expiry
+By default, it will store the cache in the directory ~/.qsv-cache/fetch, with a cache expiry
 Time-to-Live (TTL) of 2,419,200 seconds (28 days), and cache hits NOT refreshing the TTL
 of cached values.
 
@@ -46,7 +46,7 @@ By default, it will connect to a local Redis instance at redis://127.0.0.1:6379/
 with a cache expiry Time-to-Live (TTL) of 2,419,200 seconds (28 days),
 and cache hits NOT refreshing the TTL of cached values.
 
-Set the environment variables QSV_REDIS_CONNSTR, QSV_REDIS_TTL_SECONDS and
+Set the environment variables QSV_REDIS_CONNSTR, QSV_REDIS_TTL_SECS and
 QSV_REDIS_TTL_REFRESH to change default Redis settings.
 
 If you don't want responses to be cached at all, use the --no-cache flag.
@@ -207,8 +207,8 @@ qsv fetch --help
 | &nbsp;`--no-cache`&nbsp; | flag | Do not cache responses. |  |
 | &nbsp;`--mem-cache-size`&nbsp; | string | Maximum number of entries in the in-memory LRU cache. | `2000000` |
 | &nbsp;`--disk-cache`&nbsp; | flag | Use a persistent disk cache for responses. The cache is stored in the directory specified by --disk-cache-dir. If the directory does not exist, it will be created. If the directory exists, it will be used as is. It has a default Time To Live (TTL)/lifespan of 28 days and cache hits do not refresh the TTL of cached values. Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars to change DiskCache settings. |  |
-| &nbsp;`--disk-cache-dir`&nbsp; | string | The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different fetch jobs (e.g. one for geocoding, another for weather, etc.) | `~/.qsv/cache/fetch` |
-| &nbsp;`--redis-cache`&nbsp; | flag | Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/1" with a connection pool size of 20, with a TTL of 28 days, and a cache hit NOT renewing an entry's TTL. Adjust the QSV_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS & QSV_REDIS_TTL_REFRESH env vars respectively to change Redis settings. This option is ignored if the --disk-cache option is enabled. |  |
+| &nbsp;`--disk-cache-dir`&nbsp; | string | The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different fetch jobs (e.g. one for geocoding, another for weather, etc.) | `~/.qsv-cache/fetch` |
+| &nbsp;`--redis-cache`&nbsp; | flag | Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/1" with a connection pool size of 20, with a TTL of 28 days, and a cache hit NOT renewing an entry's TTL. Adjust the QSV_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECS & QSV_REDIS_TTL_REFRESH env vars respectively to change Redis settings. This option is ignored if the --disk-cache option is enabled. |  |
 | &nbsp;`--cache-error`&nbsp; | flag | Cache error responses even if a request fails. If an identical URL is requested, the cached error is returned. Otherwise, the fetch is attempted again for --max-retries. |  |
 | &nbsp;`--flush-cache`&nbsp; | flag | Flush all the keys in the current cache on startup. This only applies to Disk and Redis caches. |  |
 

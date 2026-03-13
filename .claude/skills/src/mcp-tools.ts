@@ -4022,7 +4022,7 @@ export async function handleLogCall(
 export function createSetupToolDefinition(): McpToolDefinition {
   const platformHint =
     process.platform === "darwin" || process.platform === "win32"
-      ? "direct download from qsv.dathere.com"
+      ? "direct download from GitHub Releases"
       : "manual download from GitHub releases";
 
   return {

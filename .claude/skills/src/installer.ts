@@ -19,7 +19,7 @@ import {
   writeFileSync,
 } from "fs";
 import { join } from "path";
-import { tmpdir } from "os";
+import { homedir, tmpdir } from "os";
 
 export interface InstallResult {
   success: boolean;
@@ -44,6 +44,9 @@ export const ASSET_SUFFIXES: Record<string, string> = {
 /** GitHub API URL for the latest qsv release */
 const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/dathere/qsv/releases/latest";
 
+/** Timeout for GitHub API and download requests (60 seconds) */
+const FETCH_TIMEOUT_MS = 60_000;
+
 /**
  * Get the asset filename suffix for the current platform, or null if unsupported.
  */
@@ -61,7 +64,11 @@ export async function getDownloadUrl(): Promise<string | null> {
   if (!suffix) return null;
 
   const response = await fetch(GITHUB_LATEST_RELEASE_URL, {
-    headers: { Accept: "application/vnd.github+json" },
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "qsv-mcp-server",
+    },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!response.ok) return null;
 
@@ -83,7 +90,7 @@ export async function getDownloadUrl(): Promise<string | null> {
  */
 export function getInstallDir(): string {
   if (process.platform === "win32") {
-    const localAppData = process.env.LOCALAPPDATA ?? join(process.env.USERPROFILE ?? "", "AppData", "Local");
+    const localAppData = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
     return join(localAppData, "Programs", "qsv");
   }
 
@@ -94,8 +101,7 @@ export function getInstallDir(): string {
     return systemDir;
   } catch {
     // Fall back to ~/.local/bin
-    const home = process.env.HOME ?? "/tmp";
-    return join(home, ".local", "bin");
+    return join(homedir(), ".local", "bin");
   }
 }
 
@@ -108,8 +114,14 @@ async function downloadAndInstall(url: string): Promise<InstallResult> {
   const tempDir = mkdtempSync(join(tmpdir(), "qsv-install-"));
 
   try {
+    // Helper to escape single quotes for PowerShell single-quoted strings
+    const psEscape = (s: string) => s.replace(/'/g, "''");
+
     // 1. Download the zip file
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: { "User-Agent": "qsv-mcp-server" },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
     if (!response.ok) {
       return {
         success: false,
@@ -127,7 +139,7 @@ async function downloadAndInstall(url: string): Promise<InstallResult> {
       execFileSync("powershell", [
         "-NoProfile",
         "-Command",
-        `Expand-Archive -Path '${zipPath}' -DestinationPath '${tempDir}' -Force`,
+        `Expand-Archive -Path '${psEscape(zipPath)}' -DestinationPath '${psEscape(tempDir)}' -Force`,
       ], { encoding: "utf8", timeout: 60_000 });
     } else {
       // Extract entire archive, then search for the binary (handles nested directories)
@@ -144,7 +156,7 @@ async function downloadAndInstall(url: string): Promise<InstallResult> {
         const findResult = execFileSync("powershell", [
           "-NoProfile",
           "-Command",
-          `(Get-ChildItem -Path '${tempDir}' -Recurse -Filter '${binaryName}' | Select-Object -First 1).FullName`,
+          `(Get-ChildItem -Path '${psEscape(tempDir)}' -Recurse -Filter '${psEscape(binaryName)}' | Select-Object -First 1).FullName`,
         ], { encoding: "utf8", timeout: 10_000 }).trim();
         if (findResult) {
           extractedPath = findResult;
@@ -228,7 +240,7 @@ export function getManualInstructions(platform: NodeJS.Platform): InstallResult 
         `## Install qsv on macOS\n\n` +
         `**Download pre-built binary:**\n` +
         `1. Go to ${baseUrl}\n` +
-        `2. Download the macOS binary (qsv-*-apple-darwin.zip)\n` +
+        `2. Download the macOS ARM64 binary (qsv-*-aarch64-apple-darwin.zip)\n` +
         `3. Extract and move to /usr/local/bin/\n` +
         `\`\`\`\nunzip qsv-*.zip\nsudo mv qsvmcp /usr/local/bin/\n\`\`\``;
       break;

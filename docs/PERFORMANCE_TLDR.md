@@ -75,7 +75,7 @@ If you need to fine-tune performance further:
    ```bash
    # Adjust read/write buffer sizes (in bytes)
    export QSV_RDR_BUFFER_CAPACITY=131072  # Default 128KB
-   export QSV_WTR_BUFFER_CAPACITY=262144  # Default 256KB
+   export QSV_WTR_BUFFER_CAPACITY=524288  # Default 512KB
    ```
 
 2. **Control parallel processing:**

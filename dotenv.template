@@ -222,19 +222,19 @@ QSV_DISKCACHE_TTL_SECS = 2419200
 QSV_DISKCACHE_TTL_REFRESH = False
 
 # the `fetch` command can use Redis to cache responses.
-# Set to connect to the desired Redis instance. (default: `redis:127.0.0.1:6379/1`).
-# For more info on valid Redis connection string formats, 
+# Set to connect to the desired Redis instance. (default: `redis://127.0.0.1:6379/1`).
+# For more info on valid Redis connection string formats,
 # see https://docs.rs/redis/latest/redis/#connection-parameters.
-QSV_REDIS_CONNSTR = redis:127.0.0.1:6379/1
+QSV_REDIS_CONNSTR = redis://127.0.0.1:6379/1
 
 # the `fetchpost` command can also use Redis to cache responses
-# (default: `redis:127.0.0.1:6379/2`). Note that `fetchpost` connects to
+# (default: `redis://127.0.0.1:6379/2`). Note that `fetchpost` connects to
 # database 2, as opposed to `fetch` which connects to database 1.
-QSV_FP_REDIS_CONNSTR = redis:127.0.0.1:6379/2
+QSV_FP_REDIS_CONNSTR = redis://127.0.0.1:6379/2
 
 # the `describegpt` command can also use Redis to cache responses
-# (default: `redis:127.0.0.1:6379/3`).
-QSV_DG_REDIS_CONNSTR = redis:127.0.0.1:6379/3
+# (default: `redis://127.0.0.1:6379/3`).
+QSV_DG_REDIS_CONNSTR = redis://127.0.0.1:6379/3
 
 # the maximum Redis connection pool size. (default: 20).
 QSV_REDIS_MAX_POOL_SIZE = 20
@@ -303,10 +303,6 @@ QSV_TIMEOUT = 30
 
 # --- Performance Tuning ---
 
-# Command timeout in milliseconds. Used by Desktop extension mode.
-# (default: 300000 (5 min), min: 10000, max: 3600000)
-# QSV_MCP_TIMEOUT_MS = 300000
-
 # Operation timeout in milliseconds. Used by legacy MCP mode.
 # (default: 120000 (2 min), min: 1000, max: 1800000)
 # QSV_MCP_OPERATION_TIMEOUT_MS = 120000
@@ -323,10 +319,6 @@ QSV_TIMEOUT = 30
 # Maximum number of files returned in a single directory listing.
 # (default: 1000, min: 1, max: 100000)
 # QSV_MCP_MAX_FILES_PER_LISTING = 1000
-
-# Maximum number of steps allowed in a single pipeline execution.
-# (default: 50, min: 1, max: 1000)
-# QSV_MCP_MAX_PIPELINE_STEPS = 50
 
 # Maximum number of concurrent qsv operations.
 # (default: 10, min: 1, max: 100)

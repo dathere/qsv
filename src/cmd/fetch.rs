@@ -22,7 +22,7 @@ set the --mem-cache-size option.
 
 Disk Cache:
 For persistent, inter-session caching, a DiskCache can be enabled with the --disk-cache flag.
-By default, it will store the cache in the directory ~/.qsv/cache/fetch, with a cache expiry
+By default, it will store the cache in the directory ~/.qsv-cache/fetch, with a cache expiry
 Time-to-Live (TTL) of 2,419,200 seconds (28 days), and cache hits NOT refreshing the TTL
 of cached values.
 
@@ -35,7 +35,7 @@ By default, it will connect to a local Redis instance at redis://127.0.0.1:6379/
 with a cache expiry Time-to-Live (TTL) of 2,419,200 seconds (28 days),
 and cache hits NOT refreshing the TTL of cached values.
 
-Set the environment variables QSV_REDIS_CONNSTR, QSV_REDIS_TTL_SECONDS and
+Set the environment variables QSV_REDIS_CONNSTR, QSV_REDIS_TTL_SECS and
 QSV_REDIS_TTL_REFRESH to change default Redis settings.
 
 If you don't want responses to be cached at all, use the --no-cache flag.
@@ -204,12 +204,12 @@ Fetch options:
                                does not exist, it will be created. If the directory exists, it will be used as is,
                                and will not be flushed. This option allows you to maintain several disk caches
                                for different fetch jobs (e.g. one for geocoding, another for weather, etc.)
-                               [default: ~/.qsv/cache/fetch]
+                               [default: ~/.qsv-cache/fetch]
 
     --redis-cache              Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/1"
                                with a connection pool size of 20, with a TTL of 28 days, and a cache hit
                                NOT renewing an entry's TTL.
-                               Adjust the QSV_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS &
+                               Adjust the QSV_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECS &
                                QSV_REDIS_TTL_REFRESH env vars respectively to change Redis settings.
                                This option is ignored if the --disk-cache option is enabled.
 

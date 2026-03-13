@@ -17,7 +17,7 @@ let mut var_a = String::with_capacity(10); // amortize allocation
 
 * Ensure you have the latest version of Rust nightly installed (`rustup toolchain update nightly`), as we use it for clippy and rustfmt. Running `cargo +nightly fmt` and `cargo +nightly clippy` may return different results if you are not using the latest nightly version of Rust.
 * We use docopt for command line argument parsing as we fully take advantage of its ability to parse command line arguments from the contiguous, verbose usage text that is at the beginning of each command's source code that more popular libraries like clap or structopt do not offer.   
-However, since [docopt.rs is unmaintained](https://github.com/docopt/docopt.rs#this-crate-is-unmaintained), we have a [fork](https://github.com/dathere/docopt.rs) that will be maintained along with this project. See this [discussion thread](https://github.com/dathere/qsv/discussions/463) for more details.
+However, since [docopt.rs is unmaintained](https://github.com/docopt/docopt.rs#this-crate-is-unmaintained), we have a [fork](https://github.com/dathere/qsv-docopt) that will be maintained along with this project. See this [discussion thread](https://github.com/dathere/qsv/discussions/463) for more details.
 * `unwrap()` and `expect()` are allowed, but there should be an accompanying comment detailing safety
 * TODO: explain testing conventions, and test helpers
 * TODO: explain error handling conventions

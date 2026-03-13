@@ -438,6 +438,36 @@ fn parse_sql(sql: &str) -> SqlInfo {
     }
 }
 
+/// Split a token on SQL comparison operators (=, <, >, <=, >=, <>, !=)
+/// so that `status='active'` becomes `["status", "'active'"]` and
+/// `a.id=b.id` becomes `["a.id", "b.id"]`.
+fn split_on_operators(token: &str) -> Vec<&str> {
+    // Split on operator chars, keeping only non-empty parts
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let bytes = token.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'=' || bytes[i] == b'<' || bytes[i] == b'>' || bytes[i] == b'!' {
+            if start < i {
+                parts.push(&token[start..i]);
+            }
+            // Skip the operator (and any following = for <=, >=, !=, <>)
+            i += 1;
+            if i < bytes.len() && (bytes[i] == b'=' || bytes[i] == b'>') {
+                i += 1;
+            }
+            start = i;
+        } else {
+            i += 1;
+        }
+    }
+    if start < token.len() {
+        parts.push(&token[start..]);
+    }
+    parts
+}
+
 fn extract_columns_after_keyword(sql: &str, keyword: &str) -> Vec<String> {
     let upper = sql.to_ascii_uppercase();
     let Some(pos) = upper.find(keyword) else {
@@ -462,28 +492,31 @@ fn extract_columns_after_keyword(sql: &str, keyword: &str) -> Vec<String> {
 
     let mut columns = Vec::new();
     for token in after.split_whitespace() {
-        let clean = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '.');
-        let upper_clean = clean.to_ascii_uppercase();
-        if stop_keywords.contains(&upper_clean.as_str()) {
-            break;
-        }
-        if !clean.is_empty()
-            && ![
-                "AND", "OR", "NOT", "BY", "ASC", "DESC", "IS", "NULL", "IN", "BETWEEN", "LIKE",
-            ]
-            .contains(&upper_clean.as_str())
-            && !clean.starts_with('\'')
-            && !clean.starts_with('"')
-            && clean.parse::<f64>().is_err()
-        {
-            // Strip table prefix (e.g. "data.col1" -> "col1")
-            let col = if let Some(dot_pos) = clean.rfind('.') {
-                &clean[dot_pos + 1..]
-            } else {
-                clean
-            };
-            if !col.is_empty() {
-                columns.push(col.to_string());
+        // First split on comparison operators to handle col=value patterns
+        for part in split_on_operators(token) {
+            let clean = part.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '.');
+            let upper_clean = clean.to_ascii_uppercase();
+            if stop_keywords.contains(&upper_clean.as_str()) {
+                return columns;
+            }
+            if !clean.is_empty()
+                && ![
+                    "AND", "OR", "NOT", "BY", "ASC", "DESC", "IS", "NULL", "IN", "BETWEEN", "LIKE",
+                ]
+                .contains(&upper_clean.as_str())
+                && !clean.starts_with('\'')
+                && !clean.starts_with('"')
+                && clean.parse::<f64>().is_err()
+            {
+                // Strip table prefix (e.g. "data.col1" -> "col1")
+                let col = if let Some(dot_pos) = clean.rfind('.') {
+                    &clean[dot_pos + 1..]
+                } else {
+                    clean
+                };
+                if !col.is_empty() {
+                    columns.push(col.to_string());
+                }
             }
         }
     }
@@ -498,17 +531,21 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
     for (i, _) in upper.match_indices(" ON ") {
         let after = &sql[i + 4..];
         for token in after.split_whitespace() {
-            let clean = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '.');
-            let upper_clean = clean.to_ascii_uppercase();
-            if ["WHERE", "ORDER", "GROUP", "HAVING", "LIMIT", "JOIN"]
-                .contains(&upper_clean.as_str())
-            {
-                break;
-            }
-            if clean.contains('.') {
-                if let Some(col) = clean.split('.').last() {
-                    if !col.is_empty() && !["AND", "OR", "="].contains(&upper_clean.as_str()) {
-                        columns.push(col.to_string());
+            // Split on operators to handle a.id=b.id patterns
+            for part in split_on_operators(token) {
+                let clean =
+                    part.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '.');
+                let upper_clean = clean.to_ascii_uppercase();
+                if ["WHERE", "ORDER", "GROUP", "HAVING", "LIMIT", "JOIN"]
+                    .contains(&upper_clean.as_str())
+                {
+                    break;
+                }
+                if clean.contains('.') {
+                    if let Some(col) = clean.split('.').last() {
+                        if !col.is_empty() && !["AND", "OR"].contains(&upper_clean.as_str()) {
+                            columns.push(col.to_string());
+                        }
                     }
                 }
             }
@@ -612,12 +649,9 @@ fn is_cache_fresh(cache_path: &Path, input_path: &Path) -> bool {
 fn load_stats_cache(stats_path: &Path) -> CliResult<Vec<crate::cmd::stats::StatsData>> {
     let content = std::fs::read_to_string(stats_path)?;
     let mut stats = Vec::new();
-    for (i, line) in content.lines().enumerate() {
+    // stats --stats-jsonl has no metadata header — every line is a StatsData record
+    for line in content.lines() {
         if line.is_empty() {
-            continue;
-        }
-        if i == 0 {
-            // First line is metadata, skip
             continue;
         }
         if let Ok(sd) = serde_json::from_str::<crate::cmd::stats::StatsData>(line) {
@@ -748,9 +782,12 @@ fn get_polars_plan(
         ctx.register(table_name_str, lf.with_optimizations(optflags));
     }
 
-    // Replace aliases in query
+    // Replace aliases in query. Sort by alias length descending to avoid
+    // partial matches (e.g., _t_1 matching inside _t_10).
     let mut query = args.arg_sql.clone();
-    for (tname, talias) in table_aliases {
+    let mut alias_pairs: Vec<_> = table_aliases.iter().collect();
+    alias_pairs.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    for (tname, talias) in alias_pairs {
         query = query.replace(talias, &format!(r#""{tname}""#));
     }
 
@@ -788,7 +825,14 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
     // Deduplicate in case a table name equals an alias
     replacements.dedup_by(|a, b| a.0 == b.0);
     for (from, to) in &replacements {
-        query = query.replace(from, to);
+        // Use word-boundary regex to avoid replacing inside other identifiers
+        // or string literals (e.g., "data" inside "metadata_col")
+        let pattern = format!(r"\b{}\b", regex::escape(from));
+        if let Ok(re) = regex::Regex::new(&pattern) {
+            query = re.replace_all(&query, to.as_str()).to_string();
+        } else {
+            query = query.replace(from, to);
+        }
     }
 
     let explain_query = format!("EXPLAIN {query}");

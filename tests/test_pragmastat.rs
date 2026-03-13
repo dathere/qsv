@@ -1312,6 +1312,27 @@ fn pragmastat_subsample_reproducible() {
     // Same seed => same output
     assert_eq!(got1[1][2], got2[1][2], "center should be identical");
     assert_eq!(got1[1][3], got2[1][3], "spread should be identical");
+
+    // Different seed => different output (with very high probability on 100-row data)
+    let mut cmd3 = wrk.command("pragmastat");
+    cmd3.arg("--standalone")
+        .arg("--subsample")
+        .arg("50")
+        .arg("--seed")
+        .arg("999")
+        .arg("--select")
+        .arg("latitude")
+        .arg(&test_file);
+    let got3: Vec<Vec<String>> = wrk.read_stdout(&mut cmd3);
+
+    assert!(
+        got1[1][2] != got3[1][2] || got1[1][3] != got3[1][3],
+        "different seed should produce different results (center: {} vs {}, spread: {} vs {})",
+        got1[1][2],
+        got3[1][2],
+        got1[1][3],
+        got3[1][3]
+    );
 }
 
 #[test]
@@ -1431,4 +1452,16 @@ fn pragmastat_subsample_and_no_bounds() {
     assert!(lat_row[5].is_empty(), "center_upper should be empty");
     assert!(lat_row[6].is_empty(), "spread_lower should be empty");
     assert!(lat_row[7].is_empty(), "spread_upper should be empty");
+}
+
+#[test]
+fn pragmastat_no_bounds_cache_incompatible() {
+    let wrk = Workdir::new("pragmastat_no_bounds_cache_incompatible");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // --no-bounds without --standalone triggers cache mode, which should be rejected
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--no-bounds").arg(&test_file);
+
+    wrk.assert_err(&mut cmd);
 }

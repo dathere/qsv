@@ -278,6 +278,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         winfo!("--seed has no effect without --subsample.");
     }
 
+    // --no-bounds is incompatible with cache mode (non-standalone one-sample).
+    // The cache would store results with empty bounds, and a subsequent run
+    // without --no-bounds would read incomplete data from the cache.
+    let is_onesample_cache = !args.flag_twosample
+        && args.flag_compare1.is_none()
+        && args.flag_compare2.is_none()
+        && !args.flag_standalone
+        && args.arg_input.is_some();
+    if args.flag_no_bounds && is_onesample_cache {
+        return Err(CliError::IncorrectUsage(
+            "--no-bounds is incompatible with cache mode. Use --standalone with --no-bounds, or \
+             omit --no-bounds when writing to the stats cache."
+                .to_string(),
+        ));
+    }
+
     // Mutual exclusivity: at most one mode flag
     let mode_count = usize::from(args.flag_twosample)
         + usize::from(args.flag_compare1.is_some())
@@ -295,13 +311,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         run_cache_append(&args)
     } else {
         util::njobs(args.flag_jobs);
-        let (col_names, mut col_values, col_types) = read_columns(&args)?;
-        if let Some(max_n) = args.flag_subsample {
-            subsample_columns(&mut col_values, max_n, args.flag_seed.unwrap_or(42));
-        }
+        let (col_names, col_values, col_types) = prepare_columns(&args)?;
         write_results(&args, &col_names, &col_values, &col_types)?;
         Ok(())
     }
+}
+
+/// Read columns and optionally subsample them according to the `--subsample`/`--seed` flags.
+fn prepare_columns(args: &Args) -> Result<(Vec<String>, Vec<Vec<f64>>, Vec<ColType>), CliError> {
+    let (col_names, mut col_values, col_types) = read_columns(args)?;
+    if let Some(max_n) = args.flag_subsample {
+        subsample_columns(&mut col_values, max_n, args.flag_seed.unwrap_or(42));
+    }
+    Ok((col_names, col_values, col_types))
 }
 
 /// The 7 column names appended to the stats cache.
@@ -386,10 +408,7 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
 
     // Read original CSV data and compute one-sample results
     util::njobs(args.flag_jobs);
-    let (col_names, mut col_values, col_types) = read_columns(args)?;
-    if let Some(max_n) = args.flag_subsample {
-        subsample_columns(&mut col_values, max_n, args.flag_seed.unwrap_or(42));
-    }
+    let (col_names, col_values, col_types) = prepare_columns(args)?;
 
     // Compute one-sample results in parallel
     let no_bounds = args.flag_no_bounds;

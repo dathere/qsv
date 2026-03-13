@@ -3207,8 +3207,9 @@ impl Stats {
     ///
     /// # Safety
     ///
-    /// * Uses unsafe code for performance-critical operations Updates modes/cardinality trackers
-    ///   with a sample value. Weighted modes and unweighted modes are mutually exclusive.
+    /// * Uses unsafe code for performance-critical operations.
+    /// * Updates modes/cardinality trackers with a sample value.
+    ///   Weighted modes and unweighted modes are mutually exclusive.
     #[allow(clippy::inline_always)]
     #[inline(always)]
     fn update_modes(&mut self, sample: &[u8], weight: f64) {

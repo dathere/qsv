@@ -10,16 +10,16 @@ test("getAssetSuffix returns correct suffix for macOS ARM", { skip: process.plat
   assert.strictEqual(getAssetSuffix(), "aarch64-apple-darwin");
 });
 
-test("getAssetSuffix returns correct suffix for macOS x64", { skip: process.platform !== "darwin" || process.arch !== "x64" ? "not macOS x64" : false }, () => {
-  assert.strictEqual(getAssetSuffix(), "x86_64-apple-darwin");
+test("getAssetSuffix returns null for macOS x64 (not supported by Claude Desktop)", { skip: process.platform !== "darwin" || process.arch !== "x64" ? "not macOS x64" : false }, () => {
+  assert.strictEqual(getAssetSuffix(), null);
 });
 
-test("getAssetSuffix returns correct suffix for Linux x64", { skip: process.platform !== "linux" || process.arch !== "x64" ? "not Linux x64" : false }, () => {
-  assert.strictEqual(getAssetSuffix(), "x86_64-unknown-linux-gnu");
+test("getAssetSuffix returns null for Linux x64 (not supported by Claude Desktop)", { skip: process.platform !== "linux" || process.arch !== "x64" ? "not Linux x64" : false }, () => {
+  assert.strictEqual(getAssetSuffix(), null);
 });
 
-test("getAssetSuffix returns correct suffix for Linux ARM64", { skip: process.platform !== "linux" || process.arch !== "arm64" ? "not Linux ARM64" : false }, () => {
-  assert.strictEqual(getAssetSuffix(), "aarch64-unknown-linux-gnu");
+test("getAssetSuffix returns null for Linux ARM64 (not supported by Claude Desktop)", { skip: process.platform !== "linux" || process.arch !== "arm64" ? "not Linux ARM64" : false }, () => {
+  assert.strictEqual(getAssetSuffix(), null);
 });
 
 test("getAssetSuffix returns correct suffix for Windows x64", { skip: process.platform !== "win32" || process.arch !== "x64" ? "not Windows x64" : false }, () => {

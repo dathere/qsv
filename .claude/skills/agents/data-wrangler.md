@@ -5,6 +5,7 @@ allowed-tools:
   - mcp__qsv__qsv_headers
   - mcp__qsv__qsv_index
   - mcp__qsv__qsv_stats
+  - mcp__qsv__qsv_moarstats
   - mcp__qsv__qsv_frequency
   - mcp__qsv__qsv_select
   - mcp__qsv__qsv_search

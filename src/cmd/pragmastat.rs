@@ -109,6 +109,18 @@ Examples:
   # Compare two-sample shift and disparity against thresholds
   qsv pragmastat --compare2 shift:0,disparity:0.8 --select latency_ms,price data.csv
 
+  # Fast exploratory analysis with subsampling (~100x speedup on large datasets)
+  qsv pragmastat --subsample 10000 data.csv
+
+  # Reproducible subsampling with a specific seed
+  qsv pragmastat --subsample 10000 --seed 123 data.csv
+
+  # Skip confidence bounds for ~2x speedup
+  qsv pragmastat --no-bounds data.csv
+
+  # Combined: ~200x speedup for large datasets
+  qsv pragmastat --subsample 10000 --no-bounds data.csv
+
 Full Pragmastat manual:
   https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.0.0/pragmastat-v12.0.0.pdf
   https://pragmastat.dev/ (latest version)
@@ -143,6 +155,12 @@ pragmastat options:
                            [default: 4]
         --force            Force recomputing ps_* columns even if they already exist
                            in the stats cache.
+        --subsample <N>    Randomly subsample N values per column before computing.
+                           Speeds up large datasets while maintaining statistical
+                           robustness. Recommended: 10000-50000 for exploratory analysis.
+        --seed <N>         Seed for reproducible subsampling. [default: 42]
+        --no-bounds        Skip confidence bounds computation (~2x faster).
+                           Incompatible with --compare1/--compare2.
 
 Common options:
     -h, --help             Display this message
@@ -196,6 +214,9 @@ struct Args {
     flag_stats_options: String,
     flag_round:         u32,
     flag_force:         bool,
+    flag_subsample:     Option<usize>,
+    flag_seed:          Option<u64>,
+    flag_no_bounds:     bool,
     flag_output:        Option<String>,
     flag_delimiter:     Option<Delimiter>,
     flag_no_headers:    bool,
@@ -234,6 +255,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     validate_misrate(args.flag_misrate)?;
 
+    // Validate --subsample
+    if let Some(n) = args.flag_subsample {
+        if n == 0 {
+            return Err(CliError::IncorrectUsage(
+                "--subsample must be greater than 0.".to_string(),
+            ));
+        }
+    }
+
+    // --no-bounds is incompatible with --compare1/--compare2 (they need bounds for verdicts)
+    if args.flag_no_bounds && (args.flag_compare1.is_some() || args.flag_compare2.is_some()) {
+        return Err(CliError::IncorrectUsage(
+            "--no-bounds is incompatible with --compare1/--compare2 (bounds are required for \
+             verdicts)."
+                .to_string(),
+        ));
+    }
+
+    // --seed without --subsample has no effect
+    if args.flag_seed.is_some() && args.flag_subsample.is_none() {
+        winfo!("--seed has no effect without --subsample.");
+    }
+
     // Mutual exclusivity: at most one mode flag
     let mode_count = usize::from(args.flag_twosample)
         + usize::from(args.flag_compare1.is_some())
@@ -251,7 +295,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         run_cache_append(&args)
     } else {
         util::njobs(args.flag_jobs);
-        let (col_names, col_values, col_types) = read_columns(&args)?;
+        let (col_names, mut col_values, col_types) = read_columns(&args)?;
+        if let Some(max_n) = args.flag_subsample {
+            subsample_columns(&mut col_values, max_n, args.flag_seed.unwrap_or(42));
+        }
         write_results(&args, &col_names, &col_values, &col_types)?;
         Ok(())
     }
@@ -339,13 +386,17 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
 
     // Read original CSV data and compute one-sample results
     util::njobs(args.flag_jobs);
-    let (col_names, col_values, col_types) = read_columns(args)?;
+    let (col_names, mut col_values, col_types) = read_columns(args)?;
+    if let Some(max_n) = args.flag_subsample {
+        subsample_columns(&mut col_values, max_n, args.flag_seed.unwrap_or(42));
+    }
 
     // Compute one-sample results in parallel
+    let no_bounds = args.flag_no_bounds;
     let results: Vec<OneSampleResult> = col_names
         .par_iter()
         .enumerate()
-        .map(|(i, name)| compute_one_sample(name, &col_values[i], args.flag_misrate))
+        .map(|(i, name)| compute_one_sample(name, &col_values[i], args.flag_misrate, no_bounds))
         .collect();
 
     // Build a lookup map: field_name -> (result_index, col_type)
@@ -538,6 +589,25 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>, Vec<ColTy
     }
 }
 
+/// Randomly subsample each column's values to at most `max_n` elements.
+/// Uses a partial Fisher-Yates shuffle with per-column deterministic seeds.
+fn subsample_columns(col_values: &mut [Vec<f64>], max_n: usize, seed: u64) {
+    use rand::{RngExt, SeedableRng};
+
+    for (col_idx, values) in col_values.iter_mut().enumerate() {
+        if values.len() <= max_n {
+            continue;
+        }
+        let col_seed = seed.wrapping_add(col_idx as u64);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(col_seed);
+        for i in 0..max_n {
+            let j = rng.random_range(i..values.len());
+            values.swap(i, j);
+        }
+        values.truncate(max_n);
+    }
+}
+
 /// Try to read the stats cache and return `(column_index, ColType)` pairs for columns
 /// that pragmastat can analyse (Integer, Float, Date, DateTime).
 /// Returns `None` if the cache is unavailable or stale.
@@ -665,6 +735,7 @@ fn write_results(
             col_values,
             col_types,
             args.flag_misrate,
+            args.flag_no_bounds,
             round,
         )?;
     } else {
@@ -674,6 +745,7 @@ fn write_results(
             col_values,
             col_types,
             args.flag_misrate,
+            args.flag_no_bounds,
             round,
         )?;
     }
@@ -688,6 +760,7 @@ fn write_onesample_results(
     col_values: &[Vec<f64>],
     col_types: &[ColType],
     misrate: f64,
+    no_bounds: bool,
     round: u32,
 ) -> CliResult<()> {
     write_onesample_header(wtr)?;
@@ -695,7 +768,7 @@ fn write_onesample_results(
     let results: Vec<OneSampleResult> = col_names
         .par_iter()
         .enumerate()
-        .map(|(i, name)| compute_one_sample(name, &col_values[i], misrate))
+        .map(|(i, name)| compute_one_sample(name, &col_values[i], misrate, no_bounds))
         .collect();
 
     for (i, result) in results.iter().enumerate() {
@@ -710,6 +783,7 @@ fn write_twosample_results(
     col_values: &[Vec<f64>],
     col_types: &[ColType],
     misrate: f64,
+    no_bounds: bool,
     round: u32,
 ) -> CliResult<()> {
     write_twosample_header(wtr)?;
@@ -754,6 +828,7 @@ fn write_twosample_results(
                 log_values[i].as_deref(),
                 log_values[j].as_deref(),
                 misrate,
+                no_bounds,
             )
         })
         .collect();
@@ -976,7 +1051,12 @@ fn collect_numeric_values_parallel(
     Ok((col_names, col_values, col_types))
 }
 
-fn compute_one_sample<'a>(name: &'a str, values: &[f64], misrate: f64) -> OneSampleResult<'a> {
+fn compute_one_sample<'a>(
+    name: &'a str,
+    values: &[f64],
+    misrate: f64,
+    no_bounds: bool,
+) -> OneSampleResult<'a> {
     let n = values.len();
 
     if n == 0 {
@@ -994,8 +1074,14 @@ fn compute_one_sample<'a>(name: &'a str, values: &[f64], misrate: f64) -> OneSam
 
     let center = pragmastat::estimators::raw::center(values).ok();
     let spread = pragmastat::estimators::raw::spread(values).ok();
-    let center_bounds = pragmastat::estimators::raw::center_bounds(values, misrate).ok();
-    let spread_bounds = pragmastat::estimators::raw::spread_bounds(values, misrate).ok();
+    let (center_bounds, spread_bounds) = if no_bounds {
+        (None, None)
+    } else {
+        (
+            pragmastat::estimators::raw::center_bounds(values, misrate).ok(),
+            pragmastat::estimators::raw::spread_bounds(values, misrate).ok(),
+        )
+    };
 
     OneSampleResult {
         field: name,
@@ -1017,6 +1103,7 @@ fn compute_two_sample<'a>(
     log_x: Option<&[f64]>,
     log_y: Option<&[f64]>,
     misrate: f64,
+    no_bounds: bool,
 ) -> TwoSampleResult<'a> {
     let n_x = x.len();
     let n_y = y.len();
@@ -1040,9 +1127,17 @@ fn compute_two_sample<'a>(
     }
 
     let shift = pragmastat::estimators::raw::shift(x, y).ok();
-    let shift_bounds = pragmastat::estimators::raw::shift_bounds(x, y, misrate).ok();
+    let shift_bounds = if no_bounds {
+        None
+    } else {
+        pragmastat::estimators::raw::shift_bounds(x, y, misrate).ok()
+    };
     let disparity = pragmastat::estimators::raw::disparity(x, y).ok();
-    let disparity_bounds = pragmastat::estimators::raw::disparity_bounds(x, y, misrate).ok();
+    let disparity_bounds = if no_bounds {
+        None
+    } else {
+        pragmastat::estimators::raw::disparity_bounds(x, y, misrate).ok()
+    };
 
     // Use pre-computed log-transformed slices for ratio computation.
     // Both must be Some (all values > 0) for ratio to be valid.
@@ -1050,9 +1145,13 @@ fn compute_two_sample<'a>(
         let ratio = pragmastat::estimators::raw::shift(lx, ly)
             .ok()
             .map(f64::exp);
-        let ratio_bounds = pragmastat::estimators::raw::shift_bounds(lx, ly, misrate)
-            .ok()
-            .map(|b| (b.lower.exp(), b.upper.exp()));
+        let ratio_bounds = if no_bounds {
+            None
+        } else {
+            pragmastat::estimators::raw::shift_bounds(lx, ly, misrate)
+                .ok()
+                .map(|b| (b.lower.exp(), b.upper.exp()))
+        };
         (
             ratio,
             ratio_bounds.map(|(lo, _)| lo),

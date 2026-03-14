@@ -56,8 +56,8 @@ const FETCH_TIMEOUT_MS = 60_000;
 function psEscape(s: string): string {
   // Reject paths containing characters that could break out of single-quoted context
   // or be used for injection (backticks, $, semicolons, pipes, etc.)
-  if (/[`$;|&{}<>]/.test(s)) {
-    throw new Error(`Refusing to interpolate potentially unsafe path into PowerShell command: ${s}`);
+  if (/[`$;|&{}<>\r\n]/.test(s)) {
+    throw new Error("Refusing to interpolate potentially unsafe path into PowerShell command");
   }
   return s.replace(/'/g, "''");
 }

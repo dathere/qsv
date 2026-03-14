@@ -173,7 +173,7 @@ To find out your jobs setting, call `qsv --version`.
 The `--version` option shows a lot of information about qsv. It displays:
 * qsv version
 * the memory allocator (`standard` or `mimalloc`)
-* all enabled features (`apply`, `fetch`, `foreach`, `luau`, `polars`, `python`, `self_update` & `to`)
+* all enabled features (`apply`, `fetch`, `foreach`, `geocode`, `luau`, `magika`, `polars`, `prompt`, `python`, `self_update` & `to`)
 * Python version linked if the `python` feature was enabled
 * Luau version embedded if the `luau` feature was enabled
 * the number of processors to use for multi-threading commands
@@ -187,17 +187,16 @@ The `--version` option shows a lot of information about qsv. It displays:
 
 ```bash
 $ qsv --version
-qsv 2.0.0-mimalloc-apply;fetch;foreach;geocode;Luau 0.653;prompt;python-3.10.14 (main, Aug  7 2024, 12:09:26) [Clang 16.0.0 (clang-1600.0.23.1)];to;polars-0.45.1:py-1.19.0:72cd66a;self_update-8-8;19.20 GiB-1.59 GiB-510.91 MiB-24.00 GiB (aarch64-apple-darwin compiled with Rust 1.83) compiled
+qsv 17.0.0-mimalloc 315-apply;fetch;foreach;geocode;Luau 0.709;magika;to;polars-0.53.0:802550b;self_update-16-16;51.20 GiB-1.26 GiB-0 B-64.00 GiB (aarch64-apple-darwin compiled with Rust 1.93;macOS 26.4-Darwin 25.4.0;Apple M4 Max-16) prebuilt
 ```
 
-Shows that I'm running qsv version 2.0.0, with the `mimalloc` allocator (instead of `standard`), and I have:
-- the `apply`, `fetch`, `foreach`, `geocode`, `luau`, `prompt`, `python`, `to`, `polars` and `self_update` features enabled,
-- the exact version of the embedded Luau interpreter (Luau 0.653),
-- Polars with its version metadata (polars-0.45.1:py-1.19.0:72cd66a),
-- the Python version qsv is dynamically linked against (Python 3.10.14 (main, Aug  7 2024, 12:09:26) [Clang 16.0.0 (clang-1600.0.23.1)]). 
-- qsv will use 8 logical processors out of 8 detected when running multithreaded commands.
-- a maximum input file size of 19.20 GiB for "non-streaming" commands (see [Memory Management](https://github.com/dathere/qsv#memory-management) for more info), 1.59 GiB of free swap memory, 510.91 MiB of available memory and 24.00 GiB of total memory.
-- the qsv binary was built to target the aarch64-apple-darwin platform (Apple Silicon), compiled using Rust 1.83.0. The binary was `compiled` using `cargo build`.
+Shows that I'm running qsv version 17.0.0, with the `mimalloc` allocator (instead of `standard`), build number 315, and I have:
+- the `apply`, `fetch`, `foreach`, `geocode`, `luau`, `magika`, `to`, `polars` and `self_update` features enabled,
+- the exact version of the embedded Luau interpreter (Luau 0.709),
+- Polars with its version metadata (polars-0.53.0:802550b),
+- qsv will use 16 logical processors out of 16 detected when running multithreaded commands.
+- a maximum input file size of 51.20 GiB for "non-streaming" commands (see [Memory Management](https://github.com/dathere/qsv#memory-management) for more info), 1.26 GiB of free swap memory, 0 B of available memory (this value fluctuates based on system load at the time) and 64.00 GiB of total memory.
+- the qsv binary was built to target the aarch64-apple-darwin platform (Apple Silicon), compiled using Rust 1.93. It also shows the OS version (macOS 26.4-Darwin 25.4.0) and CPU (Apple M4 Max). The binary is a `prebuilt` release.
 
 ## Caching
 qsv employs several caching strategies to improve performance:

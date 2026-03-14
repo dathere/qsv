@@ -10,7 +10,7 @@ It is built using the latest stable Rust.
 - `/contrib`: Contains contributions from the ecosystem. Currently, its been seeded with tab completions and Jupyter notebooks.
 - `/docs`: Contains documentation for the project, including API specifications and user guides.
 - `/resources`: Contains examples, vendored code, and test files used by some tests.
-- `/scripts`: Contains shell scripts that use qsv. Currently, the benchmark script that is used to populate https://qsv.dathere.com/benchmarks lives here.
+- `/scripts`: Contains shell scripts, benchmark tooling, sample data files, Luau scripts, SQL files, and helper scripts used by qsv. The benchmark script that populates https://qsv.dathere.com/benchmarks lives here.
 - `/src`: The source code can be found here.
 - `/tests`: The test suite lives here.
 

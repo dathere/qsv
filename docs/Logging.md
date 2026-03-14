@@ -7,8 +7,8 @@ To keep things simple:
 * logging can be disabled completely (default behavior for `qsv`/`qsvlite`/`qsvdp`; `qsvmcp` defaults to `info` level to capture process-level START/END entries)
 * logging goes to specified directory with auto log rotation (default: current directory)
 * if specified directory doesn't exist, qsv will attempt to create it
-* logs to `qsv_rCURRENT.log` - rotating at 1mb, keeping 10 most recent log files uncompressed, 
-  and 100 gz-compressed log files named sequentially (e.g. qsv_0001.log, qsv0010.log.gz)
+* logs to `qsv_rCURRENT.log` - rotating at 20mb, keeping 10 most recent log files uncompressed,
+  and 100 gz-compressed log files named sequentially (e.g. qsv_r00001.log, qsv_r00010.log.gz)
 * only requires standard Log trait to add log traces in code
 
 ## Enable Logging

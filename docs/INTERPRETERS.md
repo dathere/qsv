@@ -25,9 +25,9 @@ If you plan to distribute your manually built `qsv` with the `python` feature, `
 Note that this will happen on qsv startup, even if you're NOT running the `py` command.
 
 When building from source - [PyO3](https://pyo3.rs) - the underlying crate that enables the `python` feature, uses a build script to determine the Python version & set the correct linker arguments. By default it uses the python3 executable.
-You can override this by setting `PYO3_PYTHON` (e.g., `PYO3_PYTHON=python3.7`), before installing/compiling qsv. See the [PyO3 User Guide](https://pyo3.rs/v0.23.3/building-and-distribution.html) for more information.
+You can override this by setting `PYO3_PYTHON` (e.g., `PYO3_PYTHON=python3.7`), before installing/compiling qsv. See the [PyO3 User Guide](https://pyo3.rs/latest/building-and-distribution.html) for more information.
 
-Consider using the [`luau`](/src/cmd/luau.rs#L2) command instead of the [`py`]((/src/cmd/python.rs#L2)) command if the operation you're trying to do can be done with `luau` - as `luau` is statically linked, has no external dependencies, much faster than `py`, can do aggregations, supports random access, has a bevy of qsv helper functions, and allows mapping of multiple new columns. 
+Consider using the [`luau`](/src/cmd/luau.rs#L2) command instead of the [`py`](/src/cmd/python.rs#L2) command if the operation you're trying to do can be done with `luau` - as `luau` is statically linked, has no external dependencies, much faster than `py`, can do aggregations, supports random access, has a bevy of qsv helper functions, and allows mapping of multiple new columns. 
 
 The `py` command cannot do aggregations because Python's Global Interpreter Lock (GIL) limitations will quickly consume a lot of memory (see [issue 449](https://github.com/dathere/qsv/issues/449#issuecomment-1226095316) for details).
 To prevent this, the `py` command processes CSVs in batches (default: 50,000 records), with a GIL pool for each batch, so no globals are available across batches.

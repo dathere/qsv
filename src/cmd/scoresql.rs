@@ -569,8 +569,8 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
     }
 
     // Deduplicate (case-insensitive) to avoid double-counting the same join key
-    columns.sort_unstable();
-    columns.dedup();
+    columns.sort_unstable_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    columns.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
     columns
 }
 
@@ -706,6 +706,8 @@ fn generate_stats_cache(input_path: &Path, delim: u8) -> CliResult<()> {
     let mut cmd = Command::new(&qsv_bin);
     cmd.args(["stats", "--everything", "--stats-jsonl"]);
     if delim != b',' {
+        // Safety: qsv's --delimiter only accepts single-byte ASCII delimiters
+        debug_assert!(delim.is_ascii(), "delimiter must be ASCII");
         cmd.args(["--delimiter", &(delim as char).to_string()]);
     }
     let output = cmd.arg(input_path).output()?;
@@ -725,6 +727,8 @@ fn generate_freq_cache(input_path: &Path, delim: u8) -> CliResult<()> {
     let mut cmd = Command::new(&qsv_bin);
     cmd.args(["frequency", "--frequency-jsonl"]);
     if delim != b',' {
+        // Safety: qsv's --delimiter only accepts single-byte ASCII delimiters
+        debug_assert!(delim.is_ascii(), "delimiter must be ASCII");
         cmd.args(["--delimiter", &(delim as char).to_string()]);
     }
     let output = cmd.arg(input_path).output()?;

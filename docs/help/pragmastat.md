@@ -151,6 +151,30 @@ qsv pragmastat --compare1 center:42.0,spread:0.5 --select latitude data.csv
 qsv pragmastat --compare2 shift:0,disparity:0.8 --select latency_ms,price data.csv
 ```
 
+> Fast exploratory analysis with subsampling (~100x speedup on large datasets)
+
+```console
+qsv pragmastat --standalone --subsample 10000 data.csv
+```
+
+> Reproducible subsampling with a specific seed
+
+```console
+qsv pragmastat --standalone --subsample 10000 --seed 123 data.csv
+```
+
+> Skip confidence bounds for ~2x speedup
+
+```console
+qsv pragmastat --standalone --no-bounds data.csv
+```
+
+> Combined: ~200x speedup for large datasets
+
+```console
+qsv pragmastat --standalone --subsample 10000 --no-bounds data.csv
+```
+
 Full Pragmastat manual:
 <https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.0.0/pragmastat-v12.0.0.pdf>
 <https://pragmastat.dev/> (latest version)
@@ -179,6 +203,9 @@ qsv pragmastat --help
 | &nbsp;`--stats-options`&nbsp; | string | Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace. | `--infer-dates --infer-boolean --mad --quartiles --force --stats-jsonl` |
 | &nbsp;`--round`&nbsp; | string | Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule. | `4` |
 | &nbsp;`--force`&nbsp; | flag | Force recomputing ps_* columns even if they already exist in the stats cache. |  |
+| &nbsp;`--subsample`&nbsp; | string | Randomly subsample N values per column before computing. Speeds up large datasets while maintaining statistical robustness. Recommended: 10000-50000 for exploratory analysis. |  |
+| &nbsp;`--seed`&nbsp; | string | Seed for reproducible subsampling. If not specified, defaults to 42 when --subsample is used. |  |
+| &nbsp;`--no-bounds`&nbsp; | flag | Skip confidence bounds computation (~2x faster). Incompatible with --compare1/--compare2. |  |
 
 <a name="common-options"></a>
 

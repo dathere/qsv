@@ -4103,13 +4103,19 @@ export async function handleSetupCall(
   const revalidation = revalidateCallback();
 
   if (revalidation.validation.valid) {
+    const paths = result.binaryPaths;
+    const binaryInfo = paths
+      ? (paths.qsv
+        ? `Binaries: ${paths.qsvmcp} (MCP server)\n         ${paths.qsv} (CLI)`
+        : `Binary: ${paths.qsvmcp}`)
+      : `Binary: ${revalidation.path}`;
     return {
       revalidated: true,
       response: successResult(
         `qsv installed successfully via ${result.method}!\n\n` +
-        `Binary: ${revalidation.path}\n` +
+        `${binaryInfo}\n` +
         `Version: ${revalidation.validation.version}\n\n` +
-        `The full qsv toolkit is now available. You can proceed with data tasks.`,
+        `${paths?.qsv ? 'The full qsv toolkit is now available.' : 'The qsv MCP server is now available.'} You can proceed with data tasks.`,
       ),
     };
   }

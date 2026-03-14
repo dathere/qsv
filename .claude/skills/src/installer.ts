@@ -1,8 +1,8 @@
 /**
  * Platform-specific qsv installation logic
  *
- * Downloads the qsv binary from GitHub Releases (latest), extracts only
- * qsvmcp, and installs it to a discoverable location.
+ * Downloads the qsv release archive from GitHub Releases (latest), extracts
+ * both qsvmcp and qsv binaries, and installs them to a discoverable location.
  * Falls back to manual instructions for unsupported platforms.
  */
 
@@ -24,7 +24,7 @@ import { homedir, tmpdir } from "os";
 export interface InstallResult {
   success: boolean;
   method: "direct-download" | "manual";
-  binaryPath?: string;
+  binaryPaths?: { qsvmcp: string; qsv?: string };
   output?: string;
   error?: string;
   instructions?: string;
@@ -47,8 +47,20 @@ const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/dathere/qsv/rele
 /** Timeout for GitHub API and download requests (60 seconds) */
 const FETCH_TIMEOUT_MS = 60_000;
 
-/** Escape single quotes for PowerShell single-quoted strings */
-const psEscape = (s: string) => s.replace(/'/g, "''");
+/**
+ * Escape a string for use inside PowerShell single-quoted strings.
+ * Single-quoted strings in PowerShell only interpret '' as a literal '.
+ * We also reject characters that should never appear in temp paths as a
+ * defense-in-depth measure against command injection.
+ */
+function psEscape(s: string): string {
+  // Reject paths containing characters that could break out of single-quoted context
+  // or be used for injection (backticks, $, semicolons, pipes, etc.)
+  if (/[`$;|&{}<>\r\n]/.test(s)) {
+    throw new Error("Refusing to interpolate potentially unsafe path into PowerShell command");
+  }
+  return s.replace(/'/g, "''");
+}
 
 /**
  * Get the asset filename suffix for the current platform, or null if unsupported.
@@ -109,11 +121,40 @@ export function getInstallDir(): string {
 }
 
 /**
- * Download and install the qsvmcp binary from the given URL.
+ * Find a binary by name in the extracted archive directory.
+ * Returns the path if found, or null if not found.
+ */
+function findBinaryInArchive(tempDir: string, binaryName: string, isWindows: boolean): string | null {
+  let extractedPath = join(tempDir, binaryName);
+  if (existsSync(extractedPath)) return extractedPath;
+
+  try {
+    if (isWindows) {
+      const findResult = execFileSync("powershell", [
+        "-NoProfile",
+        "-Command",
+        `(Get-ChildItem -Path '${psEscape(tempDir)}' -Recurse -Filter '${binaryName}' | Select-Object -First 1).FullName`,
+      ], { encoding: "utf8", timeout: 10_000 }).trim();
+      if (findResult) return findResult;
+    } else {
+      const findResult = execFileSync("/usr/bin/find", [tempDir, "-name", binaryName, "-type", "f"], {
+        encoding: "utf8",
+        timeout: 10_000,
+      }).trim().split("\n")[0];
+      if (findResult) return findResult;
+    }
+  } catch {
+    // Best-effort search — if find/powershell fails, fall through to return null
+  }
+
+  return null;
+}
+
+/**
+ * Download and install the qsvmcp and qsv binaries from the given URL.
  */
 async function downloadAndInstall(url: string): Promise<InstallResult> {
   const isWindows = process.platform === "win32";
-  const binaryName = isWindows ? "qsvmcp.exe" : "qsvmcp";
   const tempDir = mkdtempSync(join(tmpdir(), "qsv-install-"));
 
   try {
@@ -134,7 +175,7 @@ async function downloadAndInstall(url: string): Promise<InstallResult> {
     const buffer = Buffer.from(await response.arrayBuffer());
     writeFileSync(zipPath, buffer);
 
-    // 2. Extract only the qsvmcp binary
+    // 2. Extract the archive
     if (isWindows) {
       execFileSync("powershell", [
         "-NoProfile",
@@ -142,73 +183,76 @@ async function downloadAndInstall(url: string): Promise<InstallResult> {
         `Expand-Archive -Path '${psEscape(zipPath)}' -DestinationPath '${psEscape(tempDir)}' -Force`,
       ], { encoding: "utf8", timeout: 60_000 });
     } else {
-      // Extract entire archive, then search for the binary (handles nested directories)
       execFileSync("/usr/bin/unzip", ["-o", zipPath, "-d", tempDir], {
         encoding: "utf8",
         timeout: 60_000,
       });
     }
 
-    // Find the extracted binary (may be nested in a subdirectory)
-    let extractedPath = join(tempDir, binaryName);
-    if (!existsSync(extractedPath)) {
-      if (isWindows) {
-        const findResult = execFileSync("powershell", [
-          "-NoProfile",
-          "-Command",
-          `(Get-ChildItem -Path '${psEscape(tempDir)}' -Recurse -Filter '${binaryName}' | Select-Object -First 1).FullName`,
-        ], { encoding: "utf8", timeout: 10_000 }).trim();
-        if (findResult) {
-          extractedPath = findResult;
-        }
-      } else {
-        // Use find to locate the binary in nested directories
-        const findResult = execFileSync("/usr/bin/find", [tempDir, "-name", binaryName, "-type", "f"], {
-          encoding: "utf8",
-          timeout: 10_000,
-        }).trim().split("\n")[0];
-        if (findResult) {
-          extractedPath = findResult;
-        }
-      }
-    }
+    // 3. Find and install both binaries
+    const qsvmcpName = isWindows ? "qsvmcp.exe" : "qsvmcp";
+    const qsvName = isWindows ? "qsv.exe" : "qsv";
 
-    if (!existsSync(extractedPath)) {
+    const qsvmcpExtracted = findBinaryInArchive(tempDir, qsvmcpName, isWindows);
+    if (!qsvmcpExtracted) {
       return {
         success: false,
         method: "direct-download",
-        error: `Could not find ${binaryName} in the downloaded archive`,
+        error: `Could not find ${qsvmcpName} in the downloaded archive`,
       };
     }
 
-    // 3. Install to target directory
     const installDir = getInstallDir();
     mkdirSync(installDir, { recursive: true });
-    const targetPath = join(installDir, binaryName);
-    copyFileSync(extractedPath, targetPath);
+
+    const installedPaths: { qsvmcp: string; qsv?: string } = {
+      qsvmcp: join(installDir, qsvmcpName),
+    };
+
+    // Install qsvmcp (required)
+    copyFileSync(qsvmcpExtracted, installedPaths.qsvmcp);
+
+    // Install qsv (optional — warn but don't fail if missing)
+    const qsvExtracted = findBinaryInArchive(tempDir, qsvName, isWindows);
+    let qsvWarning = "";
+    if (qsvExtracted) {
+      const qsvTarget = join(installDir, qsvName);
+      copyFileSync(qsvExtracted, qsvTarget);
+      installedPaths.qsv = qsvTarget;
+    } else {
+      qsvWarning = `\nNote: ${qsvName} was not found in the archive; only qsvmcp was installed.`;
+    }
 
     // 4. Set permissions on Unix
     if (!isWindows) {
-      chmodSync(targetPath, 0o755);
+      chmodSync(installedPaths.qsvmcp, 0o755);
+      if (installedPaths.qsv) chmodSync(installedPaths.qsv, 0o755);
     }
 
     // 5. On macOS: clear Gatekeeper quarantine flag
     if (process.platform === "darwin") {
-      try {
-        execFileSync("xattr", ["-d", "com.apple.quarantine", targetPath], {
-          encoding: "utf8",
-          timeout: 10_000,
-        });
-      } catch {
-        // xattr removal is best-effort — may fail if no quarantine flag is set
+      for (const p of [installedPaths.qsvmcp, installedPaths.qsv]) {
+        if (!p) continue;
+        try {
+          execFileSync("xattr", ["-d", "com.apple.quarantine", p], {
+            encoding: "utf8",
+            timeout: 10_000,
+          });
+        } catch {
+          // xattr removal is best-effort — may fail if no quarantine flag is set
+        }
       }
     }
+
+    const installed = installedPaths.qsv
+      ? `qsvmcp and qsv`
+      : `qsvmcp`;
 
     return {
       success: true,
       method: "direct-download",
-      binaryPath: targetPath,
-      output: `Successfully installed ${binaryName} to ${targetPath}`,
+      binaryPaths: installedPaths,
+      output: `Successfully installed ${installed} to ${installDir}${qsvWarning}`,
     };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -242,7 +286,7 @@ export function getManualInstructions(platform: NodeJS.Platform): InstallResult 
         `1. Go to ${baseUrl}\n` +
         `2. Download the macOS ARM64 binary (qsv-*-aarch64-apple-darwin.zip)\n` +
         `3. Extract and move to /usr/local/bin/\n` +
-        `\`\`\`\nunzip qsv-*.zip\nsudo mv qsvmcp /usr/local/bin/\n\`\`\``;
+        `\`\`\`\nunzip qsv-*.zip\nsudo mv qsvmcp qsv /usr/local/bin/\n\`\`\``;
       break;
 
     case "win32":
@@ -251,7 +295,7 @@ export function getManualInstructions(platform: NodeJS.Platform): InstallResult 
         `**Download pre-built binary:**\n` +
         `1. Go to ${baseUrl}\n` +
         `2. Download the Windows binary (qsv-*-x86_64-pc-windows-msvc.zip)\n` +
-        `3. Extract and add to your PATH`;
+        `3. Extract and add qsvmcp.exe and qsv.exe to your PATH`;
       break;
 
     default: // linux and others
@@ -261,7 +305,7 @@ export function getManualInstructions(platform: NodeJS.Platform): InstallResult 
         `1. Go to ${baseUrl}\n` +
         `2. Download the Linux binary (qsv-*-x86_64-unknown-linux-gnu.zip)\n` +
         `3. Extract and install:\n` +
-        `\`\`\`\nunzip qsv-*.zip\nsudo mv qsvmcp /usr/local/bin/\n\`\`\`\n\n` +
+        `\`\`\`\nunzip qsv-*.zip\nsudo mv qsvmcp qsv /usr/local/bin/\n\`\`\`\n\n` +
         `For more options, visit ${baseUrl}`;
       break;
   }

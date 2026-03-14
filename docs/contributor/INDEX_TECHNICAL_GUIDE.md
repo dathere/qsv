@@ -29,7 +29,7 @@
 
 ## Command Responsibilities
 
-1. Validate the input file path (no stdin, no snappy `.sz`).
+1. Validate the input file path (no stdin, must have a supported extension: csv, tsv, tab, or ssv).
 2. Resolve the output location (`<input>.idx` by default or explicit `--output`).
 3. Stream the CSV rows once, capturing row boundaries using the `csv-index` crate.
 4. Flush the resulting index file and exit cleanly.
@@ -83,7 +83,7 @@ The USAGE string doubles as user help and ensures flags stay synchronized with t
 
 The core of `run` is straightforward:
 
-1. **Snappy check**: `input.to_lowercase().ends_with(".sz")` short-circuits with a CLI error. Snappy streams cannot be randomly indexed, so there is no point continuing.
+1. **Extension check**: Validates that the input file has a supported extension (`csv`, `tsv`, `tab`, or `ssv`). Files with unsupported extensions are rejected with the error "Can only index CSV, TSV/TAB or SSV files."
 
 2. **Path resolution**:
    ```rust

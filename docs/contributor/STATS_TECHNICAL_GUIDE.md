@@ -1048,7 +1048,7 @@ echo "col1,col2
 
 Per the project's `.github/copilot-instructions.md`:
 
-1. **Use latest Rust features** (edition 2024, Rust 1.93+)
+1. **Use latest Rust features** (edition 2024, Rust 1.94+)
 2. **Always include safety comments**:
    ```rust
    unsafe {

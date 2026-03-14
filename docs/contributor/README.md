@@ -48,7 +48,7 @@ Most content in this directory is AI-generated or AI-assisted, created using too
 - **Read before writing**: The technical guides often explain *why* existing code is structured a certain way. Avoiding incompatible changes saves review cycles.
 - **Follow Rust conventions**: Each guide includes relevant Rust concepts (ownership, unsafe blocks, trait usage). Align with the patterns shown.
 - **Test frequently**: Run `cargo test --test test_<command>` after each meaningful change to catch regressions early.
-- **Check the copilot-instructions**: Root-level `copilot-instructions.md` documents project-wide standards (latest Rust features, safety comments, performance expectations).
+- **Check the copilot-instructions**: `.github/copilot-instructions.md` documents project-wide standards (latest Rust features, safety comments, performance expectations).
 
 ## Contributing Improvements
 
@@ -73,11 +73,11 @@ All contributions—docs, code fixes, or discussions—help qsv grow stronger.
 
 ## Additional Resources
 
-- **Project Overview**: See `docs/PROJECT_TECHNICAL_OVERVIEW.md` for an architectural helicopter view.
+- **Project Overview**: See `docs/contributor/PROJECT_TECHNICAL_OVERVIEW.md` for an architectural helicopter view.
 - **Performance Context**: `docs/PERFORMANCE.md` explains stats caching, benchmarks, and indexing benefits.
 - **GitHub Wiki**: https://github.com/dathere/qsv/wiki for user-facing documentation and supplemental guides.
 - **Issue Tracker**: https://github.com/dathere/qsv/issues for tracking bugs, feature requests, and discussions.
-- **Copilot Instructions**: Root-level `copilot-instructions.md` for project standards and Rust patterns.
+- **Copilot Instructions**: `.github/copilot-instructions.md` for project standards and Rust patterns.
 
 ## Acknowledgments
 

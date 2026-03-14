@@ -88,8 +88,8 @@ These environment variables configure the MCP server behavior:
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `QSV_MCP_BIN_PATH` | Full path to the qsv binary. If not set, auto-detects from PATH and common installation locations (`/usr/local/bin/qsv`, `/opt/homebrew/bin/qsv`, `~/.cargo/bin/qsv`, etc.). | Auto-detect |
-| `QSV_MCP_WORKING_DIR` | Default working directory for file operations. Supports template variables like `${HOME}`, `${DOWNLOADS}`, `${DOCUMENTS}`. | `${DOWNLOADS}` |
+| `QSV_MCP_BIN_PATH` | Full path to the qsv binary (`qsvmcp` preferred over `qsv`). If not set, auto-detects from PATH and common installation locations. | Auto-detect |
+| `QSV_MCP_WORKING_DIR` | Default working directory for file operations. Supports template variables like `${HOME}`, `${DOWNLOADS}`, `${DOCUMENTS}`, `${PWD}`. | `${PWD}` (plugin mode) / `${DOWNLOADS}` (extension & legacy modes) |
 | `QSV_MCP_ALLOWED_DIRS` | Additional directories where qsv can access files (colon-separated on Unix, semicolon on Windows, or JSON array). File access is restricted to working directory and these directories only. | Empty (working dir only) |
 
 ### Performance Tuning

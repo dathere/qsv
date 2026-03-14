@@ -47,8 +47,20 @@ const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/dathere/qsv/rele
 /** Timeout for GitHub API and download requests (60 seconds) */
 const FETCH_TIMEOUT_MS = 60_000;
 
-/** Escape single quotes for PowerShell single-quoted strings */
-const psEscape = (s: string) => s.replace(/'/g, "''");
+/**
+ * Escape a string for use inside PowerShell single-quoted strings.
+ * Single-quoted strings in PowerShell only interpret '' as a literal '.
+ * We also reject characters that should never appear in temp paths as a
+ * defense-in-depth measure against command injection.
+ */
+function psEscape(s: string): string {
+  // Reject paths containing characters that could break out of single-quoted context
+  // or be used for injection (backticks, $, semicolons, pipes, etc.)
+  if (/[`$;|&{}<>]/.test(s)) {
+    throw new Error(`Refusing to interpolate potentially unsafe path into PowerShell command: ${s}`);
+  }
+  return s.replace(/'/g, "''");
+}
 
 /**
  * Get the asset filename suffix for the current platform, or null if unsupported.
@@ -116,19 +128,23 @@ function findBinaryInArchive(tempDir: string, binaryName: string, isWindows: boo
   let extractedPath = join(tempDir, binaryName);
   if (existsSync(extractedPath)) return extractedPath;
 
-  if (isWindows) {
-    const findResult = execFileSync("powershell", [
-      "-NoProfile",
-      "-Command",
-      `(Get-ChildItem -Path '${psEscape(tempDir)}' -Recurse -Filter '${binaryName}' | Select-Object -First 1).FullName`,
-    ], { encoding: "utf8", timeout: 10_000 }).trim();
-    if (findResult) return findResult;
-  } else {
-    const findResult = execFileSync("/usr/bin/find", [tempDir, "-name", binaryName, "-type", "f"], {
-      encoding: "utf8",
-      timeout: 10_000,
-    }).trim().split("\n")[0];
-    if (findResult) return findResult;
+  try {
+    if (isWindows) {
+      const findResult = execFileSync("powershell", [
+        "-NoProfile",
+        "-Command",
+        `(Get-ChildItem -Path '${psEscape(tempDir)}' -Recurse -Filter '${binaryName}' | Select-Object -First 1).FullName`,
+      ], { encoding: "utf8", timeout: 10_000 }).trim();
+      if (findResult) return findResult;
+    } else {
+      const findResult = execFileSync("/usr/bin/find", [tempDir, "-name", binaryName, "-type", "f"], {
+        encoding: "utf8",
+        timeout: 10_000,
+      }).trim().split("\n")[0];
+      if (findResult) return findResult;
+    }
+  } catch {
+    // Best-effort search — if find/powershell fails, fall through to return null
   }
 
   return null;

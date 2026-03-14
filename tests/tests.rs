@@ -117,6 +117,8 @@ mod test_safenames;
 mod test_sample;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_schema;
+#[cfg(all(feature = "polars", feature = "feature_capable"))]
+mod test_scoresql;
 mod test_search;
 mod test_searchset;
 mod test_select;

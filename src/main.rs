@@ -226,6 +226,10 @@ fn main() -> QsvExitCode {
 
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
     enabled_commands.push_str(
+        "    scoresql    Score a SQL query against CSV caches for performance analysis\n",
+    );
+    #[cfg(all(feature = "polars", feature = "feature_capable"))]
+    enabled_commands.push_str(
         "    sqlp        Run a SQL query against several CSVs using the Pola.rs engine\n",
     );
 
@@ -480,6 +484,8 @@ enum Command {
     SortCheck,
     Split,
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
+    ScoreSql,
+    #[cfg(all(feature = "polars", feature = "feature_capable"))]
     SqlP,
     Stats,
     Moarstats,
@@ -587,6 +593,8 @@ impl Command {
             Command::Sort => cmd::sort::run(argv),
             Command::SortCheck => cmd::sortcheck::run(argv),
             Command::Split => cmd::split::run(argv),
+            #[cfg(all(feature = "polars", feature = "feature_capable"))]
+            Command::ScoreSql => cmd::scoresql::run(argv),
             #[cfg(all(feature = "polars", feature = "feature_capable"))]
             Command::SqlP => cmd::sqlp::run(argv),
             Command::Stats => cmd::stats::run(argv),

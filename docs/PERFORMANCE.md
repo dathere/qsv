@@ -173,7 +173,7 @@ To find out your jobs setting, call `qsv --version`.
 The `--version` option shows a lot of information about qsv. It displays:
 * qsv version
 * the memory allocator (`standard` or `mimalloc`)
-* all enabled features (`apply`, `fetch`, `foreach`, `geocode`, `luau`, `mcp`, `polars`, `prompt`, `python`, `self_update` & `to`)
+* all enabled features (`apply`, `fetch`, `foreach`, `geocode`, `luau`, `magika`, `polars`, `prompt`, `python`, `self_update` & `to`)
 * Python version linked if the `python` feature was enabled
 * Luau version embedded if the `luau` feature was enabled
 * the number of processors to use for multi-threading commands

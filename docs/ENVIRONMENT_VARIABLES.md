@@ -96,11 +96,11 @@ These environment variables configure the MCP server behavior:
 
 | Variable | Description | Default | Range |
 | --- | --- | --- | --- |
-| `QSV_MCP_OPERATION_TIMEOUT_MS` | Operation timeout in milliseconds. Used by legacy MCP mode. | 600,000 (10 min) | 1,000 - 1,800,000 |
+| `QSV_MCP_OPERATION_TIMEOUT_MS` | Operation timeout in milliseconds for qsv command execution. | 600,000 (10 min) | 1,000 - 1,800,000 |
 | `QSV_MCP_MAX_OUTPUT_SIZE` | Maximum output size in bytes before results are automatically saved to disk. | 52,428,800 (50 MB) | 1,048,576 - 104,857,600 |
 | `QSV_MCP_CONVERTED_LIFO_SIZE_GB` | Maximum size for the converted file cache (Excel→CSV, JSONL→CSV) in GB. Uses LIFO eviction. | 1.0 | 0.1 - 100.0 |
 | `QSV_MCP_MAX_FILES_PER_LISTING` | Maximum number of files returned in a single directory listing. | 1,000 | 1 - 100,000 |
-| `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | Maximum number of concurrent qsv operations. | 3 (plugin mode) / 1 (legacy MCP mode) | 1 - 100 |
+| `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | Maximum number of concurrent qsv operations. | 3 (plugin mode) / 1 (extension & legacy modes) | 1 - 100 |
 | `QSV_MCP_MAX_EXAMPLES` | Maximum number of examples to include in MCP tool descriptions. Set to 0 to disable examples. | 5 | 0 - 20 |
 
 ### Advanced Configuration

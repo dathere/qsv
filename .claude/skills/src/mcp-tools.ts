@@ -4115,7 +4115,7 @@ export async function handleSetupCall(
         `qsv installed successfully via ${result.method}!\n\n` +
         `${binaryInfo}\n` +
         `Version: ${revalidation.validation.version}\n\n` +
-        `The full qsv toolkit is now available. You can proceed with data tasks.`,
+        `${paths?.qsv ? 'The full qsv toolkit is now available.' : 'The qsv MCP server is now available.'} You can proceed with data tasks.`,
       ),
     };
   }

@@ -530,7 +530,7 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
     // Look for ON clause
     for (i, _) in upper.match_indices(" ON ") {
         let after = &sql[i + 4..];
-        for token in after.split_whitespace() {
+        'on_clause: for token in after.split_whitespace() {
             // Split on operators to handle a.id=b.id patterns
             for part in split_on_operators(token) {
                 let clean =
@@ -539,7 +539,7 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
                 if ["WHERE", "ORDER", "GROUP", "HAVING", "LIMIT", "JOIN"]
                     .contains(&upper_clean.as_str())
                 {
-                    break;
+                    break 'on_clause;
                 }
                 if clean.contains('.') {
                     if let Some(col) = clean.split('.').last() {
@@ -788,7 +788,16 @@ fn get_polars_plan(
     let mut alias_pairs: Vec<_> = table_aliases.iter().collect();
     alias_pairs.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
     for (tname, talias) in alias_pairs {
-        query = query.replace(talias, &format!(r#""{tname}""#));
+        // Use word-boundary regex to avoid replacing inside other identifiers
+        // (e.g., alias "data" matching inside "metadata_col")
+        let pattern = format!(r"\b{}\b", regex::escape(talias));
+        if let Ok(re) = regex::Regex::new(&pattern) {
+            query = re
+                .replace_all(&query, format!(r#""{tname}""#).as_str())
+                .to_string();
+        } else {
+            query = query.replace(talias, &format!(r#""{tname}""#));
+        }
     }
 
     let explain_query = format!("EXPLAIN {query}");

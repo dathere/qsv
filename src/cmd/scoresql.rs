@@ -19,15 +19,19 @@ Caches are auto-generated when missing:
 
 Examples:
 
+  # Score a simple filter query against a single CSV file
   $ qsv scoresql data.csv "SELECT * FROM data WHERE col1 > 10"
 
+  # Output the score report as JSON instead of the default human-readable format
   $ qsv scoresql --json data.csv "SELECT col1, col2 FROM data ORDER BY col1"
 
+  # Score a join query across two CSV files
   $ qsv scoresql data.csv data2.csv "SELECT * FROM data JOIN data2 ON data.id = data2.id"
 
+  # Use DuckDB for query plan analysis instead of Polars
   $ qsv scoresql --duckdb data.csv "SELECT * FROM data WHERE status = 'active'"
 
-  # use _t_N aliases just like sqlp (see sqlp documentation)
+  # Use _t_N aliases just like sqlp (see sqlp documentation)
   $ qsv scoresql data.csv data2.csv "SELECT * FROM _t_1 JOIN _t_2 ON _t_1.id = _t_2.id"
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_scoresql.rs.

@@ -257,12 +257,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     validate_misrate(args.flag_misrate)?;
 
     // Validate --subsample
-    if let Some(n) = args.flag_subsample {
-        if n == 0 {
-            return Err(CliError::IncorrectUsage(
-                "--subsample must be greater than 0.".to_string(),
-            ));
-        }
+    if let Some(n) = args.flag_subsample
+        && n == 0
+    {
+        return Err(CliError::IncorrectUsage(
+            "--subsample must be greater than 0.".to_string(),
+        ));
     }
 
     // --no-bounds is incompatible with --compare1/--compare2 (they need bounds for verdicts)
@@ -630,7 +630,7 @@ fn subsample_columns(col_values: &mut [Vec<f64>], max_n: usize, seed: u64) {
             continue;
         }
         let col_seed = seed.wrapping_add(col_idx as u64);
-        let mut rng = rand::rngs::StdRng::seed_from_u64(col_seed);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(col_seed); // DevSkim: ignore DS148264
         for i in 0..max_n {
             let j = rng.random_range(i..values.len());
             values.swap(i, j);

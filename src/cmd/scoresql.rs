@@ -71,6 +71,7 @@ Common options:
 use std::{
     borrow::Cow,
     env,
+    fmt::Write as FmtWrite,
     io::Write,
     path::{Path, PathBuf},
     process::Command,
@@ -372,8 +373,10 @@ fn parse_sql(sql: &str) -> SqlInfo {
     let upper = sql.to_ascii_uppercase();
     let tokens: Vec<&str> = upper.split_whitespace().collect();
 
+    #[allow(clippy::missing_asserts_for_indexing)]
     let has_select_star = tokens.windows(2).any(|w| w[0] == "SELECT" && w[1] == "*");
 
+    #[allow(clippy::missing_asserts_for_indexing)]
     let has_order_by = tokens.windows(2).any(|w| w[0] == "ORDER" && w[1] == "BY");
 
     let has_limit = tokens.contains(&"LIMIT");
@@ -545,12 +548,12 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
                 {
                     break 'on_clause;
                 }
-                if clean.contains('.') {
-                    if let Some(col) = clean.split('.').last() {
-                        if !col.is_empty() && !["AND", "OR"].contains(&upper_clean.as_str()) {
-                            columns.push(col.to_string());
-                        }
-                    }
+                if clean.contains('.')
+                    && let Some(col) = clean.split('.').next_back()
+                    && !col.is_empty()
+                    && !["AND", "OR"].contains(&upper_clean.as_str())
+                {
+                    columns.push(col.to_string());
                 }
             }
         }
@@ -559,21 +562,21 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
     // Look for USING clause
     for (i, _) in upper.match_indices("USING") {
         let after = &sql[i + 5..];
-        if let Some(paren_start) = after.find('(') {
-            if let Some(paren_end) = after.find(')') {
-                let cols = &after[paren_start + 1..paren_end];
-                for col in cols.split(',') {
-                    let col = col.trim();
-                    if !col.is_empty() {
-                        columns.push(col.to_string());
-                    }
+        if let Some(paren_start) = after.find('(')
+            && let Some(paren_end) = after.find(')')
+        {
+            let cols = &after[paren_start + 1..paren_end];
+            for col in cols.split(',') {
+                let col = col.trim();
+                if !col.is_empty() {
+                    columns.push(col.to_string());
                 }
             }
         }
     }
 
     // Deduplicate (case-insensitive) to avoid double-counting the same join key
-    columns.sort_unstable_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    columns.sort_unstable_by_key(|a| a.to_lowercase());
     columns.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
     columns
 }
@@ -801,7 +804,7 @@ fn get_polars_plan(
     // partial matches (e.g., _t_1 matching inside _t_10).
     let mut query = args.arg_sql.clone();
     let mut alias_pairs: Vec<_> = table_aliases.iter().collect();
-    alias_pairs.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    alias_pairs.sort_by_key(|b| std::cmp::Reverse(b.1.len()));
     for (tname, talias) in alias_pairs {
         // Use word-boundary regex to avoid replacing inside other identifiers
         // (e.g., alias "data" matching inside "metadata_col")
@@ -845,7 +848,7 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
         }
     }
     // Sort by length descending so longer names are replaced first
-    replacements.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    replacements.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
     // Deduplicate in case a table name equals an alias
     replacements.dedup_by(|a, b| a.0 == b.0);
     for (from, to) in &replacements {
@@ -1062,22 +1065,21 @@ fn score_filter_selectivity(
                 .find(|f| f.field.to_ascii_uppercase() == col_upper)
             {
                 // If the most common value accounts for > 70% of rows, selectivity is low
-                if let Some(top) = freq.frequencies.first() {
-                    if top.percentage > 70.0
-                        && top.value != "<ALL_UNIQUE>"
-                        && top.value != "<HIGH_CARDINALITY>"
-                    {
-                        score = score.saturating_sub(5);
-                        details.push(format!(
-                            "{}.{} top value '{}' is {:.0}% of rows (low selectivity)",
-                            cache.table_name, freq.field, top.value, top.percentage
-                        ));
-                        suggestions.push(format!(
-                            "Column '{}.{}' filter may match {:.0}% of rows — consider a more \
-                             selective filter",
-                            cache.table_name, freq.field, top.percentage
-                        ));
-                    }
+                if let Some(top) = freq.frequencies.first()
+                    && top.percentage > 70.0
+                    && top.value != "<ALL_UNIQUE>"
+                    && top.value != "<HIGH_CARDINALITY>"
+                {
+                    score = score.saturating_sub(5);
+                    details.push(format!(
+                        "{}.{} top value '{}' is {:.0}% of rows (low selectivity)",
+                        cache.table_name, freq.field, top.value, top.percentage
+                    ));
+                    suggestions.push(format!(
+                        "Column '{}.{}' filter may match {:.0}% of rows — consider a more \
+                         selective filter",
+                        cache.table_name, freq.field, top.percentage
+                    ));
                 }
             }
         }
@@ -1126,41 +1128,41 @@ fn score_data_distribution(
             }
 
             // Check skewness
-            if let Some(skewness) = stat.skewness {
-                if skewness.abs() > 2.0 {
-                    score = score.saturating_sub(2);
-                    details.push(format!(
-                        "{}.{} highly skewed (skewness={:.2})",
-                        cache.table_name, stat.field, skewness
-                    ));
-                }
+            if let Some(skewness) = stat.skewness
+                && skewness.abs() > 2.0
+            {
+                score = score.saturating_sub(2);
+                details.push(format!(
+                    "{}.{} highly skewed (skewness={:.2})",
+                    cache.table_name, stat.field, skewness
+                ));
             }
 
             // Check gini coefficient (from moarstats)
-            if let Some(gini) = stat.gini_coefficient {
-                if gini > 0.5 {
-                    score = score.saturating_sub(2);
-                    details.push(format!(
-                        "{}.{} high inequality (gini={:.2})",
-                        cache.table_name, stat.field, gini
-                    ));
-                    suggestions.push(format!(
-                        "Column '{}.{}' has high inequality (gini={:.2}) — may cause performance \
-                         issues in joins/aggregations",
-                        cache.table_name, stat.field, gini
-                    ));
-                }
+            if let Some(gini) = stat.gini_coefficient
+                && gini > 0.5
+            {
+                score = score.saturating_sub(2);
+                details.push(format!(
+                    "{}.{} high inequality (gini={:.2})",
+                    cache.table_name, stat.field, gini
+                ));
+                suggestions.push(format!(
+                    "Column '{}.{}' has high inequality (gini={:.2}) — may cause performance \
+                     issues in joins/aggregations",
+                    cache.table_name, stat.field, gini
+                ));
             }
 
             // Check entropy (from moarstats)
-            if let Some(entropy) = stat.normalized_entropy {
-                if entropy < 0.3 {
-                    score = score.saturating_sub(1);
-                    details.push(format!(
-                        "{}.{} low entropy ({:.2}) — data is highly concentrated",
-                        cache.table_name, stat.field, entropy
-                    ));
-                }
+            if let Some(entropy) = stat.normalized_entropy
+                && entropy < 0.3
+            {
+                score = score.saturating_sub(1);
+                details.push(format!(
+                    "{}.{} low entropy ({:.2}) — data is highly concentrated",
+                    cache.table_name, stat.field, entropy
+                ));
             }
         }
     }
@@ -1239,10 +1241,11 @@ fn score_query_patterns(
 fn format_human_report(report: &ScoreReport) -> String {
     let mut out = String::with_capacity(2048);
 
-    out.push_str(&format!(
+    let _ = write!(
+        out,
         "Score: {}/{} ({})\n\n",
         report.score, report.max_score, report.rating
-    ));
+    );
 
     out.push_str("=== Query Plan ===\n");
     out.push_str(&report.plan);
@@ -1253,19 +1256,20 @@ fn format_human_report(report: &ScoreReport) -> String {
 
     out.push_str("\n=== Scoring Breakdown ===\n");
     for b in &report.breakdown {
-        out.push_str(&format!(
-            "  {:25} {:>2}/{:<2}  - {}\n",
+        let _ = writeln!(
+            out,
+            "  {:25} {:>2}/{:<2}  - {}",
             format!("{}:", b.category),
             b.score,
             b.max,
             b.detail
-        ));
+        );
     }
 
     if !report.suggestions.is_empty() {
         out.push_str("\n=== Suggestions ===\n");
         for (i, s) in report.suggestions.iter().enumerate() {
-            out.push_str(&format!("  {}. {s}\n", i + 1));
+            let _ = writeln!(out, "  {}. {s}", i + 1);
         }
     }
 
@@ -1276,22 +1280,25 @@ fn format_human_report(report: &ScoreReport) -> String {
     {
         out.push_str("\n=== Cache Status ===\n");
         if !report.cache_status.stats_missing.is_empty() {
-            out.push_str(&format!(
-                "  Stats missing: {}\n",
+            let _ = writeln!(
+                out,
+                "  Stats missing: {}",
                 report.cache_status.stats_missing.join(", ")
-            ));
+            );
         }
         if !report.cache_status.frequency_missing.is_empty() {
-            out.push_str(&format!(
-                "  Frequency missing: {}\n",
+            let _ = writeln!(
+                out,
+                "  Frequency missing: {}",
                 report.cache_status.frequency_missing.join(", ")
-            ));
+            );
         }
         if !report.cache_status.index_missing.is_empty() {
-            out.push_str(&format!(
-                "  Index missing: {}\n",
+            let _ = writeln!(
+                out,
+                "  Index missing: {}",
                 report.cache_status.index_missing.join(", ")
-            ));
+            );
         }
     }
 

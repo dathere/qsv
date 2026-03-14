@@ -568,6 +568,9 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
         }
     }
 
+    // Deduplicate (case-insensitive) to avoid double-counting the same join key
+    columns.sort_unstable();
+    columns.dedup();
     columns
 }
 
@@ -578,7 +581,7 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
 fn load_or_generate_caches(
     input_path: &Path,
     table_name: &str,
-    _delim: u8,
+    delim: u8,
     quiet: bool,
 ) -> CliResult<InputCacheData> {
     let canonical = input_path.canonicalize()?;
@@ -591,7 +594,7 @@ fn load_or_generate_caches(
         if !quiet {
             winfo!("Generating stats cache for {table_name}...");
         }
-        generate_stats_cache(input_path)?;
+        generate_stats_cache(&canonical, delim)?;
         if stats_path.exists() {
             load_stats_cache(&stats_path)?
         } else {
@@ -608,7 +611,7 @@ fn load_or_generate_caches(
             if !quiet {
                 winfo!("Generating frequency cache for {table_name}...");
             }
-            generate_freq_cache(input_path)?;
+            generate_freq_cache(&canonical, delim)?;
             if freq_path.exists() {
                 (true, load_freq_cache(&freq_path)?)
             } else {
@@ -643,7 +646,7 @@ fn is_cache_fresh(cache_path: &Path, input_path: &Path) -> bool {
     let Ok(input_mtime) = input_meta.modified() else {
         return false;
     };
-    cache_mtime > input_mtime
+    cache_mtime >= input_mtime
 }
 
 fn load_stats_cache(stats_path: &Path) -> CliResult<Vec<crate::cmd::stats::StatsData>> {
@@ -698,12 +701,14 @@ fn load_freq_cache(freq_path: &Path) -> CliResult<Vec<FreqEntry>> {
     Ok(entries)
 }
 
-fn generate_stats_cache(input_path: &Path) -> CliResult<()> {
+fn generate_stats_cache(input_path: &Path, delim: u8) -> CliResult<()> {
     let qsv_bin = env::current_exe()?;
-    let output = Command::new(&qsv_bin)
-        .args(["stats", "--everything", "--stats-jsonl"])
-        .arg(input_path)
-        .output()?;
+    let mut cmd = Command::new(&qsv_bin);
+    cmd.args(["stats", "--everything", "--stats-jsonl"]);
+    if delim != b',' {
+        cmd.args(["--delimiter", &(delim as char).to_string()]);
+    }
+    let output = cmd.arg(input_path).output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         log::warn!("Stats cache generation failed: {stderr}");
@@ -715,12 +720,14 @@ fn generate_stats_cache(input_path: &Path) -> CliResult<()> {
     Ok(())
 }
 
-fn generate_freq_cache(input_path: &Path) -> CliResult<()> {
+fn generate_freq_cache(input_path: &Path, delim: u8) -> CliResult<()> {
     let qsv_bin = env::current_exe()?;
-    let output = Command::new(&qsv_bin)
-        .args(["frequency", "--frequency-jsonl"])
-        .arg(input_path)
-        .output()?;
+    let mut cmd = Command::new(&qsv_bin);
+    cmd.args(["frequency", "--frequency-jsonl"]);
+    if delim != b',' {
+        cmd.args(["--delimiter", &(delim as char).to_string()]);
+    }
+    let output = cmd.arg(input_path).output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         log::warn!("Frequency cache generation failed: {stderr}");

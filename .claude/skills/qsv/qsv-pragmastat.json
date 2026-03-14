@@ -46,6 +46,11 @@
         "default": "0.001"
       },
       {
+        "flag": "--no-bounds",
+        "type": "flag",
+        "description": "Skip confidence bounds computation (~2x faster). Incompatible with --compare1/--compare2."
+      },
+      {
         "flag": "--no-headers",
         "type": "flag",
         "description": "When set, the first row will not be treated as headers."
@@ -62,6 +67,11 @@
         "default": "4"
       },
       {
+        "flag": "--seed",
+        "type": "string",
+        "description": "Seed for reproducible subsampling. If not specified, defaults to 42 when --subsample is used."
+      },
+      {
         "flag": "--select",
         "type": "string",
         "description": "Select columns for analysis. Uses qsv's column selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed."
@@ -76,6 +86,11 @@
         "type": "string",
         "description": "Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace.",
         "default": "--infer-dates --infer-boolean --mad --quartiles --force --stats-jsonl"
+      },
+      {
+        "flag": "--subsample",
+        "type": "string",
+        "description": "Randomly subsample N values per column before computing. Speeds up large datasets while maintaining statistical robustness. Recommended: 10000-50000 for exploratory analysis."
       },
       {
         "flag": "--twosample",
@@ -121,6 +136,22 @@
     {
       "description": "Compare two-sample shift and disparity against thresholds",
       "command": "qsv pragmastat --compare2 shift:0,disparity:0.8 --select latency_ms,price data.csv"
+    },
+    {
+      "description": "Fast exploratory analysis with subsampling (~100x speedup on large datasets)",
+      "command": "qsv pragmastat --standalone --subsample 10000 data.csv"
+    },
+    {
+      "description": "Reproducible subsampling with a specific seed",
+      "command": "qsv pragmastat --standalone --subsample 10000 --seed 123 data.csv"
+    },
+    {
+      "description": "Skip confidence bounds for ~2x speedup",
+      "command": "qsv pragmastat --standalone --no-bounds data.csv"
+    },
+    {
+      "description": "Combined: ~200x speedup for large datasets",
+      "command": "qsv pragmastat --standalone --subsample 10000 --no-bounds data.csv"
     }
   ]
 }

@@ -136,6 +136,7 @@ const NON_TABULAR_COMMANDS = new Set([
   "tojsonl",             // JSONL output
   "template",            // Free-form text
   "schema",              // JSON Schema output
+  "scoresql",            // Score report (human-readable or JSON)
   "validate",            // Validation messages, not CSV data
   "describegpt",         // Markdown output (data dictionaries, descriptions, tags)
 ]);
@@ -285,11 +286,19 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     commonPattern: "Iterate: qsv_schema → validate → fix → validate until clean.",
     needsIndexHint: true,
   },
+  scoresql: {
+    whenToUse:
+      "Score a SQL query BEFORE running it with sqlp. Analyzes query plan, type optimization, join cardinality, filter selectivity, and anti-patterns against CSV caches. Use for complex queries, large files, or when you want optimization suggestions.",
+    commonPattern:
+      "Pre-flight: scoresql → review score/suggestions → adjust query → sqlp. Use --json for machine-readable output. Caches (stats, frequency) are auto-generated if missing. Same input/SQL arguments as sqlp.",
+    errorPrevention:
+      "Auto-generates stats and frequency caches as a side effect if missing. Use --duckdb when DuckDB is the target engine. Score: <50 Poor, 50-74 Fair, 75-89 Good, 90+ Excellent.",
+  },
   sqlp: {
     whenToUse:
       "Run SQL queries on tabular data. Auto-converts CSV to Parquet for performance, then routes to DuckDB when available (faster, PostgreSQL-compatible). Falls back to Polars SQL (sqlp) otherwise.",
     commonPattern:
-      "Stats → SQL: Read qsv_stats output before writing queries. Use type for correct casts (don't quote integers, use date functions for Date/DateTime). Use min/max/range for precise WHERE clauses. Use cardinality to optimize GROUP BY (low = fast, high = consider LIMIT). Use sort_order to skip redundant ORDER BY. For value distributions, run qsv_frequency on relevant columns. For multi-file queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() in SQL.",
+      "Stats → SQL: Read qsv_stats output before writing queries. Use type for correct casts (don't quote integers, use date functions for Date/DateTime). Use min/max/range for precise WHERE clauses. Use cardinality to optimize GROUP BY (low = fast, high = consider LIMIT). Use sort_order to skip redundant ORDER BY. For value distributions, run qsv_frequency on relevant columns. For multi-file queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() in SQL. For complex queries on large files, run qsv_scoresql first to get a performance score and optimization suggestions.",
     errorPrevention:
       "Column names are case-sensitive in Polars SQL but case-insensitive in DuckDB. For unsupported output formats (Arrow, Avro), sqlp is used automatically. Use nullcount from qsv_stats to add COALESCE/IS NOT NULL only where nulls actually exist — skip null handling for columns with nullcount=0. In Claude Cowork, ensure DuckDB runs on the host, not the Linux container.",
     hasCommonMistakes: true,
@@ -1234,7 +1243,7 @@ async function shouldUseTempFile(
 }
 
 /**
- * 12 most essential qsv commands exposed as individual MCP tools
+ * 13 most essential qsv commands exposed as individual MCP tools
  * Optimized for token efficiency while maintaining high-value tool access
  *
  * Commands promoted to CORE_TOOLS (always loaded):
@@ -1252,6 +1261,7 @@ export const COMMON_COMMANDS = [
   "count", // Row counting (instant with index)
   "slice", // Row selection
   "sqlp", // SQL queries (Polars engine)
+  "scoresql", // Pre-execution SQL query scoring/analysis
   "joinp", // High-performance joins (Polars engine)
   "cat", // Concatenate CSV files (rows/columns)
   "geocode", // Geocoding operations

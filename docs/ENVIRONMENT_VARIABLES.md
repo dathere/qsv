@@ -53,7 +53,7 @@
 | `QSV_REDIS_MAX_POOL_SIZE` | the maximum Redis connection pool size. (default: 20). |
 | `QSV_REDIS_TTL_SECS` | set time-to-live of Redis cached values (default (seconds): 2419200 (28 days)). |
 | `QSV_REDIS_TTL_REFRESH`| if set, enables cache hits to refresh TTL of Redis cached values. |
-| `QSV_TIMEOUT`| for commands with a --timeout option (`fetch`, `fetchpost`, `luau`, `sniff` and `validate`), the number of seconds before a web request times out (default: 30). |
+| `QSV_TIMEOUT`| for commands with a --timeout option (`describegpt`, `fetch`, `fetchpost`, `geocode`, `luau`, `sample`, `snappy`, `sniff`, `template` & `validate`), the number of seconds before a web request times out (default: 30). |
 | `QSV_USER_AGENT`| the user-agent to use for web requests. When specifying a custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to conform to the [IETF RFC 72321 standard](https://tools.ietf.org/html/rfc7231#section-5.5.3). See [here](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent) for examples.<br>(default: $QSV_BIN_NAME/$QSV_VERSION ($QSV_TARGET; $QSV_KIND; https://github.com/dathere/qsv) - e.g.<br>`qsv/0.105.0 (x86_64-unknown-linux; prebuilt; https://github.com/dathere/qsv)`).|
 | `QSV_GEOIP2_FILENAME` | the filename of the GeoIP2 database to use for the `geocode` command. (default: `GeoLite2-City.mmdb`) |
 | `QSV_GEOCODE_INDEX_FILENAME` | The filename of the Geonames index file to use for the `geocode` command. If not set, the default index file for that qsv version is downloaded and saved to `QSV_CACHE_DIR`. Set this only if you have a custom Geonames index file. |
@@ -69,7 +69,7 @@ Several dependencies also have environment variables that influence qsv's perfor
   qsv uses reqwest and will honor [proxy settings](https://docs.rs/reqwest/latest/reqwest/index.html#proxies) set through the `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` & `NO_PROXY` environment variables.
 
 * Polars   
-  qsv uses [polars](https://github.com/pola.rs/polars) for several commands - currently `color`, `count`, `joinp`, `lens`, `pivotp`, `prompt`, `schema` and `sqlp`. Polars has its own set of environment variables that can be set to influence its behavior (see [here](https://github.com/pola-rs/polars/blob/dd1fc86b65ae39b741f46edc6da01d024bed50b6/crates/polars/src/lib.rs#L366-L408)). The most relevant ones are:
+  qsv uses [polars](https://github.com/pola.rs/polars) for several commands - currently `color`, `count`, `joinp`, `lens`, `pivotp`, `prompt`, `schema`, `scoresql` and `sqlp`. Polars has its own set of environment variables that can be set to influence its behavior (see [here](https://github.com/pola-rs/polars/blob/dd1fc86b65ae39b741f46edc6da01d024bed50b6/crates/polars/src/lib.rs#L366-L408)). The most relevant ones are:
 
   * `POLARS_VERBOSE` - if set to 1, polars will output logging messages to stderr.
   * `POLARS_PANIC_ON_ERR` - if set to 1, panics on polars-related errors, instead of returning an error.
@@ -96,11 +96,11 @@ These environment variables configure the MCP server behavior:
 
 | Variable | Description | Default | Range |
 | --- | --- | --- | --- |
-| `QSV_MCP_OPERATION_TIMEOUT_MS` | Operation timeout in milliseconds. Used by legacy MCP mode. | 120,000 (2 min) | 1,000 - 1,800,000 |
+| `QSV_MCP_OPERATION_TIMEOUT_MS` | Operation timeout in milliseconds. Used by legacy MCP mode. | 600,000 (10 min) | 1,000 - 1,800,000 |
 | `QSV_MCP_MAX_OUTPUT_SIZE` | Maximum output size in bytes before results are automatically saved to disk. | 52,428,800 (50 MB) | 1,048,576 - 104,857,600 |
 | `QSV_MCP_CONVERTED_LIFO_SIZE_GB` | Maximum size for the converted file cache (Excel→CSV, JSONL→CSV) in GB. Uses LIFO eviction. | 1.0 | 0.1 - 100.0 |
 | `QSV_MCP_MAX_FILES_PER_LISTING` | Maximum number of files returned in a single directory listing. | 1,000 | 1 - 100,000 |
-| `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | Maximum number of concurrent qsv operations. | 10 | 1 - 100 |
+| `QSV_MCP_MAX_CONCURRENT_OPERATIONS` | Maximum number of concurrent qsv operations. | 3 (plugin mode) / 1 (legacy MCP mode) | 1 - 100 |
 | `QSV_MCP_MAX_EXAMPLES` | Maximum number of examples to include in MCP tool descriptions. Set to 0 to disable examples. | 5 | 0 - 20 |
 
 ### Advanced Configuration
@@ -129,7 +129,7 @@ These environment variables configure the MCP server behavior:
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `MCPB_EXTENSION_MODE` | Set automatically by Claude Desktop when running as an extension. Enables stricter validation (requires fully qualified qsv path, version >= 13.0.0). | `false` |
+| `MCPB_EXTENSION_MODE` | Set automatically by Claude Desktop when running as an extension. Enables stricter validation (requires fully qualified qsv path, version >= 17.0.0). | `false` |
 
 ### Template Variables
 
@@ -143,6 +143,7 @@ The following template variables can be used in `QSV_MCP_WORKING_DIR` and `QSV_M
 | `${DOCUMENTS}` | User's Documents folder |
 | `${DOWNLOADS}` | User's Downloads folder |
 | `${TEMP}` / `${TMPDIR}` | System temporary directory |
+| `${PWD}` | Current working directory |
 
 ### Example Configuration
 

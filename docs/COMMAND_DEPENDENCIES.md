@@ -29,6 +29,7 @@ The following "smart" commands (🪄) use the stats cache (`stats.csv.data.jsonl
 *   **`sqlp`**: Indirectly uses the stats cache via `util::infer_polars_schema()` for data type inference.
 *   **`tojsonl`**: Uses the stats cache via `infer_schema_from_stats` for JSON data type inference.
 *   **`moarstats`**: Reads `.stats.csv` files to add extended statistics.
+*   **`scoresql`**: Analyzes SQL queries against stats, moarstats, and frequency caches to produce performance scores with optimization suggestions.
 
 ## 3. Dependency on `frequency` (created via `qsv frequency`)
 *   **`schema`**: Uses frequency distributions internally to identify "low cardinality" columns and automatically build `enum` constraints for the generated JSON Schema.
@@ -36,7 +37,7 @@ The following "smart" commands (🪄) use the stats cache (`stats.csv.data.jsonl
 
 ## 4. Dependency on `schema` (created via `qsv schema`)
 *   **`validate`**: Primarily depends on a `.schema.json` file (produced by `schema`) to validate CSV records.
-*   **`sqlp`, `joinp`, `pivotp`**: These Polars-based commands automatically look for a `.pschema.json` file (created via `qsv schema --polars`). If found, they use it to bypass schema inference, ensuring correct data types (like `Decimal` or `Date`) and optimizing query planning.
+*   **`sqlp`, `joinp`, `pivotp`, `scoresql`**: These Polars-based commands automatically look for a `.pschema.json` file (created via `qsv schema --polars`). If found, they use it to bypass schema inference, ensuring correct data types (like `Decimal` or `Date`) and optimizing query planning.
 
 ## 5. Cross-Command Data Dependencies
 *   **`validate` (via `dynamicEnum`)**: Can depend on **any other CSV** to serve as a lookup table for validating values in a specific column.

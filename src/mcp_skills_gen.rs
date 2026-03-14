@@ -1114,6 +1114,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "safenames",
         "sample",
         "schema",
+        "scoresql",
         "search",
         "searchset",
         "select",

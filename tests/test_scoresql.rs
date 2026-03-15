@@ -95,7 +95,7 @@ fn scoresql_select_star_warning() {
     let suggestions = parsed["suggestions"].as_array().unwrap();
     let has_select_star_warning = suggestions
         .iter()
-        .any(|s| s.as_str().unwrap().contains("SELECT *"));
+        .any(|s| s.as_str().unwrap_or_default().contains("SELECT *"));
     assert!(
         has_select_star_warning,
         "Expected SELECT * warning in suggestions"
@@ -117,7 +117,7 @@ fn scoresql_order_by_no_limit() {
     let suggestions = parsed["suggestions"].as_array().unwrap();
     let has_limit_warning = suggestions
         .iter()
-        .any(|s| s.as_str().unwrap().contains("LIMIT"));
+        .any(|s| s.as_str().unwrap_or_default().contains("LIMIT"));
     assert!(
         has_limit_warning,
         "Expected LIMIT suggestion for ORDER BY without LIMIT"
@@ -277,7 +277,8 @@ fn scoresql_invalid_sql() {
     cmd.arg("data.csv");
     cmd.arg("SELEC * FROM data");
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    let got = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&got.stderr);
     assert!(
         stderr.contains("Failed to execute SQL query"),
         "Expected 'Failed to execute SQL query' in stderr, got: {stderr}"
@@ -290,7 +291,7 @@ fn scoresql_invalid_sql() {
         stderr.contains("Hint: Check your SQL syntax"),
         "Expected syntax hint in stderr, got: {stderr}"
     );
-    wrk.assert_err(&mut cmd);
+    assert!(!got.status.success(), "Expected command to fail");
 }
 
 #[test]
@@ -313,6 +314,11 @@ SELECT name, score FROM data WHERE age > 30 LIMIT 5;
     cmd.arg(wrk.path("script.sql"));
 
     let got = wrk.output(&mut cmd);
+    assert!(
+        got.status.success(),
+        "scoresql failed: {}",
+        String::from_utf8_lossy(&got.stderr)
+    );
     let stdout = String::from_utf8_lossy(&got.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
 
@@ -325,7 +331,7 @@ SELECT name, score FROM data WHERE age > 30 LIMIT 5;
     let suggestions = parsed["suggestions"].as_array().unwrap();
     let has_select_star_warning = suggestions
         .iter()
-        .any(|s| s.as_str().unwrap().contains("SELECT *"));
+        .any(|s| s.as_str().unwrap_or_default().contains("SELECT *"));
     assert!(
         !has_select_star_warning,
         "Last query uses specific columns, should NOT have SELECT * warning"

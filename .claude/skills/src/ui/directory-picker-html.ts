@@ -14,7 +14,7 @@
  * Vanilla JS (no framework) with breadcrumb navigation, directory listing,
  * quick-access buttons, and a "Select" confirmation action.
  */
-export function getDirectoryPickerHtml(): string {
+export function getDirectoryPickerHtml(platformRoot: string = "/"): string {
   // Use a template literal for the full HTML — no external dependencies except
   // the MCP Apps SDK loaded from esm.sh CDN.
   return /* html */ `<!DOCTYPE html>
@@ -333,6 +333,8 @@ export function getDirectoryPickerHtml(): string {
 </div>
 
 <script>
+// Platform-appropriate filesystem root (injected server-side)
+const PLATFORM_ROOT = ${JSON.stringify(platformRoot)};
 // ── Inline MCP Apps SDK shim ──────────────────────────────────────────
 // Minimal implementation of the @modelcontextprotocol/ext-apps App class
 // and style helpers. Communicates with the host via postMessage using
@@ -737,9 +739,9 @@ app.connect().then(() => {
       if (homeDir || currentPath) {
         navigate(homeDir || currentPath);
       } else {
-        // Last resort: if no home dir or path available, try root
+        // Last resort: if no home dir or path available, try filesystem root
         showError("Could not determine home directory. Trying root...");
-        navigate("/");
+        navigate(PLATFORM_ROOT);
       }
     }
   }, 500);

@@ -65,6 +65,8 @@ import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
 
 /**
  * Directories under $HOME that the browse-directory tool must never enter.
+ * Each entry must be a directory (not a file) — the check resolves these as
+ * paths and tests whether the target dir equals or is a child of the entry.
  * Promoted to module level so the array is created once, not on every call.
  */
 const SENSITIVE_DIRS = [
@@ -72,7 +74,7 @@ const SENSITIVE_DIRS = [
   ".aws", ".azure", ".config/gcloud",
   ".kube",
   ".password-store", ".local/share/keyrings",
-  ".netrc", ".docker", ".npmrc",
+  ".docker",
 ];
 
 /**
@@ -961,7 +963,7 @@ class QsvMcpServer {
               {
                 uri,
                 mimeType: RESOURCE_MIME_TYPE,
-                text: getDirectoryPickerHtml(),
+                text: getDirectoryPickerHtml(process.platform === "win32" ? (process.env.SYSTEMDRIVE || "C:") + "\\" : "/"),
                 // No CSP needed — the App HTML uses an inline SDK shim
                 // with no external CDN dependencies.
               },

@@ -18,7 +18,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { basename, resolve } from "node:path";
+import { basename, resolve, sep } from "node:path";
 import { access, realpath, stat as fsStat } from "node:fs/promises";
 import { execFile as execFileCb } from "node:child_process";
 import { homedir } from "node:os";
@@ -62,6 +62,18 @@ import { scanDirectory } from "./browse-directory.js";
 import { VERSION } from "./version.js";
 import { getErrorMessage, errorResult, successResult } from "./utils.js";
 import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
+
+/**
+ * Directories under $HOME that the browse-directory tool must never enter.
+ * Promoted to module level so the array is created once, not on every call.
+ */
+const SENSITIVE_DIRS = [
+  ".ssh", ".gnupg", ".gpg", ".pki",
+  ".aws", ".azure", ".config/gcloud",
+  ".kube",
+  ".password-store", ".local/share/keyrings",
+  ".netrc", ".docker", ".npmrc",
+];
 
 /**
  * Core tools that are always available (defer_loading: false)
@@ -1002,16 +1014,10 @@ class QsvMcpServer {
       }
 
       // Defense-in-depth: block browsing sensitive directories
-      const SENSITIVE_DIRS = [
-        ".ssh", ".gnupg", ".gpg", ".pki",
-        ".aws", ".azure", ".config/gcloud",
-        ".kube",
-        ".password-store", ".local/share/keyrings",
-      ];
       const home = homedir();
       for (const sensitive of SENSITIVE_DIRS) {
         const blocked = resolve(home, sensitive);
-        if (targetDir === blocked || targetDir.startsWith(blocked + "/")) {
+        if (targetDir === blocked || targetDir.startsWith(blocked + sep)) {
           return errorResult(`Access to "${sensitive}" is not allowed for security reasons.`);
         }
       }

@@ -733,7 +733,15 @@ app.connect().then(() => {
   requestAnimationFrame(() => notifySizeChanged());
   // Fallback: if ontoolresult hasn't fired yet, bootstrap with home dir
   setTimeout(() => {
-    if (!navigated && (homeDir || currentPath)) navigate(homeDir || currentPath);
+    if (!navigated) {
+      if (homeDir || currentPath) {
+        navigate(homeDir || currentPath);
+      } else {
+        // Last resort: if no home dir or path available, try root
+        showError("Could not determine home directory. Trying root...");
+        navigate("/");
+      }
+    }
   }, 500);
 }).catch(err => {
   showError("Failed to connect: " + (err.message || err));

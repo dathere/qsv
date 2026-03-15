@@ -29,7 +29,7 @@
       {
         "flag": "--duckdb",
         "type": "flag",
-        "description": "Use DuckDB for query plan analysis instead of Polars. Requires the QSV_DUCKDB_PATH environment variable to be set to the path of the DuckDB binary."
+        "description": "Use DuckDB for query plan analysis instead of Polars. Uses the QSV_DUCKDB_PATH environment variable if set, otherwise looks for \"duckdb\" in PATH."
       },
       {
         "flag": "--ignore-errors",

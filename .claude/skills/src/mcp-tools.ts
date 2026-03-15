@@ -290,9 +290,9 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     whenToUse:
       "Score a SQL query BEFORE running it with sqlp. Analyzes query plan, type optimization, join cardinality, filter selectivity, and anti-patterns against CSV caches. Use for complex queries, large files, or when you want optimization suggestions.",
     commonPattern:
-      "Pre-flight: scoresql → review score/suggestions → adjust query → sqlp. Use --json for machine-readable output. Caches (stats, frequency) are auto-generated if missing. For multi-file queries, pass space-separated paths in input_file (same as sqlp).",
+      "Pre-flight: scoresql → review score/suggestions → adjust query → sqlp. Use --json for machine-readable output. Accepts SQL as a string or .sql file (last query is scored). Caches (stats, frequency) are auto-generated if missing. For multi-file queries, pass space-separated paths in input_file (same as sqlp).",
     errorPrevention:
-      "Auto-generates stats and frequency caches as a side effect if missing. Use --duckdb when DuckDB is the target engine. Score: <50 Poor, 50-74 Fair, 75-89 Good, 90+ Excellent.",
+      "Auto-generates stats and frequency caches as a side effect if missing. Use --duckdb when DuckDB is the target engine — finds duckdb in PATH automatically if QSV_DUCKDB_PATH is not set. Accepts .sql script files (scores the last query). Score: <50 Poor, 50-74 Fair, 75-89 Good, 90+ Excellent.",
   },
   sqlp: {
     whenToUse:

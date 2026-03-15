@@ -2145,12 +2145,12 @@ mod tests {
     fn test_format_examples_env_var_continuation_reaches_qsv() {
         let input = lines(&[
             "# Set engine and run",
-            "QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb \\",
+            "QSV_DUCKDB_PATH=/path/to/duckdb \\",
             "qsv describegpt data.csv",
         ]);
         let md = format_examples(&input);
         assert!(
-            md.contains("```console\nQSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb"),
+            md.contains("```console\nQSV_DUCKDB_PATH=/path/to/duckdb"),
             "Env-var continuation should be inside code block, got:\n{md}"
         );
         assert!(

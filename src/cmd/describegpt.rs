@@ -23,7 +23,7 @@ and provide it to the LLM as additional context to help it generate a SQL query 
 answers the natural language question.
 
 Two SQL dialects are currently supported - DuckDB (highly recommended) & Polars. If the
-QSV_DESCRIBEGPT_DB_ENGINE environment variable is set to the absolute path of the DuckDB binary,
+QSV_DUCKDB_PATH environment variable is set to the absolute path of the DuckDB binary,
 DuckDB will be used to answer the question. Otherwise, if the "polars" feature is enabled,
 Polars SQL will be used.
 
@@ -78,7 +78,7 @@ Examples:
 
   # Ask detailed natural language questions that require SQL queries and auto-invoke SQL RAG mode
   # Generate a DuckDB SQL query to answer the question
-  QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb \
+  QSV_DUCKDB_PATH=/path/to/duckdb \
   qsv describegpt NYC_311.csv -p "What's the breakdown of complaint types by borough descending order?"
   
   # Prompt requires a natural language query. Convert query to SQL using the LLM and save results to
@@ -211,7 +211,7 @@ describegpt options:
                            The prompt will be answered based on the dataset's Summary Statistics,
                            Frequency data & Data Dictionary. If the prompt CANNOT be answered by looking
                            at these metadata, a SQL query will be generated to answer the question.
-                           If the "polars" or the "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set
+                           If the "polars" or the "QSV_DUCKDB_PATH" environment variable is set
                            & the `--sql-results` option is used, the SQL query will be automatically
                            executed and its results returned.
                            Otherwise, the SQL query will be returned along with the reasoning behind it.
@@ -219,7 +219,7 @@ describegpt options:
                            e.g. "file:my_long_prompt.txt"
     --sql-results <file>   The file to save the SQL query results to.
                            Only valid if the --prompt option is used & the "polars" or the
-                           "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set.
+                           "QSV_DUCKDB_PATH" environment variable is set.
                            If the SQL query executes successfully, the results will be saved with a
                            ".csv" extension. Otherwise, it will be saved with a ".sql" extension so
                            the user can inspect why it failed and modify it.
@@ -631,7 +631,7 @@ static QSV_REDIS_CONNSTR_ENV: &str = "QSV_DG_REDIS_CONNSTR";
 static QSV_REDIS_MAX_POOL_SIZE_ENV: &str = "QSV_REDIS_MAX_POOL_SIZE";
 static QSV_REDIS_TTL_SECS_ENV: &str = "QSV_REDIS_TTL_SECS";
 static QSV_REDIS_TTL_REFRESH_ENV: &str = "QSV_REDIS_TTL_REFRESH";
-static QSV_DESCRIBEGPT_DB_ENGINE_ENV: &str = "QSV_DESCRIBEGPT_DB_ENGINE";
+static QSV_DUCKDB_PATH_ENV: &str = "QSV_DUCKDB_PATH";
 
 // Shared regex for matching read_csv_auto function calls
 static READ_CSV_AUTO_REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
@@ -763,7 +763,7 @@ fn parse_language_option(language: Option<&String>) -> (bool, f64, Option<String
 
 // Check if DuckDB should be used based on environment variable
 fn should_use_duckdb() -> bool {
-    env::var(QSV_DESCRIBEGPT_DB_ENGINE_ENV).is_ok_and(|val| val.to_lowercase().contains("duckdb"))
+    env::var(QSV_DUCKDB_PATH_ENV).is_ok_and(|val| !val.is_empty())
 }
 
 // Get DuckDB binary path from environment variable
@@ -773,8 +773,8 @@ fn get_duckdb_path() -> CliResult<String> {
         return Ok(path.clone());
     }
 
-    let duckdb_path = env::var(QSV_DESCRIBEGPT_DB_ENGINE_ENV)
-        .map_err(|_| "QSV_DESCRIBEGPT_DB_ENGINE env var not set")?;
+    let duckdb_path =
+        env::var(QSV_DUCKDB_PATH_ENV).map_err(|_| "QSV_DUCKDB_PATH env var not set")?;
 
     // Check if the binary exists
     let path = Path::new(&duckdb_path);
@@ -3771,8 +3771,8 @@ fn run_inference_options(
                 return fail_clierror!(
                     "Cannot answer the prompt using just Summary Statistics & Frequency \
                      Distribution data. However, \"SQL RAG\" mode is only supported when the \
-                     `polars` feature is enabled, or when using DuckDB via the \
-                     QSV_DESCRIBEGPT_DB_ENGINE environment variable."
+                     `polars` feature is enabled, or when using DuckDB via the QSV_DUCKDB_PATH \
+                     environment variable."
                 );
             }
         }

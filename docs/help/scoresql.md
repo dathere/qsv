@@ -64,6 +64,12 @@ qsv scoresql --duckdb data.csv "SELECT * FROM data WHERE status = 'active'"
 qsv scoresql data.csv data2.csv "SELECT * FROM _t_1 JOIN _t_2 ON _t_1.id = _t_2.id"
 ```
 
+> Score a query from a SQL script file (only the last query is scored)
+
+```console
+qsv scoresql data.csv script.sql
+```
+
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_scoresql.rs).
 
 
@@ -83,7 +89,7 @@ qsv scoresql --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--json`&nbsp; | flag | Output results as JSON instead of human-readable report. |  |
-| &nbsp;`--duckdb`&nbsp; | flag | Use DuckDB for query plan analysis instead of Polars. Requires the QSV_DESCRIBEGPT_DB_ENGINE environment variable to be set to the path of the DuckDB binary. |  |
+| &nbsp;`--duckdb`&nbsp; | flag | Use DuckDB for query plan analysis instead of Polars. Uses the QSV_DUCKDB_PATH environment variable if set, otherwise looks for "duckdb" in PATH. |  |
 | &nbsp;`--try-parsedates`&nbsp; | flag | Automatically try to parse dates/datetimes and time. |  |
 | &nbsp;`--infer-len`&nbsp; | string | Number of rows to scan when inferring schema. | `10000` |
 | &nbsp;`--ignore-errors`&nbsp; | flag | Ignore errors when parsing CSVs. |  |

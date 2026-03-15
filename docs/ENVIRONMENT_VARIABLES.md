@@ -25,7 +25,7 @@
 | `QSV_LLM_BASE_URL` | The LLM API URL to use with the `describegpt` command. |
 | `QSV_LLM_APIKEY` | The API key of the supported LLM service to use with the `describegpt` command. |
 | `QSV_LLM_MODEL` | The LLM Model to use with the `describegpt` command. |
-| `QSV_DESCRIBEGPT_DB_ENGINE` | The database engine to use for SQL query execution in the `describegpt` command. When set to a path containing "duckdb" (case-insensitive), DuckDB will be used instead of the default Polars SQL engine. The environment variable value should be the fully qualified path to the DuckDB binary. Note that all loaded DuckDB extensions will be sent as additional context to the LLM to let it know what functions (even UDFs!) it can use in the SQL queries it generates. |
+| `QSV_DUCKDB_PATH` | The fully qualified path to the DuckDB binary. In `describegpt`, when set, DuckDB is used instead of the default Polars SQL engine and all loaded DuckDB extensions are sent as additional context to the LLM. In `scoresql`, the `--duckdb` flag is required to use DuckDB; the env var only supplies the binary path (if unset, `scoresql` looks for `duckdb` in PATH). |
 | `QSV_TEST_DESCRIBEGPT` | If set, enables `describegpt` command tests. Requires LM Studio with openai/gpt-oss-20b model loaded. |
 | `QSV_OUTPUT_BOM` | if set, the output will have a Byte Order Mark (BOM) at the beginning. This is used to generate Excel-friendly CSVs on Windows. |
 | `QSV_FORCE_COLOR` | if set, forces colorized output even when redirecting or running in CI. Used by the `color` command to override automatic color detection. |

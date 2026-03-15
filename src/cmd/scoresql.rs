@@ -34,6 +34,9 @@ Examples:
   # Use _t_N aliases just like sqlp (see sqlp documentation)
   $ qsv scoresql data.csv data2.csv "SELECT * FROM _t_1 JOIN _t_2 ON _t_1.id = _t_2.id"
 
+  # Score a query from a SQL script file (only the last query is scored)
+  $ qsv scoresql data.csv script.sql
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_scoresql.rs.
 
 Usage:
@@ -48,12 +51,16 @@ scoresql arguments:
                               the file will be read as a list of input files.
 
     sql                       The SQL query to score/analyze.
+                              If the query ends with ".sql", it will be read as a
+                              SQL script file, with single-line "--" comments stripped.
+                              If the script has multiple queries separated by ";",
+                              only the last non-empty query is scored.
 
 scoresql options:
     --json                    Output results as JSON instead of human-readable report.
     --duckdb                  Use DuckDB for query plan analysis instead of Polars.
-                              Requires the QSV_DESCRIBEGPT_DB_ENGINE environment variable
-                              to be set to the path of the DuckDB binary.
+                              Uses the QSV_DUCKDB_PATH environment variable if set,
+                              otherwise looks for "duckdb" in PATH.
     --try-parsedates          Automatically try to parse dates/datetimes and time.
     --infer-len <arg>         Number of rows to scan when inferring schema.
                               [default: 10000]
@@ -72,7 +79,7 @@ use std::{
     borrow::Cow,
     env,
     fmt::Write as FmtWrite,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
     sync::OnceLock,
@@ -109,6 +116,11 @@ const WEIGHT_DATA_DIST: u32 = 20;
 const WEIGHT_PATTERNS: u32 = 20;
 
 static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
+
+// remove full-line comments starting with "--"
+// NOTE: inline trailing comments (e.g., `SELECT 1 -- comment`) are not stripped
+static COMMENT_REGEX: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"(?m)^\s*--.*$").unwrap());
 
 // ── Output structs ─────────────────────────────────────────────────────────
 
@@ -223,6 +235,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // ── 2. Parse SQL for patterns ──────────────────────────────────────────
+    // check if the input is a SQL script file (ends with .sql)
+    if Path::new(&args.arg_sql)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("sql"))
+    {
+        let mut file = std::fs::File::open(&args.arg_sql)?;
+        let mut sql_script = String::new();
+        file.read_to_string(&mut sql_script)?;
+
+        let sql_script = COMMENT_REGEX.replace_all(&sql_script, "");
+
+        // split by ";", take the last non-empty query, and trim it
+        args.arg_sql = sql_script
+            .split(';')
+            .map(|s| s.trim().to_string())
+            .rfind(|s| !s.is_empty())
+            .unwrap_or_default();
+    }
+
     let sql_info = parse_sql(&args.arg_sql);
 
     // ── 3. Load / generate caches ──────────────────────────────────────────
@@ -800,31 +831,54 @@ fn get_polars_plan(
         ctx.register(table_name_str, lf.with_optimizations(optflags));
     }
 
-    // Replace aliases in query. Sort by alias length descending to avoid
-    // partial matches (e.g., _t_1 matching inside _t_10).
-    let mut query = args.arg_sql.clone();
+    // Replace _t_N aliases with quoted table names using a single combined regex.
+    // Alternation is longest-first so _t_10 is matched before _t_1.
     let mut alias_pairs: Vec<_> = table_aliases.iter().collect();
-    alias_pairs.sort_by_key(|b| std::cmp::Reverse(b.1.len()));
-    for (tname, talias) in alias_pairs {
-        // Use word-boundary regex to avoid replacing inside other identifiers
-        // (e.g., alias "data" matching inside "metadata_col")
-        let pattern = format!(r"\b{}\b", regex::escape(talias));
-        if let Ok(re) = regex::Regex::new(&pattern) {
-            query = re
-                .replace_all(&query, format!(r#""{tname}""#).as_str())
-                .to_string();
-        } else {
-            query = query.replace(talias, &format!(r#""{tname}""#));
-        }
-    }
+    alias_pairs.sort_by_key(|(_, alias)| std::cmp::Reverse(alias.len()));
+
+    let query = if alias_pairs.is_empty() {
+        args.arg_sql.clone()
+    } else {
+        let alternatives: String = alias_pairs
+            .iter()
+            .map(|(_, alias)| regex::escape(alias))
+            .collect::<Vec<_>>()
+            .join("|");
+        let pattern = format!(r"\b(?:{alternatives})\b");
+        let re = regex::Regex::new(&pattern)
+            .map_err(|e| format!("Failed to compile alias regex: {e}"))?;
+
+        let alias_lookup: HashMap<&str, &str> = alias_pairs
+            .iter()
+            .map(|(tname, talias)| (talias.as_str(), tname.as_str()))
+            .collect();
+
+        re.replace_all(&args.arg_sql, |caps: &regex::Captures| {
+            let matched = caps.get(0).unwrap().as_str();
+            format!(r#""{}""#, alias_lookup[matched])
+        })
+        .into_owned()
+    };
 
     let explain_query = format!("EXPLAIN {query}");
     match ctx.execute(&explain_query) {
         Ok(lf) => match lf.collect() {
             Ok(df) => Ok(format!("{df}")),
-            Err(e) => Ok(format!("Plan generation error: {e}")),
+            Err(e) => {
+                fail_clierror!(
+                    "Failed to generate query plan.\n\nSQL: {sql}\n\nError: {e}\n\nHint: Check \
+                     your SQL syntax.",
+                    sql = args.arg_sql
+                )
+            },
         },
-        Err(e) => Ok(format!("Plan generation error: {e}")),
+        Err(e) => {
+            fail_clierror!(
+                "Failed to execute SQL query.\n\nSQL: {sql}\n\nError: {e}\n\nHint: Check your SQL \
+                 syntax.",
+                sql = args.arg_sql
+            )
+        },
     }
 }
 
@@ -834,7 +888,6 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
     // Translate _t_N aliases and table names to read_csv('path').
     // Process replacements longest-first to avoid partial matches
     // (e.g., "data" matching inside "data2").
-    let mut query = args.arg_sql.clone();
     let mut replacements: Vec<(String, String)> = Vec::new();
     for (idx, input) in args.arg_input.iter().enumerate() {
         let alias = format!("_t_{}", idx + 1);
@@ -848,19 +901,43 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
         }
     }
     // Sort by length descending so longer names are replaced first
-    replacements.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
+    replacements.sort_by_key(|(name, _)| std::cmp::Reverse(name.len()));
     // Deduplicate in case a table name equals an alias
     replacements.dedup_by(|a, b| a.0 == b.0);
-    for (from, to) in &replacements {
-        // Use word-boundary regex to avoid replacing inside other identifiers
-        // or string literals (e.g., "data" inside "metadata_col")
-        let pattern = format!(r"\b{}\b", regex::escape(from));
-        if let Ok(re) = regex::Regex::new(&pattern) {
-            query = re.replace_all(&query, to.as_str()).to_string();
-        } else {
-            query = query.replace(from, to);
-        }
-    }
+
+    // Build a single combined regex for one-pass replacement.
+    // The regex matches single-quoted strings first (to skip them) OR table names/aliases.
+    // This prevents replacing table names that appear inside SQL string literals
+    // (e.g., inside an existing read_csv_auto('...') call in a .sql script).
+    let query = if replacements.is_empty() {
+        args.arg_sql.clone()
+    } else {
+        let alternatives: String = replacements
+            .iter()
+            .map(|(name, _)| regex::escape(name))
+            .collect::<Vec<_>>()
+            .join("|");
+        // Match single-quoted strings (including '' and \' escaped quotes) OR table names
+        let pattern = format!(r"'(?:[^'\\]|\\'|''|\\\\)*'|\b(?:{alternatives})\b");
+        let re = regex::Regex::new(&pattern)
+            .map_err(|e| format!("Failed to compile DuckDB alias regex: {e}"))?;
+
+        let replacement_lookup: HashMap<&str, &str> = replacements
+            .iter()
+            .map(|(name, target)| (name.as_str(), target.as_str()))
+            .collect();
+
+        re.replace_all(&args.arg_sql, |caps: &regex::Captures| {
+            let matched = caps.get(0).unwrap().as_str();
+            // If the match starts with a quote, it's a string literal — keep it as-is
+            if matched.starts_with('\'') {
+                matched.to_string()
+            } else {
+                replacement_lookup[matched].to_string()
+            }
+        })
+        .into_owned()
+    };
 
     let explain_query = format!("EXPLAIN {query}");
     let output = Command::new(duckdb_path)
@@ -874,7 +951,11 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Ok(format!("DuckDB plan error: {stderr}"))
+        fail_clierror!(
+            "Failed to execute SQL query with DuckDB.\n\nSQL: {sql}\n\nError: {stderr}\n\nHint: \
+             Check your SQL syntax.",
+            sql = args.arg_sql
+        )
     }
 }
 
@@ -883,19 +964,51 @@ fn get_duckdb_path() -> CliResult<String> {
         return Ok(path.clone());
     }
 
-    let duckdb_path = env::var("QSV_DESCRIBEGPT_DB_ENGINE")
-        .map_err(|_| "QSV_DESCRIBEGPT_DB_ENGINE env var not set. Required for --duckdb mode.")?;
+    let duckdb_path = if let Ok(explicit_path) = env::var("QSV_DUCKDB_PATH") {
+        // Env var is set — validate the explicit path
+        let path = Path::new(&explicit_path);
+        if !path.exists() {
+            return fail_clierror!("DuckDB binary not found at path: {explicit_path}");
+        }
+        if !path.is_file() {
+            return fail_clierror!("DuckDB path is not a file: {explicit_path}");
+        }
+        if !util::is_executable(&explicit_path)? {
+            return fail_clierror!("DuckDB path is not executable: {explicit_path}");
+        }
+        explicit_path
+    } else {
+        // Env var not set — try to find "duckdb" in PATH using a cross-platform approach.
+        // On Unix we use "which", on Windows we use "where".
+        #[cfg(not(target_os = "windows"))]
+        let which_cmd = "which";
+        #[cfg(target_os = "windows")]
+        let which_cmd = "where";
 
-    let path = Path::new(&duckdb_path);
-    if !path.exists() {
-        return fail_clierror!("DuckDB binary not found at path: {duckdb_path}");
-    }
-    if !path.is_file() {
-        return fail_clierror!("DuckDB path is not a file: {duckdb_path}");
-    }
-    if !util::is_executable(&duckdb_path)? {
-        return fail_clierror!("DuckDB path is not executable: {duckdb_path}");
-    }
+        if let Some(resolved) = Command::new(which_cmd)
+            .arg("duckdb")
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| {
+                let s = String::from_utf8(o.stdout).ok()?;
+                // `where` on Windows may return multiple lines; take the first
+                let trimmed = s.lines().next().unwrap_or("").trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            })
+        {
+            resolved
+        } else {
+            return fail_clierror!(
+                "DuckDB not found. Either set QSV_DUCKDB_PATH to the DuckDB binary path or ensure \
+                 \"duckdb\" is in your PATH."
+            );
+        }
+    };
 
     let _ = DUCKDB_PATH.set(duckdb_path.clone());
     Ok(duckdb_path)

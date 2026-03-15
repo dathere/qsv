@@ -682,17 +682,29 @@ export const config = {
    * Can be either:
    * - Colon/semicolon-separated paths (legacy MCP)
    * - JSON array (Desktop extension with directory type)
-   * Default: Empty array (only working directory allowed)
+   * Default: Platform-specific well-known dirs (Downloads, Documents, Desktop, Home)
    */
   allowedDirs: (() => {
     const envValue = process.env["QSV_MCP_ALLOWED_DIRS"];
-    // Treat empty, undefined, or unexpanded template as empty array
+    // When unset/empty, default to well-known user directories
     if (
       !envValue ||
       envValue.trim() === "" ||
       UNEXPANDED_TEMPLATE_REGEX.test(envValue)
     ) {
-      return [];
+      const home = homedir();
+      const defaults = [
+        join(home, "Downloads"),
+        join(home, "Documents"),
+        join(home, "Desktop"),
+        home,
+      ];
+      // On Windows, also add USERPROFILE if it differs from homedir()
+      if (process.platform === "win32") {
+        const userProfile = process.env["USERPROFILE"];
+        if (userProfile && userProfile !== home) defaults.push(userProfile);
+      }
+      return defaults;
     }
 
     // Try parsing as JSON array first (Desktop extension mode)

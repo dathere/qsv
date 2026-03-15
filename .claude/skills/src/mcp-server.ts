@@ -18,8 +18,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename } from "node:path";
 import { access, stat as fsStat } from "node:fs/promises";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
@@ -949,15 +948,8 @@ class QsvMcpServer {
                 uri,
                 mimeType: RESOURCE_MIME_TYPE,
                 text: getDirectoryPickerHtml(),
-                _meta: {
-                  ui: {
-                    csp: {
-                      // The App HTML loads the ext-apps SDK from esm.sh CDN
-                      resourceDomains: ["https://esm.sh"],
-                      connectDomains: ["https://esm.sh"],
-                    },
-                  },
-                },
+                // No CSP needed — the App HTML uses an inline SDK shim
+                // with no external CDN dependencies.
               },
             ],
           };
@@ -997,8 +989,17 @@ class QsvMcpServer {
         : this.filesystemProvider.getWorkingDirectory();
 
     try {
-      // Validate the directory is within allowed directories before scanning
-      const targetDir = await this.filesystemProvider.resolvePath(rawDir);
+      // Resolve to absolute path without restricting to allowed directories.
+      // The browse tool is read-only (lists subdirs only), hidden from the LLM,
+      // and its purpose is to let users pick ANY directory as working dir.
+      const { resolve } = await import("node:path");
+      const { realpath } = await import("node:fs/promises");
+      let targetDir: string;
+      try {
+        targetDir = await realpath(resolve(rawDir));
+      } catch {
+        targetDir = resolve(rawDir);
+      }
       const result = await scanDirectory(targetDir);
       return successResult(JSON.stringify(result));
     } catch (err) {
@@ -1038,23 +1039,20 @@ class QsvMcpServer {
    * Async to avoid blocking the event loop with synchronous stat calls.
    */
   private async discoverDirectories(): Promise<Array<{ path: string; label: string }>> {
-    const home = homedir();
+    const allowedDirs = this.filesystemProvider.getAllowedDirectories();
 
-    const wellKnown = [
-      { path: join(home, "Downloads"), label: "Downloads" },
-      { path: join(home, "Documents"), label: "Documents" },
-      { path: join(home, "Desktop"), label: "Desktop" },
-      { path: home, label: "Home" },
-    ];
+    // Build candidates from allowed directories — use basename as label
+    const allowedCandidates: Array<{ path: string; label: string }> = allowedDirs.map(dir => ({
+      path: dir,
+      label: basename(dir) || dir,  // basename of "/" is "" — fall back to full path
+    }));
 
     const currentDir = this.filesystemProvider.getWorkingDirectory();
-    const cwd = process.cwd();
 
     // Check all candidates in parallel
     const allCandidates = [
-      ...wellKnown,
-      { path: cwd, label: "Current Directory" },
-      { path: currentDir, label: "qsv Working Dir" },
+      ...allowedCandidates,
+      { path: currentDir, label: "Current Directory" },
     ];
 
     const results = await Promise.allSettled(

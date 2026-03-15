@@ -187,6 +187,13 @@ export class FilesystemResourceProvider {
   }
 
   /**
+   * Get the list of allowed directories
+   */
+  getAllowedDirectories(): string[] {
+    return this.allowedDirs;
+  }
+
+  /**
    * Check if a path is within allowed directories.
    * In plugin mode, auto-adds the directory if not already allowed.
    * Returns true if path is allowed (or was auto-added).

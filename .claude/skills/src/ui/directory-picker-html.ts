@@ -566,6 +566,8 @@ async function navigate(path) {
     renderBreadcrumbs(currentPath);
     renderDirList(data);
     updateSelectedState(currentPath);
+    // Content changed — notify host so iframe resizes to fit
+    requestAnimationFrame(() => notifySizeChanged());
   } catch (err) {
     showError("Failed to browse: " + (err.message || err));
     dirListEl.innerHTML = '<div class="empty-state">Failed to load directory</div>';
@@ -617,21 +619,31 @@ function applyTheme(ctx) {
 let heightMode = "unknown"; // "fixed" | "flexible" | "unbounded"
 function applyContainerDimensions(ctx) {
   const dims = ctx?.containerDimensions;
+  console.log("[qsv-picker] containerDimensions:", JSON.stringify(dims));
+
   if (!dims) { heightMode = "unbounded"; return; }
 
   const root = document.documentElement;
   const container = document.querySelector(".container");
+  const mainUi = document.getElementById("main-ui");
+  const dirList = document.getElementById("dir-list");
 
   if ("height" in dims) {
-    // Fixed height: host controls size — fill it and scroll dir-list internally
+    // Fixed height: host controls size — use flex layout, dir-list scrolls internally
     heightMode = "fixed";
     root.style.height = "100vh";
     container.style.height = "100%";
   } else {
-    // Flexible (maxHeight) or unbounded: we control our size
+    // Flexible (maxHeight) or unbounded: let content flow naturally so the
+    // host can measure our actual size and resize the iframe to fit.
     heightMode = ("maxHeight" in dims && dims.maxHeight) ? "flexible" : "unbounded";
     root.style.height = "auto";
     container.style.height = "auto";
+    // Disable flex stretching and internal scroll — let dir-list grow naturally
+    mainUi.style.flex = "none";
+    mainUi.style.overflow = "visible";
+    dirList.style.flex = "none";
+    dirList.style.overflowY = "visible";
     if (dims.maxHeight) {
       root.style.maxHeight = dims.maxHeight + "px";
     }
@@ -642,15 +654,21 @@ function applyContainerDimensions(ctx) {
   } else if ("maxWidth" in dims && dims.maxWidth) {
     root.style.maxWidth = dims.maxWidth + "px";
   }
+
+  console.log("[qsv-picker] heightMode:", heightMode);
 }
 
-// Notify host of our content size (for flexible/unbounded height modes)
+// Notify host of our content size so the iframe can resize.
 let lastNotifiedHeight = 0;
 let lastNotifiedWidth = 0;
 function notifySizeChanged() {
-  if (heightMode === "fixed") return; // host controls size, don't send
-  const height = document.documentElement.scrollHeight;
-  const width = document.documentElement.scrollWidth;
+  // Use the #app div's bounding rect — this reflects the actual rendered
+  // content height, and correctly shrinks when content gets shorter.
+  // (scrollHeight only grows — it never reports smaller than the element.)
+  const appEl = document.getElementById("app");
+  const rect = appEl.getBoundingClientRect();
+  const height = Math.ceil(rect.height);
+  const width = Math.ceil(rect.width);
   if (height !== lastNotifiedHeight || width !== lastNotifiedWidth) {
     lastNotifiedHeight = height;
     lastNotifiedWidth = width;

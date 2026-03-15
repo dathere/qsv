@@ -20,11 +20,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { basename, resolve, sep } from "node:path";
 import { access, realpath, stat as fsStat } from "node:fs/promises";
-import { execFile as execFileCb } from "node:child_process";
 import { homedir } from "node:os";
-import { promisify } from "node:util";
-
-const execFile = promisify(execFileCb);
 
 import { SkillLoader } from "./loader.js";
 import { SkillExecutor, runQsvSimple } from "./executor.js";
@@ -763,16 +759,7 @@ class QsvMcpServer {
               } as { content: Array<{ type: "text"; text: string }> };
             }
 
-            // 2. Try native OS folder picker (macOS Finder dialog)
-            const nativePick = await this.showNativeFolderPicker();
-            if (nativePick) {
-              const newDir = this.updateWorkingDirectory(nativePick);
-              this.manuallySetWorkingDir = true;
-              this.workingDirConfirmed = true;
-              return successResult(`Working directory set to: ${newDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
-            }
-
-            // 3. Try interactive elicitation form
+            // 2. Try interactive elicitation form
             const elicitResult = await this.elicitWorkingDirectory();
             if (elicitResult.directory) {
               const newDir = this.updateWorkingDirectory(elicitResult.directory);
@@ -781,7 +768,7 @@ class QsvMcpServer {
               return successResult(`Working directory set to: ${newDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
             }
 
-            // 4. Return suggestions as success so the agent can pick a directory
+            // 3. Return suggestions as success so the agent can pick a directory
             return successResult(elicitResult.fallback || "No directory selected. Please call qsv_set_working_dir with an explicit directory path.");
           }
 
@@ -1121,64 +1108,6 @@ class QsvMcpServer {
       `Call qsv_set_working_dir with one of these paths (e.g. directory: "${candidates[0]?.path || currentDir}"), ` +
       `or provide any other accessible directory path.`
     );
-  }
-
-  /**
-   * Show a native OS folder picker dialog.
-   * On macOS, uses osascript to display a Finder folder picker.
-   * On Windows, uses PowerShell to display a FolderBrowserDialog.
-   * Returns the selected directory path or null if cancelled/unsupported.
-   */
-  private async showNativeFolderPicker(): Promise<string | null> {
-    const platform = process.platform;
-    if (platform !== "darwin" && platform !== "win32") return null;
-
-    // No env-based headless check here — MCP servers are spawned by Claude
-    // Desktop/MCPB without TERM_PROGRAM or DISPLAY, yet the desktop is available.
-    // If the native dialog fails (SSH, headless CI), the catch block returns null.
-
-    try {
-      const currentDir = this.filesystemProvider.getWorkingDirectory();
-      let selected: string;
-
-      if (platform === "darwin") {
-        // Escape backslashes and double quotes to prevent AppleScript injection
-        const escapedDir = currentDir
-          .replace(/\\/g, "\\\\")
-          .replace(/"/g, '\\"');
-        const { stdout } = await execFile("osascript", [
-          "-e",
-          `POSIX path of (choose folder with prompt "Select qsv working directory" default location POSIX file "${escapedDir}")`,
-        ], { timeout: 60_000 });
-        selected = stdout.trim();
-      } else {
-        // Windows: use PowerShell FolderBrowserDialog
-        // Escape single quotes for PowerShell string embedding
-        const escapedDir = currentDir.replace(/'/g, "''");
-        const psScript = [
-          "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
-          "Add-Type -AssemblyName System.Windows.Forms",
-          "$dlg = New-Object System.Windows.Forms.FolderBrowserDialog",
-          "$dlg.Description = 'Select qsv working directory'",
-          `$dlg.SelectedPath = '${escapedDir}'`,
-          "$dlg.ShowNewFolderButton = $true",
-          "if ($dlg.ShowDialog() -eq 'OK') { $dlg.SelectedPath } else { '' }",
-        ].join("; ");
-        const { stdout } = await execFile("powershell.exe", [
-          "-NoProfile", "-NonInteractive", "-Command", psScript,
-        ], { timeout: 60_000 });
-        selected = stdout.trim();
-      }
-
-      if (!selected) return null;
-
-      // Validate it's a directory
-      const stat = await fsStat(selected);
-      return stat.isDirectory() ? selected : null;
-    } catch {
-      // User cancelled or native dialog unavailable
-      return null;
-    }
   }
 
   /**

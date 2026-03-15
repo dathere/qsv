@@ -117,6 +117,11 @@ const WEIGHT_PATTERNS: u32 = 20;
 
 static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
 
+// remove full-line comments starting with "--"
+// NOTE: inline trailing comments (e.g., `SELECT 1 -- comment`) are not stripped
+static COMMENT_REGEX: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"(?m)^\s*--.*$").unwrap());
+
 // ── Output structs ─────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -239,18 +244,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut sql_script = String::new();
         file.read_to_string(&mut sql_script)?;
 
-        // remove full-line comments starting with "--"
-        // NOTE: inline trailing comments (e.g., `SELECT 1 -- comment`) are not stripped
-        static COMMENT_REGEX: std::sync::LazyLock<regex::Regex> =
-            std::sync::LazyLock::new(|| regex::Regex::new(r"(?m)^\s*--.*$").unwrap());
         let sql_script = COMMENT_REGEX.replace_all(&sql_script, "");
 
-        // split by ";", take the last non-empty query
+        // split by ";", take the last non-empty query, and trim it
         args.arg_sql = sql_script
             .split(';')
             .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .last()
+            .rfind(|s| !s.is_empty())
             .unwrap_or_default();
     }
 
@@ -831,23 +831,31 @@ fn get_polars_plan(
         ctx.register(table_name_str, lf.with_optimizations(optflags));
     }
 
-    // Replace aliases in query. Sort by alias length descending to avoid
-    // partial matches (e.g., _t_1 matching inside _t_10).
-    let mut query = args.arg_sql.clone();
+    // Replace _t_N aliases with quoted table names using a single combined regex.
+    // Alternation is longest-first so _t_10 is matched before _t_1.
     let mut alias_pairs: Vec<_> = table_aliases.iter().collect();
-    alias_pairs.sort_by_key(|b| std::cmp::Reverse(b.1.len()));
-    for (tname, talias) in alias_pairs {
-        // Use word-boundary regex to avoid replacing inside other identifiers
-        // (e.g., alias "data" matching inside "metadata_col")
-        let pattern = format!(r"\b{}\b", regex::escape(talias));
-        if let Ok(re) = regex::Regex::new(&pattern) {
-            query = re
-                .replace_all(&query, format!(r#""{tname}""#).as_str())
-                .to_string();
-        } else {
-            query = query.replace(talias, &format!(r#""{tname}""#));
-        }
-    }
+    alias_pairs.sort_by_key(|(_, alias)| std::cmp::Reverse(alias.len()));
+
+    let alternatives: String = alias_pairs
+        .iter()
+        .map(|(_, alias)| regex::escape(alias))
+        .collect::<Vec<_>>()
+        .join("|");
+    let pattern = format!(r"\b(?:{alternatives})\b");
+    let re =
+        regex::Regex::new(&pattern).map_err(|e| format!("Failed to compile alias regex: {e}"))?;
+
+    let alias_lookup: HashMap<&str, &str> = alias_pairs
+        .iter()
+        .map(|(tname, talias)| (talias.as_str(), tname.as_str()))
+        .collect();
+
+    let query = re
+        .replace_all(&args.arg_sql, |caps: &regex::Captures| {
+            let matched = caps.get(0).unwrap().as_str();
+            format!(r#""{}""#, alias_lookup[matched])
+        })
+        .into_owned();
 
     let explain_query = format!("EXPLAIN {query}");
     match ctx.execute(&explain_query) {
@@ -877,7 +885,6 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
     // Translate _t_N aliases and table names to read_csv('path').
     // Process replacements longest-first to avoid partial matches
     // (e.g., "data" matching inside "data2").
-    let mut query = args.arg_sql.clone();
     let mut replacements: Vec<(String, String)> = Vec::new();
     for (idx, input) in args.arg_input.iter().enumerate() {
         let alias = format!("_t_{}", idx + 1);
@@ -891,19 +898,31 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
         }
     }
     // Sort by length descending so longer names are replaced first
-    replacements.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
+    replacements.sort_by_key(|(name, _)| std::cmp::Reverse(name.len()));
     // Deduplicate in case a table name equals an alias
     replacements.dedup_by(|a, b| a.0 == b.0);
-    for (from, to) in &replacements {
-        // Use word-boundary regex to avoid replacing inside other identifiers
-        // or string literals (e.g., "data" inside "metadata_col")
-        let pattern = format!(r"\b{}\b", regex::escape(from));
-        if let Ok(re) = regex::Regex::new(&pattern) {
-            query = re.replace_all(&query, to.as_str()).to_string();
-        } else {
-            query = query.replace(from, to);
-        }
-    }
+
+    // Build a single combined regex for one-pass replacement
+    let alternatives: String = replacements
+        .iter()
+        .map(|(name, _)| regex::escape(name))
+        .collect::<Vec<_>>()
+        .join("|");
+    let pattern = format!(r"\b(?:{alternatives})\b");
+    let re = regex::Regex::new(&pattern)
+        .map_err(|e| format!("Failed to compile DuckDB alias regex: {e}"))?;
+
+    let replacement_lookup: HashMap<&str, &str> = replacements
+        .iter()
+        .map(|(name, target)| (name.as_str(), target.as_str()))
+        .collect();
+
+    let query = re
+        .replace_all(&args.arg_sql, |caps: &regex::Captures| {
+            let matched = caps.get(0).unwrap().as_str();
+            replacement_lookup[matched].to_string()
+        })
+        .into_owned();
 
     let explain_query = format!("EXPLAIN {query}");
     let output = Command::new(duckdb_path)

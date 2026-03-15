@@ -704,7 +704,14 @@ export const config = {
         const userProfile = process.env["USERPROFILE"];
         if (userProfile && userProfile !== home) defaults.push(userProfile);
       }
-      return defaults;
+      // Filter out directories that don't exist (e.g. headless Linux servers)
+      return defaults.filter((dir) => {
+        try {
+          return statSync(dir).isDirectory();
+        } catch {
+          return false;
+        }
+      });
     }
 
     // Try parsing as JSON array first (Desktop extension mode)

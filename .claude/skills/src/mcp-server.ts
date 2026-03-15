@@ -18,9 +18,10 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { basename } from "node:path";
-import { access, stat as fsStat } from "node:fs/promises";
+import { basename, resolve } from "node:path";
+import { access, realpath, stat as fsStat } from "node:fs/promises";
 import { execFile as execFileCb } from "node:child_process";
+import { homedir } from "node:os";
 import { promisify } from "node:util";
 
 const execFile = promisify(execFileCb);
@@ -743,6 +744,7 @@ class QsvMcpServer {
                 structuredContent: {
                   currentPath: currentDir,
                   knownDirs: candidates,
+                  homeDir: homedir(),
                 },
               } as { content: Array<{ type: "text"; text: string }> };
             }
@@ -992,14 +994,28 @@ class QsvMcpServer {
       // Resolve to absolute path without restricting to allowed directories.
       // The browse tool is read-only (lists subdirs only), hidden from the LLM,
       // and its purpose is to let users pick ANY directory as working dir.
-      const { resolve } = await import("node:path");
-      const { realpath } = await import("node:fs/promises");
       let targetDir: string;
       try {
         targetDir = await realpath(resolve(rawDir));
       } catch {
         targetDir = resolve(rawDir);
       }
+
+      // Defense-in-depth: block browsing sensitive directories
+      const SENSITIVE_DIRS = [
+        ".ssh", ".gnupg", ".gpg", ".pki",
+        ".aws", ".azure", ".config/gcloud",
+        ".kube",
+        ".password-store", ".local/share/keyrings",
+      ];
+      const home = homedir();
+      for (const sensitive of SENSITIVE_DIRS) {
+        const blocked = resolve(home, sensitive);
+        if (targetDir === blocked || targetDir.startsWith(blocked + "/")) {
+          return errorResult(`Access to "${sensitive}" is not allowed for security reasons.`);
+        }
+      }
+
       const result = await scanDirectory(targetDir);
       return successResult(JSON.stringify(result));
     } catch (err) {

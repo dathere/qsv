@@ -356,6 +356,7 @@ class App {
   constructor({ name, version }) {
     this._appInfo = { name, version };
     this._hostContext = null;
+    this._hostOrigin = null;  // Captured from first valid message
     this._nextId = 1;
     this._pending = new Map();     // id -> { resolve, reject }
     this.ontoolresult = null;
@@ -367,6 +368,13 @@ class App {
   _onMessage(ev) {
     const msg = ev.data;
     if (!msg || typeof msg !== "object") return;
+
+    // Origin validation: lock to the first origin we see from the host
+    if (!this._hostOrigin) {
+      this._hostOrigin = ev.origin;
+    } else if (ev.origin !== this._hostOrigin) {
+      return; // Reject messages from unexpected origins
+    }
 
     // Response to a request we sent (has id + result/error, no method)
     if ("id" in msg && !("method" in msg)) {
@@ -393,15 +401,16 @@ class App {
 
   _send(method, params, isNotification) {
     const msg = { jsonrpc: "2.0", method, params };
+    const targetOrigin = this._hostOrigin || "*";
     if (!isNotification) {
       const id = this._nextId++;
       msg.id = id;
       return new Promise((resolve, reject) => {
         this._pending.set(id, { resolve, reject });
-        window.parent.postMessage(msg, "*");
+        window.parent.postMessage(msg, targetOrigin);
       });
     }
-    window.parent.postMessage(msg, "*");
+    window.parent.postMessage(msg, targetOrigin);
   }
 
   async connect() {
@@ -429,6 +438,7 @@ const app = new App({ name: "qsv-directory-picker", version: "1.0.0" });
 let currentPath = "";
 let knownDirs = [];
 let selectedPath = "";
+let homeDir = "";  // Set from server-provided homeDir, used as fallback
 
 // DOM refs
 const errorEl = document.getElementById("error");
@@ -692,6 +702,7 @@ app.ontoolresult = (result) => {
   const sc = result?.structuredContent;
   if (sc?.currentPath || sc?.knownDirs) {
     if (sc.currentPath) currentPath = sc.currentPath;
+    if (sc.homeDir) homeDir = sc.homeDir;
     if (sc.knownDirs) {
       knownDirs = sc.knownDirs;
       renderQuickAccess(knownDirs);
@@ -705,6 +716,7 @@ app.ontoolresult = (result) => {
   try {
     const data = JSON.parse(text);
     if (data.currentPath) currentPath = data.currentPath;
+    if (data.homeDir) homeDir = data.homeDir;
     if (data.knownDirs) {
       knownDirs = data.knownDirs;
       renderQuickAccess(knownDirs);
@@ -722,7 +734,7 @@ app.connect().then(() => {
   requestAnimationFrame(() => notifySizeChanged());
   // Fallback: if ontoolresult hasn't fired yet, bootstrap with home dir
   setTimeout(() => {
-    if (!navigated) navigate("/Users");
+    if (!navigated && (homeDir || currentPath)) navigate(homeDir || currentPath);
   }, 500);
 }).catch(err => {
   showError("Failed to connect: " + (err.message || err));

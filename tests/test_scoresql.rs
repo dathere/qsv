@@ -269,3 +269,65 @@ fn scoresql_no_where_clause() {
             .contains("no WHERE clause")
     );
 }
+
+#[test]
+fn scoresql_invalid_sql() {
+    let wrk = setup("scoresql_invalid_sql");
+    let mut cmd = wrk.command("scoresql");
+    cmd.arg("data.csv");
+    cmd.arg("SELEC * FROM data");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("Failed to execute SQL query"),
+        "Expected 'Failed to execute SQL query' in stderr, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("SELEC * FROM data"),
+        "Expected the invalid SQL in stderr, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("Hint: Check your SQL syntax"),
+        "Expected syntax hint in stderr, got: {stderr}"
+    );
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn scoresql_sql_script() {
+    let wrk = setup("scoresql_sql_script");
+
+    // Create a SQL script with comments and multiple queries.
+    // Only the last query should be scored.
+    let sql_script = r#"
+-- This is a comment
+SELECT * FROM data;
+-- Another comment
+SELECT name, score FROM data WHERE age > 30 LIMIT 5;
+"#;
+    wrk.create_from_string("script.sql", sql_script);
+
+    let mut cmd = wrk.command("scoresql");
+    cmd.arg("--json");
+    cmd.arg("data.csv");
+    cmd.arg(wrk.path("script.sql"));
+
+    let got = wrk.output(&mut cmd);
+    let stdout = String::from_utf8_lossy(&got.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+
+    // Should produce a valid score from the last query
+    assert!(parsed["score"].is_number());
+    assert!(parsed["max_score"].is_number());
+
+    // The last query has specific columns (not SELECT *), so there should be
+    // no SELECT * warning
+    let suggestions = parsed["suggestions"].as_array().unwrap();
+    let has_select_star_warning = suggestions
+        .iter()
+        .any(|s| s.as_str().unwrap().contains("SELECT *"));
+    assert!(
+        !has_select_star_warning,
+        "Last query uses specific columns, should NOT have SELECT * warning"
+    );
+}

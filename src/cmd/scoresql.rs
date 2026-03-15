@@ -59,8 +59,8 @@ scoresql arguments:
 scoresql options:
     --json                    Output results as JSON instead of human-readable report.
     --duckdb                  Use DuckDB for query plan analysis instead of Polars.
-                              Requires the QSV_DUCKDB_PATH environment variable
-                              to be set to the path of the DuckDB binary.
+                              Uses the QSV_DUCKDB_PATH environment variable if set,
+                              otherwise looks for "duckdb" in PATH.
     --try-parsedates          Automatically try to parse dates/datetimes and time.
     --infer-len <arg>         Number of rows to scan when inferring schema.
                               [default: 10000]
@@ -905,7 +905,10 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
     // Deduplicate in case a table name equals an alias
     replacements.dedup_by(|a, b| a.0 == b.0);
 
-    // Build a single combined regex for one-pass replacement
+    // Build a single combined regex for one-pass replacement.
+    // The regex matches single-quoted strings first (to skip them) OR table names/aliases.
+    // This prevents replacing table names that appear inside SQL string literals
+    // (e.g., inside an existing read_csv_auto('...') call in a .sql script).
     let query = if replacements.is_empty() {
         args.arg_sql.clone()
     } else {
@@ -914,7 +917,8 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
             .map(|(name, _)| regex::escape(name))
             .collect::<Vec<_>>()
             .join("|");
-        let pattern = format!(r"\b(?:{alternatives})\b");
+        // Match single-quoted strings (including escaped quotes '') OR table names
+        let pattern = format!(r"'(?:[^']|'')*'|\b(?:{alternatives})\b");
         let re = regex::Regex::new(&pattern)
             .map_err(|e| format!("Failed to compile DuckDB alias regex: {e}"))?;
 
@@ -925,7 +929,12 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
 
         re.replace_all(&args.arg_sql, |caps: &regex::Captures| {
             let matched = caps.get(0).unwrap().as_str();
-            replacement_lookup[matched].to_string()
+            // If the match starts with a quote, it's a string literal — keep it as-is
+            if matched.starts_with('\'') {
+                matched.to_string()
+            } else {
+                replacement_lookup[matched].to_string()
+            }
         })
         .into_owned()
     };
@@ -955,19 +964,34 @@ fn get_duckdb_path() -> CliResult<String> {
         return Ok(path.clone());
     }
 
-    let duckdb_path = env::var("QSV_DUCKDB_PATH")
-        .map_err(|_| "QSV_DUCKDB_PATH env var not set. Required for --duckdb mode.")?;
-
-    let path = Path::new(&duckdb_path);
-    if !path.exists() {
-        return fail_clierror!("DuckDB binary not found at path: {duckdb_path}");
-    }
-    if !path.is_file() {
-        return fail_clierror!("DuckDB path is not a file: {duckdb_path}");
-    }
-    if !util::is_executable(&duckdb_path)? {
-        return fail_clierror!("DuckDB path is not executable: {duckdb_path}");
-    }
+    let duckdb_path = if let Ok(explicit_path) = env::var("QSV_DUCKDB_PATH") {
+        // Env var is set — validate the explicit path
+        let path = Path::new(&explicit_path);
+        if !path.exists() {
+            return fail_clierror!("DuckDB binary not found at path: {explicit_path}");
+        }
+        if !path.is_file() {
+            return fail_clierror!("DuckDB path is not a file: {explicit_path}");
+        }
+        if !util::is_executable(&explicit_path)? {
+            return fail_clierror!("DuckDB path is not executable: {explicit_path}");
+        }
+        explicit_path
+    } else {
+        // Env var not set — try to find "duckdb" in PATH
+        if Command::new("duckdb")
+            .arg("--version")
+            .output()
+            .is_ok_and(|o| o.status.success())
+        {
+            "duckdb".to_string()
+        } else {
+            return fail_clierror!(
+                "DuckDB not found. Either set QSV_DUCKDB_PATH to the DuckDB binary path or ensure \
+                 \"duckdb\" is in your PATH."
+            );
+        }
+    };
 
     let _ = DUCKDB_PATH.set(duckdb_path.clone());
     Ok(duckdb_path)

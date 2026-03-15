@@ -2,7 +2,7 @@ Generated using a Local LLM (openai/gpt-oss-20b) on LM Studio 0.3.33 Build 1 run
 
 ```bash
 $ QSV_LLM_BASE_URL=https://localhost:1234/v1 \
-  QSV_DESCRIBEGPT_DB_ENGINE=/opt/homebrew/bin/duckdb \
+  QSV_DUCKDB_PATH=/opt/homebrew/bin/duckdb \
   qsv describegpt NYC_311_SR_2010-2020-sample-1M.csv \
     --output nyc311-describegpt-prompt.md \
     --sql-results nyc311-describegpt-prompt-results \

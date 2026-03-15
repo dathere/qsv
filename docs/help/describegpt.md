@@ -35,7 +35,7 @@ and provide it to the LLM as additional context to help it generate a SQL query 
 answers the natural language question.
 
 Two SQL dialects are currently supported - DuckDB (highly recommended) & Polars. If the
-QSV_DESCRIBEGPT_DB_ENGINE environment variable is set to the absolute path of the DuckDB binary,
+QSV_DUCKDB_PATH environment variable is set to the absolute path of the DuckDB binary,
 DuckDB will be used to answer the question. Otherwise, if the "polars" feature is enabled,
 Polars SQL will be used.
 
@@ -104,7 +104,7 @@ qsv describegpt NYC_311.csv --prompt "What is the most common complaint?"
 > Generate a DuckDB SQL query to answer the question
 
 ```console
-QSV_DESCRIBEGPT_DB_ENGINE=/path/to/duckdb \
+QSV_DUCKDB_PATH=/path/to/duckdb \
 qsv describegpt NYC_311.csv -p "What's the breakdown of complaint types by borough descending order?"
 ```
 
@@ -245,8 +245,8 @@ qsv describegpt --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-p,`<br>`--prompt`&nbsp; | string | Custom prompt to answer questions about the dataset. The prompt will be answered based on the dataset's Summary Statistics, Frequency data & Data Dictionary. If the prompt CANNOT be answered by looking at these metadata, a SQL query will be generated to answer the question. If the "polars" or the "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set & the `--sql-results` option is used, the SQL query will be automatically executed and its results returned. Otherwise, the SQL query will be returned along with the reasoning behind it. If it starts with "file:" prefix, the prompt is read from the file specified. e.g. "file:my_long_prompt.txt" |  |
-| &nbsp;`--sql-results`&nbsp; | string | The file to save the SQL query results to. Only valid if the --prompt option is used & the "polars" or the "QSV_DESCRIBEGPT_DB_ENGINE" environment variable is set. If the SQL query executes successfully, the results will be saved with a ".csv" extension. Otherwise, it will be saved with a ".sql" extension so the user can inspect why it failed and modify it. |  |
+| &nbsp;`-p,`<br>`--prompt`&nbsp; | string | Custom prompt to answer questions about the dataset. The prompt will be answered based on the dataset's Summary Statistics, Frequency data & Data Dictionary. If the prompt CANNOT be answered by looking at these metadata, a SQL query will be generated to answer the question. If the "polars" or the "QSV_DUCKDB_PATH" environment variable is set & the `--sql-results` option is used, the SQL query will be automatically executed and its results returned. Otherwise, the SQL query will be returned along with the reasoning behind it. If it starts with "file:" prefix, the prompt is read from the file specified. e.g. "file:my_long_prompt.txt" |  |
+| &nbsp;`--sql-results`&nbsp; | string | The file to save the SQL query results to. Only valid if the --prompt option is used & the "polars" or the "QSV_DUCKDB_PATH" environment variable is set. If the SQL query executes successfully, the results will be saved with a ".csv" extension. Otherwise, it will be saved with a ".sql" extension so the user can inspect why it failed and modify it. |  |
 | &nbsp;`--prompt-file`&nbsp; | string | The configurable TOML file containing prompts to use for inferencing. If no file is provided, default prompts will be used. The prompt file uses the Mini Jinja template engine (<https://docs.rs/minijinja>) See <https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml> |  |
 | &nbsp;`--sample-size`&nbsp; | string | The number of rows to randomly sample from the input file for the sample data. Uses the INDEXED sampling method with the qsv sample command. | `100` |
 | &nbsp;`--fewshot-examples`&nbsp; | flag | By default, few-shot examples are NOT included in the LLM prompt when generating SQL queries. When this option is set, few-shot examples in the default prompt file are included. Though this will increase the quality of the generated SQL, it comes at a cost - increased LLM API call cost in terms of tokens and execution time. See <https://en.wikipedia.org/wiki/Prompt_engineering> for more info. |  |

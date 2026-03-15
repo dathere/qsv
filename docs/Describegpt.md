@@ -241,10 +241,10 @@ qsv describegpt data.csv --prompt "What's the breakdown of complaint types by bo
 
 ### Using SQL with DuckDB
 
-You can also use DuckDB to execute SQL queries by setting the `QSV_DESCRIBEGPT_DB_ENGINE` environment variable to a path containing "duckdb" (case-insensitive). The environment variable value should be the fully qualified path to the DuckDB binary:
+You can also use DuckDB to execute SQL queries by setting the `QSV_DUCKDB_PATH` environment variable to a path containing "duckdb" (case-insensitive). The environment variable value should be the fully qualified path to the DuckDB binary:
 
 ```bash
-export QSV_DESCRIBEGPT_DB_ENGINE=/usr/local/bin/duckdb
+export QSV_DUCKDB_PATH=/usr/local/bin/duckdb
 qsv describegpt data.csv --prompt "What's the breakdown of complaint types by borough?" --sql-results results.csv
 ```
 

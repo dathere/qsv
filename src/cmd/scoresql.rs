@@ -978,15 +978,22 @@ fn get_duckdb_path() -> CliResult<String> {
         }
         explicit_path
     } else {
-        // Env var not set — try to resolve the absolute path of "duckdb" in PATH
-        if let Some(resolved) = Command::new("which")
+        // Env var not set — try to find "duckdb" in PATH using a cross-platform approach.
+        // On Unix we use "which", on Windows we use "where".
+        #[cfg(not(target_os = "windows"))]
+        let which_cmd = "which";
+        #[cfg(target_os = "windows")]
+        let which_cmd = "where";
+
+        if let Some(resolved) = Command::new(which_cmd)
             .arg("duckdb")
             .output()
             .ok()
             .filter(|o| o.status.success())
             .and_then(|o| {
                 let s = String::from_utf8(o.stdout).ok()?;
-                let trimmed = s.trim().to_string();
+                // `where` on Windows may return multiple lines; take the first
+                let trimmed = s.lines().next().unwrap_or("").trim().to_string();
                 if trimmed.is_empty() {
                     None
                 } else {

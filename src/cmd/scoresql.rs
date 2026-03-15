@@ -917,8 +917,8 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
             .map(|(name, _)| regex::escape(name))
             .collect::<Vec<_>>()
             .join("|");
-        // Match single-quoted strings (including escaped quotes '') OR table names
-        let pattern = format!(r"'(?:[^']|'')*'|\b(?:{alternatives})\b");
+        // Match single-quoted strings (including '' and \' escaped quotes) OR table names
+        let pattern = format!(r"'(?:[^'\\]|\\'|''|\\\\)*'|\b(?:{alternatives})\b");
         let re = regex::Regex::new(&pattern)
             .map_err(|e| format!("Failed to compile DuckDB alias regex: {e}"))?;
 
@@ -978,13 +978,23 @@ fn get_duckdb_path() -> CliResult<String> {
         }
         explicit_path
     } else {
-        // Env var not set — try to find "duckdb" in PATH
-        if Command::new("duckdb")
-            .arg("--version")
+        // Env var not set — try to resolve the absolute path of "duckdb" in PATH
+        if let Some(resolved) = Command::new("which")
+            .arg("duckdb")
             .output()
-            .is_ok_and(|o| o.status.success())
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| {
+                let s = String::from_utf8(o.stdout).ok()?;
+                let trimmed = s.trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            })
         {
-            "duckdb".to_string()
+            resolved
         } else {
             return fail_clierror!(
                 "DuckDB not found. Either set QSV_DUCKDB_PATH to the DuckDB binary path or ensure \

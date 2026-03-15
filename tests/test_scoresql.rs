@@ -275,7 +275,7 @@ fn scoresql_invalid_sql() {
     let wrk = setup("scoresql_invalid_sql");
     let mut cmd = wrk.command("scoresql");
     cmd.arg("data.csv");
-    cmd.arg("SELEC * FROM data");
+    cmd.arg("SELECTED * FROM data");
 
     let got = wrk.output(&mut cmd);
     let stderr = String::from_utf8_lossy(&got.stderr);
@@ -284,7 +284,7 @@ fn scoresql_invalid_sql() {
         "Expected 'Failed to execute SQL query' in stderr, got: {stderr}"
     );
     assert!(
-        stderr.contains("SELEC * FROM data"),
+        stderr.contains("SELECTED * FROM data"),
         "Expected the invalid SQL in stderr, got: {stderr}"
     );
     assert!(

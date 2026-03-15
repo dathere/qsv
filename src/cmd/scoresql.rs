@@ -34,6 +34,9 @@ Examples:
   # Use _t_N aliases just like sqlp (see sqlp documentation)
   $ qsv scoresql data.csv data2.csv "SELECT * FROM _t_1 JOIN _t_2 ON _t_1.id = _t_2.id"
 
+  # Score a query from a SQL script file (only the last query is scored)
+  $ qsv scoresql data.csv script.sql
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_scoresql.rs.
 
 Usage:
@@ -48,11 +51,15 @@ scoresql arguments:
                               the file will be read as a list of input files.
 
     sql                       The SQL query to score/analyze.
+                              If the query ends with ".sql", it will be read as a
+                              SQL script file, with single-line "--" comments stripped.
+                              If the script has multiple queries separated by ";",
+                              only the last non-empty query is scored.
 
 scoresql options:
     --json                    Output results as JSON instead of human-readable report.
     --duckdb                  Use DuckDB for query plan analysis instead of Polars.
-                              Requires the QSV_DESCRIBEGPT_DB_ENGINE environment variable
+                              Requires the QSV_DUCKDB_PATH environment variable
                               to be set to the path of the DuckDB binary.
     --try-parsedates          Automatically try to parse dates/datetimes and time.
     --infer-len <arg>         Number of rows to scan when inferring schema.
@@ -72,7 +79,7 @@ use std::{
     borrow::Cow,
     env,
     fmt::Write as FmtWrite,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
     sync::OnceLock,
@@ -223,6 +230,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // ── 2. Parse SQL for patterns ──────────────────────────────────────────
+    // check if the input is a SQL script file (ends with .sql)
+    if Path::new(&args.arg_sql)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("sql"))
+    {
+        let mut file = std::fs::File::open(&args.arg_sql)?;
+        let mut sql_script = String::new();
+        file.read_to_string(&mut sql_script)?;
+
+        // remove single-line comments starting with "--"
+        let comment_regex = regex::Regex::new(r"^\s*--.*$")?;
+        let sql_script = comment_regex.replace_all(&sql_script, "");
+
+        // split by ";", take the last non-empty query
+        args.arg_sql = sql_script
+            .split(';')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .last()
+            .unwrap_or_default();
+    }
+
     let sql_info = parse_sql(&args.arg_sql);
 
     // ── 3. Load / generate caches ──────────────────────────────────────────
@@ -822,9 +851,21 @@ fn get_polars_plan(
     match ctx.execute(&explain_query) {
         Ok(lf) => match lf.collect() {
             Ok(df) => Ok(format!("{df}")),
-            Err(e) => Ok(format!("Plan generation error: {e}")),
+            Err(e) => {
+                fail_clierror!(
+                    "Failed to generate query plan.\n\nSQL: {sql}\n\nError: {e}\n\nHint: Check \
+                     your SQL syntax.",
+                    sql = args.arg_sql
+                )
+            },
         },
-        Err(e) => Ok(format!("Plan generation error: {e}")),
+        Err(e) => {
+            fail_clierror!(
+                "Failed to execute SQL query.\n\nSQL: {sql}\n\nError: {e}\n\nHint: Check your SQL \
+                 syntax.",
+                sql = args.arg_sql
+            )
+        },
     }
 }
 
@@ -874,7 +915,11 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Ok(format!("DuckDB plan error: {stderr}"))
+        fail_clierror!(
+            "Failed to execute SQL query with DuckDB.\n\nSQL: {sql}\n\nError: {stderr}\n\nHint: \
+             Check your SQL syntax.",
+            sql = args.arg_sql
+        )
     }
 }
 
@@ -883,8 +928,8 @@ fn get_duckdb_path() -> CliResult<String> {
         return Ok(path.clone());
     }
 
-    let duckdb_path = env::var("QSV_DESCRIBEGPT_DB_ENGINE")
-        .map_err(|_| "QSV_DESCRIBEGPT_DB_ENGINE env var not set. Required for --duckdb mode.")?;
+    let duckdb_path = env::var("QSV_DUCKDB_PATH")
+        .map_err(|_| "QSV_DUCKDB_PATH env var not set. Required for --duckdb mode.")?;
 
     let path = Path::new(&duckdb_path);
     if !path.exists() {

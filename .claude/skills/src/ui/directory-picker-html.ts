@@ -581,6 +581,7 @@ async function navigate(path) {
   } catch (err) {
     showError("Failed to browse: " + (err.message || err));
     dirListEl.innerHTML = '<div class="empty-state">Failed to load directory</div>';
+    requestAnimationFrame(() => notifySizeChanged());
   }
 }
 
@@ -629,8 +630,6 @@ function applyTheme(ctx) {
 let heightMode = "unknown"; // "fixed" | "flexible" | "unbounded"
 function applyContainerDimensions(ctx) {
   const dims = ctx?.containerDimensions;
-  console.log("[qsv-picker] containerDimensions:", JSON.stringify(dims));
-
   if (!dims) { heightMode = "unbounded"; return; }
 
   const root = document.documentElement;
@@ -665,13 +664,13 @@ function applyContainerDimensions(ctx) {
     root.style.maxWidth = dims.maxWidth + "px";
   }
 
-  console.log("[qsv-picker] heightMode:", heightMode);
 }
 
 // Notify host of our content size so the iframe can resize.
 let lastNotifiedHeight = 0;
 let lastNotifiedWidth = 0;
 function notifySizeChanged() {
+  if (heightMode === "fixed") return;
   // Use the #app div's bounding rect — this reflects the actual rendered
   // content height, and correctly shrinks when content gets shorter.
   // (scrollHeight only grows — it never reports smaller than the element.)

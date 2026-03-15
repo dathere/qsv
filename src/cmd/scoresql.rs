@@ -836,26 +836,29 @@ fn get_polars_plan(
     let mut alias_pairs: Vec<_> = table_aliases.iter().collect();
     alias_pairs.sort_by_key(|(_, alias)| std::cmp::Reverse(alias.len()));
 
-    let alternatives: String = alias_pairs
-        .iter()
-        .map(|(_, alias)| regex::escape(alias))
-        .collect::<Vec<_>>()
-        .join("|");
-    let pattern = format!(r"\b(?:{alternatives})\b");
-    let re =
-        regex::Regex::new(&pattern).map_err(|e| format!("Failed to compile alias regex: {e}"))?;
+    let query = if alias_pairs.is_empty() {
+        args.arg_sql.clone()
+    } else {
+        let alternatives: String = alias_pairs
+            .iter()
+            .map(|(_, alias)| regex::escape(alias))
+            .collect::<Vec<_>>()
+            .join("|");
+        let pattern = format!(r"\b(?:{alternatives})\b");
+        let re = regex::Regex::new(&pattern)
+            .map_err(|e| format!("Failed to compile alias regex: {e}"))?;
 
-    let alias_lookup: HashMap<&str, &str> = alias_pairs
-        .iter()
-        .map(|(tname, talias)| (talias.as_str(), tname.as_str()))
-        .collect();
+        let alias_lookup: HashMap<&str, &str> = alias_pairs
+            .iter()
+            .map(|(tname, talias)| (talias.as_str(), tname.as_str()))
+            .collect();
 
-    let query = re
-        .replace_all(&args.arg_sql, |caps: &regex::Captures| {
+        re.replace_all(&args.arg_sql, |caps: &regex::Captures| {
             let matched = caps.get(0).unwrap().as_str();
             format!(r#""{}""#, alias_lookup[matched])
         })
-        .into_owned();
+        .into_owned()
+    };
 
     let explain_query = format!("EXPLAIN {query}");
     match ctx.execute(&explain_query) {
@@ -903,26 +906,29 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
     replacements.dedup_by(|a, b| a.0 == b.0);
 
     // Build a single combined regex for one-pass replacement
-    let alternatives: String = replacements
-        .iter()
-        .map(|(name, _)| regex::escape(name))
-        .collect::<Vec<_>>()
-        .join("|");
-    let pattern = format!(r"\b(?:{alternatives})\b");
-    let re = regex::Regex::new(&pattern)
-        .map_err(|e| format!("Failed to compile DuckDB alias regex: {e}"))?;
+    let query = if replacements.is_empty() {
+        args.arg_sql.clone()
+    } else {
+        let alternatives: String = replacements
+            .iter()
+            .map(|(name, _)| regex::escape(name))
+            .collect::<Vec<_>>()
+            .join("|");
+        let pattern = format!(r"\b(?:{alternatives})\b");
+        let re = regex::Regex::new(&pattern)
+            .map_err(|e| format!("Failed to compile DuckDB alias regex: {e}"))?;
 
-    let replacement_lookup: HashMap<&str, &str> = replacements
-        .iter()
-        .map(|(name, target)| (name.as_str(), target.as_str()))
-        .collect();
+        let replacement_lookup: HashMap<&str, &str> = replacements
+            .iter()
+            .map(|(name, target)| (name.as_str(), target.as_str()))
+            .collect();
 
-    let query = re
-        .replace_all(&args.arg_sql, |caps: &regex::Captures| {
+        re.replace_all(&args.arg_sql, |caps: &regex::Captures| {
             let matched = caps.get(0).unwrap().as_str();
             replacement_lookup[matched].to_string()
         })
-        .into_owned();
+        .into_owned()
+    };
 
     let explain_query = format!("EXPLAIN {query}");
     let output = Command::new(duckdb_path)

@@ -239,9 +239,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut sql_script = String::new();
         file.read_to_string(&mut sql_script)?;
 
-        // remove single-line comments starting with "--"
-        let comment_regex = regex::Regex::new(r"^\s*--.*$")?;
-        let sql_script = comment_regex.replace_all(&sql_script, "");
+        // remove full-line comments starting with "--"
+        // NOTE: inline trailing comments (e.g., `SELECT 1 -- comment`) are not stripped
+        static COMMENT_REGEX: std::sync::LazyLock<regex::Regex> =
+            std::sync::LazyLock::new(|| regex::Regex::new(r"(?m)^\s*--.*$").unwrap());
+        let sql_script = COMMENT_REGEX.replace_all(&sql_script, "");
 
         // split by ";", take the last non-empty query
         args.arg_sql = sql_script

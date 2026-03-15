@@ -763,7 +763,7 @@ fn parse_language_option(language: Option<&String>) -> (bool, f64, Option<String
 
 // Check if DuckDB should be used based on environment variable
 fn should_use_duckdb() -> bool {
-    env::var(QSV_DUCKDB_PATH_ENV).is_ok_and(|val| val.to_lowercase().contains("duckdb"))
+    env::var(QSV_DUCKDB_PATH_ENV).is_ok_and(|val| !val.is_empty())
 }
 
 // Get DuckDB binary path from environment variable

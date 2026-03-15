@@ -89,7 +89,7 @@ qsv scoresql --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`--json`&nbsp; | flag | Output results as JSON instead of human-readable report. |  |
-| &nbsp;`--duckdb`&nbsp; | flag | Use DuckDB for query plan analysis instead of Polars. Requires the QSV_DUCKDB_PATH environment variable to be set to the path of the DuckDB binary. |  |
+| &nbsp;`--duckdb`&nbsp; | flag | Use DuckDB for query plan analysis instead of Polars. Uses the QSV_DUCKDB_PATH environment variable if set, otherwise looks for "duckdb" in PATH. |  |
 | &nbsp;`--try-parsedates`&nbsp; | flag | Automatically try to parse dates/datetimes and time. |  |
 | &nbsp;`--infer-len`&nbsp; | string | Number of rows to scan when inferring schema. | `10000` |
 | &nbsp;`--ignore-errors`&nbsp; | flag | Ignore errors when parsing CSVs. |  |

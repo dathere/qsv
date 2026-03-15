@@ -241,7 +241,7 @@ qsv describegpt data.csv --prompt "What's the breakdown of complaint types by bo
 
 ### Using SQL with DuckDB
 
-You can also use DuckDB to execute SQL queries by setting the `QSV_DUCKDB_PATH` environment variable to a path containing "duckdb" (case-insensitive). The environment variable value should be the fully qualified path to the DuckDB binary:
+You can also use DuckDB to execute SQL queries by setting the `QSV_DUCKDB_PATH` environment variable to the fully qualified path of the DuckDB binary. When set and non-empty, DuckDB will be used instead of Polars:
 
 ```bash
 export QSV_DUCKDB_PATH=/usr/local/bin/duckdb

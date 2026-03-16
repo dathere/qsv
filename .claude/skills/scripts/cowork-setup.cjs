@@ -4,9 +4,10 @@
 // Copies a qsv CLAUDE.md template into the Cowork working folder
 // if one doesn't already exist.
 // Node.js port of cowork-setup.sh for Windows compatibility.
+// Uses CommonJS so it works standalone without package.json declaring "type": "module".
 
-import { existsSync, copyFileSync, realpathSync } from 'node:fs';
-import { resolve, normalize, join } from 'node:path';
+const { existsSync, copyFileSync, realpathSync } = require('node:fs');
+const { resolve, normalize, join } = require('node:path');
 
 function output(additionalContext) {
   process.stdout.write(JSON.stringify({ additionalContext }) + '\n');

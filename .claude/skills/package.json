@@ -18,7 +18,8 @@
     "test-update-checker": "node examples/update-checker-demo.js",
     "mcp:start": "node dist/mcp-server.js",
     "mcp:install": "node scripts/install-mcp.js",
-    "mcpb:package": "node scripts/package-mcpb.js"
+    "mcpb:package": "node scripts/package-mcpb.js",
+    "plugin:package": "node scripts/package-plugin.js"
   },
   "keywords": [
     "qsv",

@@ -995,18 +995,31 @@ class QsvMcpServer {
       // Resolve to absolute path without restricting to allowed directories.
       // The browse tool is read-only (lists subdirs only), hidden from the LLM,
       // and its purpose is to let users pick ANY directory as working dir.
+      // Resolve relative paths against the qsv working directory (not process.cwd())
+      const baseDir = this.filesystemProvider.getWorkingDirectory();
+      const absPath = resolve(baseDir, rawDir);
       let targetDir: string;
       try {
-        targetDir = await realpath(resolve(rawDir));
+        targetDir = await realpath(absPath);
       } catch {
-        targetDir = resolve(rawDir);
+        targetDir = absPath;
       }
 
-      // Defense-in-depth: block browsing sensitive directories
-      const home = homedir();
+      // Defense-in-depth: block browsing sensitive directories.
+      // Canonicalize home via realpath to match targetDir (e.g. macOS
+      // /Users/… vs /System/Volumes/Data/Users/…).
+      let canonHome: string;
+      try {
+        canonHome = await realpath(homedir());
+      } catch {
+        canonHome = homedir();
+      }
+      const caseInsensitive = process.platform === "darwin" || process.platform === "win32";
+      const normalize = (p: string) => caseInsensitive ? p.toLowerCase() : p;
       for (const sensitive of SENSITIVE_DIRS) {
-        const blocked = resolve(home, sensitive);
-        if (targetDir === blocked || targetDir.startsWith(blocked + sep)) {
+        const blocked = normalize(resolve(canonHome, sensitive));
+        const target = normalize(targetDir);
+        if (target === blocked || target.startsWith(blocked + sep)) {
           return errorResult(`Access to "${sensitive}" is not allowed for security reasons.`);
         }
       }

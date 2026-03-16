@@ -2,7 +2,7 @@
  * Directory Picker MCP App HTML
  *
  * Self-contained HTML for an interactive directory browser rendered as an MCP App.
- * Uses the @modelcontextprotocol/ext-apps App SDK loaded from CDN.
+ * Uses an inline MCP Apps SDK shim (no external CDN dependencies).
  *
  * The App communicates with the MCP server via:
  * - `qsv_browse_directory` to list directory contents
@@ -15,8 +15,8 @@
  * quick-access buttons, and a "Select" confirmation action.
  */
 export function getDirectoryPickerHtml(platformRoot: string = "/"): string {
-  // Use a template literal for the full HTML — no external dependencies except
-  // the MCP Apps SDK loaded from esm.sh CDN.
+  // Use a template literal for the full HTML — no external dependencies.
+  // The MCP Apps SDK is inlined as a minimal shim (no CDN required).
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -368,8 +368,12 @@ class App {
   }
 
   _onMessage(ev) {
+    // Only accept messages from the parent frame
+    if (ev.source !== window.parent) return;
     const msg = ev.data;
     if (!msg || typeof msg !== "object") return;
+    // Validate JSON-RPC 2.0 structure
+    if (msg.jsonrpc !== "2.0") return;
 
     // Origin validation: lock to the first origin we see from the host
     if (!this._hostOrigin) {
@@ -639,11 +643,20 @@ function applyContainerDimensions(ctx) {
   const mainUi = document.getElementById("main-ui");
   const dirList = document.getElementById("dir-list");
 
+  // Clear any previously-set maxHeight/maxWidth from a prior mode
+  root.style.maxHeight = "";
+  root.style.maxWidth = "";
+
   if ("height" in dims) {
     // Fixed height: host controls size — use flex layout, dir-list scrolls internally
     heightMode = "fixed";
     root.style.height = "100vh";
     container.style.height = "100%";
+    // Restore flex defaults (undo any prior flexible/unbounded overrides)
+    mainUi.style.flex = "1";
+    mainUi.style.overflow = "hidden";
+    dirList.style.flex = "1";
+    dirList.style.overflowY = "auto";
   } else {
     // Flexible (maxHeight) or unbounded: let content flow naturally so the
     // host can measure our actual size and resize the iframe to fit.

@@ -189,8 +189,8 @@ export class FilesystemResourceProvider {
   /**
    * Get the list of allowed directories
    */
-  getAllowedDirectories(): string[] {
-    return this.allowedDirs;
+  getAllowedDirectories(): readonly string[] {
+    return [...this.allowedDirs];
   }
 
   /**

@@ -90,9 +90,9 @@ console.log(stats);
 // {
 //   total: 52,
 //   byCategory: { selection: 5, aggregation: 8, ... },
-//   totalExamples: 200,
-//   totalOptions: 450,
-//   totalArgs: 50
+//   totalExamples: 180,
+//   totalOptions: 607,
+//   totalArgs: 89
 // }
 ```
 

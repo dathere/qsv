@@ -118,9 +118,9 @@ The qsv MCP server lets Claude read, analyze, and transform your local data file
 
 ### Download the MCPB Bundle
 
-Go to: **<https://github.com/dathere/qsv/releases/download/17.0.0/qsv-mcp-server-17.0.0.mcpb>**
+Go to: **<https://github.com/dathere/qsv/releases/latest>**
 
-Save the `.mcpb` file to your Downloads folder.
+Download the `.mcpb` file and save it to your Downloads folder.
 
 ### Install in Claude Desktop
 
@@ -128,7 +128,7 @@ Save the `.mcpb` file to your Downloads folder.
 2. Click your **profile icon** (bottom-left) > **Settings**
 3. Go to the **Extensions** tab
 4. Click **"Install from file"**
-5. Select the `qsv-mcp-server-17.0.0.mcpb` file you downloaded
+5. Select the `.mcpb` file you downloaded
 6. Click **Install**
 
 ### Configure
@@ -466,4 +466,4 @@ Now that everything is set up, here are some things you can try:
 
 ---
 
-*Last updated: 2026-03-07 | qsv MCP Server v17.0.0*
+*Last updated: 2026-03-15*

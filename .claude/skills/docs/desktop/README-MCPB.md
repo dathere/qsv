@@ -18,7 +18,7 @@ Under the hood, it's powered by **qsv**: a purpose-built CLI tool written in hig
 
 Claude handles the rest automatically — no commands to remember, no syntax to learn.
 
-The extension uses **qsvmcp**, a streamlined variant of qsv purpose-built for MCP server use. It ships with exactly the 51 commands the MCP server needs, plus built-in session logging for increased reproducibility.
+The extension uses **qsvmcp**, a streamlined variant of qsv purpose-built for MCP server use. It ships with exactly the 52 commands the MCP server needs, plus built-in session logging for increased reproducibility.
 
 ## Installation (Simple)
 
@@ -139,7 +139,7 @@ Claude: [Performs all three operations in sequence]
    - **Linux**: Place in `/usr/local/bin/` or specify the full path in settings
 4. Restart Claude Desktop
 
-> **Note**: qsvmcp is the recommended binary — it includes only the 51 commands needed by the MCP server and is smaller and faster than the full qsv binary.
+> **Note**: qsvmcp is the recommended binary — it includes only the 52 commands needed by the MCP server and is smaller and faster than the full qsv binary.
 
 ### "Permission denied" or "Access denied" errors
 
@@ -256,7 +256,7 @@ qsv-mcp-server.mcpb
                │ stdio (JSON-RPC 2.0)
 ┌──────────────▼──────────────────────┐
 │  QSV MCP Server (Node.js/TypeScript)│
-│  • Tool definitions (10 core + 51)  │
+│  • Tool definitions (11 core + 52)  │
 │  • Parameter validation            │
 │  • File conversion manager         │
 │  • Format auto-detection           │
@@ -265,7 +265,7 @@ qsv-mcp-server.mcpb
 ┌──────────────▼──────────────────────┐
 │   qsvmcp binary (preferred) / qsv   │
 │  • Tabular data processing         │
-│  • 51 commands (qsvmcp) / 68 (qsv) │
+│  • 52 commands (qsvmcp) / 68 (qsv) │
 │  • High-performance operations      │
 │  • Multi-format support             │
 └─────────────────────────────────────┘
@@ -362,7 +362,7 @@ The MCP server enforces limits to prevent DoS attacks and resource exhaustion:
 **CRITICAL**: The `QSV_MCP_BIN_PATH` must point to a trusted qsvmcp or qsv binary:
 
 - Only use official releases from https://github.com/dathere/qsv/releases
-- The **qsvmcp** binary is recommended — it's optimized for MCP server use with only the 51 commands needed
+- The **qsvmcp** binary is recommended — it's optimized for MCP server use with only the 52 commands needed
 - Verify binary integrity (checksums provided in releases)
 - Ensure binary path is not writable by untrusted users
 - Do not use binaries from unknown sources
@@ -575,7 +575,7 @@ Same license as qsv: MIT OR Apache-2.0
 
 ---
 
-**Updated**: 2026-02-18
-**Version**: 16.1.2
+**Updated**: 2026-03-15
+**Version**: 17.0.0
 **Format**: MCP Bundle (MCPB) v0.3
 **Compatibility**: Claude Desktop 1.0+

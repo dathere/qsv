@@ -52,7 +52,7 @@ Claude Code is Anthropic's official CLI for Claude - a powerful terminal-based i
 4. **Verify qsv installation**:
    ```bash
    qsv --version
-   # Should output: qsv 16.1.0 (or later)
+   # Should output: qsv 17.0.0 (or later)
    ```
 
 ---
@@ -822,5 +822,4 @@ Check out the [examples directory](../../examples/) for inspiration!
 
 **Status**: ✅ Production Ready
 **Compatibility**: Claude Code v1.0+
-**MCP Protocol**: 2025-06-18
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-03-15

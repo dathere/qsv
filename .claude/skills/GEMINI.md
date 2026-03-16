@@ -12,7 +12,7 @@ QSV Agent Skills is a high-performance TypeScript implementation of a Model Cont
 ## Architecture & Core Components
 
 - **MCP Server (`src/mcp-server.ts`):** The primary entry point that implements the Model Context Protocol. It manages tool registration, resource handling (filesystem access), and provides intelligent "server instructions" to guide agent workflows.
-- **Tool Definition System (`src/mcp-tools.ts`):** Dynamically generates tool definitions for 66+ `qsv` commands. It includes a "Guidance Enhancement" system providing `USE WHEN`, `COMMON PATTERNS`, and `CAUTION` hints to help agents make optimal tool choices.
+- **Tool Definition System (`src/mcp-tools.ts`):** Dynamically generates tool definitions for 52+ `qsv` commands. It includes a "Guidance Enhancement" system providing `USE WHEN`, `COMMON PATTERNS`, and `CAUTION` hints to help agents make optimal tool choices.
 - **Execution Engine (`src/executor.ts`):** A robust wrapper around `spawn` for streaming `qsv` commands. It handles stdin/stdout/stderr buffering, provides a 50MB output size limit (auto-saving larger results to disk), and implements sophisticated timeout and process management.
 - **Skill Loader (`src/loader.ts`):** Dynamically loads skill definitions from auto-generated JSON files in the `qsv/` directory. These JSON files are derived from `qsv`'s usage text using a specialized Rust-based generator.
 - **Filesystem & Cache Management:**
@@ -36,7 +36,7 @@ QSV Agent Skills is a high-performance TypeScript implementation of a Model Cont
 
 ## Development Conventions
 
-- **Tool Discovery:** Employs "Deferred Tool Loading." Only 10 core tools are loaded initially to reduce token usage; others are discovered via `qsv_search_tools`.
+- **Tool Discovery:** Employs "Deferred Tool Loading." Only 11 core tools are loaded initially to reduce token usage; others are discovered via `qsv_search_tools`.
 - **Guidance Enhancement:** When adding or modifying tools, include `USE WHEN`, `COMMON PATTERNS`, and `CAUTION` hints in `src/mcp-tools.ts`.
 - **Performance Optimization:**
   - **Streaming:** Always use the streaming executor for data processing.

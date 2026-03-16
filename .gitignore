@@ -51,3 +51,4 @@ scripts/benchmark_data.*
 /.claude/skills/docs/diagnosis
 /docs/audits
 /.claude/skills/docs/audits
+*.plugin

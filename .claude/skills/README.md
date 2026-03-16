@@ -392,7 +392,7 @@ Claude will automatically:
 
 ### What's Available
 
-- **24 MCP Tools**: 11 core tools (search, config, filesystem, browse, log, command, to_parquet, index, stats) + 13 common command tools
+- **23+ MCP Tools**: 10 core tools (search, config, filesystem, log, command, to_parquet, index, stats) + 13 common command tools. `qsv_browse_directory` is available when MCP Apps are supported.
 - **Local File Access**: Browse and process tabular data files (CSV, Excel, JSONL, etc.) directly from your filesystem
 - **File-Based Processing**: Works with your local files without uploading
 - **Natural Language Interface**: No command syntax needed

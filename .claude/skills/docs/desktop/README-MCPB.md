@@ -256,7 +256,7 @@ qsv-mcp-server.mcpb
                │ stdio (JSON-RPC 2.0)
 ┌──────────────▼──────────────────────┐
 │  QSV MCP Server (Node.js/TypeScript)│
-│  • Tool definitions (11 core + 52)  │
+│  • Tool definitions (10 core + 52)  │
 │  • Parameter validation            │
 │  • File conversion manager         │
 │  • Format auto-detection           │

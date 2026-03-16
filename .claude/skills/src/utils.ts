@@ -30,6 +30,20 @@ export function successResult(text: string) {
 }
 
 /**
+ * Build a structured response for a completed directory-set operation.
+ * Used when the App UI should show a minimal confirmation instead of the full picker.
+ */
+export function completedDirResult(text: string, path: string) {
+  return {
+    content: [{ type: "text" as const, text }],
+    structuredContent: {
+      completed: true,
+      currentPath: path,
+    },
+  };
+}
+
+/**
  * Compare two semantic version strings.
  * Strips pre-release (-alpha.1) and build metadata (+build.123) before comparing.
  * Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2.

@@ -716,12 +716,12 @@ app.ontoolresult = (result) => {
   const sc = result?.structuredContent;
 
   // If directory was set directly (not via picker), show minimal confirmation
-  if (sc?.completed) {
+  if (sc?.completed && sc?.currentPath) {
     navigated = true;
     document.getElementById('app').innerHTML =
       '<div style="padding:1.5em;text-align:center;color:var(--text-secondary)">' +
       '<span style="font-size:1.5em">&#10003;</span> Working directory set to ' +
-      '<strong>' + escapeHtml(sc.currentPath || '') + '</strong></div>';
+      '<strong>' + escapeHtml(sc.currentPath) + '</strong></div>';
     return;
   }
 

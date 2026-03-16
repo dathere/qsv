@@ -56,7 +56,7 @@ import { getUiCapability, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-a
 import { getDirectoryPickerHtml } from "./ui/directory-picker-html.js";
 import { scanDirectory } from "./browse-directory.js";
 import { VERSION } from "./version.js";
-import { getErrorMessage, errorResult, successResult } from "./utils.js";
+import { getErrorMessage, errorResult, successResult, completedDirResult } from "./utils.js";
 import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
 
 /**
@@ -800,13 +800,7 @@ class QsvMcpServer {
               const autoMessage = `Auto-sync re-enabled. Working directory is now: ${currentDir}\n\nThe working directory will automatically follow the MCP client's root directory.`;
 
               if (config.enableMcpApps && this.clientSupportsApps()) {
-                return {
-                  content: [{ type: "text" as const, text: autoMessage }],
-                  structuredContent: {
-                    completed: true,
-                    currentPath: currentDir,
-                  },
-                } as { content: Array<{ type: "text"; text: string }> };
+                return completedDirResult(autoMessage, currentDir);
               }
               return successResult(autoMessage);
             }
@@ -830,13 +824,7 @@ class QsvMcpServer {
           const message = `Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`;
 
           if (config.enableMcpApps && this.clientSupportsApps()) {
-            return {
-              content: [{ type: "text" as const, text: message }],
-              structuredContent: {
-                completed: true,
-                currentPath: newWorkingDir,
-              },
-            } as { content: Array<{ type: "text"; text: string }> };
+            return completedDirResult(message, newWorkingDir);
           }
           return successResult(message);
         }

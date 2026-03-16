@@ -155,10 +155,10 @@
     },
     "enable_mcp_apps": {
       "type": "boolean",
-      "title": "Enable MCP Apps (Experimental)",
-      "description": "Enable interactive MCP App UI for the directory picker. Requires Claude Desktop with HTTP transport support for MCP Apps. Leave disabled for standard behavior (native folder picker on macOS, elicitation form, or text suggestions).",
+      "title": "Enable MCP Apps",
+      "description": "Enable interactive MCP App UI for the directory picker. Disable to fall back to elicitation form or text suggestions.",
       "required": false,
-      "default": false
+      "default": true
     }
   },
   "tools": [

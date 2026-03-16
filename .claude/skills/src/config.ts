@@ -902,12 +902,11 @@ export const config = {
   /**
    * Enable MCP Apps (interactive UI) for the directory picker.
    * MCP Apps require an HTTP transport to render in Claude Desktop;
-   * stdio-based servers (the current default) cannot display them.
-   * Set to true once Claude Desktop supports Apps over stdio or when
-   * using an HTTP transport (e.g., via cloudflared).
-   * Default: false
+   * Enables MCP App UI features (interactive directory picker, etc.).
+   * Set to false to disable if your client does not support MCP Apps.
+   * Default: true
    */
-  enableMcpApps: getBooleanEnv("QSV_MCP_ENABLE_APPS", false),
+  enableMcpApps: getBooleanEnv("QSV_MCP_ENABLE_APPS", true),
 
   /**
    * Output format for tabular data returned to MCP clients.

@@ -18,13 +18,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { basename, resolve, sep } from "node:path";
+import { access, realpath, stat as fsStat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { access, stat as fsStat } from "node:fs/promises";
-import { execFile as execFileCb } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFile = promisify(execFileCb);
 
 import { SkillLoader } from "./loader.js";
 import { SkillExecutor, runQsvSimple } from "./executor.js";
@@ -62,6 +58,20 @@ import { scanDirectory } from "./browse-directory.js";
 import { VERSION } from "./version.js";
 import { getErrorMessage, errorResult, successResult } from "./utils.js";
 import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
+
+/**
+ * Directories under $HOME that the browse-directory tool must never enter.
+ * Each entry must be a directory (not a file) — the check resolves these as
+ * paths and tests whether the target dir equals or is a child of the entry.
+ * Promoted to module level so the array is created once, not on every call.
+ */
+const SENSITIVE_DIRS = [
+  ".ssh", ".gnupg", ".gpg", ".pki",
+  ".aws", ".azure", ".config/gcloud",
+  ".kube",
+  ".password-store", ".local/share/keyrings",
+  ".docker",
+];
 
 /**
  * Core tools that are always available (defer_loading: false)
@@ -744,20 +754,12 @@ class QsvMcpServer {
                 structuredContent: {
                   currentPath: currentDir,
                   knownDirs: candidates,
+                  homeDir: homedir(),
                 },
               } as { content: Array<{ type: "text"; text: string }> };
             }
 
-            // 2. Try native OS folder picker (macOS Finder dialog)
-            const nativePick = await this.showNativeFolderPicker();
-            if (nativePick) {
-              const newDir = this.updateWorkingDirectory(nativePick);
-              this.manuallySetWorkingDir = true;
-              this.workingDirConfirmed = true;
-              return successResult(`Working directory set to: ${newDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
-            }
-
-            // 3. Try interactive elicitation form
+            // 2. Try interactive elicitation form
             const elicitResult = await this.elicitWorkingDirectory();
             if (elicitResult.directory) {
               const newDir = this.updateWorkingDirectory(elicitResult.directory);
@@ -766,7 +768,7 @@ class QsvMcpServer {
               return successResult(`Working directory set to: ${newDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
             }
 
-            // 4. Return suggestions as success so the agent can pick a directory
+            // 3. Return suggestions as success so the agent can pick a directory
             return successResult(elicitResult.fallback || "No directory selected. Please call qsv_set_working_dir with an explicit directory path.");
           }
 
@@ -948,16 +950,9 @@ class QsvMcpServer {
               {
                 uri,
                 mimeType: RESOURCE_MIME_TYPE,
-                text: getDirectoryPickerHtml(),
-                _meta: {
-                  ui: {
-                    csp: {
-                      // The App HTML loads the ext-apps SDK from esm.sh CDN
-                      resourceDomains: ["https://esm.sh"],
-                      connectDomains: ["https://esm.sh"],
-                    },
-                  },
-                },
+                text: getDirectoryPickerHtml(process.platform === "win32" ? (process.env.SYSTEMDRIVE || "C:") + "\\" : "/"),
+                // No CSP needed — the App HTML uses an inline SDK shim
+                // with no external CDN dependencies.
               },
             ],
           };
@@ -997,8 +992,39 @@ class QsvMcpServer {
         : this.filesystemProvider.getWorkingDirectory();
 
     try {
-      // Validate the directory is within allowed directories before scanning
-      const targetDir = await this.filesystemProvider.resolvePath(rawDir);
+      // Resolve to absolute path without restricting to allowed directories.
+      // The browse tool is read-only (lists subdirs only), hidden from the LLM,
+      // and its purpose is to let users pick ANY directory as working dir.
+      // Resolve relative paths against the qsv working directory (not process.cwd())
+      const baseDir = this.filesystemProvider.getWorkingDirectory();
+      const absPath = resolve(baseDir, rawDir);
+      let targetDir: string;
+      try {
+        targetDir = await realpath(absPath);
+      } catch {
+        targetDir = absPath;
+      }
+
+      // Defense-in-depth: block browsing sensitive directories.
+      // Canonicalize home via realpath to match targetDir (e.g. macOS
+      // /Users/… vs /System/Volumes/Data/Users/…).
+      const home = homedir();
+      let canonHome: string;
+      try {
+        canonHome = await realpath(home);
+      } catch {
+        canonHome = home;
+      }
+      const caseInsensitive = process.platform === "darwin" || process.platform === "win32";
+      const normalize = (p: string) => caseInsensitive ? p.toLowerCase() : p;
+      const target = normalize(targetDir);
+      for (const sensitive of SENSITIVE_DIRS) {
+        const blocked = normalize(resolve(canonHome, sensitive));
+        if (target === blocked || target.startsWith(blocked + sep)) {
+          return errorResult(`Access to "${sensitive}" is not allowed for security reasons.`);
+        }
+      }
+
       const result = await scanDirectory(targetDir);
       return successResult(JSON.stringify(result));
     } catch (err) {
@@ -1038,23 +1064,20 @@ class QsvMcpServer {
    * Async to avoid blocking the event loop with synchronous stat calls.
    */
   private async discoverDirectories(): Promise<Array<{ path: string; label: string }>> {
-    const home = homedir();
+    const allowedDirs = this.filesystemProvider.getAllowedDirectories();
 
-    const wellKnown = [
-      { path: join(home, "Downloads"), label: "Downloads" },
-      { path: join(home, "Documents"), label: "Documents" },
-      { path: join(home, "Desktop"), label: "Desktop" },
-      { path: home, label: "Home" },
-    ];
+    // Build candidates from allowed directories — use basename as label
+    const allowedCandidates: Array<{ path: string; label: string }> = allowedDirs.map(dir => ({
+      path: dir,
+      label: basename(dir) || dir,  // basename of "/" is "" — fall back to full path
+    }));
 
     const currentDir = this.filesystemProvider.getWorkingDirectory();
-    const cwd = process.cwd();
 
     // Check all candidates in parallel
     const allCandidates = [
-      ...wellKnown,
-      { path: cwd, label: "Current Directory" },
-      { path: currentDir, label: "qsv Working Dir" },
+      ...allowedCandidates,
+      { path: currentDir, label: "Current Directory" },
     ];
 
     const results = await Promise.allSettled(
@@ -1099,64 +1122,6 @@ class QsvMcpServer {
       `Call qsv_set_working_dir with one of these paths (e.g. directory: "${candidates[0]?.path || currentDir}"), ` +
       `or provide any other accessible directory path.`
     );
-  }
-
-  /**
-   * Show a native OS folder picker dialog.
-   * On macOS, uses osascript to display a Finder folder picker.
-   * On Windows, uses PowerShell to display a FolderBrowserDialog.
-   * Returns the selected directory path or null if cancelled/unsupported.
-   */
-  private async showNativeFolderPicker(): Promise<string | null> {
-    const platform = process.platform;
-    if (platform !== "darwin" && platform !== "win32") return null;
-
-    // No env-based headless check here — MCP servers are spawned by Claude
-    // Desktop/MCPB without TERM_PROGRAM or DISPLAY, yet the desktop is available.
-    // If the native dialog fails (SSH, headless CI), the catch block returns null.
-
-    try {
-      const currentDir = this.filesystemProvider.getWorkingDirectory();
-      let selected: string;
-
-      if (platform === "darwin") {
-        // Escape backslashes and double quotes to prevent AppleScript injection
-        const escapedDir = currentDir
-          .replace(/\\/g, "\\\\")
-          .replace(/"/g, '\\"');
-        const { stdout } = await execFile("osascript", [
-          "-e",
-          `POSIX path of (choose folder with prompt "Select qsv working directory" default location POSIX file "${escapedDir}")`,
-        ], { timeout: 60_000 });
-        selected = stdout.trim();
-      } else {
-        // Windows: use PowerShell FolderBrowserDialog
-        // Escape single quotes for PowerShell string embedding
-        const escapedDir = currentDir.replace(/'/g, "''");
-        const psScript = [
-          "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
-          "Add-Type -AssemblyName System.Windows.Forms",
-          "$dlg = New-Object System.Windows.Forms.FolderBrowserDialog",
-          "$dlg.Description = 'Select qsv working directory'",
-          `$dlg.SelectedPath = '${escapedDir}'`,
-          "$dlg.ShowNewFolderButton = $true",
-          "if ($dlg.ShowDialog() -eq 'OK') { $dlg.SelectedPath } else { '' }",
-        ].join("; ");
-        const { stdout } = await execFile("powershell.exe", [
-          "-NoProfile", "-NonInteractive", "-Command", psScript,
-        ], { timeout: 60_000 });
-        selected = stdout.trim();
-      }
-
-      if (!selected) return null;
-
-      // Validate it's a directory
-      const stat = await fsStat(selected);
-      return stat.isDirectory() ? selected : null;
-    } catch {
-      // User cancelled or native dialog unavailable
-      return null;
-    }
   }
 
   /**

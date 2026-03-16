@@ -139,7 +139,7 @@ describe("directory picker HTML resource", () => {
     assert.ok(html.includes("qsv Directory Picker"), "should have title");
     assert.ok(html.includes("qsv_browse_directory"), "should reference browse tool");
     assert.ok(html.includes("qsv_set_working_dir"), "should reference set_working_dir tool");
-    assert.ok(html.includes("@modelcontextprotocol/ext-apps"), "should load App SDK from CDN");
+    assert.ok(html.includes("class App"), "should include inline App SDK shim");
     assert.ok(html.includes("applyDocumentTheme"), "should support theming");
     assert.ok(html.includes("applyHostStyleVariables"), "should apply host style variables");
   });

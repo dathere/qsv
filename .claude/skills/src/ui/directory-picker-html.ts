@@ -2,7 +2,7 @@
  * Directory Picker MCP App HTML
  *
  * Self-contained HTML for an interactive directory browser rendered as an MCP App.
- * Uses the @modelcontextprotocol/ext-apps App SDK loaded from CDN.
+ * Uses an inline MCP Apps SDK shim (no external CDN dependencies).
  *
  * The App communicates with the MCP server via:
  * - `qsv_browse_directory` to list directory contents
@@ -14,9 +14,9 @@
  * Vanilla JS (no framework) with breadcrumb navigation, directory listing,
  * quick-access buttons, and a "Select" confirmation action.
  */
-export function getDirectoryPickerHtml(): string {
-  // Use a template literal for the full HTML — no external dependencies except
-  // the MCP Apps SDK loaded from esm.sh CDN.
+export function getDirectoryPickerHtml(platformRoot: string = "/"): string {
+  // Use a template literal for the full HTML — no external dependencies.
+  // The MCP Apps SDK is inlined as a minimal shim (no CDN required).
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -56,19 +56,26 @@ export function getDirectoryPickerHtml(): string {
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
+  html, body {
+    margin: 0;
+    /* height set dynamically by applyContainerDimensions() */
+  }
+
   body {
     font-family: var(--font);
     background: var(--bg);
     color: var(--text);
     font-size: 14px;
     line-height: 1.5;
-    overflow-x: hidden;
   }
 
   .container {
     max-width: 600px;
     margin: 0 auto;
     padding: 16px;
+    display: flex;
+    flex-direction: column;
+    /* height set dynamically by applyContainerDimensions() */
   }
 
   .header {
@@ -76,6 +83,7 @@ export function getDirectoryPickerHtml(): string {
     align-items: center;
     gap: 8px;
     margin-bottom: 12px;
+    flex-shrink: 0;
   }
 
   .header h1 {
@@ -97,6 +105,7 @@ export function getDirectoryPickerHtml(): string {
     white-space: nowrap;
     font-family: var(--font-mono);
     font-size: 13px;
+    flex-shrink: 0;
   }
 
   .breadcrumb-item {
@@ -121,6 +130,7 @@ export function getDirectoryPickerHtml(): string {
     gap: 8px;
     margin-bottom: 12px;
     flex-wrap: wrap;
+    flex-shrink: 0;
   }
 
   .quick-btn {
@@ -144,12 +154,22 @@ export function getDirectoryPickerHtml(): string {
     color: var(--text-info);
   }
 
-  /* Directory listing */
+  #main-ui {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Directory listing — fills remaining space, scrolls internally */
   .dir-list {
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    overflow: hidden;
+    overflow-y: auto;
     margin-bottom: 12px;
+    flex: 1;
+    min-height: 0;
   }
 
   .dir-item {
@@ -199,6 +219,7 @@ export function getDirectoryPickerHtml(): string {
     font-size: 13px;
     color: var(--text-secondary);
     margin-bottom: 12px;
+    flex-shrink: 0;
   }
 
   .status-path {
@@ -214,6 +235,7 @@ export function getDirectoryPickerHtml(): string {
     display: flex;
     gap: 8px;
     justify-content: flex-end;
+    flex-shrink: 0;
   }
 
   .btn {
@@ -310,15 +332,119 @@ export function getDirectoryPickerHtml(): string {
   </div>
 </div>
 
-<script type="module">
-import { App } from "https://esm.sh/@modelcontextprotocol/ext-apps@1.2.0";
-import { applyDocumentTheme, applyHostStyleVariables } from "https://esm.sh/@modelcontextprotocol/ext-apps@1.2.0/styles";
+<script>
+// Platform-appropriate filesystem root (injected server-side)
+const PLATFORM_ROOT = ${JSON.stringify(platformRoot)};
+// ── Inline MCP Apps SDK shim ──────────────────────────────────────────
+// Minimal implementation of the @modelcontextprotocol/ext-apps App class
+// and style helpers. Communicates with the host via postMessage using
+// JSON-RPC 2.0 — no CDN dependency, no CSP issues.
+const PROTOCOL_VERSION = "2026-01-26";
+
+function applyDocumentTheme(theme) {
+  const el = document.documentElement;
+  el.setAttribute("data-theme", theme);
+  el.style.colorScheme = theme;
+}
+
+function applyHostStyleVariables(vars, root) {
+  const el = root || document.documentElement;
+  for (const [key, value] of Object.entries(vars)) {
+    if (value != null) el.style.setProperty(key, value);
+  }
+}
+
+class App {
+  constructor({ name, version }) {
+    this._appInfo = { name, version };
+    this._hostContext = null;
+    this._hostOrigin = null;  // Captured from first valid message
+    this._nextId = 1;
+    this._pending = new Map();     // id -> { resolve, reject }
+    this.ontoolresult = null;
+    this.onhostcontextchanged = null;
+
+    window.addEventListener("message", (ev) => this._onMessage(ev));
+  }
+
+  _onMessage(ev) {
+    // Only accept messages from the parent frame
+    if (ev.source !== window.parent) return;
+    const msg = ev.data;
+    if (!msg || typeof msg !== "object") return;
+    // Validate JSON-RPC 2.0 structure
+    if (msg.jsonrpc !== "2.0") return;
+
+    // Origin validation: lock to the first origin we see from the host
+    if (!this._hostOrigin) {
+      this._hostOrigin = ev.origin;
+    } else if (ev.origin !== this._hostOrigin) {
+      return; // Reject messages from unexpected origins
+    }
+
+    // Response to a request we sent (has id + result/error, no method)
+    if ("id" in msg && !("method" in msg)) {
+      const p = this._pending.get(msg.id);
+      if (p) {
+        this._pending.delete(msg.id);
+        if (msg.error) p.reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+        else p.resolve(msg.result);
+      }
+      return;
+    }
+
+    // Notification from host (has method, no id)
+    if (msg.method === "ui/notifications/tool-result" && this.ontoolresult) {
+      this.ontoolresult(msg.params);
+    } else if (msg.method === "ui/notifications/host-context-changed" && this.onhostcontextchanged) {
+      // Merge partial updates into stored context
+      if (this._hostContext && msg.params) {
+        Object.assign(this._hostContext, msg.params);
+      }
+      this.onhostcontextchanged(msg.params);
+    }
+  }
+
+  _send(method, params, isNotification) {
+    const msg = { jsonrpc: "2.0", method, params };
+    const targetOrigin = this._hostOrigin || "*";
+    if (!isNotification) {
+      const id = this._nextId++;
+      msg.id = id;
+      return new Promise((resolve, reject) => {
+        this._pending.set(id, { resolve, reject });
+        window.parent.postMessage(msg, targetOrigin);
+      });
+    }
+    window.parent.postMessage(msg, targetOrigin);
+  }
+
+  async connect() {
+    const result = await this._send("ui/initialize", {
+      appInfo: this._appInfo,
+      appCapabilities: {},
+      protocolVersion: PROTOCOL_VERSION,
+    });
+    this._hostContext = result?.hostContext || null;
+    // Send initialized notification
+    this._send("ui/notifications/initialized", {}, true);
+    return result;
+  }
+
+  getHostContext() { return this._hostContext; }
+
+  async callServerTool({ name, arguments: args }) {
+    return this._send("tools/call", { name, arguments: args || {} });
+  }
+}
+// ── End inline MCP Apps SDK shim ──────────────────────────────────────
 
 const app = new App({ name: "qsv-directory-picker", version: "1.0.0" });
 
 let currentPath = "";
 let knownDirs = [];
 let selectedPath = "";
+let homeDir = "";  // Set from server-provided homeDir, used as fallback
 
 // DOM refs
 const errorEl = document.getElementById("error");
@@ -443,6 +569,11 @@ async function navigate(path) {
 
   try {
     const result = await app.callServerTool({ name: "qsv_browse_directory", arguments: { directory: path } });
+    // Check for server-side error
+    if (result?.isError) {
+      const errText = result?.content?.find(c => c.type === "text")?.text || "Unknown error";
+      throw new Error(errText);
+    }
     const text = result?.content?.find(c => c.type === "text")?.text;
     if (!text) throw new Error("No response from server");
     const data = JSON.parse(text);
@@ -451,9 +582,12 @@ async function navigate(path) {
     renderBreadcrumbs(currentPath);
     renderDirList(data);
     updateSelectedState(currentPath);
+    // Content changed — notify host so iframe resizes to fit
+    requestAnimationFrame(() => notifySizeChanged());
   } catch (err) {
     showError("Failed to browse: " + (err.message || err));
     dirListEl.innerHTML = '<div class="empty-state">Failed to load directory</div>';
+    requestAnimationFrame(() => notifySizeChanged());
   }
 }
 
@@ -492,35 +626,138 @@ selectBtn.onclick = async () => {
   }
 };
 
-// Apply host theming
+// Apply host theming and container dimensions
 function applyTheme(ctx) {
   if (ctx?.theme) applyDocumentTheme(ctx.theme);
   if (ctx?.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
 }
 
-app.onhostcontextchanged = (ctx) => applyTheme(ctx);
+// Adapt layout based on host container dimensions (MCP Apps spec §Container Dimensions)
+let heightMode = "unknown"; // "fixed" | "flexible" | "unbounded"
+function applyContainerDimensions(ctx) {
+  const dims = ctx?.containerDimensions;
+  if (!dims) { heightMode = "unbounded"; return; }
+
+  const root = document.documentElement;
+  const container = document.querySelector(".container");
+  const mainUi = document.getElementById("main-ui");
+  const dirList = document.getElementById("dir-list");
+
+  // Clear any previously-set maxHeight/maxWidth from a prior mode
+  root.style.maxHeight = "";
+  root.style.maxWidth = "";
+
+  if ("height" in dims) {
+    // Fixed height: host controls size — use flex layout, dir-list scrolls internally
+    heightMode = "fixed";
+    root.style.height = "100vh";
+    container.style.height = "100%";
+    // Restore flex defaults (undo any prior flexible/unbounded overrides)
+    mainUi.style.flex = "1";
+    mainUi.style.overflow = "hidden";
+    dirList.style.flex = "1";
+    dirList.style.overflowY = "auto";
+  } else {
+    // Flexible (maxHeight) or unbounded: let content flow naturally so the
+    // host can measure our actual size and resize the iframe to fit.
+    heightMode = ("maxHeight" in dims && dims.maxHeight) ? "flexible" : "unbounded";
+    root.style.height = "auto";
+    container.style.height = "auto";
+    // Disable flex stretching and internal scroll — let dir-list grow naturally
+    mainUi.style.flex = "none";
+    mainUi.style.overflow = "visible";
+    dirList.style.flex = "none";
+    dirList.style.overflowY = "visible";
+    if (dims.maxHeight) {
+      root.style.maxHeight = dims.maxHeight + "px";
+    }
+  }
+
+  if ("width" in dims) {
+    root.style.width = "100vw";
+  } else if ("maxWidth" in dims && dims.maxWidth) {
+    root.style.maxWidth = dims.maxWidth + "px";
+  }
+
+}
+
+// Notify host of our content size so the iframe can resize.
+let lastNotifiedHeight = 0;
+let lastNotifiedWidth = 0;
+function notifySizeChanged() {
+  if (heightMode === "fixed") return;
+  // Use the #app div's bounding rect — this reflects the actual rendered
+  // content height, and correctly shrinks when content gets shorter.
+  // (scrollHeight only grows — it never reports smaller than the element.)
+  const appEl = document.getElementById("app");
+  const rect = appEl.getBoundingClientRect();
+  const height = Math.ceil(rect.height);
+  const width = Math.ceil(rect.width);
+  if (height !== lastNotifiedHeight || width !== lastNotifiedWidth) {
+    lastNotifiedHeight = height;
+    lastNotifiedWidth = width;
+    app._send("ui/notifications/size-changed", { height, width }, true);
+  }
+}
+
+// Observe content size changes and notify host
+const resizeObserver = new ResizeObserver(() => notifySizeChanged());
+resizeObserver.observe(document.getElementById("app"));
+
+app.onhostcontextchanged = (ctx) => {
+  applyTheme(ctx);
+  applyContainerDimensions(ctx);
+};
 
 // Handle tool result (initial data passed by the server)
+let navigated = false;
 app.ontoolresult = (result) => {
+  // structuredContent is the primary data source (MCP Apps extension)
+  const sc = result?.structuredContent;
+  if (sc?.currentPath || sc?.knownDirs) {
+    if (sc.currentPath) currentPath = sc.currentPath;
+    if (sc.homeDir) homeDir = sc.homeDir;
+    if (sc.knownDirs) {
+      knownDirs = sc.knownDirs;
+      renderQuickAccess(knownDirs);
+    }
+    if (currentPath) { navigated = true; navigate(currentPath); }
+    return;
+  }
+  // Fallback: try parsing text content as JSON (backwards compat)
   const text = result?.content?.find(c => c.type === "text")?.text;
   if (!text) return;
   try {
     const data = JSON.parse(text);
     if (data.currentPath) currentPath = data.currentPath;
+    if (data.homeDir) homeDir = data.homeDir;
     if (data.knownDirs) {
       knownDirs = data.knownDirs;
       renderQuickAccess(knownDirs);
     }
-    if (currentPath) navigate(currentPath);
-  } catch {
-    // Not JSON initial data — ignore
-  }
+    if (currentPath) { navigated = true; navigate(currentPath); }
+  } catch { /* Not JSON — ignore */ }
 };
 
 // Connect and initialize
 app.connect().then(() => {
   const ctx = app.getHostContext();
   applyTheme(ctx);
+  applyContainerDimensions(ctx);
+  // Send initial size for flexible/unbounded hosts
+  requestAnimationFrame(() => notifySizeChanged());
+  // Fallback: if ontoolresult hasn't fired yet, bootstrap with home dir
+  setTimeout(() => {
+    if (!navigated) {
+      if (homeDir || currentPath) {
+        navigate(homeDir || currentPath);
+      } else {
+        // Last resort: if no home dir or path available, try filesystem root
+        showError("Could not determine home directory. Trying root...");
+        navigate(PLATFORM_ROOT);
+      }
+    }
+  }, 500);
 }).catch(err => {
   showError("Failed to connect: " + (err.message || err));
 });

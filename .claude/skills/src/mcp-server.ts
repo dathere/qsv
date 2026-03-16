@@ -797,7 +797,18 @@ class QsvMcpServer {
             }
 
             if (autoSyncEnabled) {
-              return successResult(`Auto-sync re-enabled. Working directory is now: ${currentDir}\n\nThe working directory will automatically follow the MCP client's root directory.`);
+              const autoMessage = `Auto-sync re-enabled. Working directory is now: ${currentDir}\n\nThe working directory will automatically follow the MCP client's root directory.`;
+
+              if (config.enableMcpApps && this.clientSupportsApps()) {
+                return {
+                  content: [{ type: "text" as const, text: autoMessage }],
+                  structuredContent: {
+                    completed: true,
+                    currentPath: currentDir,
+                  },
+                } as { content: Array<{ type: "text"; text: string }> };
+              }
+              return successResult(autoMessage);
             }
 
             // Auto-sync could not be enabled; surface a user-visible error.
@@ -816,7 +827,18 @@ class QsvMcpServer {
           this.manuallySetWorkingDir = true;
           this.workingDirConfirmed = true;
 
-          return successResult(`Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
+          const message = `Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`;
+
+          if (config.enableMcpApps && this.clientSupportsApps()) {
+            return {
+              content: [{ type: "text" as const, text: message }],
+              structuredContent: {
+                completed: true,
+                currentPath: newWorkingDir,
+              },
+            } as { content: Array<{ type: "text"; text: string }> };
+          }
+          return successResult(message);
         }
 
         if (name === "qsv_get_working_dir") {

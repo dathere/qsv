@@ -14,7 +14,7 @@
  * The MCP server comes separately from the .mcpb Desktop Extension.
  */
 
-import { createWriteStream, existsSync, readFileSync } from 'fs';
+import { createWriteStream, existsSync, readFileSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import archiver from 'archiver';
@@ -53,7 +53,6 @@ console.log('All required files present');
 
 // Remove existing output
 if (existsSync(OUTPUT_PATH)) {
-  const { rmSync } = await import('fs');
   rmSync(OUTPUT_PATH);
   console.log(`Removed existing ${OUTPUT_FILE}`);
 }
@@ -73,6 +72,11 @@ output.on('close', () => {
   console.log('  2. Ensure .mcpb Desktop Extension is also installed (provides qsv MCP tools)');
   console.log('  3. Start a new session to trigger SessionStart hook');
   console.log('');
+});
+
+output.on('error', (err) => {
+  console.error('Write failed:', err);
+  process.exit(1);
 });
 
 archive.on('error', (err) => {

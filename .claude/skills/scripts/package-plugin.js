@@ -68,9 +68,10 @@ output.on('close', () => {
   console.log(`\nArchive created: ${OUTPUT_FILE} (${sizeKB} KB)`);
   console.log('='.repeat(50));
   console.log('\nNext Steps:');
-  console.log('  1. Drag .plugin file into a Cowork session to install');
-  console.log('  2. Ensure .mcpb Desktop Extension is also installed (provides qsv MCP tools)');
-  console.log('  3. Start a new session to trigger SessionStart hook');
+  console.log(`  1. Install locally: bash scripts/install-cowork-plugin.sh ${OUTPUT_FILE}`);
+  console.log('  2. Or drag .plugin file into a Cowork session to install');
+  console.log('  3. Ensure .mcpb Desktop Extension is also installed (provides qsv MCP tools)');
+  console.log('  4. Start a new Cowork session to activate');
   console.log('');
 });
 

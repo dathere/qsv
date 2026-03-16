@@ -1008,17 +1008,18 @@ class QsvMcpServer {
       // Defense-in-depth: block browsing sensitive directories.
       // Canonicalize home via realpath to match targetDir (e.g. macOS
       // /Users/… vs /System/Volumes/Data/Users/…).
+      const home = homedir();
       let canonHome: string;
       try {
-        canonHome = await realpath(homedir());
+        canonHome = await realpath(home);
       } catch {
-        canonHome = homedir();
+        canonHome = home;
       }
       const caseInsensitive = process.platform === "darwin" || process.platform === "win32";
       const normalize = (p: string) => caseInsensitive ? p.toLowerCase() : p;
+      const target = normalize(targetDir);
       for (const sensitive of SENSITIVE_DIRS) {
         const blocked = normalize(resolve(canonHome, sensitive));
-        const target = normalize(targetDir);
         if (target === blocked || target.startsWith(blocked + sep)) {
           return errorResult(`Access to "${sensitive}" is not allowed for security reasons.`);
         }

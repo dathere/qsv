@@ -43,7 +43,7 @@ The qsv Desktop Extension packages the MCP Server as a `.mcpb` file (MCP Bundle)
 
    ```bash
    qsv --version
-   # Should output: qsv 16.1.0 (or later)
+   # Should output: qsv 17.0.0 (or later)
    ```
 
 ---
@@ -600,12 +600,11 @@ Yes! The extension is open source:
 
 ## Changelog
 
-### Version 16.1.2 (2026-02-18)
+### Version 17.0.0 (2026-03-03)
 - See [CHANGELOG.md](../../CHANGELOG.md) for full version history
 
 ---
 
 **Status**: ✅ Production Ready
 **Extension ID**: `qsv-data-wrangling`
-**Package Size**: ~11MB (compressed)
 **Supported Platforms**: macOS, Windows, Linux

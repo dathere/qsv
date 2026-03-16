@@ -21,7 +21,7 @@ The QSV MCP Server now supports **direct access to local tabular data files** (C
 
 This directory contains:
 
-1. **66 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
+1. **52 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
 2. **TypeScript Executor** - Complete implementation for running qsv skills
 3. **MCP Server with Filesystem Access** - Model Context Protocol server for Claude Desktop integration
 5. **Working Demos** - Practical demonstrations of the system
@@ -29,7 +29,7 @@ This directory contains:
 Each skill file provides:
 - **Command specification**: Binary, subcommand, arguments, and options (parsed with qsv-docopt)
 - **Rich descriptions**: Extracted from usage text
-- **Usage examples**: Real usage examples from documentation (417 total)
+- **Usage examples**: Real usage examples from documentation (180 total)
 - **Type information**: Inferred parameter types and validation
 - **Performance hints**: Memory usage, streaming capability, indexing benefits
 - **Links to tests**: For additional context and validation
@@ -54,7 +54,7 @@ Each skill file provides:
 4. **That's it!** qsv binary path is auto-detected, no manual configuration needed
 5. Restart Claude Desktop
 
-**New in 13.0.0**: Auto-detection finds qsv in standard locations (PATH, /usr/local/bin, ~/.cargo/bin, etc.)
+Auto-detection finds qsv in standard locations (PATH, /usr/local/bin, ~/.cargo/bin, etc.)
 
 **Documentation**: [docs/guides/DESKTOP_EXTENSION.md](./docs/guides/DESKTOP_EXTENSION.md)
 
@@ -126,36 +126,36 @@ npm run test-pipeline
 npm run mcpb:package
 ```
 
-## Generated Skills (66)
+## Generated Skills (52)
 
 | Category | Count | Skills |
 |----------|-------|--------|
-| **utility** | 38 | cat, clipboard, count, edit, headers, index, input, lens, partition, pro, pseudo, reverse, sniff, split, template, etc. |
-| **transformation** | 5 | apply, applydp, rename, replace, transpose |
-| **aggregation** | 4 | frequency, moarstats, stats, count |
-| **conversion** | 5 | excel, input, json, jsonl, to, tojsonl |
+| **utility** | 23 | cat, clipboard, count, headers, index, input, partition, pseudo, reverse, sniff, split, template, etc. |
+| **transformation** | 5 | rename, replace, transpose, etc. |
+| **aggregation** | 5 | frequency, moarstats, stats, count, pragmastat |
+| **conversion** | 5 | excel, json, jsonl, tojsonl, etc. |
 | **selection** | 3 | select, slice, sample |
 | **filtering** | 2 | search, searchset |
 | **formatting** | 3 | fmt, fixlengths, table |
 | **joining** | 2 | join, joinp |
 | **validation** | 3 | schema, safenames, validate |
-| **analysis** | 1 | describegpt |
+| **documentation** | 1 | describegpt |
 
 **Total Statistics:**
-- **Skills**: 66 commands
-- **Usage Examples**: 417 from documentation
-- **Options**: 837 command-line options
-- **Arguments**: 60 positional arguments
+- **Skills**: 52 commands
+- **Usage Examples**: 180 from documentation
+- **Options**: 607 command-line options
+- **Arguments**: 89 positional arguments
 
 ## Project Structure
 
 ```
 .claude/skills/
-├── qsv/                    # 66 skill JSON definitions
+├── qsv/                    # 52 skill JSON definitions
 │   ├── qsv-select.json
 │   ├── qsv-stats.json
 │   ├── qsv-moarstats.json
-│   └── ... (63 more)
+│   └── ... (49 more)
 ├── src/                    # TypeScript source
 │   ├── types.ts           # Type definitions
 │   ├── loader.ts          # Skill loading
@@ -163,9 +163,19 @@ npm run mcpb:package
 │   ├── mcp-server.ts      # MCP server implementation
 │   ├── mcp-tools.ts       # MCP tool definitions
 │   ├── mcp-filesystem.ts  # Filesystem resource provider
+│   ├── bm25-search.ts     # BM25 search index for tool discovery
+│   ├── config.ts          # Configuration and validation
+│   ├── converted-file-manager.ts  # LIFO cache for converted files
+│   ├── duckdb.ts          # DuckDB integration for SQL queries
+│   ├── update-checker.ts  # Version detection and skill regeneration
+│   ├── utils.ts           # Utility functions
+│   ├── version.ts         # Version management
 │   └── index.ts           # Public exports
 ├── scripts/
-│   └── install-mcp.js     # MCP installation helper
+│   ├── install-mcp.js     # MCP installation helper
+│   ├── package-mcpb.js    # MCPB packaging script
+│   ├── cowork-setup.js    # Claude Cowork integration setup
+│   └── run-tests.js       # Cross-platform test runner
 ├── dist/                   # Compiled JavaScript (gitignored)
 ├── package.json
 ├── tsconfig.json
@@ -186,7 +196,7 @@ npm run mcpb:package
 ```typescript
 import { SkillLoader, SkillExecutor } from './dist/index.js';
 
-// Load all 66 skills
+// Load all 52 skills
 const loader = new SkillLoader();
 await loader.loadAll();
 
@@ -326,7 +336,7 @@ await agent.chat("Remove duplicates from sales.csv");
 
 ## Integration with Claude Desktop (MCP Server)
 
-The QSV MCP Server exposes all 66 qsv commands to Claude Desktop through the Model Context Protocol.
+The QSV MCP Server exposes all 52 qsv commands to Claude Desktop through the Model Context Protocol.
 
 ### Quick Start
 
@@ -382,7 +392,7 @@ Claude will automatically:
 
 ### What's Available
 
-- **21 MCP Tools**: 10 core tools (search, config, filesystem, log, command, to_parquet, index, stats) + 11 common command tools
+- **23+ MCP Tools**: 10 core tools (search, config, filesystem, log, command, to_parquet, index, stats) + 13 common command tools. `qsv_browse_directory` is available when MCP Apps are supported.
 - **Local File Access**: Browse and process tabular data files (CSV, Excel, JSONL, etc.) directly from your filesystem
 - **File-Based Processing**: Works with your local files without uploading
 - **Natural Language Interface**: No command syntax needed
@@ -420,12 +430,6 @@ qsv --update-mcp-skills
 - [Complete API Documentation](./docs/reference/SKILLS_API.md)
 - [qsv Commands](https://github.com/dathere/qsv#commands)
 
-### Technical Documentation
-- [Design Document](./docs/design/AGENT_SKILLS_DESIGN.md)
-- [Integration Guide](./docs/design/AGENT_SKILLS_INTEGRATION.md)
-- [POC Summary](./docs/design/AGENT_SKILLS_POC_SUMMARY.md)
-- [Complete Summary](./docs/design/AGENT_SKILLS_COMPLETE_SUMMARY.md)
-
 ## Requirements
 
 - Node.js >= 18.0.0
@@ -438,11 +442,11 @@ MIT
 
 ---
 
-**Updated**: 2026-01-26
-**Version**: 15.0.0
+**Updated**: 2026-03-15
+**Version**: 17.0.0
 **Generator**: `qsv --update-mcp-skills`
-**Skills**: 66/66 commands (100%)
-**Usage Examples**: 417 from documentation
+**Skills**: 52 commands
+**Usage Examples**: 180 from documentation
 **Parsing**: qsv-docopt (robust, accurate)
 **Features**: MCP server, filesystem access, type-safe execution
 **Status**: ✅ Production Ready

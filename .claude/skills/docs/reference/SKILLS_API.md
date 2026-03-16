@@ -88,11 +88,11 @@ Get statistics about loaded skills.
 const stats = loader.getStats();
 console.log(stats);
 // {
-//   total: 51,
+//   total: 52,
 //   byCategory: { selection: 5, aggregation: 8, ... },
-//   totalExamples: 200,
-//   totalOptions: 450,
-//   totalArgs: 50
+//   totalExamples: 180,
+//   totalOptions: 607,
+//   totalArgs: 89
 // }
 ```
 
@@ -318,7 +318,7 @@ Check the skills directory:
 
 ```bash
 ls -la .claude/skills/qsv/
-# Should show 51 .json files
+# Should show 52 .json files
 ```
 
 ## License
@@ -328,6 +328,3 @@ MIT
 ## Links
 
 - [qsv Repository](https://github.com/dathere/qsv)
-- [Design Document](../design/AGENT_SKILLS_DESIGN.md)
-- [Integration Guide](../design/AGENT_SKILLS_INTEGRATION.md)
-- [Skill Generation POC](../design/AGENT_SKILLS_POC_SUMMARY.md)

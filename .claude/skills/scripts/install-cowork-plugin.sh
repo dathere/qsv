@@ -41,8 +41,7 @@ PLUGIN_JSON=$(unzip -p "$PLUGIN_FILE" .claude-plugin/plugin.json 2>/dev/null) ||
   exit 1
 }
 
-PLUGIN_NAME=$(echo "$PLUGIN_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
-PLUGIN_VERSION=$(echo "$PLUGIN_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+read -r PLUGIN_NAME PLUGIN_VERSION <<< "$(echo "$PLUGIN_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['name'], d['version'])")"
 
 if [ -z "$PLUGIN_NAME" ] || [ -z "$PLUGIN_VERSION" ]; then
   echo "Error: Could not read name/version from plugin.json"
@@ -62,7 +61,7 @@ if [ ! -d "$BASE_DIR" ]; then
   exit 1
 fi
 
-UPLOADS_DIR=$(find "$BASE_DIR" -type d -name "local-desktop-app-uploads" -path "*/cowork_plugins/marketplaces/*" 2>/dev/null | head -1)
+UPLOADS_DIR=$(find "$BASE_DIR" -type d -name "local-desktop-app-uploads" -path "*/cowork_plugins/marketplaces/*" -print0 2>/dev/null | xargs -0 stat -f '%m %N' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
 
 if [ -z "$UPLOADS_DIR" ]; then
   echo "Error: Could not find local-desktop-app-uploads directory."
@@ -82,6 +81,11 @@ echo "  Install path:   $DEST"
 
 # --- Install the plugin files ---
 if [ -d "$DEST" ]; then
+  # Sanity check: ensure DEST is inside UPLOADS_DIR before removing
+  if [[ "$DEST" != "$UPLOADS_DIR"/* ]]; then
+    echo "Error: Install path '$DEST' is not inside uploads directory '$UPLOADS_DIR'"
+    exit 1
+  fi
   echo "  Replacing existing installation..."
   rm -rf "$DEST"
 fi
@@ -92,27 +96,32 @@ echo "  Extracted plugin files"
 
 # --- Update marketplace.json ---
 if [ -f "$MARKETPLACE_JSON" ]; then
+  MARKETPLACE_JSON="$MARKETPLACE_JSON" PLUGIN_NAME="$PLUGIN_NAME" PLUGIN_VERSION="$PLUGIN_VERSION" \
   python3 -c "
-import json, sys
+import json, os
 
-with open('$MARKETPLACE_JSON', 'r') as f:
+mj = os.environ['MARKETPLACE_JSON']
+name = os.environ['PLUGIN_NAME']
+version = os.environ['PLUGIN_VERSION']
+
+with open(mj, 'r') as f:
     data = json.load(f)
 
 plugins = data.get('plugins', [])
 
 # Remove existing entry for this plugin name
-plugins = [p for p in plugins if p.get('name') != '$PLUGIN_NAME']
+plugins = [p for p in plugins if p.get('name') != name]
 
 # Add new entry
 plugins.append({
-    'name': '$PLUGIN_NAME',
-    'version': '$PLUGIN_VERSION',
-    'source': './$PLUGIN_NAME'
+    'name': name,
+    'version': version,
+    'source': './' + name
 })
 
 data['plugins'] = plugins
 
-with open('$MARKETPLACE_JSON', 'w') as f:
+with open(mj, 'w') as f:
     json.dump(data, f, indent=2)
     f.write('\n')
 
@@ -124,24 +133,30 @@ fi
 
 # --- Update installed_plugins.json ---
 if [ -f "$INSTALLED_JSON" ]; then
+  INSTALLED_JSON="$INSTALLED_JSON" PLUGIN_NAME="$PLUGIN_NAME" PLUGIN_VERSION="$PLUGIN_VERSION" DEST="$DEST" \
   python3 -c "
-import json, datetime
+import json, datetime, os
 
-with open('$INSTALLED_JSON', 'r') as f:
+ij = os.environ['INSTALLED_JSON']
+name = os.environ['PLUGIN_NAME']
+version = os.environ['PLUGIN_VERSION']
+dest = os.environ['DEST']
+
+with open(ij, 'r') as f:
     data = json.load(f)
 
-key = '$PLUGIN_NAME@local-desktop-app-uploads'
+key = name + '@local-desktop-app-uploads'
 now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
 
 data.setdefault('plugins', {})[key] = [{
     'scope': 'user',
-    'installPath': '$DEST',
-    'version': '$PLUGIN_VERSION',
+    'installPath': dest,
+    'version': version,
     'installedAt': now,
     'lastUpdated': now
 }]
 
-with open('$INSTALLED_JSON', 'w') as f:
+with open(ij, 'w') as f:
     json.dump(data, f, indent=2)
     f.write('\n')
 

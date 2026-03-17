@@ -58,15 +58,7 @@ Skip this if the user provides absolute file paths or if you're unsure of the wo
 
 ## Analysis Capabilities
 
-| Task | Primary Tool | Notes |
-|------|-------------|-------|
-| Column statistics | `qsv_stats` / `qsv_moarstats` | Mean, median, mode, stddev, quartiles |
-| Value distributions | `qsv_frequency` | Top N values per column |
-| Data quality check | `qsv_stats` | Null counts, cardinality, types |
-| SQL aggregation | `qsv_sqlp` | GROUP BY, HAVING, window functions |
-| Cross-file analysis | `qsv_sqlp` / `qsv_joinp` | JOIN multiple datasets |
-| Pattern search | `qsv_search` | Regex filtering |
-| Random sampling | `qsv_sample` | Representative subset |
+See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key analysis tools: `qsv_stats`/`qsv_moarstats` (column statistics), `qsv_frequency` (distributions), `qsv_sqlp` (SQL aggregation, joins, window functions), `qsv_search` (regex filtering), `qsv_sample` (random sampling).
 
 ## Guidelines
 

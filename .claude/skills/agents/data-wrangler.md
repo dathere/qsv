@@ -58,22 +58,7 @@ Skip this if the user provides absolute file paths or if you're unsure of the wo
 
 ## Transformation Capabilities
 
-| Task | Primary Tool | Alternative |
-|------|-------------|-------------|
-| Select/reorder columns | `qsv_select` | `qsv_sqlp` |
-| Rename columns | `qsv_command` (rename) | `qsv_command` (safenames) |
-| Filter rows | `qsv_search` | `qsv_sqlp` |
-| Sort data | `qsv_command` (sort) | `qsv_sqlp` ORDER BY |
-| Remove duplicates | `qsv_command` (dedup) | `qsv_sqlp` DISTINCT |
-| String operations | `qsv_command` (apply operations) | `qsv_sqlp` |
-| Join datasets | `qsv_joinp` | `qsv_sqlp` JOIN |
-| Concatenate files | `qsv_cat` | - |
-| Reshape wide->long | `qsv_command` (melt) | `qsv_sqlp` UNPIVOT |
-| Reshape long->wide | `qsv_command` (pivotp) | `qsv_sqlp` PIVOT |
-| Format conversion | `qsv_command` (to, tojsonl, excel, fmt) | - |
-| Fill empty cells | `qsv_command` (apply emptyreplace) | `qsv_sqlp` COALESCE |
-| Add computed columns | `qsv_sqlp` | `qsv_command` (luau map) |
-| Split files | `qsv_command` (split, partition) | - |
+See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key transform tools: `qsv_select` (columns), `qsv_search` (filter rows), `qsv_command` (sort, dedup, apply, rename, safenames, melt, pivotp, to, tojsonl, fmt, split, partition), `qsv_joinp` (joins), `qsv_cat` (concatenate), `qsv_sqlp` (complex transforms, computed columns).
 
 ## Multi-Step Best Practices
 

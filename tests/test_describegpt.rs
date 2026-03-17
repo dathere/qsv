@@ -2230,6 +2230,11 @@ fn describegpt_score_high_threshold_triggers_retries() {
     let got = wrk.output(&mut cmd);
     let stderr = String::from_utf8_lossy(&got.stderr);
 
+    // Command should still succeed (uses best query even when threshold not met)
+    assert!(
+        got.status.success(),
+        "Command should succeed even with unreachable threshold. stderr: {stderr}"
+    );
     // With threshold 101 (impossible to reach), must retry and show warning
     assert!(
         stderr.contains("[attempt 1]"),
@@ -2383,6 +2388,11 @@ fn describegpt_score_duckdb_high_threshold_retries() {
     let got = wrk.output(&mut cmd);
     let stderr = String::from_utf8_lossy(&got.stderr);
 
+    // Command should still succeed (uses best query even when threshold not met)
+    assert!(
+        got.status.success(),
+        "Command should succeed even with unreachable DuckDB threshold. stderr: {stderr}"
+    );
     // With threshold 101 and DuckDB, must attempt scoring and retry
     assert!(
         stderr.contains("SQL score:"),

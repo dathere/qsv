@@ -3696,6 +3696,17 @@ fn run_inference_options(
             let mut best_sql_template = sql_query.clone();
             let mut best_score: u32 = 0;
 
+            // Use a targeted regex to only replace file_stem when it appears as a
+            // table name (after FROM/JOIN/INTO/UPDATE), optionally quoted, avoiding
+            // corruption of column names or literals that contain the file stem.
+            // NOTE: INPUT_TABLE_NAME must not contain regex replacement-special chars
+            // (e.g. `$`); the current value `{INPUT_TABLE_NAME}` is safe.
+            let table_re = regex::Regex::new(&format!(
+                r#"(?i)\b(FROM|JOIN|INTO|UPDATE)\s+["'`]?{}["'`]?(?:\b|$)"#,
+                regex::escape(file_stem)
+            ))
+            .expect("Invalid table-name regex");
+
             for attempt in 1..=max_retries.saturating_add(1) {
                 match score_sql_query(input_path, &scoring_sql, use_duckdb) {
                     Ok((score, rating, report_json)) => {
@@ -3706,15 +3717,6 @@ fn run_inference_options(
 
                         if score > best_score {
                             best_score = score;
-                            // Use a targeted regex to only replace file_stem when it
-                            // appears as a table name (after FROM/JOIN), avoiding
-                            // corruption of column names or literals that happen to
-                            // contain the file stem as a substring.
-                            let table_re = regex::Regex::new(&format!(
-                                r"(?i)\b(FROM|JOIN)\s+{}(?:\b|$)",
-                                regex::escape(file_stem)
-                            ))
-                            .expect("Invalid table-name regex");
                             best_sql_template = table_re
                                 .replace_all(&scoring_sql, format!("${{1}} {INPUT_TABLE_NAME}"))
                                 .to_string();

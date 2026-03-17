@@ -64,13 +64,14 @@
 ## Quality Assessment Workflow
 
 ```
-1. sniff           -> Detect format, encoding, preamble issues
-2. count           -> Establish baseline row count
-3. headers         -> Verify expected columns exist
-4. stats --cardinality --stats-jsonl -> Full statistical profile
-5. frequency       -> Value distribution for categorical columns
-6. validate        -> Schema validation (if schema available)
-7. fixlengths      -> Pad short rows to uniform length (compare count before/after to detect ragged rows)
+1. index           -> Enable fast random access for subsequent commands
+2. sniff           -> Detect format, encoding, preamble issues
+3. count           -> Establish baseline row count
+4. headers         -> Verify expected columns exist
+5. stats --cardinality --stats-jsonl -> Full statistical profile
+6. frequency       -> Value distribution for categorical columns
+7. validate        -> Schema validation (if schema available)
+8. fixlengths      -> Pad short rows to uniform length (compare count before/after to detect ragged rows)
 ```
 
 ## Quality Report Checklist

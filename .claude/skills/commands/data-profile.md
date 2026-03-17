@@ -25,13 +25,13 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 ## Steps
 
-1. **Detect format**: Run `qsv_sniff` on the file to detect delimiter, encoding, preamble, and row count estimate.
+1. **Index**: Run `qsv_index` on the file for fast random access in subsequent steps.
 
-2. **Count rows**: Run `qsv_count` to get the exact row count.
+2. **Detect format**: Run `qsv_sniff` on the file to detect delimiter, encoding, preamble, and row count estimate.
 
-3. **Get headers**: Run `qsv_headers` to list all column names and positions.
+3. **Count rows**: Run `qsv_count` to get the exact row count.
 
-4. **Create index**: Run `qsv_index` on the file for fast access in subsequent steps.
+4. **Get headers**: Run `qsv_headers` to list all column names and positions.
 
 5. **Compute statistics**: Run `qsv_stats` with `cardinality: true` and `stats_jsonl: true` to generate full column statistics and cache them. Include `--everything` for comprehensive stats (mean, median, mode, stddev, quartiles, etc.).
 

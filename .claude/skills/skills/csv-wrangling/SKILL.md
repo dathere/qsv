@@ -5,8 +5,8 @@
 Always follow this sequence when processing CSV data:
 
 0. **Setup (Cowork)** - `qsv_get_working_dir` (check current dir) -> `qsv_set_working_dir` (sync to workspace root if needed)
-1. **Discover** - `sniff` (detect format, encoding, delimiter) -> `headers` -> `count`
-2. **Index** - `index` (enables fast random access for subsequent commands)
+1. **Index** - `index` (enables fast random access for subsequent commands)
+2. **Discover** - `sniff` (detect format, encoding, delimiter) -> `headers` -> `count`
 3. **Profile** - `stats --cardinality --stats-jsonl` (creates cache used by smart commands)
 4. **Inspect** - `slice --len 5` (preview rows), `frequency --frequency-jsonl` (value distributions with cache for reuse)
 5. **Transform** - select, sort, dedup, apply, rename, search, etc.

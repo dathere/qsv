@@ -23,11 +23,13 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 ## Steps
 
-1. **Assess current state**: Run `qsv_sniff` and `qsv_count` to understand the file format and size.
+1. **Index**: Run `qsv_index` on the file for fast random access in subsequent steps.
 
-2. **Check headers**: Run `qsv_headers` to inspect column names. If names contain spaces, special characters, or are duplicated, plan to use `safenames`.
+2. **Assess current state**: Run `qsv_sniff` and `qsv_count` to understand the file format and size.
 
-3. **Build cleaning steps**: Apply these operations in order (skip any that aren't needed based on assessment):
+3. **Check headers**: Run `qsv_headers` to inspect column names. If names contain spaces, special characters, or are duplicated, plan to use `safenames`.
+
+4. **Build cleaning steps**: Apply these operations in order (skip any that aren't needed based on assessment):
 
    a. **`safenames`** - Normalize column names to safe, ASCII-only identifiers (removes spaces, special chars, ensures uniqueness)
 
@@ -39,9 +41,9 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
    e. **`validate`** - If a JSON Schema is available, validate against it and report violations.
 
-4. **Verify results**: Run `qsv_count` on the output to confirm row count. Run `qsv_stats` with `cardinality: true` to verify improvements.
+5. **Verify results**: Run `qsv_count` on the output to confirm row count. Run `qsv_stats` with `cardinality: true` to verify improvements.
 
-5. **Report changes**: Summarize what was cleaned:
+6. **Report changes**: Summarize what was cleaned:
    - Headers renamed (before -> after)
    - Rows with wrong field count (fixed by fixlengths)
    - Duplicate rows removed

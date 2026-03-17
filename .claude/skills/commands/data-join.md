@@ -35,9 +35,9 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 ## Steps
 
-1. **Inspect both files**: Run `qsv_headers` on both files to identify column names. Determine which columns to join on.
+1. **Index both files**: Run `qsv_index` on both files for fast random access.
 
-2. **Index both files**: Run `qsv_index` on both files.
+2. **Inspect both files**: Run `qsv_headers` on both files to identify column names. Determine which columns to join on.
 
 3. **Profile join columns**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` on both files. Check the cardinality of join columns to determine optimal table order.
 

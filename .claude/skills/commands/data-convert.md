@@ -45,9 +45,9 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 ## Steps
 
-1. **Detect source format**: Run `qsv_sniff` to identify the input format, delimiter, and encoding.
+1. **Index**: Run `qsv_index` on the file for fast random access in subsequent steps.
 
-2. **Index if CSV**: If the input is CSV/TSV, run `qsv_index` for faster processing.
+2. **Detect source format**: Run `qsv_sniff` to identify the input format, delimiter, and encoding.
 
 3. **Convert**: Use the appropriate command based on the target format:
 

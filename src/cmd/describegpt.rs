@@ -244,6 +244,13 @@ describegpt options:
     --session-len <n>      Maximum number of recent messages to keep in session context before
                            summarizing older messages. Only used when --session is specified.
                            [default: 10]
+    --no-score-sql         Disable scoresql validation of generated SQL queries before execution.
+                           By default, when --prompt generates a SQL query and --sql-results is set,
+                           the query is scored and iteratively improved if below threshold.
+    --score-threshold <n>  Minimum scoresql score (0-100) for a SQL query to be accepted.
+                           [default: 50]
+    --score-max-retries <n>  Max LLM re-prompts to improve a low-scoring SQL query.
+                           [default: 3]
 
                            LLM API OPTIONS:
     -u, --base-url <url>   The LLM API URL. Supports APIs & local LLMs compatible with
@@ -398,53 +405,56 @@ enum OutputFormat {
 }
 #[derive(Debug, Deserialize)]
 struct Args {
-    arg_input:             Option<String>,
-    flag_dictionary:       bool,
-    flag_description:      bool,
-    flag_tags:             bool,
-    flag_all:              bool,
-    flag_num_tags:         u16,
-    flag_tag_vocab:        Option<String>,
+    arg_input:              Option<String>,
+    flag_dictionary:        bool,
+    flag_description:       bool,
+    flag_tags:              bool,
+    flag_all:               bool,
+    flag_num_tags:          u16,
+    flag_tag_vocab:         Option<String>,
     #[allow(dead_code)]
-    flag_cache_dir:        String,
+    flag_cache_dir:         String,
     #[allow(dead_code)]
-    flag_ckan_api:         String,
+    flag_ckan_api:          String,
     #[allow(dead_code)]
-    flag_ckan_token:       Option<String>,
-    flag_stats_options:    String,
-    flag_freq_options:     String,
-    flag_enum_threshold:   usize,
-    flag_num_examples:     u16,
-    flag_truncate_str:     usize,
-    flag_prompt:           Option<String>,
-    flag_sql_results:      Option<String>,
-    flag_prompt_file:      Option<String>,
-    flag_sample_size:      u16,
-    flag_fewshot_examples: bool,
-    flag_base_url:         Option<String>,
-    flag_model:            Option<String>,
-    flag_language:         Option<String>,
-    flag_addl_props:       Option<String>,
-    flag_api_key:          Option<String>,
-    flag_max_tokens:       u32,
-    flag_timeout:          u16,
-    flag_user_agent:       Option<String>,
-    flag_export_prompt:    Option<String>,
-    flag_no_cache:         bool,
-    flag_disk_cache_dir:   Option<String>,
-    flag_redis_cache:      bool,
-    flag_fresh:            bool,
-    flag_forget:           bool,
-    flag_flush_cache:      bool,
-    flag_prepare_context:  bool,
-    flag_process_response: bool,
-    flag_format:           Option<String>,
-    flag_output:           Option<String>,
-    flag_quiet:            bool,
-    flag_addl_cols:        bool,
-    flag_addl_cols_list:   Option<String>,
-    flag_session:          Option<String>,
-    flag_session_len:      usize,
+    flag_ckan_token:        Option<String>,
+    flag_stats_options:     String,
+    flag_freq_options:      String,
+    flag_enum_threshold:    usize,
+    flag_num_examples:      u16,
+    flag_truncate_str:      usize,
+    flag_prompt:            Option<String>,
+    flag_sql_results:       Option<String>,
+    flag_prompt_file:       Option<String>,
+    flag_sample_size:       u16,
+    flag_fewshot_examples:  bool,
+    flag_base_url:          Option<String>,
+    flag_model:             Option<String>,
+    flag_language:          Option<String>,
+    flag_addl_props:        Option<String>,
+    flag_api_key:           Option<String>,
+    flag_max_tokens:        u32,
+    flag_timeout:           u16,
+    flag_user_agent:        Option<String>,
+    flag_export_prompt:     Option<String>,
+    flag_no_cache:          bool,
+    flag_disk_cache_dir:    Option<String>,
+    flag_redis_cache:       bool,
+    flag_fresh:             bool,
+    flag_forget:            bool,
+    flag_flush_cache:       bool,
+    flag_prepare_context:   bool,
+    flag_process_response:  bool,
+    flag_format:            Option<String>,
+    flag_output:            Option<String>,
+    flag_quiet:             bool,
+    flag_addl_cols:         bool,
+    flag_addl_cols_list:    Option<String>,
+    flag_session:           Option<String>,
+    flag_session_len:       usize,
+    flag_no_score_sql:      bool,
+    flag_score_threshold:   u32,
+    flag_score_max_retries: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -764,6 +774,72 @@ fn parse_language_option(language: Option<&String>) -> (bool, f64, Option<String
 // Check if DuckDB should be used based on environment variable
 fn should_use_duckdb() -> bool {
     env::var(QSV_DUCKDB_PATH_ENV).is_ok_and(|val| !val.is_empty())
+}
+
+/// Score a SQL query using the scoresql command.
+/// Returns Ok((score, rating, report_json)) on success.
+fn score_sql_query(
+    input_path: &str,
+    sql_query: &str,
+    use_duckdb: bool,
+) -> CliResult<(u32, String, String)> {
+    let qsv_path = std::env::current_exe()?;
+    let mut cmd = Command::new(qsv_path);
+    cmd.arg("scoresql").arg(input_path).arg("--json").arg("-q");
+    if use_duckdb {
+        cmd.arg("--duckdb");
+    }
+    cmd.arg(sql_query);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to run scoresql: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return fail_clierror!("scoresql failed: {stderr}");
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse scoresql JSON: {e}"))?;
+
+    let score = report["score"].as_u64().unwrap_or(0) as u32;
+    let rating = report["rating"].as_str().unwrap_or("Unknown").to_string();
+
+    Ok((score, rating, stdout))
+}
+
+/// Build a prompt asking the LLM to improve a low-scoring SQL query.
+fn build_score_refinement_prompt(
+    sql_query: &str,
+    score_report_json: &str,
+    attempt: u32,
+    max_retries: u32,
+    table_name: &str,
+) -> String {
+    let report: serde_json::Value = serde_json::from_str(score_report_json).unwrap_or_default();
+    let score = report["score"].as_u64().unwrap_or(0);
+    let rating = report["rating"].as_str().unwrap_or("Unknown");
+    let suggestions: Vec<&str> = report["suggestions"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+    let suggestions_text = suggestions
+        .iter()
+        .enumerate()
+        .map(|(i, s)| format!("{}. {s}", i + 1))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "The SQL query scored {score}/100 ({rating}), below the acceptable threshold. Retry \
+         {attempt} of {max_retries}.\n\nCurrent \
+         SQL:\n```sql\n{sql_query}\n```\n\nSuggestions:\n{suggestions_text}\n\nImprove the SQL \
+         query addressing these suggestions. Use `{table_name}` as the table name. Return ONLY \
+         the improved SQL in a ```sql code block. Keep the same logic/results, optimize structure \
+         and performance."
+    )
 }
 
 // Get DuckDB binary path from environment variable
@@ -3266,7 +3342,7 @@ fn run_inference_options(
 
     let mut total_json_output: serde_json::Value = json!({});
     let mut prompt: String;
-    let mut system_prompt: String;
+    let mut system_prompt = String::new();
     let mut messages: serde_json::Value;
     let mut data_dict: CompletionResponse = CompletionResponse::default();
     let mut completion_response: CompletionResponse = CompletionResponse::default();
@@ -3589,6 +3665,178 @@ fn run_inference_options(
             }
             return fail_clierror!("Failed to extract SQL query from custom prompt response");
         };
+
+        // Score SQL before execution (enabled by default, disable with --no-score-sql)
+        // When polars feature is disabled, scoresql only works with --duckdb
+        #[cfg(feature = "polars")]
+        let can_score = !args.flag_no_score_sql;
+        #[cfg(not(feature = "polars"))]
+        let can_score = !args.flag_no_score_sql && should_use_duckdb();
+
+        if can_score {
+            let use_duckdb = should_use_duckdb();
+            let threshold = args.flag_score_threshold;
+            let max_retries = args.flag_score_max_retries.min(100);
+            if args.flag_score_max_retries > 100 {
+                print_status(
+                    &format!(
+                        "  Warning: --score-max-retries {} clamped to 100.",
+                        args.flag_score_max_retries
+                    ),
+                    None,
+                );
+            }
+
+            // Replace {INPUT_TABLE_NAME} with file stem for scoresql
+            let file_stem = Path::new(input_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("input");
+            let mut scoring_sql = sql_query.replace(INPUT_TABLE_NAME, file_stem);
+            let mut best_sql_template = sql_query.clone();
+            let mut best_score: u32 = 0;
+
+            // Use a targeted regex to only replace file_stem when it appears as a
+            // table name (after FROM/JOIN/INTO/UPDATE), optionally quoted, avoiding
+            // corruption of column names or literals that contain the file stem.
+            // NOTE: INPUT_TABLE_NAME must not contain regex replacement-special chars
+            // (e.g. `$`); the current value `{INPUT_TABLE_NAME}` is safe.
+            let table_re = regex::Regex::new(&format!(
+                r#"(?i)\b(FROM|JOIN|INTO|UPDATE)\s+["'`]?{}["'`]?(?:\b|$)"#,
+                regex::escape(file_stem)
+            ))
+            .expect("Invalid table-name regex");
+
+            for attempt in 1..=max_retries.saturating_add(1) {
+                match score_sql_query(input_path, &scoring_sql, use_duckdb) {
+                    Ok((score, rating, report_json)) => {
+                        print_status(
+                            &format!("  SQL score: {score}/100 ({rating}) [attempt {attempt}]"),
+                            None,
+                        );
+
+                        if score > best_score {
+                            best_score = score;
+                            best_sql_template = table_re
+                                .replace_all(&scoring_sql, format!("${{1}} {INPUT_TABLE_NAME}"))
+                                .to_string();
+                        }
+
+                        if score >= threshold || attempt > max_retries {
+                            if score < threshold {
+                                print_status(
+                                    &format!(
+                                        "  Warning: Best SQL score {best_score}/100 below \
+                                         threshold {threshold} after {max_retries} retries. Using \
+                                         best query."
+                                    ),
+                                    None,
+                                );
+                            }
+                            // Restore {INPUT_TABLE_NAME} so the existing replacement logic works
+                            sql_query = best_sql_template.clone();
+                            break;
+                        }
+
+                        // Ask LLM to improve — use the file_stem as the table
+                        // name in the prompt so the LLM returns SQL we can score directly
+                        let refinement_prompt = build_score_refinement_prompt(
+                            &scoring_sql,
+                            &report_json,
+                            attempt,
+                            max_retries,
+                            file_stem,
+                        );
+                        let refinement_messages = json!([
+                            {"role": "system", "content": &system_prompt},
+                            {"role": "user", "content": refinement_prompt}
+                        ]);
+
+                        match get_completion(
+                            args,
+                            &client,
+                            &model,
+                            api_key,
+                            &refinement_messages,
+                            PromptType::Prompt,
+                        ) {
+                            Ok(response) => {
+                                if let Some(new_sql) =
+                                    regex_oncelock!(r"(?s)```sql\s*\n(.*?)\n\s*```")
+                                        .captures(&response.response)
+                                        .and_then(|caps| {
+                                            caps.get(1).map(|m| m.as_str().trim().to_string())
+                                        })
+                                {
+                                    // Use LLM's SQL directly for scoring — the refinement
+                                    // prompt instructs the LLM to use `file_stem` as the
+                                    // table name
+                                    scoring_sql = new_sql;
+                                } else {
+                                    print_status(
+                                        "  LLM refinement had no SQL block. Using best query.",
+                                        None,
+                                    );
+                                    sql_query = best_sql_template.clone();
+                                    break;
+                                }
+                            },
+                            Err(e) => {
+                                log::warn!("SQL refinement LLM call failed: {e}");
+                                sql_query = best_sql_template.clone();
+                                break;
+                            },
+                        }
+                    },
+                    Err(e) => {
+                        // scoresql itself failed — SQL is likely invalid, counts as score=0
+                        log::warn!("scoresql failed: {e}");
+                        if attempt > max_retries {
+                            print_status(
+                                "  scoresql failed on all attempts. Proceeding with original \
+                                 query.",
+                                None,
+                            );
+                            break;
+                        }
+                        // Feed the error to the LLM as feedback
+                        let error_prompt = format!(
+                            "The SQL query failed \
+                             validation:\n```sql\n{scoring_sql}\n```\n\nError: {e}\n\nFix the SQL \
+                             query. Use `{file_stem}` as the table name. Return ONLY the \
+                             corrected SQL in a ```sql code block."
+                        );
+                        let error_messages = json!([
+                            {"role": "system", "content": &system_prompt},
+                            {"role": "user", "content": error_prompt}
+                        ]);
+                        match get_completion(
+                            args,
+                            &client,
+                            &model,
+                            api_key,
+                            &error_messages,
+                            PromptType::Prompt,
+                        ) {
+                            Ok(response) => {
+                                if let Some(new_sql) =
+                                    regex_oncelock!(r"(?s)```sql\s*\n(.*?)\n\s*```")
+                                        .captures(&response.response)
+                                        .and_then(|caps| {
+                                            caps.get(1).map(|m| m.as_str().trim().to_string())
+                                        })
+                                {
+                                    scoring_sql = new_sql;
+                                } else {
+                                    break;
+                                }
+                            },
+                            Err(_) => break,
+                        }
+                    },
+                }
+            }
+        }
 
         // Check if DuckDB should be used
         if should_use_duckdb() {

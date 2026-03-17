@@ -586,3 +586,27 @@ fn searchset_exact_no_match_substring() {
     assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
+
+#[test]
+fn searchset_comment_lines() {
+    let wrk = Workdir::new("searchset_comment_lines");
+    wrk.create("data.csv", data(true));
+    // regexset file with comment lines (starting with #) and indented comments
+    wrk.create_from_string(
+        "regexset.txt",
+        "# This is a comment\n^foo\n  # indented comment\nbar$\n# another comment\n",
+    );
+    let mut cmd = wrk.command("searchset");
+    cmd.arg("regexset.txt").arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Should match the same rows as the regular regexset (^foo and bar$),
+    // ignoring all comment lines
+    let expected = vec![
+        svec!["h1", "h2"],
+        svec!["foobar", "barfoo"],
+        svec!["barfoo", "foobar"],
+    ];
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+}

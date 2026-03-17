@@ -21,10 +21,10 @@ When a quality issue is found, choose the right fix:
 | Ragged rows | High | `fixlengths` | Never — breaks downstream tools |
 | Wrong encoding | High | `input` | File is already UTF-8 (check with `sniff`) |
 | Unsafe column names | Medium | `safenames` | Headers already safe (no spaces/special chars) |
-| Leading/trailing whitespace | Medium | `apply operations trim` | Stats show no difference between `min`/`max` lengths and trimmed values |
+| Leading/trailing whitespace | Medium | `sqlp` with `TRIM(col)` | Stats show no difference between `min`/`max` lengths and trimmed values |
 | Duplicate rows | Medium | `dedup` (or `extdedup` for >1GB) | `stats --cardinality` on key columns shows all unique |
-| Inconsistent case | Low | `apply operations upper/lower` | `frequency` shows no case variants |
-| Empty values | Low | `apply emptyreplace --replacement "N/A"` | Nulls are semantically meaningful |
+| Inconsistent case | Low | `sqlp` with `UPPER(col)` or `LOWER(col)` | `frequency` shows no case variants |
+| Empty values | Low | `sqlp` with `COALESCE(NULLIF(col, ''), 'N/A')` | Nulls are semantically meaningful |
 | Invalid rows | Low | `validate schema.json` + filter | No schema available |
 
 ## Fix Ordering
@@ -35,7 +35,7 @@ Always apply fixes in this order to avoid cascading issues:
 1. input          (encoding — must be UTF-8 before anything else)
 2. safenames      (headers — fixes names before column references)
 3. fixlengths     (structure — ensures consistent field counts)
-4. apply operations trim  (whitespace — clean values before dedup)
+4. sqlp with TRIM()    (whitespace — clean values before dedup)
 5. dedup          (duplicates — remove after trimming so "foo " and "foo" match)
 6. validate       (validation — check against schema last)
 ```

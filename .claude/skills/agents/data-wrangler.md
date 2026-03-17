@@ -58,7 +58,7 @@ Skip this if the user provides absolute file paths or if you're unsure of the wo
 
 ## Transformation Capabilities
 
-See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key transform tools: `qsv_select` (columns), `qsv_search` (filter rows), `qsv_command` (sort, dedup, apply, rename, safenames, pivotp, to, tojsonl, fmt, split, partition), `qsv_joinp` (joins), `qsv_cat` (concatenate), `qsv_sqlp` (complex transforms, computed columns).
+See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key transform tools: `qsv_select` (columns), `qsv_search` (filter rows), `qsv_command` (sort, dedup, rename, replace, safenames, pivotp, tojsonl, fmt, split, partition), `qsv_joinp` (joins), `qsv_cat` (concatenate), `qsv_sqlp` (complex transforms, computed columns, find/replace, case conversion).
 
 ## Multi-Step Best Practices
 

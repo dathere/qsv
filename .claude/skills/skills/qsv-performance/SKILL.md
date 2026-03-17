@@ -59,7 +59,7 @@ For CSV > 10MB needing SQL queries, convert to Parquet first with `qsv_to_parque
 `frequency`, `join`, `schema`, `tojsonl`
 
 ### Streaming Commands (constant memory)
-Everything else - `select`, `search`, `slice`, `apply`, `count`, etc.
+Everything else - `select`, `search`, `slice`, `replace`, `count`, etc.
 
 ## Large File Decision Tree
 

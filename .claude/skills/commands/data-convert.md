@@ -38,11 +38,6 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 | JSONL | `tojsonl` | `.jsonl` |
 | JSON | `slice --json` | `.json` |
 | Parquet | `qsv_to_parquet` (core tool) | `.parquet` |
-| Excel XLSX | `to xlsx` (via qsv_command) | `.xlsx` |
-| ODS | `to ods` (via qsv_command) | `.ods` |
-| PostgreSQL | `to postgres` (via qsv_command) | - |
-| SQLite | `to sqlite` (via qsv_command) | `.db` |
-| Data Package | `to datapackage` (via qsv_command) | `.json` |
 
 ## Steps
 
@@ -54,17 +49,11 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
    - **To CSV** (from Excel/JSONL): The MCP server handles this automatically when you pass non-CSV files to any qsv tool. Use `qsv_command` with `excel` for explicit control over sheet selection.
 
-   - **To TSV**: Use `qsv_command` with `cmd: "fmt"` and `--out-delimiter '\t'`.
+   - **To TSV**: Use `qsv_command` with `command: "fmt"`, `options: {"out-delimiter": "\t"}`.
 
-   - **To JSONL**: Use `qsv_command` with `cmd: "tojsonl"`.
+   - **To JSONL**: Use `qsv_command` with `command: "tojsonl"`.
 
    - **To Parquet**: Use `qsv_to_parquet` (dedicated core tool, preferred over `qsv_command`).
-
-   - **To Excel XLSX**: Use `qsv_command` with `cmd: "to"`, `sub_cmd: "xlsx"`.
-
-   - **To ODS**: Use `qsv_command` with `cmd: "to"`, `sub_cmd: "ods"`.
-
-   - **To SQLite**: Use `qsv_command` with `cmd: "to"`, `sub_cmd: "sqlite"`.
 
 4. **Verify output**: Run `qsv_count` on the output (if CSV-based) to confirm row count matches input.
 

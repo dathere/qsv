@@ -190,11 +190,11 @@ The extension provides MCP tools covering:
 - **Data Selection**: select, slice, sample
 - **Statistics**: stats, moarstats, frequency
 - **Filtering**: search, searchset, dedup
-- **Transformation**: apply, rename, replace
+- **Transformation**: rename, replace, sqlp
 - **Aggregation**: pivotp, pragmastat
 - **Joining**: join, joinp
 - **Validation**: validate, schema, safenames
-- **Conversion**: excel, json, jsonl, to
+- **Conversion**: excel, json, jsonl, tojsonl
 - **Formatting**: fmt, table, fixlengths
 - **Filesystem**: list_files, set_working_dir, get_working_dir
 
@@ -495,7 +495,6 @@ The extension uses skill definitions from `.claude/skills/qsv/*.json`.
 - Results are saved as CSV files
 - Use qsv to convert to other formats:
   ```bash
-  qsv to xlsx input.csv
   qsv sqlp input.csv 'SELECT * FROM input' --format parquet --output output.parquet
   ```
 

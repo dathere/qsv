@@ -24,7 +24,7 @@ When a quality issue is found, choose the right fix:
 | Leading/trailing whitespace | Medium | `sqlp` with `TRIM(col)` | Stats show no difference between `min`/`max` lengths and trimmed values |
 | Duplicate rows | Medium | `dedup` (or `extdedup` for >1GB) | `stats --cardinality` on key columns shows all unique |
 | Inconsistent case | Low | `sqlp` with `UPPER(col)` or `LOWER(col)` | `frequency` shows no case variants |
-| Empty values | Low | `sqlp` with `COALESCE(col, 'N/A')` | Nulls are semantically meaningful |
+| Empty values | Low | `sqlp` with `COALESCE(NULLIF(col, ''), 'N/A')` | Nulls are semantically meaningful |
 | Invalid rows | Low | `validate schema.json` + filter | No schema available |
 
 ## Fix Ordering

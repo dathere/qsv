@@ -9,6 +9,7 @@ allowed-tools:
   - mcp__qsv__qsv_command
   - mcp__qsv__qsv_sqlp
   - mcp__qsv__qsv_select
+  - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
 argument-hint: "<file1> <file2>"

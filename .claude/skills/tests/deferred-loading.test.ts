@@ -65,8 +65,8 @@ test('CORE_TOOLS includes all required utility tools', () => {
 // Common Commands Verification
 // ============================================================================
 
-test('COMMON_COMMANDS has 13 commands', () => {
-  assert.strictEqual(COMMON_COMMANDS.length, 13, 'Should have 13 common commands');
+test('COMMON_COMMANDS has 12 commands', () => {
+  assert.strictEqual(COMMON_COMMANDS.length, 12, 'Should have 12 common commands');
 });
 
 test('COMMON_COMMANDS and CORE_TOOLS are disjoint sets', () => {

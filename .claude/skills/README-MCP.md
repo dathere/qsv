@@ -215,7 +215,6 @@ Tools for frequently used commands, loaded when discovered via search:
 | `qsv_count` | Row counting (instant with index) |
 | `qsv_slice` | Row selection |
 | `qsv_sqlp` | SQL queries (Polars engine) |
-| `qsv_scoresql` | Pre-execution SQL query scoring/analysis |
 | `qsv_joinp` | High-performance joins (Polars engine) |
 | `qsv_cat` | Concatenate CSV files |
 | `qsv_geocode` | Geocoding operations |

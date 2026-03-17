@@ -1,26 +1,55 @@
 # Data Quality Assessment with qsv
 
-For the full quality assessment workflow and step-by-step profiling, use the `/data-profile` command. This skill provides a quick-reference summary of the five quality dimensions and common fixes.
+For the full step-by-step profiling workflow, use the `/data-profile` command. This skill provides quick-reference guidance for quality assessment and remediation decisions.
 
 ## Quality Dimensions (Quick Reference)
 
-| Dimension | Key Question | Primary Check |
-|-----------|-------------|---------------|
-| **Completeness** | Missing values? | `stats` — `nullcount`, `sparsity` > 0.5 |
-| **Uniqueness** | Unwanted duplicates? | `stats --cardinality` — cardinality vs row count |
-| **Validity** | Correct formats/types? | `stats` — `type` column; `validate schema.json` |
-| **Consistency** | Uniform formats? | `frequency` — case variants; `sniff` — encoding |
-| **Accuracy** | Plausible values? | `stats` — min/max/stddev; `frequency --limit 20` |
+| Dimension | Key Question | Primary Check | Red Flag |
+|-----------|-------------|---------------|----------|
+| **Completeness** | Missing values? | `stats` — `nullcount`, `sparsity` | Sparsity > 0.5 |
+| **Uniqueness** | Unwanted duplicates? | `stats --cardinality` vs row count | Key column cardinality < row count |
+| **Validity** | Correct formats/types? | `stats` — `type`; `validate schema.json` | String type on numeric column |
+| **Consistency** | Uniform formats? | `frequency` — case variants; `sniff` — encoding | Same value in different cases |
+| **Accuracy** | Plausible values? | `stats` — min/max/stddev | Values > 3 stddev from mean |
 
-## Common Data Quality Fixes
+## Remediation Decision Tree
 
-| Problem | Fix Command |
-|---------|-------------|
-| Inconsistent case | `apply operations upper/lower col` |
-| Leading/trailing whitespace | `apply operations trim col` |
-| Duplicate rows | `dedup` |
-| Ragged rows | `fixlengths` |
-| Unsafe column names | `safenames` |
-| Wrong encoding | `input` (normalizes to UTF-8) |
-| Empty values | `apply emptyreplace col --replacement "N/A"` |
-| Invalid rows | `validate schema.json` + filter |
+When a quality issue is found, choose the right fix:
+
+| Problem | Severity | Fix Command | When to Skip |
+|---------|----------|-------------|-------------|
+| Ragged rows | High | `fixlengths` | Never — breaks downstream tools |
+| Wrong encoding | High | `input` | File is already UTF-8 (check with `sniff`) |
+| Unsafe column names | Medium | `safenames` | Headers already safe (no spaces/special chars) |
+| Leading/trailing whitespace | Medium | `apply operations trim` | Stats show no difference between `min`/`max` lengths and trimmed values |
+| Duplicate rows | Medium | `dedup` (or `extdedup` for >1GB) | `stats --cardinality` on key columns shows all unique |
+| Inconsistent case | Low | `apply operations upper/lower` | `frequency` shows no case variants |
+| Empty values | Low | `apply emptyreplace --replacement "N/A"` | Nulls are semantically meaningful |
+| Invalid rows | Low | `validate schema.json` + filter | No schema available |
+
+## Fix Ordering
+
+Always apply fixes in this order to avoid cascading issues:
+
+```
+1. input          (encoding — must be UTF-8 before anything else)
+2. safenames      (headers — fixes names before column references)
+3. fixlengths     (structure — ensures consistent field counts)
+4. apply trim     (whitespace — clean values before dedup)
+5. dedup          (duplicates — remove after trimming so "foo " and "foo" match)
+6. validate       (validation — check against schema last)
+```
+
+## Stats Cache as Quality Dashboard
+
+After running `stats --cardinality --stats-jsonl`, read the `.stats.csv` cache to assess quality in one pass:
+
+| Cache Column | Quality Signal |
+|-------------|----------------|
+| `nullcount` | Completeness — 0 is ideal |
+| `sparsity` | Completeness — ratio of nulls (0.0–1.0) |
+| `cardinality` | Uniqueness — compare to row count |
+| `type` | Validity — check expected types |
+| `min` / `max` | Accuracy — plausible range? |
+| `mean` / `stddev` | Accuracy — outlier detection (>3σ) |
+| `mode` | Consistency — dominant value expected? |

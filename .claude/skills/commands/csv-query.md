@@ -11,6 +11,7 @@ allowed-tools:
   - mcp__qsv__qsv_frequency
   - mcp__qsv__qsv_count
   - mcp__qsv__qsv_command
+  - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
 argument-hint: "<file> [query]"

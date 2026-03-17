@@ -5,6 +5,7 @@ allowed-tools:
   - mcp__qsv__qsv_index
   - mcp__qsv__qsv_count
   - mcp__qsv__qsv_headers
+  - mcp__qsv__qsv_to_parquet
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
@@ -36,12 +37,12 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 | TSV | `fmt --out-delimiter '\t'` | `.tsv` |
 | JSONL | `tojsonl` | `.jsonl` |
 | JSON | `slice --json` | `.json` |
-| Parquet | `to parquet` | `.parquet` |
-| Excel XLSX | `to xlsx` | `.xlsx` |
-| ODS | `to ods` | `.ods` |
-| PostgreSQL | `to postgres` | - |
-| SQLite | `to sqlite` | `.db` |
-| Data Package | `to datapackage` | `.json` |
+| Parquet | `qsv_to_parquet` (core tool) | `.parquet` |
+| Excel XLSX | `to xlsx` (via qsv_command) | `.xlsx` |
+| ODS | `to ods` (via qsv_command) | `.ods` |
+| PostgreSQL | `to postgres` (via qsv_command) | - |
+| SQLite | `to sqlite` (via qsv_command) | `.db` |
+| Data Package | `to datapackage` (via qsv_command) | `.json` |
 
 ## Steps
 
@@ -57,7 +58,7 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
    - **To JSONL**: Use `qsv_command` with `cmd: "tojsonl"`.
 
-   - **To Parquet**: Use `qsv_command` with `cmd: "to"`, `sub_cmd: "parquet"`.
+   - **To Parquet**: Use `qsv_to_parquet` (dedicated core tool, preferred over `qsv_command`).
 
    - **To Excel XLSX**: Use `qsv_command` with `cmd: "to"`, `sub_cmd: "xlsx"`.
 

@@ -160,7 +160,9 @@ struct SearchSetResult {
 fn read_regexset(filename: &str, literal: bool, exact: bool) -> io::Result<Vec<String>> {
     let file = File::open(filename)?;
     let reader = BufReader::new(file);
-    let lines = reader.lines();
+    let lines = reader
+        .lines()
+        .filter(|line| line.as_ref().map_or(true, |s| !s.starts_with('#')));
 
     if literal {
         lines.map(|line| line.map(|s| regex::escape(&s))).collect()

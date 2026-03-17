@@ -1981,3 +1981,388 @@ fn describegpt_prepare_context_analysis_results_structure() {
         "analysis_results should have file_hash"
     );
 }
+
+// =========================================================================
+// scoresql integration tests (--no-score-sql, --score-threshold, --score-max-retries)
+// =========================================================================
+
+fn is_duckdb_available() -> bool {
+    std::env::var("QSV_DUCKDB_PATH").is_ok_and(|val| !val.is_empty())
+}
+
+// Test that --no-score-sql disables scoring and the command still works with --prompt +
+// --sql-results
+#[test]
+#[serial]
+fn describegpt_no_score_sql_flag() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_no_score_sql");
+    wrk.create_indexed(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "85"],
+            svec!["Bob", "25", "92"],
+            svec!["Carol", "35", "78"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("data.csv")
+        .args([
+            "--prompt",
+            "Write a SQL query to select all rows where age > 28. Return ONLY a SQL query in a \
+             ```sql code block.",
+        ])
+        .args(["--sql-results", "results.csv"])
+        .arg("--no-score-sql")
+        .arg("--no-cache");
+
+    let got = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&got.stderr);
+
+    // Should NOT contain any SQL score messages
+    assert!(
+        !stderr.contains("SQL score:"),
+        "Expected no scoring output with --no-score-sql, but got: {stderr}"
+    );
+}
+
+// Test that scoring is enabled by default when --prompt + --sql-results are used
+// and that stderr contains scoring status messages (polars feature enabled)
+#[test]
+#[serial]
+fn describegpt_score_sql_enabled_by_default() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_score_enabled");
+    wrk.create_indexed(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "85"],
+            svec!["Bob", "25", "92"],
+            svec!["Carol", "35", "78"],
+            svec!["Dave", "28", "95"],
+            svec!["Eve", "32", "88"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("data.csv")
+        .args([
+            "--prompt",
+            "Write a SQL query to select all rows where age > 28. Return ONLY a SQL query in a \
+             ```sql code block.",
+        ])
+        .args(["--sql-results", "results.csv"])
+        .arg("--no-cache");
+
+    let got = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&got.stderr);
+
+    // Should contain SQL score output since scoring is enabled by default
+    assert!(
+        stderr.contains("SQL score:"),
+        "Expected scoring output by default, stderr: {stderr}"
+    );
+    // Should contain attempt indicator
+    assert!(
+        stderr.contains("[attempt"),
+        "Expected attempt indicator in scoring output, stderr: {stderr}"
+    );
+}
+
+// Test that --score-threshold 0 accepts any query immediately (no retries)
+#[test]
+#[serial]
+fn describegpt_score_threshold_zero_accepts_immediately() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_score_threshold_zero");
+    wrk.create_indexed(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "85"],
+            svec!["Bob", "25", "92"],
+            svec!["Carol", "35", "78"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("data.csv")
+        .args([
+            "--prompt",
+            "Write a SQL query to select all rows where age > 28. Return ONLY a SQL query in a \
+             ```sql code block.",
+        ])
+        .args(["--sql-results", "results.csv"])
+        .args(["--score-threshold", "0"])
+        .arg("--no-cache");
+
+    let got = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&got.stderr);
+
+    // With threshold 0, the first attempt should be accepted (score >= 0 is always true)
+    assert!(
+        stderr.contains("[attempt 1]"),
+        "Expected attempt 1 in output, stderr: {stderr}"
+    );
+    // Should NOT have attempt 2 since threshold 0 accepts any score
+    assert!(
+        !stderr.contains("[attempt 2]"),
+        "Expected no retry with threshold 0, stderr: {stderr}"
+    );
+}
+
+// Test that --score-max-retries 0 scores once and does not retry
+#[test]
+#[serial]
+fn describegpt_score_max_retries_zero() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_score_max_retries_zero");
+    wrk.create_indexed(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "85"],
+            svec!["Bob", "25", "92"],
+            svec!["Carol", "35", "78"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("data.csv")
+        .args([
+            "--prompt",
+            "Write a SQL query to select all rows where age > 28. Return ONLY a SQL query in a \
+             ```sql code block.",
+        ])
+        .args(["--sql-results", "results.csv"])
+        .args(["--score-max-retries", "0"])
+        .arg("--no-cache");
+
+    let got = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&got.stderr);
+
+    // With max-retries 0, the loop runs once (attempt 1 only)
+    assert!(
+        stderr.contains("[attempt 1]"),
+        "Expected attempt 1 in output, stderr: {stderr}"
+    );
+    // Should NOT have attempt 2
+    assert!(
+        !stderr.contains("[attempt 2]"),
+        "Expected no retry with max-retries 0, stderr: {stderr}"
+    );
+}
+
+// Test that a high threshold triggers retries
+#[test]
+#[serial]
+fn describegpt_score_high_threshold_triggers_retries() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_score_high_threshold");
+    wrk.create_indexed(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "85"],
+            svec!["Bob", "25", "92"],
+            svec!["Carol", "35", "78"],
+            svec!["Dave", "28", "95"],
+            svec!["Eve", "32", "88"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("data.csv")
+        .args([
+            "--prompt",
+            "Write a SQL query using SELECT * FROM data. Return ONLY a SQL query in a ```sql code \
+             block.",
+        ])
+        .args(["--sql-results", "results.csv"])
+        // Set threshold very high so it's likely to retry
+        .args(["--score-threshold", "100"])
+        .args(["--score-max-retries", "1"])
+        .arg("--no-cache");
+
+    let got = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&got.stderr);
+
+    // With threshold 100, the query will almost certainly score below and trigger a retry
+    assert!(
+        stderr.contains("[attempt 1]"),
+        "Expected attempt 1 in output, stderr: {stderr}"
+    );
+    // Should see the warning about best score below threshold or a second attempt
+    let has_retry_or_warning = stderr.contains("[attempt 2]") || stderr.contains("below threshold");
+    assert!(
+        has_retry_or_warning,
+        "Expected retry or threshold warning with score-threshold 100, stderr: {stderr}"
+    );
+}
+
+// Test scoring with DuckDB backend when QSV_DUCKDB_PATH is available
+#[test]
+#[serial]
+fn describegpt_score_sql_with_duckdb() {
+    if !is_local_llm_available() || !is_duckdb_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_score_duckdb");
+    wrk.create_indexed(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "85"],
+            svec!["Bob", "25", "92"],
+            svec!["Carol", "35", "78"],
+            svec!["Dave", "28", "95"],
+            svec!["Eve", "32", "88"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    // Pass QSV_DUCKDB_PATH through to the subprocess
+    if let Ok(duckdb_path) = env::var("QSV_DUCKDB_PATH") {
+        cmd.env("QSV_DUCKDB_PATH", duckdb_path);
+    }
+    cmd.arg("data.csv")
+        .args([
+            "--prompt",
+            "Write a SQL query to find the average age. Return ONLY a SQL query in a ```sql code \
+             block.",
+        ])
+        .args(["--sql-results", "results.csv"])
+        .args(["--score-threshold", "0"])
+        .arg("--no-cache");
+
+    let got = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&got.stderr);
+
+    // Scoring should work with DuckDB
+    assert!(
+        stderr.contains("SQL score:"),
+        "Expected scoring output with DuckDB, stderr: {stderr}"
+    );
+    // Should succeed on first attempt with threshold 0
+    assert!(
+        got.status.success(),
+        "Command should succeed with DuckDB scoring. stderr: {stderr}"
+    );
+}
+
+// Test that the SQL results file is actually created when scoring is enabled
+#[test]
+#[serial]
+fn describegpt_score_sql_produces_results_file() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_score_results_file");
+    wrk.create_indexed(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "85"],
+            svec!["Bob", "25", "92"],
+            svec!["Carol", "35", "78"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("data.csv")
+        .args([
+            "--prompt",
+            "Write a SQL query to select name and age where age > 25. Return ONLY a SQL query in \
+             a ```sql code block.",
+        ])
+        .args(["--sql-results", "results.csv"])
+        // Use threshold 0 to accept any query and proceed to execution
+        .args(["--score-threshold", "0"])
+        .arg("--no-cache");
+
+    wrk.assert_success(&mut cmd);
+
+    // Verify the results file was created
+    let results_path = wrk.path("results.csv");
+    assert!(
+        results_path.exists(),
+        "SQL results file should be created at {}",
+        results_path.display()
+    );
+
+    // Verify the file has content
+    let content = std::fs::read_to_string(&results_path).unwrap();
+    assert!(!content.is_empty(), "SQL results file should not be empty");
+}
+
+// Test scoring with DuckDB and high threshold triggers retries
+#[test]
+#[serial]
+fn describegpt_score_duckdb_high_threshold_retries() {
+    if !is_local_llm_available() || !is_duckdb_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_score_duckdb_retries");
+    wrk.create_indexed(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "85"],
+            svec!["Bob", "25", "92"],
+            svec!["Carol", "35", "78"],
+            svec!["Dave", "28", "95"],
+            svec!["Eve", "32", "88"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    if let Ok(duckdb_path) = env::var("QSV_DUCKDB_PATH") {
+        cmd.env("QSV_DUCKDB_PATH", duckdb_path);
+    }
+    cmd.arg("data.csv")
+        .args([
+            "--prompt",
+            "Write a SQL query using SELECT * FROM data. Return ONLY a SQL query in a ```sql code \
+             block.",
+        ])
+        .args(["--sql-results", "results.csv"])
+        .args(["--score-threshold", "100"])
+        .args(["--score-max-retries", "2"])
+        .arg("--no-cache");
+
+    let got = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&got.stderr);
+
+    // With threshold 100 and DuckDB, should attempt scoring and likely retry
+    assert!(
+        stderr.contains("SQL score:"),
+        "Expected scoring output with DuckDB and high threshold, stderr: {stderr}"
+    );
+    // Should see warning or multiple attempts
+    let has_retry_activity = stderr.contains("[attempt 2]") || stderr.contains("below threshold");
+    assert!(
+        has_retry_activity,
+        "Expected retry activity with threshold 100, stderr: {stderr}"
+    );
+}

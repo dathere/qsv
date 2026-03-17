@@ -54,7 +54,7 @@ Skip this if the user provides absolute file paths or if you're unsure of the wo
 3. **Profile**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` for comprehensive column statistics. Basic moarstats auto-runs to enrich the cache.
 4. **Deep profile** (when needed): Run `qsv_moarstats` with `advanced: true` for kurtosis, entropy, Gini coefficient, bimodality, and winsorized/trimmed means. Use when data shows skewness, potential outliers, or you need distribution shape analysis. Set `output_file` to the stats cache path (`<FILESTEM>.stats.csv`).
 5. **Explore**: Use `qsv_frequency` for distributions, `qsv_slice` for row samples, `qsv_search` for filtering.
-6. **Query**: Use `qsv_sqlp` for SQL-based analysis (GROUP BY, aggregations, window functions, joins). For CSV > 10MB, convert to Parquet first with `qsv_to_parquet` for dramatically faster SQL queries, then use `read_parquet('file.parquet')` as the table source in `sqlp`.
+6. **Query**: Use `qsv_sqlp` for SQL-based analysis. **Before writing SQL**, read `.stats.csv` for column types, cardinality, nullcount, min/max ranges, and sort order; run `qsv_frequency` on columns you'll GROUP BY or filter on. Use this data to write precise WHERE clauses, skip unnecessary COALESCE on zero-null columns, and avoid GROUP BY on high-cardinality columns. For CSV > 10MB, convert to Parquet first with `qsv_to_parquet`, then use `read_parquet('file.parquet')` as the table source.
 7. **Report**: Summarize findings clearly with tables, key metrics, and observations.
 
 ## Analysis Capabilities

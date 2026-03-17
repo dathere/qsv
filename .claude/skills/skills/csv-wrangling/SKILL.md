@@ -53,8 +53,10 @@ sniff -> index -> safenames -> fixlengths -> trim (apply operations) -> dedup ->
 
 ### Profile and Analyze
 ```
-sniff -> index -> stats --cardinality --stats-jsonl -> frequency -> sqlp (GROUP BY queries)
+sniff -> index -> stats --cardinality --stats-jsonl -> read .stats.csv -> frequency (on key columns) -> sqlp (GROUP BY queries)
 ```
+**Before writing SQL**: read `.stats.csv` to learn column types, cardinality, nullcount, min/max, sort order. Run `frequency` on columns you'll GROUP BY or filter on. Use this to write precise WHERE clauses, correct type casts, and avoid unnecessary COALESCE.
+
 For CSV > 10MB, convert to Parquet before SQL queries: `sniff -> index -> stats -> to_parquet -> sqlp (using read_parquet())`
 
 ### Join and Enrich

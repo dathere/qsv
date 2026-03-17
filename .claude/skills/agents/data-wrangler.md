@@ -70,7 +70,8 @@ See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipel
 
 ## Guidelines
 
-- Always assess data before transforming - understand types, nulls, cardinality
+- Always assess data before transforming - read `.stats.csv` for types, nulls, cardinality, min/max ranges; run `qsv_frequency` on columns you'll filter or join on
+- When writing SQL via `sqlp`, use stats to write precise queries: correct casts from `type`, actual bounds from `min`/`max`, skip COALESCE where `nullcount` = 0, check `cardinality` before GROUP BY
 - Use `qsv_search_tools` to discover specialized tools for uncommon operations
 - Verify output after transformation - compare row counts, check statistics
 - When cleaning, follow the order: safenames -> fixlengths -> trim -> dedup -> validate

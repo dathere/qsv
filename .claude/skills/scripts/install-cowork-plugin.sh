@@ -12,7 +12,7 @@
 #   4. Registers the plugin in marketplace.json and installed_plugins.json
 #   5. Claude Desktop picks it up on the next Cowork session
 #
-# Requirements: macOS with Claude Desktop + Cowork, unzip, python3 (ships with macOS)
+# Requirements: macOS with Claude Desktop + Cowork (uses only built-in macOS tools)
 
 set -euo pipefail
 
@@ -41,7 +41,9 @@ PLUGIN_JSON=$(unzip -p "$PLUGIN_FILE" .claude-plugin/plugin.json 2>/dev/null) ||
   exit 1
 }
 
-read -r PLUGIN_NAME PLUGIN_VERSION <<< "$(echo "$PLUGIN_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['name'], d['version'])")"
+# Extract name and version using grep/sed (no Python or jq needed)
+PLUGIN_NAME=$(echo "$PLUGIN_JSON" | grep '"name"' | head -1 | sed 's/.*: *"\([^"]*\)".*/\1/')
+PLUGIN_VERSION=$(echo "$PLUGIN_JSON" | grep '"version"' | head -1 | sed 's/.*: *"\([^"]*\)".*/\1/')
 
 if [ -z "$PLUGIN_NAME" ] || [ -z "$PLUGIN_VERSION" ]; then
   echo "Error: Could not read name/version from plugin.json"
@@ -94,74 +96,46 @@ mkdir -p "$DEST"
 unzip -qo "$PLUGIN_FILE" -d "$DEST"
 echo "  Extracted plugin files"
 
-# --- Update marketplace.json ---
+# --- Update marketplace.json using osascript (JXA — ships with macOS) ---
 if [ -f "$MARKETPLACE_JSON" ]; then
-  MARKETPLACE_JSON="$MARKETPLACE_JSON" PLUGIN_NAME="$PLUGIN_NAME" PLUGIN_VERSION="$PLUGIN_VERSION" \
-  python3 -c "
-import json, os
-
-mj = os.environ['MARKETPLACE_JSON']
-name = os.environ['PLUGIN_NAME']
-version = os.environ['PLUGIN_VERSION']
-
-with open(mj, 'r') as f:
-    data = json.load(f)
-
-plugins = data.get('plugins', [])
-
-# Remove existing entry for this plugin name
-plugins = [p for p in plugins if p.get('name') != name]
-
-# Add new entry
-plugins.append({
-    'name': name,
-    'version': version,
-    'source': './' + name
-})
-
-data['plugins'] = plugins
-
-with open(mj, 'w') as f:
-    json.dump(data, f, indent=2)
-    f.write('\n')
-
-print('  Updated marketplace.json')
-"
+  osascript -l JavaScript -e "
+    var app = Application.currentApplication(); app.includeStandardAdditions = true;
+    var mj = '$MARKETPLACE_JSON';
+    var name = '$PLUGIN_NAME';
+    var version = '$PLUGIN_VERSION';
+    var data = JSON.parse(app.read(Path(mj)));
+    data.plugins = (data.plugins || []).filter(function(p) { return p.name !== name; });
+    data.plugins.push({ name: name, version: version, source: './' + name });
+    var fh = app.openForAccess(Path(mj), { writePermission: true });
+    try { app.setEof(fh, { to: 0 }); app.write(JSON.stringify(data, null, 2) + '\n', { to: fh }); }
+    finally { app.closeAccess(fh); }
+  " 2>/dev/null
+  echo "  Updated marketplace.json"
 else
   echo "  Warning: marketplace.json not found at $MARKETPLACE_JSON — skipping"
 fi
 
-# --- Update installed_plugins.json ---
+# --- Update installed_plugins.json using osascript (JXA) ---
 if [ -f "$INSTALLED_JSON" ]; then
-  INSTALLED_JSON="$INSTALLED_JSON" PLUGIN_NAME="$PLUGIN_NAME" PLUGIN_VERSION="$PLUGIN_VERSION" DEST="$DEST" \
-  python3 -c "
-import json, datetime, os
-
-ij = os.environ['INSTALLED_JSON']
-name = os.environ['PLUGIN_NAME']
-version = os.environ['PLUGIN_VERSION']
-dest = os.environ['DEST']
-
-with open(ij, 'r') as f:
-    data = json.load(f)
-
-key = name + '@local-desktop-app-uploads'
-now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
-
-data.setdefault('plugins', {})[key] = [{
-    'scope': 'user',
-    'installPath': dest,
-    'version': version,
-    'installedAt': now,
-    'lastUpdated': now
-}]
-
-with open(ij, 'w') as f:
-    json.dump(data, f, indent=2)
-    f.write('\n')
-
-print('  Updated installed_plugins.json')
-"
+  NOW=$(date -u '+%Y-%m-%dT%H:%M:%S.000Z')
+  osascript -l JavaScript -e "
+    var app = Application.currentApplication(); app.includeStandardAdditions = true;
+    var ij = '$INSTALLED_JSON';
+    var name = '$PLUGIN_NAME';
+    var version = '$PLUGIN_VERSION';
+    var dest = '$DEST';
+    var now = '$NOW';
+    var data = JSON.parse(app.read(Path(ij)));
+    if (!data.plugins) data.plugins = {};
+    data.plugins[name + '@local-desktop-app-uploads'] = [{
+      scope: 'user', installPath: dest, version: version,
+      installedAt: now, lastUpdated: now
+    }];
+    var fh = app.openForAccess(Path(ij), { writePermission: true });
+    try { app.setEof(fh, { to: 0 }); app.write(JSON.stringify(data, null, 2) + '\n', { to: fh }); }
+    finally { app.closeAccess(fh); }
+  " 2>/dev/null
+  echo "  Updated installed_plugins.json"
 else
   echo "  Warning: installed_plugins.json not found at $INSTALLED_JSON — skipping"
 fi

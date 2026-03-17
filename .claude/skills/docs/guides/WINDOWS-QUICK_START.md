@@ -1,6 +1,6 @@
-# "Have we achieved Accelerated Civic Intelligence (ACI)?" Quick Start
+# "Have we achieved Accelerated Civic Intelligence (ACI)?" Quick Start — Windows
 
-This guide walks you through installing Claude Desktop and three powerful data MCP servers on your Mac:
+This guide walks you through installing Claude Desktop and three powerful data MCP servers on Windows:
 
 1. **qsv MCP Server** — Slice, dice and run Polars SQL queries on local CSV, Excel, JSONL and Parquet files with qsv's full command set
 2. **US Census Bureau MCP Server** — Access US Census data (population, demographics, economics) via a local Docker container
@@ -32,13 +32,13 @@ This will allow you to recreate the scenarios described in the ["Have we achieve
 
 Before you start, make sure you have:
 
-- A **Mac** (Apple Silicon)
+- **Windows 10** (version 2004 or later) or **Windows 11**
 - **Claude Desktop** installed — [download here](https://claude.ai/download)
 - A **Claude Pro plan** (or higher) — required for Claude Cowork ([see pricing](https://claude.ai/pricing))
 - An **internet connection** for downloads
 - About **10 minutes** of your time
 
-You'll also use **Terminal** (found in Applications > Utilities) to run a few commands. Don't worry — every command is provided for you to copy and paste.
+You'll use **PowerShell** to run a few commands. Don't worry — every command is provided for you to copy and paste. To open PowerShell: press `Win + X` and select **Windows Terminal** (or **PowerShell**).
 
 > **Two pieces, one toolkit:**
 >
@@ -77,11 +77,11 @@ Download the `.mcpb` file and save it to your Downloads folder.
 After installation, you'll be prompted to set up:
 
 - **Working Directory** — where Claude looks for your data files by default.
-  Example: `$HOME/Downloads`
+  Example: `%USERPROFILE%\Downloads`
 
 - **Allowed Directories** — folders Claude is allowed to access (for security).
-  Example: `$HOME/Downloads:$HOME/Documents`
-  (Use `:` to separate multiple folders.)
+  Example: `%USERPROFILE%\Downloads;%USERPROFILE%\Documents`
+  (Use `;` to separate multiple folders on Windows.)
 
 - **qsv Binary Path** — usually auto-detected. If not found, the installer will prompt you to download it.
 
@@ -117,20 +117,22 @@ Go to: **<https://github.com/dathere/qsv/releases/latest>**
 
 Download both:
 - The `.plugin` file (e.g., `qsv-data-wrangling-17.0.0.plugin`)
-- The `install-cowork-plugin.sh` script
+- The `install-cowork-plugin.ps1` script
 
 Save both to the same folder (e.g., your Downloads folder).
 
 ### Install
 
-Open **Terminal** and run:
+Open **PowerShell** and run:
 
-```bash
-cd ~/Downloads
-bash install-cowork-plugin.sh qsv-data-wrangling-17.0.0.plugin
+```powershell
+cd ~\Downloads
+powershell -ExecutionPolicy Bypass -File install-cowork-plugin.ps1 qsv-data-wrangling-17.0.0.plugin
 ```
 
 > **Note:** Replace `17.0.0` with the version you downloaded.
+>
+> The `-ExecutionPolicy Bypass` flag allows the script to run without changing your system's execution policy.
 
 The script will:
 1. Extract the plugin files
@@ -149,41 +151,45 @@ The script will:
 
 The [US Census Bureau MCP server](https://github.com/dathere/us-census-bureau-data-api-mcp) gives Claude access to US Census data (population, demographics, economics, and more).
 
-This one requires a few extra tools: **Docker**, **Node.js**, and a free **Census API key**.
+This one requires a few extra tools: **Docker Desktop**, **Node.js**, and a free **Census API key**.
 
-> **Need Homebrew?** Docker and Node.js are installed via [Homebrew](https://brew.sh), the standard macOS package manager. If you don't have it yet, install it first:
+> **Need Scoop?** Node.js is installed via [Scoop](https://scoop.sh), a command-line installer for Windows. If you don't have it yet, install it first in PowerShell:
 >
-> ```bash
-> /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+> ```powershell
+> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+> irm get.scoop.sh | iex
 > ```
 >
-> Follow the on-screen instructions, then verify with `brew --version`.
+> Verify with `scoop --version`.
 
 ### 4a. Install Docker Desktop
 
 Docker is a tool that runs applications in isolated containers. The Census server uses it for its database.
 
-```bash
-brew install --cask docker
-```
+> **Prerequisite:** Docker Desktop for Windows requires **WSL 2** (Windows Subsystem for Linux). If you haven't enabled it yet:
+>
+> ```powershell
+> wsl --install
+> ```
+>
+> Restart your computer after running this command.
 
-After installation:
+1. Download **Docker Desktop** from: **<https://www.docker.com/products/docker-desktop/>**
+2. Run the installer and follow the setup wizard
+3. When prompted, ensure **"Use WSL 2 instead of Hyper-V"** is checked
+4. After installation, open **Docker Desktop** and wait for it to finish starting (you'll see a green "Running" indicator)
 
-1. Open **Docker Desktop** from your Applications folder
-2. Follow the setup wizard (accept the terms, grant permissions)
-3. Wait for Docker to finish starting (you'll see a green "Running" indicator)
-
-> **First time?** Docker may ask for your password and require a restart. This is normal.
+> **First time?** Docker may require a restart and will ask you to sign in or create a Docker account. A free account is fine.
 
 ### 4b. Install Node.js
 
-```bash
-brew install node
+```powershell
+scoop install nodejs
 ```
 
 Verify:
 
-```bash
+```powershell
 node --version
 ```
 
@@ -198,27 +204,27 @@ You should see `v20.x.x` or higher.
 
 ### 4d. Download and Set Up the Census Server
 
-In Terminal, run these commands one at a time:
+In PowerShell, run these commands one at a time:
 
-```bash
-cd ~/Documents
+```powershell
+cd ~\Documents
 ```
 
-```bash
+```powershell
 git clone https://github.com/dathere/us-census-bureau-data-api-mcp.git
 ```
 
-```bash
+```powershell
 cd us-census-bureau-data-api-mcp
 ```
 
-> **Don't have `git`?** You can also [download the ZIP file](https://github.com/dathere/us-census-bureau-data-api-mcp/archive/refs/heads/main.zip), unzip it, and move the folder to your Documents.
+> **Don't have `git`?** Install it with `scoop install git`, or [download the ZIP file](https://github.com/dathere/us-census-bureau-data-api-mcp/archive/refs/heads/main.zip), unzip it, and move the folder to your Documents.
 
 ### 4e. Initialize the Database
 
 Make sure **Docker Desktop is running**, then run:
 
-```bash
+```powershell
 docker compose --profile prod run --rm census-mcp-db-init sh -c "npm run migrate:up && npm run seed"
 ```
 
@@ -232,7 +238,7 @@ Open the Claude Desktop config file (see [Section 6](#6-editing-the-claude-deskt
 "mcp-census-api": {
   "command": "bash",
   "args": [
-    "/Users/YOUR_USERNAME/Documents/us-census-bureau-data-api-mcp/scripts/mcp-connect.sh"
+    "C:\\Users\\YOUR_USERNAME\\Documents\\us-census-bureau-data-api-mcp\\scripts\\mcp-connect.sh"
   ],
   "env": {
     "CENSUS_API_KEY": "YOUR_CENSUS_API_KEY"
@@ -241,8 +247,10 @@ Open the Claude Desktop config file (see [Section 6](#6-editing-the-claude-deskt
 ```
 
 Replace:
-- `YOUR_USERNAME` with your macOS username (run `whoami` in Terminal to check)
+- `YOUR_USERNAME` with your Windows username (run `$env:USERNAME` in PowerShell to check)
 - `YOUR_CENSUS_API_KEY` with the API key from your email
+
+> **Note:** The Census server uses `bash` via WSL. The `"command": "bash"` above relies on WSL's `bash.exe` being on your Windows PATH (it is by default after WSL installation). To verify, run `where bash` in PowerShell — it should show `C:\Windows\System32\bash.exe`. If not found, make sure WSL is installed (see [Section 4a](#4a-install-docker-desktop)). If you have Git Bash installed and it resolves first, use `"command": "wsl"` with `"args": ["bash", "path/to/mcp-connect.sh"]` instead.
 
 ### Verify Census Server
 
@@ -278,29 +286,29 @@ That's it! Skip to [Verify Wikidata Server](#verify-wikidata-server) below.
 
 If you prefer to run the server locally (e.g., for development or offline use), follow these steps.
 
-**Install uv** (a fast Python package manager) — requires [Homebrew](https://brew.sh):
+**Install uv** (a fast Python package manager) — requires [Scoop](https://scoop.sh):
 
-```bash
-brew install uv
+```powershell
+scoop install uv
 ```
 
 **Clone the repository:**
 
-```bash
-cd ~/Documents
+```powershell
+cd ~\Documents
 ```
 
-```bash
+```powershell
 git clone https://github.com/philippesaade-wmde/WikidataMCP.git
 ```
 
-```bash
+```powershell
 cd WikidataMCP
 ```
 
 **Install dependencies:**
 
-```bash
+```powershell
 uv sync
 ```
 
@@ -312,11 +320,11 @@ Open the Claude Desktop config file (see [Section 6](#6-editing-the-claude-deskt
 "Wikidata MCP": {
   "command": "uv",
   "args": ["run", "fastmcp", "run", "./main.py"],
-  "cwd": "/Users/YOUR_USERNAME/Documents/WikidataMCP"
+  "cwd": "C:\\Users\\YOUR_USERNAME\\Documents\\WikidataMCP"
 }
 ```
 
-Replace `YOUR_USERNAME` with your macOS username (run `whoami` in Terminal to check).
+Replace `YOUR_USERNAME` with your Windows username (run `$env:USERNAME` in PowerShell to check).
 
 ### Verify Wikidata Server
 
@@ -335,23 +343,27 @@ Some MCP servers need to be added manually to Claude Desktop's configuration fil
 ### Where is the Config File?
 
 ```
-~/Library/Application Support/Claude/claude_desktop_config.json
+%APPDATA%\Claude\claude_desktop_config.json
+```
+
+This typically resolves to:
+```
+C:\Users\YOUR_USERNAME\AppData\Roaming\Claude\claude_desktop_config.json
 ```
 
 ### How to Open It
 
-**Option A — Terminal (easiest):**
+**Option A — PowerShell (easiest):**
 
-```bash
-open -a TextEdit "$HOME/Library/Application Support/Claude/claude_desktop_config.json"
+```powershell
+notepad "$env:APPDATA\Claude\claude_desktop_config.json"
 ```
 
-**Option B — Finder:**
+**Option B — File Explorer:**
 
-1. Open Finder
-2. Click **Go** in the menu bar, then **Go to Folder...**
-3. Paste: `~/Library/Application Support/Claude/`
-4. Double-click `claude_desktop_config.json` to open it in TextEdit
+1. Press `Win + R` to open the Run dialog
+2. Type `%APPDATA%\Claude` and press Enter
+3. Double-click `claude_desktop_config.json` to open it in Notepad
 
 ### What the Config Looks Like
 
@@ -363,17 +375,17 @@ After setting up all three servers, your config file should look something like 
     "qsv": {
       "command": "node",
       "args": [
-        "/path/auto-configured-by-mcpb/dist/mcp-server.js"
+        "C:\\path\\auto-configured-by-mcpb\\dist\\mcp-server.js"
       ],
       "env": {
-        "QSV_MCP_WORKING_DIR": "/Users/YOUR_USERNAME/Downloads",
-        "QSV_MCP_ALLOWED_DIRS": "/Users/YOUR_USERNAME/Downloads:/Users/YOUR_USERNAME/Documents"
+        "QSV_MCP_WORKING_DIR": "C:\\Users\\YOUR_USERNAME\\Downloads",
+        "QSV_MCP_ALLOWED_DIRS": "C:\\Users\\YOUR_USERNAME\\Downloads;C:\\Users\\YOUR_USERNAME\\Documents"
       }
     },
     "mcp-census-api": {
       "command": "bash",
       "args": [
-        "/Users/YOUR_USERNAME/Documents/us-census-bureau-data-api-mcp/scripts/mcp-connect.sh"
+        "C:\\Users\\YOUR_USERNAME\\Documents\\us-census-bureau-data-api-mcp\\scripts\\mcp-connect.sh"
       ],
       "env": {
         "CENSUS_API_KEY": "YOUR_CENSUS_API_KEY"
@@ -406,7 +418,7 @@ With the **qsv Cowork plugin** installed ([Section 3](#3-install-the-qsv-cowork-
 
 **Try it out:** Open a Cowork session and type:
 
-> "/data-profile ~/Downloads/sales.csv"
+> "/data-profile ~\Downloads\sales.csv"
 
 Claude will generate a comprehensive data profile with statistics, frequency distributions, and quality checks.
 
@@ -419,16 +431,14 @@ Claude will generate a comprehensive data profile with statistics, frequency dis
 | Problem | Solution |
 | ------- | -------- |
 | Claude doesn't seem to use the MCP servers | Make sure you restarted Claude Desktop after setup. Check Settings > Extensions. |
-| "Permission denied" when running a command | Try prefixing with `sudo` (e.g., `sudo cp ...`). On macOS, you may also need to allow the app in **System Settings > Privacy & Security**. |
 | Config file won't save | Make sure Claude Desktop is closed while editing the config file. |
 
 ### qsv MCP Server
 
 | Problem | Solution |
 | ------- | -------- |
-| "qsv binary not found" | The MCPB installer should auto-install qsvmcp. Check Settings > Extensions > qsv to verify the binary path. If needed, download qsv manually from <https://qsv.dathere.com/download/macos-silicon>. |
-| "Operation not permitted" running qsv | Run `xattr -d com.apple.quarantine $(which qsvmcp)` to clear the quarantine flag. If using qsv instead: `xattr -d com.apple.quarantine $(which qsv)`. |
-| Claude says it can't find your file | Use the full file path (e.g., `/Users/you/Downloads/data.csv`) or ask Claude to "list data files" first. |
+| "qsv binary not found" | The MCPB installer should auto-install qsvmcp. Check Settings > Extensions > qsv to verify the binary path. If needed, download qsv manually from <https://qsv.dathere.com/download/windows>. |
+| Claude says it can't find your file | Use the full file path (e.g., `C:\Users\you\Downloads\data.csv`) or ask Claude to "list data files" first. |
 
 ### qsv Cowork Plugin
 
@@ -437,6 +447,7 @@ Claude will generate a comprehensive data profile with statistics, frequency dis
 | "local-desktop-app-uploads not found" | You need to have opened Cowork at least once with any marketplace plugin installed. Install one from the marketplace (e.g., Data or Productivity), then retry the installer. |
 | Slash commands don't appear | Start a **new** Cowork session after installation. Existing sessions won't pick up the plugin. |
 | Skills not showing in Context panel | Restart Claude Desktop and start a fresh Cowork session. |
+| ExecutionPolicy error running the script | Use the full command: `powershell -ExecutionPolicy Bypass -File install-cowork-plugin.ps1 <plugin-file>`. This bypasses the policy for that single script run without changing system settings. |
 
 ### Wikidata MCP Server
 
@@ -444,7 +455,7 @@ Claude will generate a comprehensive data profile with statistics, frequency dis
 | ------- | -------- |
 | Wikidata server not responding | Check your internet connection. The hosted server at `wd-mcp.wmcloud.org` requires internet access. |
 | Timeout on SPARQL queries | Complex queries may take time. Try simpler queries first, or break them into smaller parts. |
-| Local server won't start | Make sure `uv` is installed (`brew install uv`) and you ran `uv sync` in the WikidataMCP directory. |
+| Local server won't start | Make sure `uv` is installed (`scoop install uv`) and you ran `uv sync` in the WikidataMCP directory. |
 
 ### US Census Bureau MCP Server
 
@@ -454,6 +465,7 @@ Claude will generate a comprehensive data profile with statistics, frequency dis
 | Database initialization fails | Make sure Docker Desktop is running, then try the `docker compose` command again. |
 | "Invalid API key" | Double-check your Census API key. You can request a new one at <https://api.census.gov/data/key_signup.html>. |
 | Census server won't start | Make sure Docker Desktop is running — it's needed every time you use the Census server. |
+| WSL 2 not installed | Run `wsl --install` in PowerShell (as Administrator) and restart your computer. Docker Desktop requires WSL 2. |
 
 ---
 

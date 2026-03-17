@@ -56,7 +56,7 @@ import { getUiCapability, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-a
 import { getDirectoryPickerHtml } from "./ui/directory-picker-html.js";
 import { scanDirectory } from "./browse-directory.js";
 import { VERSION } from "./version.js";
-import { getErrorMessage, errorResult, successResult } from "./utils.js";
+import { getErrorMessage, errorResult, successResult, completedDirResult } from "./utils.js";
 import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
 
 /**
@@ -797,7 +797,12 @@ class QsvMcpServer {
             }
 
             if (autoSyncEnabled) {
-              return successResult(`Auto-sync re-enabled. Working directory is now: ${currentDir}\n\nThe working directory will automatically follow the MCP client's root directory.`);
+              const autoMessage = `Auto-sync re-enabled. Working directory is now: ${currentDir}\n\nThe working directory will automatically follow the MCP client's root directory.`;
+
+              if (config.enableMcpApps && this.clientSupportsApps()) {
+                return completedDirResult(autoMessage, currentDir);
+              }
+              return successResult(autoMessage);
             }
 
             // Auto-sync could not be enabled; surface a user-visible error.
@@ -816,7 +821,12 @@ class QsvMcpServer {
           this.manuallySetWorkingDir = true;
           this.workingDirConfirmed = true;
 
-          return successResult(`Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
+          const message = `Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`;
+
+          if (config.enableMcpApps && this.clientSupportsApps()) {
+            return completedDirResult(message, newWorkingDir);
+          }
+          return successResult(message);
         }
 
         if (name === "qsv_get_working_dir") {

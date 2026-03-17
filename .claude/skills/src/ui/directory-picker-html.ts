@@ -714,6 +714,17 @@ let navigated = false;
 app.ontoolresult = (result) => {
   // structuredContent is the primary data source (MCP Apps extension)
   const sc = result?.structuredContent;
+
+  // If directory was set directly (not via picker), show minimal confirmation
+  if (sc?.completed && sc?.currentPath) {
+    navigated = true;
+    document.getElementById('app').innerHTML =
+      '<div style="padding:1.5em;text-align:center;color:var(--text-secondary)">' +
+      '<span style="font-size:1.5em">&#10003;</span> Working directory set to ' +
+      '<strong>' + escapeHtml(sc.currentPath) + '</strong></div>';
+    return;
+  }
+
   if (sc?.currentPath || sc?.knownDirs) {
     if (sc.currentPath) currentPath = sc.currentPath;
     if (sc.homeDir) homeDir = sc.homeDir;

@@ -11,6 +11,7 @@ allowed-tools:
   - mcp__qsv__qsv_frequency
   - mcp__qsv__qsv_count
   - mcp__qsv__qsv_command
+  - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
 argument-hint: "<file> [query]"
@@ -40,15 +41,39 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 ## Steps
 
-1. **Prepare the file**: Run `qsv_index` and `qsv_stats` with `cardinality: true, stats_jsonl: true` to create index and stats cache. This helps `sqlp` optimize query execution.
+1. **Prepare the file**: Run `qsv_index` and `qsv_stats` with `cardinality: true, stats_jsonl: true` to create index and stats cache.
 
-2. **Convert large files to Parquet**: If the CSV is > 10MB, run `qsv_to_parquet` to convert it. Parquet is a columnar format that dramatically speeds up SQL queries. Note: Parquet works ONLY with `sqlp` and DuckDB -- all other qsv commands require CSV/TSV/SSV input.
+2. **Read the stats cache**: Read `<FILESTEM>.stats.csv` (e.g., `data.stats.csv` for `data.csv`) to understand column metadata before writing SQL. This is the most important step for writing efficient queries.
 
-3. **Inspect schema**: Run `qsv_headers` to see column names. Use these exact names in SQL queries.
+3. **Run frequency on key columns**: For columns you plan to GROUP BY, filter on, or join on, run `qsv_frequency` to see actual value distributions. This reveals the best filter values and whether a GROUP BY will produce a manageable result set.
 
-4. **Write and run SQL**: Use `qsv_sqlp` with the SQL query. The table name in SQL is the filename stem (e.g., `data.csv` -> `SELECT * FROM data`). For Parquet files, use `read_parquet('data.parquet')` as the table source instead.
+4. **Convert large files to Parquet**: If the CSV is > 10MB, run `qsv_to_parquet` to convert it. Parquet is a columnar format that dramatically speeds up SQL queries. Note: Parquet works ONLY with `sqlp` and DuckDB -- all other qsv commands require CSV/TSV/SSV input.
 
-5. **Refine if needed**: Check results and adjust the query.
+5. **Write and run SQL**: Use `qsv_sqlp` with the SQL query informed by stats and frequency data. The table name in SQL is the filename stem (e.g., `data.csv` -> `SELECT * FROM data`). For Parquet files, use `read_parquet('data.parquet')` as the table source instead.
+
+6. **Refine if needed**: Check results and adjust the query.
+
+## Using Stats to Write Better SQL
+
+After reading the `.stats.csv` cache, use these columns to inform your SQL:
+
+| Stats Column | How to Use in SQL |
+|-------------|-------------------|
+| `type` | Use correct casts and comparisons — don't quote integers, use date functions for Date/DateTime columns |
+| `min` / `max` | Write precise WHERE clauses using actual data range (e.g., `WHERE price BETWEEN 10.5 AND 999.99` instead of arbitrary bounds) |
+| `cardinality` | Estimate GROUP BY result size — low cardinality (< 100) is fast; high cardinality (> 10K) may need LIMIT or a different approach |
+| `nullcount` | Only add COALESCE or IS NOT NULL where `nullcount` > 0 — skip null handling for columns with zero nulls |
+| `sort_order` | Skip ORDER BY if data is already sorted on that column (sort_order = "Ascending"/"Descending") |
+| `mean` / `stddev` | Write outlier filters: `WHERE col BETWEEN mean - 3*stddev AND mean + 3*stddev` |
+| `sparsity` | Columns with sparsity > 0.5 are mostly null — avoid using them as join keys or GROUP BY columns |
+
+### Using Frequency for Filter Values
+
+Run `qsv_frequency --select col --limit 20` before writing WHERE clauses on categorical columns:
+
+- **Pick selective filters**: If `frequency` shows "active" has 90% of rows, filtering on `WHERE status = 'active'` is wasteful — filter on the rare values instead
+- **Validate expected values**: If you plan `WHERE category IN ('A','B','C')`, check frequency first to confirm those values exist and see if you're missing any
+- **Avoid GROUP BY on high-cardinality columns**: If frequency shows thousands of unique values, GROUP BY will produce a huge result — add LIMIT or aggregate differently
 
 ## SQL Syntax Guide
 

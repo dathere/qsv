@@ -136,7 +136,6 @@ const NON_TABULAR_COMMANDS = new Set([
   "tojsonl",             // JSONL output
   "template",            // Free-form text
   "schema",              // JSON Schema output
-  "scoresql",            // Score report (human-readable or JSON)
   "validate",            // Validation messages, not CSV data
   "describegpt",         // Markdown output (data dictionaries, descriptions, tags)
 ]);
@@ -286,19 +285,11 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     commonPattern: "Iterate: qsv_schema → validate → fix → validate until clean.",
     needsIndexHint: true,
   },
-  scoresql: {
-    whenToUse:
-      "Score a SQL query BEFORE running it with sqlp. Analyzes query plan, type optimization, join cardinality, filter selectivity, and anti-patterns against CSV caches. Use for complex queries, large files, or when you want optimization suggestions.",
-    commonPattern:
-      "Pre-flight: scoresql → review score/suggestions → adjust query → sqlp. Use --json for machine-readable output. Accepts SQL as a string or .sql file (last query is scored). Caches (stats, frequency) are auto-generated if missing. For multi-file queries, pass space-separated paths in input_file (same as sqlp).",
-    errorPrevention:
-      "Auto-generates stats and frequency caches as a side effect if missing. Use --duckdb when DuckDB is the target engine — finds duckdb in PATH automatically if QSV_DUCKDB_PATH is not set. Accepts .sql script files (scores the last query). Score: <50 Poor, 50-74 Fair, 75-89 Good, 90+ Excellent.",
-  },
   sqlp: {
     whenToUse:
       "Run SQL queries on tabular data. Auto-converts CSV to Parquet for performance, then routes to DuckDB when available (faster, PostgreSQL-compatible). Falls back to Polars SQL (sqlp) otherwise.",
     commonPattern:
-      "Stats → SQL: Read qsv_stats output before writing queries. Use type for correct casts (don't quote integers, use date functions for Date/DateTime). Use min/max/range for precise WHERE clauses. Use cardinality to optimize GROUP BY (low = fast, high = consider LIMIT). Use sort_order to skip redundant ORDER BY. For value distributions, run qsv_frequency on relevant columns. For multi-file queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() in SQL. For complex queries on large files, run qsv_scoresql first to get a performance score and optimization suggestions.",
+      "Stats → SQL: Read qsv_stats output before writing queries. Use type for correct casts (don't quote integers, use date functions for Date/DateTime). Use min/max/range for precise WHERE clauses. Use cardinality to optimize GROUP BY (low = fast, high = consider LIMIT). Use sort_order to skip redundant ORDER BY. For value distributions, run qsv_frequency on relevant columns. For multi-file queries, convert all files to Parquet first with qsv_to_parquet, then use read_parquet() in SQL. For complex queries on large files, use EXPLAIN to review the query plan before execution.",
     errorPrevention:
       "Column names are case-sensitive in Polars SQL but case-insensitive in DuckDB. For unsupported output formats (Arrow, Avro), sqlp is used automatically. Use nullcount from qsv_stats to add COALESCE/IS NOT NULL only where nulls actually exist — skip null handling for columns with nullcount=0. In Claude Cowork, ensure DuckDB runs on the host, not the Linux container.",
     hasCommonMistakes: true,
@@ -432,6 +423,47 @@ const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     whenToUse: "Generate data dictionaries, descriptions, and tags for CSV data using LLM inference.",
     commonPattern: "Through MCP: no API key needed — uses the connected LLM automatically. Use --dictionary, --description, --tags, or --all. May require two tool calls (first returns prompts, second processes your responses via _llm_responses). For natural language questions, use sqlp or other qsv tools directly instead of --prompt.",
     errorPrevention: "In MCP mode: do NOT use --prompt (SQL RAG mode) — ask the LLM directly instead. Do NOT pass --base-url or --api-key. LLM results may be inaccurate. Run stats first for best results.",
+  },
+  fixlengths: {
+    whenToUse:
+      "Fix ragged CSVs where rows have inconsistent field counts. Pads short rows, truncates long rows to match the longest row.",
+    commonPattern:
+      "Early in cleaning: safenames → fixlengths → trim → dedup. Run count before/after to detect how many rows were ragged.",
+  },
+  fmt: {
+    whenToUse:
+      "Reformat CSV: change delimiter, quoting style, line endings. Use --out-delimiter to convert between CSV/TSV/SSV.",
+    commonPattern:
+      "CSV ↔ TSV: fmt --out-delimiter '\\t'. Also useful for normalizing quoting before downstream tools.",
+  },
+  input: {
+    whenToUse:
+      "Normalize encoding to UTF-8, strip BOM, and handle non-UTF-8 CSV files. First step for files with encoding issues.",
+  },
+  table: {
+    whenToUse:
+      "Pretty-print CSV as an aligned text table. For small files or terminal display only.",
+    needsMemoryWarning: true,
+  },
+  fill: {
+    whenToUse:
+      "Fill empty fields with values from previous rows or a specified groupby column. Useful for sparse data with repeated group headers.",
+  },
+  sortcheck: {
+    whenToUse:
+      "Check if CSV is already sorted on specified columns. Avoids unnecessary sort operations.",
+  },
+  enum: {
+    whenToUse:
+      "Add a row number, UUID, or constant column. Useful for creating IDs or tracking row provenance.",
+  },
+  exclude: {
+    whenToUse:
+      "Remove rows from one CSV that match rows in another. Inverse of join — keeps only non-matching rows. For anti-join semantics, joinp --anti is faster for large files.",
+  },
+  flatten: {
+    whenToUse:
+      "Display each row vertically (one field per line). For inspecting wide CSVs with many columns in the terminal.",
   },
 };
 
@@ -1243,7 +1275,7 @@ async function shouldUseTempFile(
 }
 
 /**
- * 13 most essential qsv commands exposed as individual MCP tools
+ * 12 most essential qsv commands exposed as individual MCP tools
  * Optimized for token efficiency while maintaining high-value tool access
  *
  * Commands promoted to CORE_TOOLS (always loaded):
@@ -1261,7 +1293,6 @@ export const COMMON_COMMANDS = [
   "count", // Row counting (instant with index)
   "slice", // Row selection
   "sqlp", // SQL queries (Polars engine)
-  "scoresql", // Pre-execution SQL query scoring/analysis
   "joinp", // High-performance joins (Polars engine)
   "cat", // Concatenate CSV files (rows/columns)
   "geocode", // Geocoding operations

@@ -79,7 +79,7 @@ if [ ! -d "$BASE_DIR" ]; then
   exit 1
 fi
 
-UPLOADS_DIR=$(find "$BASE_DIR" -type d -name "local-desktop-app-uploads" -path "*/cowork_plugins/marketplaces/*" -print0 2>/dev/null | xargs -0 stat -f '%m %N' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+UPLOADS_DIR=$(find "$BASE_DIR" -type d -name "local-desktop-app-uploads" -path "*/cowork_plugins/marketplaces/*" -print0 2>/dev/null | xargs -0 -r stat -f '%m %N' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2- || true)
 
 if [ -z "$UPLOADS_DIR" ]; then
   echo "Error: Could not find local-desktop-app-uploads directory."
@@ -109,6 +109,15 @@ if [ -d "$DEST" ]; then
 fi
 
 mkdir -p "$DEST"
+
+# Validate ZIP entries for path traversal (Zip Slip) before extracting
+BAD_ENTRIES=$(unzip -l "$PLUGIN_FILE" 2>/dev/null | awk 'NR>3 && !/^-/ {print $4}' | grep -E '(^/|\.\./)' || true)
+if [ -n "$BAD_ENTRIES" ]; then
+  echo "Error: Archive contains unsafe paths (absolute or traversal):"
+  echo "$BAD_ENTRIES"
+  exit 1
+fi
+
 unzip -qo "$PLUGIN_FILE" -d "$DEST"
 echo "  Extracted plugin files"
 

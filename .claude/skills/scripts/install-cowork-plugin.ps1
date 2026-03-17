@@ -32,13 +32,21 @@ if (-not (Test-Path $PluginFile -PathType Leaf)) {
 $PluginFile = (Resolve-Path $PluginFile).Path
 
 # Verify it's a zip by checking the magic bytes (PK header)
-$header = [System.IO.File]::ReadAllBytes($PluginFile)[0..1]
-if ($header[0] -ne 0x50 -or $header[1] -ne 0x4B) {
+$stream = [System.IO.File]::OpenRead($PluginFile)
+try {
+    $header = New-Object byte[] 2
+    $bytesRead = $stream.Read($header, 0, 2)
+} finally {
+    $stream.Close()
+}
+if ($bytesRead -lt 2 -or $header[0] -ne 0x50 -or $header[1] -ne 0x4B) {
     Write-Error "$PluginFile is not a valid .plugin archive (expected zip format)"
     exit 1
 }
 
 # --- Extract plugin metadata from the archive ---
+$zip = $null
+$reader = $null
 try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [System.IO.Compression.ZipFile]::OpenRead($PluginFile)
@@ -46,11 +54,12 @@ try {
     if (-not $entry) { throw 'Not found' }
     $reader = [System.IO.StreamReader]::new($entry.Open())
     $pluginJsonText = $reader.ReadToEnd()
-    $reader.Close()
-    $zip.Dispose()
 } catch {
     Write-Error "Archive does not contain .claude-plugin/plugin.json"
     exit 1
+} finally {
+    if ($reader) { $reader.Close() }
+    if ($zip) { $zip.Dispose() }
 }
 
 $pluginJson = $pluginJsonText | ConvertFrom-Json
@@ -119,6 +128,23 @@ if (Test-Path $dest -PathType Container) {
 }
 
 New-Item -ItemType Directory -Path $dest -Force | Out-Null
+
+# Validate ZIP entries for path traversal (Zip Slip) before extracting
+$zipCheck = [System.IO.Compression.ZipFile]::OpenRead($PluginFile)
+try {
+    $badEntries = $zipCheck.Entries | Where-Object {
+        $_.FullName -match '^\.\.[/\\]' -or $_.FullName -match '[/\\]\.\.[/\\]' -or
+        [System.IO.Path]::IsPathRooted($_.FullName)
+    }
+    if ($badEntries) {
+        $names = ($badEntries | ForEach-Object { $_.FullName }) -join ', '
+        Write-Error "Archive contains unsafe paths (absolute or traversal): $names"
+        exit 1
+    }
+} finally {
+    $zipCheck.Dispose()
+}
+
 Expand-Archive -Path $PluginFile -DestinationPath $dest -Force
 Write-Host '  Extracted plugin files'
 

@@ -36,6 +36,7 @@ export function successResult(text: string) {
 export function completedDirResult(text: string, path: string) {
   return {
     content: [{ type: "text" as const, text }],
+    isError: false as const,
     structuredContent: {
       completed: true,
       currentPath: path,

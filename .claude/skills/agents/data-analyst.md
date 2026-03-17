@@ -14,6 +14,7 @@ allowed-tools:
   - mcp__qsv__qsv_to_parquet
   - mcp__qsv__qsv_joinp
   - mcp__qsv__qsv_sample
+  - mcp__qsv__qsv_describegpt
   - mcp__qsv__qsv_command
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_list_files
@@ -56,10 +57,11 @@ Skip this if the user provides absolute file paths or if you're unsure of the wo
 5. **Explore**: Use `qsv_frequency` for distributions, `qsv_slice` for row samples, `qsv_search` for filtering.
 6. **Query**: Use `qsv_sqlp` for SQL-based analysis. **Before writing SQL**, read `.stats.csv` for column types, cardinality, nullcount, min/max ranges, and sort order; run `qsv_frequency` on columns you'll GROUP BY or filter on. Use this data to write precise WHERE clauses, skip unnecessary COALESCE on zero-null columns, and avoid GROUP BY on high-cardinality columns. For CSV > 10MB, convert to Parquet first with `qsv_to_parquet`, then use `read_parquet('file.parquet')` as the table source.
 7. **Report**: Summarize findings clearly with tables, key metrics, and observations.
+8. **Document**: Run `qsv_describegpt` with `all: true` to generate a Data Dictionary, Description, and Tags. Output defaults to `<filestem>.describegpt.md`. Uses the connected LLM automatically via MCP sampling — no API key needed.
 
 ## Analysis Capabilities
 
-See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key analysis tools: `qsv_stats`/`qsv_moarstats` (column statistics), `qsv_frequency` (distributions), `qsv_sqlp` (SQL aggregation, joins, window functions), `qsv_search` (regex filtering), `qsv_sample` (random sampling).
+See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key analysis tools: `qsv_stats`/`qsv_moarstats` (column statistics), `qsv_frequency` (distributions), `qsv_sqlp` (SQL aggregation, joins, window functions), `qsv_search` (regex filtering), `qsv_sample` (random sampling), `qsv_describegpt` (AI-powered Data Dictionary, Description & Tags).
 
 ## Guidelines
 

@@ -12,6 +12,7 @@ Always follow this sequence when processing CSV data:
 5. **Transform** - select, sort, dedup, rename, replace, search, sqlp, etc.
 6. **Validate** - `validate` (against JSON Schema), `stats` (verify results)
 7. **Export** - `tojsonl`, `table`, `qsv_to_parquet`
+8. **Document** - `describegpt --all` (AI-generated Data Dictionary, Description & Tags)
 
 ## Tool Selection Matrix
 
@@ -29,6 +30,7 @@ Always follow this sequence when processing CSV data:
 | Reshape long->wide | `pivotp` | `sqlp` | Complex pivots |
 | Concatenate files | `cat rows` | `cat rowskey` | Different column orders |
 | Sample rows | `sample` | `slice` | `slice` for positional ranges |
+| Document dataset | `describegpt` | — | AI-generated Data Dictionary, Description & Tags |
 
 ## qsv Selection Syntax
 
@@ -62,6 +64,11 @@ For CSV > 10MB, convert to Parquet before SQL queries: `sniff -> index -> stats 
 ### Join and Enrich
 ```
 index (both files) -> stats (both) -> joinp -> select (keep needed columns) -> sort
+```
+
+### Profile and Document
+```
+sniff -> index -> stats --cardinality --stats-jsonl -> describegpt --all
 ```
 
 ### Convert and Export

@@ -3677,6 +3677,15 @@ fn run_inference_options(
             let use_duckdb = should_use_duckdb();
             let threshold = args.flag_score_threshold;
             let max_retries = args.flag_score_max_retries.min(100);
+            if args.flag_score_max_retries > 100 {
+                print_status(
+                    &format!(
+                        "  Warning: --score-max-retries {} clamped to 100.",
+                        args.flag_score_max_retries
+                    ),
+                    None,
+                );
+            }
 
             // Replace {INPUT_TABLE_NAME} with file stem for scoresql
             let file_stem = Path::new(input_path)
@@ -3697,7 +3706,18 @@ fn run_inference_options(
 
                         if score > best_score {
                             best_score = score;
-                            best_sql_template = scoring_sql.replace(file_stem, INPUT_TABLE_NAME);
+                            // Use a targeted regex to only replace file_stem when it
+                            // appears as a table name (after FROM/JOIN), avoiding
+                            // corruption of column names or literals that happen to
+                            // contain the file stem as a substring.
+                            let table_re = regex::Regex::new(&format!(
+                                r"(?i)\b(FROM|JOIN)\s+{}(?:\b|$)",
+                                regex::escape(file_stem)
+                            ))
+                            .expect("Invalid table-name regex");
+                            best_sql_template = table_re
+                                .replace_all(&scoring_sql, format!("${{1}} {INPUT_TABLE_NAME}"))
+                                .to_string();
                         }
 
                         if score >= threshold || attempt > max_retries {

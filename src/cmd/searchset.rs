@@ -4,8 +4,9 @@ Filters CSV data by whether the given regex set matches a row.
 Unlike the search operation, this allows regex matching of multiple regexes 
 in a single pass.
 
-The regexset-file is a plain text file with multiple regexes, with a regex on 
-each line. For an example scanning for common Personally Identifiable Information (PII) -
+The regexset-file is a plain text file with multiple regexes, with a regex on
+each line. Lines starting with '#' (optionally preceded by whitespace) are
+treated as comments and ignored. For an example scanning for common Personally Identifiable Information (PII) -
 SSN, credit cards, email, bank account numbers & phones, see
 https://github.com/dathere/qsv/blob/master/resources/examples/searchset/pii_regexes.txt
 
@@ -160,9 +161,10 @@ struct SearchSetResult {
 fn read_regexset(filename: &str, literal: bool, exact: bool) -> io::Result<Vec<String>> {
     let file = File::open(filename)?;
     let reader = BufReader::new(file);
-    let lines = reader
-        .lines()
-        .filter(|line| line.as_ref().map_or(true, |s| !s.starts_with('#')));
+    let lines = reader.lines().filter(|line| {
+        line.as_ref()
+            .map_or(true, |s| !s.trim_start().starts_with('#'))
+    });
 
     if literal {
         lines.map(|line| line.map(|s| regex::escape(&s))).collect()

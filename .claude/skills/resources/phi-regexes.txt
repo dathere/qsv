@@ -5,5 +5,5 @@
 (?x)\b[A-Z]{2,4}\d{5,10}\b #MRN (Medical Record Number) - letter prefix + digits
 (?x)\b[ABFGMabfgm][A-Za-z]\d{7}\b #DEA (Drug Enforcement Administration number)
 (?x)\b\d{10}\b #NPI (National Provider Identifier) - broad, overlaps unformatted phone numbers; cross-check against PII matches
-(?x)\b[A-Z]\d{2}\.?[A-Za-z0-9]{1,4}\b #ICD-10-CM (diagnosis code, e.g. J45.20, U07.1, T36.0X5A, S72.001A)
+(?x)\b[A-Z]\d{2}(?:\.?[A-Za-z0-9]{1,4})?\b #ICD-10-CM (diagnosis code, e.g. A09, J45.20, U07.1, T36.0X5A, S72.001A; covers 3-char category codes and subdivided codes)
 (?x)\b(?:\d{4}-?\d{4}-?\d{2}|\d{5}-?\d{3}-?\d{2}|\d{5}-?\d{4}-?\d{1,2})\b #NDC (National Drug Code) - covers 4-4-2, 5-3-2, 5-4-1, 5-4-2 formats

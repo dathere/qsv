@@ -250,7 +250,7 @@ Replace:
 - `YOUR_USERNAME` with your Windows username (run `$env:USERNAME` in PowerShell to check)
 - `YOUR_CENSUS_API_KEY` with the API key from your email
 
-> **Note:** The Census server uses `bash` via WSL. Make sure WSL is installed (see [Section 4a](#4a-install-docker-desktop)).
+> **Note:** The Census server uses `bash` via WSL. The `"command": "bash"` above relies on WSL's `bash.exe` being on your Windows PATH (it is by default after WSL installation). To verify, run `where bash` in PowerShell — it should show `C:\Windows\System32\bash.exe`. If not found, make sure WSL is installed (see [Section 4a](#4a-install-docker-desktop)). If you have Git Bash installed and it resolves first, use `"command": "wsl"` with `"args": ["bash", "path/to/mcp-connect.sh"]` instead.
 
 ### Verify Census Server
 

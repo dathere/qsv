@@ -41,12 +41,28 @@ PLUGIN_JSON=$(unzip -p "$PLUGIN_FILE" .claude-plugin/plugin.json 2>/dev/null) ||
   exit 1
 }
 
-# Extract name and version using grep/sed (no Python or jq needed)
-PLUGIN_NAME=$(echo "$PLUGIN_JSON" | grep '"name"' | head -1 | sed 's/.*: *"\([^"]*\)".*/\1/')
-PLUGIN_VERSION=$(echo "$PLUGIN_JSON" | grep '"version"' | head -1 | sed 's/.*: *"\([^"]*\)".*/\1/')
+# Extract name and version using osascript/JXA (no Python or jq needed)
+# Values are passed via environment variables to avoid shell injection
+PLUGIN_META=$(PLUGIN_JSON_RAW="$PLUGIN_JSON" osascript -l JavaScript -e "
+  ObjC.import('stdlib');
+  var raw = $.getenv('PLUGIN_JSON_RAW').js;
+  var meta = JSON.parse(raw);
+  meta.name + '\n' + meta.version;
+" 2>/dev/null) || {
+  echo "Error: Could not parse plugin.json"
+  exit 1
+}
+PLUGIN_NAME=$(echo "$PLUGIN_META" | head -1)
+PLUGIN_VERSION=$(echo "$PLUGIN_META" | tail -1)
 
 if [ -z "$PLUGIN_NAME" ] || [ -z "$PLUGIN_VERSION" ]; then
   echo "Error: Could not read name/version from plugin.json"
+  exit 1
+fi
+
+# Validate plugin name to prevent path traversal
+if ! echo "$PLUGIN_NAME" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+  echo "Error: Invalid plugin name '$PLUGIN_NAME': must contain only alphanumeric characters, hyphens, and underscores"
   exit 1
 fi
 
@@ -97,12 +113,15 @@ unzip -qo "$PLUGIN_FILE" -d "$DEST"
 echo "  Extracted plugin files"
 
 # --- Update marketplace.json using osascript (JXA — ships with macOS) ---
+# All values are passed via environment variables to avoid shell injection
 if [ -f "$MARKETPLACE_JSON" ]; then
+  MJ_PATH="$MARKETPLACE_JSON" P_NAME="$PLUGIN_NAME" P_VERSION="$PLUGIN_VERSION" \
   osascript -l JavaScript -e "
+    ObjC.import('stdlib');
     var app = Application.currentApplication(); app.includeStandardAdditions = true;
-    var mj = '$MARKETPLACE_JSON';
-    var name = '$PLUGIN_NAME';
-    var version = '$PLUGIN_VERSION';
+    var mj = $.getenv('MJ_PATH').js;
+    var name = $.getenv('P_NAME').js;
+    var version = $.getenv('P_VERSION').js;
     var data = JSON.parse(app.read(Path(mj)));
     data.plugins = (data.plugins || []).filter(function(p) { return p.name !== name; });
     data.plugins.push({ name: name, version: version, source: './' + name });
@@ -118,13 +137,16 @@ fi
 # --- Update installed_plugins.json using osascript (JXA) ---
 if [ -f "$INSTALLED_JSON" ]; then
   NOW=$(date -u '+%Y-%m-%dT%H:%M:%S.000Z')
+  IJ_PATH="$INSTALLED_JSON" P_NAME="$PLUGIN_NAME" P_VERSION="$PLUGIN_VERSION" \
+  P_DEST="$DEST" P_NOW="$NOW" \
   osascript -l JavaScript -e "
+    ObjC.import('stdlib');
     var app = Application.currentApplication(); app.includeStandardAdditions = true;
-    var ij = '$INSTALLED_JSON';
-    var name = '$PLUGIN_NAME';
-    var version = '$PLUGIN_VERSION';
-    var dest = '$DEST';
-    var now = '$NOW';
+    var ij = $.getenv('IJ_PATH').js;
+    var name = $.getenv('P_NAME').js;
+    var version = $.getenv('P_VERSION').js;
+    var dest = $.getenv('P_DEST').js;
+    var now = $.getenv('P_NOW').js;
     var data = JSON.parse(app.read(Path(ij)));
     if (!data.plugins) data.plugins = {};
     data.plugins[name + '@local-desktop-app-uploads'] = [{

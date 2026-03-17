@@ -62,6 +62,12 @@ if (-not $pluginName -or -not $pluginVersion) {
     exit 1
 }
 
+# Validate plugin name to prevent path traversal
+if ($pluginName -notmatch '^[a-zA-Z0-9_-]+$') {
+    Write-Error "Invalid plugin name '$pluginName': must contain only alphanumeric characters, hyphens, and underscores"
+    exit 1
+}
+
 Write-Host "Installing $pluginName v$pluginVersion"
 Write-Host ('=' * 50)
 
@@ -104,7 +110,7 @@ Write-Host "  Install path:   $dest"
 # --- Install the plugin files ---
 if (Test-Path $dest -PathType Container) {
     # Sanity check: ensure dest is inside uploadsDir before removing
-    if (-not $dest.StartsWith($uploadsDir)) {
+    if (-not $dest.StartsWith($uploadsDir, [System.StringComparison]::OrdinalIgnoreCase)) {
         Write-Error "Install path '$dest' is not inside uploads directory '$uploadsDir'"
         exit 1
     }

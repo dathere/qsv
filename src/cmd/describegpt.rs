@@ -247,7 +247,9 @@ describegpt options:
     --no-score-sql         Disable scoresql validation of generated SQL queries before execution.
                            By default, when --prompt generates a SQL query and --sql-results is set,
                            the query is scored and iteratively improved if below threshold.
-    --score-threshold <n>  Minimum scoresql score (0-100) for a SQL query to be accepted.
+    --score-threshold <n>  Minimum scoresql score for a SQL query to be accepted.
+                           Typical range is 0-100; values >100 will always trigger retries
+                           and the below-threshold warning.
                            [default: 50]
     --score-max-retries <n>  Max LLM re-prompts to improve a low-scoring SQL query.
                            [default: 3]

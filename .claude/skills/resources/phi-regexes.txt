@@ -1,5 +1,5 @@
 # PHI (Protected Health Information) regex patterns for use with qsv searchset
-# Canonical source: docs/cookbook/searchset/phi-regexes.txt
+# Canonical source: .claude/skills/resources/phi-regexes.txt
 # These patterns target HIPAA-defined identifiers commonly found in health data.
 # For PII patterns (SSN, credit cards, email, phone), see pii-regexes.txt.
 (?x)\b[A-Z]{2,4}\d{5,10}\b #MRN (Medical Record Number) - letter prefix + digits

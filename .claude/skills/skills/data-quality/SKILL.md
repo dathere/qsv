@@ -35,7 +35,7 @@ Always apply fixes in this order to avoid cascading issues:
 1. input          (encoding — must be UTF-8 before anything else)
 2. safenames      (headers — fixes names before column references)
 3. fixlengths     (structure — ensures consistent field counts)
-4. apply trim     (whitespace — clean values before dedup)
+4. apply operations trim  (whitespace — clean values before dedup)
 5. dedup          (duplicates — remove after trimming so "foo " and "foo" match)
 6. validate       (validation — check against schema last)
 ```

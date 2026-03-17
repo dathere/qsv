@@ -111,7 +111,7 @@ fi
 mkdir -p "$DEST"
 
 # Validate ZIP entries for path traversal (Zip Slip) before extracting
-BAD_ENTRIES=$(zipinfo -1 "$PLUGIN_FILE" 2>/dev/null | grep -E '(^/|\.\./)' || true)
+BAD_ENTRIES=$(zipinfo -1 "$PLUGIN_FILE" 2>/dev/null | grep -E '(^/|\.\.[/\\])' || true)
 if [ -n "$BAD_ENTRIES" ]; then
   echo "Error: Archive contains unsafe paths (absolute or traversal):"
   echo "$BAD_ENTRIES"

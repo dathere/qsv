@@ -33,13 +33,15 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 4. **Get headers**: Run `qsv_headers` to list all column names and positions.
 
-5. **Compute statistics**: Run `qsv_stats` with `cardinality: true` and `stats_jsonl: true` to generate full column statistics and cache them. Include `--everything` for comprehensive stats (mean, median, mode, stddev, quartiles, etc.).
+5. **Compute statistics**: Run `qsv_stats` with `cardinality: true` and `stats_jsonl: true` to generate full column statistics and cache them. Include `--everything` for comprehensive stats (mean, median, mode, stddev, quartiles, etc.). Basic moarstats auto-runs to enrich the cache with ~18 additional columns.
 
-6. **Show distributions**: Run `qsv_frequency` with `limit: 10` to show top value distributions for each column. For high-cardinality columns (cardinality close to row count), note them as likely unique identifiers.
+6. **Advanced statistics**: Run `qsv_moarstats` with `advanced: true` and `output_file` set to `<FILESTEM>.stats.csv` (e.g., `data.stats.csv` for `data.csv`). This adds kurtosis, bimodality coefficient, Gini coefficient, Shannon entropy, and winsorized/trimmed means to the stats cache — essential for understanding distribution shape and inequality.
 
-7. **Screen for PII/PHI**: Run `qsv_command` with `cmd: "searchset"` and `args: ["--flag", "pii_match", "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"]` to scan for sensitive data patterns (SSN, credit cards, email, phone, IBAN). Report any columns with matches.
+7. **Show distributions**: Run `qsv_frequency` with `limit: 10` to show top value distributions for each column. For high-cardinality columns (cardinality close to row count), note them as likely unique identifiers.
 
-8. **Preview data**: Run `qsv_slice` with `len: 5` to show the first 5 rows as a sample.
+8. **Screen for PII/PHI**: Run `qsv_command` with `cmd: "searchset"` and `args: ["--flag", "pii_match", "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"]` to scan for sensitive data patterns (SSN, credit cards, email, phone, IBAN). Report any columns with matches.
+
+9. **Preview data**: Run `qsv_slice` with `len: 5` to show the first 5 rows as a sample.
 
 ## Quality Dimensions
 
@@ -88,11 +90,14 @@ When profiling, assess these five dimensions:
 | Check | Command | What to Look For |
 |-------|---------|-----------------|
 | Statistical outliers | `stats` | `mean`, `stddev` - values > 3 stddev from mean |
+| Outlier counts | `moarstats` | `outliers_total_cnt`, `outliers_percentage` > 5% |
+| Distribution shape | `moarstats --advanced` | `kurtosis` > 3 (heavy tails), `bimodality_coefficient` >= 0.555 (bimodal) |
+| Inequality | `moarstats --advanced` | `gini_coefficient` near 1 (extreme concentration) |
 | Value distributions | `frequency --limit 20` | Unexpected dominant values |
 | Range checks | `stats` | `min`/`max` outside plausible range |
 | Cross-field checks | `sqlp` | SQL WHERE clauses for business rules |
 
-**Red flag**: Latitude > 90 or < -90, negative ages, future birth dates.
+**Red flag**: Latitude > 90 or < -90, negative ages, future birth dates, kurtosis > 10 (extreme outliers).
 
 ### 6. PII/PHI Screening
 **Question**: Does the data contain personally identifiable or protected health information?
@@ -148,6 +153,7 @@ Present a summary with:
 - [ ] **Cardinality** per column (uniqueness assessment)
 - [ ] **Data types** inferred per column (validity)
 - [ ] **Min/max/mean** for numeric columns (range plausibility)
+- [ ] **Outlier counts** and **distribution shape** (kurtosis, bimodality) from moarstats --advanced
 - [ ] **Top frequency values** for categorical columns (distribution)
 - [ ] **Duplicate rows** detected (uniqueness)
 - [ ] **Schema violations** if schema provided (validity)

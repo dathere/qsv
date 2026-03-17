@@ -42,7 +42,7 @@ Always apply fixes in this order to avoid cascading issues:
 
 ## Stats Cache as Quality Dashboard
 
-After running `stats --cardinality --stats-jsonl`, read the `.stats.csv` cache to assess quality in one pass:
+After running `stats --cardinality --stats-jsonl` (basic moarstats auto-runs), read the `.stats.csv` cache to assess quality in one pass:
 
 | Cache Column | Quality Signal |
 |-------------|----------------|
@@ -52,4 +52,17 @@ After running `stats --cardinality --stats-jsonl`, read the `.stats.csv` cache t
 | `type` | Validity — check expected types |
 | `min` / `max` | Accuracy — plausible range? |
 | `mean` / `stddev` | Accuracy — outlier detection (>3σ) |
+| `outliers_total_cnt` | Accuracy — from moarstats; outlier count per column |
 | `mode` | Consistency — dominant value expected? |
+
+### Advanced Stats (via `moarstats --advanced`)
+
+Run `moarstats --advanced` to enrich the cache with distribution shape metrics:
+
+| Cache Column | Quality Signal |
+|-------------|----------------|
+| `kurtosis` | >3 heavy tails (outlier-prone), <3 light tails |
+| `bimodality_coefficient` | >=0.555 suggests bimodal distribution (possible mixed populations) |
+| `gini_coefficient` | Near 1 = extreme concentration; near 0 = uniform |
+| `shannon_entropy` | Low = concentrated values; high = diverse |
+| `winsorized_mean` | Compare to `mean` — large difference signals outlier influence |

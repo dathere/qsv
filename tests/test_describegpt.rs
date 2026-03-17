@@ -2025,6 +2025,11 @@ fn describegpt_no_score_sql_flag() {
     let got = wrk.output(&mut cmd);
     let stderr = String::from_utf8_lossy(&got.stderr);
 
+    // Command should succeed
+    assert!(
+        got.status.success(),
+        "Command should succeed with --no-score-sql. stderr: {stderr}"
+    );
     // Should NOT contain any SQL score messages
     assert!(
         !stderr.contains("SQL score:"),
@@ -2068,6 +2073,11 @@ fn describegpt_score_sql_enabled_by_default() {
     let got = wrk.output(&mut cmd);
     let stderr = String::from_utf8_lossy(&got.stderr);
 
+    // Command should succeed
+    assert!(
+        got.status.success(),
+        "Command should succeed with default scoring. stderr: {stderr}"
+    );
     // Should contain SQL score output since scoring is enabled by default
     assert!(
         stderr.contains("SQL score:"),
@@ -2114,6 +2124,11 @@ fn describegpt_score_threshold_zero_accepts_immediately() {
     let got = wrk.output(&mut cmd);
     let stderr = String::from_utf8_lossy(&got.stderr);
 
+    // Command should succeed
+    assert!(
+        got.status.success(),
+        "Command should succeed with threshold 0. stderr: {stderr}"
+    );
     // With threshold 0, the first attempt should be accepted (score >= 0 is always true)
     assert!(
         stderr.contains("[attempt 1]"),
@@ -2160,6 +2175,11 @@ fn describegpt_score_max_retries_zero() {
     let got = wrk.output(&mut cmd);
     let stderr = String::from_utf8_lossy(&got.stderr);
 
+    // Command should succeed
+    assert!(
+        got.status.success(),
+        "Command should succeed with max-retries 0. stderr: {stderr}"
+    );
     // With max-retries 0, the loop runs once (attempt 1 only)
     assert!(
         stderr.contains("[attempt 1]"),
@@ -2202,15 +2222,15 @@ fn describegpt_score_high_threshold_triggers_retries() {
              block.",
         ])
         .args(["--sql-results", "results.csv"])
-        // Set threshold very high so it's likely to retry
-        .args(["--score-threshold", "100"])
+        // Use threshold 101 (above max score of 100) to guarantee retry/warning
+        .args(["--score-threshold", "101"])
         .args(["--score-max-retries", "1"])
         .arg("--no-cache");
 
     let got = wrk.output(&mut cmd);
     let stderr = String::from_utf8_lossy(&got.stderr);
 
-    // With threshold 100, the query will almost certainly score below and trigger a retry
+    // With threshold 101 (impossible to reach), must retry and show warning
     assert!(
         stderr.contains("[attempt 1]"),
         "Expected attempt 1 in output, stderr: {stderr}"
@@ -2219,7 +2239,7 @@ fn describegpt_score_high_threshold_triggers_retries() {
     let has_retry_or_warning = stderr.contains("[attempt 2]") || stderr.contains("below threshold");
     assert!(
         has_retry_or_warning,
-        "Expected retry or threshold warning with score-threshold 100, stderr: {stderr}"
+        "Expected retry or threshold warning with score-threshold 101, stderr: {stderr}"
     );
 }
 
@@ -2355,14 +2375,15 @@ fn describegpt_score_duckdb_high_threshold_retries() {
              block.",
         ])
         .args(["--sql-results", "results.csv"])
-        .args(["--score-threshold", "100"])
+        // Use threshold 101 (above max score of 100) to guarantee retry/warning
+        .args(["--score-threshold", "101"])
         .args(["--score-max-retries", "2"])
         .arg("--no-cache");
 
     let got = wrk.output(&mut cmd);
     let stderr = String::from_utf8_lossy(&got.stderr);
 
-    // With threshold 100 and DuckDB, should attempt scoring and likely retry
+    // With threshold 101 and DuckDB, must attempt scoring and retry
     assert!(
         stderr.contains("SQL score:"),
         "Expected scoring output with DuckDB and high threshold, stderr: {stderr}"
@@ -2371,6 +2392,6 @@ fn describegpt_score_duckdb_high_threshold_retries() {
     let has_retry_activity = stderr.contains("[attempt 2]") || stderr.contains("below threshold");
     assert!(
         has_retry_activity,
-        "Expected retry activity with threshold 100, stderr: {stderr}"
+        "Expected retry activity with threshold 101, stderr: {stderr}"
     );
 }

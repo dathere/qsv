@@ -833,7 +833,7 @@ fn build_score_refinement_prompt(
         .join("\n");
 
     format!(
-        "The SQL query scored {score}/100 ({rating}), below the acceptable threshold. Attempt \
+        "The SQL query scored {score}/100 ({rating}), below the acceptable threshold. Retry \
          {attempt} of {max_retries}.\n\nCurrent \
          SQL:\n```sql\n{sql_query}\n```\n\nSuggestions:\n{suggestions_text}\n\nImprove the SQL \
          query addressing these suggestions. Use `{table_name}` as the table name. Return ONLY \

@@ -164,13 +164,13 @@ Present a summary with:
 
 | Problem | Fix Command |
 |---------|-------------|
-| Inconsistent case | `apply operations upper/lower col` |
-| Leading/trailing whitespace | `apply operations trim col` |
+| Inconsistent case | `sqlp` with `UPPER(col)` or `LOWER(col)` |
+| Leading/trailing whitespace | `sqlp` with `TRIM(col)` |
 | Duplicate rows | `dedup` |
 | Ragged rows | `fixlengths` |
 | Unsafe column names | `safenames` |
 | Wrong encoding | `input` (normalizes to UTF-8) |
-| Empty values | `apply emptyreplace col --replacement "N/A"` |
+| Empty values | `fill --default "N/A"` or `sqlp` with `COALESCE(col, 'N/A')` |
 | Invalid rows | `validate schema.json` + filter |
 
 ## Notes

@@ -9,9 +9,9 @@ Always follow this sequence when processing CSV data:
 2. **Discover** - `sniff` (detect format, encoding, delimiter) -> `headers` -> `count`
 3. **Profile** - `stats --cardinality --stats-jsonl` (creates cache used by smart commands)
 4. **Inspect** - `slice --len 5` (preview rows), `frequency --frequency-jsonl` (value distributions with cache for reuse)
-5. **Transform** - select, sort, dedup, apply, rename, search, etc.
+5. **Transform** - select, sort, dedup, rename, replace, search, sqlp, etc.
 6. **Validate** - `validate` (against JSON Schema), `stats` (verify results)
-7. **Export** - `to` (XLSX, ODS, etc.), `tojsonl`, `table`
+7. **Export** - `tojsonl`, `table`, `qsv_to_parquet`
 
 ## Tool Selection Matrix
 
@@ -24,7 +24,7 @@ Always follow this sequence when processing CSV data:
 | Join two files | `joinp` | `join` | `join` for memory-constrained |
 | Aggregate/GROUP BY | `sqlp` | `frequency` | `frequency` for simple counts; `--frequency-jsonl` creates cache |
 | Column stats | `stats` | `moarstats` | `moarstats` for extended stats |
-| Find/replace | `apply operations` | `sqlp` | `sqlp` for conditional replace |
+| Find/replace | `replace` | `sqlp` | `sqlp` for conditional replace |
 | Reshape wide->long | `transpose --long` | - | DuckDB UNPIVOT (external) for complex reshaping |
 | Reshape long->wide | `pivotp` | `sqlp` | Complex pivots |
 | Concatenate files | `cat rows` | `cat rowskey` | Different column orders |
@@ -48,7 +48,7 @@ Used by `select`, `search`, `sort`, `dedup`, `frequency`, and other commands:
 
 ### Clean and Deduplicate
 ```
-sniff -> index -> safenames -> fixlengths -> trim (apply operations) -> dedup -> validate
+sniff -> index -> safenames -> fixlengths -> sqlp (TRIM) -> dedup -> validate
 ```
 
 ### Profile and Analyze
@@ -66,7 +66,7 @@ index (both files) -> stats (both) -> joinp -> select (keep needed columns) -> s
 
 ### Convert and Export
 ```
-excel (to CSV) -> index -> stats -> select -> to ods/xlsx
+excel (to CSV) -> index -> stats -> select -> tojsonl / qsv_to_parquet
 ```
 
 ## Delimiter Handling

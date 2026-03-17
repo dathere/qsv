@@ -35,7 +35,7 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
    b. **`fixlengths`** - Ensure all rows have the same number of fields (pads short rows, truncates long rows)
 
-   c. **`apply operations trim`** - Remove leading/trailing whitespace from all columns. Use selection syntax to target specific columns or all columns.
+   c. **`sqlp`** - Remove leading/trailing whitespace from columns using `TRIM()`. Example: `SELECT TRIM(col1) AS col1, TRIM(col2) AS col2 FROM _t_1`. For all columns, use `SELECT * REPLACE(TRIM(col1) AS col1, TRIM(col2) AS col2) FROM _t_1`.
 
    d. **`dedup`** - Remove exact duplicate rows. Loads all data into memory and sorts internally. Use `--sorted` if input is already sorted to enable streaming mode with constant memory.
 
@@ -55,7 +55,7 @@ Call each tool sequentially, passing the output of one step as input to the next
 
 1. `qsv_command` with `cmd: "safenames"`, `input_file: "<file>"`, `output: "step1.csv"`
 2. `qsv_command` with `cmd: "fixlengths"`, `input_file: "step1.csv"`, `output: "step2.csv"`
-3. `qsv_command` with `cmd: "apply"`, `sub_cmd: "operations"`, `operations: "trim"`, `input_file: "step2.csv"`, `output: "step3.csv"`
+3. `qsv_sqlp` with `input_file: "step2.csv"`, `sql: "SELECT TRIM(col1) AS col1, TRIM(col2) AS col2, ... FROM _t_1"`, `output_file: "step3.csv"` (list all columns with TRIM)
 4. `qsv_command` with `cmd: "dedup"`, `input_file: "step3.csv"`, `output: "<output>"`
 
 ## Notes

@@ -170,7 +170,7 @@ Present a summary with:
 | Ragged rows | `fixlengths` |
 | Unsafe column names | `safenames` |
 | Wrong encoding | `input` (normalizes to UTF-8) |
-| Empty values | `fill --default "N/A"` or `sqlp` with `COALESCE(col, 'N/A')` |
+| Empty values | `sqlp` with `COALESCE(col, 'N/A')` |
 | Invalid rows | `validate schema.json` + filter |
 
 ## Notes

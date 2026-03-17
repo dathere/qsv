@@ -9,6 +9,7 @@ allowed-tools:
   - mcp__qsv__qsv_frequency
   - mcp__qsv__qsv_slice
   - mcp__qsv__qsv_command
+  - mcp__qsv__qsv_sqlp
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
 argument-hint: "<file>"
@@ -39,7 +40,7 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 7. **Show distributions**: Run `qsv_frequency` with `limit: 10` to show top value distributions for each column. For high-cardinality columns (cardinality close to row count), note them as likely unique identifiers.
 
-8. **Screen for PII/PHI**: Run `qsv_command` with `cmd: "searchset"` and `args: ["--flag", "pii_match", "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"]` to scan for sensitive data patterns (SSN, credit cards, email, phone, IBAN). Report any columns with matches.
+8. **Screen for PII/PHI**: Run `qsv_command` with `command: "searchset"` and `args: ["--flag", "pii_match", "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"]` to scan for sensitive data patterns (SSN, credit cards, email, phone, IBAN). Report any columns with matches.
 
 9. **Preview data**: Run `qsv_slice` with `len: 5` to show the first 5 rows as a sample.
 
@@ -105,7 +106,7 @@ When profiling, assess these five dimensions:
 Use `searchset` with a regex file to scan all columns for sensitive patterns:
 
 ```
-qsv_command cmd: "searchset", input_file: "<file>", args: ["--flag", "pii_match", "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"]
+qsv_command command: "searchset", input_file: "<file>", args: ["--flag", "pii_match", "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"]
 ```
 
 The bundled `${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt` detects:
@@ -122,7 +123,7 @@ The bundled `${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt` detects:
 For PHI screening, use the bundled `${CLAUDE_PLUGIN_ROOT}/resources/phi-regexes.txt`:
 
 ```
-qsv_command cmd: "searchset", input_file: "<file>", args: ["--flag", "phi_match", "${CLAUDE_PLUGIN_ROOT}/resources/phi-regexes.txt"]
+qsv_command command: "searchset", input_file: "<file>", args: ["--flag", "phi_match", "${CLAUDE_PLUGIN_ROOT}/resources/phi-regexes.txt"]
 ```
 
 The bundled `${CLAUDE_PLUGIN_ROOT}/resources/phi-regexes.txt` detects:

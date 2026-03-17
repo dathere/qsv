@@ -133,7 +133,7 @@ New-Item -ItemType Directory -Path $dest -Force | Out-Null
 $zipCheck = [System.IO.Compression.ZipFile]::OpenRead($PluginFile)
 try {
     $badEntries = $zipCheck.Entries | Where-Object {
-        $_.FullName -match '^\.\.[/\\]' -or $_.FullName -match '[/\\]\.\.[/\\]' -or
+        $_.FullName -match '\.\.[\\/]' -or
         [System.IO.Path]::IsPathRooted($_.FullName)
     }
     if ($badEntries) {

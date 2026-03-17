@@ -56,7 +56,10 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
    - **To Parquet**: Use `qsv_to_parquet` (dedicated core tool, preferred over `qsv_command`).
 
-   - **To SQLite**: Use `qsv_sqlp` with DuckDB's `COPY` or `CREATE TABLE ... AS SELECT` to export to SQLite.
+   - **To SQLite**: Use `qsv_sqlp` with DuckDB's `ATTACH` and `CREATE TABLE ... AS SELECT` to export to SQLite:
+     ```
+     qsv sqlp input.csv "ATTACH 'output.db' AS sdb; CREATE TABLE sdb.data AS SELECT * FROM input"
+     ```
 
 4. **Verify output**: Run `qsv_count` on the output (if CSV-based) to confirm row count matches input.
 

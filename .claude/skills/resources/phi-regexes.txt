@@ -1,0 +1,9 @@
+# PHI (Protected Health Information) regex patterns for use with qsv searchset
+# Canonical source: docs/cookbook/searchset/phi-regexes.txt
+# These patterns target HIPAA-defined identifiers commonly found in health data.
+# For PII patterns (SSN, credit cards, email, phone), see pii-regexes.txt.
+(?x)\b[A-Z]{2,4}\d{5,10}\b #MRN (Medical Record Number) - letter prefix + digits
+(?x)\b[ABFGMabfgm][A-Za-z]\d{7}\b #DEA (Drug Enforcement Administration number)
+(?x)\b\d{10}\b #NPI (National Provider Identifier) - broad, verify with Luhn check
+(?x)\b[A-TV-Z]\d{2}\.\d{1,2}[A-Za-z]?\b #ICD-10-CM (diagnosis code, e.g. J45.20)
+(?x)\b\d{4,5}-?\d{4}-?\d{2}\b #NDC (National Drug Code) - 10-11 digit product ID

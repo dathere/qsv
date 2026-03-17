@@ -114,7 +114,22 @@ The bundled `${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt` detects:
 | Email | `user@example.com` |
 | US Phone | `+1 (555) 123-4567` |
 
-For PHI screening, create a custom regex file with patterns for MRNs, DEA numbers, NPI numbers, or ICD codes and pass it to `searchset` the same way.
+For PHI screening, use the bundled `${CLAUDE_PLUGIN_ROOT}/resources/phi-regexes.txt`:
+
+```
+qsv_command cmd: "searchset", input_file: "<file>", args: ["--flag", "phi_match", "${CLAUDE_PLUGIN_ROOT}/resources/phi-regexes.txt"]
+```
+
+The bundled `${CLAUDE_PLUGIN_ROOT}/resources/phi-regexes.txt` detects:
+| Pattern | Example |
+|---------|---------|
+| MRN (Medical Record Number) | `MRN123456` |
+| DEA Number | `AB1234563` |
+| NPI (National Provider Identifier) | `1234567890` (broad — verify with Luhn check) |
+| ICD-10-CM Diagnosis Code | `J45.20`, `E11.9` |
+| NDC (National Drug Code) | `0002-3456-78` |
+
+For additional PHI patterns (e.g., MBI, state license numbers), create a custom regex file and pass it to `searchset` the same way.
 
 **Red flag**: Any matches indicate PII/PHI exposure — flag columns for masking or removal before sharing.
 

@@ -799,7 +799,7 @@ class QsvMcpServer {
             if (autoSyncEnabled) {
               const autoMessage = `Auto-sync re-enabled. Working directory is now: ${currentDir}\n\nThe working directory will automatically follow the MCP client's root directory.`;
 
-              if (config.enableMcpApps && this.clientSupportsApps()) {
+              if (config.enableMcpApps) {
                 return completedDirResult(autoMessage, currentDir);
               }
               return successResult(autoMessage);
@@ -823,7 +823,7 @@ class QsvMcpServer {
 
           const message = `Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`;
 
-          if (config.enableMcpApps && this.clientSupportsApps()) {
+          if (config.enableMcpApps) {
             return completedDirResult(message, newWorkingDir);
           }
           return successResult(message);

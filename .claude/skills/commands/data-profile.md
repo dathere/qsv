@@ -35,7 +35,7 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 5. **Compute statistics**: Run `qsv_stats` with `cardinality: true` and `stats_jsonl: true` to generate full column statistics and cache them. Include `--everything` for comprehensive stats (mean, median, mode, stddev, quartiles, etc.). Basic moarstats auto-runs to enrich the cache with ~18 additional columns.
 
-6. **Advanced statistics**: Run `qsv_moarstats` with `advanced: true` and `output_file` set to `<FILESTEM>.stats.csv` (e.g., `data.stats.csv` for `data.csv`). This adds kurtosis, bimodality coefficient, Gini coefficient, Shannon entropy, and winsorized/trimmed means to the stats cache — essential for understanding distribution shape and inequality.
+6. **Advanced statistics**: Run `qsv_moarstats` with `advanced: true` (omit `output_file` — it updates the stats cache in-place by default). This adds kurtosis, bimodality coefficient, Gini coefficient, Shannon entropy, and winsorized/trimmed means to the stats cache — essential for understanding distribution shape and inequality.
 
 7. **Show distributions**: Run `qsv_frequency` with `limit: 10` to show top value distributions for each column. For high-cardinality columns (cardinality close to row count), note them as likely unique identifiers.
 

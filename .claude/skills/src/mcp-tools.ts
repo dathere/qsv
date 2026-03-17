@@ -1275,7 +1275,7 @@ async function shouldUseTempFile(
 }
 
 /**
- * 13 most essential qsv commands exposed as individual MCP tools
+ * 12 most essential qsv commands exposed as individual MCP tools
  * Optimized for token efficiency while maintaining high-value tool access
  *
  * Commands promoted to CORE_TOOLS (always loaded):

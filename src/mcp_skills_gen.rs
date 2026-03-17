@@ -172,29 +172,32 @@ impl UsageParser {
 
         // Per-command option skip list for MCP
         // These options are not relevant when using the command through MCP
-        let command_skip_options: HashMap<&str, &[&str]> = HashMap::from_iter([(
-            "describegpt",
-            [
-                "--prompt",
-                "--sql-results",
-                "--session",
-                "--session-len",
-                "--fewshot-examples",
-                "--sample-size",
-                "--base-url",
-                "--model",
-                "--max-tokens",
-                "--timeout",
-                "--addl-props",
-                "--export-prompt",
-                "--prepare-context",
-                "--process-response",
-                "--prompt-file",
-                "--ckan-api",
-                "--cache-dir",
-            ]
-            .as_slice(),
-        )]);
+        let command_skip_options: HashMap<&str, &[&str]> = HashMap::from_iter([
+            (
+                "describegpt",
+                [
+                    "--prompt",
+                    "--sql-results",
+                    "--session",
+                    "--session-len",
+                    "--fewshot-examples",
+                    "--sample-size",
+                    "--base-url",
+                    "--model",
+                    "--max-tokens",
+                    "--timeout",
+                    "--addl-props",
+                    "--export-prompt",
+                    "--prepare-context",
+                    "--process-response",
+                    "--prompt-file",
+                    "--ckan-api",
+                    "--cache-dir",
+                ]
+                .as_slice(),
+            ),
+            ("index", ["--output"].as_slice()),
+        ]);
 
         // Iterate over parsed atoms from docopt
         for (atom, opts) in parser.descs.iter() {

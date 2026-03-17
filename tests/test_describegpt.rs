@@ -1996,6 +1996,7 @@ fn is_duckdb_available() -> bool {
 #[serial]
 fn describegpt_no_score_sql_flag() {
     if !is_local_llm_available() {
+        eprintln!("Skipping: local LLM not available");
         return;
     }
     let wrk = Workdir::new("describegpt_no_score_sql");
@@ -2037,6 +2038,7 @@ fn describegpt_no_score_sql_flag() {
 #[serial]
 fn describegpt_score_sql_enabled_by_default() {
     if !is_local_llm_available() {
+        eprintln!("Skipping: local LLM not available");
         return;
     }
     let wrk = Workdir::new("describegpt_score_enabled");
@@ -2083,6 +2085,7 @@ fn describegpt_score_sql_enabled_by_default() {
 #[serial]
 fn describegpt_score_threshold_zero_accepts_immediately() {
     if !is_local_llm_available() {
+        eprintln!("Skipping: local LLM not available");
         return;
     }
     let wrk = Workdir::new("describegpt_score_threshold_zero");
@@ -2128,6 +2131,7 @@ fn describegpt_score_threshold_zero_accepts_immediately() {
 #[serial]
 fn describegpt_score_max_retries_zero() {
     if !is_local_llm_available() {
+        eprintln!("Skipping: local LLM not available");
         return;
     }
     let wrk = Workdir::new("describegpt_score_max_retries_zero");
@@ -2173,6 +2177,7 @@ fn describegpt_score_max_retries_zero() {
 #[serial]
 fn describegpt_score_high_threshold_triggers_retries() {
     if !is_local_llm_available() {
+        eprintln!("Skipping: local LLM not available");
         return;
     }
     let wrk = Workdir::new("describegpt_score_high_threshold");
@@ -2223,6 +2228,7 @@ fn describegpt_score_high_threshold_triggers_retries() {
 #[serial]
 fn describegpt_score_sql_with_duckdb() {
     if !is_local_llm_available() || !is_duckdb_available() {
+        eprintln!("Skipping: local LLM or DuckDB not available");
         return;
     }
     let wrk = Workdir::new("describegpt_score_duckdb");
@@ -2274,6 +2280,7 @@ fn describegpt_score_sql_with_duckdb() {
 #[serial]
 fn describegpt_score_sql_produces_results_file() {
     if !is_local_llm_available() {
+        eprintln!("Skipping: local LLM not available");
         return;
     }
     let wrk = Workdir::new("describegpt_score_results_file");
@@ -2320,6 +2327,7 @@ fn describegpt_score_sql_produces_results_file() {
 #[serial]
 fn describegpt_score_duckdb_high_threshold_retries() {
     if !is_local_llm_available() || !is_duckdb_available() {
+        eprintln!("Skipping: local LLM or DuckDB not available");
         return;
     }
     let wrk = Workdir::new("describegpt_score_duckdb_retries");

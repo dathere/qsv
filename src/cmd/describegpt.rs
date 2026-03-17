@@ -816,6 +816,7 @@ fn build_score_refinement_prompt(
     score_report_json: &str,
     attempt: u32,
     max_retries: u32,
+    table_name: &str,
 ) -> String {
     let report: serde_json::Value = serde_json::from_str(score_report_json).unwrap_or_default();
     let score = report["score"].as_u64().unwrap_or(0);
@@ -835,8 +836,9 @@ fn build_score_refinement_prompt(
         "The SQL query scored {score}/100 ({rating}), below the acceptable threshold. Attempt \
          {attempt} of {max_retries}.\n\nCurrent \
          SQL:\n```sql\n{sql_query}\n```\n\nSuggestions:\n{suggestions_text}\n\nImprove the SQL \
-         query addressing these suggestions. Return ONLY the improved SQL in a ```sql code block. \
-         Keep the same logic/results, optimize structure and performance."
+         query addressing these suggestions. Use `{table_name}` as the table name. Return ONLY \
+         the improved SQL in a ```sql code block. Keep the same logic/results, optimize structure \
+         and performance."
     )
 }
 
@@ -3674,7 +3676,7 @@ fn run_inference_options(
         if can_score {
             let use_duckdb = should_use_duckdb();
             let threshold = args.flag_score_threshold;
-            let max_retries = args.flag_score_max_retries;
+            let max_retries = args.flag_score_max_retries.min(100);
 
             // Replace {INPUT_TABLE_NAME} with file stem for scoresql
             let file_stem = Path::new(input_path)
@@ -3682,10 +3684,10 @@ fn run_inference_options(
                 .and_then(|s| s.to_str())
                 .unwrap_or("input");
             let mut scoring_sql = sql_query.replace(INPUT_TABLE_NAME, file_stem);
-            let mut best_sql = scoring_sql.clone();
+            let mut best_sql_template = sql_query.clone();
             let mut best_score: u32 = 0;
 
-            for attempt in 1..=max_retries + 1 {
+            for attempt in 1..=max_retries.saturating_add(1) {
                 match score_sql_query(input_path, &scoring_sql, use_duckdb) {
                     Ok((score, rating, report_json)) => {
                         print_status(
@@ -3695,7 +3697,7 @@ fn run_inference_options(
 
                         if score > best_score {
                             best_score = score;
-                            best_sql = scoring_sql.clone();
+                            best_sql_template = scoring_sql.replace(file_stem, INPUT_TABLE_NAME);
                         }
 
                         if score >= threshold || attempt > max_retries {
@@ -3710,16 +3712,18 @@ fn run_inference_options(
                                 );
                             }
                             // Restore {INPUT_TABLE_NAME} so the existing replacement logic works
-                            sql_query = best_sql.replace(file_stem, INPUT_TABLE_NAME);
+                            sql_query = best_sql_template.clone();
                             break;
                         }
 
-                        // Ask LLM to improve
+                        // Ask LLM to improve — use the file_stem as the table
+                        // name in the prompt so the LLM returns SQL we can score directly
                         let refinement_prompt = build_score_refinement_prompt(
                             &scoring_sql,
                             &report_json,
                             attempt,
                             max_retries,
+                            file_stem,
                         );
                         let refinement_messages = json!([
                             {"role": "system", "content": &system_prompt},
@@ -3742,21 +3746,22 @@ fn run_inference_options(
                                             caps.get(1).map(|m| m.as_str().trim().to_string())
                                         })
                                 {
-                                    // Replace {INPUT_TABLE_NAME} with file stem for next scoring
-                                    // round
-                                    scoring_sql = new_sql.replace(INPUT_TABLE_NAME, file_stem);
+                                    // Use LLM's SQL directly for scoring — the refinement
+                                    // prompt instructs the LLM to use `file_stem` as the
+                                    // table name
+                                    scoring_sql = new_sql;
                                 } else {
                                     print_status(
                                         "  LLM refinement had no SQL block. Using best query.",
                                         None,
                                     );
-                                    sql_query = best_sql.replace(file_stem, INPUT_TABLE_NAME);
+                                    sql_query = best_sql_template.clone();
                                     break;
                                 }
                             },
                             Err(e) => {
                                 log::warn!("SQL refinement LLM call failed: {e}");
-                                sql_query = best_sql.replace(file_stem, INPUT_TABLE_NAME);
+                                sql_query = best_sql_template.clone();
                                 break;
                             },
                         }
@@ -3776,7 +3781,8 @@ fn run_inference_options(
                         let error_prompt = format!(
                             "The SQL query failed \
                              validation:\n```sql\n{scoring_sql}\n```\n\nError: {e}\n\nFix the SQL \
-                             query. Return ONLY the corrected SQL in a ```sql code block."
+                             query. Use `{file_stem}` as the table name. Return ONLY the \
+                             corrected SQL in a ```sql code block."
                         );
                         let error_messages = json!([
                             {"role": "system", "content": &system_prompt},
@@ -3798,7 +3804,7 @@ fn run_inference_options(
                                             caps.get(1).map(|m| m.as_str().trim().to_string())
                                         })
                                 {
-                                    scoring_sql = new_sql.replace(INPUT_TABLE_NAME, file_stem);
+                                    scoring_sql = new_sql;
                                 } else {
                                     break;
                                 }

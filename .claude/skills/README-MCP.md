@@ -18,7 +18,7 @@ The **qsvmcp** binary variant is purpose-built for MCP server use. It includes o
 
 **Features included in qsvmcp**: Polars, Luau scripting, geocoding, self-update, MCP skill generation (`--update-mcp-skills`), and the `log` command for MCP audit logging.
 
-**Commands excluded from qsvmcp** (not needed for MCP): `apply`, `fetch`, `fetchpost`, `foreach`, `lens`, `prompt`, `python`, and others — 17 commands total.
+**Commands excluded from qsvmcp** (not needed for MCP): `apply`, `fetch`, `fetchpost`, `foreach`, `lens`, `prompt`, `python`, and `clipboard` — 8 commands total.
 
 | Binary | Commands | MCP Server Support | Notes |
 |--------|----------|-------------------|-------|
@@ -194,7 +194,7 @@ These tools are always available immediately:
 | `qsv_get_working_dir` | Get current working directory |
 | `qsv_list_files` | List tabular data files in a directory |
 | `qsv_log` | Write to the MCP audit log |
-| `qsv_command` | Execute any of the 60 qsvmcp commands |
+| `qsv_command` | Execute any qsv command with a skill definition |
 | `qsv_to_parquet` | Convert CSV to Parquet format |
 | `qsv_index` | Create index for fast random access |
 | `qsv_stats` | Statistical analysis (creates stats cache) |
@@ -222,7 +222,7 @@ Tools for frequently used commands, loaded when discovered via search:
 
 ### Generic Command Tool
 
-`qsv_command` - Execute any of the 60 qsvmcp commands:
+`qsv_command` - Execute any qsv command with a skill definition (51 commands):
 - `to`, `tojsonl`, `partition`, `pseudo`, `reverse`, `sniff`, `sort`, `dedup`, `join`, `apply`, `rename`, `validate`, `sample`, `template`, `diff`, `schema`, etc.
 - Full list: https://github.com/dathere/qsv#commands
 

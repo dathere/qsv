@@ -9,6 +9,7 @@ allowed-tools:
   - mcp__qsv__qsv_frequency
   - mcp__qsv__qsv_slice
   - mcp__qsv__qsv_command
+  - mcp__qsv__qsv_describegpt
   - mcp__qsv__qsv_sqlp
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
@@ -43,6 +44,8 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 8. **Screen for PII/PHI**: Run `qsv_command` with `command: "searchset"` and `args: ["--flag", "pii_match", "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"]` to scan for sensitive data patterns (SSN, credit cards, email, phone, IBAN). Report any columns with matches.
 
 9. **Preview data**: Run `qsv_slice` with `len: 5` to show the first 5 rows as a sample.
+
+10. **Document**: Run `qsv_describegpt` with `all: true` to generate a Data Dictionary, Description, and Tags. Output defaults to `<filestem>.describegpt.md`. This step leverages the stats cache created in step 5. Uses the connected LLM via MCP sampling — no API key needed.
 
 ## Quality Dimensions
 
@@ -146,6 +149,7 @@ Present a summary with:
 - **Column overview**: table with name, type, nulls, cardinality, min, max, mean (where applicable)
 - **Key observations**: unique identifiers, high-null columns, type mismatches, notable distributions
 - **Data quality flags**: any issues found (high sparsity, mixed types, ragged rows)
+- **Data Dictionary, Description & Tags** (optional): AI-generated documentation from describegpt (step 10)
 
 ### Quality Report Checklist
 
@@ -160,6 +164,7 @@ Present a summary with:
 - [ ] **Schema violations** if schema provided (validity)
 - [ ] **Encoding and delimiter** detected (consistency)
 - [ ] **PII/PHI patterns** detected via searchset (privacy)
+- [ ] **Data Dictionary** generated with column labels, descriptions, and types (describegpt)
 
 ## Common Data Quality Fixes
 

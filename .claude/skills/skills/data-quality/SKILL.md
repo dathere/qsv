@@ -11,6 +11,7 @@ For the full step-by-step profiling workflow, use the `/data-profile` command. T
 | **Validity** | Correct formats/types? | `stats` — `type`; `validate schema.json` | String type on numeric column |
 | **Consistency** | Uniform formats? | `frequency` — case variants; `sniff` — encoding | Same value in different cases |
 | **Accuracy** | Plausible values? | `stats` — min/max/stddev | Values > 3 stddev from mean |
+| **Documentation** | Dataset described? | `describegpt --all` | No Data Dictionary or Description |
 
 ## Remediation Decision Tree
 

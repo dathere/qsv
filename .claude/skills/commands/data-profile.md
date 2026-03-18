@@ -149,7 +149,7 @@ Present a summary with:
 - **Column overview**: table with name, type, nulls, cardinality, min, max, mean (where applicable)
 - **Key observations**: unique identifiers, high-null columns, type mismatches, notable distributions
 - **Data quality flags**: any issues found (high sparsity, mixed types, ragged rows)
-- **Data Dictionary, Description & Tags**: AI-generated documentation from describegpt
+- **Data Dictionary, Description & Tags** (optional): AI-generated documentation from describegpt (step 10)
 
 ### Quality Report Checklist
 

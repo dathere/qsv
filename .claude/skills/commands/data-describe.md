@@ -26,7 +26,7 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 2. **Profile**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` to generate the stats cache. describegpt reads this cache for column metadata, so it must exist first.
 
-3. **Describe**: Run `qsv_describegpt` with the requested options (default: `all: true`). Output defaults to `<filestem>.describegpt.md`.
+3. **Describe**: Run `qsv_describegpt` with the requested options (recommend `all: true` for comprehensive output). At least one inference option (`dictionary`, `description`, `tags`, or `all`) is required. Output defaults to `<filestem>.describegpt.md`.
 
 4. **Present**: Display the generated Data Dictionary table, Description, and Tags to the user.
 
@@ -34,7 +34,7 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 | Option | Effect |
 |--------|--------|
-| `--all` (default) | Generate Dictionary + Description + Tags in one pass |
+| `--all` (recommended) | Generate Dictionary + Description + Tags in one pass |
 | `--dictionary` | Data Dictionary only — column labels, descriptions, types |
 | `--description` | Natural-language dataset Description only |
 | `--tags` | Semantic Tags only |

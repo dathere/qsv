@@ -7,10 +7,65 @@
 // Uses CommonJS so it works standalone without package.json declaring "type": "module".
 
 const { existsSync, copyFileSync, realpathSync } = require('node:fs');
+const { execFileSync } = require('node:child_process');
 const { resolve, normalize, join } = require('node:path');
+const { homedir } = require('node:os');
 
 function output(additionalContext) {
   process.stdout.write(JSON.stringify({ additionalContext }) + '\n');
+}
+
+/**
+ * Check if qsvmcp or qsv binary is available.
+ * Mirrors the detection logic in config.ts: which/where → common paths.
+ * Returns the found path, or null if not found.
+ */
+function findQsvBinary() {
+  const command = process.platform === 'win32' ? 'where' : 'which';
+  for (const binName of ['qsvmcp', 'qsv']) {
+    try {
+      const result = execFileSync(command, [binName], {
+        encoding: 'utf-8',
+        timeout: 3000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim().split(/\r?\n/)[0];
+      if (result) return result;
+    } catch {
+      // not found via which/where — continue
+    }
+  }
+
+  // Fall back to common installation paths
+  const home = homedir();
+  const commonPaths =
+    process.platform === 'win32'
+      ? [
+          'C:\\Program Files\\qsv\\qsvmcp.exe',
+          'C:\\Program Files\\qsv\\qsv.exe',
+          'C:\\qsv\\qsvmcp.exe',
+          'C:\\qsv\\qsv.exe',
+          join(home, 'scoop', 'shims', 'qsvmcp.exe'),
+          join(home, 'scoop', 'shims', 'qsv.exe'),
+          join(home, 'AppData', 'Local', 'Programs', 'qsv', 'qsvmcp.exe'),
+          join(home, 'AppData', 'Local', 'Programs', 'qsv', 'qsv.exe'),
+        ]
+      : [
+          '/usr/local/bin/qsvmcp',
+          '/usr/local/bin/qsv',
+          '/opt/homebrew/bin/qsvmcp',
+          '/opt/homebrew/bin/qsv',
+          '/usr/bin/qsvmcp',
+          '/usr/bin/qsv',
+          join(home, '.cargo', 'bin', 'qsvmcp'),
+          join(home, '.cargo', 'bin', 'qsv'),
+          join(home, '.local', 'bin', 'qsvmcp'),
+          join(home, '.local', 'bin', 'qsv'),
+        ];
+
+  for (const p of commonPaths) {
+    if (existsSync(p)) return p;
+  }
+  return null;
 }
 
 async function main() {
@@ -116,6 +171,22 @@ async function main() {
     } catch {
       output(`Could not create CLAUDE.md in ${cwd} (directory may not be writable). Skipping qsv workflow guidance setup.`);
     }
+  }
+
+  // Validate that qsvmcp/qsv binary is available — warn early if not
+  const qsvBin = findQsvBinary();
+  if (!qsvBin) {
+    const mcpbUrl = 'https://github.com/dathere/qsv/releases/latest';
+    output(
+      `WARNING: The qsv plugin requires the qsvmcp (or qsv) binary, but neither was found on this system. ` +
+        `The qsv tools (qsv_stats, qsv_sqlp, etc.) will NOT work until a binary is installed.\n\n` +
+        `Install the qsv MCP Server Desktop Extension (.mcpb) — it auto-installs the qsvmcp binary for you:\n` +
+        `1. Download the .mcpb file from: ${mcpbUrl}\n` +
+        `2. Double-click to install in Claude Desktop\n` +
+        `3. Restart Claude Desktop\n\n` +
+        `The extension auto-detects and installs qsvmcp. No manual binary setup needed.\n` +
+        `If qsvmcp is already installed elsewhere, set QSV_MCP_BIN_PATH to its location.`,
+    );
   }
 }
 

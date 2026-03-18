@@ -11,6 +11,10 @@ For the full step-by-step profiling workflow, use the `/data-profile` command. T
 | **Validity** | Correct formats/types? | `stats` — `type`; `validate schema.json` | String type on numeric column |
 | **Consistency** | Uniform formats? | `frequency` — case variants; `sniff` — encoding | Same value in different cases |
 | **Accuracy** | Plausible values? | `stats` — min/max/stddev | Values > 3 stddev from mean |
+| **Column Name Quality** | Headers safe & descriptive? | `safenames --verify` | Spaces, special chars, or duplicates in headers |
+| **Conformity** | Values follow standards? | `searchset` with domain regex | Non-standard codes (country, state, zip, phone) |
+| **Referential Integrity** | Foreign keys valid? | `joinp --left-anti` | Orphaned references across related files |
+| **Injection Safety** | Malicious payloads? | `searchset` with injection regex | Formula/SQL injection patterns in cells |
 | **Documentation** | Dataset described? | `describegpt --all` | No Data Dictionary or Description |
 
 ## Remediation Decision Tree
@@ -26,6 +30,9 @@ When a quality issue is found, choose the right fix:
 | Duplicate rows | Medium | `dedup` (or `extdedup` for >1GB) | `stats --cardinality` on key columns shows all unique |
 | Inconsistent case | Low | `sqlp` with `UPPER(col)` or `LOWER(col)` | `frequency` shows no case variants |
 | Empty values | Low | `sqlp` with `COALESCE(NULLIF(col, ''), 'N/A')` | Nulls are semantically meaningful |
+| Non-conforming values | Medium | `searchset` + `search --flag` | No domain standard applies |
+| Orphaned foreign keys | Medium | `joinp --left-anti` | Single-file dataset with no references |
+| Injection payloads | High | `searchset` with injection regex + sanitize | Data is internal-only and never opened in spreadsheets or loaded into databases |
 | Invalid rows | Low | `validate schema.json` + filter | No schema available |
 
 ## Fix Ordering

@@ -1,0 +1,16 @@
+# Injection pattern detection for use with qsv searchset
+# Detects CSV/formula injection and SQL injection payloads in cell values
+# CSV/Formula injection — cells that execute when opened in spreadsheet apps
+(?x)^\s*= # Formula: starts with =
+(?x)^\s*\+ # Formula: starts with +
+(?x)^\s*-\s*[A-Za-z(] # Formula: starts with - followed by function/paren (avoids negative numbers)
+(?x)^\s*@ # Formula: starts with @ (Excel function prefix)
+(?x)^\s*\r # CR injection: starts with carriage return
+(?x)(?i)\bSELECT\b.+\bFROM\b # SQL: SELECT ... FROM
+(?x)(?i)\bUNION\b.+\bSELECT\b # SQL: UNION SELECT
+(?x)(?i)\bINSERT\b.+\bINTO\b # SQL: INSERT INTO
+(?x)(?i)\bDELETE\b.+\bFROM\b # SQL: DELETE FROM
+(?x)(?i)\bDROP\b\s+\b(TABLE|DATABASE)\b # SQL: DROP TABLE/DATABASE
+(?x)(?i)\bUPDATE\b.+\bSET\b # SQL: UPDATE ... SET
+(?x)(?i)'\s*(OR|AND)\s+\d+=\d+ # SQL: tautology injection (' OR 1=1)
+(?x)(?i);\s*(DROP|DELETE|INSERT|UPDATE|ALTER)\b # SQL: stacked query injection

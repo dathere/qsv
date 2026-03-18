@@ -10,6 +10,7 @@ allowed-tools:
   - mcp__qsv__qsv_slice
   - mcp__qsv__qsv_command
   - mcp__qsv__qsv_describegpt
+  - mcp__qsv__qsv_joinp
   - mcp__qsv__qsv_sqlp
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
@@ -43,13 +44,15 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 8. **Screen for PII/PHI**: Run `qsv_command` with `command: "searchset"` and `args: ["--flag", "pii_match", "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"]` to scan for sensitive data patterns (SSN, credit cards, email, phone, IBAN). Report any columns with matches.
 
-9. **Preview data**: Run `qsv_slice` with `len: 5` to show the first 5 rows as a sample.
+9. **Screen for injection**: Run `qsv_command` with `command: "searchset"` and `args: ["--flag", "injection_match", "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"]` to scan for CSV/formula injection and SQL injection payloads. Report any columns with matches.
 
-10. **Document**: Run `qsv_describegpt` with `all: true` to generate a Data Dictionary, Description, and Tags. Output defaults to `<filestem>.describegpt.md`. This step leverages the stats cache created in step 5. Uses the connected LLM via MCP sampling — no API key needed.
+10. **Preview data**: Run `qsv_slice` with `len: 5` to show the first 5 rows as a sample.
+
+11. **Document**: Run `qsv_describegpt` with `all: true` to generate a Data Dictionary, Description, and Tags. Output defaults to `<filestem>.describegpt.md`. This step leverages the stats cache created in step 5. Uses the connected LLM via MCP sampling — no API key needed.
 
 ## Quality Dimensions
 
-When profiling, assess these five dimensions:
+When profiling, assess these quality dimensions:
 
 ### 1. Completeness
 | Check | Command | What to Look For |
@@ -103,7 +106,34 @@ When profiling, assess these five dimensions:
 
 **Red flag**: Latitude > 90 or < -90, negative ages, future birth dates, kurtosis > 10 (extreme outliers).
 
-### 6. PII/PHI Screening
+### 6. Column Name Quality
+| Check | Command | What to Look For |
+|-------|---------|-----------------|
+| Unsafe names | `safenames --verify` | Spaces, special chars, reserved words |
+| Duplicate headers | `headers` | Same name appearing twice |
+| Naming consistency | `headers` | Mixed conventions (camelCase vs snake_case) |
+
+**Red flag**: Column names with spaces or special characters break downstream tools and SQL queries.
+
+### 7. Conformity
+| Check | Command | What to Look For |
+|-------|---------|-----------------|
+| Standard codes | `searchset` with domain regex file | Values not matching ISO country, state, zip patterns |
+| Format adherence | `search --flag` with expected pattern | Phone numbers, emails, URLs not matching standard format |
+| Controlled vocabularies | `frequency` | Unexpected values outside known valid set |
+
+**Red flag**: A "country" column with free-text entries instead of ISO 3166 codes, or a "state" column mixing abbreviations and full names.
+
+### 8. Referential Integrity
+| Check | Command | What to Look For |
+|-------|---------|-----------------|
+| Orphaned foreign keys | `joinp --left-anti` | Rows in child file with no match in parent |
+| Missing references | `joinp --left-anti` (reversed) | Parent records with no children (if expected) |
+| Key overlap | `sqlp` | Cross-file key comparison via SQL |
+
+**Red flag**: An orders file referencing customer IDs that don't exist in the customers file. Only applicable when profiling related files together.
+
+### 9. PII/PHI Screening
 **Question**: Does the data contain personally identifiable or protected health information?
 
 Use `searchset` with a regex file to scan all columns for sensitive patterns:
@@ -142,6 +172,39 @@ For additional PHI patterns (e.g., MBI, state license numbers), create a custom 
 
 **Red flag**: Any matches indicate PII/PHI exposure — flag columns for masking or removal before sharing.
 
+### 10. Injection Safety
+**Question**: Does the data contain CSV/formula injection or SQL injection payloads?
+
+Malicious cell values can execute code when opened in spreadsheet applications (Excel, Google Sheets) or cause damage when loaded into databases without parameterized queries.
+
+Use `searchset` with the bundled injection regex file to scan all columns:
+
+```
+qsv_command command: "searchset", input_file: "<file>", args: ["--flag", "injection_match", "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"]
+```
+
+The bundled `${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt` detects:
+
+**CSV/Formula Injection**:
+| Pattern | Example | Risk |
+|---------|---------|------|
+| Starts with `=` | `=CMD("calc")` | Arbitrary command execution in Excel |
+| Starts with `+` | `+CMD("calc")` | Same as `=` in many spreadsheet apps |
+| Starts with `-` + function | `-SUM(A1:A10)` | Formula execution (negative numbers excluded) |
+| Starts with `@` | `@SUM(A1:A10)` | Excel function prefix |
+| Starts with tab/CR | `\t=CMD(...)` | Bypasses naive prefix checks |
+
+**SQL Injection**:
+| Pattern | Example | Risk |
+|---------|---------|------|
+| SELECT...FROM | `'; SELECT * FROM users--` | Data exfiltration |
+| UNION SELECT | `' UNION SELECT password FROM users--` | Query hijacking |
+| DROP TABLE/DATABASE | `'; DROP TABLE users--` | Data destruction |
+| Tautology | `' OR 1=1--` | Authentication bypass |
+| Stacked queries | `'; DELETE FROM orders--` | Arbitrary SQL execution |
+
+**Red flag**: Any matches indicate potential injection payloads — sanitize cells before sharing the file or loading into a database. For formula injection, prefix dangerous cells with a single quote (`'`) or strip leading `=+\-@` characters.
+
 ## Report Format
 
 Present a summary with:
@@ -149,7 +212,7 @@ Present a summary with:
 - **Column overview**: table with name, type, nulls, cardinality, min, max, mean (where applicable)
 - **Key observations**: unique identifiers, high-null columns, type mismatches, notable distributions
 - **Data quality flags**: any issues found (high sparsity, mixed types, ragged rows)
-- **Data Dictionary, Description & Tags** (optional): AI-generated documentation from describegpt (step 10)
+- **Data Dictionary, Description & Tags** (optional): AI-generated documentation from describegpt (step 11)
 
 ### Quality Report Checklist
 
@@ -163,7 +226,11 @@ Present a summary with:
 - [ ] **Duplicate rows** detected (uniqueness)
 - [ ] **Schema violations** if schema provided (validity)
 - [ ] **Encoding and delimiter** detected (consistency)
+- [ ] **Column names** safe and consistent (safenames --verify)
+- [ ] **Conformity** to domain standards checked where applicable (searchset)
+- [ ] **Referential integrity** verified across related files if provided (joinp --left-anti)
 - [ ] **PII/PHI patterns** detected via searchset (privacy)
+- [ ] **Injection payloads** scanned for CSV/formula and SQL injection patterns (searchset)
 - [ ] **Data Dictionary** generated with column labels, descriptions, and types (describegpt)
 
 ## Common Data Quality Fixes
@@ -175,6 +242,9 @@ Present a summary with:
 | Duplicate rows | `dedup` |
 | Ragged rows | `fixlengths` |
 | Unsafe column names | `safenames` |
+| Non-conforming values | `searchset` + `search --flag` to identify, `sqlp` to fix |
+| Orphaned foreign keys | `joinp --left-anti` to find, then remove or fix references |
+| Injection payloads | `searchset` to detect + `sqlp` to sanitize (prefix with `'` or strip leading `=+-@`) |
 | Wrong encoding | `input` (normalizes to UTF-8) |
 | Empty values | `sqlp` with `COALESCE(NULLIF(col, ''), 'N/A')` |
 | Invalid rows | `validate schema.json` + filter |

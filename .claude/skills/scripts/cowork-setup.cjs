@@ -15,6 +15,9 @@ function output(additionalContext) {
   process.stdout.write(JSON.stringify({ additionalContext }) + '\n');
 }
 
+// Minimum qsv version required — keep in sync with manifest.json _meta.minimum_qsv_version
+const MINIMUM_QSV_VERSION = '18.0.0';
+
 /**
  * Check if qsvmcp or qsv binary is available.
  * Mirrors the detection logic in config.ts: which/where → common paths.
@@ -66,6 +69,111 @@ function findQsvBinary() {
     if (existsSync(p)) return p;
   }
   return null;
+}
+
+/**
+ * Compare two semver strings (major.minor.patch).
+ * Returns -1 if a < b, 0 if equal, 1 if a > b.
+ */
+function compareVersions(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+    if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+  }
+  return 0;
+}
+
+/**
+ * Validate the qsv MCP server configuration:
+ *  1. MCP server entry point exists in the plugin root
+ *  2. qsvmcp/qsv binary is found
+ *  3. Binary version >= MINIMUM_QSV_VERSION
+ *  4. Polars feature is compiled in (mandatory for MCP tools)
+ *
+ * Returns { valid, warnings[] } — warnings are emitted via output().
+ */
+function validateMcpServer(pluginRoot) {
+  const warnings = [];
+
+  // 1. Check MCP server entry point
+  const serverEntry = join(pluginRoot, 'dist', 'mcp-server.js');
+  if (!existsSync(serverEntry)) {
+    warnings.push(
+      `WARNING: MCP server entry point not found at ${serverEntry}. ` +
+        `The qsv tools will NOT work. The plugin may not have been built correctly — ` +
+        `try reinstalling the plugin from a fresh .plugin archive.`,
+    );
+    return { valid: false, warnings };
+  }
+
+  // 2. Check binary availability
+  const qsvBin = findQsvBinary();
+  if (!qsvBin) {
+    const mcpbUrl = 'https://github.com/dathere/qsv/releases/latest';
+    warnings.push(
+      `WARNING: The qsv plugin requires the qsvmcp (or qsv) binary, but neither was found on this system. ` +
+        `The qsv tools (qsv_stats, qsv_sqlp, etc.) will NOT work until a binary is installed.\n\n` +
+        `Install the qsv MCP Server Desktop Extension (.mcpb) — it auto-installs the qsvmcp binary for you:\n` +
+        `1. Download the .mcpb file from: ${mcpbUrl}\n` +
+        `2. Double-click to install in Claude Desktop\n` +
+        `3. Restart Claude Desktop\n\n` +
+        `The extension auto-detects and installs qsvmcp. No manual binary setup needed.\n` +
+        `If qsvmcp is already installed elsewhere, set QSV_MCP_BIN_PATH to its location.`,
+    );
+    return { valid: false, warnings };
+  }
+
+  // 3. Run --version and validate
+  let versionOutput = '';
+  try {
+    versionOutput = execFileSync(qsvBin, ['--version'], {
+      encoding: 'utf-8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    warnings.push(
+      `WARNING: Found qsv binary at ${qsvBin} but could not run '${qsvBin} --version'. ` +
+        `The binary may be corrupted or not executable.`,
+    );
+    return { valid: false, warnings };
+  }
+
+  // 3a. Extract and check version (e.g. "qsvmcp 18.0.0 ..." → "18.0.0")
+  const versionMatch = versionOutput.match(/qsv(?:mcp)?\s+(\d+\.\d+\.\d+)/);
+  if (!versionMatch) {
+    warnings.push(
+      `WARNING: Could not parse version from '${qsvBin} --version' output. ` +
+        `Expected format: "qsvmcp X.Y.Z" or "qsv X.Y.Z".`,
+    );
+    return { valid: false, warnings };
+  }
+
+  const version = versionMatch[1];
+  if (compareVersions(version, MINIMUM_QSV_VERSION) < 0) {
+    warnings.push(
+      `WARNING: qsv version ${version} found at ${qsvBin}, but version ${MINIMUM_QSV_VERSION} or higher is required. ` +
+        `Please update: https://github.com/dathere/qsv/releases/latest`,
+    );
+    return { valid: false, warnings };
+  }
+
+  // 3b. Check Polars feature (mandatory — without it, sqlp/joinp/pivotp etc. won't work)
+  // Polars appears in version output as e.g. ";polars-0.53.0:54c9168;" or "polars-0.53.0;"
+  const polarsMatch = versionOutput.match(/(?:;|\s|\d-)polars-(\d+\.\d+\.\d+)(?::[0-9a-fA-F]+)?(?:;|\s|$)/);
+  if (!polarsMatch) {
+    warnings.push(
+      `WARNING: qsv binary at ${qsvBin} does not have the Polars feature enabled. ` +
+        `The MCP server requires Polars-powered commands (sqlp, joinp, pivotp, etc.). ` +
+        `Only qsvmcp or full qsv builds include Polars — qsvlite and qsvdp are NOT supported.\n\n` +
+        `Install qsvmcp from: https://github.com/dathere/qsv/releases/latest`,
+    );
+    return { valid: false, warnings };
+  }
+
+  return { valid: true, warnings, version, polarsVersion: polarsMatch[1], path: qsvBin };
 }
 
 async function main() {
@@ -173,19 +281,14 @@ async function main() {
     }
   }
 
-  // Validate that qsvmcp/qsv binary is available — warn early if not
-  const qsvBin = findQsvBinary();
-  if (!qsvBin) {
-    const mcpbUrl = 'https://github.com/dathere/qsv/releases/latest';
+  // Validate the full MCP server configuration — not just the binary
+  const validation = validateMcpServer(resolvedPluginRoot);
+  for (const warning of validation.warnings) {
+    output(warning);
+  }
+  if (validation.valid) {
     output(
-      `WARNING: The qsv plugin requires the qsvmcp (or qsv) binary, but neither was found on this system. ` +
-        `The qsv tools (qsv_stats, qsv_sqlp, etc.) will NOT work until a binary is installed.\n\n` +
-        `Install the qsv MCP Server Desktop Extension (.mcpb) — it auto-installs the qsvmcp binary for you:\n` +
-        `1. Download the .mcpb file from: ${mcpbUrl}\n` +
-        `2. Double-click to install in Claude Desktop\n` +
-        `3. Restart Claude Desktop\n\n` +
-        `The extension auto-detects and installs qsvmcp. No manual binary setup needed.\n` +
-        `If qsvmcp is already installed elsewhere, set QSV_MCP_BIN_PATH to its location.`,
+      `qsv MCP server is properly configured: qsv ${validation.version} with Polars ${validation.polarsVersion} at ${validation.path}`,
     );
   }
 }

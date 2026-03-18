@@ -45,7 +45,7 @@ PLUGIN_JSON=$(unzip -p "$PLUGIN_FILE" .claude-plugin/plugin.json 2>/dev/null) ||
 # Values are passed via environment variables to avoid shell injection
 PLUGIN_META=$(PLUGIN_JSON_RAW="$PLUGIN_JSON" osascript -l JavaScript -e "
   ObjC.import('stdlib');
-  var raw = $.getenv('PLUGIN_JSON_RAW').js;
+  var raw = $.getenv('PLUGIN_JSON_RAW');
   var meta = JSON.parse(raw);
   meta.name + '\n' + meta.version;
 " 2>/dev/null) || {
@@ -128,9 +128,9 @@ if [ -f "$MARKETPLACE_JSON" ]; then
   osascript -l JavaScript -e "
     ObjC.import('stdlib');
     var app = Application.currentApplication(); app.includeStandardAdditions = true;
-    var mj = $.getenv('MJ_PATH').js;
-    var name = $.getenv('P_NAME').js;
-    var version = $.getenv('P_VERSION').js;
+    var mj = $.getenv('MJ_PATH');
+    var name = $.getenv('P_NAME');
+    var version = $.getenv('P_VERSION');
     var data = JSON.parse(app.read(Path(mj)));
     data.plugins = (data.plugins || []).filter(function(p) { return p.name !== name; });
     data.plugins.push({ name: name, version: version, source: './' + name });
@@ -151,11 +151,11 @@ if [ -f "$INSTALLED_JSON" ]; then
   osascript -l JavaScript -e "
     ObjC.import('stdlib');
     var app = Application.currentApplication(); app.includeStandardAdditions = true;
-    var ij = $.getenv('IJ_PATH').js;
-    var name = $.getenv('P_NAME').js;
-    var version = $.getenv('P_VERSION').js;
-    var dest = $.getenv('P_DEST').js;
-    var now = $.getenv('P_NOW').js;
+    var ij = $.getenv('IJ_PATH');
+    var name = $.getenv('P_NAME');
+    var version = $.getenv('P_VERSION');
+    var dest = $.getenv('P_DEST');
+    var now = $.getenv('P_NOW');
     var data = JSON.parse(app.read(Path(ij)));
     if (!data.plugins) data.plugins = {};
     data.plugins[name + '@local-desktop-app-uploads'] = [{

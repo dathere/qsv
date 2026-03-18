@@ -6,7 +6,7 @@ Complete TypeScript implementation for loading, executing, and composing qsv com
 
 The QSV MCP Server now supports **direct access to local tabular data files** (CSV, Excel, JSONL, etc.). No more uploading files to Claude Desktop!
 
-**Quick Start**: See [docs/guides/QUICK_START.md](./docs/guides/QUICK_START.md)
+**Quick Start**: See [docs/guides/START_HERE.md](./docs/guides/START_HERE.md)
 **Full Guide**: See [docs/guides/FILESYSTEM_USAGE.md](./docs/guides/FILESYSTEM_USAGE.md)
 
 ### Key Features:
@@ -56,7 +56,7 @@ Each skill file provides:
 
 Auto-detection finds qsv in standard locations (PATH, /usr/local/bin, ~/.cargo/bin, etc.)
 
-**Documentation**: [docs/guides/DESKTOP_EXTENSION.md](./docs/guides/DESKTOP_EXTENSION.md)
+**Documentation**: [docs/guides/START_HERE.md](./docs/guides/START_HERE.md)
 
 </details>
 
@@ -420,12 +420,12 @@ qsv --update-mcp-skills
 ## Documentation
 
 ### Installation & Setup
-- [Desktop Extension Guide](./docs/guides/DESKTOP_EXTENSION.md) - Install as Claude Desktop extension (recommended)
+- [Getting Started Guide](./docs/guides/START_HERE.md) - Install qsv MCP Server + Cowork Plugin (recommended)
 - [MCP Server Guide](./README-MCP.md) - Claude Desktop integration (legacy method)
 - [Auto-Update Guide](./docs/reference/AUTO_UPDATE.md) - Keep skills in sync with qsv releases
 
 ### Usage & Features
-- [Quick Start Guide](./docs/guides/QUICK_START.md) - Get started quickly
+- [Additional Servers Guide](./docs/guides/ADDITIONAL_SERVERS.md) - Census + Wikidata MCP servers
 - [Filesystem Usage Guide](./docs/guides/FILESYSTEM_USAGE.md) - Local file access
 - [Complete API Documentation](./docs/reference/SKILLS_API.md)
 - [qsv Commands](https://github.com/dathere/qsv#commands)

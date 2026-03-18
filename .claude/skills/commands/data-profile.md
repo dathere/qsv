@@ -189,7 +189,7 @@ The bundled `${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt` detects:
 | Pattern | Example | Risk |
 |---------|---------|------|
 | Starts with `=` | `=CMD("calc")` | Arbitrary command execution in Excel |
-| Starts with `+` | `+CMD("calc")` | Same as `=` in many spreadsheet apps |
+| Starts with `+` + function | `+CMD("calc")` | Same as `=` in many spreadsheet apps (positive numbers/phone numbers excluded) |
 | Starts with `-` + function | `-SUM(A1:A10)` | Formula execution (negative numbers excluded) |
 | Starts with `@` | `@SUM(A1:A10)` | Excel function prefix |
 | Starts with tab/CR | `\t=CMD(...)` | Bypasses naive prefix checks |
@@ -200,6 +200,9 @@ The bundled `${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt` detects:
 | SELECT...FROM | `'; SELECT * FROM users--` | Data exfiltration |
 | UNION SELECT | `' UNION SELECT password FROM users--` | Query hijacking |
 | DROP TABLE/DATABASE | `'; DROP TABLE users--` | Data destruction |
+| INSERT INTO | `'; INSERT INTO users VALUES(...)--` | Data tampering |
+| DELETE FROM | `'; DELETE FROM orders--` | Data deletion |
+| UPDATE SET | `'; UPDATE users SET role='admin'--` | Data modification |
 | Tautology | `' OR 1=1--` | Authentication bypass |
 | Stacked queries | `'; DELETE FROM orders--` | Arbitrary SQL execution |
 

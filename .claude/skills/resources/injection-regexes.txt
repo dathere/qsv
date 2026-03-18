@@ -2,7 +2,7 @@
 # Detects CSV/formula injection and SQL injection payloads in cell values
 # CSV/Formula injection — cells that execute when opened in spreadsheet apps
 (?x)^\s*= # Formula: starts with =
-(?x)^\s*\+ # Formula: starts with +
+(?x)^\s*\+\s*[A-Za-z(] # Formula: starts with + followed by function/paren (avoids positive numbers/phone numbers)
 (?x)^\s*-\s*[A-Za-z(] # Formula: starts with - followed by function/paren (avoids negative numbers)
 (?x)^\s*@ # Formula: starts with @ (Excel function prefix)
 (?x)^\s*\r # CR injection: starts with carriage return

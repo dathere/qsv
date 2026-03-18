@@ -1076,6 +1076,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // - lens: interactive TUI viewer (requires terminal)
     // - pro: contains interactive/terminal-dependent subcommands (lens, workflow)
     // - prompt: interactive prompt builder (requires terminal)
+    // - scoresql: not available in qsvmcp
     // - snappy: compression utility not needed for AI agents
     // - to: not available in qsvmcp
     //
@@ -1117,7 +1118,6 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "safenames",
         "sample",
         "schema",
-        "scoresql",
         "search",
         "searchset",
         "select",

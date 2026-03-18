@@ -90,6 +90,11 @@
         "description": "Disable default disk cache."
       },
       {
+        "flag": "--no-score-sql",
+        "type": "flag",
+        "description": "Disable scoresql validation of generated SQL queries before execution. By default, when --prompt generates a SQL query and --sql-results is set, the query is scored and iteratively improved if below threshold."
+      },
+      {
         "flag": "--num-examples",
         "type": "string",
         "description": "The number of Example values to include in the dictionary.",
@@ -105,6 +110,18 @@
         "flag": "--output",
         "type": "string",
         "description": "Write output to <file> instead of stdout. If --format is set to TSV, separate files will be created for each prompt type with the pattern {filestem}.{kind}.tsv (e.g., output.dictionary.tsv, output.tags.tsv)."
+      },
+      {
+        "flag": "--score-max-retries",
+        "type": "string",
+        "description": "Max LLM re-prompts to improve a low-scoring SQL query.",
+        "default": "3"
+      },
+      {
+        "flag": "--score-threshold",
+        "type": "string",
+        "description": "Minimum scoresql score for a SQL query to be accepted. Typical range is 0-100; values >100 will always trigger retries and the below-threshold warning.",
+        "default": "50"
       },
       {
         "flag": "--stats-options",

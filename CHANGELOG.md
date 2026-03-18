@@ -143,7 +143,7 @@ Detailed MCP changes are documented in the [MCP CHANGELOG](https://github.com/da
 
 Statistical analysis gets faster and more robust; User & Agent Experience (UAX) improvements keep the CLI parser, docs, shell completions, and MCP tool definitions in sync from a single source; and the qsv MCP Server gets leaner and smarter.
 
-With a [properly configured environment](https://github.com/dathere/qsv/blob/master/.claude/skills/docs/guides/MACOS-QUICK_START.md), a User can team up with several AI Agents for **_accelerated analysis_** of large, **real-world, messy data** — raw datasets, presentations, reports, spreadsheets, etc. — without uploading it all to the cloud or manually wrangling it into shape first.  Analyzing in a few minutes, what would otherwise take a few days, if not a few weeks to compile.
+With a [properly configured environment](https://github.com/dathere/qsv/blob/master/.claude/skills/docs/guides/START_HERE.md), a User can team up with several AI Agents for **_accelerated analysis_** of large, **real-world, messy data** — raw datasets, presentations, reports, spreadsheets, etc. — without uploading it all to the cloud or manually wrangling it into shape first.  Analyzing in a few minutes, what would otherwise take a few days, if not a few weeks to compile.
 
 ---
 

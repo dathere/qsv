@@ -784,7 +784,7 @@ The MCP server will fail validation and show an error. Use `qsv_config` to see d
 ### Documentation
 
 - **Quick Start**: This guide
-- **Desktop Extension**: [DESKTOP_EXTENSION.md](./DESKTOP_EXTENSION.md)
+- **Getting Started**: [START_HERE.md](./START_HERE.md)
 - **Full MCP Guide**: [README.md](../../README.md)
 - **Filesystem Usage**: [FILESYSTEM_USAGE.md](./FILESYSTEM_USAGE.md)
 - **qsv Documentation**: https://github.com/dathere/qsv#commands

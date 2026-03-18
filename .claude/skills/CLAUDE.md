@@ -17,7 +17,7 @@
 
 Common commands go in the `COMMON_COMMANDS` array in `mcp-tools.ts` and use `handleGenericCommand` automatically. Specialized tools need a dedicated definition function, a `case` in `handleToolCall()`, and a handler function.
 
-Both types need a `COMMAND_GUIDANCE` entry with `useWhen`, `commonPattern`, and optionally `caution`.
+Both types need a `COMMAND_GUIDANCE` entry with `whenToUse`, `commonPattern`, and optionally `errorPrevention`.
 
 ### Guidance emoji conventions
 
@@ -43,7 +43,7 @@ Prefer reading `.stats.csv` and `.freq.csv` directly over their `.data.jsonl` co
 
 ## Operational limits (quick reference)
 
-> Values verified 2026-03-12. If in doubt, grep the source files below for current values.
+> Values verified 2026-03-18. If in doubt, grep the source files below for current values.
 
 | Constant | Value | Location |
 |----------|-------|----------|

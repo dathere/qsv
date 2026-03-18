@@ -21,7 +21,7 @@ The QSV MCP Server now supports **direct access to local tabular data files** (C
 
 This directory contains:
 
-1. **52 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
+1. **51 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
 2. **TypeScript Executor** - Complete implementation for running qsv skills
 3. **MCP Server with Filesystem Access** - Model Context Protocol server for Claude Desktop integration
 5. **Working Demos** - Practical demonstrations of the system
@@ -126,7 +126,7 @@ npm run test-pipeline
 npm run mcpb:package
 ```
 
-## Generated Skills (52)
+## Generated Skills (51)
 
 | Category | Count | Skills |
 |----------|-------|--------|
@@ -142,7 +142,7 @@ npm run mcpb:package
 | **documentation** | 1 | describegpt |
 
 **Total Statistics:**
-- **Skills**: 52 commands
+- **Skills**: 51 commands
 - **Usage Examples**: 180 from documentation
 - **Options**: 607 command-line options
 - **Arguments**: 89 positional arguments
@@ -151,11 +151,11 @@ npm run mcpb:package
 
 ```
 .claude/skills/
-├── qsv/                    # 52 skill JSON definitions
+├── qsv/                    # 51 skill JSON definitions
 │   ├── qsv-select.json
 │   ├── qsv-stats.json
 │   ├── qsv-moarstats.json
-│   └── ... (49 more)
+│   └── ... (48 more)
 ├── src/                    # TypeScript source
 │   ├── types.ts           # Type definitions
 │   ├── loader.ts          # Skill loading
@@ -186,7 +186,7 @@ npm run mcpb:package
 └── docs/                   # Documentation
     ├── guides/             # User guides
     ├── reference/          # Technical reference
-    └── design/             # Design documents
+    └── desktop/            # Desktop extension documentation
 ```
 
 ## Usage
@@ -196,7 +196,7 @@ npm run mcpb:package
 ```typescript
 import { SkillLoader, SkillExecutor } from './dist/index.js';
 
-// Load all 52 skills
+// Load all 51 skills
 const loader = new SkillLoader();
 await loader.loadAll();
 
@@ -336,7 +336,7 @@ await agent.chat("Remove duplicates from sales.csv");
 
 ## Integration with Claude Desktop (MCP Server)
 
-The QSV MCP Server exposes all 52 qsv commands to Claude Desktop through the Model Context Protocol.
+The QSV MCP Server exposes all 51 qsv skill-based commands to Claude Desktop through the Model Context Protocol.
 
 ### Quick Start
 
@@ -392,7 +392,7 @@ Claude will automatically:
 
 ### What's Available
 
-- **23+ MCP Tools**: 10 core tools (search, config, filesystem, log, command, to_parquet, index, stats) + 13 common command tools. `qsv_browse_directory` is available when MCP Apps are supported.
+- **22+ MCP Tools**: 10 core tools (search, config, filesystem, log, command, to_parquet, index, stats) + 12 common command tools. `qsv_browse_directory` is available when MCP Apps are supported.
 - **Local File Access**: Browse and process tabular data files (CSV, Excel, JSONL, etc.) directly from your filesystem
 - **File-Based Processing**: Works with your local files without uploading
 - **Natural Language Interface**: No command syntax needed
@@ -445,7 +445,7 @@ MIT
 **Updated**: 2026-03-15
 **Version**: 17.0.0
 **Generator**: `qsv --update-mcp-skills`
-**Skills**: 52 commands
+**Skills**: 51 commands
 **Usage Examples**: 180 from documentation
 **Parsing**: qsv-docopt (robust, accurate)
 **Features**: MCP server, filesystem access, type-safe execution

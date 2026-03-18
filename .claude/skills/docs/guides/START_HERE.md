@@ -17,7 +17,7 @@
 
 | Component | What it is | What it provides |
 |-----------|-----------|-----------------|
-| `.mcpb` (MCP Server) | The qsv tools Claude can call in Chat + Cowork | 68 data-wrangling commands, SQL queries, file conversion. **Auto-installs the qsv binary** — no separate download needed. |
+| `.mcpb` (MCP Server) | The qsv tools Claude can call in Chat + Cowork | 51 data-wrangling skills (backed by qsvmcp's 60 commands), SQL queries, file conversion. **Auto-installs the qsv binary** — no separate download needed. |
 | Cowork Plugin (via marketplace) | Workflow layer for Cowork sessions | 3 domain skills, 6 slash commands, 2 subagents for guided data workflows |
 
 Install both for the full experience. The `.mcpb` is required; the plugin is optional but recommended for Cowork users.

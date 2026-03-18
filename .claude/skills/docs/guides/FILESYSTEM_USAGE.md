@@ -130,7 +130,7 @@ For legacy MCP server installations, add the QSV MCP server to your Claude Deskt
 #### `QSV_MCP_EXPOSE_ALL_TOOLS`
 - **Description**: Controls how tools are exposed to the agent
 - **Options**:
-  - `true`: Expose all 52+ tools immediately (no deferred loading)
+  - `true`: Expose all 51+ tools immediately (no deferred loading)
   - `false`: Expose only 10 core tools (disables search-additions)
   - `unset` (Default): **Deferred Loading** - 10 core tools initially, others added as they are found via `qsv_search_tools`
 - **Example**: `"true"`

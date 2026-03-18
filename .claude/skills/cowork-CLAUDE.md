@@ -43,7 +43,7 @@ Check column cardinality with **`qsv_stats`** before running `frequency` or `piv
 
 ## Tool Discovery
 
-Use **`qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 52 qsv commands available covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more. Tool names may change across versions; check `qsv_search_tools` if any are unrecognized.
+Use **`qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 51 qsv skill-based commands available covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more. Tool names may change across versions; check `qsv_search_tools` if any are unrecognized.
 
 ## Operation Timeout
 

@@ -96,7 +96,7 @@ excel (to CSV) -> index -> stats -> select -> tojsonl / qsv_to_parquet
 
 ## Tool Discovery
 
-Use **`qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 52+ qsv commands covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more.
+Use **`qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 51+ qsv skill-based commands covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more.
 
 ## Operational Notes
 

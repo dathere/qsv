@@ -243,7 +243,7 @@ qsv describegpt --help
 
 ## Custom Prompt Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`-p,`<br>`--prompt`&nbsp; | string | Custom prompt to answer questions about the dataset. The prompt will be answered based on the dataset's Summary Statistics, Frequency data & Data Dictionary. If the prompt CANNOT be answered by looking at these metadata, a SQL query will be generated to answer the question. If the "polars" or the "QSV_DUCKDB_PATH" environment variable is set & the `--sql-results` option is used, the SQL query will be automatically executed and its results returned. Otherwise, the SQL query will be returned along with the reasoning behind it. If it starts with "file:" prefix, the prompt is read from the file specified. e.g. "file:my_long_prompt.txt" |  |
 | &nbsp;`--sql-results`&nbsp; | string | The file to save the SQL query results to. Only valid if the --prompt option is used & the "polars" or the "QSV_DUCKDB_PATH" environment variable is set. If the SQL query executes successfully, the results will be saved with a ".csv" extension. Otherwise, it will be saved with a ".sql" extension so the user can inspect why it failed and modify it. |  |
@@ -252,6 +252,9 @@ qsv describegpt --help
 | &nbsp;`--fewshot-examples`&nbsp; | flag | By default, few-shot examples are NOT included in the LLM prompt when generating SQL queries. When this option is set, few-shot examples in the default prompt file are included. Though this will increase the quality of the generated SQL, it comes at a cost - increased LLM API call cost in terms of tokens and execution time. See <https://en.wikipedia.org/wiki/Prompt_engineering> for more info. |  |
 | &nbsp;`--session`&nbsp; | string | Enable stateful session mode for iterative SQL RAG refinement. The session name is the file path of the markdown file where session messages will be stored. When used with --prompt, subsequent queries in the same session will refine the baseline SQL query. SQL query results (10-row sample) and errors are automatically included in subsequent messages for context. |  |
 | &nbsp;`--session-len`&nbsp; | string | Maximum number of recent messages to keep in session context before summarizing older messages. Only used when --session is specified. | `10` |
+| &nbsp;`--no-score-sql`&nbsp; | flag | Disable scoresql validation of generated SQL queries before execution. By default, when --prompt generates a SQL query and --sql-results is set, the query is scored and iteratively improved if below threshold. |  |
+| &nbsp;`--score-threshold`&nbsp; | string | Minimum scoresql score for a SQL query to be accepted. Typical range is 0-100; values >100 will always trigger retries and the below-threshold warning. | `50` |
+| &nbsp;`--score-max-retries`&nbsp; | string | Max LLM re-prompts to improve a low-scoring SQL query. | `3` |
 
 <a name="llm-api-options"></a>
 

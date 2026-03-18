@@ -3736,7 +3736,7 @@ fn run_inference_options(
                                 );
                             }
                             // Restore {INPUT_TABLE_NAME} so the existing replacement logic works
-                            sql_query = best_sql_template.clone();
+                            sql_query.clone_from(&best_sql_template);
                             break;
                         }
 
@@ -3779,13 +3779,13 @@ fn run_inference_options(
                                         "  LLM refinement had no SQL block. Using best query.",
                                         None,
                                     );
-                                    sql_query = best_sql_template.clone();
+                                    sql_query.clone_from(&best_sql_template);
                                     break;
                                 }
                             },
                             Err(e) => {
                                 log::warn!("SQL refinement LLM call failed: {e}");
-                                sql_query = best_sql_template.clone();
+                                sql_query.clone_from(&best_sql_template);
                                 break;
                             },
                         }

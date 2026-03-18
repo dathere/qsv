@@ -177,8 +177,20 @@ function validateMcpServer(pluginRoot) {
 }
 
 async function main() {
+  const debug = process.env.QSV_COWORK_DEBUG === '1';
+
+  function debugLog(msg) {
+    if (debug) process.stderr.write(`cowork-setup [DEBUG]: ${msg}\n`);
+  }
+
+  debugLog(`pid=${process.pid} platform=${process.platform}`);
+  debugLog(`CLAUDE_PLUGIN_ROOT=${process.env.CLAUDE_PLUGIN_ROOT || '(unset)'}`);
+  debugLog(`QSV_MCP_BIN_PATH=${process.env.QSV_MCP_BIN_PATH || '(unset)'}`);
+  debugLog(`stdin.isTTY=${process.stdin.isTTY}`);
+
   // Allow opting out via environment variable
   if (process.env.QSV_NO_COWORK_SETUP === '1') {
+    debugLog('QSV_NO_COWORK_SETUP=1 — exiting');
     process.exit(0);
   }
 
@@ -187,6 +199,7 @@ async function main() {
   let input = '';
   const timeoutId = setTimeout(() => {
     process.stderr.write('cowork-setup: stdin read timed out after 5s\n');
+    debugLog('stdin timed out — no data received within 5s');
     process.stdin.destroy();
   }, 5000);
   try {
@@ -207,33 +220,46 @@ async function main() {
   }
   clearTimeout(timeoutId);
 
+  debugLog(`stdin raw (${input.length} bytes): ${input.substring(0, 500)}`);
+
   let cwd = '';
   try {
     const parsed = JSON.parse(input);
+    debugLog(`stdin parsed keys: ${Object.keys(parsed).join(', ')}`);
+    debugLog(`stdin parsed JSON: ${JSON.stringify(parsed, null, 2).substring(0, 1000)}`);
     cwd = parsed.cwd || '';
   } catch {
     // Invalid or empty JSON — warn and exit (skip warning for empty stdin)
     if (input.trim()) {
       process.stderr.write('cowork-setup: failed to parse stdin as JSON\n');
+      debugLog(`unparseable stdin content: ${input.substring(0, 200)}`);
+    } else {
+      debugLog('stdin was empty — no JSON received');
     }
     process.exit(0);
   }
 
+  debugLog(`cwd from stdin: "${cwd}"`);
+
   if (!cwd) {
+    debugLog('cwd is empty — exiting');
     process.exit(0);
   }
 
   // Resolve to real path to prevent path traversal via symlinks
   try {
     cwd = realpathSync(resolve(cwd));
-  } catch {
+    debugLog(`resolved cwd: ${cwd}`);
+  } catch (err) {
     // Directory doesn't exist or isn't accessible
+    debugLog(`cwd resolve failed: ${err?.message || err} — exiting`);
     process.exit(0);
   }
 
   // Guard against deploying into the plugin's own directory tree
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   if (!pluginRoot) {
+    debugLog('CLAUDE_PLUGIN_ROOT is not set — exiting');
     output('CLAUDE_PLUGIN_ROOT is not set. Skipping qsv CLAUDE.md deployment.');
     process.exit(0);
   }
@@ -241,7 +267,9 @@ async function main() {
   let resolvedPluginRoot;
   try {
     resolvedPluginRoot = realpathSync(resolve(pluginRoot));
-  } catch {
+    debugLog(`resolved pluginRoot: ${resolvedPluginRoot}`);
+  } catch (err) {
+    debugLog(`pluginRoot resolve failed: ${err?.message || err} — exiting`);
     process.exit(0);
   }
 
@@ -257,27 +285,42 @@ async function main() {
   const separator = process.platform === 'win32' ? '\\' : '/';
 
   if (cwdForCompare === rootForCompare || cwdForCompare.startsWith(rootForCompare + separator)) {
+    debugLog('cwd is inside plugin root — skipping CLAUDE.md deployment');
     process.exit(0);
   }
 
   const template = join(resolvedPluginRoot, 'cowork-CLAUDE.md');
   const target = join(cwd, 'CLAUDE.md');
+  debugLog(`template: ${template} (exists=${existsSync(template)})`);
+  debugLog(`target: ${target} (exists=${existsSync(target)})`);
 
   // Ensure the template exists
   if (!existsSync(template)) {
+    debugLog('template not found — exiting');
     process.exit(0);
   }
 
+  // Deploy CLAUDE.md (used by Claude Code CLI)
   if (existsSync(target)) {
-    // Existing CLAUDE.md — don't overwrite
     output(`An existing CLAUDE.md was found at ${target}. It was NOT overwritten. The existing file will be used for workflow guidance.`);
   } else {
-    // Copy the template
     try {
       copyFileSync(template, target);
       output(`A qsv CLAUDE.md was created at ${target}. qsv workflow guidance has been set up in the working folder.`);
     } catch {
       output(`Could not create CLAUDE.md in ${cwd} (directory may not be writable). Skipping qsv workflow guidance setup.`);
+    }
+  }
+
+  // Deploy .cowork-instructions.md (read natively by Cowork for per-folder context)
+  const coworkTarget = join(cwd, '.cowork-instructions.md');
+  debugLog(`coworkTarget: ${coworkTarget} (exists=${existsSync(coworkTarget)})`);
+  if (!existsSync(coworkTarget)) {
+    try {
+      copyFileSync(template, coworkTarget);
+      debugLog(`deployed .cowork-instructions.md to ${coworkTarget}`);
+    } catch {
+      debugLog(`could not create .cowork-instructions.md in ${cwd}`);
     }
   }
 

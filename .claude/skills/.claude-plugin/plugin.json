@@ -20,13 +20,5 @@
     "etl",
     "sql",
     "data-quality"
-  ],
-  "hooks": {
-    "SessionStart": [
-      {
-        "type": "command",
-        "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/cowork-setup.cjs\""
-      }
-    ]
-  }
+  ]
 }

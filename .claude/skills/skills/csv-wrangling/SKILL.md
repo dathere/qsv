@@ -93,3 +93,16 @@ excel (to CSV) -> index -> stats -> select -> tojsonl / qsv_to_parquet
 - `dedup` loads all data into memory and sorts internally; use `--sorted` flag if input is already sorted to enable streaming mode with constant memory
 - `sort` loads entire file into memory; for huge files use `sqlp` with ORDER BY
 - For CSV > 10MB needing SQL queries, convert to Parquet first with `qsv_to_parquet` for dramatically faster SQL. Parquet works ONLY with `sqlp` and DuckDB -- all other qsv commands need CSV/TSV/SSV input
+
+## Tool Discovery
+
+Use **`qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 52+ qsv commands covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more.
+
+## Operational Notes
+
+- **Timeout**: Default operation timeout is 10 minutes (configurable via `QSV_MCP_OPERATION_TIMEOUT_MS`, max 30 min). Allow operations to run to completion.
+- **Memory**: `dedup`, `sort`, `reverse`, `table`, `transpose`, `pragmastat`, and `stats` (with extended stats) load entire files into memory. For files >1GB, prefer `extdedup`/`extsort` via `qsv_command`.
+- **Cowork path architecture**: qsv runs on the HOST machine. File paths must be valid on the host. Always verify with `qsv_get_working_dir`.
+- **Sequential operations**: Prefer sequential over parallel qsv calls to avoid queuing delays: index → stats → analysis.
+- **Large files (>5GB)**: Let `qsv_frequency` run to completion. Only fall back to `qsv_sqlp` with GROUP BY if the server timeout is exceeded.
+- **Context window**: Save outputs to files rather than returning to chat. Use `qsv_slice` or `qsv_sqlp` with LIMIT to inspect subsets.

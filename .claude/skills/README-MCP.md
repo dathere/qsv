@@ -223,7 +223,7 @@ Tools for frequently used commands, loaded when discovered via search:
 ### Generic Command Tool
 
 `qsv_command` - Execute any qsv command with a skill definition (51 commands):
-- `to`, `tojsonl`, `partition`, `pseudo`, `reverse`, `sniff`, `sort`, `dedup`, `join`, `apply`, `rename`, `validate`, `sample`, `template`, `diff`, `schema`, etc.
+- `to`, `tojsonl`, `partition`, `pseudo`, `reverse`, `sniff`, `sort`, `dedup`, `join`, `rename`, `validate`, `sample`, `template`, `diff`, `schema`, etc.
 - Full list: https://github.com/dathere/qsv#commands
 
 ## Tool Search and Deferred Loading

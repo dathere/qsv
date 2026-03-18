@@ -244,9 +244,9 @@ function displaySummary() {
   console.log('   3. Restart Claude Desktop');
   console.log('   4. Verify all 55 qsv skills are available');
   console.log('\n📚 Documentation:');
-  console.log('   - Getting Started Guide: START_HERE.md');
+  console.log('   - Getting Started Guide: docs/guides/START_HERE.md');
   console.log('   - Installation Guide: README.md');
-  console.log('   - Filesystem Usage: FILESYSTEM_USAGE.md');
+  console.log('   - Filesystem Usage: docs/guides/FILESYSTEM_USAGE.md');
   console.log('\n');
 }
 

@@ -6,7 +6,7 @@ Complete TypeScript implementation for loading, executing, and composing qsv com
 
 The QSV MCP Server now supports **direct access to local tabular data files** (CSV, Excel, JSONL, etc.). No more uploading files to Claude Desktop!
 
-**Quick Start**: See [docs/guides/START_HERE.md](./docs/guides/START_HERE.md)
+**Getting Started**: See [docs/guides/START_HERE.md](./docs/guides/START_HERE.md)
 **Full Guide**: See [docs/guides/FILESYSTEM_USAGE.md](./docs/guides/FILESYSTEM_USAGE.md)
 
 ### Key Features:

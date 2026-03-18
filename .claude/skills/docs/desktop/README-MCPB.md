@@ -254,13 +254,13 @@ qsv-mcp-server.mcpb
 │      Claude Desktop (MCP Client)   │
 └──────────────┬──────────────────────┘
                │ stdio (JSON-RPC 2.0)
-┌──────────────▼──────────────────────┐
-│  QSV MCP Server (Node.js/TypeScript)│
-│  • Tool definitions (10 core + 51)  │
-│  • Parameter validation            │
-│  • File conversion manager         │
-│  • Format auto-detection           │
-└──────────────┬──────────────────────┘
+┌──────────────▼───────────────────────────┐
+│  QSV MCP Server (Node.js/TypeScript)     │
+│  • Tool definitions (10 core + deferred) │
+│  • Parameter validation                  │
+│  • File conversion manager               │
+│  • Format auto-detection                 │
+└──────────────┬───────────────────────────┘
                │ spawn (streaming, secure)
 ┌──────────────▼──────────────────────┐
 │   qsvmcp binary (preferred) / qsv   │

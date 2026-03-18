@@ -319,9 +319,12 @@ async function main() {
     try {
       copyFileSync(template, coworkTarget);
       debugLog(`deployed .cowork-instructions.md to ${coworkTarget}`);
+      output(`A .cowork-instructions.md was deployed to ${cwd} for Cowork per-folder context. Consider adding it to .gitignore.`);
     } catch {
       debugLog(`could not create .cowork-instructions.md in ${cwd}`);
     }
+  } else {
+    debugLog('.cowork-instructions.md already exists — skipping');
   }
 
   // Validate the full MCP server configuration — not just the binary

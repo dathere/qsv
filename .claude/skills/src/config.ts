@@ -402,13 +402,15 @@ export function parseQsvMemoryInfo(
  * Exported for testing
  */
 export function parsePolarsVersion(versionOutput: string): string | null {
-  // Match polars-X.Y.Z optionally followed by :HASH
+  // Match polars-X.Y.Z optionally followed by colon-separated suffixes
   // In qsv --version output, features are semicolon-separated (e.g. "apply;polars-0.53.0:54c9168;self_update")
   // polars must be preceded by ;, whitespace, or digit-dash (count separator like "315-polars-...")
   // but NOT by a letter-dash (to avoid matching e.g. "non-polars-...")
-  // Note: \d- could theoretically match a digit-dash in other contexts, but qsv version
-  // strings have a well-defined format (count-features;...) so false positives are unlikely.
-  const match = versionOutput.match(/(?:;|\s|\d-)polars-(\d+\.\d+\.\d+)(?::[0-9a-fA-F]+)?(?:;|\s|$)/);
+  // Suffix formats:
+  //   polars-0.53.0                       (no suffix)
+  //   polars-0.53.0:54c9168               (git hash only)
+  //   polars-0.53.0:py-1.39.2:4c4c029     (py version + git hash, since qsv 18.0.0)
+  const match = versionOutput.match(/(?:;|\s|\d-)polars-(\d+\.\d+\.\d+)(?::[^;\s]+)?(?:;|\s|$)/);
   return match ? match[1] : null;
 }
 

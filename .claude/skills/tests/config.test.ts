@@ -223,6 +223,11 @@ test('parsePolarsVersion matches polars as first feature after dash-separated co
   assert.strictEqual(parsePolarsVersion(versionOutput), '0.53.0');
 });
 
+test('parsePolarsVersion handles py version + git hash suffix (qsv 18.0.0+ format)', () => {
+  const versionOutput = 'qsvmcp 18.0.0-mimalloc 315-geocode;Luau 0.709;polars-0.53.0:py-1.39.2:4c4c029;self_update-16-16;51.20 GiB (aarch64-apple-darwin)';
+  assert.strictEqual(parsePolarsVersion(versionOutput), '0.53.0');
+});
+
 test('config.qsvValidation includes polarsVersion when valid', { skip: !QSV_AVAILABLE }, () => {
   // Precondition: qsv must be valid (Polars required for validity)
   assert.strictEqual(config.qsvValidation.valid, true,

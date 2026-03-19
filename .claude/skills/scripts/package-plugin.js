@@ -68,10 +68,11 @@ output.on('close', () => {
   console.log(`\nArchive created: ${OUTPUT_FILE} (${sizeKB} KB)`);
   console.log('='.repeat(50));
   console.log('\nNext Steps:');
-  console.log(`  1. Install locally: bash scripts/install-cowork-plugin.sh ${OUTPUT_FILE}`);
-  console.log('  2. Or drag .plugin file into a Cowork session to install');
-  console.log('  3. Ensure .mcpb Desktop Extension is also installed (provides qsv MCP tools)');
-  console.log('  4. Start a new Cowork session to activate');
+  console.log(`  1. Commit ${OUTPUT_FILE} to the dathere/qsv plugin marketplace repository`);
+  console.log('  2. Users install with:');
+  console.log('       claude plugin marketplace add dathere/qsv');
+  console.log('       claude plugin install qsv-data-wrangling@qsv-plugins');
+  console.log('  3. Start a new Cowork session to activate');
   console.log('');
 });
 

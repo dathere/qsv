@@ -43,11 +43,13 @@ Add a new section at the top of `docs/CHANGELOG.md` following this format:
 ### Fixed
 - (bug fixes)
 
-### Performance
-- (performance improvements)
+### Removed
+- (removed features)
 ```
 
 Use `git log` from the last release tag to populate the changelog sections.
+**Exclude** commits with `(mcp)` or `(plugin)` in the title — those belong in the MCP/Plugin changelog (`.claude/skills/CHANGELOG.md`) and are handled by `/mcp-release-prep`.
+Add links to relevant PRs and issues for each change when possible.
 
 ## Post-Version-Bump Steps
 

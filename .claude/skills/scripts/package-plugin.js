@@ -68,11 +68,16 @@ output.on('close', () => {
   console.log(`\nArchive created: ${OUTPUT_FILE} (${sizeKB} KB)`);
   console.log('='.repeat(50));
   console.log('\nNext Steps:');
-  console.log(`  1. Commit ${OUTPUT_FILE} to the dathere/qsv plugin marketplace repository`);
-  console.log('  2. Users install with:');
-  console.log('       claude plugin marketplace add dathere/qsv');
-  console.log('       claude plugin install qsv-data-wrangling@qsv-plugins');
-  console.log('  3. Start a new Cowork session to activate');
+  console.log('  Marketplace (recommended):');
+  console.log('    The marketplace.json at dathere/qsv/.claude-plugin/ points to');
+  console.log('    .claude/skills/ as the plugin source. Just push to master and users install with:');
+  console.log('      claude plugin marketplace add dathere/qsv');
+  console.log('      claude plugin install qsv-data-wrangling@qsv-plugins');
+  console.log('');
+  console.log('  Drag-and-drop:');
+  console.log(`    Drag ${OUTPUT_FILE} into a Cowork session to install directly.`);
+  console.log('');
+  console.log('  Then start a new Cowork session to activate.');
   console.log('');
 });
 

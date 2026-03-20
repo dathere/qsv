@@ -6,6 +6,7 @@ allowed-tools:
   - mcp__qsv__qsv_count
   - mcp__qsv__qsv_headers
   - mcp__qsv__qsv_to_parquet
+  - mcp__qsv__qsv_list_files
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
@@ -17,9 +18,7 @@ description: Convert between CSV, TSV, Excel, JSONL, Parquet, and other tabular 
 
 Convert tabular data files between formats.
 
-## Cowork Setup
-
-If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check qsv's current working directory. If it differs from your workspace root (the directory where relative paths should resolve), call `qsv_set_working_dir` to sync it.
+> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
 
 ## Supported Conversions
 
@@ -53,7 +52,7 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
    - **To JSONL**: Use `qsv_command` with `command: "tojsonl"`.
 
-   - **To Parquet**: Use `qsv_to_parquet` (dedicated core tool, preferred over `qsv_command`).
+   - **To Parquet**: Use `qsv_to_parquet` (dedicated core tool).
 
 4. **Verify output**: Run `qsv_count` on the output (if CSV-based) to confirm row count matches input.
 

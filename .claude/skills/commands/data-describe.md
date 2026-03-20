@@ -6,6 +6,7 @@ allowed-tools:
   - mcp__qsv__qsv_headers
   - mcp__qsv__qsv_count
   - mcp__qsv__qsv_describegpt
+  - mcp__qsv__qsv_list_files
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
 argument-hint: "<file> [--dictionary|--description|--tags|--all]"
@@ -16,9 +17,7 @@ description: Generate AI-powered Data Dictionary, Description, and Tags for a CS
 
 Generate AI-powered documentation for a tabular data file using `describegpt`. Produces a Data Dictionary (column labels, descriptions, types), a natural-language Description of the dataset, and semantic Tags — all via the connected LLM (no API key needed in MCP mode).
 
-## Cowork Setup
-
-If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check qsv's current working directory. If it differs from your workspace root (the directory where relative paths should resolve), call `qsv_set_working_dir` to sync it.
+> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
 
 ## Steps
 

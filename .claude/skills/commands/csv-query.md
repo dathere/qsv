@@ -11,6 +11,7 @@ allowed-tools:
   - mcp__qsv__qsv_frequency
   - mcp__qsv__qsv_count
   - mcp__qsv__qsv_command
+  - mcp__qsv__qsv_list_files
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
@@ -22,9 +23,7 @@ description: Run SQL queries against CSV/TSV/Excel files using Polars SQL engine
 
 Query tabular data files using SQL via the Polars-powered `sqlp` command.
 
-## Cowork Setup
-
-If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check qsv's current working directory. If it differs from your workspace root (the directory where relative paths should resolve), call `qsv_set_working_dir` to sync it.
+> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
 
 ## Decision Tree
 
@@ -32,12 +31,11 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 - Yes -> Consider `select` + `search` for simpler operations
 - No -> Use `sqlp` for full SQL support
 
-**Is the CSV file > 10MB?**
-- Yes -> Convert to Parquet first with `qsv_to_parquet`, then query the Parquet file
-- No -> Query the CSV directly
-
 **Does the query involve joins, GROUP BY, window functions, or complex expressions?**
 - Yes -> Use `sqlp` (Polars SQL engine)
+
+**Is the CSV file very large (> 10MB)?**
+- Yes -> Consider converting to Parquet with `qsv_to_parquet` for faster repeated queries. Note: `sqlp` can also query CSV files of any size directly.
 
 ## Steps
 
@@ -47,11 +45,9 @@ If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check q
 
 3. **Run frequency on key columns**: For columns you plan to GROUP BY, filter on, or join on, run `qsv_frequency` to see actual value distributions. This reveals the best filter values and whether a GROUP BY will produce a manageable result set.
 
-4. **Convert large files to Parquet**: If the CSV is > 10MB, run `qsv_to_parquet` to convert it. Parquet is a columnar format that dramatically speeds up SQL queries. Note: Parquet works ONLY with `sqlp` and DuckDB -- all other qsv commands require CSV/TSV/SSV input.
+4. **Write and run SQL**: Use `qsv_sqlp` with the SQL query informed by stats and frequency data. The table name in SQL is the filename stem (e.g., `data.csv` -> `SELECT * FROM data`). For Parquet files, use `read_parquet('data.parquet')` as the table source instead.
 
-5. **Write and run SQL**: Use `qsv_sqlp` with the SQL query informed by stats and frequency data. The table name in SQL is the filename stem (e.g., `data.csv` -> `SELECT * FROM data`). For Parquet files, use `read_parquet('data.parquet')` as the table source instead.
-
-6. **Refine if needed**: Check results and adjust the query.
+5. **Refine if needed**: Check results and adjust the query.
 
 ## Using Stats to Write Better SQL
 

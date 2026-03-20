@@ -7,6 +7,7 @@ allowed-tools:
   - mcp__qsv__qsv_stats
   - mcp__qsv__qsv_command
   - mcp__qsv__qsv_sqlp
+  - mcp__qsv__qsv_list_files
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
@@ -18,9 +19,7 @@ description: Clean a CSV/TSV/Excel file - fix headers, trim whitespace, remove d
 
 Clean the given tabular data file by fixing common data quality issues.
 
-## Cowork Setup
-
-If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check qsv's current working directory. If it differs from your workspace root (the directory where relative paths should resolve), call `qsv_set_working_dir` to sync it.
+> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
 
 ## Steps
 

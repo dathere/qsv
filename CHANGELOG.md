@@ -4,67 +4,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [18.0.0] - 2026-03-20
 
-## What's Changed
-* build(deps): bump jsonschema from 0.44.0 to 0.44.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3567
-* build(deps): bump minijinja from 2.16.0 to 2.17.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3569
-* build(deps): bump minijinja-contrib from 2.16.0 to 2.17.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3570
-* build(deps): bump pragmastat from 11.1.0 to 11.1.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3571
-* feat(to): add table option by @jqnatividad in https://github.com/dathere/qsv/pull/3572
-* build(deps): bump minijinja from 2.17.0 to 2.17.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3574
-* build(deps): bump minijinja-contrib from 2.17.0 to 2.17.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3573
-* build(deps): bump hono from 4.12.2 to 4.12.5 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3575
-* build(deps): bump @hono/node-server from 1.19.9 to 1.19.10 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3576
-* build(deps): bump toml from 1.0.3+spec-1.1.0 to 1.0.4+spec-1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3578
-* build(deps): bump toon-format from 0.4.3 to 0.4.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3579
-* feat(to): table also for xlsx and ods by @jqnatividad in https://github.com/dathere/qsv/pull/3580
-* feat(mcp): describegpt add llm passthru by @jqnatividad in https://github.com/dathere/qsv/pull/3581
-* refactor(mcp): describegpt llm passthru tweaks by @jqnatividad in https://github.com/dathere/qsv/pull/3582
-* build(deps): bump express-rate-limit from 8.2.1 to 8.3.0 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3583
-* build(deps): bump toml from 1.0.4+spec-1.1.0 to 1.0.6+spec-1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3584
-* refactor(mcp): describegpt llm passthru tweaks by @jqnatividad in https://github.com/dathere/qsv/pull/3585
-* refactor(mcp): doc audit 2026 03 07 by @jqnatividad in https://github.com/dathere/qsv/pull/3586
-* build(deps): bump qsv-stats from 0.47.0 to 0.48.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3587
-* build(deps): bump redis from 1.0.4 to 1.0.5 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3588
-* build(deps): bump libc from 0.2.182 to 0.2.183 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3590
-* build(deps): bump pragmastat from 11.1.1 to 12.0.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3589
-* feat(pragmastat): add compare1 and compare2 options by @jqnatividad in https://github.com/dathere/qsv/pull/3591
-* feat(pragmastat): use stats cache to only process numeric/date/datetime columns by @jqnatividad in https://github.com/dathere/qsv/pull/3593
-* build(deps): bump jsonschema from 0.44.1 to 0.45.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3592
-* deps: bump cached to 0.58 by @jqnatividad in https://github.com/dathere/qsv/pull/3594
-* perf(pragmastat): more perf tweaks by @jqnatividad in https://github.com/dathere/qsv/pull/3595
-* feat(pragmastats): adds to stats cache by @jqnatividad in https://github.com/dathere/qsv/pull/3596
-* fix(stats): perf regression because of memory-aware chunking logic error by @jqnatividad in https://github.com/dathere/qsv/pull/3598
-* build(deps): bump sysinfo from 0.38.0 to 0.38.4 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3599
-* fix(help): fine-tune markdown generation of docopt usage text by @jqnatividad in https://github.com/dathere/qsv/pull/3600
-* build(deps): bump hono from 4.12.5 to 4.12.7 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3602
-* build(deps): bump tempfile from 3.26.0 to 3.27.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3603
-* feat(mcp): add MCP app & macOS native Finder directory picker for setting working directory by @jqnatividad in https://github.com/dathere/qsv/pull/3604
-* feat(mcp): add Windows native folder picker via PowerShell FolderBrow… by @jqnatividad in https://github.com/dathere/qsv/pull/3605
-* feat(pivotp): Smarter pivotp with moarstats by @jqnatividad in https://github.com/dathere/qsv/pull/3606
-* feat(stats): Reduce day-valued precision to 5 decimals by @jqnatividad in https://github.com/dathere/qsv/pull/3607
-* (mcp): qsv auto install by @jqnatividad in https://github.com/dathere/qsv/pull/3608
-* feat(mcp): qsv installer refactor by @jqnatividad in https://github.com/dathere/qsv/pull/3609
-* docs: doc-audit 20260313 by @jqnatividad in https://github.com/dathere/qsv/pull/3610
-* perf(pragmastat): addl performance options by @jqnatividad in https://github.com/dathere/qsv/pull/3611
-* feat: new `scoresql` cmd by @jqnatividad in https://github.com/dathere/qsv/pull/3612
-* (mcp): auto-install both qsvmcp and mcp binaries by @jqnatividad in https://github.com/dathere/qsv/pull/3613
-* (mcp): add scoresql to MCP server as COMMON_COMMAND by @jqnatividad in https://github.com/dathere/qsv/pull/3614
-* chore: Doc audit 20260314 by @jqnatividad in https://github.com/dathere/qsv/pull/3615
-* feat(scoresql): SQL file support, DuckDB PATH fallback & QSV_DUCKDB_PATH rename by @jqnatividad in https://github.com/dathere/qsv/pull/3616
-* feat(mcp): inline App SDK shim, harden directory picker & enable MCP Apps by default by @jqnatividad in https://github.com/dathere/qsv/pull/3617
-* build(deps): bump minijinja-contrib from 2.17.1 to 2.18.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3618
-* build(deps): bump minijinja from 2.17.1 to 2.18.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3619
-* docs(mcp): fix 25 stale claims found by documentation audit by @jqnatividad in https://github.com/dathere/qsv/pull/3620
-* feat(mcp): add Cowork plugin support and Quick Start guides by @jqnatividad in https://github.com/dathere/qsv/pull/3621
-* feat(searchset): ignore line comments in regexset files by @jqnatividad in https://github.com/dathere/qsv/pull/3622
-* refactor(plugin): refine guidance alignment, add PHI screening and stats-aware SQL by @jqnatividad in https://github.com/dathere/qsv/pull/3623
-* feat(describegpt): scoresql integration by @jqnatividad in https://github.com/dathere/qsv/pull/3624
-* Plugin refactor guidance to exclude unbundled commands by @jqnatividad in https://github.com/dathere/qsv/pull/3625
-* plugin: incorporate describegpt into agents, skills & commands by @jqnatividad in https://github.com/dathere/qsv/pull/3626
-* chore: describegpt help updates, exclude scoresql from MCP skills by @jqnatividad in https://github.com/dathere/qsv/pull/3627
+Score your SQL before you run it, compare distributions with pragmatic stats, and pivot smarter — 18.0.0 deepens qsv's "think before you act" philosophy with a new `scoresql` command that analyzes queries against cached statistics *before* execution, catching anti-patterns, type mismatches, and missing indexes up front. `pragmastat` gains comparison options and stats-cache awareness, `pivotp` auto-validates cardinality via moarstats, and `to` now writes named tables to XLSX/ODS workbooks. Under the hood, FMA-accurate `mul_add` ops replace manual arithmetic across the codebase, and Polars moves to 0.53.0.
 
+---
+
+### Major Features
+
+#### New `scoresql` Command
+Analyze SQL queries against CSV file caches (stats, moarstats, frequency) to produce a performance score with actionable optimization suggestions **before** running the query. Scoring factors include query plan analysis (EXPLAIN), type optimization, join key cardinality, filter selectivity, anti-pattern detection (SELECT *, missing LIMIT, cartesian joins), and infrastructure checks (index files, cache freshness). Supports Polars and DuckDB modes, SQL file input, and JSON output. Integrates with `describegpt` for AI-assisted query review. [#3612](https://github.com/dathere/qsv/pull/3612), [#3616](https://github.com/dathere/qsv/pull/3616), [#3624](https://github.com/dathere/qsv/pull/3624)
+
+#### Smarter `pragmastat` — Stats-Cache Aware with Comparison Mode
+`pragmastat` now reads the stats cache to automatically skip non-numeric/non-date columns, and writes its own results back to the cache for downstream commands. New `--compare1` and `--compare2` options let you compare two distributions side-by-side. Multiple performance optimizations make it significantly faster. [#3591](https://github.com/dathere/qsv/pull/3591), [#3593](https://github.com/dathere/qsv/pull/3593), [#3596](https://github.com/dathere/qsv/pull/3596), [#3595](https://github.com/dathere/qsv/pull/3595), [#3611](https://github.com/dathere/qsv/pull/3611)
+
+#### `pivotp` — Smarter Pivoting with moarstats
+`pivotp` now integrates with moarstats to auto-validate pivot column cardinality before execution, preventing overly wide output (>1000 columns) and guiding users toward better pivot strategies. [#3606](https://github.com/dathere/qsv/pull/3606)
+
+#### `to` — Named Table Support
+The `to` command gains a `--table` option for CSV, XLSX and ODS output, letting you write data to a named sheet/table in workbook formats. [#3572](https://github.com/dathere/qsv/pull/3572), [#3580](https://github.com/dathere/qsv/pull/3580)
+
+---
+
+### Added
+- `scoresql`: new command — score SQL queries for safety, complexity and performance [#3612](https://github.com/dathere/qsv/pull/3612)
+- `scoresql`: SQL file support, DuckDB PATH fallback & `QSV_DUCKDB_PATH` rename [#3616](https://github.com/dathere/qsv/pull/3616)
+- `to`: add `--table` option for CSV, XLSX and ODS output [#3572](https://github.com/dathere/qsv/pull/3572), [#3580](https://github.com/dathere/qsv/pull/3580)
+- `searchset`: ignore line comments in regexset files [#3622](https://github.com/dathere/qsv/pull/3622)
+- `pragmastat`: add `--compare1` and `--compare2` options [#3591](https://github.com/dathere/qsv/pull/3591)
+- `pragmastat`: use stats cache to only process numeric/date/datetime columns [#3593](https://github.com/dathere/qsv/pull/3593)
+- `pragmastat`: write results to stats cache [#3596](https://github.com/dathere/qsv/pull/3596)
+- `pivotp`: smarter pivoting with moarstats integration [#3606](https://github.com/dathere/qsv/pull/3606)
+- `describegpt`: scoresql integration [#3624](https://github.com/dathere/qsv/pull/3624)
+
+### Changed
+- `stats`: reduce day-valued precision to 5 decimals [#3607](https://github.com/dathere/qsv/pull/3607)
+- `frequency`: use `array_windows` for pairwise comparisons
+- Use `mul_add` for numeric ops across the codebase for more accurate FMA
+- MSRV bumped to latest stable Rust 1.94
+- Switch csvlens dependency to upstream
+- Polars bumped to 0.53.0 (py-1.39.x series)
+
+### Fixed
+- `stats`: perf regression caused by memory-aware chunking logic error [#3598](https://github.com/dathere/qsv/pull/3598)
+- `help`: fine-tune markdown generation of docopt usage text [#3600](https://github.com/dathere/qsv/pull/3600)
+
+### Performance
+- `pragmastat`: multiple performance optimizations [#3595](https://github.com/dathere/qsv/pull/3595), [#3611](https://github.com/dathere/qsv/pull/3611)
+
+### Dependencies
+- Polars 0.53.0 (py-1.39.3)
+- pragmastat 11.1.0 → 12.0.0 [#3589](https://github.com/dathere/qsv/pull/3589)
+- qsv-stats 0.47.0 → 0.48.0 [#3587](https://github.com/dathere/qsv/pull/3587)
+- jsonschema 0.44.0 → 0.45.0 [#3592](https://github.com/dathere/qsv/pull/3592)
+- minijinja/minijinja-contrib 2.16.0 → 2.18.0
+- calamine 0.33 → 0.34
+- cached 0.58 [#3594](https://github.com/dathere/qsv/pull/3594)
+- Removed patched forks of self_update and pragmastat (upstream releases available)
+- Various other dependency bumps (toml, toon-format, tempfile, redis, libc, sysinfo, once_cell, spreadsheet-ods)
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/17.0.0...18.0.0
 

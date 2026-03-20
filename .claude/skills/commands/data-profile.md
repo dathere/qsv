@@ -12,6 +12,7 @@ allowed-tools:
   - mcp__qsv__qsv_describegpt
   - mcp__qsv__qsv_joinp
   - mcp__qsv__qsv_sqlp
+  - mcp__qsv__qsv_list_files
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
 argument-hint: "<file>"
@@ -22,9 +23,7 @@ description: Profile a CSV/TSV/Excel file - detect format, compute statistics, s
 
 Profile the given tabular data file to understand its structure, types, and distributions.
 
-## Cowork Setup
-
-If running in Claude Code or Cowork, first call `qsv_get_working_dir` to check qsv's current working directory. If it differs from your workspace root (the directory where relative paths should resolve), call `qsv_set_working_dir` to sync it.
+> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
 
 ## Steps
 
@@ -206,7 +205,7 @@ The bundled `${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt` detects:
 | Tautology | `' OR 1=1--` | Authentication bypass |
 | Stacked queries | `'; DELETE FROM orders--` | Arbitrary SQL execution |
 
-**Red flag**: Any matches indicate potential injection payloads — sanitize cells before sharing the file or loading into a database. For formula injection, prefix dangerous cells with a single quote (`'`) or strip leading `=+\-@` characters.
+**Red flag**: Any matches indicate potential injection payloads — sanitize cells before sharing the file or loading into a database. For formula injection, prefix dangerous cells with a single quote (`'`) or strip leading `=+-@` characters.
 
 ## Report Format
 

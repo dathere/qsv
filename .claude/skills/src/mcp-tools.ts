@@ -1275,7 +1275,7 @@ async function shouldUseTempFile(
 }
 
 /**
- * 12 most essential qsv commands exposed as individual MCP tools
+ * 13 most essential qsv commands exposed as individual MCP tools
  * Optimized for token efficiency while maintaining high-value tool access
  *
  * Commands promoted to CORE_TOOLS (always loaded):
@@ -1292,6 +1292,7 @@ export const COMMON_COMMANDS = [
   "headers", // Header operations (quick discovery)
   "count", // Row counting (instant with index)
   "slice", // Row selection
+  "sniff", // Format detection (referenced by all command workflows)
   "sqlp", // SQL queries (Polars engine)
   "joinp", // High-performance joins (Polars engine)
   "cat", // Concatenate CSV files (rows/columns)

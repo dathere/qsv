@@ -48,7 +48,7 @@
 **Rule**: Use Polars commands (sqlp, joinp, pivotp) for files > 100MB or complex queries.
 
 ### Parquet Acceleration
-For CSV > 10MB needing SQL queries, convert to Parquet first with `qsv_to_parquet`. Parquet is a columnar format that dramatically speeds up SQL queries in `sqlp`. Use `read_parquet('file.parquet')` as the table source. DuckDB is the preferred engine for Parquet queries; `sqlp` with `SKIP_INPUT` mode also works. Note: Parquet works ONLY with `sqlp` and DuckDB -- all other qsv commands require CSV/TSV/SSV input.
+For repeated SQL queries on large CSV (> 10MB), consider converting to Parquet with `qsv_to_parquet`. Parquet is a columnar format that speeds up repeated SQL queries in `sqlp`. Use `read_parquet('file.parquet')` as the table source. DuckDB is the preferred engine for Parquet queries; `sqlp` with `SKIP_INPUT` mode also works. Note: `sqlp` can query CSV of any size directly — Parquet is an optimization for repeated queries, not a requirement. Parquet works ONLY with `sqlp` and DuckDB — all other qsv commands require CSV/TSV/SSV input.
 
 ## Memory-Aware Command Selection
 
@@ -68,18 +68,18 @@ File size?
 ├── < 10MB: Any command works fine
 ├── 10MB - 100MB:
 │   ├── Always: index first
-│   ├── SQL queries: convert to Parquet first with qsv_to_parquet
+│   ├── Repeated SQL: consider Parquet with qsv_to_parquet
 │   ├── Prefer: streaming commands
 │   └── OK: memory-intensive if < available RAM
 ├── 100MB - 1GB:
 │   ├── Always: index + stats cache first
-│   ├── SQL queries: convert to Parquet first with qsv_to_parquet
+│   ├── Repeated SQL: consider Parquet with qsv_to_parquet
 │   ├── Prefer: Polars commands (sqlp, joinp, pivotp)
 │   ├── Avoid: sort, reverse, table (load entire file)
 │   └── Alternative: sqlp with ORDER BY LIMIT instead of sort
 └── > 1GB:
     ├── Must: index + stats cache
-    ├── SQL queries: convert to Parquet first with qsv_to_parquet
+    ├── Repeated SQL: convert to Parquet with qsv_to_parquet
     ├── Must: Polars commands only for joins/queries
     ├── Avoid: all 🤯 commands
     └── Consider: split into chunks, process, cat rows

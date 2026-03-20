@@ -13,7 +13,6 @@ allowed-tools:
   - mcp__qsv__qsv_sqlp
   - mcp__qsv__qsv_to_parquet
   - mcp__qsv__qsv_joinp
-  - mcp__qsv__qsv_sample
   - mcp__qsv__qsv_describegpt
   - mcp__qsv__qsv_command
   - mcp__qsv__qsv_search_tools
@@ -38,15 +37,7 @@ Reference these domain knowledge files for best practices:
 - `skills/data-quality/SKILL.md` - Quality assessment framework
 - `skills/qsv-performance/SKILL.md` - Performance optimization
 
-## Session Setup
-
-When running in Claude Code or Cowork, sync the qsv working directory to your session's current working directory (the workspace root shown in the file tree) BEFORE any file operations:
-
-1. Call `qsv_get_working_dir` to check qsv's current working directory
-2. If it doesn't match your workspace root, call `qsv_set_working_dir` with that directory
-3. This ensures relative file paths resolve correctly
-
-Skip this if the user provides absolute file paths or if you're unsure of the workspace root — in that case, prefer absolute paths or ask the user which directory to use.
+> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
 
 ## Standard Workflow
 
@@ -54,14 +45,14 @@ Skip this if the user provides absolute file paths or if you're unsure of the wo
 2. **Orient**: Use `qsv_sniff` to detect format, then `qsv_count` and `qsv_headers` to understand structure.
 3. **Profile**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` for comprehensive column statistics. Basic moarstats auto-runs to enrich the cache.
 4. **Deep profile** (when needed): Run `qsv_moarstats` with `advanced: true` for kurtosis, entropy, Gini coefficient, bimodality, and winsorized/trimmed means. Use when data shows skewness, potential outliers, or you need distribution shape analysis. Omit `output_file` — moarstats updates the stats cache in-place by default.
-5. **Explore**: Use `qsv_frequency` for distributions, `qsv_slice` for row samples, `qsv_search` for filtering.
-6. **Query**: Use `qsv_sqlp` for SQL-based analysis. **Before writing SQL**, read `.stats.csv` for column types, cardinality, nullcount, min/max ranges, and sort order; run `qsv_frequency` on columns you'll GROUP BY or filter on. Use this data to write precise WHERE clauses, skip unnecessary COALESCE on zero-null columns, and avoid GROUP BY on high-cardinality columns. For CSV > 10MB, convert to Parquet first with `qsv_to_parquet`, then use `read_parquet('file.parquet')` as the table source.
+5. **Explore**: Use `qsv_frequency` for distributions, `qsv_slice` for row samples, `qsv_search` for filtering, `qsv_command` with `command: "sample"` for random sampling.
+6. **Query**: Use `qsv_sqlp` for SQL-based analysis. **Before writing SQL**, read `.stats.csv` for column types, cardinality, nullcount, min/max ranges, and sort order; run `qsv_frequency` on columns you'll GROUP BY or filter on. Use this data to write precise WHERE clauses, skip unnecessary COALESCE on zero-null columns, and avoid GROUP BY on high-cardinality columns. For repeated queries on large CSV (> 10MB), consider converting to Parquet with `qsv_to_parquet` for faster performance — but `sqlp` can query CSV of any size directly.
 7. **Report**: Summarize findings clearly with tables, key metrics, and observations.
 8. **Document**: Run `qsv_describegpt` with `all: true` to generate a Data Dictionary, Description, and Tags. Output defaults to `<filestem>.describegpt.md`. Uses the connected LLM automatically via MCP sampling — no API key needed.
 
 ## Analysis Capabilities
 
-See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key analysis tools: `qsv_stats`/`qsv_moarstats` (column statistics), `qsv_frequency` (distributions), `qsv_sqlp` (SQL aggregation, joins, window functions), `qsv_search` (regex filtering), `qsv_sample` (random sampling), `qsv_describegpt` (AI-powered Data Dictionary, Description & Tags).
+See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key analysis tools: `qsv_stats`/`qsv_moarstats` (column statistics), `qsv_frequency` (distributions), `qsv_sqlp` (SQL aggregation, joins, window functions), `qsv_search` (regex filtering), `qsv_command` with `command: "sample"` (random sampling), `qsv_describegpt` (AI-powered Data Dictionary, Description & Tags).
 
 ## Guidelines
 
@@ -69,6 +60,6 @@ See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipel
 - Use `sqlp` for ad-hoc analytical queries (it's the most flexible tool)
 - Present numbers with context (percentages, comparisons, trends)
 - Flag data quality issues when discovered (nulls, outliers, type mismatches)
-- For CSV > 10MB needing SQL queries, always convert to Parquet first with `qsv_to_parquet` -- Parquet is columnar and dramatically faster for SQL. Note: Parquet works ONLY with `sqlp` and DuckDB; all other qsv commands need CSV/TSV/SSV
+- For repeated SQL queries on large CSV (> 10MB), consider converting to Parquet with `qsv_to_parquet` for faster performance. Note: Parquet works ONLY with `sqlp` and DuckDB; all other qsv commands need CSV/TSV/SSV
 - For large files (> 100MB), prefer `sqlp` with `LIMIT` for exploratory queries
 - Use `qsv_search_tools` to discover additional analysis tools if needed

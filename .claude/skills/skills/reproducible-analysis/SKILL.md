@@ -24,9 +24,9 @@ Create a journal file named `<analysis-name>.journal.jsonl` alongside the analys
 | `seq` | integer | 1-based sequence number within the journal |
 | `ts` | string | ISO 8601 UTC timestamp of when the operation ran |
 | `op` | string | Human-readable operation name (e.g., "stats", "filter", "join") |
-| `tool` | string | Exact MCP tool name used (e.g., `qsv_stats`, `qsv_sqlp`) |
-| `input` | string or array | Input file path(s), relative to working directory |
-| `input_sha256` | string or array | SHA-256 hash(es) of input file(s) |
+| `tool` | string or null | Exact MCP tool name used (e.g., `qsv_stats`, `qsv_sqlp`); null for journal-level entries (`init`, `complete`) |
+| `input` | string, array, or null | Input file path(s), relative to working directory; null for journal-level entries |
+| `input_sha256` | string, array, or null | SHA-256 hash(es) of input file(s); null for journal-level entries |
 | `params` | object | All parameters passed to the tool (excluding input/output paths) |
 | `output` | string or null | Output file path, or null if result was displayed only |
 | `output_sha256` | string or null | SHA-256 hash of output file, or null |
@@ -63,7 +63,7 @@ shasum -a 256 sales.csv | cut -d' ' -f1
 Alternatively, note the file size and row count as a lighter-weight fingerprint when hashing is impractical:
 
 ```jsonl
-{"seq": 1, "input": "huge_file.csv", "input_fingerprint": {"rows": 5000000, "cols": 42, "bytes": 1073741824}, ...}
+{"seq": 1, "input": "huge_file.csv", "input_fingerprint": {"rows": 5000000, "cols": 42, "bytes": 1073741824}, "note": "additional fields omitted for brevity"}
 ```
 
 ## Journal Lifecycle

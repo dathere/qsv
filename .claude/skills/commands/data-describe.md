@@ -1,11 +1,18 @@
 ---
+name: data-describe
+version: 18.0.0
+license: MIT
 allowed-tools:
+  # Discovery
   - mcp__qsv__qsv_sniff
-  - mcp__qsv__qsv_index
-  - mcp__qsv__qsv_stats
-  - mcp__qsv__qsv_headers
   - mcp__qsv__qsv_count
+  - mcp__qsv__qsv_headers
+  - mcp__qsv__qsv_index
+  # Analysis
+  - mcp__qsv__qsv_stats
+  # AI
   - mcp__qsv__qsv_describegpt
+  # Workspace
   - mcp__qsv__qsv_list_files
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir

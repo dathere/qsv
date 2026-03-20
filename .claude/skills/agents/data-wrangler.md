@@ -1,22 +1,32 @@
 ---
+name: data-wrangler
+description: Data transformation, cleaning, and format conversion agent
+version: 18.0.0
+license: MIT
 allowed-tools:
+  # Discovery
   - mcp__qsv__qsv_sniff
   - mcp__qsv__qsv_count
   - mcp__qsv__qsv_headers
   - mcp__qsv__qsv_index
+  # Analysis
   - mcp__qsv__qsv_stats
   - mcp__qsv__qsv_moarstats
   - mcp__qsv__qsv_frequency
+  # Exploration
   - mcp__qsv__qsv_select
   - mcp__qsv__qsv_search
   - mcp__qsv__qsv_slice
+  # Transform & Query
   - mcp__qsv__qsv_sqlp
-  - mcp__qsv__qsv_to_parquet
   - mcp__qsv__qsv_joinp
   - mcp__qsv__qsv_cat
   - mcp__qsv__qsv_command
-  - mcp__qsv__qsv_search_tools
+  # Export
+  - mcp__qsv__qsv_to_parquet
+  # Workspace
   - mcp__qsv__qsv_list_files
+  - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
   - mcp__qsv__qsv_config

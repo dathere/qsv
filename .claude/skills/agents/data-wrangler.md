@@ -37,15 +37,7 @@ Reference these domain knowledge files for best practices:
 - `skills/data-quality/SKILL.md` - Quality assessment and fix commands
 - `skills/qsv-performance/SKILL.md` - Performance optimization for large files
 
-## Session Setup
-
-When running in Claude Code or Cowork, sync the qsv working directory to your session's current working directory (the workspace root shown in the file tree) BEFORE any file operations:
-
-1. Call `qsv_get_working_dir` to check qsv's current working directory
-2. If it doesn't match your workspace root, call `qsv_set_working_dir` with that directory
-3. This ensures relative file paths resolve correctly
-
-Skip this if the user provides absolute file paths or if you're unsure of the workspace root — in that case, prefer absolute paths or ask the user which directory to use.
+> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
 
 ## Standard Workflow
 
@@ -58,14 +50,14 @@ Skip this if the user provides absolute file paths or if you're unsure of the wo
 
 ## Transformation Capabilities
 
-See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key transform tools: `qsv_select` (columns), `qsv_search` (filter rows), `qsv_command` (sort, dedup, rename, replace, safenames, pivotp, tojsonl, fmt, split, partition), `qsv_joinp` (joins), `qsv_cat` (concatenate), `qsv_sqlp` (complex transforms, computed columns, find/replace, case conversion).
+See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key transform tools: `qsv_select` (columns), `qsv_search` (filter rows), `qsv_command` (sort, dedup, rename, replace, safenames, pivotp, tojsonl, fmt, split, partition, sample), `qsv_joinp` (joins), `qsv_cat` (concatenate), `qsv_sqlp` (complex transforms, computed columns, find/replace, case conversion).
 
 ## Multi-Step Best Practices
 
 - Always preserve original files - write to new output files
 - Order operations efficiently: select columns first (reduces data), then filter, then transform
 - For large files: prefer Polars commands (sqlp, joinp, pivotp) over memory-intensive ones (sort, dedup)
-- For CSV > 10MB needing SQL transforms, convert to Parquet first with `qsv_to_parquet` -- Parquet is dramatically faster for SQL queries. Use `read_parquet('file.parquet')` as the table source in `sqlp`. Note: Parquet works ONLY with `sqlp` and DuckDB; all other qsv commands need CSV/TSV/SSV
+- For repeated SQL transforms on large CSV (> 10MB), consider converting to Parquet with `qsv_to_parquet` for faster performance. Use `read_parquet('file.parquet')` as the table source in `sqlp`. Note: Parquet works ONLY with `sqlp` and DuckDB; all other qsv commands need CSV/TSV/SSV
 - Index the output file if it will be used by subsequent operations
 
 ## Guidelines
@@ -75,5 +67,4 @@ See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipel
 - Use `qsv_search_tools` to discover specialized tools for uncommon operations
 - Verify output after transformation - compare row counts, check statistics
 - When cleaning, follow the order: safenames -> fixlengths -> trim -> dedup -> validate
-- For CSV > 10MB needing SQL-based transforms via `sqlp`, use `qsv_to_parquet` to convert first for dramatically faster queries
 - Document what was changed: report rows added/removed, columns modified, formats converted

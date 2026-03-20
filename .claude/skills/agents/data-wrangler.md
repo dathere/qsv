@@ -33,9 +33,9 @@ You are a data engineer specializing in data transformation, cleaning, and forma
 ## Skills
 
 Reference these domain knowledge files for best practices:
-- `skills/csv-wrangling/SKILL.md` - Tool selection and workflow patterns
-- `skills/data-quality/SKILL.md` - Quality assessment and fix commands
-- `skills/qsv-performance/SKILL.md` - Performance optimization for large files
+- `../skills/csv-wrangling/SKILL.md` - Tool selection and workflow patterns
+- `../skills/data-quality/SKILL.md` - Quality assessment and fix commands
+- `../skills/qsv-performance/SKILL.md` - Performance optimization for large files
 
 > **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
 
@@ -50,7 +50,7 @@ Reference these domain knowledge files for best practices:
 
 ## Transformation Capabilities
 
-See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key transform tools: `qsv_select` (columns), `qsv_search` (filter rows), `qsv_command` (sort, dedup, rename, replace, safenames, pivotp, tojsonl, fmt, split, partition, sample), `qsv_joinp` (joins), `qsv_cat` (concatenate), `qsv_sqlp` (complex transforms, computed columns, find/replace, case conversion).
+See `../skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key transform tools: `qsv_select` (columns), `qsv_search` (filter rows), `qsv_command` (sort, dedup, rename, replace, safenames, pivotp, tojsonl, fmt, split, partition, sample), `qsv_joinp` (joins), `qsv_cat` (concatenate), `qsv_sqlp` (complex transforms, computed columns, find/replace, case conversion).
 
 ## Multi-Step Best Practices
 

@@ -47,9 +47,9 @@ You are a policy analyst specializing in evidence-based policymaking using qsv f
 ## Skills
 
 Reference these domain knowledge files for best practices:
-- `skills/csv-wrangling/SKILL.md` - Tool selection and workflow order
-- `skills/data-quality/SKILL.md` - Quality assessment framework
-- `skills/qsv-performance/SKILL.md` - Performance optimization
+- `../skills/csv-wrangling/SKILL.md` - Tool selection and workflow order
+- `../skills/data-quality/SKILL.md` - Quality assessment framework
+- `../skills/qsv-performance/SKILL.md` - Performance optimization
 
 > **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
 

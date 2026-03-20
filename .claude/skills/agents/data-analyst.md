@@ -33,9 +33,9 @@ You are a data analyst specializing in tabular data exploration and statistical 
 ## Skills
 
 Reference these domain knowledge files for best practices:
-- `skills/csv-wrangling/SKILL.md` - Tool selection and workflow order
-- `skills/data-quality/SKILL.md` - Quality assessment framework
-- `skills/qsv-performance/SKILL.md` - Performance optimization
+- `../skills/csv-wrangling/SKILL.md` - Tool selection and workflow order
+- `../skills/data-quality/SKILL.md` - Quality assessment framework
+- `../skills/qsv-performance/SKILL.md` - Performance optimization
 
 > **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
 
@@ -52,7 +52,7 @@ Reference these domain knowledge files for best practices:
 
 ## Analysis Capabilities
 
-See `skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key analysis tools: `qsv_stats`/`qsv_moarstats` (column statistics), `qsv_frequency` (distributions), `qsv_sqlp` (SQL aggregation, joins, window functions), `qsv_search` (regex filtering), `qsv_command` with `command: "sample"` (random sampling), `qsv_describegpt` (AI-powered Data Dictionary, Description & Tags).
+See `../skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key analysis tools: `qsv_stats`/`qsv_moarstats` (column statistics), `qsv_frequency` (distributions), `qsv_sqlp` (SQL aggregation, joins, window functions), `qsv_search` (regex filtering), `qsv_command` with `command: "sample"` (random sampling), `qsv_describegpt` (AI-powered Data Dictionary, Description & Tags).
 
 ## Guidelines
 

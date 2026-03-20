@@ -4,7 +4,7 @@
 
 Always follow this sequence when processing CSV data:
 
-0. **Setup (Cowork)** - `qsv_get_working_dir` (check current dir) -> `qsv_set_working_dir` (sync to workspace root if needed)
+0. **Setup (Cowork)** - If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync
 1. **Index** - `index` (enables fast random access for subsequent commands)
 2. **Discover** - `sniff` (detect format, encoding, delimiter) -> `headers` -> `count`
 3. **Profile** - `stats --cardinality --stats-jsonl` (creates cache used by smart commands)
@@ -59,7 +59,7 @@ sniff -> index -> stats --cardinality --stats-jsonl -> read .stats.csv -> freque
 ```
 **Before writing SQL**: read `.stats.csv` to learn column types, cardinality, nullcount, min/max, sort order. Run `frequency` on columns you'll GROUP BY or filter on. Use this to write precise WHERE clauses, correct type casts, and avoid unnecessary COALESCE.
 
-For CSV > 10MB, convert to Parquet before SQL queries: `sniff -> index -> stats -> to_parquet -> sqlp (using read_parquet())`
+For repeated SQL queries on large CSV (> 10MB), consider converting to Parquet: `sniff -> index -> stats -> to_parquet -> sqlp (using read_parquet())`. Note: `sqlp` can query CSV of any size directly.
 
 ### Join and Enrich
 ```
@@ -92,7 +92,7 @@ excel (to CSV) -> index -> stats -> select -> tojsonl / qsv_to_parquet
 - `cat rows` requires same column order; use `cat rowskey` for different schemas
 - `dedup` loads all data into memory and sorts internally; use `--sorted` flag if input is already sorted to enable streaming mode with constant memory
 - `sort` loads entire file into memory; for huge files use `sqlp` with ORDER BY
-- For CSV > 10MB needing SQL queries, convert to Parquet first with `qsv_to_parquet` for dramatically faster SQL. Parquet works ONLY with `sqlp` and DuckDB -- all other qsv commands need CSV/TSV/SSV input
+- For repeated SQL queries on large CSV (> 10MB), consider converting to Parquet with `qsv_to_parquet` for faster performance. Parquet works ONLY with `sqlp` and DuckDB — all other qsv commands need CSV/TSV/SSV input
 
 ## Tool Discovery
 

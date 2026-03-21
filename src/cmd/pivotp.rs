@@ -272,9 +272,9 @@ fn build_total_row(
 /// Returns a new DataFrame with subtotal rows interleaved.
 /// The data is sorted by the first index column to ensure contiguous groups.
 fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliResult<DataFrame> {
-    // Sort by the first index column to ensure contiguous groups,
-    // since pivot may not always return sorted results.
-    let df = df.sort([&index_cols[0]], SortMultipleOptions::default())?;
+    // Sort by all index columns to ensure contiguous groups and
+    // deterministic intra-group ordering, since pivot output order is not guaranteed.
+    let df = df.sort(index_cols, SortMultipleOptions::default())?;
 
     let group_col = df.column(&index_cols[0])?;
     let mut frames: Vec<DataFrame> = Vec::new();
@@ -302,6 +302,7 @@ fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliRe
             let group_value = group_col
                 .get(group_start)
                 .map(|v| v.to_string())
+                .ok()
                 .unwrap_or_default()
                 .trim_matches('"')
                 .to_string();

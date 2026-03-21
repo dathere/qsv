@@ -59,6 +59,12 @@ pivotp options:
     --decimal-comma         Use comma as decimal separator when READING the input.
                             Note that you will need to specify an alternate --delimiter.
     --ignore-errors         Skip rows that can't be parsed.
+    --grand-total           Append a grand total row summing all numeric pivot columns.
+                            The first index column will contain "Grand <total-label>".
+    --subtotal              Insert subtotal rows after each group in the first index column.
+                            The second index column will contain the total label.
+                            Requires 2+ index columns.
+    --total-label <arg>     Custom label for total rows. [default: Total]
 
 Common options:
     -h, --help              Display this message
@@ -112,6 +118,9 @@ struct Args {
     flag_infer_len:      usize,
     flag_decimal_comma:  bool,
     flag_ignore_errors:  bool,
+    flag_grand_total:    bool,
+    flag_subtotal:       bool,
+    flag_total_label:    String,
     flag_output:         Option<String>,
     flag_delimiter:      Option<Delimiter>,
     flag_quiet:          bool,
@@ -222,6 +231,88 @@ fn validate_pivot_operation(metadata: &PivotMetadata) -> CliResult<()> {
     }
 
     Ok(())
+}
+
+/// Build a single-row DataFrame containing a total row.
+/// Numeric columns get their sum; index columns get the provided labels.
+fn build_total_row(
+    df: &DataFrame,
+    index_cols: &[String],
+    first_index_label: &str,
+    second_index_label: &str,
+) -> CliResult<DataFrame> {
+    let mut columns: Vec<Column> = Vec::with_capacity(df.width());
+
+    for col_ref in df.columns() {
+        let name = col_ref.name().to_string();
+
+        if name == index_cols[0] {
+            // First index column gets the primary label
+            columns.push(Column::new(name.into(), &[first_index_label]));
+        } else if index_cols.len() > 1 && name == index_cols[1] {
+            // Second index column gets the secondary label
+            columns.push(Column::new(name.into(), &[second_index_label]));
+        } else if index_cols.iter().any(|ic| ic == &name) {
+            // Other index columns get empty string
+            columns.push(Column::new(name.into(), &[""]));
+        } else if col_ref.dtype().is_numeric() {
+            // Sum numeric columns
+            let sum_series = col_ref.sum_reduce()?.into_column(name.into());
+            columns.push(sum_series);
+        } else {
+            // Non-numeric pivot columns get empty string
+            columns.push(Column::new(name.into(), &[""]));
+        }
+    }
+
+    Ok(DataFrame::new(1, columns)?)
+}
+
+/// Insert subtotal rows after each group in the first index column.
+/// Returns a new DataFrame with subtotal rows interleaved.
+fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliResult<DataFrame> {
+    let group_col = df.column(&index_cols[0])?;
+    let mut frames: Vec<DataFrame> = Vec::new();
+    let mut group_start = 0_usize;
+
+    for i in 1..=df.height() {
+        // Detect group boundary: end of data or value change in first index col
+        let is_boundary = i == df.height()
+            || group_col.get(i).unwrap().to_string()
+                != group_col.get(group_start).unwrap().to_string();
+
+        if is_boundary {
+            let group_len = i - group_start;
+            let group_df = df.slice(group_start as i64, group_len);
+
+            // Get the group value for the first index column label
+            let group_value = group_col
+                .get(group_start)
+                .unwrap()
+                .to_string()
+                .trim_matches('"')
+                .to_string();
+
+            // Build subtotal row: first index col = group value, second = label
+            let subtotal_row = build_total_row(&group_df, index_cols, &group_value, label)?;
+
+            frames.push(group_df);
+            frames.push(subtotal_row);
+            group_start = i;
+        }
+    }
+
+    // Stack all frames together
+    if frames.is_empty() {
+        return Ok(df.clone());
+    }
+
+    let mut result = frames.remove(0);
+    for frame in frames {
+        result = result.vstack(&frame)?;
+    }
+
+    Ok(result)
 }
 
 /// Suggest an appropriate aggregation function based on column statistics
@@ -892,6 +983,48 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         sorted_columns.extend(pivot_names);
 
         pivot_result = pivot_result.select(sorted_columns.as_slice())?;
+    }
+
+    // Add subtotals and/or grand total rows
+    if args.flag_subtotal || args.flag_grand_total {
+        if args.flag_subtotal && actual_index_cols.len() < 2 {
+            return fail_incorrectusage_clierror!(
+                "--subtotal requires 2 or more index columns (specified via --index)."
+            );
+        }
+
+        // Cast index columns to String so we can insert label text
+        for idx_col in &actual_index_cols {
+            let col_data = pivot_result.column(idx_col)?;
+            if col_data.dtype() != &DataType::String {
+                let casted = col_data.cast(&DataType::String)?;
+                let _ = pivot_result.replace(idx_col, casted);
+            }
+        }
+
+        let total_label = &args.flag_total_label;
+
+        // Compute grand total from the original data (before subtotals are inserted)
+        let grand_total_row = if args.flag_grand_total {
+            Some(build_total_row(
+                &pivot_result,
+                &actual_index_cols,
+                &format!("Grand {total_label}"),
+                "",
+            )?)
+        } else {
+            None
+        };
+
+        // Insert subtotals
+        if args.flag_subtotal {
+            pivot_result = insert_subtotals(&pivot_result, &actual_index_cols, total_label)?;
+        }
+
+        // Append grand total
+        if let Some(gt_row) = grand_total_row {
+            pivot_result = pivot_result.vstack(&gt_row)?;
+        }
     }
 
     // Write output

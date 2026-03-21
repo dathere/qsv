@@ -117,7 +117,7 @@ Use `WebSearch` and `WebFetch` to access public government data for context, ben
 1. **Clarify scope**: Identify the jurisdiction, time period, policy domain, and specific questions. Ask clarifying questions if the scope is ambiguous — effective policy analysis requires precise framing.
 2. **Index & profile**: Run `qsv_index`, then `qsv_sniff`, `qsv_count`, `qsv_headers`, and `qsv_stats` with `cardinality: true, stats_jsonl: true` to understand the data structure. Run `qsv_moarstats` with `advanced: true` when distribution shape matters (income data, crime rates, budget allocations).
 3. **Establish baseline**: Compute historical trends using `qsv_sqlp`. Calculate year-over-year changes, period averages, and identify the baseline period for comparison.
-4. **Cross-reference**: Pull benchmark data from Census (prefer `mcp-census-api` tools when available), BLS, FBI, or Wikidata (prefer `Wikidata MCP` tools when available). Fall back to `WebSearch`/`WebFetch` for sources without dedicated MCP servers. Join external data with local datasets using `qsv_joinp` or `qsv_sqlp`.
+4. **Cross-reference**: Pull benchmark data from Census (prefer `mcp-census-api` tools when available), BLS, FBI, or Wikidata (prefer `Wikidata MCP` tools when available). Fall back to `WebSearch`/`WebFetch` for sources without dedicated MCP servers. Join external data with local datasets using `qsv_joinp` or `qsv_sqlp`. For temporal cross-referencing where dates don't align exactly (e.g., annual budgets to monthly CPI, quarterly QCEW to fiscal years), prefer `qsv_joinp --asof` with `strategy: "backward", allow_exact_matches: true` to match each record to the most recent reference value.
 5. **Temporal analysis**: Use `qsv_sqlp` window functions for trend decomposition — moving averages, rate-of-change, cumulative totals. Flag inflection points and structural breaks in time series.
 6. **Comparative analysis**: Benchmark against peer jurisdictions, state averages, and national figures. Normalize for population, inflation, or other relevant denominators.
 7. **Synthesize findings**: Summarize the evidence with confidence levels. Include spend-vs-outcomes efficiency findings when budget data is available. Identify causal factors where supported, and flag where evidence is correlational only.
@@ -134,13 +134,41 @@ Use `qsv_sqlp` for all temporal calculations:
 - **Inflation adjustment**: Multiply nominal values by `(CPI_base_year / CPI_current_year)` to convert to constant dollars. Always state the base year.
 - **Per-capita normalization**: Divide totals by population estimates for the same year and geography. Note the population source.
 
+### Temporal Cross-Referencing with ASOF Joins
+
+When joining datasets with misaligned time periods, use `qsv_joinp --asof` instead of complex SQL window functions. ASOF joins match each row to the nearest key in the reference dataset.
+
+**Common policy analysis patterns:**
+
+- **CPI inflation adjustment**: Join budget rows (with fiscal year dates) to monthly CPI data using `--asof --strategy backward` on the date column. Each budget row matches to the most recent CPI observation.
+- **QCEW/LAUS cross-reference**: Match quarterly employment data to annual budget data. Use `--asof --strategy backward --left_by jurisdiction --right_by jurisdiction` to find the nearest quarter per jurisdiction.
+- **Census ACS alignment**: When ACS reference periods (July estimates) don't match fiscal year boundaries, use `--asof --strategy nearest --tolerance 365d` to match within one year.
+- **Event-to-outcome matching**: Match program start dates to the nearest subsequent outcome measurement using `--strategy forward`.
+
+**Example — CPI-adjusted budget comparison:**
+```
+joinp
+  columns1: "date"
+  input1: "budget_by_year.csv"
+  columns2: "date"
+  input2: "monthly_cpi.csv"
+  asof: true
+  strategy: "backward"
+  allow_exact_matches: true
+```
+Then compute constant dollars via `qsv_sqlp`:
+```sql
+SELECT year, department, amount * (base_cpi / cpi_value) AS real_amount
+FROM joined_result
+```
+
 ## Spend vs Outcomes Analysis
 
 Every policy recommendation must connect spending to measurable outcomes. Always ask: "What did this spend achieve?" and "What would alternative spend achieve?"
 
 ### Linking Spend to Outcomes
 
-Join budget/expenditure data with outcome datasets (crime rates, graduation rates, health metrics, employment, etc.) using `qsv_sqlp` or `qsv_joinp`. Match on jurisdiction, year, and program area. Normalize spending to constant dollars before comparing across years.
+Join budget/expenditure data with outcome datasets (crime rates, graduation rates, health metrics, employment, etc.) using `qsv_sqlp` or `qsv_joinp`. Match on jurisdiction, year, and program area. When spend and outcome datasets have different temporal granularity (e.g., annual budgets vs. quarterly outcomes), use `qsv_joinp --asof --left_by jurisdiction --right_by jurisdiction` to align the nearest time period rather than requiring exact date matches. Normalize spending to constant dollars before comparing across years.
 
 ### Key Metrics
 

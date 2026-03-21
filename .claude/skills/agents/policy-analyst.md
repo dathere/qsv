@@ -115,7 +115,9 @@ Use `WebSearch` and `WebFetch` to access public government data for context, ben
 ## Standard Workflow
 
 1. **Clarify scope**: Identify the jurisdiction, time period, policy domain, and specific questions. Ask clarifying questions if the scope is ambiguous — effective policy analysis requires precise framing.
-2. **Index & profile**: Run `qsv_index`, then `qsv_sniff`, `qsv_count`, `qsv_headers`, and `qsv_stats` with `cardinality: true, stats_jsonl: true` to understand the data structure. Run `qsv_moarstats` with `advanced: true` when distribution shape matters (income data, crime rates, budget allocations). Add `bivariate: true` when analyzing spend-outcome relationships to screen for correlations before building SQL queries. For inequality-focused analysis, set `epsilon` to control Atkinson Index sensitivity: `0.5` (top-end focus), `1.0` (balanced, default), `2.0` (bottom-end/poverty focus).
+2. **Index & profile**:
+   - Run `qsv_index`, then `qsv_sniff`, `qsv_count`, `qsv_headers`, and `qsv_stats` with `cardinality: true, stats_jsonl: true` to understand the data structure.
+   - Run `qsv_moarstats` with `advanced: true` when distribution shape or inequality matters (income data, crime rates, budget allocations). Add `bivariate: true` when analyzing spend-outcome relationships to screen for correlations before building SQL queries. See the "Distribution & Inequality Analysis" section for detailed metric guidance.
 3. **Establish baseline**: Compute historical trends using `qsv_sqlp`. Calculate year-over-year changes, period averages, and identify the baseline period for comparison.
 4. **Cross-reference**: Pull benchmark data from Census (prefer `mcp-census-api` tools when available), BLS, FBI, or Wikidata (prefer `Wikidata MCP` tools when available). Fall back to `WebSearch`/`WebFetch` for sources without dedicated MCP servers. Join external data with local datasets using `qsv_joinp` or `qsv_sqlp`. For temporal cross-referencing where dates don't align exactly (e.g., annual budgets to monthly CPI, quarterly QCEW to fiscal years), prefer `qsv_joinp --asof` with `strategy: "backward", allow_exact_matches: true` to match each record to the most recent reference value.
 5. **Temporal analysis**: Use `qsv_sqlp` window functions for trend decomposition — moving averages, rate-of-change, cumulative totals. Flag inflection points and structural breaks in time series.
@@ -259,7 +261,7 @@ Use `qsv_moarstats` with `advanced: true` and/or `bivariate: true` to access the
 
 ### Bivariate Analysis
 
-- **Pearson / Spearman / Kendall correlations** (`bivariate: true`): Measure relationships between all numeric column pairs. Spearman is preferred for policy data (robust to outliers and non-linear monotonic relationships). Use as a quick screening step to identify which spend categories correlate with which outcomes before building detailed SQL analyses.
+- **Pearson / Spearman / Kendall correlations** (`bivariate: true`): Measure relationships between all numeric column pairs. Spearman is preferred for most policy data (robust to outliers and non-linear monotonic relationships). Kendall is preferred for small samples or ordinal data with many ties (e.g., survey ratings, ranked program tiers). Use as a quick screening step to identify which spend categories correlate with which outcomes before building detailed SQL analyses.
 - **Mutual Information** (`bivariate: true`): Captures non-linear dependencies that correlation misses. High mutual information with low Pearson correlation = a real but non-linear relationship worth investigating (e.g., diminishing returns where more spend helps up to a point, then stops).
 - **Covariance**: Raw measure of linear co-movement. Less interpretable than correlation but useful for variance decomposition in multi-program analysis.
 

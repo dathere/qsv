@@ -81,11 +81,11 @@ Join two tabular data files on common columns.
      strategy: "backward"
      allow_exact_matches: true
    ```
-   - `strategy: "backward"` (default) — match to the last right row with key < left key (note: `qsv joinp --help` says ≤, but runtime default is strict <; use `--allow-exact-matches` for ≤)
-   - `strategy: "forward"` — match to the first right row with key > left key (similarly, `--help` says ≥; use `--allow-exact-matches` for ≥)
+   - `strategy: "backward"` (default) — match to the last right row with key < left key
+   - `strategy: "forward"` — match to the first right row with key > left key
    - `strategy: "nearest"` — match to the numerically closest row (supports `--tolerance`)
    - Add `--left_by`/`--right_by` to restrict matching within subgroups (e.g., per jurisdiction)
-   - Add `--allow-exact-matches` to include equal keys (<=, >=); default is strict inequality (<, >)
+   - Add `allow_exact_matches: true` to include equal keys (<=, >=); default is strict inequality (<, >)
 
 6. **Clean up result**: Use `qsv_select` to remove duplicate join columns or unnecessary columns from the result.
 
@@ -116,7 +116,7 @@ Join two tabular data files on common columns.
 - If join columns have different names, specify separately: `left_columns: "id"`, `right_columns: "customer_id"`
 - For one-to-many joins, the result will have more rows than either input
 - `joinp` handles null values in join columns (nulls don't match by default)
-- ASOF joins automatically enable `--try-parsedates` so date columns are parsed consistently across different formats
+- ASOF joins implicitly enable `--try-parsedates` — no need to pass it explicitly
 - For ASOF joins with subgroups, use `--left_by` and `--right_by` (e.g., match nearest date *per jurisdiction*)
 - The `--tolerance` option limits how far the nearest match can be: use duration strings for dates (`1d`, `30d`, `365d`) or positive integers for numeric keys
 - ASOF joins require sorted join columns; both datasets are auto-sorted unless `--no-sort` is set

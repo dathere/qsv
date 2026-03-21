@@ -173,12 +173,12 @@ joinp options:
     --strategy <arg>       The strategy to use for the asof join:
                              backward - For each row in the first CSV data set,
                                         we find the last row in the second data set
-                                        whose key is less than or equal to the key
-                                        in the first data set.
+                                        whose key is less than the key in the first
+                                        data set.
                              forward -  For each row in the first CSV data set,
                                         we find the first row in the second data set
-                                        whose key is greater than or equal to the key
-                                        in the first data set.
+                                        whose key is greater than the key in the
+                                        first data set.
                              nearest -  selects the last row in the second data set
                                         whose value is nearest to the value in the
                                         first data set.

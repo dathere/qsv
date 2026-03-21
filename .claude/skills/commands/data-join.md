@@ -118,5 +118,5 @@ Join two tabular data files on common columns.
 - `joinp` handles null values in join columns (nulls don't match by default)
 - ASOF joins implicitly enable `--try-parsedates` — no need to pass it explicitly
 - For ASOF joins with subgroups, use `--left_by` and `--right_by` (e.g., match nearest date *per jurisdiction*)
-- The `--tolerance` option limits how far the nearest match can be: use duration strings for dates (`1d`, `30d`, `365d`) or positive integers for numeric keys
+- The `--tolerance` option (nearest strategy only) limits how far the nearest match can be: use duration strings for dates (`1d`, `30d`, `365d`) or positive integers for numeric keys
 - ASOF joins require sorted join columns; both datasets are auto-sorted unless `--no-sort` is set

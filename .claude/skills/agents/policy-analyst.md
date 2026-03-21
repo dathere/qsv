@@ -115,7 +115,9 @@ Use `WebSearch` and `WebFetch` to access public government data for context, ben
 ## Standard Workflow
 
 1. **Clarify scope**: Identify the jurisdiction, time period, policy domain, and specific questions. Ask clarifying questions if the scope is ambiguous — effective policy analysis requires precise framing.
-2. **Index & profile**: Run `qsv_index`, then `qsv_sniff`, `qsv_count`, `qsv_headers`, and `qsv_stats` with `cardinality: true, stats_jsonl: true` to understand the data structure. Run `qsv_moarstats` with `advanced: true` when distribution shape matters (income data, crime rates, budget allocations).
+2. **Index & profile**:
+   - Run `qsv_index`, then `qsv_sniff`, `qsv_count`, `qsv_headers`, and `qsv_stats` with `cardinality: true, stats_jsonl: true` to understand the data structure.
+   - Run `qsv_moarstats` with `advanced: true` when distribution shape or inequality matters (income data, crime rates, budget allocations). Add `bivariate: true, bivariate_stats: "all"` when analyzing spend-outcome relationships to screen for correlations before building SQL queries — note that bivariate results are written to a separate sidecar file (`<FILESTEM>.stats.bivariate.csv`), not into the main `.stats.csv`. See the "Distribution & Inequality Analysis" section for detailed metric guidance.
 3. **Establish baseline**: Compute historical trends using `qsv_sqlp`. Calculate year-over-year changes, period averages, and identify the baseline period for comparison.
 4. **Cross-reference**: Pull benchmark data from Census (prefer `mcp-census-api` tools when available), BLS, FBI, or Wikidata (prefer `Wikidata MCP` tools when available). Fall back to `WebSearch`/`WebFetch` for sources without dedicated MCP servers. Join external data with local datasets using `qsv_joinp` or `qsv_sqlp`. For temporal cross-referencing where dates don't align exactly (e.g., annual budgets to monthly CPI, quarterly QCEW to fiscal years), prefer `qsv_joinp --asof` with `strategy: "backward", allow_exact_matches: true` to match each record to the most recent reference value.
 5. **Temporal analysis**: Use `qsv_sqlp` window functions for trend decomposition — moving averages, rate-of-change, cumulative totals. Flag inflection points and structural breaks in time series.
@@ -168,6 +170,8 @@ Every policy recommendation must connect spending to measurable outcomes. Always
 
 ### Linking Spend to Outcomes
 
+**Quick screen first**: Run `qsv_moarstats` on combined spend-outcome data with `advanced: true, bivariate: true, bivariate_stats: "all"` to get Pearson/Spearman correlations, mutual information/NMI, and Gini across relevant columns (note: `bivariate_stats: "all"` is more expensive than the default `"fast"` mode which only computes Pearson + covariance). This reveals which spend categories have the strongest associations with outcomes before investing in detailed SQL analysis and whether spending reduces inequality in outcomes.
+
 Join budget/expenditure data with outcome datasets (crime rates, graduation rates, health metrics, employment, etc.) using `qsv_sqlp` or `qsv_joinp`. Match on jurisdiction, year, and program area. When spend and outcome datasets have different temporal granularity (e.g., annual budgets vs. quarterly outcomes), use `qsv_joinp --asof --left_by jurisdiction --right_by jurisdiction` to align the nearest time period rather than requiring exact date matches. Normalize spending to constant dollars before comparing across years.
 
 ### Key Metrics
@@ -219,6 +223,48 @@ ORDER BY year
 
 Always establish the baseline outcome trajectory *before* the spend change. Compare the pre-intervention trend to post-intervention actuals. A rising outcome trend that predates the spend increase suggests the spend may not be the causal driver.
 
+## Distribution & Inequality Analysis
+
+Use `qsv_moarstats` with `advanced: true` and/or `bivariate: true` to access these policy-relevant statistics. Run after initial profiling (step 2) to inform deeper analysis.
+
+### Inequality Metrics
+
+- **Gini Coefficient** (`advanced: true`): Core inequality measure (0 = perfect equality, 1 = maximum inequality). Essential for income distribution, resource allocation, and service access analysis. Compare Gini across jurisdictions to benchmark inequality, or track over time to measure whether policies reduce disparity.
+- **Atkinson Index** (`advanced: true`, configurable `epsilon`): More policy-actionable than Gini because the `epsilon` parameter controls sensitivity to different parts of the distribution:
+  - `epsilon: 0.5` — sensitive to top-end inequality (executive compensation, high earners)
+  - `epsilon: 1.0` — balanced view (default)
+  - `epsilon: 2.0` — sensitive to bottom-end inequality (poverty, underserved populations)
+
+### Distribution Shape
+
+- **Kurtosis** (`advanced: true`): Identifies heavy-tailed distributions. High kurtosis in crime rates or health outcomes means extreme values are more common than normal, signaling concentrated risk. Policy implication: mean-based targets may be misleading when tails are heavy — use median or trimmed mean instead.
+- **Bimodality Coefficient** (`advanced: true`): Detects two-tiered distributions. Values > 0.555 suggest bimodality (e.g., bimodal income = "haves and have-nots"). Policy implication: a single intervention may not address both peaks — consider targeted approaches for each group.
+- **Pearson's Second Skewness**: Quantifies asymmetry. Highly skewed distributions (common in income, property values, healthcare costs) require median-based analysis rather than means.
+
+### Diversity & Concentration
+
+- **Shannon Entropy / Normalized Entropy** (`advanced: true`): Measures how evenly values are distributed. Low entropy in budget allocations = spending concentrated in few departments or programs. High entropy = more even distribution. Use normalized entropy (0–1 scale) for cross-jurisdiction comparison. Useful for assessing resource diversification and economic sector concentration.
+
+### Robust Statistics
+
+- **Winsorized Mean**: Mean after capping extreme values at configurable percentile thresholds. Compare to regular mean — large divergence signals that outlier jurisdictions or programs are skewing the average.
+- **Trimmed Mean**: Mean after excluding extreme values entirely. Use for fairer peer comparisons when outliers are present but shouldn't drive the comparison.
+- Both also compute robust stddev, variance, and CV for consistent analysis.
+
+### Outlier Detection
+
+- **Outlier statistics** (24 measures): Identify anomalous jurisdictions, programs, or time periods. Key metrics:
+  - `outlier_impact_ratio` — quantifies how much outliers distort the overall mean
+  - `outliers_extreme_lower_cnt` / `outliers_extreme_upper_cnt` — count of extreme outliers (beyond outer fences)
+  - `outliers_to_normal_mean_ratio` — how different outlier values are from the typical range
+  - Use to flag programs with unusually high spend, jurisdictions with extreme crime rates, or budget line items that merit closer review.
+
+### Bivariate Analysis
+
+- **Pearson / Spearman / Kendall correlations** (`bivariate: true, bivariate_stats: "all"`): Measure relationships between all numeric column pairs. The default `bivariate_stats: "fast"` computes only Pearson + covariance (streaming, cheap); set `"all"` to include Spearman, Kendall, MI, and NMI (requires storing all values, more expensive). Spearman is preferred for most policy data (robust to outliers and non-linear monotonic relationships). Kendall is preferred for small samples or ordinal data with many ties (e.g., survey ratings, ranked program tiers). Results are written to `<FILESTEM>.stats.bivariate.csv` (or `<FILESTEM>.stats.bivariate.joined.csv` when `join_inputs: true`). Use as a quick screening step to identify which spend categories correlate with which outcomes before building detailed SQL analyses.
+- **Mutual Information** (`bivariate_stats: "all"`): Captures non-linear dependencies that correlation misses. High mutual information with low Pearson correlation = a real but non-linear relationship worth investigating (e.g., diminishing returns where more spend helps up to a point, then stops).
+- **Covariance** (`bivariate_stats: "fast"` or `"all"`): Raw measure of linear co-movement. Less interpretable than correlation but useful for variance decomposition in multi-program analysis. Included in default fast mode.
+
 ## Evidence-Based Recommendation Framework
 
 Structure each recommendation as:
@@ -245,6 +291,7 @@ Structure each recommendation as:
 - Be consultative: ask clarifying questions, present multiple options, highlight trade-offs rather than prescribing a single path
 - Always link spending to measurable outcomes — avoid recommending increased spend without quantifying expected returns
 - When budget data is available, compute cost-per-outcome and compare across programs, years, and peer jurisdictions before recommending resource allocation
+- Use `qsv_moarstats` with `advanced: true, bivariate: true` to screen for inequality patterns (Gini, Atkinson), distribution anomalies (kurtosis, bimodality), and spend-outcome correlations before building detailed SQL analyses
 - Profile before analyzing — run `stats` and `frequency` first to understand data characteristics
 - Use `qsv_search_tools` to discover additional analysis tools if needed
 - For large datasets (> 10MB), consider converting to Parquet with `qsv_to_parquet` for faster `sqlp` queries

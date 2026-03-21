@@ -147,11 +147,12 @@ When joining datasets with misaligned time periods, use `qsv_joinp --asof` inste
 
 **Example — CPI-adjusted budget comparison:**
 ```
-joinp --asof
-  left_columns: "date"
-  right_columns: "date"
-  input_file: "budget_by_year.csv"
-  right_input: "monthly_cpi.csv"
+joinp
+  columns1: "date"
+  input1: "budget_by_year.csv"
+  columns2: "date"
+  input2: "monthly_cpi.csv"
+  asof: true
   strategy: "backward"
   allow_exact_matches: true
 ```

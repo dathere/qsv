@@ -58,10 +58,10 @@ Join two tabular data files on common columns.
 5. **Execute join**: Use `qsv_joinp` for standard joins:
    ```
    joinp --left/--inner/--full/--cross
-     left_columns: "id"
-     right_columns: "id"
-     input_file: "file1.csv"
-     right_input: "file2.csv"
+     columns1: "id"
+     input1: "file1.csv"
+     columns2: "id"
+     input2: "file2.csv"
    ```
 
    Or use `qsv_sqlp` for complex joins:
@@ -73,11 +73,12 @@ Join two tabular data files on common columns.
 
    For ASOF (nearest-match) joins, use `qsv_joinp` with `--asof`:
    ```
-   joinp --asof
-     left_columns: "date"
-     right_columns: "date"
-     input_file: "events.csv"
-     right_input: "reference.csv"
+   joinp
+     columns1: "date"
+     input1: "events.csv"
+     columns2: "date"
+     input2: "reference.csv"
+     asof: true
      strategy: "backward"
      allow_exact_matches: true
    ```
@@ -111,9 +112,9 @@ Join two tabular data files on common columns.
 
 - `joinp` uses the Polars engine and is significantly faster than `join` for large files
 - The stats cache helps `joinp` optimize join execution
-- For joining on multiple columns, separate column names with commas: `left_columns: "col1,col2"`
+- For joining on multiple columns, separate column names with commas: `columns1: "col1,col2"`
 - Column names must match exactly (case-sensitive)
-- If join columns have different names, specify separately: `left_columns: "id"`, `right_columns: "customer_id"`
+- If join columns have different names, specify separately: `columns1: "id"`, `columns2: "customer_id"`
 - For one-to-many joins, the result will have more rows than either input
 - `joinp` handles null values in join columns (nulls don't match by default)
 - ASOF joins implicitly enable `--try-parsedates` — no need to pass it explicitly

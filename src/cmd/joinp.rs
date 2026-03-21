@@ -174,11 +174,11 @@ joinp options:
                              backward - For each row in the first CSV data set,
                                         we find the last row in the second data set
                                         whose key is less than the key in the first
-                                        data set.
+                                        data set (or <= with --allow-exact-matches).
                              forward -  For each row in the first CSV data set,
                                         we find the first row in the second data set
                                         whose key is greater than the key in the
-                                        first data set.
+                                        first data set (or >= with --allow-exact-matches).
                              nearest -  selects the last row in the second data set
                                         whose value is nearest to the value in the
                                         first data set.

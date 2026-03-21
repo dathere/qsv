@@ -270,16 +270,29 @@ fn build_total_row(
 
 /// Insert subtotal rows after each group in the first index column.
 /// Returns a new DataFrame with subtotal rows interleaved.
+/// The data is sorted by the first index column to ensure contiguous groups.
 fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliResult<DataFrame> {
+    // Sort by the first index column to ensure contiguous groups,
+    // since pivot may not always return sorted results.
+    let df = df.sort([&index_cols[0]], SortMultipleOptions::default())?;
+
     let group_col = df.column(&index_cols[0])?;
     let mut frames: Vec<DataFrame> = Vec::new();
     let mut group_start = 0_usize;
 
     for i in 1..=df.height() {
         // Detect group boundary: end of data or value change in first index col
-        let is_boundary = i == df.height()
-            || group_col.get(i).unwrap().to_string()
-                != group_col.get(group_start).unwrap().to_string();
+        let current_val = if i < df.height() {
+            group_col.get(i).map(|v| v.to_string()).ok()
+        } else {
+            None
+        };
+        let start_val = group_col
+            .get(group_start)
+            .map(|v| v.to_string())
+            .ok()
+            .unwrap_or_default();
+        let is_boundary = i == df.height() || current_val.as_deref() != Some(&start_val);
 
         if is_boundary {
             let group_len = i - group_start;
@@ -288,8 +301,8 @@ fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliRe
             // Get the group value for the first index column label
             let group_value = group_col
                 .get(group_start)
-                .unwrap()
-                .to_string()
+                .map(|v| v.to_string())
+                .unwrap_or_default()
                 .trim_matches('"')
                 .to_string();
 
@@ -1004,7 +1017,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         let total_label = &args.flag_total_label;
 
-        // Compute grand total from the original data (before subtotals are inserted)
+        // Compute grand total from pivot result (before subtotals are inserted)
         let grand_total_row = if args.flag_grand_total {
             Some(build_total_row(
                 &pivot_result,

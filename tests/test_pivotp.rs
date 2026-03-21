@@ -990,13 +990,16 @@ pivotp_test!(
         wrk.assert_success(&mut cmd);
 
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-        // Each date group should have a subtotal row
-        let has_subtotal = got.iter().any(|row| row.iter().any(|c| c == "Total"));
-        assert!(has_subtotal, "Expected subtotal rows, got: {got:?}");
-
-        // Verify last data row is a subtotal
-        let last = got.last().unwrap();
-        assert_eq!(last[1], "Total");
+        let expected = vec![
+            svec!["date", "region", "A", "B"],
+            svec!["2023-01-01", "North", "100", "150"],
+            svec!["2023-01-01", "South", "200", "0"],
+            svec!["2023-01-01", "Total", "300", "150"],
+            svec!["2023-01-02", "South", "0", "250"],
+            svec!["2023-01-02", "North", "300", "350"],
+            svec!["2023-01-02", "Total", "300", "600"],
+        ];
+        assert_eq!(got, expected);
     }
 );
 
@@ -1020,12 +1023,17 @@ pivotp_test!(
         wrk.assert_success(&mut cmd);
 
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-        // Should have subtotal rows and a grand total row
-        let last = got.last().unwrap();
-        assert_eq!(last[0], "Grand Total");
-
-        let has_subtotal = got.iter().any(|row| row.len() > 1 && row[1] == "Total");
-        assert!(has_subtotal, "Expected subtotal rows, got: {got:?}");
+        let expected = vec![
+            svec!["date", "region", "A", "B"],
+            svec!["2023-01-01", "North", "100", "150"],
+            svec!["2023-01-01", "South", "200", "0"],
+            svec!["2023-01-01", "Total", "300", "150"],
+            svec!["2023-01-02", "South", "0", "250"],
+            svec!["2023-01-02", "North", "300", "350"],
+            svec!["2023-01-02", "Total", "300", "600"],
+            svec!["Grand Total", "", "600", "750"],
+        ];
+        assert_eq!(got, expected);
     }
 );
 

@@ -79,12 +79,13 @@ Join two tabular data files on common columns.
      input_file: "events.csv"
      right_input: "reference.csv"
      strategy: "backward"
+     allow_exact_matches: true
    ```
-   - `strategy: "backward"` (default) — match to the last right row with key <= left key
-   - `strategy: "forward"` — match to the first right row with key >= left key
+   - `strategy: "backward"` (default) — match to the last right row with key < left key
+   - `strategy: "forward"` — match to the first right row with key > left key
    - `strategy: "nearest"` — match to the numerically closest row (supports `--tolerance`)
    - Add `--left_by`/`--right_by` to restrict matching within subgroups (e.g., per jurisdiction)
-   - Add `--allow-exact-matches` to include equal keys (<=, >=) instead of strict (<, >)
+   - Add `--allow-exact-matches` to include equal keys (<=, >=); default is strict inequality (<, >)
    - Both datasets are auto-sorted on join columns; use `--no-sort` only if pre-sorted
 
 6. **Clean up result**: Use `qsv_select` to remove duplicate join columns or unnecessary columns from the result.

@@ -117,7 +117,7 @@ Use `WebSearch` and `WebFetch` to access public government data for context, ben
 1. **Clarify scope**: Identify the jurisdiction, time period, policy domain, and specific questions. Ask clarifying questions if the scope is ambiguous — effective policy analysis requires precise framing.
 2. **Index & profile**:
    - Run `qsv_index`, then `qsv_sniff`, `qsv_count`, `qsv_headers`, and `qsv_stats` with `cardinality: true, stats_jsonl: true` to understand the data structure.
-   - Run `qsv_moarstats` with `advanced: true` when distribution shape or inequality matters (income data, crime rates, budget allocations). Add `bivariate: true` when analyzing spend-outcome relationships to screen for correlations before building SQL queries. See the "Distribution & Inequality Analysis" section for detailed metric guidance.
+   - Run `qsv_moarstats` with `advanced: true` when distribution shape or inequality matters (income data, crime rates, budget allocations). Add `bivariate: true, bivariate_stats: "all"` when analyzing spend-outcome relationships to screen for correlations before building SQL queries — note that bivariate results are written to a separate sidecar file (`<FILESTEM>.stats.bivariate.csv`), not into the main `.stats.csv`. See the "Distribution & Inequality Analysis" section for detailed metric guidance.
 3. **Establish baseline**: Compute historical trends using `qsv_sqlp`. Calculate year-over-year changes, period averages, and identify the baseline period for comparison.
 4. **Cross-reference**: Pull benchmark data from Census (prefer `mcp-census-api` tools when available), BLS, FBI, or Wikidata (prefer `Wikidata MCP` tools when available). Fall back to `WebSearch`/`WebFetch` for sources without dedicated MCP servers. Join external data with local datasets using `qsv_joinp` or `qsv_sqlp`. For temporal cross-referencing where dates don't align exactly (e.g., annual budgets to monthly CPI, quarterly QCEW to fiscal years), prefer `qsv_joinp --asof` with `strategy: "backward", allow_exact_matches: true` to match each record to the most recent reference value.
 5. **Temporal analysis**: Use `qsv_sqlp` window functions for trend decomposition — moving averages, rate-of-change, cumulative totals. Flag inflection points and structural breaks in time series.
@@ -170,7 +170,7 @@ Every policy recommendation must connect spending to measurable outcomes. Always
 
 ### Linking Spend to Outcomes
 
-**Quick screen first**: Run `qsv_moarstats` with `bivariate: true` on combined spend-outcome data to get Spearman/Pearson correlations and mutual information across all column pairs. This reveals which spend categories have the strongest associations with outcomes before investing in detailed SQL analysis. Also compute Gini on outcome columns to assess whether spending reduces inequality in outcomes.
+**Quick screen first**: Run `qsv_moarstats` on combined spend-outcome data with `advanced: true, bivariate: true, bivariate_stats: "all"` to get Pearson/Spearman correlations, mutual information/NMI, and Gini across relevant columns (note: `bivariate_stats: "all"` is more expensive than the default `"fast"` mode which only computes Pearson + covariance). This reveals which spend categories have the strongest associations with outcomes before investing in detailed SQL analysis and whether spending reduces inequality in outcomes.
 
 Join budget/expenditure data with outcome datasets (crime rates, graduation rates, health metrics, employment, etc.) using `qsv_sqlp` or `qsv_joinp`. Match on jurisdiction, year, and program area. When spend and outcome datasets have different temporal granularity (e.g., annual budgets vs. quarterly outcomes), use `qsv_joinp --asof --left_by jurisdiction --right_by jurisdiction` to align the nearest time period rather than requiring exact date matches. Normalize spending to constant dollars before comparing across years.
 
@@ -255,15 +255,15 @@ Use `qsv_moarstats` with `advanced: true` and/or `bivariate: true` to access the
 
 - **Outlier statistics** (24 measures): Identify anomalous jurisdictions, programs, or time periods. Key metrics:
   - `outlier_impact_ratio` — quantifies how much outliers distort the overall mean
-  - `extreme_lower_cnt` / `extreme_upper_cnt` — count of extreme outliers (beyond outer fences)
+  - `outliers_extreme_lower_cnt` / `outliers_extreme_upper_cnt` — count of extreme outliers (beyond outer fences)
   - `outliers_to_normal_mean_ratio` — how different outlier values are from the typical range
   - Use to flag programs with unusually high spend, jurisdictions with extreme crime rates, or budget line items that merit closer review.
 
 ### Bivariate Analysis
 
-- **Pearson / Spearman / Kendall correlations** (`bivariate: true`): Measure relationships between all numeric column pairs. Spearman is preferred for most policy data (robust to outliers and non-linear monotonic relationships). Kendall is preferred for small samples or ordinal data with many ties (e.g., survey ratings, ranked program tiers). Use as a quick screening step to identify which spend categories correlate with which outcomes before building detailed SQL analyses.
-- **Mutual Information** (`bivariate: true`): Captures non-linear dependencies that correlation misses. High mutual information with low Pearson correlation = a real but non-linear relationship worth investigating (e.g., diminishing returns where more spend helps up to a point, then stops).
-- **Covariance**: Raw measure of linear co-movement. Less interpretable than correlation but useful for variance decomposition in multi-program analysis.
+- **Pearson / Spearman / Kendall correlations** (`bivariate: true, bivariate_stats: "all"`): Measure relationships between all numeric column pairs. The default `bivariate_stats: "fast"` computes only Pearson + covariance (streaming, cheap); set `"all"` to include Spearman, Kendall, MI, and NMI (requires storing all values, more expensive). Spearman is preferred for most policy data (robust to outliers and non-linear monotonic relationships). Kendall is preferred for small samples or ordinal data with many ties (e.g., survey ratings, ranked program tiers). Results are written to `<FILESTEM>.stats.bivariate.csv`. Use as a quick screening step to identify which spend categories correlate with which outcomes before building detailed SQL analyses.
+- **Mutual Information** (`bivariate_stats: "all"`): Captures non-linear dependencies that correlation misses. High mutual information with low Pearson correlation = a real but non-linear relationship worth investigating (e.g., diminishing returns where more spend helps up to a point, then stops).
+- **Covariance** (`bivariate_stats: "fast"` or `"all"`): Raw measure of linear co-movement. Less interpretable than correlation but useful for variance decomposition in multi-program analysis. Included in default fast mode.
 
 ## Evidence-Based Recommendation Framework
 

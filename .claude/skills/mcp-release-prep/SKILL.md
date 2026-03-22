@@ -1,12 +1,12 @@
 ---
 name: mcp-release-prep
-description: Prepare an MCP server release by bumping versions across all files and updating changelog
+description: Prepare an MCP server and plugin release by bumping versions across all files and updating changelog
 disable-model-invocation: true
 ---
 
-# MCP Server Release Preparation
+# MCP Server & Plugin Release Preparation
 
-Prepare an MCP server release by updating version numbers across all required files and generating a changelog entry. The MCP server version advances **independently** of the qsv binary version.
+Prepare an MCP server and plugin release by updating version numbers across all required files and generating a changelog entry. The MCP server version advances **independently** of the qsv binary version.
 
 ## Arguments
 
@@ -22,18 +22,19 @@ All paths below are relative to `.claude/skills/`.
 1. **`package.json`**: find `"version":` field — source of truth; `version.ts` reads this at runtime
 2. **`manifest.json`**: find `"version":` field near top — must match package.json
 3. **`.claude-plugin/plugin.json`**: find `"version":` field
+4. **`../../.claude-plugin/marketplace.json`** (repo root): find `"version":` in both `metadata` and `plugins[0]` — must match package.json
 
 ### Conditional (only if minimum qsv binary version changes)
 
-4. **`manifest.json`**: find `"minimum_qsv_version":` field
-5. **`scripts/cowork-setup.cjs`**: find `MINIMUM_QSV_VERSION` constant — must match manifest.json
+5. **`manifest.json`**: find `"minimum_qsv_version":` field
+6. **`scripts/cowork-setup.cjs`**: find `MINIMUM_QSV_VERSION` constant — must match manifest.json
 
 ### Documentation (hardcoded versions to update)
 
-6. **`README-MCP.md`**: search for `**Version**: X.Y.Z` near the bottom
-7. **`docs/guides/MACOS_SETUP.md`**: search for download URLs and footer version (multiple occurrences)
-8. **`docs/desktop/README-MCPB.md`**: search for download URLs and version badge (multiple occurrences)
-9. **`docs/guides/START_HERE.md`**: check for any hardcoded version references
+7. **`README-MCP.md`**: search for `**Version**: X.Y.Z` near the bottom
+8. **`docs/guides/MACOS_SETUP.md`**: search for download URLs and footer version (multiple occurrences)
+9. **`docs/desktop/README-MCPB.md`**: search for download URLs and version badge (multiple occurrences)
+10. **`docs/guides/START_HERE.md`**: check for any hardcoded version references
 
 ## Changelog Entry
 
@@ -91,7 +92,7 @@ The Cowork plugin (`.plugin` file) is a separate distribution artifact from the 
 When preparing a release, also review:
 
 - **`cowork-CLAUDE.md`**: check that tool names, workflow steps, and limits are still accurate
-- **`scripts/cowork-setup.cjs`**: if `minimum_qsv_version` changed, update the `MINIMUM_QSV_VERSION` constant (listed in Conditional step 5)
+- **`scripts/cowork-setup.cjs`**: if `minimum_qsv_version` changed, update the `MINIMUM_QSV_VERSION` constant (listed in Conditional step 6)
 - **`skills/`**, **`commands/`**, **`agents/`**: check for any hardcoded version references or stale tool names
 
 ## Important Notes

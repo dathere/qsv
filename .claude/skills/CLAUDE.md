@@ -21,10 +21,10 @@ Both types need a `COMMAND_GUIDANCE` entry with `whenToUse`, `commonPattern`, an
 
 ### Guidance emoji conventions
 
-- `USE WHEN` — when to use this tool vs alternatives
-- `COMMON PATTERN` — how this tool fits into workflows
-- `CAUTION` — memory limits, file size constraints, feature requirements
-- `PERFORMANCE` — index acceleration tips, cache strategies
+- 💡 `USE WHEN` — when to use this tool vs alternatives
+- 📋 `COMMON PATTERN` — how this tool fits into workflows
+- ⚠️ `CAUTION` — memory limits, file size constraints, feature requirements
+- 🚀 `PERFORMANCE` — index acceleration tips, cache strategies
 - 📊 marks stats-related guidance
 
 Stats-aware guidance — run `qsv stats --cardinality --stats-jsonl` first, then read `.stats.csv` (not `.data.jsonl`):
@@ -67,7 +67,7 @@ Only `qsvmcp` (preferred) and `qsv` (full) are supported. `qsvlite` and `qsvdp` 
 
 ### Plugin mode
 
-`.claude-plugin/plugin.json` declares the plugin, points to `.mcp.json` (server key `"qsv"`, tools become `mcp__qsv__qsv_*`). Uses `QSV_MCP_EXPOSE_ALL_TOOLS=true` since Claude Code/Cowork handle large tool lists well. Two separate agents (analyst/wrangler) for clear boundaries.
+`.claude-plugin/plugin.json` declares the plugin, points to `.mcp.json` (server key `"qsv"`, tools become `mcp__qsv__qsv_*`). Uses `QSV_MCP_EXPOSE_ALL_TOOLS=true` since Claude Code/Cowork handle large tool lists well. Three agents (data-analyst, data-wrangler, policy-analyst) for clear boundaries.
 
 ### Skills auto-generation
 

@@ -320,5 +320,5 @@ For issues with auto-updates:
 ---
 
 **Updated**: 2026-03-15
-**Version**: 17.0.0
+**Version**: 18.0.0
 **Status**: ✅ Production Ready

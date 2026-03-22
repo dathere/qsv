@@ -145,7 +145,7 @@ Survey abbreviation: CX. Series IDs vary widely. Use `get_popular_series` with s
 
 ## Local Area Unemployment (LAUS)
 
-Format: `LAUST${STATE_FIPS}0000000000003` for state unemployment rates.
+Format: `LASST${STATE_FIPS}0000000000003` for state unemployment rates.
 
 | Series ID | Description |
 |---|---|

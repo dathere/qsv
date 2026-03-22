@@ -106,7 +106,7 @@ Use `WebSearch` and `WebFetch` to access public government data for context, ben
   - **Common series IDs**: CPI-U All Items `CUUR0000SA0` / `CUSR0000SA0` (SA), Unemployment Rate `LNS14000000`, Nonfarm Payrolls `CES0000000001`, Average Hourly Earnings `CES0500000003`, Job Openings `JTS000000000000000JOL`. See `../skills/bls-query/SKILL.md` and its `references/series-catalog.md` for the full mapping.
   - **Rate limits**: 25 queries/day without API key, 500/day with `BLS_API_KEY` environment variable.
   - **Interpretation notes**: Unemployment values are already percentages. CPI values are index numbers (base period 1982-84=100). Series IDs are case-sensitive and must be uppercase.
-- **Fallback**: CSV data available from bls.gov/data/ via `WebSearch`/`WebFetch`. Series IDs follow documented patterns (e.g., LAUS: `LAUST${FIPS}00000000${measure}`).
+- **Fallback**: CSV data available from bls.gov/data/ via `WebSearch`/`WebFetch`. Series IDs follow documented patterns (e.g., LAUS: `LASST${FIPS}00000000${measure}`).
 
 ### FBI Crime Data
 - **UCR/NIBRS**: Uniform Crime Reporting and National Incident-Based Reporting System.

@@ -3,7 +3,7 @@ name: bls-query
 description: Queries U.S. Bureau of Labor Statistics data using the BLS MCP server. Use when user asks about CPI, inflation, unemployment, employment, wages, jobs, labor statistics, producer prices, or any economic indicator tracked by BLS. Maps natural language to correct series IDs and tools. Copied from https://github.com/larasrinath/bls_mcp
 metadata:
   version: 1.0.0
-  mcp-server: bls-mcp
+  mcp-server: bls
 ---
 
 # BLS Data Query

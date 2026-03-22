@@ -163,18 +163,26 @@ npm run mcpb:package
 │   ├── mcp-server.ts      # MCP server implementation
 │   ├── mcp-tools.ts       # MCP tool definitions
 │   ├── mcp-filesystem.ts  # Filesystem resource provider
+│   ├── mcp-sampling.ts    # MCP sampling support
 │   ├── bm25-search.ts     # BM25 search index for tool discovery
+│   ├── browse-directory.ts # Directory browser (MCP Apps)
 │   ├── config.ts          # Configuration and validation
 │   ├── converted-file-manager.ts  # LIFO cache for converted files
 │   ├── duckdb.ts          # DuckDB integration for SQL queries
+│   ├── installer.ts       # Binary installer
 │   ├── update-checker.ts  # Version detection and skill regeneration
 │   ├── utils.ts           # Utility functions
 │   ├── version.ts         # Version management
+│   ├── wink-bm25-text-search.d.ts  # BM25 type declarations
+│   ├── wink-nlp-utils.d.ts         # NLP utils type declarations
+│   ├── ui/                # UI components
+│   │   └── directory-picker-html.ts
 │   └── index.ts           # Public exports
 ├── scripts/
 │   ├── install-mcp.js     # MCP installation helper
 │   ├── package-mcpb.js    # MCPB packaging script
-│   ├── cowork-setup.js    # Claude Cowork integration setup
+│   ├── package-plugin.js  # Plugin packaging script
+│   ├── cowork-setup.cjs   # Claude Cowork integration setup
 │   └── run-tests.js       # Cross-platform test runner
 ├── dist/                   # Compiled JavaScript (gitignored)
 ├── package.json
@@ -392,7 +400,7 @@ Claude will automatically:
 
 ### What's Available
 
-- **22+ MCP Tools**: 10 core tools (search, config, filesystem, log, command, to_parquet, index, stats) + 12 common command tools. `qsv_browse_directory` is available when MCP Apps are supported.
+- **24+ MCP Tools**: 11 core tools (search, config, set_working_dir, get_working_dir, filesystem, log, command, to_parquet, index, stats, + conditional browse_directory) + 13 common command tools (including sniff). `qsv_browse_directory` is available when MCP Apps are supported.
 - **Local File Access**: Browse and process tabular data files (CSV, Excel, JSONL, etc.) directly from your filesystem
 - **File-Based Processing**: Works with your local files without uploading
 - **Natural Language Interface**: No command syntax needed
@@ -443,7 +451,7 @@ MIT
 ---
 
 **Updated**: 2026-03-15
-**Version**: 17.0.0
+**Version**: 18.0.0
 **Generator**: `qsv --update-mcp-skills`
 **Skills**: 51 commands
 **Usage Examples**: 180 from documentation

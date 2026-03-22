@@ -14,16 +14,16 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 
 ## Recommended Binary: qsvmcp
 
-The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 60 commands needed by the MCP server (vs 68 in the full qsv binary), resulting in a smaller, faster binary.
+The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 60 commands needed by the MCP server (vs 70 in the full qsv binary), resulting in a smaller, faster binary.
 
 **Features included in qsvmcp**: Polars, Luau scripting, geocoding, self-update, MCP skill generation (`--update-mcp-skills`), and the `log` command for MCP audit logging.
 
-**Commands excluded from qsvmcp** (not needed for MCP): `apply`, `fetch`, `fetchpost`, `foreach`, `lens`, `prompt`, `python`, and `clipboard` — 8 commands total.
+**Commands excluded from qsvmcp** (not needed for MCP): `apply`, `fetch`, `fetchpost`, `foreach`, `lens`, `prompt`, `python`, `clipboard`, `to`, and `color` — 10 commands total.
 
 | Binary | Commands | MCP Server Support | Notes |
 |--------|----------|-------------------|-------|
 | **qsvmcp** | 60 | Preferred | Optimized for MCP, smaller binary |
-| **qsv** | 68 | Supported | Full-featured, includes extra commands not used by MCP |
+| **qsv** | 70 | Supported | Full-featured, includes extra commands not used by MCP |
 | qsvlite | — | Not supported | Missing Polars and other required features |
 | qsvdp | — | Not supported | DataPusher+ variant, missing required features |
 
@@ -201,7 +201,7 @@ These tools are always available immediately:
 
 > **App-only tool:** `qsv_browse_directory` (interactive directory browser) is also available when `QSV_MCP_ENABLE_APPS=true` and the client supports MCP Apps UI (e.g., Claude Desktop).
 
-### 12 Common Command Tools (Loaded on Demand)
+### 13 Common Command Tools (Loaded on Demand)
 
 Tools for frequently used commands, loaded when discovered via search:
 
@@ -214,6 +214,7 @@ Tools for frequently used commands, loaded when discovered via search:
 | `qsv_headers` | Header operations |
 | `qsv_count` | Row counting (instant with index) |
 | `qsv_slice` | Row selection |
+| `qsv_sniff` | File format detection and metadata |
 | `qsv_sqlp` | SQL queries (Polars engine) |
 | `qsv_joinp` | High-performance joins (Polars engine) |
 | `qsv_cat` | Concatenate CSV files |
@@ -505,21 +506,29 @@ Press Ctrl+C to stop.
 │   ├── mcp-server.ts         # Main MCP server
 │   ├── mcp-tools.ts          # Tool definitions with guidance
 │   ├── mcp-filesystem.ts     # Filesystem resource provider
+│   ├── mcp-sampling.ts       # MCP sampling support
 │   ├── bm25-search.ts        # BM25 search index for tool discovery
+│   ├── browse-directory.ts   # Directory browser (MCP Apps)
 │   ├── config.ts             # Configuration and validation
 │   ├── converted-file-manager.ts  # LIFO cache for converted files
 │   ├── executor.ts           # Skill executor
+│   ├── installer.ts          # Binary installer
 │   ├── loader.ts             # Skill loader
 │   ├── update-checker.ts     # Version detection and skill regeneration
 │   ├── types.ts              # Type definitions
 │   ├── duckdb.ts             # DuckDB integration for SQL queries
 │   ├── utils.ts              # Utility functions
 │   ├── version.ts            # Version management
+│   ├── wink-bm25-text-search.d.ts  # BM25 type declarations
+│   ├── wink-nlp-utils.d.ts   # NLP utils type declarations
+│   ├── ui/                   # UI components
+│   │   └── directory-picker-html.ts
 │   └── index.ts              # Module exports
 ├── scripts/
 │   ├── install-mcp.js        # Installation helper
 │   ├── package-mcpb.js       # MCPB packaging script
-│   ├── cowork-setup.js       # Claude Cowork integration setup
+│   ├── package-plugin.js     # Plugin packaging script
+│   ├── cowork-setup.cjs      # Claude Cowork integration setup
 │   └── run-tests.js          # Cross-platform test runner
 ├── mcp-config.json           # Config template
 ├── README-MCP.md             # This file
@@ -598,7 +607,7 @@ For issues or questions:
 ---
 
 **Updated**: 2026-03-15
-**Version**: 17.0.0
+**Version**: 18.0.0
 **Tools**: 10 core tools initially (deferred loading), 51+ when discovered via search
 **Skills**: 51 qsv commands
 **Status**: Production Ready

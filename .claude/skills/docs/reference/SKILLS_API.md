@@ -238,13 +238,13 @@ Skills are organized by function:
 | Category | Skills | Description |
 |----------|--------|-------------|
 | selection | select, slice, sample | Column/row selection |
-| filtering | search, searchset, grep | Row filtering |
-| transformation | apply, rename, transpose | Data transformation |
+| filtering | search, searchset | Row filtering |
+| transformation | rename, transpose, datefmt | Data transformation |
 | aggregation | stats, moarstats, frequency, count | Statistical analysis |
 | joining | join, joinp | Combining datasets |
 | validation | schema, validate, safenames | Data validation |
 | formatting | fmt, fixlengths, table | Output formatting |
-| conversion | to, input, excel | Format conversion |
+| conversion | input, excel, tojsonl | Format conversion |
 | documentation | describegpt | AI-powered data documentation |
 | utility | index, cat, headers | Utility operations |
 

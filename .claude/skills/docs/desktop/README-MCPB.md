@@ -18,7 +18,7 @@ Under the hood, it's powered by **qsv**: a purpose-built CLI tool written in hig
 
 Claude handles the rest automatically — no commands to remember, no syntax to learn.
 
-The extension uses **qsvmcp**, a streamlined variant of qsv purpose-built for MCP server use. It ships with 60 commands (vs 68 in the full qsv binary), plus built-in session logging for increased reproducibility.
+The extension uses **qsvmcp**, a streamlined variant of qsv purpose-built for MCP server use. It ships with 60 commands (vs 70 in the full qsv binary), plus built-in session logging for increased reproducibility.
 
 ## Installation (Simple)
 
@@ -265,7 +265,7 @@ qsv-mcp-server.mcpb
 ┌──────────────▼──────────────────────┐
 │   qsvmcp binary (preferred) / qsv   │
 │  • Tabular data processing         │
-│  • 60 commands (qsvmcp) / 68 (qsv) │
+│  • 60 commands (qsvmcp) / 70 (qsv) │
 │  • High-performance operations      │
 │  • Multi-format support             │
 └─────────────────────────────────────┘
@@ -576,6 +576,6 @@ Same license as qsv: MIT OR Apache-2.0
 ---
 
 **Updated**: 2026-03-15
-**Version**: 17.0.0
+**Version**: 18.0.0
 **Format**: MCP Bundle (MCPB) v0.3
 **Compatibility**: Claude Desktop 1.0+

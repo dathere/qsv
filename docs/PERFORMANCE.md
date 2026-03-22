@@ -187,10 +187,10 @@ The `--version` option shows a lot of information about qsv. It displays:
 
 ```bash
 $ qsv --version
-qsv 17.0.0-mimalloc 315-apply;fetch;foreach;geocode;Luau 0.709;magika;to;polars-0.53.0:802550b;self_update-16-16;51.20 GiB-1.26 GiB-0 B-64.00 GiB (aarch64-apple-darwin compiled with Rust 1.93;macOS 26.4-Darwin 25.4.0;Apple M4 Max-16) prebuilt
+qsv 18.0.0-mimalloc 315-apply;fetch;foreach;geocode;Luau 0.709;magika;to;polars-0.53.0:802550b;self_update-16-16;51.20 GiB-1.26 GiB-0 B-64.00 GiB (aarch64-apple-darwin compiled with Rust 1.93;macOS 26.4-Darwin 25.4.0;Apple M4 Max-16) prebuilt
 ```
 
-Shows that I'm running qsv version 17.0.0, with the `mimalloc` allocator (instead of `standard`), build number 315, and I have:
+Shows that I'm running qsv version 18.0.0, with the `mimalloc` allocator (instead of `standard`), build number 315, and I have:
 - the `apply`, `fetch`, `foreach`, `geocode`, `luau`, `magika`, `to`, `polars` and `self_update` features enabled,
 - the exact version of the embedded Luau interpreter (Luau 0.709),
 - Polars with its version metadata (polars-0.53.0:802550b),

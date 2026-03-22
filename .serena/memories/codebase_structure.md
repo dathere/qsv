@@ -39,9 +39,9 @@ tests/             — test_<command>.rs files
   tests/                    — <module>.test.ts files
   qsv/                     — 51 auto-generated skill JSON files
   scripts/                 — Build/deployment scripts
-  commands/                — 5 slash commands
-  agents/                  — 2 subagents (data-analyst, data-wrangler)
-  skills/                  — 3 domain knowledge skills
+  commands/                — 8 slash commands
+  agents/                  — 3 subagents (data-analyst, data-wrangler, policy-analyst)
+  skills/                  — 5 domain knowledge skills
 ```
 
 ## Key Config Files

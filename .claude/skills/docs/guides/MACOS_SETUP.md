@@ -83,9 +83,9 @@ The Cowork plugin adds a workflow layer on top of the MCP server, giving Cowork 
 
 | Component | Details |
 |-----------|---------|
-| 3 domain skills | csv-wrangling, data-quality, qsv-performance |
-| 6 slash commands | /csv-query, /data-clean, /data-convert, /data-describe, /data-join, /data-profile |
-| 2 subagents | data-analyst, data-wrangler |
+| 5 domain skills | csv-wrangling, data-quality, genai-disclaimer, qsv-performance, reproducible-analysis |
+| 8 slash commands | /csv-query, /data-clean, /data-convert, /data-describe, /data-join, /data-profile, /data-validate, /data-viz |
+| 3 subagents | data-analyst, data-wrangler, policy-analyst |
 
 **Prerequisites:**
 - The qsv MCP Server must be installed first ([Section 2](#2-install-the-qsv-mcp-server-mcpb-bundle))
@@ -120,7 +120,7 @@ With the **qsv Cowork plugin** installed ([Section 3](#3-install-the-qsv-cowork-
 
 - **Domain skills** that give Claude deep knowledge of CSV wrangling, data quality, and qsv performance optimization
 - **Slash commands** like `/data-profile` and `/data-clean` for common data workflows
-- **Specialized subagents** (data-analyst and data-wrangler) that can autonomously handle complex data tasks
+- **Specialized subagents** (data-analyst, data-wrangler, and policy-analyst) that can autonomously handle complex data tasks
 
 **Try it out:** Open a Cowork session and type:
 

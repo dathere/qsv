@@ -115,6 +115,7 @@ These environment variables configure the MCP server behavior:
 | `QSV_MCP_DUCKDB_BIN_PATH` | Full path to the DuckDB binary. If not set, auto-detects from PATH. | `""` (auto-detect) |
 | `QSV_MCP_USE_DUCKDB` | Enable DuckDB for SQL queries when available. When `false`, always uses `sqlp` (Polars SQL). | `false` |
 | `QSV_MCP_OUTPUT_FORMAT` | Output format for qsv command results. Valid values: `"tsv"` or `"csv"`. | `tsv` |
+| `QSV_MCP_ENABLE_APPS` | Enable MCP Apps UI features (e.g., `qsv_browse_directory` interactive directory browser). | `true` |
 
 ### Update Checking
 

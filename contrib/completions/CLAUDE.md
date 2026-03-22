@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a standalone Rust project that generates shell tab-completion files for the [qsv](../../README.md) CLI tool. It **auto-generates** completions for 7 shells (**Bash, Zsh, Fish, PowerShell, Nushell, Fig, and Elvish**) by reading the `static USAGE` text from qsv's source files (`src/cmd/*.rs`) at build time.
 
-The generated completion files live in `examples/` and cover 66 qsv commands (all except `applydp` and `generate`).
+The generated completion files live in `examples/` and cover 69 qsv commands (all except `applydp`).
 
 ## Build & Generate Commands
 

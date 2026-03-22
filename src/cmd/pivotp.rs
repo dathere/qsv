@@ -270,7 +270,7 @@ fn build_total_row(
 
 /// Insert subtotal rows after each group in the first index column.
 /// Returns a new DataFrame with subtotal rows interleaved.
-/// Subtotals are inserted based on the existing row order.
+/// The data is sorted by all index columns to ensure contiguous groups and deterministic ordering.
 fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliResult<DataFrame> {
     // Sort by all index columns to ensure contiguous groups and
     // deterministic intra-group ordering, since pivot output order is not guaranteed.
@@ -283,15 +283,23 @@ fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliRe
     for i in 1..=df.height() {
         // Detect group boundary: end of data or value change in first index col
         let current_val = if i < df.height() {
-            group_col.get(i).map(|v| v.to_string()).ok()
+            if let Ok(str_col) = group_col.str() {
+                str_col.get(i).map(String::from)
+            } else {
+                group_col.get(i).map(|v| v.to_string()).ok()
+            }
         } else {
             None
         };
-        let start_val = group_col
-            .get(group_start)
-            .map(|v| v.to_string())
-            .ok()
-            .unwrap_or_default();
+        let start_val = if let Ok(str_col) = group_col.str() {
+            str_col.get(group_start).unwrap_or_default().to_string()
+        } else {
+            group_col
+                .get(group_start)
+                .map(|v| v.to_string())
+                .ok()
+                .unwrap_or_default()
+        };
         let is_boundary = i == df.height() || current_val.as_deref() != Some(&start_val);
 
         if is_boundary {

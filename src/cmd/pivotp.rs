@@ -277,13 +277,14 @@ fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliRe
     let df = df.sort(index_cols, SortMultipleOptions::default())?;
 
     let group_col = df.column(&index_cols[0])?;
+    let str_col = group_col.str().ok();
     let mut frames: Vec<DataFrame> = Vec::new();
     let mut group_start = 0_usize;
 
     for i in 1..=df.height() {
         // Detect group boundary: end of data or value change in first index col
         let current_val = if i < df.height() {
-            if let Ok(str_col) = group_col.str() {
+            if let Some(str_col) = &str_col {
                 str_col.get(i).map(String::from)
             } else {
                 group_col.get(i).map(|v| v.to_string()).ok()
@@ -291,23 +292,19 @@ fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliRe
         } else {
             None
         };
-        let start_val = if let Ok(str_col) = group_col.str() {
-            str_col.get(group_start).unwrap_or_default().to_string()
+        let start_val = if let Some(str_col) = &str_col {
+            str_col.get(group_start).map(|s| s.to_string())
         } else {
-            group_col
-                .get(group_start)
-                .map(|v| v.to_string())
-                .ok()
-                .unwrap_or_default()
+            group_col.get(group_start).map(|v| v.to_string()).ok()
         };
-        let is_boundary = i == df.height() || current_val.as_deref() != Some(&start_val);
+        let is_boundary = i == df.height() || current_val.as_deref() != start_val.as_deref();
 
         if is_boundary {
             let group_len = i - group_start;
             let group_df = df.slice(group_start as i64, group_len);
 
             // Get the group value for the first index column label
-            let group_value = if let Ok(str_col) = group_col.str() {
+            let group_value = if let Some(str_col) = &str_col {
                 str_col.get(group_start).unwrap_or_default().to_string()
             } else {
                 group_col

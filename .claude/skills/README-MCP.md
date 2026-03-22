@@ -14,15 +14,15 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 
 ## Recommended Binary: qsvmcp
 
-The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 62 commands needed by the MCP server (vs 70 in the full qsv binary), resulting in a smaller, faster binary.
+The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 60 commands needed by the MCP server (vs 70 in the full qsv binary), resulting in a smaller, faster binary.
 
 **Features included in qsvmcp**: Polars, Luau scripting, geocoding, self-update, MCP skill generation (`--update-mcp-skills`), and the `log` command for MCP audit logging.
 
-**Commands excluded from qsvmcp** (not needed for MCP): `apply`, `fetch`, `fetchpost`, `foreach`, `lens`, `prompt`, `python`, and `clipboard` — 8 commands total.
+**Commands excluded from qsvmcp** (not needed for MCP): `apply`, `fetch`, `fetchpost`, `foreach`, `lens`, `prompt`, `python`, `clipboard`, `to`, and `color` — 10 commands total.
 
 | Binary | Commands | MCP Server Support | Notes |
 |--------|----------|-------------------|-------|
-| **qsvmcp** | 62 | Preferred | Optimized for MCP, smaller binary |
+| **qsvmcp** | 60 | Preferred | Optimized for MCP, smaller binary |
 | **qsv** | 70 | Supported | Full-featured, includes extra commands not used by MCP |
 | qsvlite | — | Not supported | Missing Polars and other required features |
 | qsvdp | — | Not supported | DataPusher+ variant, missing required features |

@@ -941,3 +941,212 @@ pivotp_test!(
         assert_eq!(got, expected);
     }
 );
+
+// Test grand total with single index
+pivotp_test!(
+    pivotp_grand_total,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "product",
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            "sum",
+            "--grand-total",
+            "sales.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["region", "A", "B"],
+            svec!["North", "400", "500"],
+            svec!["South", "200", "250"],
+            svec!["Grand Total", "600", "750"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// Test subtotal with two index columns
+pivotp_test!(
+    pivotp_subtotal,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "product",
+            "--index",
+            "date,region",
+            "--values",
+            "sales",
+            "--agg",
+            "sum",
+            "--subtotal",
+            "sales.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["date", "region", "A", "B"],
+            svec!["2023-01-01", "North", "100", "150"],
+            svec!["2023-01-01", "South", "200", "0"],
+            svec!["2023-01-01", "Total", "300", "150"],
+            svec!["2023-01-02", "North", "300", "350"],
+            svec!["2023-01-02", "South", "0", "250"],
+            svec!["2023-01-02", "Total", "300", "600"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// Test grand total and subtotal together
+pivotp_test!(
+    pivotp_grand_total_and_subtotal,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "product",
+            "--index",
+            "date,region",
+            "--values",
+            "sales",
+            "--agg",
+            "sum",
+            "--grand-total",
+            "--subtotal",
+            "sales.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["date", "region", "A", "B"],
+            svec!["2023-01-01", "North", "100", "150"],
+            svec!["2023-01-01", "South", "200", "0"],
+            svec!["2023-01-01", "Total", "300", "150"],
+            svec!["2023-01-02", "North", "300", "350"],
+            svec!["2023-01-02", "South", "0", "250"],
+            svec!["2023-01-02", "Total", "300", "600"],
+            svec!["Grand Total", "", "600", "750"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// Test subtotal with single index column should error
+pivotp_test!(
+    pivotp_subtotal_single_index_error,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "product",
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            "sum",
+            "--subtotal",
+            "sales.csv",
+        ]);
+
+        wrk.assert_err(&mut cmd);
+    }
+);
+
+// Test grand total with custom label
+pivotp_test!(
+    pivotp_grand_total_custom_label,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "product",
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            "sum",
+            "--grand-total",
+            "--total-label",
+            "SUM",
+            "sales.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let last = got.last().unwrap();
+        assert_eq!(last[0], "Grand SUM");
+    }
+);
+
+// Test grand total with mean aggregation (totals still sum the means)
+pivotp_test!(
+    pivotp_grand_total_with_mean_agg,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "product",
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            "mean",
+            "--grand-total",
+            "sales.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let last = got.last().unwrap();
+        assert_eq!(last[0], "Grand Total");
+        // Grand total sums the per-region mean values.
+        // Verify each value column's grand total equals the sum of the means.
+        let header = &got[0];
+        let data_rows = &got[1..got.len() - 1];
+        for col in 1..header.len() {
+            let sum_means: f64 = data_rows
+                .iter()
+                .map(|row| row[col].parse::<f64>().unwrap())
+                .sum();
+            let grand_total: f64 = last[col].parse().unwrap();
+            assert!(
+                (grand_total - sum_means).abs() < 1e-9,
+                "Grand total for '{}' ({grand_total}) != sum of means ({sum_means})",
+                header[col]
+            );
+        }
+    }
+);
+
+// Test grand total with sort-columns
+pivotp_test!(
+    pivotp_grand_total_sort_columns,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "product",
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            "sum",
+            "--grand-total",
+            "--sort-columns",
+            "sales.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        // Header should have sorted pivot columns
+        assert_eq!(got[0], svec!["region", "A", "B"]);
+        // Grand total should be last
+        let last = got.last().unwrap();
+        assert_eq!(last[0], "Grand Total");
+    }
+);

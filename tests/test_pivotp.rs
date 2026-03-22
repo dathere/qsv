@@ -1102,11 +1102,24 @@ pivotp_test!(
         wrk.assert_success(&mut cmd);
 
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-        // Grand total row should be the last row
         let last = got.last().unwrap();
         assert_eq!(last[0], "Grand Total");
-        // The values should be sums of the mean values
-        assert!(last.len() > 1, "Grand total row should have value columns");
+        // Grand total sums the per-region mean values.
+        // Verify each value column's grand total equals the sum of the means.
+        let header = &got[0];
+        let data_rows = &got[1..got.len() - 1];
+        for col in 1..header.len() {
+            let sum_means: f64 = data_rows
+                .iter()
+                .map(|row| row[col].parse::<f64>().unwrap())
+                .sum();
+            let grand_total: f64 = last[col].parse().unwrap();
+            assert!(
+                (grand_total - sum_means).abs() < 1e-9,
+                "Grand total for '{}' ({grand_total}) != sum of means ({sum_means})",
+                header[col]
+            );
+        }
     }
 );
 

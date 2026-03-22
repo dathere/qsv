@@ -270,7 +270,7 @@ fn build_total_row(
 
 /// Insert subtotal rows after each group in the first index column.
 /// Returns a new DataFrame with subtotal rows interleaved.
-/// The data is sorted by the first index column to ensure contiguous groups.
+/// Subtotals are inserted based on the existing row order.
 fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliResult<DataFrame> {
     // Sort by all index columns to ensure contiguous groups and
     // deterministic intra-group ordering, since pivot output order is not guaranteed.
@@ -299,13 +299,15 @@ fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliRe
             let group_df = df.slice(group_start as i64, group_len);
 
             // Get the group value for the first index column label
-            let group_value = group_col
-                .get(group_start)
-                .map(|v| v.to_string())
-                .ok()
-                .unwrap_or_default()
-                .trim_matches('"')
-                .to_string();
+            let group_value = if let Ok(str_col) = group_col.str() {
+                str_col.get(group_start).unwrap_or_default().to_string()
+            } else {
+                group_col
+                    .get(group_start)
+                    .map(|v| v.to_string())
+                    .ok()
+                    .unwrap_or_default()
+            };
 
             // Build subtotal row: first index col = group value, second = label
             let subtotal_row = build_total_row(&group_df, index_cols, &group_value, label)?;
@@ -323,7 +325,7 @@ fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliRe
 
     let mut result = frames.remove(0);
     for frame in frames {
-        result = result.vstack(&frame)?;
+        result.vstack_mut(&frame)?;
     }
 
     Ok(result)
@@ -1001,6 +1003,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Add subtotals and/or grand total rows
     if args.flag_subtotal || args.flag_grand_total {
+        if args.flag_grand_total && actual_index_cols.is_empty() {
+            return fail_incorrectusage_clierror!(
+                "--grand-total requires at least 1 index column (specified via --index)."
+            );
+        }
         if args.flag_subtotal && actual_index_cols.len() < 2 {
             return fail_incorrectusage_clierror!(
                 "--subtotal requires 2 or more index columns (specified via --index)."
@@ -1012,7 +1019,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let col_data = pivot_result.column(idx_col)?;
             if col_data.dtype() != &DataType::String {
                 let casted = col_data.cast(&DataType::String)?;
-                let _ = pivot_result.replace(idx_col, casted);
+                pivot_result.replace(idx_col, casted)?;
             }
         }
 

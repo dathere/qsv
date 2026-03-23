@@ -32,9 +32,8 @@ All paths below are relative to `.claude/skills/`.
 ### Documentation (hardcoded versions to update)
 
 7. **`README-MCP.md`**: search for `**Version**: X.Y.Z` near the bottom
-8. **`docs/guides/MACOS_SETUP.md`**: search for download URLs and footer version (multiple occurrences)
-9. **`docs/desktop/README-MCPB.md`**: search for download URLs and version badge (multiple occurrences)
-10. **`docs/guides/START_HERE.md`**: check for any hardcoded version references
+8. **`docs/desktop/README-MCPB.md`**: search for download URLs and version badge (multiple occurrences)
+9. **`docs/guides/START_HERE.md`**: check for any hardcoded version references
 
 ## Changelog Entry
 

@@ -18,7 +18,7 @@ Under the hood, it's powered by **qsv**: a purpose-built CLI tool written in hig
 
 Claude handles the rest automatically — no commands to remember, no syntax to learn.
 
-The extension uses **qsvmcp**, a streamlined variant of qsv purpose-built for MCP server use. It ships with 60 commands (vs 70 in the full qsv binary), plus built-in session logging for increased reproducibility.
+The extension uses **qsvmcp**, a streamlined variant of qsv purpose-built for MCP server use. It ships with 65 commands (vs 75 in the full qsv binary), plus built-in session logging for increased reproducibility.
 
 ## Installation (Simple)
 
@@ -256,7 +256,7 @@ qsv-mcp-server.mcpb
                │ stdio (JSON-RPC 2.0)
 ┌──────────────▼───────────────────────────┐
 │  QSV MCP Server (Node.js/TypeScript)     │
-│  • Tool definitions (10 core + deferred) │
+│  • Tool definitions (11 core + deferred) │
 │  • Parameter validation                  │
 │  • File conversion manager               │
 │  • Format auto-detection                 │
@@ -265,7 +265,7 @@ qsv-mcp-server.mcpb
 ┌──────────────▼──────────────────────┐
 │   qsvmcp binary (preferred) / qsv   │
 │  • Tabular data processing         │
-│  • 60 commands (qsvmcp) / 70 (qsv) │
+│  • 65 commands (qsvmcp) / 75 (qsv) │
 │  • High-performance operations      │
 │  • Multi-format support             │
 └─────────────────────────────────────┘
@@ -403,7 +403,8 @@ The MCP server automatically enables `--stats-jsonl` when running `qsv stats` to
 - `schema` - Uses data type inference from stats
 - `tojsonl` - Uses stats for type detection
 - `sqlp`, `joinp`, `pivotp` - Uses stats for query optimization
-- `diff` - Uses fingerprint hashes to short-circuit
+- `describegpt` - Uses stats for context-aware descriptions
+- `moarstats` - Uses stats cache for enriched statistics
 - `sample` - Uses row count for sample size calculation
 
 **Cache files:**
@@ -575,7 +576,7 @@ Same license as qsv: MIT OR Apache-2.0
 
 ---
 
-**Updated**: 2026-03-22
+**Updated**: 2026-03-23
 **Version**: 18.0.2
 **Format**: MCP Bundle (MCPB) v0.3
 **Compatibility**: Claude Desktop 1.0+

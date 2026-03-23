@@ -254,7 +254,7 @@
   "_meta": {
     "com.dathere.qsv": {
       "features": [
-        "68 CSV data-wrangling commands",
+        "75 CSV data-wrangling commands",
         "Process local files (CSV, Parquet, Excel, JSONL) without uploading",
         "Smart caching with stats/frequency files",
         "Automatic Excel, Parquet and JSONL conversion"

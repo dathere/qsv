@@ -242,5 +242,5 @@ Uses Node.js built-ins plus two npm dependencies:
 ---
 
 **Implemented**: 2026-01-07
-**Version**: 18.0.0
+**Version**: 18.0.2
 **Status**: ✅ Production Ready

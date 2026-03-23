@@ -5,6 +5,40 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [18.0.2] - 2026-03-22
+
+### Added
+- **Policy analyst agent** for evidence-based policymaking with BLS MCP Server integration
+- **BLS query skill** (`bls-query`) for querying Bureau of Labor Statistics data series
+- **Build dashboard skill** documentation for interactive HTML dashboard creation
+- **Cowork plugin support** with Quick Start guides, marketplace, and setup hooks (#3621)
+- **MCP Apps support** — inline App SDK shim, macOS Finder and Windows PowerShell native directory pickers (#3604, #3605, #3617)
+- **qsv auto-installer** — automatic download and installation of qsvmcp and MCP binaries (#3608, #3609, #3613)
+- **scoresql** added to MCP server as COMMON_COMMAND (#3614)
+- **describegpt LLM passthrough** for direct LLM API access (#3581)
+- **PII/PHI screening** in data-profile command with regex-based detection
+- **Plugin commands, skills & agents** — data-profile, data-describe, csv-query, data-join, data-clean, data-convert (#3630)
+
+### Changed
+- **Policy analyst agent** now uses moarstats for enhanced statistical analysis (#3634)
+- **joinp asof guidance** refined for clearer usage patterns (#3633)
+- **Consolidate data-quality into data-profile** and trim agent duplication
+- **Guidance alignment** — refine stats-aware SQL, exclude unbundled commands (#3623, #3625)
+- **describegpt LLM passthrough** tweaks (#3582, #3585)
+- **Suppress index --output option** from agent view
+- **Parse polars with multi-part suffixes** for version detection
+- **Plugin binary validation** — detect qsv binary and warn if missing, validate env parsing
+- **Documentation** — consolidate getting started guides, fix 25 stale claims (#3620, #3628), doc audit (#3586)
+- **Markdown frontmatter** fully populated across all skill/command/agent files
+- **MCP/Plugin publish skill** updated
+
+### Fixed
+- **LAUS series ID prefix** and BLS MCP server key corrected in policy analyst configuration
+- **PII regex patterns** hardened — add word boundaries to Amex, IBAN, and email patterns
+- **Relative path** in data-profile and skill file links in agent docs
+- **App picker** prevented when setting working directory
+- **Cowork plugin** — fix loading and sync marketplace version
+
 ## [17.0.0] - 2026-03-03
 
 ### Added

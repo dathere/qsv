@@ -145,6 +145,10 @@ async function createArchive() {
     console.log('   Adding manifest.json...');
     archive.file(join(rootDir, 'manifest.json'), { name: 'manifest.json' });
 
+    // Add package.json (needed by version.ts at runtime)
+    console.log('   Adding package.json...');
+    archive.file(join(rootDir, 'package.json'), { name: 'package.json' });
+
     // Add compiled server code (dist/ → server/)
     console.log('   Adding server code (dist/ → server/)...');
     archive.directory(join(rootDir, 'dist'), 'server');

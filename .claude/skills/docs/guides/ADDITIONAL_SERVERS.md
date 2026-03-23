@@ -1,6 +1,6 @@
 # Additional MCP Servers — Census + Wikidata
 
-These optional MCP servers extend Claude Desktop with access to external data sources. Install them after completing your platform setup ([macOS](./MACOS_SETUP.md) | [Windows](./WINDOWS_SETUP.md)).
+These optional MCP servers extend Claude Desktop with access to external data sources. Install them after completing the [Getting Started guide](./START_HERE.md).
 
 [< Back to Start Here](./START_HERE.md)
 

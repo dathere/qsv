@@ -1,4 +1,4 @@
-# Getting Started with qsv Data Wrangling (MCP Server + Cowork Plugin)
+# Getting Started with qsv MCP Server + Cowork Plugin
 
 **qsv** is a free, open-source toolkit that gives Claude the ability to work directly with data files on your computer — CSV, Excel, JSONL, Parquet, and more with blazing speed. It offers hundreds of built-in functions for data transformation, analysis, and validation, but typically requires being comfortable with command-line tools.
 

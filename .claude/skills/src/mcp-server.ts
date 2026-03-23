@@ -19,7 +19,7 @@ import {
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { basename, resolve, sep } from "node:path";
-import { access, realpath, stat as fsStat } from "node:fs/promises";
+import { access, readFile, realpath, stat as fsStat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 
 import { SkillLoader } from "./loader.js";
@@ -126,7 +126,7 @@ REPRODUCIBILITY LOG: Use qsv_log to create a verifiable audit trail. Log each us
 COWORK/PLUGIN-MODE NOTES:
 - PATH ARCHITECTURE: qsv runs on the HOST machine, not inside the Linux container. File paths must be valid on the host. Always verify with qsv_get_working_dir.
 - SEQUENTIAL OPERATIONS: Prefer sequential over parallel qsv calls to avoid queuing delays: index → stats → analysis.
-- LARGE FILES (>5GB): Let qsv_frequency run to completion (server timeout is 10 min). Only fall back to qsv_sqlp with GROUP BY if the server timeout is exceeded. Use extsort/extdedup via qsv_command instead of sort/dedup.
+- LARGE FILES (>5GB): Let qsv_frequency run to completion (default server timeout is 10 min, configurable via QSV_MCP_OPERATION_TIMEOUT_MS). Only fall back to qsv_sqlp with GROUP BY if the server timeout is exceeded. Use extsort/extdedup via qsv_command instead of sort/dedup.
 - CONTEXT WINDOW: Save outputs to files rather than returning to chat. Use qsv_slice or qsv_sqlp with LIMIT to inspect subsets.` : ""}`;
 
 /**
@@ -1337,7 +1337,7 @@ class QsvMcpServer {
   }
 
   /**
-   * Deploy cowork-CLAUDE.md workflow guide to the working directory (best-effort).
+   * Deploy cowork-CLAUDE.md workflow guide to the working directory (non-fatal).
    * Replaces the SessionStart hook (cowork-setup.cjs) which doesn't fire in Cowork.
    * Only runs in plugin mode. Silently skips if the file already exists or on any error.
    */
@@ -1367,39 +1367,28 @@ class QsvMcpServer {
         return;
       }
 
-      const { readFile, writeFile } = await import("node:fs/promises");
       const template = await readFile(templatePath, "utf-8");
 
-      // Deploy CLAUDE.md (used by Claude Code CLI)
-      const claudeMdTarget = resolve(workingDir, "CLAUDE.md");
-      try {
-        await access(claudeMdTarget);
-        console.error(`[Deploy] CLAUDE.md already exists at ${claudeMdTarget}, not overwriting`);
-      } catch {
-        // File doesn't exist — deploy it
+      // Deploy both files: CLAUDE.md (for Claude Code CLI) and .cowork-instructions.md (for Cowork per-folder context)
+      const deployIfMissing = async (filename: string, label: string): Promise<void> => {
+        const target = resolve(workingDir, filename);
         try {
-          await writeFile(claudeMdTarget, template, "utf-8");
-          console.error(`[Deploy] Deployed CLAUDE.md to ${claudeMdTarget}`);
-        } catch (writeErr: unknown) {
-          console.error(`[Deploy] Could not write CLAUDE.md to ${workingDir}: ${getErrorMessage(writeErr)}`);
+          await access(target);
+          console.error(`[Deploy] ${label} already exists at ${target}, not overwriting`);
+        } catch {
+          try {
+            await writeFile(target, template, "utf-8");
+            console.error(`[Deploy] Deployed ${label} to ${target}`);
+          } catch (writeErr: unknown) {
+            console.error(`[Deploy] Could not write ${label} to ${workingDir}: ${getErrorMessage(writeErr)}`);
+          }
         }
-      }
+      };
 
-      // Deploy .cowork-instructions.md (read natively by Cowork for per-folder context)
-      const coworkTarget = resolve(workingDir, ".cowork-instructions.md");
-      try {
-        await access(coworkTarget);
-        console.error(`[Deploy] .cowork-instructions.md already exists at ${coworkTarget}, not overwriting`);
-      } catch {
-        try {
-          await writeFile(coworkTarget, template, "utf-8");
-          console.error(`[Deploy] Deployed .cowork-instructions.md to ${coworkTarget}`);
-        } catch (writeErr: unknown) {
-          console.error(`[Deploy] Could not write .cowork-instructions.md to ${workingDir}: ${getErrorMessage(writeErr)}`);
-        }
-      }
+      await deployIfMissing("CLAUDE.md", "CLAUDE.md");
+      await deployIfMissing(".cowork-instructions.md", ".cowork-instructions.md");
     } catch (error: unknown) {
-      // Best-effort — never block server startup
+      // Non-fatal — never block server startup
       console.error(`[Deploy] Workflow guide deployment failed (non-fatal): ${getErrorMessage(error)}`);
     }
   }
@@ -1442,10 +1431,13 @@ class QsvMcpServer {
     // Auto-sync working directory from MCP client roots
     await this.syncWorkingDirFromRoots();
 
-    // In plugin mode, deploy workflow guide to working directory (best-effort).
+    // In plugin mode, deploy workflow guide to working directory (fire-and-forget).
     // This replaces the SessionStart hook (cowork-setup.cjs) which doesn't fire in Cowork.
+    // Non-blocking: server is ready to accept requests while files are being written.
     if (config.isPluginMode) {
-      await this.deployWorkflowGuide();
+      this.deployWorkflowGuide().catch((err: unknown) =>
+        console.error(`[Deploy] Workflow guide deployment failed: ${getErrorMessage(err)}`),
+      );
     }
 
     // Listen for root changes mid-session

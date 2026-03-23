@@ -5,6 +5,21 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [18.0.3] - 2026-03-23
+
+### Added
+- **Cowork/plugin-mode server instructions** — conditional COWORK/PLUGIN-MODE NOTES appended to server instructions when running in plugin mode, covering host path architecture, sequential operations, large file guidance, and context window management
+
+### Changed
+- **Workflow guide deployment** moved from SessionStart hook (which doesn't fire in Cowork) to MCP server startup as a fire-and-forget operation; deploys `CLAUDE.md` and `.cowork-instructions.md` to working directory
+- **Workflow guide deployer** refactored: static imports for `readFile`/`writeFile`, extracted `deployIfMissing` helper to deduplicate logic
+- **Documentation** updated stale claims: command counts (65 qsvmcp / 75 qsv), core tools count (11), smart commands list (added describegpt/moarstats, removed diff), manifest description (75 commands)
+
+### Fixed
+- **completedDirResult** returned when MCP Apps enabled (browse directory)
+- **package.json** included in MCPB archive for runtime version detection
+- **Hardcoded timeout** in plugin-mode notes now says "default 10 min, configurable via QSV_MCP_OPERATION_TIMEOUT_MS"
+
 ## [18.0.2] - 2026-03-22
 
 ### Added

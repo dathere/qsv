@@ -46,7 +46,7 @@ When you select an Excel or JSONL file, the MCP server automatically:
 
 1. Install the `.mcpb` file (see [Getting Started guide](./START_HERE.md))
 2. qsv path is auto-detected from PATH and common locations
-3. Working directory defaults to ~/Downloads
+3. Working directory defaults to your Downloads folder (e.g., `~/Downloads` on macOS, `%USERPROFILE%\Downloads` on Windows)
 4. Add more allowed directories in Settings if needed
 
 Use `qsv_config` tool to verify your configuration.

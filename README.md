@@ -125,7 +125,7 @@
 ## Installation Options
 
 > [!NOTE]
-> To install the qsv MCP Server, go [here](.claude/skills/docs/desktop/README-MCPB.md). To install the Claude Cowork plugin, go [here](claude/skills/docs/guides/START_HERE.md).
+> To install the qsv MCP Server, go [here](.claude/skills/docs/desktop/README-MCPB.md). To install the Claude Cowork plugin, go [here](.claude/skills/docs/guides/START_HERE.md).
 
 ### Option 0: qsv pro
 

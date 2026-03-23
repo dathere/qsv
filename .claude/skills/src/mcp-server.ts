@@ -823,8 +823,13 @@ class QsvMcpServer {
 
           const message = `Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`;
 
-          // When directory is explicitly provided, return plain text — no
-          // structuredContent so the client won't open the App picker UI.
+          // When Apps are enabled the client always renders the App UI (due to
+          // the tool-level _meta annotation).  Return completedDirResult so the
+          // picker shows a minimal checkmark confirmation instead of a broken
+          // "Failed to load directory" state.
+          if (config.enableMcpApps && this.clientSupportsApps()) {
+            return completedDirResult(message, newWorkingDir);
+          }
           return successResult(message);
         }
 

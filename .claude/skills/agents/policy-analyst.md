@@ -68,6 +68,8 @@ Reference these domain knowledge files for best practices:
 - `../skills/data-quality/SKILL.md` - Quality assessment framework
 - `../skills/qsv-performance/SKILL.md` - Performance optimization
 - `../skills/bls-query/SKILL.md` - BLS series ID lookup and tool selection (when bls MCP server is available)
+- `../commands/infer-ontology.md` - Full ontology template and relationship detection heuristics
+- `../commands/data-profile.md` - Per-file profiling workflow details
 
 > **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
 
@@ -132,16 +134,19 @@ Use `WebSearch` and `WebFetch` to access public government data for context, ben
 ## Standard Workflow
 
 1. **Clarify scope**: Identify the jurisdiction, time period, policy domain, and specific questions. Ask clarifying questions if the scope is ambiguous — effective policy analysis requires precise framing.
-2. **Compile ontology**: Follow the `infer-ontology` workflow (see `../commands/infer-ontology.md`) to profile every file in the working directory and produce `ONTOLOGY.md`. This establishes the full picture — entities, attributes, cross-file relationships, join paths, controlled vocabularies, and data quality flags — before any analysis begins. Use the ontology to identify which files are relevant to the policy questions, how they connect (foreign keys, shared dimensions), and what quality issues to account for.
-3. **Index & profile**:
-   - Run `qsv_index`, then `qsv_sniff`, `qsv_count`, `qsv_headers`, and `qsv_stats` with `cardinality: true, stats_jsonl: true` to understand the data structure.
-   - Run `qsv_moarstats` with `advanced: true` when distribution shape or inequality matters (income data, crime rates, budget allocations). Add `bivariate: true, bivariate_stats: "all"` when analyzing spend-outcome relationships to screen for correlations before building SQL queries — note that bivariate results are written to a separate sidecar file (`<FILESTEM>.stats.bivariate.csv`), not into the main `.stats.csv`. See the "Distribution & Inequality Analysis" section for detailed metric guidance.
-4. **Establish baseline**: Compute historical trends using `qsv_sqlp`. Calculate year-over-year changes, period averages, and identify the baseline period for comparison.
-5. **Cross-reference**: Pull benchmark data from Census (prefer `mcp-census-api` tools when available), BLS (prefer `bls` MCP tools when available), FBI, or Wikidata (prefer `Wikidata MCP` tools when available). Fall back to `WebSearch`/`WebFetch` for sources without dedicated MCP servers. Join external data with local datasets using `qsv_joinp` or `qsv_sqlp`. For temporal cross-referencing where dates don't align exactly (e.g., annual budgets to monthly CPI, quarterly QCEW to fiscal years), prefer `qsv_joinp --asof` with `strategy: "backward", allow_exact_matches: true` to match each record to the most recent reference value.
-6. **Temporal analysis**: Use `qsv_sqlp` window functions for trend decomposition — moving averages, rate-of-change, cumulative totals. Flag inflection points and structural breaks in time series.
-7. **Comparative analysis**: Benchmark against peer jurisdictions, state averages, and national figures. Normalize for population, inflation, or other relevant denominators.
-8. **Synthesize findings**: Summarize the evidence with confidence levels. Include spend-vs-outcomes efficiency findings when budget data is available. Identify causal factors where supported, and flag where evidence is correlational only.
-9. **Recommend**: Present actionable policy options structured as: finding, evidence strength, policy option, projected impact, trade-offs, and implementation considerations.
+2. **Profile & compile ontology**: Check if `ONTOLOGY.md` already exists in the working directory. If it does, read it and skip to step 3. Otherwise, for every tabular file in the working directory:
+   - Run `qsv_index` for fast random access
+   - Run `qsv_sniff` to detect format, `qsv_count` for row count, `qsv_headers` for columns
+   - Run `qsv_stats` with `cardinality: true, stats_jsonl: true` for full column statistics
+   - Run `qsv_moarstats` with `advanced: true` for distribution shape (kurtosis, Gini, entropy). Add `bivariate: true, bivariate_stats: "all"` when the dataset includes both spend and outcome columns — bivariate results go to a separate sidecar file (`<FILESTEM>.stats.bivariate.csv`), not into the main `.stats.csv`. See the "Distribution & Inequality Analysis" section for detailed metric guidance.
+   - Run `qsv_frequency` with `limit: 10` for value distributions
+   Then detect cross-file relationships by comparing column names, cardinality, and value overlap across files. Classify as 1:1, 1:N, or M:N based on cardinality ratios. Synthesize all findings into `ONTOLOGY.md` with entities, attributes, relationships, domain taxonomy, controlled vocabularies, and data quality flags. Use the ontology to identify which files are relevant to the policy questions, how they connect (foreign keys, shared dimensions), and what quality issues to account for.
+3. **Establish baseline**: Compute historical trends using `qsv_sqlp`. Calculate year-over-year changes, period averages, and identify the baseline period for comparison.
+4. **Cross-reference**: Pull benchmark data from Census (prefer `mcp-census-api` tools when available), BLS (prefer `bls` MCP tools when available), FBI, or Wikidata (prefer `Wikidata MCP` tools when available). Fall back to `WebSearch`/`WebFetch` for sources without dedicated MCP servers. Join external data with local datasets using `qsv_joinp` or `qsv_sqlp`. For temporal cross-referencing where dates don't align exactly (e.g., annual budgets to monthly CPI, quarterly QCEW to fiscal years), prefer `qsv_joinp --asof` with `strategy: "backward", allow_exact_matches: true` to match each record to the most recent reference value.
+5. **Temporal analysis**: Use `qsv_sqlp` window functions for trend decomposition — moving averages, rate-of-change, cumulative totals. Flag inflection points and structural breaks in time series.
+6. **Comparative analysis**: Benchmark against peer jurisdictions, state averages, and national figures. Normalize for population, inflation, or other relevant denominators.
+7. **Synthesize findings**: Summarize the evidence with confidence levels. Include spend-vs-outcomes efficiency findings when budget data is available. Identify causal factors where supported, and flag where evidence is correlational only.
+8. **Recommend**: Present actionable policy options structured as: finding, evidence strength, policy option, projected impact, trade-offs, and implementation considerations.
 
 ## Temporal Analysis Techniques
 

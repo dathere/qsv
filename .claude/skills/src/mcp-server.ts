@@ -138,6 +138,16 @@ const QSV_SERVER_INSTRUCTIONS = config.serverInstructions || DEFAULT_SERVER_INST
 /**
  * QSV MCP Server implementation
  */
+/**
+ * Tool handler signature for the dispatch map.
+ * Handlers receive tool arguments and return an MCP-compatible result.
+ */
+type ToolHandler = (args: Record<string, unknown>) => Promise<{
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+  structuredContent?: unknown;
+}>;
+
 class QsvMcpServer {
   private server: Server;
   private loader: SkillLoader;
@@ -155,6 +165,14 @@ class QsvMcpServer {
   private static readonly MAX_ROOTS_SYNC_RETRIES = 3;
   /** Raw client extensions captured before Zod strips them from capabilities */
   private rawClientExtensions: Record<string, unknown> | undefined;
+
+  /**
+   * Dispatch map for tool handlers, keyed by tool name.
+   * Initialized in the constructor after all dependencies are set.
+   * The `qsv_*` wildcard for skill-based tools is handled as a fallback
+   * after the map lookup in registerToolHandlers().
+   */
+  private toolDispatchMap: Record<string, ToolHandler>;
 
   /**
    * Track which tools have been loaded via search (for deferred loading).
@@ -201,6 +219,25 @@ class QsvMcpServer {
       undefined, // Use default skills directory
       getUpdateConfigFromEnv(),
     );
+
+    // Initialize tool dispatch map — closures capture `this`, so all
+    // property references resolve to their current values at call time.
+    this.toolDispatchMap = {
+      qsv_setup: (args) => this.handleSetup(args),
+      qsv_log: (args) => handleLogCall(args, this.filesystemProvider.getWorkingDirectory()),
+      qsv_list_files: (args) => this.handleListFiles(args),
+      qsv_set_working_dir: (args) => this.handleSetWorkingDir(args),
+      qsv_get_working_dir: () =>
+        Promise.resolve(successResult(`Current working directory: ${this.filesystemProvider.getWorkingDirectory()}`)),
+      qsv_browse_directory: (args) => this.handleBrowseDirectoryDispatch(args),
+      qsv_command: (args) =>
+        handleGenericCommand(args, this.executor, this.loader, this.filesystemProvider, this.server),
+      qsv_config: () => handleConfigTool(this.filesystemProvider),
+      qsv_search_tools: (args) =>
+        handleSearchToolsCall(args, this.loader, this.loadedTools),
+      qsv_to_parquet: (args) =>
+        handleToParquetCall(args, this.filesystemProvider),
+    };
   }
 
   /**
@@ -691,199 +728,14 @@ class QsvMcpServer {
 
       // Dispatch tool and log result
       const dispatch = async () => {
-        // Tool dispatch chain: ordered from most specific to most general.
-        // Each handler has a different signature/dependency set, so a handler map
-        // would require a uniform interface wrapper with no real benefit.
-        // Order: filesystem → generic command → config → search →
-        //        to_parquet → skill-based (qsv_*) → unknown tool error.
-
-        // Handle setup tool (available even when qsv is not installed)
-        if (name === "qsv_setup") {
-          const setupResult = await handleSetupCall(toolArgs || {}, () => {
-            const revalidation = revalidateQsvBinary();
-            if (revalidation.validation.valid) {
-              // Reconstruct executor and update filesystem provider with new binary path.
-              // Use the current working directory rather than the possibly stale config.workingDir.
-              this.executor = new SkillExecutor(
-                revalidation.path,
-                this.filesystemProvider.getWorkingDirectory(),
-              );
-              this.filesystemProvider.updateQsvBinPath(revalidation.path);
-            }
-            return revalidation;
-          });
-          // Send tools/list_changed notification so the client re-fetches the full tool list
-          if (setupResult.revalidated) {
-            this.server.sendToolListChanged().catch((err: unknown) => console.error("[Server] Failed to send tools/list_changed:", err));
-          }
-          return setupResult.response;
+        // Look up handler in the dispatch map first, then fall back to
+        // skill-based tools (qsv_*) and finally unknown tool error.
+        const handler = this.toolDispatchMap[name];
+        if (handler) {
+          return await handler(toolArgs || {});
         }
 
-        // Handle log tool (before filesystem tools so it's fast)
-        if (name === "qsv_log") {
-          return await handleLogCall(toolArgs || {}, this.filesystemProvider.getWorkingDirectory());
-        }
-
-        // Handle filesystem tools
-        if (name === "qsv_list_files") {
-          const directory = typeof toolArgs?.directory === "string" ? toolArgs.directory : undefined;
-          const recursive = typeof toolArgs?.recursive === "boolean" ? toolArgs.recursive : false;
-
-          const result = await this.filesystemProvider.listFiles(
-            directory,
-            recursive,
-          );
-
-          const fileList = result.resources
-            .map((r) => `- ${r.name} (${r.description})`)
-            .join("\n");
-
-          return successResult(`Found ${result.resources.length} tabular data files:\n\n${fileList}\n\nUse these file paths (relative or absolute) in qsv commands via the input_file parameter.`);
-        }
-
-        if (name === "qsv_set_working_dir") {
-          if (
-            typeof toolArgs?.directory !== "string" ||
-            toolArgs.directory.trim().length === 0
-          ) {
-            // No directory provided — try App UI, elicitation, or text suggestions
-
-            // 1. If MCP Apps are enabled and client supports them, return structuredContent
-            if (config.enableMcpApps && this.clientSupportsApps()) {
-              const candidates = await this.discoverDirectories();
-              const currentDir = this.filesystemProvider.getWorkingDirectory();
-              // structuredContent is an MCP Apps extension not yet in the SDK's
-              // CallToolResult type. Cast to satisfy the compiler while still
-              // delivering the payload to App-capable clients.
-              return {
-                content: [{ type: "text" as const, text: "Opening interactive directory picker..." }],
-                structuredContent: {
-                  currentPath: currentDir,
-                  knownDirs: candidates,
-                  homeDir: homedir(),
-                },
-              } as { content: Array<{ type: "text"; text: string }> };
-            }
-
-            // 2. Try interactive elicitation form
-            const elicitResult = await this.elicitWorkingDirectory();
-            if (elicitResult.directory) {
-              const newDir = this.updateWorkingDirectory(elicitResult.directory);
-              this.manuallySetWorkingDir = true;
-              this.workingDirConfirmed = true;
-              return successResult(`Working directory set to: ${newDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
-            }
-
-            // 3. Return suggestions as success so the agent can pick a directory
-            return successResult(elicitResult.fallback || "No directory selected. Please call qsv_set_working_dir with an explicit directory path.");
-          }
-
-          const directory = toolArgs.directory.trim();
-
-          // "auto" is a reserved keyword — not treated as a filesystem path
-          if (directory.toLowerCase() === "auto") {
-            const previousDir = this.filesystemProvider.getWorkingDirectory();
-            let autoSyncEnabled = false;
-            let currentDir = previousDir;
-            let syncErrorMessage: string | null = null;
-
-            try {
-              await this.syncWorkingDirFromRoots();
-              // Only mark auto-sync as enabled if the sync completed successfully
-              this.manuallySetWorkingDir = false;
-              this.workingDirConfirmed = true;
-              autoSyncEnabled = true;
-              currentDir = this.filesystemProvider.getWorkingDirectory();
-            } catch (syncError: unknown) {
-              const message = getErrorMessage(syncError);
-              syncErrorMessage = message;
-              console.error(
-                `[Roots] Auto-sync from "auto" keyword failed: ${message}`,
-              );
-            }
-
-            if (autoSyncEnabled) {
-              const autoMessage = `Auto-sync re-enabled. Working directory is now: ${currentDir}\n\nThe working directory will automatically follow the MCP client's root directory.`;
-
-              if (config.enableMcpApps && this.clientSupportsApps()) {
-                return completedDirResult(autoMessage, currentDir);
-              }
-              return successResult(autoMessage);
-            }
-
-            // Auto-sync could not be enabled; surface a user-visible error.
-            return errorResult(
-              `Failed to enable automatic root-based working directory sync.\n` +
-              (syncErrorMessage
-                ? `Reason: ${syncErrorMessage}\n`
-                : "") +
-              `The working directory remains: ${previousDir}\n\n` +
-              `You can continue using this directory, or choose a different path. ` +
-              `Pass "auto" again once your MCP client exposes a compatible file:// root to re-enable automatic sync.`,
-            );
-          }
-
-          const newWorkingDir = this.updateWorkingDirectory(directory);
-          this.manuallySetWorkingDir = true;
-          this.workingDirConfirmed = true;
-
-          const message = `Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`;
-
-          // When Apps are enabled the client always renders the App UI (due to
-          // the tool-level _meta annotation).  Return completedDirResult so the
-          // picker shows a minimal checkmark confirmation instead of a broken
-          // "Failed to load directory" state.
-          if (config.enableMcpApps && this.clientSupportsApps()) {
-            return completedDirResult(message, newWorkingDir);
-          }
-          return successResult(message);
-        }
-
-        if (name === "qsv_get_working_dir") {
-          return successResult(`Current working directory: ${this.filesystemProvider.getWorkingDirectory()}`);
-        }
-
-        // Handle browse directory tool (App-only helper for directory picker)
-        if (name === "qsv_browse_directory") {
-          if (!(config.enableMcpApps && this.clientSupportsApps())) {
-            return errorResult(
-              "The qsv_browse_directory tool is only available when MCP Apps are enabled and supported by the client.",
-            );
-          }
-          return await this.handleBrowseDirectory(toolArgs || {});
-        }
-
-        // Handle generic command tool
-        if (name === "qsv_command") {
-          return await handleGenericCommand(
-            toolArgs || {},
-            this.executor,
-            this.loader,
-            this.filesystemProvider,
-            this.server,
-          );
-        }
-
-        // Handle config tool
-        if (name === "qsv_config") {
-          return await handleConfigTool(this.filesystemProvider);
-        }
-
-        // Handle search tools
-        if (name === "qsv_search_tools") {
-          return await handleSearchToolsCall(
-            toolArgs || {},
-            this.loader,
-            this.loadedTools,
-          );
-        }
-
-        // Handle CSV to Parquet conversion tool
-        if (name === "qsv_to_parquet") {
-          return await handleToParquetCall(toolArgs || {}, this.filesystemProvider);
-        }
-
-        // Handle common command tools
+        // Skill-based tools (qsv_index, qsv_stats, qsv_select, etc.)
         if (name.startsWith("qsv_")) {
           return await handleToolCall(
             name,
@@ -996,6 +848,178 @@ class QsvMcpServer {
       : null;
     const uiCap = getUiCapability(capsWithExtensions);
     return Boolean(uiCap?.mimeTypes?.includes(RESOURCE_MIME_TYPE));
+  }
+
+  // ── Extracted tool handlers for dispatch map ──────────────────────────────
+
+  /**
+   * Handle qsv_setup tool call.
+   * Installs qsv, revalidates the binary, and notifies the client to re-fetch tools.
+   */
+  private async handleSetup(
+    args: Record<string, unknown>,
+  ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+    const setupResult = await handleSetupCall(args, () => {
+      const revalidation = revalidateQsvBinary();
+      if (revalidation.validation.valid) {
+        // Reconstruct executor and update filesystem provider with new binary path.
+        // Use the current working directory rather than the possibly stale config.workingDir.
+        this.executor = new SkillExecutor(
+          revalidation.path,
+          this.filesystemProvider.getWorkingDirectory(),
+        );
+        this.filesystemProvider.updateQsvBinPath(revalidation.path);
+      }
+      return revalidation;
+    });
+    // Send tools/list_changed notification so the client re-fetches the full tool list
+    if (setupResult.revalidated) {
+      this.server.sendToolListChanged().catch((err: unknown) =>
+        console.error("[Server] Failed to send tools/list_changed:", err),
+      );
+    }
+    return setupResult.response;
+  }
+
+  /**
+   * Handle qsv_list_files tool call.
+   * Lists tabular data files in the specified or current working directory.
+   */
+  private async handleListFiles(
+    args: Record<string, unknown>,
+  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+    const directory = typeof args?.directory === "string" ? args.directory : undefined;
+    const recursive = typeof args?.recursive === "boolean" ? args.recursive : false;
+
+    const result = await this.filesystemProvider.listFiles(directory, recursive);
+
+    const fileList = result.resources
+      .map((r) => `- ${r.name} (${r.description})`)
+      .join("\n");
+
+    return successResult(
+      `Found ${result.resources.length} tabular data files:\n\n${fileList}\n\nUse these file paths (relative or absolute) in qsv commands via the input_file parameter.`,
+    );
+  }
+
+  /**
+   * Handle qsv_set_working_dir tool call.
+   * Supports: no-arg (interactive picker / elicitation / suggestions),
+   * "auto" keyword (re-enable root-based sync), and explicit directory paths.
+   */
+  private async handleSetWorkingDir(
+    args: Record<string, unknown>,
+  ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean; structuredContent?: unknown }> {
+    if (
+      typeof args?.directory !== "string" ||
+      args.directory.trim().length === 0
+    ) {
+      // No directory provided — try App UI, elicitation, or text suggestions
+
+      // 1. If MCP Apps are enabled and client supports them, return structuredContent
+      if (config.enableMcpApps && this.clientSupportsApps()) {
+        const candidates = await this.discoverDirectories();
+        const currentDir = this.filesystemProvider.getWorkingDirectory();
+        // structuredContent is an MCP Apps extension not yet in the SDK's
+        // CallToolResult type. Cast to satisfy the compiler while still
+        // delivering the payload to App-capable clients.
+        return {
+          content: [{ type: "text" as const, text: "Opening interactive directory picker..." }],
+          structuredContent: {
+            currentPath: currentDir,
+            knownDirs: candidates,
+            homeDir: homedir(),
+          },
+        } as { content: Array<{ type: "text"; text: string }> };
+      }
+
+      // 2. Try interactive elicitation form
+      const elicitResult = await this.elicitWorkingDirectory();
+      if (elicitResult.directory) {
+        const newDir = this.updateWorkingDirectory(elicitResult.directory);
+        this.manuallySetWorkingDir = true;
+        this.workingDirConfirmed = true;
+        return successResult(`Working directory set to: ${newDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`);
+      }
+
+      // 3. Return suggestions as success so the agent can pick a directory
+      return successResult(elicitResult.fallback || "No directory selected. Please call qsv_set_working_dir with an explicit directory path.");
+    }
+
+    const directory = args.directory.trim();
+
+    // "auto" is a reserved keyword — not treated as a filesystem path
+    if (directory.toLowerCase() === "auto") {
+      const previousDir = this.filesystemProvider.getWorkingDirectory();
+      let autoSyncEnabled = false;
+      let currentDir = previousDir;
+      let syncErrorMessage: string | null = null;
+
+      try {
+        await this.syncWorkingDirFromRoots();
+        // Only mark auto-sync as enabled if the sync completed successfully
+        this.manuallySetWorkingDir = false;
+        this.workingDirConfirmed = true;
+        autoSyncEnabled = true;
+        currentDir = this.filesystemProvider.getWorkingDirectory();
+      } catch (syncError: unknown) {
+        const message = getErrorMessage(syncError);
+        syncErrorMessage = message;
+        console.error(
+          `[Roots] Auto-sync from "auto" keyword failed: ${message}`,
+        );
+      }
+
+      if (autoSyncEnabled) {
+        const autoMessage = `Auto-sync re-enabled. Working directory is now: ${currentDir}\n\nThe working directory will automatically follow the MCP client's root directory.`;
+
+        if (config.enableMcpApps && this.clientSupportsApps()) {
+          return completedDirResult(autoMessage, currentDir);
+        }
+        return successResult(autoMessage);
+      }
+
+      // Auto-sync could not be enabled; surface a user-visible error.
+      return errorResult(
+        `Failed to enable automatic root-based working directory sync.\n` +
+        (syncErrorMessage
+          ? `Reason: ${syncErrorMessage}\n`
+          : "") +
+        `The working directory remains: ${previousDir}\n\n` +
+        `You can continue using this directory, or choose a different path. ` +
+        `Pass "auto" again once your MCP client exposes a compatible file:// root to re-enable automatic sync.`,
+      );
+    }
+
+    const newWorkingDir = this.updateWorkingDirectory(directory);
+    this.manuallySetWorkingDir = true;
+    this.workingDirConfirmed = true;
+
+    const message = `Working directory set to: ${newWorkingDir}\n\nAll relative file paths will now be resolved from this directory. Pass "auto" to re-enable automatic root-based sync.`;
+
+    // When Apps are enabled the client always renders the App UI (due to
+    // the tool-level _meta annotation).  Return completedDirResult so the
+    // picker shows a minimal checkmark confirmation instead of a broken
+    // "Failed to load directory" state.
+    if (config.enableMcpApps && this.clientSupportsApps()) {
+      return completedDirResult(message, newWorkingDir);
+    }
+    return successResult(message);
+  }
+
+  /**
+   * Handle qsv_browse_directory dispatch.
+   * Validates MCP Apps support before delegating to the actual handler.
+   */
+  private async handleBrowseDirectoryDispatch(
+    args: Record<string, unknown>,
+  ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+    if (!(config.enableMcpApps && this.clientSupportsApps())) {
+      return errorResult(
+        "The qsv_browse_directory tool is only available when MCP Apps are enabled and supported by the client.",
+      );
+    }
+    return await this.handleBrowseDirectory(args);
   }
 
   /**

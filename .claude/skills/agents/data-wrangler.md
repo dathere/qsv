@@ -51,12 +51,13 @@ Reference these domain knowledge files for best practices:
 
 ## Standard Workflow
 
-1. **Index**: Run `qsv_index` for fast access.
-2. **Assess**: Use `qsv_sniff`, `qsv_count`, `qsv_headers` to understand input.
-3. **Profile**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` to understand data characteristics before transforming.
-4. **Plan**: Determine the sequence of transformations needed.
-5. **Transform**: Execute transforms using individual tools, chaining operations sequentially.
-6. **Verify**: Run `qsv_count` and `qsv_stats` on the output to confirm correctness.
+1. **Check ontology**: Check if `ONTOLOGY.md` exists in the working directory (via `qsv_list_files`). If it does, read it to learn entity descriptions, column labels, cross-file relationships, join paths, controlled vocabularies, and data quality flags. Use this context to understand how files relate before transforming — especially for joins, dedup key selection, and column renaming. **When an ontology exists**, the stats cache (`.stats.csv`) should already be populated — skip steps 2-4 and go directly to step 5 (Plan). Read the existing `.stats.csv` files for column types, cardinality, and null counts to inform your transformation plan. If no ontology exists, proceed with manual discovery in the following steps.
+2. **Index**: Run `qsv_index` for fast access.
+3. **Assess**: Use `qsv_sniff`, `qsv_count`, `qsv_headers` to understand input.
+4. **Profile**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` to understand data characteristics before transforming.
+5. **Plan**: Determine the sequence of transformations needed.
+6. **Transform**: Execute transforms using individual tools, chaining operations sequentially.
+7. **Verify**: Run `qsv_count` and `qsv_stats` on the output to confirm correctness.
 
 ## Transformation Capabilities
 

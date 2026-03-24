@@ -50,14 +50,15 @@ Reference these domain knowledge files for best practices:
 
 ## Standard Workflow
 
-1. **Index**: Always run `qsv_index` first for fast access.
-2. **Orient**: Use `qsv_sniff` to detect format, then `qsv_count` and `qsv_headers` to understand structure.
-3. **Profile**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` for comprehensive column statistics. Basic moarstats auto-runs to enrich the cache.
-4. **Deep profile** (when needed): Run `qsv_moarstats` with `advanced: true` for kurtosis, entropy, Gini coefficient, bimodality, and winsorized/trimmed means. Use when data shows skewness, potential outliers, or you need distribution shape analysis. Omit `output_file` — moarstats updates the stats cache in-place by default.
-5. **Explore**: Use `qsv_frequency` for distributions, `qsv_slice` for row samples, `qsv_search` for filtering, `qsv_command` with `command: "sample"` for random sampling.
-6. **Query**: Use `qsv_sqlp` for SQL-based analysis. **Before writing SQL**, read `.stats.csv` for column types, cardinality, nullcount, min/max ranges, and sort order; run `qsv_frequency` on columns you'll GROUP BY or filter on. Use this data to write precise WHERE clauses, skip unnecessary COALESCE on zero-null columns, and avoid GROUP BY on high-cardinality columns. For repeated queries on large CSV (> 10MB), consider converting to Parquet with `qsv_to_parquet` for faster performance — but `sqlp` can query CSV of any size directly.
-7. **Report**: Summarize findings clearly with tables, key metrics, and observations.
-8. **Document**: Using the statistics (steps 3-4) and frequency distributions (step 5) already collected, generate:
+1. **Check ontology**: Check if `ONTOLOGY.md` exists in the working directory (via `qsv_list_files`). If it does, read it to learn entity descriptions, column labels, cross-file relationships, join paths, controlled vocabularies, and data quality flags. Use this context to guide which files to analyze and how columns relate across files. **When an ontology exists**, the stats cache (`.stats.csv`) and frequency cache (`.freq.csv`) should already be populated — skip steps 2-5 and go directly to step 6 (Query). Read the existing `.stats.csv` files for column types, cardinality, and ranges. If no ontology exists, proceed with manual discovery in the following steps.
+2. **Index**: Always run `qsv_index` first for fast access.
+3. **Orient**: Use `qsv_sniff` to detect format, then `qsv_count` and `qsv_headers` to understand structure.
+4. **Profile**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` for comprehensive column statistics. Basic moarstats auto-runs to enrich the cache.
+5. **Deep profile** (when needed): Run `qsv_moarstats` with `advanced: true` for kurtosis, entropy, Gini coefficient, bimodality, and winsorized/trimmed means. Use when data shows skewness, potential outliers, or you need distribution shape analysis. Omit `output_file` — moarstats updates the stats cache in-place by default.
+6. **Explore**: Use `qsv_frequency` for distributions, `qsv_slice` for row samples, `qsv_search` for filtering, `qsv_command` with `command: "sample"` for random sampling.
+7. **Query**: Use `qsv_sqlp` for SQL-based analysis. **Before writing SQL**, read `.stats.csv` for column types, cardinality, nullcount, min/max ranges, and sort order; run `qsv_frequency` on columns you'll GROUP BY or filter on. Use this data to write precise WHERE clauses, skip unnecessary COALESCE on zero-null columns, and avoid GROUP BY on high-cardinality columns. For repeated queries on large CSV (> 10MB), consider converting to Parquet with `qsv_to_parquet` for faster performance — but `sqlp` can query CSV of any size directly.
+8. **Report**: Summarize findings clearly with tables, key metrics, and observations.
+9. **Document**: Using the statistics (steps 4-5) and frequency distributions (step 6) already collected, generate:
 
     **a) Data Dictionary** — Present a table with one row per column. Include the `field`, `type`, `Label`, and `Description` columns (in that order), followed by key stats columns (`nullcount`, `cardinality`, `min`, `max`, `mean`, `sortiness`, `stddev`, `variance`, `cv`, `sparsity` where applicable):
     - `Label`: Human-readable version of the field name (e.g., `customer_id` → `Customer ID`, `avg_txn_amt` → `Average Transaction Amount`)

@@ -1,7 +1,9 @@
 /**
  * Version Management
  *
- * Exports the version from package.json to ensure consistency across the codebase.
+ * Exports the version from package.json and validates it matches manifest.json.
+ * Both files must stay in sync — package.json is the npm/build version,
+ * manifest.json is the Claude Desktop extension/plugin version.
  */
 
 import { readFileSync, existsSync } from "fs";
@@ -11,31 +13,65 @@ import { dirname, join } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
- * Get version from package.json
+ * Resolve the project root directory (parent of dist/).
+ * Handles both production (dist/version.js) and test (dist/src/version.js) layouts.
  */
-function getVersion(): string {
+function resolveProjectRoot(): string {
+  const productionRoot = join(__dirname, "..");
+  const testRoot = join(__dirname, "../..");
+
+  if (existsSync(join(productionRoot, "package.json"))) {
+    return productionRoot;
+  }
+  if (existsSync(join(testRoot, "package.json"))) {
+    return testRoot;
+  }
+  return productionRoot; // fallback
+}
+
+/**
+ * Read a version string from a JSON file.
+ * Returns null if the file doesn't exist, can't be parsed, or has no version field.
+ */
+function readVersionFromJson(filePath: string): string | null {
   try {
-    // Try multiple possible locations for package.json
-    // 1. When built for production: dist/version.js -> ../package.json
-    // 2. When built for tests: dist/src/version.js -> ../../package.json
-    const productionPath = join(__dirname, "../package.json");
-    const testPath = join(__dirname, "../../package.json");
-
-    let packageJsonPath = productionPath;
-    if (!existsSync(productionPath) && existsSync(testPath)) {
-      packageJsonPath = testPath;
-    }
-
-    const parsed: unknown = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+    if (!existsSync(filePath)) return null;
+    const parsed: unknown = JSON.parse(readFileSync(filePath, "utf-8"));
     if (typeof parsed === "object" && parsed !== null && "version" in parsed) {
       const { version } = parsed as { version: unknown };
       if (typeof version === "string" && version.length > 0) return version;
     }
-    return "0.0.0";
-  } catch (error: unknown) {
-    console.error("[Version] Failed to read version from package.json:", error);
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get version from package.json and validate it matches manifest.json.
+ * Logs a warning at startup if the versions diverge.
+ */
+function getVersion(): string {
+  const projectRoot = resolveProjectRoot();
+  const packageJsonPath = join(projectRoot, "package.json");
+  const manifestJsonPath = join(projectRoot, "manifest.json");
+
+  const packageVersion = readVersionFromJson(packageJsonPath);
+  if (!packageVersion) {
+    console.error("[Version] Failed to read version from package.json");
     return "0.0.0";
   }
+
+  // Validate manifest.json version matches package.json
+  const manifestVersion = readVersionFromJson(manifestJsonPath);
+  if (manifestVersion && manifestVersion !== packageVersion) {
+    console.error(
+      `[Version] ⚠️  VERSION MISMATCH: package.json=${packageVersion}, manifest.json=${manifestVersion}. ` +
+      `These must be kept in sync. Update the lagging file before publishing.`,
+    );
+  }
+
+  return packageVersion;
 }
 
 export const VERSION = getVersion();

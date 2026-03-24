@@ -23,8 +23,6 @@ allowed-tools:
   - mcp__qsv__qsv_command
   # Export
   - mcp__qsv__qsv_to_parquet
-  # AI
-  - mcp__qsv__qsv_describegpt
   # Workspace
   - mcp__qsv__qsv_list_files
   - mcp__qsv__qsv_search_tools
@@ -59,11 +57,19 @@ Reference these domain knowledge files for best practices:
 5. **Explore**: Use `qsv_frequency` for distributions, `qsv_slice` for row samples, `qsv_search` for filtering, `qsv_command` with `command: "sample"` for random sampling.
 6. **Query**: Use `qsv_sqlp` for SQL-based analysis. **Before writing SQL**, read `.stats.csv` for column types, cardinality, nullcount, min/max ranges, and sort order; run `qsv_frequency` on columns you'll GROUP BY or filter on. Use this data to write precise WHERE clauses, skip unnecessary COALESCE on zero-null columns, and avoid GROUP BY on high-cardinality columns. For repeated queries on large CSV (> 10MB), consider converting to Parquet with `qsv_to_parquet` for faster performance — but `sqlp` can query CSV of any size directly.
 7. **Report**: Summarize findings clearly with tables, key metrics, and observations.
-8. **Document**: Run `qsv_describegpt` with `all: true` to generate a Data Dictionary, Description, and Tags. Output defaults to `<filestem>.describegpt.md`. Uses the connected LLM automatically via MCP sampling — no API key needed.
+8. **Document**: Using the statistics (steps 3-4) and frequency distributions (step 5) already collected, generate:
+
+    **a) Data Dictionary** — Present a table with one row per column. Include the `field`, `type`, `Label`, and `Description` columns (in that order), followed by key stats columns (`nullcount`, `cardinality`, `min`, `max`, `mean`, `sortiness`, `stddev`, `variance`, `cv`, `sparsity` where applicable):
+    - `Label`: Human-readable version of the field name (e.g., `customer_id` → `Customer ID`, `avg_txn_amt` → `Average Transaction Amount`)
+    - `Description`: 1-5 sentence description of the field informed by its type, statistics and frequency distribution
+
+    **b) Dataset Description** — Write 3-10 sentences describing the entire dataset: what it represents, its scope (row count, column count, date range if applicable), key characteristics, notable quality issues found during profiling, and potential use cases.
+
+    **c) Tags** — Infer 5-15 semantic tags for the dataset based on column names, data types, value distributions, and domain characteristics. If a controlled Tag Vocabulary is provided by the user, constrain tag choices to that vocabulary only.
 
 ## Analysis Capabilities
 
-See `../skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key analysis tools: `qsv_stats`/`qsv_moarstats` (column statistics), `qsv_frequency` (distributions), `qsv_sqlp` (SQL aggregation, joins, window functions), `qsv_search` (regex filtering), `qsv_command` with `command: "sample"` (random sampling), `qsv_describegpt` (AI-powered Data Dictionary, Description & Tags).
+See `../skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key analysis tools: `qsv_stats`/`qsv_moarstats` (column statistics), `qsv_frequency` (distributions), `qsv_sqlp` (SQL aggregation, joins, window functions), `qsv_search` (regex filtering), `qsv_command` with `command: "sample"` (random sampling).
 
 ## Guidelines
 

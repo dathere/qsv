@@ -104,15 +104,16 @@ test('VERSION matches the version in package.json', () => {
     'VERSION export must equal the version in package.json');
 });
 
-test('package.json and manifest.json versions are in sync', () => {
+// Pre-check manifest availability so the test is reported as "skipped" rather
+// than silently passing when manifest.json is absent (common in test layouts).
+const MANIFEST_AVAILABLE = readVersionFromJson(
+  join(resolveProjectRoot(), 'manifest.json'),
+) !== null;
+
+test('package.json and manifest.json versions are in sync', { skip: !MANIFEST_AVAILABLE }, () => {
   const root = resolveProjectRoot();
   const packageVersion = readVersionFromJson(join(root, 'package.json'));
   const manifestVersion = readVersionFromJson(join(root, 'manifest.json'));
-
-  // manifest.json may not exist in test layouts — skip if absent
-  if (manifestVersion === null) {
-    return;
-  }
 
   assert.strictEqual(packageVersion, manifestVersion,
     `package.json (${packageVersion}) and manifest.json (${manifestVersion}) versions must match`);

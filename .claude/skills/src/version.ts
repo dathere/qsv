@@ -64,12 +64,17 @@ function getVersion(): string {
     return "0.0.0";
   }
 
-  // Validate manifest.json version matches package.json
+  // Validate manifest.json version matches package.json.
+  // A missing manifest.json is normal in dev/test layouts (dist/src/version.js
+  // resolves to the repo root where manifest.json lives one level up from the
+  // test build output). Only warn when it's genuinely unexpected.
   const manifestVersion = readVersionFromJson(manifestJsonPath);
   if (!manifestVersion) {
-    // Missing manifest.json is expected during development/testing but would
-    // indicate a packaging error in production builds.
-    console.error("[Version] manifest.json not found or has no version field");
+    // Suppress noise during test runs; in production (dist/version.js next to
+    // manifest.json) a missing manifest is a real packaging error worth logging.
+    if (!process.env.NODE_TEST) {
+      console.error("[Version] manifest.json not found or has no version field");
+    }
   } else if (manifestVersion !== packageVersion) {
     console.error(
       `[Version] ⚠️  VERSION MISMATCH: package.json=${packageVersion}, manifest.json=${manifestVersion}. ` +

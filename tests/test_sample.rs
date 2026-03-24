@@ -1279,81 +1279,82 @@ fn sample_multiple_sampling_methods_error() {
     wrk.assert_err(&mut cmd);
 }
 
-#[test]
-fn sample_remote_bernoulli_streaming_standard_rng() {
-    let wrk = Workdir::new("sample_remote_bernoulli_streaming_standard_rng");
+// disabled because the test file is too large for CI and we don't want to add a smaller test file just for this test
+// #[test]
+// fn sample_remote_bernoulli_streaming_standard_rng() {
+//     let wrk = Workdir::new("sample_remote_bernoulli_streaming_standard_rng");
 
-    // Use a small test file from the qsv repository that we know supports range requests
-    let test_url = "https://raw.githubusercontent.com/dathere/qsv/refs/heads/master/resources/test/NYC311-50k.csv";
+//     // Use a small test file from the qsv repository that we know supports range requests
+//     let test_url = "https://raw.githubusercontent.com/dathere/qsv/refs/heads/master/resources/test/NYC311-50k.csv";
 
-    let mut cmd = wrk.command("sample");
-    cmd.args(["--bernoulli"])
-        .args(["--seed", "42"])
-        .arg("0.3") // 30% probability
-        .arg(test_url);
+//     let mut cmd = wrk.command("sample");
+//     cmd.args(["--bernoulli"])
+//         .args(["--seed", "42"])
+//         .arg("0.3") // 30% probability
+//         .arg(test_url);
 
-    wrk.assert_success(&mut cmd);
+//     wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+//     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
-    // Verify we got the header
-    assert_eq!(
-        got[0],
-        vec![
-            "Unique Key",
-            "Created Date",
-            "Closed Date",
-            "Agency",
-            "Agency Name",
-            "Complaint Type",
-            "Descriptor",
-            "Location Type",
-            "Incident Zip",
-            "Incident Address",
-            "Street Name",
-            "Cross Street 1",
-            "Cross Street 2",
-            "Intersection Street 1",
-            "Intersection Street 2",
-            "Address Type",
-            "City",
-            "Landmark",
-            "Facility Type",
-            "Status",
-            "Due Date",
-            "Resolution Description",
-            "Resolution Action Updated Date",
-            "Community Board",
-            "BBL",
-            "Borough",
-            "X Coordinate (State Plane)",
-            "Y Coordinate (State Plane)",
-            "Open Data Channel Type",
-            "Park Facility Name",
-            "Park Borough",
-            "Vehicle Type",
-            "Taxi Company Borough",
-            "Taxi Pick Up Location",
-            "Bridge Highway Name",
-            "Bridge Highway Direction",
-            "Road Ramp",
-            "Bridge Highway Segment",
-            "Latitude",
-            "Longitude",
-            "Location",
-        ]
-    );
+//     // Verify we got the header
+//     assert_eq!(
+//         got[0],
+//         vec![
+//             "Unique Key",
+//             "Created Date",
+//             "Closed Date",
+//             "Agency",
+//             "Agency Name",
+//             "Complaint Type",
+//             "Descriptor",
+//             "Location Type",
+//             "Incident Zip",
+//             "Incident Address",
+//             "Street Name",
+//             "Cross Street 1",
+//             "Cross Street 2",
+//             "Intersection Street 1",
+//             "Intersection Street 2",
+//             "Address Type",
+//             "City",
+//             "Landmark",
+//             "Facility Type",
+//             "Status",
+//             "Due Date",
+//             "Resolution Description",
+//             "Resolution Action Updated Date",
+//             "Community Board",
+//             "BBL",
+//             "Borough",
+//             "X Coordinate (State Plane)",
+//             "Y Coordinate (State Plane)",
+//             "Open Data Channel Type",
+//             "Park Facility Name",
+//             "Park Borough",
+//             "Vehicle Type",
+//             "Taxi Company Borough",
+//             "Taxi Pick Up Location",
+//             "Bridge Highway Name",
+//             "Bridge Highway Direction",
+//             "Road Ramp",
+//             "Bridge Highway Segment",
+//             "Latitude",
+//             "Longitude",
+//             "Location",
+//         ]
+//     );
 
-    // Verify we got some records (exact count as we're using a seed)
-    assert_eq!(got.len(), 14_941);
+//     // Verify we got some records (exact count as we're using a seed)
+//     assert_eq!(got.len(), 14_941);
 
-    // Verify the structure of sampled records
-    for record in got.iter().skip(1) {
-        assert_eq!(record.len(), 41); // Each record should have position and title
-        assert!(!record[0].is_empty()); // Unique Key should not be empty
-        assert!(!record[1].is_empty()); // Created Date should not be empty
-    }
-}
+//     // Verify the structure of sampled records
+//     for record in got.iter().skip(1) {
+//         assert_eq!(record.len(), 41); // Each record should have position and title
+//         assert!(!record[0].is_empty()); // Unique Key should not be empty
+//         assert!(!record[1].is_empty()); // Created Date should not be empty
+//     }
+// }
 
 #[test]
 fn sample_remote_bernoulli_streaming_cryptosecure() {

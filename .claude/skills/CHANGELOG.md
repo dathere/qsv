@@ -5,6 +5,24 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [18.0.4] - 2026-03-23
+
+### Changed
+- **Tool dispatch refactored** from if-else cascade to dispatch map in `mcp-server.ts` — extracted `handleSetup`, `handleListFiles`, `handleSetWorkingDir`, `handleBrowseDirectoryDispatch` private methods; adding new tools now requires only a map entry + handler method
+- **Version module refactored** — extracted `resolveProjectRoot` and `readVersionFromJson` helpers from monolithic `getVersion()`; both exported for testability
+- **Documentation** consolidated install guides into single START_HERE.md (#3641)
+- **data-profile command** replaced describegpt with LLM-based profiling docs
+- **data-analyst agent** no longer uses describegpt
+- **policy-analyst agent** now infers ontology by default, references infer-ontology workflow directly
+
+### Fixed
+- **Version sync validation** — `version.ts` now validates `manifest.json` version matches `package.json` at startup, logging a warning on mismatch and a diagnostic when `manifest.json` is absent (suppressed in test runs via `NODE_TEST` guard)
+- **Version test skip pattern** — manifest sync test uses `{ skip: !MANIFEST_AVAILABLE }` instead of silent early return, consistent with project test conventions
+
+### Added
+- **`infer-ontology` command** for plugin — infers domain ontology from data
+- **9 version module tests** covering `resolveProjectRoot`, `readVersionFromJson` edge cases (missing file, invalid JSON, non-string version, empty version), and package.json/manifest.json sync validation
+
 ## [18.0.3] - 2026-03-23
 
 ### Added

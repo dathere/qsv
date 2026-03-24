@@ -607,7 +607,7 @@ For issues or questions:
 ---
 
 **Updated**: 2026-03-23
-**Version**: 18.0.3
+**Version**: 18.0.4
 **Tools**: 10 core tools initially (deferred loading), 51+ when discovered via search
 **Skills**: 51 qsv commands
 **Status**: Production Ready

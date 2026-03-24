@@ -50,7 +50,7 @@ Reference these domain knowledge files for best practices:
 
 ## Standard Workflow
 
-1. **Check ontology**: Check if `ONTOLOGY.md` exists in the working directory (via `qsv_list_files`). If it does, read it to learn entity descriptions, column labels, cross-file relationships, join paths, controlled vocabularies, and data quality flags. Use this context to guide which files to analyze and how columns relate across files. **When an ontology exists**, the stats cache (`.stats.csv`) and frequency cache (`.freq.csv`) should already be populated — skip steps 2-5 and go directly to step 6 (Query). Read the existing `.stats.csv` files for column types, cardinality, and ranges. If no ontology exists, proceed with manual discovery in the following steps.
+1. **Check ontology**: Check if `ONTOLOGY.md` exists in the working directory (via `qsv_list_files`). If it does, read it to learn entity descriptions, column labels, cross-file relationships, join paths, controlled vocabularies, and data quality flags. Use this context to guide which files to analyze and how columns relate across files. **When an ontology exists**, the stats cache (`.stats.csv`) and frequency cache (`.freq.csv`) should already be populated — skip steps 2-6 and go directly to step 7 (Query). Read the existing `.stats.csv` files for column types, cardinality, and ranges. If no ontology exists, proceed with manual discovery in the following steps.
 2. **Index**: Always run `qsv_index` first for fast access.
 3. **Orient**: Use `qsv_sniff` to detect format, then `qsv_count` and `qsv_headers` to understand structure.
 4. **Profile**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` for comprehensive column statistics. Basic moarstats auto-runs to enrich the cache.

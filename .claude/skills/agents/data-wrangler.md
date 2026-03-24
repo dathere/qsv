@@ -60,7 +60,34 @@ Reference these domain knowledge files for best practices:
 
 ## Transformation Capabilities
 
-See `../skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key transform tools: `qsv_select` (columns), `qsv_search` (filter rows), `qsv_command` (sort, dedup, rename, replace, safenames, pivotp, tojsonl, fmt, split, partition, sample), `qsv_joinp` (joins), `qsv_cat` (concatenate), `qsv_sqlp` (complex transforms, computed columns, find/replace, case conversion).
+### Tool Selection Matrix
+
+| Task | Best Tool | Alternative | When to Use Alternative |
+|------|-----------|-------------|------------------------|
+| Select columns | `select` | `sqlp` | Need computed columns |
+| Filter rows | `search` | `sqlp` | Complex WHERE conditions |
+| Sort data | `sort` | `sqlp` | Need ORDER BY with LIMIT |
+| Remove duplicates | `dedup` | `sqlp` | Need GROUP BY dedup |
+| Join two files | `joinp` | `join` | `join` for memory-constrained |
+| Aggregate/GROUP BY | `sqlp` | `frequency` | `frequency` for simple counts |
+| Find/replace | `replace` | `sqlp` | `sqlp` for conditional replace |
+| Reshape wide->long | `transpose --long` | — | DuckDB UNPIVOT for complex reshaping |
+| Reshape long->wide | `pivotp` | `sqlp` | Complex pivots |
+| Concatenate files | `cat rows` | `cat rowskey` | Different column orders |
+| Sample rows | `sample` | `slice` | `slice` for positional ranges |
+
+### Selection Syntax
+
+Used by `select`, `search`, `sort`, `dedup`, `frequency`, and other commands:
+
+| Syntax | Meaning | Example |
+|--------|---------|---------|
+| `name` | Column by name | `select "City"` |
+| `1` | Column by 1-based index | `select 1` |
+| `1,3,5` | Multiple columns | `select 1,3,5` |
+| `1-5` | Range (inclusive) | `select 1-5` |
+| `!col` | Exclude column | `select '!SSN'` |
+| `/regex/` | Match column names | `select '/^price/'` |
 
 ## Multi-Step Best Practices
 

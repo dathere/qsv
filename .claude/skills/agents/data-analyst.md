@@ -69,7 +69,34 @@ Reference these domain knowledge files for best practices:
 
 ## Analysis Capabilities
 
-See `../skills/csv-wrangling/SKILL.md` for the full tool selection matrix and pipeline patterns. Key analysis tools: `qsv_stats`/`qsv_moarstats` (column statistics), `qsv_frequency` (distributions), `qsv_sqlp` (SQL aggregation, joins, window functions), `qsv_search` (regex filtering), `qsv_command` with `command: "sample"` (random sampling).
+### Tool Selection Matrix
+
+| Task | Best Tool | Alternative | When to Use Alternative |
+|------|-----------|-------------|------------------------|
+| Select columns | `select` | `sqlp` | Need computed columns |
+| Filter rows | `search` | `sqlp` | Complex WHERE conditions |
+| Sort data | `sort` | `sqlp` | Need ORDER BY with LIMIT |
+| Remove duplicates | `dedup` | `sqlp` | Need GROUP BY dedup |
+| Join two files | `joinp` | `join` | `join` for memory-constrained |
+| Aggregate/GROUP BY | `sqlp` | `frequency` | `frequency` for simple counts |
+| Column stats | `stats` | `moarstats` | `moarstats` for extended stats |
+| Find/replace | `replace` | `sqlp` | `sqlp` for conditional replace |
+| Reshape long->wide | `pivotp` | `sqlp` | Complex pivots |
+| Concatenate files | `cat rows` | `cat rowskey` | Different column orders |
+| Sample rows | `sample` | `slice` | `slice` for positional ranges |
+
+### Selection Syntax
+
+Used by `select`, `search`, `sort`, `dedup`, `frequency`, and other commands:
+
+| Syntax | Meaning | Example |
+|--------|---------|---------|
+| `name` | Column by name | `select "City"` |
+| `1` | Column by 1-based index | `select 1` |
+| `1,3,5` | Multiple columns | `select 1,3,5` |
+| `1-5` | Range (inclusive) | `select 1-5` |
+| `!col` | Exclude column | `select '!SSN'` |
+| `/regex/` | Match column names | `select '/^price/'` |
 
 ## Guidelines
 

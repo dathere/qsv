@@ -15,8 +15,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 /**
  * Resolve the project root directory (parent of dist/).
  * Handles both production (dist/version.js) and test (dist/src/version.js) layouts.
+ * Exported for testing.
  */
-function resolveProjectRoot(): string {
+export function resolveProjectRoot(): string {
   const productionRoot = join(__dirname, "..");
   const testRoot = join(__dirname, "../..");
 
@@ -32,8 +33,9 @@ function resolveProjectRoot(): string {
 /**
  * Read a version string from a JSON file.
  * Returns null if the file doesn't exist, can't be parsed, or has no version field.
+ * Exported for testing.
  */
-function readVersionFromJson(filePath: string): string | null {
+export function readVersionFromJson(filePath: string): string | null {
   try {
     if (!existsSync(filePath)) return null;
     const parsed: unknown = JSON.parse(readFileSync(filePath, "utf-8"));
@@ -64,7 +66,11 @@ function getVersion(): string {
 
   // Validate manifest.json version matches package.json
   const manifestVersion = readVersionFromJson(manifestJsonPath);
-  if (manifestVersion && manifestVersion !== packageVersion) {
+  if (!manifestVersion) {
+    // Missing manifest.json is expected during development/testing but would
+    // indicate a packaging error in production builds.
+    console.error("[Version] manifest.json not found or has no version field");
+  } else if (manifestVersion !== packageVersion) {
     console.error(
       `[Version] ⚠️  VERSION MISMATCH: package.json=${packageVersion}, manifest.json=${manifestVersion}. ` +
       `These must be kept in sync. Update the lagging file before publishing.`,

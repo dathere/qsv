@@ -128,7 +128,7 @@ Scan all files in the current working directory, profile each one, then synthesi
 
 ## ONTOLOGY.md Template
 
-```markdown
+````markdown
 # Ontology: {Domain Name}
 
 > Auto-generated ontology inferred from {N} files in `{working_directory}`.
@@ -205,7 +205,7 @@ and relationships as labeled arrows. Example:}
 | File | Type | Contribution |
 |------|------|-------------|
 | ... | ... | {What domain context or definitions it provided} |
-```
+````
 
 ## Notes
 

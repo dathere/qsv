@@ -18,8 +18,6 @@ allowed-tools:
   - mcp__qsv__qsv_sqlp
   - mcp__qsv__qsv_joinp
   - mcp__qsv__qsv_command
-  # AI
-  - mcp__qsv__qsv_describegpt
   # Workspace
   - mcp__qsv__qsv_list_files
   - mcp__qsv__qsv_get_working_dir
@@ -56,7 +54,15 @@ Profile the given tabular data file to understand its structure, types, and dist
 
 10. **Preview data**: Run `qsv_slice` with `len: 5` to show the first 5 rows as a sample.
 
-11. **Document**: Run `qsv_describegpt` with `all: true` to generate a Data Dictionary, Description, and Tags. Output defaults to `<filestem>.describegpt.md`. This step leverages the stats cache created in step 5. Uses the connected LLM via MCP sampling — no API key needed.
+11. **Document**: Using the statistics (steps 5-6) and frequency distributions (step 7) already collected, generate the following:
+
+    **a) Data Dictionary** — Present a table with one row per column. Include the `field`, `type`, `Label`, and `Description` columns (in that order), followed by key stats columns (`nullcount`, `cardinality`, `min`, `max`, `mean`, `sortiness`, `stddev`, `variance`, `cv`, `sparsity` where applicable):
+    - `Label`: Human-readable version of the field name (e.g., `customer_id` → `Customer ID`, `avg_txn_amt` → `Average Transaction Amount`)
+    - `Description`: 1-5 sentence description of the field informed by its type, statistics and frequency distribution
+
+    **b) Dataset Description** — Write 3-10 sentences describing the entire dataset: what it represents, its scope (row count, column count, date range if applicable), key characteristics, notable quality issues found during profiling, and potential use cases.
+
+    **c) Tags** — Infer 5-15 semantic tags for the dataset based on column names, data types, value distributions, and domain characteristics. If a controlled Tag Vocabulary is provided by the user, constrain tag choices to that vocabulary only.
 
 ## Quality Dimensions
 
@@ -223,7 +229,7 @@ Present a summary with:
 - **Column overview**: table with name, type, nulls, cardinality, min, max, mean (where applicable)
 - **Key observations**: unique identifiers, high-null columns, type mismatches, notable distributions
 - **Data quality flags**: any issues found (high sparsity, mixed types, ragged rows)
-- **Data Dictionary, Description & Tags** (optional): AI-generated documentation from describegpt (step 11)
+- **Data Dictionary, Description & Tags**: LLM-generated documentation derived from stats cache and frequency distributions (step 11)
 
 ### Quality Report Checklist
 
@@ -242,7 +248,7 @@ Present a summary with:
 - [ ] **Referential integrity** verified across related files if provided (joinp --left-anti)
 - [ ] **PII/PHI patterns** detected via searchset (privacy)
 - [ ] **Injection payloads** scanned for CSV/formula and SQL injection patterns (searchset)
-- [ ] **Data Dictionary** generated with column labels, descriptions, and types (describegpt)
+- [ ] **Data Dictionary** with Label and Description per column, dataset Description, and Tags (step 11)
 
 ## Common Data Quality Fixes
 

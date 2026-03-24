@@ -42,8 +42,8 @@ Scan all files in the current working directory, profile each one, then synthesi
    **Tabular** (handled natively by qsv MCP Server — auto-converted to CSV if needed):
    - CSV/TSV/SSV/TAB (`.csv`, `.tsv`, `.ssv`, `.tab` and `.sz` compressed variants)
    - Excel (`.xlsx`, `.xls`, `.xlsm`, `.xlsb`, `.ods`)
-   - JSON/JSONL (`.json`, `.jsonl`, `.ndjson`)
-   - Parquet (`.parquet`, `.pq`, `.pqt`)
+   - JSONL (`.jsonl`, `.ndjson`)
+   - Parquet (`.parquet`, `.pq`)
 
    **Non-tabular** (best-effort extraction):
    - Markdown (`.md`), Text (`.txt`), README files — read for domain context

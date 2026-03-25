@@ -745,7 +745,7 @@ test('createLogTool returns valid tool definition', () => {
   const entryTypeProp = toolDef.inputSchema.properties.entry_type as { enum: string[] };
   assert.ok(Array.isArray(entryTypeProp.enum));
   assert.deepStrictEqual(entryTypeProp.enum, [
-    'user_prompt', 'agent_reasoning', 'agent_action', 'result_summary', 'note',
+    'agent_reasoning', 'agent_action', 'result_summary', 'note',
   ]);
 });
 
@@ -890,18 +890,18 @@ test('handleLogCall truncates messages over MAX_LOG_MESSAGE_LEN', async (t) => {
     // Create a message longer than MAX_LOG_MESSAGE_LEN
     const longMessage = 'x'.repeat(MAX_LOG_MESSAGE_LEN + 500);
     const result = await handleLogCall(
-      { entry_type: 'user_prompt', message: longMessage },
+      { entry_type: 'note', message: longMessage },
       dir,
     );
 
     assert.strictEqual(result.isError, false);
-    assert.ok(result.content[0].text?.includes('Logged user_prompt entry'));
+    assert.ok(result.content[0].text?.includes('Logged note entry'));
 
     // Verify the log file was created but message was truncated
     const logFile = join(dir, 'qsvmcp.log');
     const logContent = await readFile(logFile, 'utf-8');
     assert.ok(logContent.includes('u-'), 'Log entry should have u- prefix');
-    assert.ok(logContent.includes('[user_prompt]'), 'Log entry should contain [user_prompt] tag');
+    assert.ok(logContent.includes('[note]'), 'Log entry should contain [note] tag');
     // The truncated message should not contain the full length
     // (log line overhead + truncated message should be shorter than the full message)
     assert.ok(logContent.length < longMessage.length, 'Log content should be shorter than the full message');

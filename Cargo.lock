@@ -1571,9 +1571,9 @@ dependencies = [
 
 [[package]]
 name = "counter"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "337a5b3c62043f6a4f5331bdb467a7f7a2099dce8522bcded6d4ebda1214fa4c"
+checksum = "66e8e052be91f1c8aae2c1d81307d9f6e67f5f37001e3ddee419e971e73f03bc"
 dependencies = [
  "num-traits",
 ]
@@ -3712,7 +3712,7 @@ dependencies = [
  "divrem",
  "generator",
  "num-traits",
- "ordered-float 5.1.0",
+ "ordered-float 5.2.0",
  "rkyv 0.8.15",
  "sorted-vec",
 ]
@@ -3864,9 +3864,9 @@ dependencies = [
 
 [[package]]
 name = "libredox"
-version = "0.1.14"
+version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1744e39d1d6a9948f4f388969627434e31128196de472883b39f148769bfe30a"
+checksum = "7ddbf48fd451246b1f8c2610bd3b4ac0cc6e149d89832867093ab69a17194f08"
 dependencies = [
  "bitflags",
  "libc",
@@ -4327,9 +4327,9 @@ dependencies = [
 
 [[package]]
 name = "num-conv"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf97ec579c3c42f953ef76dbf8d55ac91fb219dde70e49aa4a6b7d74e9919050"
+checksum = "c6673768db2d862beb9b39a78fdcb1a69439615d5794a1be50caa9bc92c81967"
 
 [[package]]
 name = "num-derive"
@@ -4497,16 +4497,18 @@ dependencies = [
 
 [[package]]
 name = "object_store"
-version = "0.13.1"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2858065e55c148d294a9f3aae3b0fa9458edadb41a108397094566f4e3c0dfb"
+checksum = "622acbc9100d3c10e2ee15804b0caa40e55c933d5aa53814cd520805b7958a49"
 dependencies = [
  "async-trait",
  "base64",
  "bytes",
  "chrono",
  "form_urlencoded",
- "futures",
+ "futures-channel",
+ "futures-core",
+ "futures-util",
  "http 1.4.0",
  "http-body-util",
  "humantime",
@@ -4514,8 +4516,8 @@ dependencies = [
  "itertools 0.14.0",
  "parking_lot",
  "percent-encoding",
- "quick-xml 0.38.4",
- "rand 0.9.2",
+ "quick-xml 0.39.2",
+ "rand 0.10.0",
  "reqwest 0.12.28",
  "ring",
  "serde",
@@ -4574,9 +4576,9 @@ dependencies = [
 
 [[package]]
 name = "ordered-float"
-version = "5.1.0"
+version = "5.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f4779c6901a562440c3786d08192c6fbda7c1c2060edd10006b05ee35d10f2d"
+checksum = "0218004a4aae742209bee9c3cef05672f6b2708be36a50add8eb613b1f2a4008"
 dependencies = [
  "num-traits",
 ]
@@ -5856,6 +5858,7 @@ dependencies = [
  "tokio",
  "toml 1.1.0+spec-1.1.0",
  "toon-format",
+ "unicode-segmentation",
  "unicode-width 0.2.0",
  "url",
  "uuid",
@@ -5957,7 +5960,6 @@ checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
 dependencies = [
  "encoding_rs",
  "memchr",
- "serde",
 ]
 
 [[package]]
@@ -5968,6 +5970,7 @@ checksum = "958f21e8e7ceb5a1aa7fa87fab28e7c75976e0bfe7e23ff069e0a260f894067d"
 dependencies = [
  "encoding_rs",
  "memchr",
+ "serde",
 ]
 
 [[package]]

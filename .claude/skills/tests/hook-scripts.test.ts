@@ -48,7 +48,11 @@ test('findQsvMcpBinary returns null when env unset and binary not on PATH', () =
     if (original !== undefined) {
       process.env.QSV_MCP_BIN_PATH = original;
     }
-    process.env.PATH = originalPath!;
+    if (originalPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = originalPath;
+    }
   }
 });
 

@@ -8,8 +8,11 @@
  * - commands/ (slash command .md files)
  * - agents/ (subagent .md files)
  * - hooks/hooks.json (hook definitions)
+ * - scripts/qsv-utils.cjs (shared utilities for hook scripts)
  * - scripts/cowork-setup.cjs (SessionStart hook script)
  * - scripts/log-user-prompt.cjs (UserPromptSubmit hook script)
+ * - scripts/log-turn-summary.cjs (Stop hook script)
+ * - scripts/log-session-end.cjs (SessionEnd hook script)
  * - cowork-CLAUDE.md (template deployed by hook)
  * - qsv-75x91.png (icon, if exists)
  *
@@ -42,8 +45,11 @@ const required = [
   'skills/',
   'commands/',
   'agents/',
+  'scripts/qsv-utils.cjs',
   'scripts/cowork-setup.cjs',
   'scripts/log-user-prompt.cjs',
+  'scripts/log-turn-summary.cjs',
+  'scripts/log-session-end.cjs',
   'cowork-CLAUDE.md',
 ];
 
@@ -117,11 +123,17 @@ archive.glob('**/*', { cwd: join(rootDir, 'agents'), ignore: ['.*', '**/.*'] }, 
 console.log('  Adding hooks/hooks.json...');
 archive.file(join(rootDir, 'hooks/hooks.json'), { name: 'hooks/hooks.json' });
 
-// Add hook scripts
-console.log('  Adding scripts/cowork-setup.cjs...');
-archive.file(join(rootDir, 'scripts/cowork-setup.cjs'), { name: 'scripts/cowork-setup.cjs' });
-console.log('  Adding scripts/log-user-prompt.cjs...');
-archive.file(join(rootDir, 'scripts/log-user-prompt.cjs'), { name: 'scripts/log-user-prompt.cjs' });
+// Add hook scripts and shared utilities
+for (const script of [
+  'qsv-utils.cjs',
+  'cowork-setup.cjs',
+  'log-user-prompt.cjs',
+  'log-turn-summary.cjs',
+  'log-session-end.cjs',
+]) {
+  console.log(`  Adding scripts/${script}...`);
+  archive.file(join(rootDir, `scripts/${script}`), { name: `scripts/${script}` });
+}
 
 // Add cowork CLAUDE.md template
 console.log('  Adding cowork-CLAUDE.md...');

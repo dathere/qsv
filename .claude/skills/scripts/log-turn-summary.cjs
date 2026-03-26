@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-// log-user-prompt.cjs — UserPromptSubmit hook
-// Logs the user's prompt to the qsv audit log (qsvmcp.log) for reproducibility.
+// log-turn-summary.cjs — Stop hook
+// Logs the model's last assistant message to the qsv audit log (qsvmcp.log)
+// at the end of each turn, providing a persistent record of what Claude did.
 // Uses CommonJS so it works standalone without package.json declaring "type": "module".
 
 const { execFile } = require('node:child_process');
@@ -21,25 +22,25 @@ readStdin().then((input) => {
     return;
   }
 
-  const prompt = String(parsed.prompt || '').trim();
-  if (!prompt) return;
+  const lastMessage = String(parsed.last_assistant_message || '').trim();
+  if (!lastMessage) return;
 
   // Use cwd from hook input so qsvmcp.log lands in the session working directory
   const cwd = parsed.cwd || process.cwd();
 
   const bin = findQsvMcpBinary();
   if (!bin) {
-    process.stderr.write('[log-user-prompt] qsvmcp binary not found\n');
+    process.stderr.write('[log-turn-summary] qsvmcp binary not found\n');
     return;
   }
 
-  const logId = `u-${randomUUID()}`;
+  const logId = `t-${randomUUID()}`;
   // Truncate AFTER building the full message (including prefix)
-  const message = truncateMessage(`[user_prompt] ${prompt}`);
+  const message = truncateMessage(`[turn_summary] ${lastMessage}`);
 
-  execFile(bin, ['log', 'user_prompt', logId, message], { timeout: 5000, cwd }, (err) => {
+  execFile(bin, ['log', 'turn_summary', logId, message], { timeout: 5000, cwd }, (err) => {
     if (err) {
-      process.stderr.write(`[log-user-prompt] qsv log failed: ${err.message}\n`);
+      process.stderr.write(`[log-turn-summary] qsv log failed: ${err.message}\n`);
     }
   });
 });

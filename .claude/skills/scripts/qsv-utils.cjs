@@ -58,26 +58,41 @@ const STDIN_TIMEOUT_MS = 5000;
 function readStdin() {
   return new Promise((resolve) => {
     let input = '';
-    const timeoutId = setTimeout(() => {
-      process.stdin.destroy();
+    let resolved = false;
+    let timeoutId;
+
+    function finish() {
+      if (resolved) return;
+      resolved = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
       resolve(input);
+    }
+
+    timeoutId = setTimeout(() => {
+      process.stdin.destroy();
+      finish();
     }, STDIN_TIMEOUT_MS);
 
     process.stdin.on('data', (chunk) => {
       input += chunk;
       if (input.length > MAX_STDIN_SIZE) {
         process.stdin.destroy();
+        finish();
       }
     });
 
     process.stdin.on('end', () => {
-      clearTimeout(timeoutId);
-      resolve(input);
+      finish();
     });
 
     process.stdin.on('error', () => {
-      clearTimeout(timeoutId);
-      resolve(input);
+      finish();
+    });
+
+    process.stdin.on('close', () => {
+      finish();
     });
   });
 }

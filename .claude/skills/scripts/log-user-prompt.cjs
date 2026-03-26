@@ -6,7 +6,7 @@
 
 const { execFile } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
-const { findQsvBinary, truncateMessage } = require('./qsv-utils.cjs');
+const { findQsvMcpBinary, truncateMessage } = require('./qsv-utils.cjs');
 
 let input = '';
 process.stdin.on('data', (chunk) => { input += chunk; });
@@ -29,7 +29,7 @@ process.stdin.on('end', () => {
   // Use cwd from hook input so qsvmcp.log lands in the session working directory
   const cwd = parsed.cwd || process.cwd();
 
-  const bin = findQsvBinary();
+  const bin = findQsvMcpBinary();
   if (!bin) {
     process.stderr.write('[log-user-prompt] qsvmcp binary not found\n');
     return;

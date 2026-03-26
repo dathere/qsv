@@ -13,7 +13,7 @@ const MAX_LOG_MESSAGE_LEN = 4096;
  * feature, which is NOT included in `all_features` / the `qsv` full binary).
  * Checks QSV_MCP_BIN_PATH env var first, then PATH via which/where.
  */
-function findQsvBinary() {
+function findQsvMcpBinary() {
   const envPath = process.env.QSV_MCP_BIN_PATH;
   if (envPath) return envPath;
 
@@ -44,4 +44,4 @@ function truncateMessage(message) {
   return message;
 }
 
-module.exports = { findQsvBinary, truncateMessage, MAX_LOG_MESSAGE_LEN };
+module.exports = { findQsvMcpBinary, truncateMessage, MAX_LOG_MESSAGE_LEN };

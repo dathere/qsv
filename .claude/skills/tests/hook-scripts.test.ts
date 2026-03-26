@@ -7,10 +7,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
-import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
@@ -18,8 +17,40 @@ const require = createRequire(import.meta.url);
 // Resolve paths relative to the project root (not dist/tests/)
 const __filename = fileURLToPath(import.meta.url);
 const projectRoot = resolve(dirname(__filename), '..', '..');
-const { truncateMessage, MAX_LOG_MESSAGE_LEN } = require(resolve(projectRoot, 'scripts', 'qsv-utils.cjs'));
+const { findQsvMcpBinary, truncateMessage, MAX_LOG_MESSAGE_LEN } = require(resolve(projectRoot, 'scripts', 'qsv-utils.cjs'));
 const { parseTranscript, formatDuration, buildSummary } = require(resolve(projectRoot, 'scripts', 'log-session-end.cjs'));
+
+// --- findQsvMcpBinary tests ---
+
+test('findQsvMcpBinary returns QSV_MCP_BIN_PATH when set', () => {
+  const original = process.env.QSV_MCP_BIN_PATH;
+  try {
+    process.env.QSV_MCP_BIN_PATH = '/fake/path/to/qsvmcp';
+    assert.strictEqual(findQsvMcpBinary(), '/fake/path/to/qsvmcp');
+  } finally {
+    if (original === undefined) {
+      delete process.env.QSV_MCP_BIN_PATH;
+    } else {
+      process.env.QSV_MCP_BIN_PATH = original;
+    }
+  }
+});
+
+test('findQsvMcpBinary returns null when env unset and binary not on PATH', () => {
+  const original = process.env.QSV_MCP_BIN_PATH;
+  const originalPath = process.env.PATH;
+  try {
+    delete process.env.QSV_MCP_BIN_PATH;
+    // Set PATH to empty so which/where won't find qsvmcp
+    process.env.PATH = '';
+    assert.strictEqual(findQsvMcpBinary(), null);
+  } finally {
+    if (original !== undefined) {
+      process.env.QSV_MCP_BIN_PATH = original;
+    }
+    process.env.PATH = originalPath!;
+  }
+});
 
 // --- truncateMessage tests ---
 

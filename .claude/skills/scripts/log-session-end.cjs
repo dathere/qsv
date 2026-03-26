@@ -10,7 +10,7 @@ const { execFileSync } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { readFileSync, appendFileSync, existsSync } = require('node:fs');
 const { join } = require('node:path');
-const { findQsvBinary, truncateMessage } = require('./qsv-utils.cjs');
+const { findQsvMcpBinary, truncateMessage } = require('./qsv-utils.cjs');
 
 /**
  * Parse a JSONL transcript file and extract tool usage stats.
@@ -153,7 +153,7 @@ if (require.main === module) {
     }
 
     // 2. Log a compact summary to qsvmcp.log
-    const bin = findQsvBinary();
+    const bin = findQsvMcpBinary();
     if (!bin) {
       process.stderr.write('[log-session-end] qsvmcp binary not found\n');
       return;

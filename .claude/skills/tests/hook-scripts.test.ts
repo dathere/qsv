@@ -19,6 +19,7 @@ const __filename = fileURLToPath(import.meta.url);
 const projectRoot = resolve(dirname(__filename), '..', '..');
 const { findQsvMcpBinary, truncateMessage, MAX_LOG_MESSAGE_LEN } = require(resolve(projectRoot, 'scripts', 'qsv-utils.cjs'));
 const { parseTranscript, formatDuration, buildSummary } = require(resolve(projectRoot, 'scripts', 'log-session-end.cjs'));
+const { sanitizeUrl, buildWebLogMessage } = require(resolve(projectRoot, 'scripts', 'log-web-results.cjs'));
 
 // --- findQsvMcpBinary tests ---
 
@@ -292,4 +293,89 @@ test('buildSummary uses unknown for missing session ID', () => {
 
   const summary = buildSummary(null, stats);
   assert.ok(summary.includes('## Session unknown'));
+});
+
+// --- sanitizeUrl tests ---
+
+test('sanitizeUrl strips embedded credentials', () => {
+  const result = sanitizeUrl('https://user:pass@example.com/path');
+  assert.strictEqual(result, 'https://example.com/path');
+});
+
+test('sanitizeUrl redacts sensitive query parameters', () => {
+  const result = sanitizeUrl('https://api.example.com/search?q=hello&api_key=abc123&token=secret');
+  assert.ok(result.includes('q=hello'));
+  assert.ok(result.includes('api_key=***REDACTED***'));
+  assert.ok(result.includes('token=***REDACTED***'));
+  assert.ok(!result.includes('abc123'));
+  assert.ok(!result.includes('secret'));
+});
+
+test('sanitizeUrl preserves normal URLs unchanged', () => {
+  const url = 'https://docs.example.com/api/v2/guide?page=3';
+  const result = sanitizeUrl(url);
+  assert.strictEqual(result, url);
+});
+
+test('sanitizeUrl returns invalid URLs as-is', () => {
+  const notAUrl = 'not-a-url';
+  assert.strictEqual(sanitizeUrl(notAUrl), notAUrl);
+});
+
+test('sanitizeUrl strips fragments that may carry tokens', () => {
+  const result = sanitizeUrl('https://example.com/callback#access_token=abc123&token_type=bearer');
+  assert.ok(!result.includes('#'));
+  assert.ok(!result.includes('abc123'));
+  assert.ok(!result.includes('token_type'));
+});
+
+test('sanitizeUrl is case-insensitive for parameter names', () => {
+  const result = sanitizeUrl('https://example.com/?API_KEY=secret&Password=hunter2');
+  assert.ok(result.includes('API_KEY=***REDACTED***'));
+  assert.ok(result.includes('Password=***REDACTED***'));
+});
+
+// --- buildWebLogMessage tests ---
+
+test('buildWebLogMessage builds WebSearch message', () => {
+  const result = buildWebLogMessage('WebSearch', { query: 'rust csv parser' }, 'some results');
+  assert.ok(result !== null);
+  assert.strictEqual(result.logCategory, 'web_search');
+  assert.ok(result.message.includes('[web_search]'));
+  assert.ok(result.message.includes('query="rust csv parser"'));
+  assert.ok(result.message.includes('results=some results'));
+});
+
+test('buildWebLogMessage builds WebFetch message with sanitized URL', () => {
+  const result = buildWebLogMessage('WebFetch', { url: 'https://user:pass@example.com/doc?token=abc' }, 'page content');
+  assert.ok(result !== null);
+  assert.strictEqual(result.logCategory, 'web_fetch');
+  assert.ok(result.message.includes('[web_fetch]'));
+  assert.ok(!result.message.includes('user:pass'));
+  assert.ok(result.message.includes('token=***REDACTED***'));
+  assert.ok(result.message.includes('content=page content'));
+});
+
+test('buildWebLogMessage returns null for missing query', () => {
+  assert.strictEqual(buildWebLogMessage('WebSearch', {}, 'results'), null);
+});
+
+test('buildWebLogMessage returns null for missing URL', () => {
+  assert.strictEqual(buildWebLogMessage('WebFetch', {}, 'content'), null);
+});
+
+test('buildWebLogMessage returns null for unknown tool', () => {
+  assert.strictEqual(buildWebLogMessage('Read', { file_path: '/tmp/x' }, 'data'), null);
+});
+
+test('buildWebLogMessage handles object tool_result', () => {
+  const result = buildWebLogMessage('WebSearch', { query: 'test' }, { items: [1, 2, 3] });
+  assert.ok(result !== null);
+  assert.ok(result.message.includes('{"items":[1,2,3]}'));
+});
+
+test('buildWebLogMessage uses search_query fallback', () => {
+  const result = buildWebLogMessage('WebSearch', { search_query: 'fallback query' }, 'results');
+  assert.ok(result !== null);
+  assert.ok(result.message.includes('query="fallback query"'));
 });

@@ -13,6 +13,7 @@
  * - scripts/log-user-prompt.cjs (UserPromptSubmit hook script)
  * - scripts/log-turn-summary.cjs (Stop hook script)
  * - scripts/log-session-end.cjs (SessionEnd hook script)
+ * - scripts/log-web-results.cjs (PostToolUse hook script for WebSearch/WebFetch)
  * - cowork-CLAUDE.md (template deployed by hook)
  * - qsv-75x91.png (icon, if exists)
  *
@@ -50,6 +51,7 @@ const required = [
   'scripts/log-user-prompt.cjs',
   'scripts/log-turn-summary.cjs',
   'scripts/log-session-end.cjs',
+  'scripts/log-web-results.cjs',
   'cowork-CLAUDE.md',
 ];
 
@@ -130,6 +132,7 @@ for (const script of [
   'log-user-prompt.cjs',
   'log-turn-summary.cjs',
   'log-session-end.cjs',
+  'log-web-results.cjs',
 ]) {
   console.log(`  Adding scripts/${script}...`);
   archive.file(join(rootDir, `scripts/${script}`), { name: `scripts/${script}` });

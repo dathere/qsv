@@ -322,6 +322,13 @@ test('sanitizeUrl returns invalid URLs as-is', () => {
   assert.strictEqual(sanitizeUrl(notAUrl), notAUrl);
 });
 
+test('sanitizeUrl strips fragments that may carry tokens', () => {
+  const result = sanitizeUrl('https://example.com/callback#access_token=abc123&token_type=bearer');
+  assert.ok(!result.includes('#'));
+  assert.ok(!result.includes('abc123'));
+  assert.ok(!result.includes('token_type'));
+});
+
 test('sanitizeUrl is case-insensitive for parameter names', () => {
   const result = sanitizeUrl('https://example.com/?API_KEY=secret&Password=hunter2');
   assert.ok(result.includes('API_KEY=***REDACTED***'));

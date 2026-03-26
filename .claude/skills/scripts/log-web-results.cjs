@@ -10,8 +10,9 @@ const { randomUUID } = require('node:crypto');
 const { findQsvMcpBinary, truncateMessage, readStdin } = require('./qsv-utils.cjs');
 
 /**
- * Sanitize a URL for logging — strip userinfo (user:pass@) and redact
- * query parameters that look like secrets (key, token, secret, password, auth, api_key).
+ * Sanitize a URL for logging — strip userinfo (user:pass@), redact
+ * query parameters that look like secrets (key, token, secret, password, auth, api_key),
+ * and strip fragments (which may carry tokens via OAuth implicit flow).
  * Keeps the rest of the URL intact for citation/reproducibility.
  */
 function sanitizeUrl(rawUrl) {
@@ -27,6 +28,8 @@ function sanitizeUrl(rawUrl) {
         u.searchParams.set(param, '***REDACTED***');
       }
     }
+    // Strip fragment — may carry tokens (e.g. OAuth implicit flow #access_token=...)
+    u.hash = '';
     return u.toString();
   } catch {
     // Not a valid URL — return as-is (let truncateMessage handle length)

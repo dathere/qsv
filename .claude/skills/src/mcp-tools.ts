@@ -3936,7 +3936,6 @@ export async function handleToParquetCall(
 
 /** Valid entry types for qsv_log */
 const LOG_ENTRY_TYPES = new Set([
-  "user_prompt",
   "agent_reasoning",
   "agent_action",
   "result_summary",
@@ -3952,17 +3951,15 @@ export function createLogTool(): McpToolDefinition {
     description: `Write a structured entry to the qsv audit log (qsvmcp.log) for reproducibility.
 
 💡 USE WHEN:
-- Logging the user's original prompt so a third party can reproduce the session
 - Recording key reasoning or decisions that led to a particular tool choice
 - Summarizing results after a workflow completes
+- Adding free-form annotations to the audit log
 
 📋 COMMON PATTERN:
-1. Log "user_prompt" when a new user request arrives
-2. Log "agent_reasoning" before complex decisions (e.g., choosing joinp over join)
-3. Log "result_summary" after completing a workflow
+1. Log "agent_reasoning" before complex decisions (e.g., choosing joinp over join)
+2. Log "result_summary" after completing a workflow
 
 📝 ENTRY TYPES:
-- user_prompt — The user's original request (log once per prompt)
 - agent_reasoning — Why you chose a particular approach
 - agent_action — A significant action taken (beyond automatic audit logging)
 - result_summary — Outcome of a completed workflow
@@ -3974,7 +3971,7 @@ export function createLogTool(): McpToolDefinition {
       properties: {
         entry_type: {
           type: "string",
-          enum: ["user_prompt", "agent_reasoning", "agent_action", "result_summary", "note"],
+          enum: ["agent_reasoning", "agent_action", "result_summary", "note"],
           description: "Category of log entry.",
         },
         message: {

@@ -7,7 +7,9 @@
  * - skills/ (domain knowledge SKILL.md files)
  * - commands/ (slash command .md files)
  * - agents/ (subagent .md files)
+ * - hooks/hooks.json (hook definitions)
  * - scripts/cowork-setup.cjs (SessionStart hook script)
+ * - scripts/log-user-prompt.cjs (UserPromptSubmit hook script)
  * - cowork-CLAUDE.md (template deployed by hook)
  * - qsv-75x91.png (icon, if exists)
  *
@@ -36,10 +38,12 @@ console.log(`Packaging version: ${version}`);
 // Validate required files
 const required = [
   '.claude-plugin/plugin.json',
+  'hooks/hooks.json',
   'skills/',
   'commands/',
   'agents/',
   'scripts/cowork-setup.cjs',
+  'scripts/log-user-prompt.cjs',
   'cowork-CLAUDE.md',
 ];
 
@@ -109,9 +113,15 @@ archive.glob('**/*', { cwd: join(rootDir, 'commands'), ignore: ['.*', '**/.*'] }
 console.log('  Adding agents/...');
 archive.glob('**/*', { cwd: join(rootDir, 'agents'), ignore: ['.*', '**/.*'] }, { prefix: 'agents' });
 
-// Add SessionStart hook script (only cowork-setup.cjs, not all scripts)
+// Add hook definitions
+console.log('  Adding hooks/hooks.json...');
+archive.file(join(rootDir, 'hooks/hooks.json'), { name: 'hooks/hooks.json' });
+
+// Add hook scripts
 console.log('  Adding scripts/cowork-setup.cjs...');
 archive.file(join(rootDir, 'scripts/cowork-setup.cjs'), { name: 'scripts/cowork-setup.cjs' });
+console.log('  Adding scripts/log-user-prompt.cjs...');
+archive.file(join(rootDir, 'scripts/log-user-prompt.cjs'), { name: 'scripts/log-user-prompt.cjs' });
 
 // Add cowork CLAUDE.md template
 console.log('  Adding cowork-CLAUDE.md...');

@@ -12,6 +12,7 @@
  * - commands/ (slash commands)
  * - agents/ (subagent definitions)
  * - skills/ (domain knowledge)
+ * - hooks/ (hook definitions)
  * - icon.png (if exists)
  */
 
@@ -204,7 +205,14 @@ async function createArchive() {
       archive.directory(skillsDir, 'skills');
     }
 
-    // Add hook scripts (for SessionStart hook)
+    // Add hook definitions
+    const hooksDir = join(rootDir, 'hooks');
+    if (existsSync(hooksDir)) {
+      console.log('   Adding hook definitions (hooks/)...');
+      archive.directory(hooksDir, 'hooks');
+    }
+
+    // Add hook scripts (for SessionStart and UserPromptSubmit hooks)
     const scriptsDir = join(rootDir, 'scripts');
     if (existsSync(scriptsDir)) {
       console.log('   Adding hook scripts (scripts/)...');

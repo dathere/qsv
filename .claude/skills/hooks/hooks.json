@@ -33,6 +33,17 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "WebSearch|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/log-web-results.cjs\""
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "matcher": "",

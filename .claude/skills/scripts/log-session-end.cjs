@@ -10,7 +10,7 @@ const { execFileSync } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { readFileSync, appendFileSync, existsSync } = require('node:fs');
 const { join } = require('node:path');
-const { findQsvMcpBinary, truncateMessage } = require('./qsv-utils.cjs');
+const { findQsvMcpBinary, truncateMessage, readStdin } = require('./qsv-utils.cjs');
 
 /**
  * Parse a JSONL transcript file and extract tool usage stats.
@@ -121,9 +121,7 @@ module.exports = { parseTranscript, formatDuration, buildSummary };
 
 // Skip main logic when loaded via require() for testing
 if (require.main === module) {
-  let input = '';
-  process.stdin.on('data', (chunk) => { input += chunk; });
-  process.stdin.on('end', () => {
+  readStdin().then((input) => {
     // Respect QSV_MCP_LOG_LEVEL — skip logging when audit logging is disabled
     const logLevel = (process.env.QSV_MCP_LOG_LEVEL || 'info').toLowerCase();
     if (logLevel === 'off') return;

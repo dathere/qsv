@@ -44,4 +44,42 @@ function truncateMessage(message) {
   return message;
 }
 
-module.exports = { findQsvMcpBinary, truncateMessage, MAX_LOG_MESSAGE_LEN };
+/** Maximum stdin size for hook scripts (64KB, same as cowork-setup.cjs). */
+const MAX_STDIN_SIZE = 65536;
+
+/** Stdin read timeout in milliseconds. */
+const STDIN_TIMEOUT_MS = 5000;
+
+/**
+ * Read stdin with a size cap and timeout to prevent hooks from hanging.
+ * Returns a Promise that resolves with the raw string (may be empty).
+ * Mirrors the defensive pattern from cowork-setup.cjs.
+ */
+function readStdin() {
+  return new Promise((resolve) => {
+    let input = '';
+    const timeoutId = setTimeout(() => {
+      process.stdin.destroy();
+      resolve(input);
+    }, STDIN_TIMEOUT_MS);
+
+    process.stdin.on('data', (chunk) => {
+      input += chunk;
+      if (input.length > MAX_STDIN_SIZE) {
+        process.stdin.destroy();
+      }
+    });
+
+    process.stdin.on('end', () => {
+      clearTimeout(timeoutId);
+      resolve(input);
+    });
+
+    process.stdin.on('error', () => {
+      clearTimeout(timeoutId);
+      resolve(input);
+    });
+  });
+}
+
+module.exports = { findQsvMcpBinary, truncateMessage, readStdin, MAX_LOG_MESSAGE_LEN };

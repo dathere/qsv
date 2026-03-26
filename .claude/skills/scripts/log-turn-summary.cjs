@@ -6,34 +6,8 @@
 // Uses CommonJS so it works standalone without package.json declaring "type": "module".
 
 const { execFile } = require('node:child_process');
-const { execFileSync } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
-
-/** Maximum message length to log (matches MAX_LOG_MESSAGE_LEN in mcp-tools.ts). */
-const MAX_LOG_MESSAGE_LEN = 4096;
-
-/**
- * Find qsvmcp binary. Only qsvmcp has the `log` command.
- * Checks QSV_MCP_BIN_PATH env var first, then PATH via which/where.
- */
-function findQsvBinary() {
-  const envPath = process.env.QSV_MCP_BIN_PATH;
-  if (envPath) return envPath;
-
-  const command = process.platform === 'win32' ? 'where' : 'which';
-  try {
-    const result = execFileSync(command, ['qsvmcp'], {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 5000,
-    });
-    const binPath = result.trim().split('\n')[0].trim();
-    if (binPath) return binPath;
-  } catch {
-    // Not found
-  }
-  return null;
-}
+const { findQsvBinary, truncateMessage } = require('./qsv-utils.cjs');
 
 let input = '';
 process.stdin.on('data', (chunk) => { input += chunk; });
@@ -50,16 +24,11 @@ process.stdin.on('end', () => {
     return;
   }
 
-  let lastMessage = String(parsed.last_assistant_message || '').trim();
+  const lastMessage = String(parsed.last_assistant_message || '').trim();
   if (!lastMessage) return;
 
   // Use cwd from hook input so qsvmcp.log lands in the session working directory
   const cwd = parsed.cwd || process.cwd();
-
-  // Truncate to MAX_LOG_MESSAGE_LEN (Unicode-safe via Array.from)
-  if (Array.from(lastMessage).length > MAX_LOG_MESSAGE_LEN) {
-    lastMessage = Array.from(lastMessage).slice(0, MAX_LOG_MESSAGE_LEN).join('');
-  }
 
   const bin = findQsvBinary();
   if (!bin) {
@@ -68,7 +37,8 @@ process.stdin.on('end', () => {
   }
 
   const logId = `t-${randomUUID()}`;
-  const message = `[turn_summary] ${lastMessage}`;
+  // Truncate AFTER building the full message (including prefix)
+  const message = truncateMessage(`[turn_summary] ${lastMessage}`);
 
   execFile(bin, ['log', 'turn_summary', logId, message], { timeout: 5000, cwd }, (err) => {
     if (err) {

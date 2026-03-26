@@ -10,32 +10,7 @@ const { execFileSync } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { readFileSync, appendFileSync, existsSync } = require('node:fs');
 const { join } = require('node:path');
-
-/** Maximum message length to log (matches MAX_LOG_MESSAGE_LEN in mcp-tools.ts). */
-const MAX_LOG_MESSAGE_LEN = 4096;
-
-/**
- * Find qsvmcp binary. Only qsvmcp has the `log` command.
- * Checks QSV_MCP_BIN_PATH env var first, then PATH via which/where.
- */
-function findQsvBinary() {
-  const envPath = process.env.QSV_MCP_BIN_PATH;
-  if (envPath) return envPath;
-
-  const command = process.platform === 'win32' ? 'where' : 'which';
-  try {
-    const result = execFileSync(command, ['qsvmcp'], {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 5000,
-    });
-    const binPath = result.trim().split('\n')[0].trim();
-    if (binPath) return binPath;
-  } catch {
-    // Not found
-  }
-  return null;
-}
+const { findQsvBinary, truncateMessage } = require('./qsv-utils.cjs');
 
 /**
  * Parse a JSONL transcript file and extract tool usage stats.
@@ -141,68 +116,72 @@ function buildSummary(sessionId, stats) {
   return lines.join('\n');
 }
 
-let input = '';
-process.stdin.on('data', (chunk) => { input += chunk; });
-process.stdin.on('end', () => {
-  // Respect QSV_MCP_LOG_LEVEL — skip logging when audit logging is disabled
-  const logLevel = (process.env.QSV_MCP_LOG_LEVEL || 'info').toLowerCase();
-  if (logLevel === 'off') return;
+// Export for testing
+module.exports = { parseTranscript, formatDuration, buildSummary };
 
-  let parsed;
-  try {
-    parsed = JSON.parse(input);
-  } catch {
-    return;
-  }
+// Skip main logic when loaded via require() for testing
+if (require.main === module) {
+  let input = '';
+  process.stdin.on('data', (chunk) => { input += chunk; });
+  process.stdin.on('end', () => {
+    // Respect QSV_MCP_LOG_LEVEL — skip logging when audit logging is disabled
+    const logLevel = (process.env.QSV_MCP_LOG_LEVEL || 'info').toLowerCase();
+    if (logLevel === 'off') return;
 
-  const sessionId = parsed.session_id || 'unknown';
-  const transcriptPath = parsed.transcript_path || '';
-  const cwd = parsed.cwd || process.cwd();
+    let parsed;
+    try {
+      parsed = JSON.parse(input);
+    } catch {
+      return;
+    }
 
-  // Parse transcript for tool usage stats
-  const stats = parseTranscript(transcriptPath);
-  const summary = buildSummary(sessionId, stats);
+    const sessionId = parsed.session_id || 'unknown';
+    const transcriptPath = parsed.transcript_path || '';
+    const cwd = parsed.cwd || process.cwd();
 
-  // 1. Append human-readable summary to .qsv-session-log.md
-  const logFile = join(cwd, '.qsv-session-log.md');
-  try {
-    const header = existsSync(logFile) ? '\n---\n\n' : '# qsv Session Log\n\n';
-    appendFileSync(logFile, header + summary, 'utf-8');
-  } catch (err) {
-    process.stderr.write(`[log-session-end] Could not write ${logFile}: ${err.message}\n`);
-  }
+    // Parse transcript for tool usage stats
+    const stats = parseTranscript(transcriptPath);
+    const summary = buildSummary(sessionId, stats);
 
-  // 2. Log a compact summary to qsvmcp.log
-  const bin = findQsvBinary();
-  if (!bin) {
-    process.stderr.write('[log-session-end] qsvmcp binary not found\n');
-    return;
-  }
+    // 1. Append human-readable summary to .qsv-session-log.md
+    const logFile = join(cwd, '.qsv-session-log.md');
+    try {
+      const header = existsSync(logFile) ? '\n---\n\n' : '# qsv Session Log\n\n';
+      appendFileSync(logFile, header + summary, 'utf-8');
+    } catch (err) {
+      process.stderr.write(`[log-session-end] Could not write ${logFile}: ${err.message}\n`);
+    }
 
-  const totalToolCalls = Object.values(stats.toolCounts).reduce((a, b) => a + b, 0);
-  let logMessage = `[session_end] session=${sessionId} turns=${stats.totalTurns} tool_calls=${totalToolCalls}`;
+    // 2. Log a compact summary to qsvmcp.log
+    const bin = findQsvBinary();
+    if (!bin) {
+      process.stderr.write('[log-session-end] qsvmcp binary not found\n');
+      return;
+    }
 
-  // Add top 5 tools by usage
-  if (totalToolCalls > 0) {
-    const top = Object.entries(stats.toolCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([name, count]) => `${name}:${count}`)
-      .join(',');
-    logMessage += ` top_tools=${top}`;
-  }
+    const totalToolCalls = Object.values(stats.toolCounts).reduce((a, b) => a + b, 0);
+    let logMessage = `[session_end] session=${sessionId} turns=${stats.totalTurns} tool_calls=${totalToolCalls}`;
 
-  // Truncate if needed
-  if (Array.from(logMessage).length > MAX_LOG_MESSAGE_LEN) {
-    logMessage = Array.from(logMessage).slice(0, MAX_LOG_MESSAGE_LEN).join('');
-  }
+    // Add top 5 tools by usage
+    if (totalToolCalls > 0) {
+      const top = Object.entries(stats.toolCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([name, count]) => `${name}:${count}`)
+        .join(',');
+      logMessage += ` top_tools=${top}`;
+    }
 
-  const logId = `s-${randomUUID()}`;
+    // Truncate AFTER building the full message
+    logMessage = truncateMessage(logMessage);
 
-  // Use sync here — SessionEnd has limited time before container teardown
-  try {
-    execFileSync(bin, ['log', 'session_end', logId, logMessage], { timeout: 5000, cwd });
-  } catch (err) {
-    process.stderr.write(`[log-session-end] qsv log failed: ${err.message}\n`);
-  }
-});
+    const logId = `s-${randomUUID()}`;
+
+    // Use sync here — SessionEnd has limited time before container teardown
+    try {
+      execFileSync(bin, ['log', 'session_end', logId, logMessage], { timeout: 5000, cwd });
+    } catch (err) {
+      process.stderr.write(`[log-session-end] qsv log failed: ${err.message}\n`);
+    }
+  });
+}

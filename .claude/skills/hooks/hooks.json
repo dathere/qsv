@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "PROMPT=$(jq -r '.prompt // empty' | cut -c1-4096); [ -n \"$PROMPT\" ] && qsv log user_prompt \"u-$(uuidgen)\" \"[user_prompt] $PROMPT\" >/dev/null || true"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/log-user-prompt.cjs\""
           }
         ]
       }

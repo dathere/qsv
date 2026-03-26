@@ -1,0 +1,208 @@
+#!/usr/bin/env node
+
+// log-session-end.cjs — SessionEnd hook
+// Parses the session transcript and writes a human-readable session summary
+// to {cwd}/.qsv-session-log.md (append mode) and a final log entry to qsvmcp.log.
+// This is critical in Cowork where the container (and transcript) is destroyed on exit.
+// Uses CommonJS so it works standalone without package.json declaring "type": "module".
+
+const { execFileSync } = require('node:child_process');
+const { randomUUID } = require('node:crypto');
+const { readFileSync, appendFileSync, existsSync } = require('node:fs');
+const { join } = require('node:path');
+
+/** Maximum message length to log (matches MAX_LOG_MESSAGE_LEN in mcp-tools.ts). */
+const MAX_LOG_MESSAGE_LEN = 4096;
+
+/**
+ * Find qsvmcp binary. Only qsvmcp has the `log` command.
+ * Checks QSV_MCP_BIN_PATH env var first, then PATH via which/where.
+ */
+function findQsvBinary() {
+  const envPath = process.env.QSV_MCP_BIN_PATH;
+  if (envPath) return envPath;
+
+  const command = process.platform === 'win32' ? 'where' : 'which';
+  try {
+    const result = execFileSync(command, ['qsvmcp'], {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 5000,
+    });
+    const binPath = result.trim().split('\n')[0].trim();
+    if (binPath) return binPath;
+  } catch {
+    // Not found
+  }
+  return null;
+}
+
+/**
+ * Parse a JSONL transcript file and extract tool usage stats.
+ * Returns { toolCounts, totalTurns, firstTimestamp, lastTimestamp }.
+ */
+function parseTranscript(transcriptPath) {
+  const toolCounts = {};
+  let totalTurns = 0;
+  let firstTimestamp = null;
+  let lastTimestamp = null;
+
+  if (!transcriptPath || !existsSync(transcriptPath)) {
+    return { toolCounts, totalTurns, firstTimestamp, lastTimestamp };
+  }
+
+  let content;
+  try {
+    content = readFileSync(transcriptPath, 'utf-8');
+  } catch {
+    return { toolCounts, totalTurns, firstTimestamp, lastTimestamp };
+  }
+
+  const lines = content.split('\n').filter(Boolean);
+  for (const line of lines) {
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    // Track timestamps
+    const ts = entry.timestamp || entry.ts;
+    if (ts) {
+      if (!firstTimestamp) firstTimestamp = ts;
+      lastTimestamp = ts;
+    }
+
+    // Count assistant turns
+    if (entry.role === 'assistant' || entry.type === 'assistant') {
+      totalTurns++;
+    }
+
+    // Count tool usage — look for tool_use content blocks
+    const contentBlocks = entry.content || entry.message?.content;
+    if (Array.isArray(contentBlocks)) {
+      for (const block of contentBlocks) {
+        if (block.type === 'tool_use' && block.name) {
+          toolCounts[block.name] = (toolCounts[block.name] || 0) + 1;
+        }
+      }
+    }
+  }
+
+  return { toolCounts, totalTurns, firstTimestamp, lastTimestamp };
+}
+
+/**
+ * Format duration between two ISO timestamps as a human-readable string.
+ */
+function formatDuration(startTs, endTs) {
+  if (!startTs || !endTs) return 'unknown';
+  try {
+    const ms = new Date(endTs).getTime() - new Date(startTs).getTime();
+    if (ms < 0 || isNaN(ms)) return 'unknown';
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+    return `${seconds}s`;
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
+ * Build a markdown summary string from parsed transcript stats.
+ */
+function buildSummary(sessionId, stats) {
+  const now = new Date().toISOString();
+  const duration = formatDuration(stats.firstTimestamp, stats.lastTimestamp);
+  const totalToolCalls = Object.values(stats.toolCounts).reduce((a, b) => a + b, 0);
+
+  const lines = [
+    `## Session ${sessionId || 'unknown'}`,
+    `- **Date**: ${now}`,
+    `- **Duration**: ${duration}`,
+    `- **Assistant turns**: ${stats.totalTurns}`,
+    `- **Total tool calls**: ${totalToolCalls}`,
+  ];
+
+  if (totalToolCalls > 0) {
+    lines.push('- **Tool usage**:');
+    // Sort by count descending
+    const sorted = Object.entries(stats.toolCounts).sort((a, b) => b[1] - a[1]);
+    for (const [tool, count] of sorted) {
+      lines.push(`  - \`${tool}\`: ${count}`);
+    }
+  }
+
+  lines.push(''); // trailing newline
+  return lines.join('\n');
+}
+
+let input = '';
+process.stdin.on('data', (chunk) => { input += chunk; });
+process.stdin.on('end', () => {
+  // Respect QSV_MCP_LOG_LEVEL — skip logging when audit logging is disabled
+  const logLevel = (process.env.QSV_MCP_LOG_LEVEL || 'info').toLowerCase();
+  if (logLevel === 'off') return;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(input);
+  } catch {
+    return;
+  }
+
+  const sessionId = parsed.session_id || 'unknown';
+  const transcriptPath = parsed.transcript_path || '';
+  const cwd = parsed.cwd || process.cwd();
+
+  // Parse transcript for tool usage stats
+  const stats = parseTranscript(transcriptPath);
+  const summary = buildSummary(sessionId, stats);
+
+  // 1. Append human-readable summary to .qsv-session-log.md
+  const logFile = join(cwd, '.qsv-session-log.md');
+  try {
+    const header = existsSync(logFile) ? '\n---\n\n' : '# qsv Session Log\n\n';
+    appendFileSync(logFile, header + summary, 'utf-8');
+  } catch (err) {
+    process.stderr.write(`[log-session-end] Could not write ${logFile}: ${err.message}\n`);
+  }
+
+  // 2. Log a compact summary to qsvmcp.log
+  const bin = findQsvBinary();
+  if (!bin) {
+    process.stderr.write('[log-session-end] qsvmcp binary not found\n');
+    return;
+  }
+
+  const totalToolCalls = Object.values(stats.toolCounts).reduce((a, b) => a + b, 0);
+  let logMessage = `[session_end] session=${sessionId} turns=${stats.totalTurns} tool_calls=${totalToolCalls}`;
+
+  // Add top 5 tools by usage
+  if (totalToolCalls > 0) {
+    const top = Object.entries(stats.toolCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, count]) => `${name}:${count}`)
+      .join(',');
+    logMessage += ` top_tools=${top}`;
+  }
+
+  // Truncate if needed
+  if (Array.from(logMessage).length > MAX_LOG_MESSAGE_LEN) {
+    logMessage = Array.from(logMessage).slice(0, MAX_LOG_MESSAGE_LEN).join('');
+  }
+
+  const logId = `s-${randomUUID()}`;
+
+  // Use sync here — SessionEnd has limited time before container teardown
+  try {
+    execFileSync(bin, ['log', 'session_end', logId, logMessage], { timeout: 5000, cwd });
+  } catch (err) {
+    process.stderr.write(`[log-session-end] qsv log failed: ${err.message}\n`);
+  }
+});

@@ -3965,8 +3965,6 @@ export function createLogTool(): McpToolDefinition {
 - result_summary — Outcome of a completed workflow
 - note — Free-form annotation
 
-Note: User prompts are logged automatically via a UserPromptSubmit hook — no need to log them manually.
-
 ⚠️ CAUTION: Keep messages concise. Max ${MAX_LOG_MESSAGE_LEN} chars (truncated silently). Newlines are collapsed to spaces. Logging never fails the workflow.`,
     inputSchema: {
       type: "object",

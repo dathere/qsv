@@ -12,7 +12,8 @@ const { randomUUID } = require('node:crypto');
 const MAX_LOG_MESSAGE_LEN = 4096;
 
 /**
- * Find qsvmcp or qsv binary, mirroring cowork-setup.cjs detection logic.
+ * Find qsvmcp binary. Only qsvmcp has the `log` command (requires the `mcp`
+ * feature, which is NOT included in `all_features` / the `qsv` full binary).
  * Checks QSV_MCP_BIN_PATH env var first, then PATH via which/where.
  */
 function findQsvBinary() {
@@ -21,18 +22,16 @@ function findQsvBinary() {
   if (envPath) return envPath;
 
   const command = process.platform === 'win32' ? 'where' : 'which';
-  for (const binName of ['qsvmcp', 'qsv']) {
-    try {
-      const result = execFileSync(command, [binName], {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 5000,
-      });
-      const binPath = result.trim().split('\n')[0].trim();
-      if (binPath) return binPath;
-    } catch {
-      // Not found, try next
-    }
+  try {
+    const result = execFileSync(command, ['qsvmcp'], {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 5000,
+    });
+    const binPath = result.trim().split('\n')[0].trim();
+    if (binPath) return binPath;
+  } catch {
+    // Not found
   }
   return null;
 }
@@ -40,16 +39,23 @@ function findQsvBinary() {
 let input = '';
 process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
-  let prompt = '';
+  // Respect QSV_MCP_LOG_LEVEL — skip logging when audit logging is disabled
+  const logLevel = (process.env.QSV_MCP_LOG_LEVEL || 'info').toLowerCase();
+  if (logLevel === 'off') return;
+
+  let parsed;
   try {
-    prompt = JSON.parse(input).prompt || '';
+    parsed = JSON.parse(input);
   } catch {
     // Invalid JSON — nothing to log
     return;
   }
 
-  prompt = String(prompt).trim();
+  let prompt = String(parsed.prompt || '').trim();
   if (!prompt) return;
+
+  // Use cwd from hook input so qsvmcp.log lands in the session working directory
+  const cwd = parsed.cwd || process.cwd();
 
   // Truncate to MAX_LOG_MESSAGE_LEN (Unicode-safe via Array.from)
   if (Array.from(prompt).length > MAX_LOG_MESSAGE_LEN) {
@@ -58,14 +64,14 @@ process.stdin.on('end', () => {
 
   const bin = findQsvBinary();
   if (!bin) {
-    process.stderr.write('[log-user-prompt] qsv binary not found\n');
+    process.stderr.write('[log-user-prompt] qsvmcp binary not found\n');
     return;
   }
 
   const logId = `u-${randomUUID()}`;
   const message = `[user_prompt] ${prompt}`;
 
-  execFile(bin, ['log', 'user_prompt', logId, message], { timeout: 5000 }, (err) => {
+  execFile(bin, ['log', 'user_prompt', logId, message], { timeout: 5000, cwd }, (err) => {
     if (err) {
       process.stderr.write(`[log-user-prompt] qsv log failed: ${err.message}\n`);
     }

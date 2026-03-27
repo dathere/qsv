@@ -64,7 +64,7 @@ If Claude shows you a list of files, the qsv MCP Server is working.
 
 The Cowork plugin adds a workflow layer on top of the MCP Server, giving **Claude Cowork** sessions access to domain skills, slash commands, and specialized subagents for guided data workflows.
 
-> Cowork requires a **Claude Pro plan** (or higher). [See plans and pricing.](https://claude.ai/pricing)
+> Cowork requires a **Claude Pro plan** (or higher). [See plans and pricing.](https://claude.com/pricing)
 
 **Prerequisites:**
 The qsv MCP Server must be installed first ([Step 1](#step-1-install-the-mcp-server))
@@ -139,11 +139,11 @@ See **[ADDITIONAL_SERVERS.md](./ADDITIONAL_SERVERS.md)** for installation instru
 
 | Problem | Solution |
 |---------|----------|
-| `claude` command not found | Install Claude Code first: see [installation instructions](https://docs.anthropic.com/en/docs/claude-code/overview). |
+| Cowork not available | Claude Cowork requires at least a [Claude Pro subscription](https://claude.com/pricing). |
 | Marketplace add fails | Check your internet connection and that you can access `github.com/dathere/qsv`. |
 | Slash commands don't appear | Start a **new** Cowork session after installation. Existing sessions won't pick up the plugin. |
 | Skills not showing in Context panel | Restart Claude Desktop and start a fresh Cowork session. |
-| Plugin not updating | Run `claude plugin update qsv-data-wrangling@qsv-plugins` to pull the latest version. |
+| Plugin not updating | Go to **Settings** -> **Capabilities** -> **Skills** -> **Go to Customize** -> **Personal plugins** -> **+ sign** -> **Browse plugins** and click on the "qsv" plugin to manually check for updates. |
 
 ---
 

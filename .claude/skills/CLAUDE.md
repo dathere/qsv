@@ -72,3 +72,15 @@ Only `qsvmcp` (preferred) and `qsv` (full) are supported. `qsvlite` and `qsvdp` 
 ### Skills auto-generation
 
 Skill JSON files in `qsv/` are auto-generated from qsv USAGE text via `qsv --update-mcp-skills`. The Rust generator (`../../src/mcp_skills_gen.rs`) parses docopt usage, extracts descriptions and performance hints from README. The `mcp-tools.ts` layer adds guidance hints on top.
+
+## Documentation Standards
+
+When counting tools, commands, or features in documentation, always verify counts by explicitly listing each item. Never estimate or assume counts — miscounts have caused multiple review cycles.
+
+## Release & Publishing
+
+Before publishing, packaging, or releasing plugins, always read the relevant docs first (e.g., marketplace.json, plugin.json specs, packaging scripts). Do not guess workflows — consult project documentation.
+
+## Debugging Guidelines
+
+When debugging, form a hypothesis and verify it before moving to the next. Do not cycle through multiple wrong hypotheses (version mismatch, PATH issues, settings files) without evidence. State your reasoning before each investigation step.

@@ -91,7 +91,7 @@ Launch a new Gemini CLI session in any directory containing data:
 gemini "What qsv core tools are available?"
 ```
 
-You should see the 11 core tools: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_log`, `qsv_command`, `qsv_to_parquet`, `qsv_index`, and `qsv_stats`. (`qsv_browse_directory` also appears when MCP Apps are enabled by the client.)
+You should see the core tools: `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_list_files`, `qsv_log`, `qsv_command`, `qsv_to_parquet`, `qsv_index`, and `qsv_stats`. (`qsv_browse_directory` also appears when MCP Apps are enabled by the client.)
 
 ## Common Workflows
 

@@ -6,7 +6,7 @@ Model Context Protocol (MCP) server that exposes qsv's tabular data-wrangling co
 
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
-- **Deferred Tool Loading**: Only 11 core tools loaded initially (~80% token reduction), with tools discovered via search added dynamically. One of the 11 tools (`qsv_browse_directory`) is conditionally exposed only when MCP Apps are enabled and supported by the client.
+- **Deferred Tool Loading**: Only 11 core tools loaded initially (~78% token reduction), with tools discovered via search added dynamically. One of the 11 tools (`qsv_browse_directory`) is conditionally exposed only when MCP Apps are enabled and supported by the client.
 - **BM25 Search**: Intelligent tool discovery using probabilistic relevance ranking
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
@@ -232,7 +232,7 @@ The MCP server implements Anthropic's Tool Search Tool pattern for optimal token
 
 ### Deferred Loading (Default)
 
-Only 11 core tools are loaded initially, reducing token usage by ~80%:
+Only 11 core tools are loaded initially, reducing token usage by ~78%:
 
 | Core Tool | Purpose |
 |-----------|---------|

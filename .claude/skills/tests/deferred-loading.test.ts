@@ -14,10 +14,7 @@ import assert from 'node:assert';
 import { COMMON_COMMANDS } from '../src/mcp-tools.js';
 import { SkillLoader } from '../src/loader.js';
 
-/**
- * The 11 core tools that should always be loaded
- * (matches CORE_TOOLS in mcp-server.ts)
- */
+// Matches CORE_TOOLS in mcp-server.ts
 const CORE_TOOLS = [
   "qsv_search_tools",
   "qsv_config",
@@ -89,14 +86,9 @@ test('COMMON_COMMANDS and CORE_TOOLS are disjoint sets', () => {
 // ============================================================================
 
 test('deferred loading reduces initial tool count significantly', async () => {
-  // In deferred mode: 11 core tools + 13 common commands = 24 tools initially
-  // In expose-all mode: all skills from JSON files are available
-  // Token reduction = 1 - (initial_tool_count / totalSkillCount)
-  // With just core tools (no common), we expect ≥80% reduction
-
   const loader = new SkillLoader();
   const skills = await loader.loadAll();
-  const coreToolCount = CORE_TOOLS.length; // 11
+  const coreToolCount = CORE_TOOLS.length;
   const totalSkillCount = skills.size;
 
   const coreOnlyReduction = 1 - (coreToolCount / totalSkillCount);

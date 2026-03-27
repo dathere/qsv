@@ -119,9 +119,6 @@ This will:
 # Basic skill loading and execution
 npm test
 
-# Pipeline composition
-npm run test-pipeline
-
 # Package as Desktop Extension
 npm run mcpb:package
 ```
@@ -451,7 +448,7 @@ MIT
 ---
 
 **Updated**: 2026-03-22
-**Version**: 18.0.2
+**Version**: 18.0.4
 **Generator**: `qsv --update-mcp-skills`
 **Skills**: 51 commands
 **Usage Examples**: 180 from documentation

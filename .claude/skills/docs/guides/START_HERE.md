@@ -77,7 +77,7 @@ The qsv MCP Server must be installed first ([Step 1](#step-1-install-the-mcp-ser
 4. Select "Add marketplace" from the list
 5. A dialog will appear. Enter `dathere/qsv` and click "Synch"
 6. You will be on the **Customize** panel again. Click the + sign next to "Personal plugins" and select "Browse plugins"
-7. In the **Browse Plugins** dialog, click on the **Personal** tab and select the "qsv" tab.
+7. In the **Browse Plugins** dialog, click on the **Personal** tab and select the "qsv" plugin.
 8. Click "Install" on the "Qsv-data-wrangling" plugin
 
 ### Verify
@@ -90,7 +90,7 @@ The qsv MCP Server must be installed first ([Step 1](#step-1-install-the-mcp-ser
 
 | Component | Details |
 |-----------|---------|
-| 5 domain skills | csv-wrangling, data-quality, genai-disclaimer, qsv-performance, reproducible-analysis |
+| 6 domain skills | bls-query, csv-wrangling, data-quality, genai-disclaimer, qsv-performance, reproducible-analysis |
 | 8 slash commands | /csv-query, /data-clean, /data-convert, /data-describe, /data-join, /data-profile, /data-validate, /data-viz |
 | 3 subagents | data-analyst, data-wrangler, policy-analyst |
 

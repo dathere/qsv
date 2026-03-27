@@ -14,7 +14,9 @@ import assert from 'node:assert';
 import { COMMON_COMMANDS } from '../src/mcp-tools.js';
 import { SkillLoader } from '../src/loader.js';
 
-// Matches CORE_TOOLS in mcp-server.ts
+// Matches CORE_TOOLS array in mcp-server.ts (11 entries).
+// Note: listTools exposes only 10 by default; qsv_browse_directory
+// is conditionally exposed when MCP Apps are enabled (line 606).
 const CORE_TOOLS = [
   "qsv_search_tools",
   "qsv_config",

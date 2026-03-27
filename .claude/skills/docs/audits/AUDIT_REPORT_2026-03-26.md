@@ -21,16 +21,19 @@ Generated: 2026-03-26 | Commit: ffb2485d5
 | ~123 | `npm run test-pipeline` | Script does not exist in package.json | Removed reference |
 
 ### README-MCP.md (8 locations)
+
+**Note:** `CORE_TOOLS` array in `mcp-server.ts` has 11 entries, but `listTools` only exposes `qsv_browse_directory` when MCP Apps are enabled (line 606). Users see 10 tools by default, 11 with Apps. Docs now say "10 core tools (+1 app-only)".
+
 | Line | Claim | Reality | Fix |
 |------|-------|---------|-----|
-| 9 | "Only 10 core tools loaded initially" | CORE_TOOLS has 11 entries | Updated to 11 |
-| 185 | "### 10 Core Tools (Always Loaded)" | 11 core tools | Updated heading |
-| 188-200 | Core tools table missing browse_directory | `qsv_browse_directory` is in CORE_TOOLS | Added to table |
-| 236-250 | Deferred loading section says "10 core tools" | 11 | Updated |
-| 265-266 | EXPOSE_ALL_TOOLS description says "10" | 11 | Updated |
-| 177 | Env var table says "10 core tools" | 11 | Updated |
-| 394 | Architecture diagram: "10 Core Tools" | 11 | Updated |
-| 611 | Footer: "10 core tools initially" | 11 | Updated |
+| 9 | "Only 10 core tools loaded initially" | Correct for default (10 exposed); internal array has 11 | Clarified: 10 + 1 app-only |
+| 185 | "### 10 Core Tools (Always Loaded)" | 10 always exposed, browse_directory conditional | Kept as 10, added app-only note |
+| 188-200 | Core tools table missing browse_directory | Conditionally exposed, not always loaded | Listed separately as app-only |
+| 236-250 | Deferred loading section says "10 core tools" | 10 exposed by default | Kept as 10 with app-only note |
+| 265-266 | EXPOSE_ALL_TOOLS description says "10" | 10 by default | Updated with app-only qualifier |
+| 177 | Env var table says "10 core tools" | 10 by default | Updated with app-only qualifier |
+| 394 | Architecture diagram: "10 Core Tools" | 10 by default | Updated |
+| 611 | Footer: "10 core tools initially" | 10 by default | Updated with app-only note |
 
 ### CLAUDE.md (skills)
 | Line | Claim | Reality | Fix |
@@ -41,12 +44,12 @@ Generated: 2026-03-26 | Commit: ffb2485d5
 ### marketplace.json (repo root)
 | Line | Claim | Reality | Fix |
 |------|-------|---------|-----|
-| 8, 15 | "68 commands" | `qsv --list` returns 70 commands | Updated to 70 |
+| 8, 15 | "68 commands" | `qsv --list` returns 66 commands | Updated to 66 |
 
 ### GEMINI.md
 | Line | Claim | Reality | Fix |
 |------|-------|---------|-----|
-| 39 | "10 core tools" | 11 | Updated |
+| 39 | "10 core tools" | 10 exposed + 1 app-only | Updated to "10 + 1 app-only" |
 
 ### docs/guides/GEMINI_CLI.md
 | Line | Claim | Reality | Fix |

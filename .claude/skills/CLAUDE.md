@@ -15,7 +15,7 @@
 
 ### Adding a new MCP tool
 
-Common commands go in the `COMMON_COMMANDS` array in `mcp-tools.ts` and use `handleGenericCommand` automatically. Specialized tools need a dedicated definition function, a `case` in `handleToolCall()`, and a handler function.
+Common commands go in the `COMMON_COMMANDS` array in `mcp-tools.ts` and use `handleGenericCommand` automatically. Specialized tools need a dedicated definition function, an entry in `toolDispatchMap` in `mcp-server.ts`, and a handler function.
 
 Both types need a `COMMAND_GUIDANCE` entry with `whenToUse`, `commonPattern`, and optionally `errorPrevention`.
 
@@ -67,7 +67,7 @@ Only `qsvmcp` (preferred) and `qsv` (full) are supported. `qsvlite` and `qsvdp` 
 
 ### Plugin mode
 
-`.claude-plugin/plugin.json` declares the plugin, points to `.mcp.json` (server key `"qsv"`, tools become `mcp__qsv__qsv_*`). Uses `QSV_MCP_EXPOSE_ALL_TOOLS=true` since Claude Code/Cowork handle large tool lists well. Three agents (data-analyst, data-wrangler, policy-analyst) for clear boundaries.
+`.claude-plugin/marketplace.json` declares the plugin for the marketplace, while `.claude/skills/.claude-plugin/plugin.json` configures the plugin locally and points to `.mcp.json` (server key `"qsv"`, tools become `mcp__qsv__qsv_*`). Uses `QSV_MCP_EXPOSE_ALL_TOOLS=true` since Claude Code/Cowork handle large tool lists well. Three agents (data-analyst, data-wrangler, policy-analyst) for clear boundaries.
 
 ### Skills auto-generation
 

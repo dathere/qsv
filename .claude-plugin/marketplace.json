@@ -5,14 +5,14 @@
     "email": "qsv@dathere.com"
   },
   "metadata": {
-    "description": "Blazingly fast data wrangling plugins for Claude Code — 68 commands for CSV, TSV, Excel, JSONL, and Parquet files",
+    "description": "Blazingly fast data wrangling plugins for Claude Code — 66 commands for CSV, TSV, Excel, JSONL, and Parquet files",
     "version": "18.0.4"
   },
   "plugins": [
     {
       "name": "qsv-data-wrangling",
       "source": "./.claude/skills",
-      "description": "Blazingly fast tabular data wrangling with 68 qsv commands for CSV, TSV, Excel, JSONL, and Parquet files",
+      "description": "Blazingly fast tabular data wrangling with 70 qsv commands for CSV, TSV, Excel, JSONL, and Parquet files",
       "version": "18.0.4",
       "author": {
         "name": "datHere, Inc.",

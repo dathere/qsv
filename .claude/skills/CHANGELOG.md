@@ -5,6 +5,24 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [18.0.5] - 2026-03-27
+
+### Added
+- **WebSearch/WebFetch logging** — log results for citation tracking (#3645)
+- **Stop and SessionEnd hooks** — log each turn and session for observability (#3643)
+- **`review-respond` skill** — batch-process PR review comments in a single pass
+
+### Changed
+- **DuckDB support enabled by default** — no longer requires explicit opt-in
+- **UserPrompt logging** refactored to use hooks for more reliable capture (#3642)
+- **Documentation** — simplified MCPB install flow (6 steps → 3), replaced CLI-based Cowork plugin install with GUI marketplace workflow, consolidated and audited docs for accuracy (#3646)
+- **Plugin agents** — agents now check for ONTOLOGY.md and skip redundant profiling; policy-analyst ontology compilation refined
+
+### Fixed
+- **START_HERE.md** — corrected "qsv tab" wording to "qsv plugin"; fixed domain skill count from 5 to 6 (added missing bls-query)
+- **Plugin** — corrected data-analyst ontology skip target (step 6 → step 7); inlined unreachable skill/command references into agent prompts
+- **Documentation version footers** — updated footer/version blocks from 18.0.4 → 18.0.5 in `README.md`, `docs/reference/AUTO_UPDATE.md`, and `docs/reference/UPDATE_SYSTEM.md`
+
 ## [18.0.4] - 2026-03-23
 
 ### Changed

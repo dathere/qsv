@@ -263,7 +263,7 @@ The `qsv_search_tools` tool uses probabilistic BM25 relevance ranking:
 Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override deferred loading:
 - `true`: Always expose all 51+ tools immediately (no deferred loading)
 - `false`: Always use 10 core tools only (+1 app-only tool when MCP Apps available; disables deferred loading)
-- Unset: Default behavior - 10 core tools with deferred loading (recommended)
+- Unset: Default behavior - 10 core tools (+1 app-only tool when MCP Apps available) with deferred loading (recommended)
 
 ### Built-in Tool Search (`qsv_search_tools`)
 

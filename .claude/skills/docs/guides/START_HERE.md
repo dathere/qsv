@@ -32,16 +32,13 @@ Download the `.mcpb` file and save it to your Downloads folder.
 
 ### Install in Claude Desktop
 
-1. Open **Claude Desktop**
-2. Click your **profile icon** (bottom-left) > **Settings**
-3. Go to the **Extensions** tab
-4. Click **"Install from file"**
-5. Select the `.mcpb` file you downloaded
-6. Click **Install**
+1. Double-click the downloaded `.mcpb` file. This should open Claude Desktop.
+2. Click "Install". A Confirmation dialog will appear confirming the installation. Click "Install" again to proceed.
+3. That's it! The MCP Server is now installed and running in the background.
 
-### Configure
+### Configure (OPTIONAL)
 
-After installation, you'll be prompted to set up:
+After installation, you can customize the MCP Server settings in **Claude Desktop > Settings > Extensions > qsv**. The defaults work for most users, but here are some key settings you might want to adjust:
 
 - **Working Directory** — where Claude looks for your data files by default.
   - **macOS:** `$HOME/Downloads`
@@ -70,19 +67,18 @@ The Cowork plugin adds a workflow layer on top of the MCP Server, giving **Claud
 > Cowork requires a **Claude Pro plan** (or higher). [See plans and pricing.](https://claude.ai/pricing)
 
 **Prerequisites:**
-- The qsv MCP Server must be installed first ([Step 1](#step-1-install-the-mcp-server))
-- **Claude Code** must be installed — [install instructions](https://docs.anthropic.com/en/docs/claude-code/overview)
+The qsv MCP Server must be installed first ([Step 1](#step-1-install-the-mcp-server))
 
 ### Install via Marketplace
 
-Open a terminal and run:
-
-```
-claude plugin marketplace add dathere/qsv
-claude plugin install qsv-data-wrangling@qsv-plugins
-```
-
-That's it! The plugin is automatically cached and kept up to date.
+1. Click your **profile icon** (bottom-left) > **Settings**
+2. Click on **Capabilities** -> **Skills** -> **Go to Customize**
+3. Go to **Personal plugins** and click on the + sign
+4. Select "Add marketplace" from the list
+5. A dialog will appear. Enter `dathere/qsv` and click "Synch"
+6. You will be on the **Customize** panel again. Click the + sign next to "Personal plugins" and select "Browse plugins"
+7. In the **Browse Plugins** dialog, click on the **Personal** tab and select the "qsv" tab.
+8. Click "Install" on the "Qsv-data-wrangling" plugin
 
 ### Verify
 

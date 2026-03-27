@@ -20,7 +20,7 @@ No uploads, no file size limits, no data leaving your machine.
 
 ## Step 1: Install the MCP Server
 
-The qsv MCP Server lets Claude read, analyze, and transform your local data files — without uploading anything. This section shows how to install and use it in **Claude Desktop Chat** and **Claude Cowork**; the same server also works with **Claude Code** and **Gemini CLI** via a separate build-from-source flow described [below](#for-developers).
+The qsv MCP Server lets Claude read, analyze, and transform your local data files in place — only uploading statistical metadata to Claude to inform its operations. This section shows how to install and use it in **Claude Desktop Chat** and **Claude Cowork**; the same server also works with **Claude Code** and **Gemini CLI** via a separate build-from-source flow described [below](#for-developers).
 
 > **No manual binary install needed.** The MCPB bundle automatically downloads and installs the qsv binary (qsvmcp) for you.
 

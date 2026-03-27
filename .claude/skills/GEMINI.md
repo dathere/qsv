@@ -36,7 +36,7 @@ QSV Agent Skills is a high-performance TypeScript implementation of a Model Cont
 
 ## Development Conventions
 
-- **Tool Discovery:** Employs "Deferred Tool Loading." Only 11 core tools are loaded initially to reduce token usage; others are discovered via `qsv_search_tools`.
+- **Tool Discovery:** Employs "Deferred Tool Loading." 10 core tools loaded initially (+1 app-only tool when Apps enabled) to reduce token usage; others are discovered via `qsv_search_tools`.
 - **Guidance Enhancement:** When adding or modifying tools, include `USE WHEN`, `COMMON PATTERNS`, and `CAUTION` hints in `src/mcp-tools.ts`.
 - **Performance Optimization:**
   - **Streaming:** Always use the streaming executor for data processing.

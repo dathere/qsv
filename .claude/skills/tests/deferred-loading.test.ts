@@ -2,7 +2,7 @@
  * Tests for deferred tool loading mechanism
  *
  * Verifies that:
- * - Core tools are always present (11 tools)
+ * - Core tools array has 11 entries (10 always exposed + 1 app-only)
  * - Common commands are loaded in deferred mode
  * - Search-discovered tools are tracked and included
  * - Expose-all mode loads all skills

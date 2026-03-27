@@ -151,7 +151,7 @@
       "title": "Use DuckDB for SQL Queries",
       "description": "When enabled, SQL queries are automatically routed through DuckDB when available (faster, PostgreSQL-compatible). If DuckDB is not installed, queries automatically fall back to Polars SQL (sqlp). Disable to always use sqlp.",
       "required": false,
-      "default": false
+      "default": true
     },
     "enable_mcp_apps": {
       "type": "boolean",

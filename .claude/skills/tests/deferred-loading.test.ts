@@ -16,7 +16,7 @@ import { SkillLoader } from '../src/loader.js';
 
 // Matches CORE_TOOLS array in mcp-server.ts (11 entries).
 // Note: listTools exposes only 10 by default; qsv_browse_directory
-// is conditionally exposed when MCP Apps are enabled (line 606).
+// is conditionally exposed when MCP Apps are enabled (via the enableMcpApps/clientSupportsApps check).
 const CORE_TOOLS = [
   "qsv_search_tools",
   "qsv_config",

@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **START_HERE.md** — corrected "qsv tab" wording to "qsv plugin"; fixed domain skill count from 5 to 6 (added missing bls-query)
 - **Plugin** — corrected data-analyst ontology skip target (step 6 → step 7); inlined unreachable skill/command references into agent prompts
+- **Documentation version footers** — updated footer/version blocks from 18.0.4 → 18.0.5 in `README.md`, `docs/reference/AUTO_UPDATE.md`, and `docs/reference/UPDATE_SYSTEM.md`
 
 ## [18.0.4] - 2026-03-23
 

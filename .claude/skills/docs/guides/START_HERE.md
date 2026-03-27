@@ -169,7 +169,3 @@ See **[ADDITIONAL_SERVERS.md](./ADDITIONAL_SERVERS.md)** for installation instru
 
 **Combining data sources:**
 > "Look up the Wikidata entities for all US state capitals, then pull their Census population data and save the results as a CSV"
-
----
-
-*Last updated: 2026-03-23*

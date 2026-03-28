@@ -293,7 +293,9 @@ fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliRe
             None
         };
         let start_val = if let Some(str_col) = &str_col {
-            str_col.get(group_start).map(|s| s.to_string())
+            str_col
+                .get(group_start)
+                .map(std::string::ToString::to_string)
         } else {
             group_col.get(group_start).map(|v| v.to_string()).ok()
         };

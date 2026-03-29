@@ -1975,7 +1975,7 @@ fn test_fetch_jaq_invalid_selector() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["URL", "result"],
-        svec!["https://api.zippopotam.us/us/90210", "null"],
+        svec!["https://api.zippopotam.us/us/90210", ""],
     ];
 
     assert_eq!(got, expected);

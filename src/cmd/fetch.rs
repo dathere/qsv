@@ -1574,10 +1574,17 @@ fn format_val(value: Val) -> String {
                 "false".to_string()
             }
         },
-        Val::Null => "null".to_string(),
+        // Map null to empty string for CSV cells — a non-matching selector
+        // should produce an empty cell rather than the literal text "null"
+        Val::Null => String::new(),
         // TStr: extract the inner string without JSON quotes, since format_val
         // is used for CSV cell values, not JSON serialization
-        Val::TStr(ref s) => String::from_utf8_lossy(s).into_owned(),
+        Val::TStr(ref s) => {
+            if std::str::from_utf8(s).is_err() {
+                log::warn!("TStr contains invalid UTF-8, using lossy conversion");
+            }
+            String::from_utf8_lossy(s).into_owned()
+        },
         _ => format!("{value}"),
     }
 }

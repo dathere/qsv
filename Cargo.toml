@@ -359,6 +359,9 @@ mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "7da
 # use our patched fork of sled to get rid of unmaintained instant
 sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }
 
+# use our patched fork of what-lang to bump hashbrown until our PR is merged
+whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-16" }
+
 # Polars has a much higher release tempo for its Python bindings compared
 # to its underlying Rust library. See https://github.com/pola-rs/polars/releases
 # It's qsv's policy to use the latest upstream of polars/py-polars

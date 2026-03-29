@@ -9082,10 +9082,9 @@ dependencies = [
 [[package]]
 name = "whatlang"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5e8f38b596e2a359b755342473520a99421e43658548c79489ee221b728c107"
+source = "git+https://github.com/jqnatividad/whatlang-rs?branch=bump-hashbrown-to-16#ab1080561a0f59cd95b55fce6028c4491d380e25"
 dependencies = [
- "hashbrown 0.15.5",
+ "hashbrown 0.16.1",
 ]
 
 [[package]]

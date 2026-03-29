@@ -1321,7 +1321,10 @@ fn fetchpost_compress_test() {
         assert!(
             row[3].starts_with('{'),
             "row {i} response should be garbled object, got: {}",
-            &row[3][..row[3].len().min(50)]
+            row[3]
+                .char_indices()
+                .nth(50)
+                .map_or(&row[3][..], |(i, _)| &row[3][..i])
         );
     }
 }

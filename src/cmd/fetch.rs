@@ -1546,10 +1546,10 @@ pub fn process_jaq(json: &str, query: &str) -> CliResult<String> {
     }
 
     let final_val = if output.len() == 1 {
-        format_val(output.into_iter().next().unwrap())
+        format_val(&output[0])
     } else {
         output
-            .into_iter()
+            .iter()
             .map(format_val)
             .collect::<Vec<String>>()
             .join(", ")
@@ -1559,16 +1559,16 @@ pub fn process_jaq(json: &str, query: &str) -> CliResult<String> {
 }
 
 #[inline]
-fn format_val(value: Val) -> String {
+fn format_val(value: &Val) -> String {
     use jaq_json::Num;
     match value {
-        Val::Num(ref n) => match n {
+        Val::Num(n) => match n {
             Num::Float(f) => zmij::Buffer::new().format_finite(*f).to_string(),
             Num::Int(i) => itoa::Buffer::new().format(*i).to_string(),
             _ => format!("{value}"),
         },
         Val::Bool(b) => {
-            if b {
+            if *b {
                 "true".to_string()
             } else {
                 "false".to_string()
@@ -1579,7 +1579,7 @@ fn format_val(value: Val) -> String {
         Val::Null => String::new(),
         // TStr: extract the inner string without JSON quotes, since format_val
         // is used for CSV cell values, not JSON serialization
-        Val::TStr(ref s) => {
+        Val::TStr(s) => {
             if std::str::from_utf8(s).is_err() {
                 log::warn!("TStr contains invalid UTF-8, using lossy conversion");
             }

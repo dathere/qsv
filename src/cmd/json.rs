@@ -143,9 +143,10 @@ Common options:
 
 use std::{env, io::Read};
 
-use jaq_core::{Compiler, Ctx, RcIter, load};
-use jaq_json::Val;
+use jaq_core::{Compiler, Ctx, Vars, data, load, unwrap_valr};
+use jaq_json::{Num, Val};
 use json_objects_to_csv::{Json2Csv, flatten_json_object::Flattener};
+use log::warn;
 use serde::Deserialize;
 
 use crate::{CliError, CliResult, config, select::SelectColumns, util};
@@ -229,7 +230,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         };
 
         // Setup loader and arena
-        let loader = load::Loader::new(jaq_std::defs().chain(jaq_json::defs()));
+        let loader = load::Loader::new(
+            jaq_core::defs()
+                .chain(jaq_std::defs())
+                .chain(jaq_json::defs()),
+        );
         let arena = load::Arena::default();
 
         // Parse the filter
@@ -239,22 +244,56 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // Compile the filter
         let jaq_filter = Compiler::default()
-            .with_funs(jaq_std::funs().chain(jaq_json::funs()))
+            .with_funs(
+                jaq_core::funs()
+                    .chain(jaq_std::funs())
+                    .chain(jaq_json::funs()),
+            )
             .compile(modules)
             .map_err(|e| CliError::Other(format!("Failed to compile jaq query: {e:?}")))?;
 
-        let inputs = RcIter::new(core::iter::empty());
+        // Convert serde_json::Value to jaq Val
+        let input: Val = serde_json::from_value(value.clone())
+            .map_err(|e| CliError::Other(format!("Failed to convert JSON to jaq value: {e}")))?;
 
         // Run the filter
-        let out = jaq_filter
-            .run((Ctx::new([], &inputs), Val::from(value.clone())))
-            .filter_map(std::result::Result::ok);
+        let ctx = Ctx::<data::JustLut<Val>>::new(&jaq_filter.lut, Vars::new([]));
+        let out: Vec<Val> = jaq_filter
+            .id
+            .run((ctx, input))
+            .map(unwrap_valr)
+            .filter_map(|r| match r {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    warn!("jaq filter runtime error (value dropped): {e}");
+                    None
+                },
+            })
+            .collect();
 
-        #[allow(clippy::from_iter_instead_of_collect)]
-        let jaq_value = serde_json::Value::from_iter(out);
+        // Convert jaq output back to serde_json::Value
+        let jaq_values: Vec<serde_json::Value> = out
+            .into_iter()
+            .filter_map(|v| match val_to_json_value(v) {
+                Ok(val) => Some(val),
+                Err(e) => {
+                    warn!("jaq Val could not be converted to JSON (value dropped): {e}");
+                    None
+                },
+            })
+            .collect();
 
-        // from_iter creates a Value::Array even if the JSON data is an array,
-        // so we unwrap this generated Value::Array to get the actual filtered output.
+        if jaq_values.is_empty() {
+            return fail_clierror!("jaq query returned no results.");
+        }
+
+        let jaq_value = if jaq_values.len() == 1 {
+            jaq_values.into_iter().next().unwrap()
+        } else {
+            serde_json::Value::Array(jaq_values)
+        };
+
+        // If the result is an array wrapping another array, unwrap it.
         // This allows the user to filter with '.data' for {"data": [...]} instead of not being able
         // to use '.data'. Both '.data' and '.data[]' should work with this implementation.
         value = if jaq_value
@@ -379,4 +418,73 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     Ok(final_csv_wtr.flush()?)
+}
+
+/// Convert a jaq `Val` to a `serde_json::Value` without going through Display.
+///
+/// This avoids the `format!("{v}")` → `serde_json::from_str` round-trip which can
+/// produce non-JSON output for NaN, Infinity, byte strings, and objects with non-string keys.
+fn val_to_json_value(v: Val) -> Result<serde_json::Value, String> {
+    match v {
+        Val::Null => Ok(serde_json::Value::Null),
+        Val::Bool(b) => Ok(serde_json::Value::Bool(b)),
+        Val::Num(ref n) => match n {
+            Num::Int(i) => Ok(serde_json::Value::Number((*i as i64).into())),
+            Num::Float(f) => {
+                if f.is_finite() {
+                    serde_json::Number::from_f64(*f)
+                        .map(serde_json::Value::Number)
+                        .ok_or_else(|| format!("cannot represent {f} as JSON number"))
+                } else {
+                    // NaN and Infinity have no JSON representation — map to null like jq does
+                    warn!("non-finite float {f} converted to null");
+                    Ok(serde_json::Value::Null)
+                }
+            },
+            Num::BigInt(bi) => {
+                // Try to parse the BigInt string representation as a JSON number
+                let s = bi.to_string();
+                s.parse::<serde_json::Number>()
+                    .map(serde_json::Value::Number)
+                    .or_else(|_| {
+                        // BigInt too large for JSON number — represent as string
+                        warn!("BigInt {bi} too large for JSON number, converting to string");
+                        Ok(serde_json::Value::String(s))
+                    })
+            },
+            Num::Dec(s) => {
+                // Decimal stored as string — parse it as a JSON number
+                s.parse::<serde_json::Number>()
+                    .map(serde_json::Value::Number)
+                    .map_err(|e| format!("invalid decimal number {s}: {e}"))
+            },
+        },
+        Val::TStr(ref s) => Ok(serde_json::Value::String(
+            String::from_utf8_lossy(s).into_owned(),
+        )),
+        Val::BStr(ref s) => {
+            warn!("byte string converted to lossy UTF-8 string for JSON");
+            Ok(serde_json::Value::String(
+                String::from_utf8_lossy(s).into_owned(),
+            ))
+        },
+        Val::Arr(a) => {
+            let items: Result<Vec<_>, _> = a.iter().cloned().map(val_to_json_value).collect();
+            Ok(serde_json::Value::Array(items?))
+        },
+        Val::Obj(o) => {
+            let mut map = serde_json::Map::new();
+            for (k, v) in o.iter() {
+                let key = match k {
+                    Val::TStr(s) => String::from_utf8_lossy(s).into_owned(),
+                    other => {
+                        warn!("non-string object key converted to string: {other}");
+                        format!("{other}")
+                    },
+                };
+                map.insert(key, val_to_json_value(v.clone())?);
+            }
+            Ok(serde_json::Value::Object(map))
+        },
+    }
 }

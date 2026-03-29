@@ -235,6 +235,7 @@ fn validate_pivot_operation(metadata: &PivotMetadata) -> CliResult<()> {
 
 /// Build a single-row DataFrame containing a total row.
 /// Numeric columns get their sum; index columns get the provided labels.
+#[allow(clippy::missing_asserts_for_indexing)]
 fn build_total_row(
     df: &DataFrame,
     index_cols: &[String],

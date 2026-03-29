@@ -143,7 +143,7 @@ Common options:
 
 use std::{env, io::Read};
 
-use jaq_core::{Compiler, Ctx, RcIter, load};
+use jaq_core::{Compiler, Ctx, Vars, data, load, unwrap_valr};
 use jaq_json::Val;
 use json_objects_to_csv::{Json2Csv, flatten_json_object::Flattener};
 use serde::Deserialize;
@@ -229,7 +229,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         };
 
         // Setup loader and arena
-        let loader = load::Loader::new(jaq_std::defs().chain(jaq_json::defs()));
+        let loader = load::Loader::new(
+            jaq_core::defs()
+                .chain(jaq_std::defs())
+                .chain(jaq_json::defs()),
+        );
         let arena = load::Arena::default();
 
         // Parse the filter
@@ -239,22 +243,41 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // Compile the filter
         let jaq_filter = Compiler::default()
-            .with_funs(jaq_std::funs().chain(jaq_json::funs()))
+            .with_funs(
+                jaq_core::funs()
+                    .chain(jaq_std::funs())
+                    .chain(jaq_json::funs()),
+            )
             .compile(modules)
             .map_err(|e| CliError::Other(format!("Failed to compile jaq query: {e:?}")))?;
 
-        let inputs = RcIter::new(core::iter::empty());
+        // Convert serde_json::Value to jaq Val
+        let input: Val = serde_json::from_value(value.clone())
+            .map_err(|e| CliError::Other(format!("Failed to convert JSON to jaq value: {e}")))?;
 
         // Run the filter
-        let out = jaq_filter
-            .run((Ctx::new([], &inputs), Val::from(value.clone())))
-            .filter_map(std::result::Result::ok);
+        let ctx = Ctx::<data::JustLut<Val>>::new(&jaq_filter.lut, Vars::new([]));
+        let out: Vec<Val> = jaq_filter
+            .id
+            .run((ctx, input))
+            .map(unwrap_valr)
+            .filter_map(std::result::Result::ok)
+            .collect();
 
-        #[allow(clippy::from_iter_instead_of_collect)]
-        let jaq_value = serde_json::Value::from_iter(out);
+        // Convert jaq output back to serde_json::Value
+        // Serialize each Val to JSON string, then parse back
+        let jaq_values: Vec<serde_json::Value> = out
+            .into_iter()
+            .filter_map(|v| serde_json::from_str(&format!("{v}")).ok())
+            .collect();
 
-        // from_iter creates a Value::Array even if the JSON data is an array,
-        // so we unwrap this generated Value::Array to get the actual filtered output.
+        let jaq_value = if jaq_values.len() == 1 {
+            jaq_values.into_iter().next().unwrap()
+        } else {
+            serde_json::Value::Array(jaq_values)
+        };
+
+        // If the result is an array wrapping another array, unwrap it.
         // This allows the user to filter with '.data' for {"data": [...]} instead of not being able
         // to use '.data'. Both '.data' and '.data[]' should work with this implementation.
         value = if jaq_value

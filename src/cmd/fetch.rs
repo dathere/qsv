@@ -253,7 +253,7 @@ use governor::{
     state::{InMemoryState, direct::NotKeyed},
 };
 use indicatif::{HumanCount, MultiProgress, ProgressBar, ProgressDrawTarget};
-use jaq_core::{Compiler, Ctx, RcIter, load};
+use jaq_core::{Compiler, Ctx, Vars, data, load, unwrap_valr};
 use jaq_json::Val;
 use log::{
     Level::{Debug, Trace, Warn},
@@ -266,7 +266,7 @@ use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 use url::Url;
 use util::expand_tilde;
 
@@ -326,8 +326,7 @@ static DEFAULT_DISKCACHE_TTL_SECS: u64 = 60 * 60 * 24 * 28;
 
 static TIMEOUT_SECS: OnceLock<u64> = OnceLock::new();
 
-pub static JAQ_FILTER: OnceLock<jaq_core::Filter<jaq_core::Native<jaq_json::Val>>> =
-    OnceLock::new();
+pub static JAQ_FILTER: OnceLock<jaq_core::Filter<data::JustLut<jaq_json::Val>>> = OnceLock::new();
 
 const FETCH_REPORT_PREFIX: &str = "qsv_fetch_";
 const FETCH_REPORT_SUFFIX: &str = ".fetch-report.tsv";
@@ -1478,7 +1477,7 @@ fn get_response(
 
 pub fn compile_jaq_filter(
     query: &str,
-) -> CliResult<jaq_core::Filter<jaq_core::Native<jaq_json::Val>>> {
+) -> CliResult<jaq_core::Filter<data::JustLut<jaq_json::Val>>> {
     // Create the program from query string
     let program = load::File {
         code: query,
@@ -1486,7 +1485,11 @@ pub fn compile_jaq_filter(
     };
 
     // Setup loader and arena
-    let loader = load::Loader::new(jaq_std::defs().chain(jaq_json::defs()));
+    let loader = load::Loader::new(
+        jaq_core::defs()
+            .chain(jaq_std::defs())
+            .chain(jaq_json::defs()),
+    );
     let arena = load::Arena::default();
 
     // Parse the filter
@@ -1496,7 +1499,11 @@ pub fn compile_jaq_filter(
 
     // Compile the filter
     let filter = Compiler::default()
-        .with_funs(jaq_std::funs().chain(jaq_json::funs()))
+        .with_funs(
+            jaq_core::funs()
+                .chain(jaq_std::funs())
+                .chain(jaq_json::funs()),
+        )
         .compile(modules)
         .map_err(|e| CliError::Other(format!("Failed to compile jaq query: {e:?}")))?;
 
@@ -1516,60 +1523,53 @@ pub fn process_jaq(json: &str, query: &str) -> CliResult<String> {
         compile_jaq_filter(query).unwrap()
     });
 
-    // Parse input JSON
-    let input: serde_json::Value = serde_json::from_str(json)?;
-
-    let inputs = RcIter::new(core::iter::empty());
+    // Parse input JSON into jaq Val
+    let input: Val = serde_json::from_str(json)?;
 
     // Run the filter
-    let output = jaq_filter
-        .run((Ctx::new([], &inputs), Val::from(input)))
-        .filter_map(std::result::Result::ok);
+    let ctx = Ctx::<data::JustLut<Val>>::new(&jaq_filter.lut, Vars::new([]));
+    let output: Vec<Val> = jaq_filter
+        .id
+        .run((ctx, input))
+        .map(unwrap_valr)
+        .filter_map(std::result::Result::ok)
+        .collect();
 
-    #[allow(clippy::from_iter_instead_of_collect)]
-    let jaq_value = serde_json::Value::from_iter(output);
+    if output.is_empty() {
+        return fail_clierror!("Jaq query returned an empty result");
+    }
 
-    let final_val = match jaq_value {
-        Value::Array(arr) => {
-            if arr.is_empty() {
-                return fail_clierror!("Jaq query returned an empty result");
-            }
-            arr.into_iter()
-                .map(format_value)
-                .collect::<Vec<String>>()
-                .join(", ")
-        },
-        value => format_value(value),
+    let final_val = if output.len() == 1 {
+        format_val(output.into_iter().next().unwrap())
+    } else {
+        output
+            .into_iter()
+            .map(format_val)
+            .collect::<Vec<String>>()
+            .join(", ")
     };
 
     Ok(final_val)
 }
 
 #[inline]
-fn format_value(value: Value) -> String {
+fn format_val(value: Val) -> String {
+    use jaq_json::Num;
     match value {
-        Value::Number(num) => {
-            if let Some(f) = num.as_f64() {
-                zmij::Buffer::new().format_finite(f).to_string()
-            } else if let Some(i) = num.as_i64() {
-                itoa::Buffer::new().format(i).to_string()
-            } else {
-                itoa::Buffer::new()
-                    .format(num.as_u64().unwrap())
-                    .to_string()
-            }
+        Val::Num(ref n) => match n {
+            Num::Float(f) => zmij::Buffer::new().format_finite(*f).to_string(),
+            Num::Int(i) => itoa::Buffer::new().format(*i).to_string(),
+            _ => format!("{value}"),
         },
-        Value::Bool(b) => {
+        Val::Bool(b) => {
             if b {
                 "true".to_string()
             } else {
                 "false".to_string()
             }
         },
-        Value::String(s) => format!("\"{s}\""),
-        Value::Null => "null".to_string(),
-        Value::Array(arr) => simd_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string()),
-        Value::Object(obj) => simd_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string()),
+        Val::Null => "null".to_string(),
+        _ => format!("{value}"),
     }
 }
 

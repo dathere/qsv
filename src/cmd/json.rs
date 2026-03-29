@@ -146,6 +146,7 @@ use std::{env, io::Read};
 use jaq_core::{Compiler, Ctx, Vars, data, load, unwrap_valr};
 use jaq_json::Val;
 use json_objects_to_csv::{Json2Csv, flatten_json_object::Flattener};
+use log::warn;
 use serde::Deserialize;
 
 use crate::{CliError, CliResult, config, select::SelectColumns, util};
@@ -261,15 +262,34 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .id
             .run((ctx, input))
             .map(unwrap_valr)
-            .filter_map(std::result::Result::ok)
+            .filter_map(|r| match r {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    warn!("jaq filter runtime error (value dropped): {e}");
+                    None
+                },
+            })
             .collect();
 
         // Convert jaq output back to serde_json::Value
         // Serialize each Val to JSON string, then parse back
         let jaq_values: Vec<serde_json::Value> = out
             .into_iter()
-            .filter_map(|v| serde_json::from_str(&format!("{v}")).ok())
+            .filter_map(|v| {
+                let json_str = format!("{v}");
+                match serde_json::from_str(&json_str) {
+                    Ok(val) => Some(val),
+                    Err(e) => {
+                        warn!("jaq Val could not be converted to JSON (value dropped): {e}");
+                        None
+                    },
+                }
+            })
             .collect();
+
+        if jaq_values.is_empty() {
+            return fail_clierror!("jaq query returned no results.");
+        }
 
         let jaq_value = if jaq_values.len() == 1 {
             jaq_values.into_iter().next().unwrap()

@@ -1532,7 +1532,13 @@ pub fn process_jaq(json: &str, query: &str) -> CliResult<String> {
         .id
         .run((ctx, input))
         .map(unwrap_valr)
-        .filter_map(std::result::Result::ok)
+        .filter_map(|r| match r {
+            Ok(v) => Some(v),
+            Err(e) => {
+                warn!("jaq filter runtime error (value dropped): {e}");
+                None
+            },
+        })
         .collect();
 
     if output.is_empty() {
@@ -1569,6 +1575,9 @@ fn format_val(value: Val) -> String {
             }
         },
         Val::Null => "null".to_string(),
+        // TStr: extract the inner string without JSON quotes, since format_val
+        // is used for CSV cell values, not JSON serialization
+        Val::TStr(ref s) => String::from_utf8_lossy(s).into_owned(),
         _ => format!("{value}"),
     }
 }

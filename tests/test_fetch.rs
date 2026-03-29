@@ -936,31 +936,31 @@ fn fetch_ratelimit() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["URL", "Fullname"],
-        svec![test_url!("user/Smurfette"), "\"Smurfette Smurf\""],
-        svec![test_url!("user/Papa"), "\"Papa Smurf\""],
-        svec![test_url!("user/Clumsy"), "\"Clumsy Smurf\""],
-        svec![test_url!("user/Brainy"), "\"Brainy Smurf\""],
-        svec![test_url!("user/Grouchy"), "\"Grouchy Smurf\""],
-        svec![test_url!("user/Hefty"), "\"Hefty Smurf\""],
-        svec![test_url!("user/Greedy"), "\"Greedy Smurf\""],
-        svec![test_url!("user/Jokey"), "\"Jokey Smurf\""],
-        svec![test_url!("user/Chef"), "\"Chef Smurf\""],
-        svec![test_url!("user/Vanity"), "\"Vanity Smurf\""],
-        svec![test_url!("user/Handy"), "\"Handy Smurf\""],
-        svec![test_url!("user/Scaredy"), "\"Scaredy Smurf\""],
-        svec![test_url!("user/Tracker"), "\"Tracker Smurf\""],
-        svec![test_url!("user/Sloppy"), "\"Sloppy Smurf\""],
-        svec![test_url!("user/Harmony"), "\"Harmony Smurf\""],
-        svec![test_url!("user/Painter"), "\"Painter Smurf\""],
-        svec![test_url!("user/Poet"), "\"Poet Smurf\""],
-        svec![test_url!("user/Farmer"), "\"Farmer Smurf\""],
-        svec![test_url!("user/Natural"), "\"Natural Smurf\""],
-        svec![test_url!("user/Snappy"), "\"Snappy Smurf\""],
+        svec![test_url!("user/Smurfette"), "Smurfette Smurf"],
+        svec![test_url!("user/Papa"), "Papa Smurf"],
+        svec![test_url!("user/Clumsy"), "Clumsy Smurf"],
+        svec![test_url!("user/Brainy"), "Brainy Smurf"],
+        svec![test_url!("user/Grouchy"), "Grouchy Smurf"],
+        svec![test_url!("user/Hefty"), "Hefty Smurf"],
+        svec![test_url!("user/Greedy"), "Greedy Smurf"],
+        svec![test_url!("user/Jokey"), "Jokey Smurf"],
+        svec![test_url!("user/Chef"), "Chef Smurf"],
+        svec![test_url!("user/Vanity"), "Vanity Smurf"],
+        svec![test_url!("user/Handy"), "Handy Smurf"],
+        svec![test_url!("user/Scaredy"), "Scaredy Smurf"],
+        svec![test_url!("user/Tracker"), "Tracker Smurf"],
+        svec![test_url!("user/Sloppy"), "Sloppy Smurf"],
+        svec![test_url!("user/Harmony"), "Harmony Smurf"],
+        svec![test_url!("user/Painter"), "Painter Smurf"],
+        svec![test_url!("user/Poet"), "Poet Smurf"],
+        svec![test_url!("user/Farmer"), "Farmer Smurf"],
+        svec![test_url!("user/Natural"), "Natural Smurf"],
+        svec![test_url!("user/Snappy"), "Snappy Smurf"],
         svec![
             test_url!(
                 "user/The quick brown fox jumped over the lazy dog by the zigzag quarry site"
             ),
-            "\"The quick brown fox jumped over the lazy dog by the zigzag quarry site Smurf\""
+            "The quick brown fox jumped over the lazy dog by the zigzag quarry site Smurf"
         ],
     ];
     assert_eq!(got, expected);
@@ -1030,26 +1030,26 @@ fn fetch_complex_url_template() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["first name", "color", "Fullname"],
-        svec!["Smurfette", "blue", "\"Smurfette blue Smurf\""],
-        svec!["Papa", "blue", "\"Papa blue Smurf\""],
-        svec!["Clumsy", "blue", "\"Clumsy blue Smurf\""],
-        svec!["Brainy", "blue", "\"Brainy blue Smurf\""],
-        svec!["Grouchy", "blue", "\"Grouchy blue Smurf\""],
-        svec!["Hefty", "blue", "\"Hefty blue Smurf\""],
-        svec!["Greedy", "green", "\"Greedy green Smurf\""],
-        svec!["Jokey", "blue", "\"Jokey blue Smurf\""],
-        svec!["Chef", "blue", "\"Chef blue Smurf\""],
-        svec!["Vanity", "blue", "\"Vanity blue Smurf\""],
-        svec!["Handy", "blue", "\"Handy blue Smurf\""],
-        svec!["Scaredy", "black", "\"Scaredy black Smurf\""],
-        svec!["Tracker", "blue", "\"Tracker blue Smurf\""],
-        svec!["Sloppy", "blue", "\"Sloppy blue Smurf\""],
-        svec!["Harmony", "blue", "\"Harmony blue Smurf\""],
-        svec!["Painter", "multicolor", "\"Painter multicolor Smurf\""],
-        svec!["Poet", "blue", "\"Poet blue Smurf\""],
-        svec!["Farmer", "blue", "\"Farmer blue Smurf\""],
-        svec!["Natural", "blue", "\"Natural blue Smurf\""],
-        svec!["Snappy", "blue", "\"Snappy blue Smurf\""],
+        svec!["Smurfette", "blue", "Smurfette blue Smurf"],
+        svec!["Papa", "blue", "Papa blue Smurf"],
+        svec!["Clumsy", "blue", "Clumsy blue Smurf"],
+        svec!["Brainy", "blue", "Brainy blue Smurf"],
+        svec!["Grouchy", "blue", "Grouchy blue Smurf"],
+        svec!["Hefty", "blue", "Hefty blue Smurf"],
+        svec!["Greedy", "green", "Greedy green Smurf"],
+        svec!["Jokey", "blue", "Jokey blue Smurf"],
+        svec!["Chef", "blue", "Chef blue Smurf"],
+        svec!["Vanity", "blue", "Vanity blue Smurf"],
+        svec!["Handy", "blue", "Handy blue Smurf"],
+        svec!["Scaredy", "black", "Scaredy black Smurf"],
+        svec!["Tracker", "blue", "Tracker blue Smurf"],
+        svec!["Sloppy", "blue", "Sloppy blue Smurf"],
+        svec!["Harmony", "blue", "Harmony blue Smurf"],
+        svec!["Painter", "multicolor", "Painter multicolor Smurf"],
+        svec!["Poet", "blue", "Poet blue Smurf"],
+        svec!["Farmer", "blue", "Farmer blue Smurf"],
+        svec!["Natural", "blue", "Natural blue Smurf"],
+        svec!["Snappy", "blue", "Snappy blue Smurf"],
     ];
 
     assert_eq!(got, expected);
@@ -1975,7 +1975,7 @@ fn test_fetch_jaq_invalid_selector() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["URL", "result"],
-        svec!["https://api.zippopotam.us/us/90210", ""],
+        svec!["https://api.zippopotam.us/us/90210", "null"],
     ];
 
     assert_eq!(got, expected);
@@ -1999,7 +1999,7 @@ fn test_fetch_jaq_number() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["URL", "longitude"],
-        svec!["https://api.zippopotam.us/us/90210", "\"-118.4065\""],
+        svec!["https://api.zippopotam.us/us/90210", "-118.4065"],
     ];
 
     assert_eq!(got, expected);

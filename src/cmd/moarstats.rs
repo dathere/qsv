@@ -14,7 +14,7 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 27 additional univariate statistics:
+Currently computes the following 25 additional univariate statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
@@ -3368,10 +3368,11 @@ fn compute_all_kga_from_reader(
             let positive_values: Vec<f64> = values.iter().copied().filter(|&v| v > 0.0).collect();
             if positive_values.len() >= 2 {
                 let n = positive_values.len() as f64;
+                let pos_mean = positive_values.iter().sum::<f64>() / n;
                 let theil: f64 = positive_values
                     .iter()
                     .map(|&x| {
-                        let ratio = x / mean_val;
+                        let ratio = x / pos_mean;
                         ratio * ratio.ln()
                     })
                     .sum::<f64>()
@@ -3926,6 +3927,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && skewness_idx.is_some()
         && new_column_indices.contains_key("kurtosis")
         && n_positive_idx.is_some()
+        && n_negative_idx.is_some()
+        && n_zero_idx.is_some()
         && !column_exists("jarque_bera")
     {
         new_columns.push("jarque_bera".to_string());
@@ -4178,6 +4181,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "kurtosis",
             "bimodality_coefficient",
             "jarque_bera",
+            "jarque_bera_pvalue",
             "gini_coefficient",
             "atkinson_index",
             "theil_index",

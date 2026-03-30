@@ -95,6 +95,19 @@ Join two tabular data files on common columns.
    - Full outer: result >= max(left, right)
    - ASOF: result = left count (every left row gets a match or null, like a left join)
 
+## Join Column Validation Checklist
+
+Before executing a join, read `.stats.csv` for both files and validate:
+
+| Check | Stats Column | Red Flag | Action |
+|-------|-------------|----------|--------|
+| Type match | `type` | Join columns have different types (e.g., Integer vs String) | Cast one column before joining: `sqlp` with `CAST(col AS INTEGER)` |
+| Null density | `nullcount`, `sparsity` | sparsity > 0.3 on join column | Nulls don't match — expect unmatched rows; consider filtering nulls first |
+| Value overlap | `min`, `max` | Non-overlapping ranges across files | No rows will match — verify correct join column |
+| Skew detection | `mode`, `mode_count` | One value dominates (mode_count > 50% of rows) | Join will be heavily skewed many-to-one; verify this is expected |
+| Uniqueness | `uniqueness_ratio` | Both files have uniqueness_ratio < 1.0 on join column | Many-to-many join risk — expect row explosion; verify with `qsv_count` after |
+| Outlier keys | `outliers_percentage` | outliers_percentage > 5% on numeric join column | Outlier keys may not match across files; consider trimming first |
+
 ## Join Types
 
 | Type | `joinp` Flag | SQL | Behavior |

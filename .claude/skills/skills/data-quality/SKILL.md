@@ -74,8 +74,14 @@ Run `moarstats --advanced` to enrich the cache with distribution shape metrics:
 
 | Cache Column | Quality Signal |
 |-------------|----------------|
-| `kurtosis` | >3 heavy tails (outlier-prone), <3 light tails |
+| `kurtosis` | >3 heavy tails (outlier-prone), <3 light tails; >10 = extreme outliers |
 | `bimodality_coefficient` | >=0.555 suggests bimodal distribution (possible mixed populations) |
+| `jarque_bera_pvalue` | <0.05 = NOT normally distributed; flag analyses assuming normality |
 | `gini_coefficient` | Near 1 = extreme concentration; near 0 = uniform |
 | `shannon_entropy` | Low = concentrated values; high = diverse |
 | `winsorized_mean` | Compare to `mean` — large difference signals outlier influence |
+| `median_mean_ratio` | <0.8 or >1.2 = significantly skewed; mean may be misleading |
+| `range_stddev_ratio` | Very high = extreme outliers relative to variability |
+| `cv` | >100% = high relative variability; data is highly spread relative to mean |
+| `mad_stddev_ratio` | >0.8 = stddev is reliable; <<0.8 = outliers inflating stddev |
+| `mode_zscore` | Far from 0 = mode is atypical; possible mixed populations |

@@ -33,9 +33,20 @@ Clean the given tabular data file by fixing common data quality issues.
 
 2. **Assess current state**: Run `qsv_sniff` and `qsv_count` to understand the file format and size.
 
-3. **Check headers**: Run `qsv_headers` to inspect column names. If names contain spaces, special characters, or are duplicated, plan to use `safenames`.
+3. **Profile for cleaning decisions**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true`. Read `.stats.csv` to decide which cleaning steps are needed:
 
-4. **Build cleaning steps**: Apply these operations in order (skip any that aren't needed based on assessment):
+   | Stats Column | What It Reveals | Cleaning Action |
+   |-------------|-----------------|-----------------|
+   | `nullcount`, `sparsity` | Missing values per column | If sparsity > 0.5, decide: impute, drop column, or flag |
+   | `cardinality` vs row count | Duplicate rows exist if any key column has cardinality < row count | Run `dedup` |
+   | `min_length`, `max_length` | String length variation | Large gap suggests ragged data or embedded whitespace |
+   | `sort_order` | Whether data is pre-sorted | Use `dedup --sorted` for streaming mode if sorted |
+   | `mode`, `mode_count` | Dominant values | If mode_count > 80% of rows, investigate data entry defaults |
+   | `type` | Inferred types | String columns that should be numeric indicate format issues |
+
+4. **Check headers**: Run `qsv_headers` to inspect column names. If names contain spaces, special characters, or are duplicated, plan to use `safenames`.
+
+5. **Build cleaning steps**: Apply these operations in order (skip any that aren't needed based on assessment):
 
    a. **`safenames`** - Normalize column names to safe, ASCII-only identifiers (removes spaces, special chars, ensures uniqueness)
 
@@ -47,9 +58,9 @@ Clean the given tabular data file by fixing common data quality issues.
 
    e. **`validate`** - If a JSON Schema is available, validate against it and report violations.
 
-5. **Verify results**: Run `qsv_count` on the output to confirm row count. Run `qsv_stats` with `cardinality: true` to verify improvements.
+6. **Verify results**: Run `qsv_count` on the output to confirm row count. Run `qsv_stats` with `cardinality: true` to verify improvements.
 
-6. **Report changes**: Summarize what was cleaned:
+7. **Report changes**: Summarize what was cleaned:
    - Headers renamed (before -> after)
    - Rows with wrong field count (fixed by fixlengths)
    - Duplicate rows removed

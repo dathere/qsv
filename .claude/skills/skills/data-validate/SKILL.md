@@ -60,7 +60,14 @@ e. **Consistency**: Run `qsv_frequency` with `limit: 20` on categorical columns 
 
 f. **Accuracy**: Read `.stats.csv` for `min`, `max`, `mean`, `stddev` — flag implausible ranges (negative ages, latitude > 90, future dates). Run `qsv_moarstats` with `advanced: true` — check `outliers_percentage` > 5%, `kurtosis` > 10 (extreme outliers).
 
-g. **Join integrity** (if multiple files): Run `qsv_joinp` with `--left-anti` to find orphaned foreign keys.
+g. **Distribution sanity**: Read moarstats columns for deeper validation:
+   - `median_mean_ratio` — if < 0.8 or > 1.2, distribution is significantly skewed; verify the mean isn't misleading
+   - `winsorized_mean_25pct` vs `mean` — large divergence (> 10%) confirms outliers are distorting the average
+   - `mad` (median absolute deviation) — more robust than stddev for outlier detection; if `mad_stddev_ratio` > 0.8, stddev is reasonably reliable
+   - `jarque_bera_pvalue` — if < 0.05, data is NOT normally distributed; flag any analysis that assumes normality
+   - `mode_count` — if mode accounts for > 50% of values, investigate whether this reflects a data entry default or missing value masking
+
+h. **Join integrity** (if multiple files): Run `qsv_joinp` with `--left-anti` to find orphaned foreign keys.
 
 h. **Injection screening**: Run `qsv_command` with `command: "searchset"` and `args: ["--flag", "injection_match", "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"]` to scan for malicious payloads.
 

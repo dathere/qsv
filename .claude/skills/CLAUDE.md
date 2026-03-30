@@ -73,6 +73,10 @@ Only `qsvmcp` (preferred) and `qsv` (full) are supported. `qsvlite` and `qsvdp` 
 
 Skill JSON files in `qsv/` are auto-generated from qsv USAGE text via `qsv --update-mcp-skills`. The Rust generator (`../../src/mcp_skills_gen.rs`) parses docopt usage, extracts descriptions and performance hints from README. The `mcp-tools.ts` layer adds guidance hints on top.
 
+### Spreadsheet format handling
+
+qsv commands operate on CSV/TSV/SSV and Parquet — not directly on spreadsheet formats (`.xls`, `.xlsx`, `.xlsm`, `.xlsb`, `.ods`). Use the `excel` command to convert spreadsheets to CSV first before processing with other qsv commands. The MCP server auto-converts Excel/ODS files when passed as input, but skills and agents should be aware of the underlying requirement. See the `data-convert` skill and the "Convert and Export" pipeline in `csv-wrangling` for details.
+
 ## Documentation Standards
 
 When counting tools, commands, or features in documentation, always verify counts by explicitly listing each item. Never estimate or assume counts — miscounts have caused multiple review cycles.

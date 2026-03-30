@@ -23,6 +23,7 @@ The stats cache accelerates: `frequency`, `schema`, `tojsonl`, `sqlp`, `joinp`, 
 - Save outputs to files with descriptive names rather than returning large results to chat.
 - Ensure output files are saved to the qsv working directory.
 - **Parquet** is ONLY for `sqlp`/DuckDB; all other qsv commands require CSV/TSV/SSV input.
+- **Spreadsheets** (`.xls`, `.xlsx`, `.xlsm`, `.xlsb`, `.ods`) must be converted to CSV first using `qsv_command` with `command="excel"` before other qsv commands can process them.
 - The working directory is automatically synced from the MCP client's root directory when available.
 - If the auto-synced directory is incorrect or no root is provided, call **`qsv_set_working_dir`** to set it manually.
 - In Claude Cowork, verify the working directory matches the "Work in a folder" path by calling **`qsv_get_working_dir`**, and correct it with **`qsv_set_working_dir`** if needed.

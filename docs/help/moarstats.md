@@ -26,7 +26,7 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 18 additional univariate statistics:
+Currently computes the following 25 additional univariate statistics:
 1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
 Measures asymmetry of the distribution.
 Positive values indicate right skew, negative values indicate left skew.
@@ -59,41 +59,73 @@ Higher values (closer to 1) indicate more data concentrated in the middle 50%.
 10. MAD-to-StdDev Ratio: mad / stddev
 Compares robust vs non-robust spread measures.
 Higher values suggest presence of outliers affecting stddev.
-11. Kurtosis: Measures the "tailedness" of the distribution (excess kurtosis).
+11. Trimean: (Q1 + 2*median + Q3) / 4
+Tukey's trimean - a robust estimator of central tendency combining the median
+with the midhinge. More robust than mean, more efficient than median alone.
+<https://en.wikipedia.org/wiki/Trimean>
+12. Midhinge: (Q1 + Q3) / 2
+Midpoint of the middle 50% of data. A robust central tendency measure
+that complements the mean and median.
+<https://en.wikipedia.org/wiki/Midhinge>
+13. Robust CV: MAD / |median|
+Robust Coefficient of Variation using MAD and the magnitude of the median.
+Always non-negative. Resistant to outliers, useful for comparing variability.
+<https://en.wikipedia.org/wiki/Robust_measures_of_scale>
+14. Kurtosis: Measures the "tailedness" of the distribution (excess kurtosis).
 Positive values indicate heavy tails, negative values indicate light tails.
 Values near 0 indicate a normal distribution.
 Requires --advanced flag.
 <https://en.wikipedia.org/wiki/Kurtosis>
-12. Bimodality Coefficient: Measures whether a distribution has two modes (peaks) or is unimodal.
+15. Bimodality Coefficient: Measures whether a distribution has two modes (peaks) or is unimodal.
 BC < 0.555 indicates unimodal, BC >= 0.555 indicates bimodal/multimodal.
 Computed as (skewness² + 1) / (kurtosis + 3).
 Requires --advanced flag (needs skewness from base stats and kurtosis from --advanced flag).
 <https://en.wikipedia.org/wiki/Bimodality>
-13. Gini Coefficient: Measures inequality/dispersion in the distribution.
+16. Jarque-Bera Test: (n/6) * (S² + K²/4)
+Standard test for normality using skewness and kurtosis.
+Also computes jarque_bera_pvalue (from chi-squared distribution with 2 df).
+Low p-values (< 0.05) indicate the data is NOT normally distributed.
+Requires --advanced flag (needs kurtosis).
+<https://en.wikipedia.org/wiki/Jarque%E2%80%93Bera_test>
+17. Gini Coefficient: Measures inequality/dispersion in the distribution.
 Values range from 0 (perfect equality) to 1 (maximum inequality).
 Requires --advanced flag.
 <https://en.wikipedia.org/wiki/Gini_coefficient>
-14. Atkinson Index: Measures inequality in the distribution with a sensitivity parameter.
+18. Atkinson Index: Measures inequality in the distribution with a sensitivity parameter.
 Values range from 0 (perfect equality) to 1 (maximum inequality).
 The Atkinson Index is a more general form of the Gini coefficient that allows for
 different sensitivity to inequality. Sensitivity is configurable via --epsilon.
 Requires --advanced flag.
 <https://en.wikipedia.org/wiki/Atkinson_index>
-15. Shannon Entropy: Measures the information content/uncertainty in the distribution.
+19. Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
+Measures inequality/concentration. Unlike Gini, it is decomposable into
+within-group and between-group components. Only computed for positive values.
+Requires --advanced flag.
+<https://en.wikipedia.org/wiki/Theil_index>
+20. Mean Absolute Deviation (from mean): (1/n) * Σ|x_i - mean|
+Average absolute distance from the mean. Different from MAD (which uses median).
+Less robust but more statistically efficient than MAD.
+Requires --advanced flag.
+21. Shannon Entropy: Measures the information content/uncertainty in the distribution.
 Higher values indicate more diversity, lower values indicate more concentration.
 Values range from 0 (all values identical) to log2(n) where n is the number of unique values.
 Requires --advanced flag.
 <https://en.wikipedia.org/wiki/Entropy_(information_theory)>
-16. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
+22. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
 Values range from 0 (all values identical) to 1 (all values equally distributed).
 Computed as shannon_entropy / log2(cardinality).
 Requires shannon_entropy (from --advanced flag) and cardinality (from base stats).
-17. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
+23. Simpson's Diversity Index: 1 - Σ(p_i²)
+Probability that two randomly chosen values are different.
+Ranges from 0 (all identical) to 1 (all unique). More intuitive than entropy.
+Requires --advanced flag (computed alongside entropy from frequency data).
+<https://en.wikipedia.org/wiki/Diversity_index#Simpson_index>
+24. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
 All values are included in the calculation, but extreme values are capped at thresholds.
 <https://en.wikipedia.org/wiki/Winsorized_mean>
 Also computes: winsorized_stddev, winsorized_variance, winsorized_cv, winsorized_range,
 and winsorized_stddev_ratio (winsorized_stddev / overall_stddev).
-18. Trimmed Mean: Excludes values outside thresholds, then computes mean.
+25. Trimmed Mean: Excludes values outside thresholds, then computes mean.
 Only values within thresholds are included in the calculation.
 <https://en.wikipedia.org/wiki/Truncated_mean>
 Also computes: trimmed_stddev, trimmed_variance, trimmed_cv, trimmed_range,
@@ -260,7 +292,7 @@ qsv moarstats --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`--advanced`&nbsp; | flag | Compute Kurtosis, Shannon Entropy, Bimodality Coefficient, Gini Coefficient and Atkinson Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing. |  |
+| &nbsp;`--advanced`&nbsp; | flag | Compute Kurtosis, Shannon Entropy, Bimodality Coefficient, Jarque-Bera, Gini Coefficient, Atkinson Index, Theil Index, Mean Absolute Deviation, and Simpson's Diversity Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing. |  |
 | &nbsp;`-e,`<br>`--epsilon`&nbsp; | string | The Atkinson Index Inequality Aversion parameter. Epsilon controls the sensitivity of the Atkinson Index to inequality. The higher the epsilon, the more sensitive the index is to inequality. Typical values are 0.5 (standard in economic research), 1.0 (natural boundary), or 2.0 (useful for poverty analysis). | `1.0` |
 | &nbsp;`--stats-options`&nbsp; | string | Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace. | `--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl` |
 | &nbsp;`--round`&nbsp; | string | Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule. | `4` |

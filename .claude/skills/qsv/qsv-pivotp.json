@@ -43,6 +43,11 @@
         "description": "The field delimiter for reading/writing CSV data. Must be a single character. (default: ,)"
       },
       {
+        "flag": "--grand-total",
+        "type": "flag",
+        "description": "Append a grand total row summing all numeric pivot columns. The first index column will contain \"Grand <total-label>\"."
+      },
+      {
         "flag": "--ignore-errors",
         "type": "flag",
         "description": "Skip rows that can't be parsed."
@@ -72,6 +77,17 @@
         "flag": "--sort-columns",
         "type": "flag",
         "description": "Sort the transposed columns by name."
+      },
+      {
+        "flag": "--subtotal",
+        "type": "flag",
+        "description": "Insert subtotal rows after each group in the first index column. The second index column will contain the total label. Requires 2+ index columns."
+      },
+      {
+        "flag": "--total-label",
+        "type": "string",
+        "description": "Custom label for total rows.",
+        "default": "Total"
       },
       {
         "flag": "--try-parsedates",

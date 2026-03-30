@@ -17,7 +17,7 @@
       {
         "flag": "--advanced",
         "type": "flag",
-        "description": "Compute Kurtosis, Shannon Entropy, Bimodality Coefficient, Gini Coefficient and Atkinson Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing."
+        "description": "Compute Kurtosis, Shannon Entropy, Bimodality Coefficient, Jarque-Bera, Gini Coefficient, Atkinson Index, Theil Index, Mean Absolute Deviation, and Simpson's Diversity Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing."
       },
       {
         "flag": "--bivariate",

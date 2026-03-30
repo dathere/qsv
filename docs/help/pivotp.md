@@ -57,6 +57,9 @@ qsv pivotp --help
 | &nbsp;`--infer-len`&nbsp; | string | Number of rows to scan when inferring schema. Set to 0 to scan entire file. | `10000` |
 | &nbsp;`--decimal-comma`&nbsp; | flag | Use comma as decimal separator when READING the input. Note that you will need to specify an alternate --delimiter. |  |
 | &nbsp;`--ignore-errors`&nbsp; | flag | Skip rows that can't be parsed. |  |
+| &nbsp;`--grand-total`&nbsp; | flag | Append a grand total row summing all numeric pivot columns. The first index column will contain "Grand <total-label>". |  |
+| &nbsp;`--subtotal`&nbsp; | flag | Insert subtotal rows after each group in the first index column. The second index column will contain the total label. Requires 2+ index columns. |  |
+| &nbsp;`--total-label`&nbsp; | string | Custom label for total rows. | `Total` |
 
 <a name="common-options"></a>
 

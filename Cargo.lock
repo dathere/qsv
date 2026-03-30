@@ -934,16 +934,16 @@ dependencies = [
 
 [[package]]
 name = "blake3"
-version = "1.8.3"
+version = "1.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2468ef7d57b3fb7e16b576e8377cdbde2320c60e1491e961d11da40fc4f02a2d"
+checksum = "4d2d5991425dfd0785aed03aedcf0b321d61975c9b5b3689c774a2610ae0b51e"
 dependencies = [
  "arrayref",
  "arrayvec",
  "cc",
  "cfg-if",
  "constant_time_eq 0.4.2",
- "cpufeatures 0.2.17",
+ "cpufeatures 0.3.0",
  "memmap2",
  "rayon-core",
 ]
@@ -1873,7 +1873,7 @@ dependencies = [
 [[package]]
 name = "csvs_convert"
 version = "0.12.1"
-source = "git+https://github.com/jqnatividad/csvs_convert?branch=bump-deps-202602#114eb81a5cf3868120ef3019956d5bb39eec321a"
+source = "git+https://github.com/jqnatividad/csvs_convert?branch=bump-deps-202602#80fdeba7fab4c7ce91f4f43f21ece62cfed10dfc"
 dependencies = [
  "chrono",
  "counter",
@@ -3304,9 +3304,9 @@ checksum = "135b12329e5e3ce057a9f972339ea52bc954fe1e9358ef27f95e89716fbc5424"
 
 [[package]]
 name = "hybrid-array"
-version = "0.4.8"
+version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8655f91cd07f2b9d0c24137bd650fe69617773435ee5ec83022377777ce65ef1"
+checksum = "1a79f2aff40c18ab8615ddc5caa9eb5b96314aef18fe5823090f204ad988e813"
 dependencies = [
  "typenum",
 ]
@@ -6153,9 +6153,9 @@ dependencies = [
 
 [[package]]
 name = "qsv-stats"
-version = "0.48.0"
+version = "0.48.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62742ad5f078d65e81d18e2a3c7e056928ae900bb9fc35c4c5dc606bf52fcb72"
+checksum = "fcb9d57e4f28dbd615e9b56f756a9f47bc1adeb932527c9959b357b8bee3879a"
 dependencies = [
  "foldhash 0.2.0",
  "num-traits",
@@ -8368,9 +8368,9 @@ checksum = "d282ade6016312faf3e41e57ebbba0c073e4056dab1232ab1cb624199648f8ed"
 
 [[package]]
 name = "toon-format"
-version = "0.4.4"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d25e33e50b37f95f3b55b6e664218cac7e1a50f056a75bb4c7a6cccfbc8a8c4"
+checksum = "5933bebbba70ee979314a8ecb021f53075a63984f94f89a10b4bdcf0af6c62b6"
 dependencies = [
  "indexmap",
  "serde",
@@ -9582,9 +9582,9 @@ checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 
 [[package]]
 name = "winnow"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a90e88e4667264a994d34e6d1ab2d26d398dcdca8b7f52bec8668957517fc7d8"
+checksum = "09dac053f1cd375980747450bfc7250c264eaae0583872e845c0c7cd578872b5"
 dependencies = [
  "memchr",
 ]

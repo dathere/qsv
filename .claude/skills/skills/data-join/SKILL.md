@@ -1,7 +1,8 @@
 ---
 name: data-join
-version: 18.0.0
-license: MIT
+description: Join two datasets with automatic strategy selection (joinp vs join vs sqlp)
+user-invocable: true
+argument-hint: "<file1> <file2>"
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff
@@ -21,8 +22,6 @@ allowed-tools:
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
-argument-hint: "<file1> <file2>"
-description: Join two datasets with automatic strategy selection (joinp vs join vs sqlp)
 ---
 
 # Data Join
@@ -95,6 +94,19 @@ Join two tabular data files on common columns.
    - Left join: result >= left count
    - Full outer: result >= max(left, right)
    - ASOF: result = left count (every left row gets a match or null, like a left join)
+
+## Join Column Validation Checklist
+
+Before executing a join, read `.stats.csv` for both files and validate:
+
+| Check | Stats Column | Red Flag | Action |
+|-------|-------------|----------|--------|
+| Type match | `type` | Join columns have different types (e.g., Integer vs String) | Cast one column before joining: `sqlp` with `CAST(col AS INTEGER)` |
+| Null density | `nullcount`, `sparsity` | sparsity > 0.3 on join column | Nulls don't match — expect unmatched rows; consider filtering nulls first |
+| Value overlap | `min`, `max` | Non-overlapping ranges across files | No rows will match — verify correct join column |
+| Skew detection | `mode`, `mode_count` | One value dominates (mode_count > 50% of rows) | Join will be heavily skewed many-to-one; verify this is expected |
+| Uniqueness | `uniqueness_ratio` | Both files have uniqueness_ratio < 1.0 on join column | Many-to-many join risk — expect row explosion; verify with `qsv_count` after |
+| Outlier keys | `outliers_percentage` | outliers_percentage > 5% on numeric join column | Outlier keys may not match across files; consider trimming first |
 
 ## Join Types
 

@@ -1,3 +1,8 @@
+---
+name: qsv-performance
+description: Performance guide covering index files, stats cache, and frequency cache accelerators for qsv
+---
+
 # qsv Performance Guide
 
 ## Three Accelerators

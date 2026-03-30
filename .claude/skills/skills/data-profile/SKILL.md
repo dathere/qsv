@@ -1,7 +1,8 @@
 ---
 name: data-profile
-version: 18.0.0
-license: MIT
+description: Profile a CSV/TSV/Excel file - detect format, compute statistics, show value distributions
+user-invocable: true
+argument-hint: "<file>"
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff
@@ -22,8 +23,6 @@ allowed-tools:
   - mcp__qsv__qsv_list_files
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
-argument-hint: "<file>"
-description: Profile a CSV/TSV/Excel file - detect format, compute statistics, show value distributions
 ---
 
 # Data Profile
@@ -44,17 +43,27 @@ Profile the given tabular data file to understand its structure, types, and dist
 
 5. **Compute statistics**: Run `qsv_stats` with `cardinality: true` and `stats_jsonl: true` to generate full column statistics and cache them. Include `--everything` for comprehensive stats (mean, median, mode, stddev, quartiles, etc.). Basic moarstats auto-runs to enrich the cache with ~18 additional columns.
 
-6. **Advanced statistics**: Run `qsv_moarstats` with `advanced: true` (omit `output_file` — it updates the stats cache in-place by default). This adds kurtosis, bimodality coefficient, Gini coefficient, Shannon entropy, and winsorized/trimmed means to the stats cache — essential for understanding distribution shape and inequality.
+6. **Advanced statistics**: Run `qsv_moarstats` with `advanced: true` (omit `output_file` — it updates the stats cache in-place by default). This enriches the stats cache with:
+   - **Distribution shape**: kurtosis, bimodality coefficient, Jarque-Bera test (normality), skewness measures (pearson_skewness)
+   - **Inequality/diversity**: Gini coefficient, Atkinson index, Theil index, Shannon entropy, normalized entropy, Simpson's diversity index
+   - **Robust central tendency**: winsorized/trimmed means (with stddev, variance, CV, range, stddev ratio)
+   - **Derived ratios**: median_mean_ratio, range_stddev_ratio, quartile_coefficient_dispersion, mad_stddev_ratio, iqr_range_ratio, robust_cv
+   - **Outlier statistics**: counts by severity (extreme/mild, lower/upper), outlier mean/stddev/range, impact ratio, fence z-scores
+   - **Other**: trimean, midhinge, mode_zscore, min/max z-scores, relative standard error, mean absolute deviation, xsd_type
 
 7. **Show distributions**: Run `qsv_frequency` with `limit: 10` to show top value distributions for each column. For high-cardinality columns (cardinality close to row count), note them as likely unique identifiers.
 
-8. **Screen for PII/PHI**: Run `qsv_command` with `command: "searchset"` and `args: ["--flag", "pii_match", "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"]` to scan for sensitive data patterns (SSN, credit cards, email, phone, IBAN). Report any columns with matches.
+8. **Optional: Bivariate correlations** (if multiple numeric columns): Run `qsv_moarstats` with `bivariate: true` to compute pairwise Pearson/Spearman/Kendall correlations, covariance, and mutual information. Output goes to `<FILESTEM>.stats.bivariate.csv`. Reveals hidden relationships between columns.
 
-9. **Screen for injection**: Run `qsv_command` with `command: "searchset"` and `args: ["--flag", "injection_match", "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"]` to scan for CSV/formula injection and SQL injection payloads. Report any columns with matches.
+9. **Optional: Robust statistics** (if data is messy/heavy-tailed and < 100K rows): Run `qsv_command` with `command: "pragmastat"` for Hodges-Lehmann center and Shamos spread — robust estimators that tolerate up to 29% corrupted data. Especially useful when mean/stddev are misleading due to outliers. **Warning:** pragmastat computes median-of-pairwise statistics (O(n²) complexity) and becomes very slow on large datasets. For files > 100K rows, use `--subsample 10000` for ~100x speedup, or combine `--subsample 10000 --no-bounds` for ~200x speedup.
 
-10. **Preview data**: Run `qsv_slice` with `len: 5` to show the first 5 rows as a sample.
+10. **Screen for PII/PHI**: Run `qsv_command` with `command: "searchset"` and `args: ["--flag", "pii_match", "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"]` to scan for sensitive data patterns (SSN, credit cards, email, phone, IBAN). Report any columns with matches.
 
-11. **Document**: Using the statistics (steps 5-6) and frequency distributions (step 7) already collected, generate the following:
+11. **Screen for injection**: Run `qsv_command` with `command: "searchset"` and `args: ["--flag", "injection_match", "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"]` to scan for CSV/formula injection and SQL injection payloads. Report any columns with matches.
+
+12. **Preview data**: Run `qsv_slice` with `len: 5` to show the first 5 rows as a sample.
+
+13. **Document**: Using the statistics (steps 5-6) and frequency distributions (step 7) already collected, generate the following:
 
     **a) Data Dictionary** — Present a table with one row per column. Include the `field`, `type`, `Label`, and `Description` columns (in that order), followed by key stats columns (`nullcount`, `cardinality`, `min`, `max`, `mean`, `sortiness`, `stddev`, `variance`, `cv`, `sparsity` where applicable):
     - `Label`: Human-readable version of the field name (e.g., `customer_id` → `Customer ID`, `avg_txn_amt` → `Average Transaction Amount`)
@@ -229,7 +238,7 @@ Present a summary with:
 - **Column overview**: table with name, type, nulls, cardinality, min, max, mean (where applicable)
 - **Key observations**: unique identifiers, high-null columns, type mismatches, notable distributions
 - **Data quality flags**: any issues found (high sparsity, mixed types, ragged rows)
-- **Data Dictionary, Description & Tags**: LLM-generated documentation derived from stats cache and frequency distributions (step 11)
+- **Data Dictionary, Description & Tags**: LLM-generated documentation derived from stats cache and frequency distributions (step 13)
 
 ### Quality Report Checklist
 
@@ -248,7 +257,7 @@ Present a summary with:
 - [ ] **Referential integrity** verified across related files if provided (joinp --left-anti)
 - [ ] **PII/PHI patterns** detected via searchset (privacy)
 - [ ] **Injection payloads** scanned for CSV/formula and SQL injection patterns (searchset)
-- [ ] **Data Dictionary** with Label and Description per column, dataset Description, and Tags (step 11)
+- [ ] **Data Dictionary** with Label and Description per column, dataset Description, and Tags (step 13)
 
 ## Common Data Quality Fixes
 

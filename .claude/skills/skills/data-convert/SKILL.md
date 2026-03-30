@@ -1,7 +1,8 @@
 ---
 name: data-convert
-version: 18.0.0
-license: MIT
+description: Convert between CSV, TSV, Excel, JSONL, Parquet, and other tabular formats
+user-invocable: true
+argument-hint: "<file> [format]"
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff
@@ -17,8 +18,6 @@ allowed-tools:
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
-argument-hint: "<file> [format]"
-description: Convert between CSV, TSV, Excel, JSONL, Parquet, and other tabular formats
 ---
 
 # Data Convert

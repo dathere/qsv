@@ -1,7 +1,7 @@
 ---
 name: infer-ontology
-version: 18.0.0
-license: MIT
+description: Infer a semantic ontology from all files in the working directory - entities, attributes, relationships, domain taxonomy, and cross-file join paths. Outputs ONTOLOGY.md.
+user-invocable: true
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff
@@ -22,7 +22,6 @@ allowed-tools:
   - mcp__qsv__qsv_list_files
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
-description: Infer a semantic ontology from all files in the working directory - entities, attributes, relationships, domain taxonomy, and cross-file join paths. Outputs ONTOLOGY.md.
 ---
 
 # Infer Ontology
@@ -53,7 +52,7 @@ Scan all files in the current working directory, profile each one, then synthesi
 
 ### Phase 2: Profile Each Tabular File
 
-3. **Run data-profile on each tabular file**: For every tabular file discovered in step 2, execute the full `/data-profile` workflow (steps 1-11). This produces for each file:
+3. **Run data-profile on each tabular file**: For every tabular file discovered in step 2, execute the full `/data-profile` workflow (steps 1-13). This produces for each file:
    - Format metadata (delimiter, encoding, row count, column count)
    - Full statistics with cardinality (`.stats.csv` cache)
    - Advanced statistics (kurtosis, Gini, entropy via moarstats)
@@ -74,11 +73,14 @@ Scan all files in the current working directory, profile each one, then synthesi
 
 5. **Identify shared columns**: Compare column names across all profiled files. Flag columns that appear in multiple files (exact name match or close variants like `customer_id` / `cust_id` / `customerid`).
 
-6. **Validate join candidates**: For each pair of files sharing column names:
-   - Compare data types from stats (both should be the same type)
-   - Compare cardinality: a foreign key column typically has cardinality ≤ the primary key's cardinality
-   - Compare value ranges (min/max) — overlapping ranges suggest a real relationship
+6. **Validate join candidates**: For each pair of files sharing column names, read `.stats.csv` and check:
+   - Compare `type` from stats — both must be the same type; if mismatched, the relationship is invalid unless one side needs casting
+   - Compare `cardinality`: a foreign key column typically has cardinality ≤ the primary key's cardinality
+   - Check `uniqueness_ratio` — a value of 1.0 identifies the primary key side of the relationship
+   - Check `nullcount` / `sparsity` — join columns with sparsity > 0.3 are unreliable join candidates (nulls don't match)
+   - Compare value ranges (`min`/`max`) — overlapping ranges suggest a real relationship
    - Compare frequency distributions — if top values in one appear in the other, the relationship is likely valid
+   - Check `skewness` — highly skewed join columns (|skewness| > 2) may indicate data quality issues masking relationships
    - Use `qsv_sqlp` to test overlap when needed:
      ```
      SELECT COUNT(DISTINCT a.col) as overlap

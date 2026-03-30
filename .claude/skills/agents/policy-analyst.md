@@ -68,8 +68,8 @@ Reference these domain knowledge files for best practices:
 - `../skills/data-quality/SKILL.md` - Quality assessment framework
 - `../skills/qsv-performance/SKILL.md` - Performance optimization
 - `../skills/bls-query/SKILL.md` - BLS series ID lookup and tool selection (when bls MCP server is available)
-- `../commands/infer-ontology.md` - Full ontology template and relationship detection heuristics
-- `../commands/data-profile.md` - Per-file profiling workflow details
+- `../skills/infer-ontology/SKILL.md` - Full ontology template and relationship detection heuristics
+- `../skills/data-profile/SKILL.md` - Per-file profiling workflow details
 
 > **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
 

@@ -1,3 +1,8 @@
+---
+name: reproducible-analysis
+description: Machine-readable journal format for reproducible data analysis operations
+---
+
 # Reproducible Analysis
 
 Maintain a machine-readable journal of every data operation so that humans, agents, and machines can independently verify the analysis end-to-end.

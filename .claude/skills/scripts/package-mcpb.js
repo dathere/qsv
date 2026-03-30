@@ -6,10 +6,9 @@
  * - manifest.json
  * - server/ (compiled JavaScript from dist/)
  * - node_modules/ (bundled dependencies)
- * - qsv/ (55 skill JSON definitions)
+ * - qsv/ (51 skill JSON definitions)
  * - .claude-plugin/ (plugin manifest)
  * - .mcp.json (MCP server configuration)
- * - commands/ (slash commands)
  * - agents/ (subagent definitions)
  * - skills/ (domain knowledge)
  * - hooks/ (hook definitions)
@@ -185,12 +184,6 @@ async function createArchive() {
     if (existsSync(mcpJsonPath)) {
       console.log('   Adding .mcp.json...');
       archive.file(mcpJsonPath, { name: '.mcp.json' });
-    }
-
-    const commandsDir = join(rootDir, 'commands');
-    if (existsSync(commandsDir)) {
-      console.log('   Adding slash commands (commands/)...');
-      archive.directory(commandsDir, 'commands');
     }
 
     const agentsDir = join(rootDir, 'agents');

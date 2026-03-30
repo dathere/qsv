@@ -75,16 +75,15 @@ After version bumps:
 
 ## Cowork Plugin
 
-The Cowork plugin (`.plugin` file) is a separate distribution artifact from the Desktop Extension (`.mcpb`). It provides the workflow layer (skills, commands, agents, hooks) without the MCP server itself.
+The Cowork plugin (`.plugin` file) is a separate distribution artifact from the Desktop Extension (`.mcpb`). It provides the workflow layer (skills, agents, hooks) without the MCP server itself.
 
 ### Plugin components (all relative to `.claude/skills/`)
 
 - **`.claude-plugin/plugin.json`** — plugin manifest (version already bumped in Core step 3)
 - **`scripts/cowork-setup.cjs`** — SessionStart hook that deploys `cowork-CLAUDE.md` to the working directory and validates the qsv binary
 - **`cowork-CLAUDE.md`** — workflow template deployed by the hook
-- **`skills/`** — domain knowledge SKILL.md files (csv-wrangling, data-quality, qsv-performance)
-- **`commands/`** — slash commands (data-profile, data-describe, csv-query, data-join, data-clean, data-convert)
-- **`agents/`** — subagents (data-analyst, data-wrangler)
+- **`skills/`** — 15 SKILL.md files: 9 user-invocable (csv-query, data-clean, data-convert, data-describe, data-join, data-profile, data-validate, data-viz, infer-ontology) + 6 model-invoked (bls-query, csv-wrangling, data-quality, genai-disclaimer, qsv-performance, reproducible-analysis)
+- **`agents/`** — subagents (data-analyst, data-wrangler, policy-analyst)
 
 ### Plugin-specific review
 
@@ -92,7 +91,7 @@ When preparing a release, also review:
 
 - **`cowork-CLAUDE.md`**: check that tool names, workflow steps, and limits are still accurate
 - **`scripts/cowork-setup.cjs`**: if `minimum_qsv_version` changed, update the `MINIMUM_QSV_VERSION` constant (listed in Conditional step 6)
-- **`skills/`**, **`commands/`**, **`agents/`**: check for any hardcoded version references or stale tool names
+- **`skills/`**, **`agents/`**: check for any hardcoded version references or stale tool names
 
 ## Important Notes
 

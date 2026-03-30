@@ -1,7 +1,8 @@
 ---
 name: data-viz
-version: 18.0.0
-license: MIT
+description: Create publication-quality visualizations from CSV/TSV/Excel data using Python
+user-invocable: true
+argument-hint: "<file> [chart type]"
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff
@@ -24,8 +25,6 @@ allowed-tools:
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
-argument-hint: "<file> [chart type]"
-description: Create publication-quality visualizations from CSV/TSV/Excel data using Python
 ---
 
 # Data Viz
@@ -58,7 +57,20 @@ c. **Profile columns**: Run `qsv_stats` with `cardinality: true, stats_jsonl: tr
 
 d. **Check distributions**: Run `qsv_frequency` with `limit: 20` on columns you plan to plot — this reveals the actual values and whether grouping or filtering is needed.
 
-e. **Preview data**: Run `qsv_slice` with `len: 5` to see actual values and formats.
+e. **Run moarstats for visualization hints**: Run `qsv_moarstats` with `advanced: true`. Read the enriched `.stats.csv` for chart design decisions:
+
+   | Stats Column | Visualization Hint |
+   |-------------|-------------------|
+   | `skewness` / `pearson_skewness` | If \|skewness\| > 1, use log scale or split view; histogram will be lopsided on linear scale |
+   | `bimodality_coefficient` | If >= 0.555, data is bimodal — overlay two distributions or use separate panels per group |
+   | `kurtosis` | If > 3, heavy tails — add outlier annotations or use box plot alongside histogram |
+   | `outliers_percentage` | If > 5%, annotate outliers in scatter plots; if > 10%, consider separate outlier panel |
+   | `q1`, `q3`, `iqr` | Set box plot boundaries; whiskers at inner fences (`q1 - 1.5*iqr`, `q3 + 1.5*iqr`) |
+   | `cv` | If CV > 100%, data is highly variable relative to mean — use normalized/percentage scale |
+   | `sparsity` | If > 0.5, too many nulls to visualize meaningfully — warn user or show completeness bar |
+   | `mode`, `mode_count` | If mode dominates (> 50% of rows), bar chart of top-N values is more informative than histogram |
+
+f. **Preview data**: Run `qsv_slice` with `len: 5` to see actual values and formats.
 
 ### 3. Prepare the Data
 

@@ -62,7 +62,7 @@ If Claude shows you a list of files, the qsv MCP Server is working.
 
 ## Step 2 (Optional): Install the Cowork Plugin
 
-The Cowork plugin adds a workflow layer on top of the MCP Server, giving **Claude Cowork** sessions access to domain skills, slash commands, and specialized subagents for guided data workflows.
+The Cowork plugin adds a workflow layer on top of the MCP Server, giving **Claude Cowork** sessions access to domain skills and specialized subagents for guided data workflows.
 
 > Cowork requires a **Claude Pro plan** (or higher). [See plans and pricing.](https://claude.com/pricing)
 
@@ -84,14 +84,14 @@ The qsv MCP Server must be installed first ([Step 1](#step-1-install-the-mcp-ser
 
 1. Start a **new Cowork session** in Claude Desktop
 2. Check the **Context panel** — the qsv skills should appear
-3. Try a slash command like `/data-profile` to confirm everything works
+3. Try invoking a skill like `/data-profile` to confirm everything works
 
 ### What the Plugin Adds
 
 | Component | Details |
 |-----------|---------|
-| 6 domain skills | bls-query, csv-wrangling, data-quality, genai-disclaimer, qsv-performance, reproducible-analysis |
-| 8 slash commands | /csv-query, /data-clean, /data-convert, /data-describe, /data-join, /data-profile, /data-validate, /data-viz |
+| 9 user-invocable skills | /csv-query, /data-clean, /data-convert, /data-describe, /data-join, /data-profile, /data-validate, /data-viz, /infer-ontology |
+| 6 model-invoked skills | bls-query, csv-wrangling, data-quality, genai-disclaimer, qsv-performance, reproducible-analysis |
 | 3 subagents | data-analyst, data-wrangler, policy-analyst |
 
 ---
@@ -141,7 +141,7 @@ See **[ADDITIONAL_SERVERS.md](./ADDITIONAL_SERVERS.md)** for installation instru
 |---------|----------|
 | Cowork not available | Claude Cowork requires at least a [Claude Pro subscription](https://claude.com/pricing). |
 | Marketplace add fails | Check your internet connection and that you can access `github.com/dathere/qsv`. |
-| Slash commands don't appear | Start a **new** Cowork session after installation. Existing sessions won't pick up the plugin. |
+| Skills don't appear as slash commands | Start a **new** Cowork session after installation. Existing sessions won't pick up the plugin. |
 | Skills not showing in Context panel | Restart Claude Desktop and start a fresh Cowork session. |
 | Plugin not updating | Go to **Settings** -> **Capabilities** -> **Skills** -> **Go to Customize** -> **Personal plugins** -> **+ sign** -> **Browse plugins** and click on the "qsv" plugin to manually check for updates. |
 

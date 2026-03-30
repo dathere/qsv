@@ -1,7 +1,8 @@
 ---
 name: data-describe
-version: 18.0.0
-license: MIT
+description: Generate AI-powered Data Dictionary, Description, and Tags for a CSV/TSV/Excel file
+user-invocable: true
+argument-hint: "<file> [--dictionary|--description|--tags|--all]"
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff
@@ -16,8 +17,6 @@ allowed-tools:
   - mcp__qsv__qsv_list_files
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
-argument-hint: "<file> [--dictionary|--description|--tags|--all]"
-description: Generate AI-powered Data Dictionary, Description, and Tags for a CSV/TSV/Excel file
 ---
 
 # Data Describe

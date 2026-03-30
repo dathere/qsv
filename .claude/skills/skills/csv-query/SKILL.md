@@ -1,7 +1,8 @@
 ---
 name: csv-query
-version: 18.0.0
-license: MIT
+description: Run SQL queries against CSV/TSV/Excel files using Polars SQL engine
+user-invocable: true
+argument-hint: "<file> [query]"
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff
@@ -24,8 +25,6 @@ allowed-tools:
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
-argument-hint: "<file> [query]"
-description: Run SQL queries against CSV/TSV/Excel files using Polars SQL engine
 ---
 
 # CSV Query
@@ -70,6 +69,10 @@ After reading the `.stats.csv` cache, use these columns to inform your SQL:
 | `nullcount` | Only add COALESCE or IS NOT NULL where `nullcount` > 0 — skip null handling for columns with zero nulls |
 | `sort_order` | Skip ORDER BY if data is already sorted on that column (sort_order = "Ascending"/"Descending") |
 | `mean` / `stddev` | Write outlier filters: `WHERE col BETWEEN mean - 3*stddev AND mean + 3*stddev` |
+| `median` / `q1` / `q3` | For skewed data (when mean and median diverge), use quartile-based ranges: `WHERE col BETWEEN q1 AND q3` instead of mean ± stddev |
+| `skewness` | If skewness > 1 or < -1, prefer median/quartile-based filters over mean-based ones |
+| `cv` | High CV (> 100%) signals high relative variability — add LIMIT to GROUP BY queries and consider binning continuous values |
+| `outliers_percentage` | If > 5%, consider excluding outliers before aggregation: `WHERE col BETWEEN lower_inner_fence AND upper_inner_fence` |
 | `sparsity` | Columns with sparsity > 0.5 are mostly null — avoid using them as join keys or GROUP BY columns |
 
 ### Using Frequency for Filter Values

@@ -6,7 +6,7 @@
  * - manifest.json
  * - server/ (compiled JavaScript from dist/)
  * - node_modules/ (bundled dependencies)
- * - qsv/ (55 skill JSON definitions)
+ * - qsv/ (51 skill JSON definitions)
  * - .claude-plugin/ (plugin manifest)
  * - .mcp.json (MCP server configuration)
  * - agents/ (subagent definitions)

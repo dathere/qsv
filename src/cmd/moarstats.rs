@@ -14,7 +14,7 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 18 additional univariate statistics:
+Currently computes the following 25 additional univariate statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
@@ -47,41 +47,73 @@ Currently computes the following 18 additional univariate statistics:
 10. MAD-to-StdDev Ratio: mad / stddev
     Compares robust vs non-robust spread measures.
     Higher values suggest presence of outliers affecting stddev.
-11. Kurtosis: Measures the "tailedness" of the distribution (excess kurtosis).
+11. Trimean: (Q1 + 2*median + Q3) / 4
+    Tukey's trimean - a robust estimator of central tendency combining the median
+    with the midhinge. More robust than mean, more efficient than median alone.
+    https://en.wikipedia.org/wiki/Trimean
+12. Midhinge: (Q1 + Q3) / 2
+    Midpoint of the middle 50% of data. A robust central tendency measure
+    that complements the mean and median.
+    https://en.wikipedia.org/wiki/Midhinge
+13. Robust CV: MAD / |median|
+    Robust Coefficient of Variation using MAD and the magnitude of the median.
+    Always non-negative. Resistant to outliers, useful for comparing variability.
+    https://en.wikipedia.org/wiki/Robust_measures_of_scale
+14. Kurtosis: Measures the "tailedness" of the distribution (excess kurtosis).
     Positive values indicate heavy tails, negative values indicate light tails.
     Values near 0 indicate a normal distribution.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Kurtosis
-12. Bimodality Coefficient: Measures whether a distribution has two modes (peaks) or is unimodal.
+15. Bimodality Coefficient: Measures whether a distribution has two modes (peaks) or is unimodal.
     BC < 0.555 indicates unimodal, BC >= 0.555 indicates bimodal/multimodal.
     Computed as (skewness² + 1) / (kurtosis + 3).
     Requires --advanced flag (needs skewness from base stats and kurtosis from --advanced flag).
     https://en.wikipedia.org/wiki/Bimodality
-13. Gini Coefficient: Measures inequality/dispersion in the distribution.
+16. Jarque-Bera Test: (n/6) * (S² + K²/4)
+    Standard test for normality using skewness and kurtosis.
+    Also computes jarque_bera_pvalue (from chi-squared distribution with 2 df).
+    Low p-values (< 0.05) indicate the data is NOT normally distributed.
+    Requires --advanced flag (needs kurtosis).
+    https://en.wikipedia.org/wiki/Jarque%E2%80%93Bera_test
+17. Gini Coefficient: Measures inequality/dispersion in the distribution.
     Values range from 0 (perfect equality) to 1 (maximum inequality).
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Gini_coefficient
-14. Atkinson Index: Measures inequality in the distribution with a sensitivity parameter.
+18. Atkinson Index: Measures inequality in the distribution with a sensitivity parameter.
     Values range from 0 (perfect equality) to 1 (maximum inequality).
     The Atkinson Index is a more general form of the Gini coefficient that allows for
     different sensitivity to inequality. Sensitivity is configurable via --epsilon.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Atkinson_index
-15. Shannon Entropy: Measures the information content/uncertainty in the distribution.
+19. Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
+    Measures inequality/concentration. Unlike Gini, it is decomposable into
+    within-group and between-group components. Only computed for positive values.
+    Requires --advanced flag.
+    https://en.wikipedia.org/wiki/Theil_index
+20. Mean Absolute Deviation (from mean): (1/n) * Σ|x_i - mean|
+    Average absolute distance from the mean. Different from MAD (which uses median).
+    Less robust but more statistically efficient than MAD.
+    Requires --advanced flag.
+21. Shannon Entropy: Measures the information content/uncertainty in the distribution.
     Higher values indicate more diversity, lower values indicate more concentration.
     Values range from 0 (all values identical) to log2(n) where n is the number of unique values.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Entropy_(information_theory)
-16. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
+22. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
     Values range from 0 (all values identical) to 1 (all values equally distributed).
     Computed as shannon_entropy / log2(cardinality).
     Requires shannon_entropy (from --advanced flag) and cardinality (from base stats).
-17. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
+23. Simpson's Diversity Index: 1 - Σ(p_i²)
+    Probability that two randomly chosen values are different.
+    Ranges from 0 (all identical) to 1 (all unique). More intuitive than entropy.
+    Requires --advanced flag (computed alongside entropy from frequency data).
+    https://en.wikipedia.org/wiki/Diversity_index#Simpson_index
+24. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
     All values are included in the calculation, but extreme values are capped at thresholds.
     https://en.wikipedia.org/wiki/Winsorized_mean
     Also computes: winsorized_stddev, winsorized_variance, winsorized_cv, winsorized_range,
     and winsorized_stddev_ratio (winsorized_stddev / overall_stddev).
-18. Trimmed Mean: Excludes values outside thresholds, then computes mean.
+25. Trimmed Mean: Excludes values outside thresholds, then computes mean.
     Only values within thresholds are included in the calculation.
     https://en.wikipedia.org/wiki/Truncated_mean
     Also computes: trimmed_stddev, trimmed_variance, trimmed_cv, trimmed_range,
@@ -217,7 +249,8 @@ Usage:
 
 moarstats options:
     --advanced             Compute Kurtosis, Shannon Entropy, Bimodality Coefficient,
-                           Gini Coefficient and Atkinson Index.
+                           Jarque-Bera, Gini Coefficient, Atkinson Index, Theil Index,
+                           Mean Absolute Deviation, and Simpson's Diversity Index.
                            These advanced statistics computations require reading the
                            original CSV file to collect all values
                            for computation and are computationally expensive.
@@ -732,6 +765,65 @@ fn compute_mad_stddev_ratio(mad: Option<f64>, stddev: Option<f64>) -> Option<f64
         } else {
             None
         }
+    } else {
+        None
+    }
+}
+
+/// Compute Trimean: (Q1 + 2*median + Q3) / 4
+/// Tukey's trimean - a robust estimator of central tendency that
+/// combines the median with the midhinge.
+#[inline]
+fn compute_trimean(q1: Option<f64>, median: Option<f64>, q3: Option<f64>) -> Option<f64> {
+    if let (Some(q1_val), Some(median_val), Some(q3_val)) = (q1, median, q3) {
+        Some((q1_val + 2.0 * median_val + q3_val) / 4.0)
+    } else {
+        None
+    }
+}
+
+/// Compute Midhinge: (Q1 + Q3) / 2
+/// Midpoint of the middle 50% of data, a robust central tendency measure.
+#[inline]
+fn compute_midhinge(q1: Option<f64>, q3: Option<f64>) -> Option<f64> {
+    if let (Some(q1_val), Some(q3_val)) = (q1, q3) {
+        Some((q1_val + q3_val) / 2.0)
+    } else {
+        None
+    }
+}
+
+/// Compute Robust Coefficient of Variation: MAD / |median|
+/// Uses robust measures (MAD and median magnitude) instead of stddev and mean.
+#[inline]
+fn compute_robust_cv(mad: Option<f64>, median: Option<f64>) -> Option<f64> {
+    if let (Some(mad_val), Some(median_val)) = (mad, median) {
+        if median_val.abs() > f64::EPSILON {
+            Some(mad_val / median_val.abs())
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+/// Compute Jarque-Bera test statistic: (n/6) * (S^2 + K^2/4)
+/// Tests whether data follows a normal distribution.
+/// Returns (jb_statistic, p_value) where p_value is from chi-squared(2) distribution.
+#[inline]
+fn compute_jarque_bera(skewness: Option<f64>, kurtosis: Option<f64>, n: u64) -> Option<(f64, f64)> {
+    if n < 3 {
+        return None;
+    }
+    if let (Some(skew_val), Some(kurt_val)) = (skewness, kurtosis) {
+        #[allow(clippy::cast_precision_loss)]
+        let n_f64 = n as f64;
+        let jb = (n_f64 / 6.0) * (skew_val * skew_val + (kurt_val * kurt_val / 4.0));
+        // Upper-tail p-value from chi-squared distribution with 2 degrees of freedom
+        // For chi-squared(2), the survival function (1 - CDF) is e^(-x/2)
+        let p_value = (-jb / 2.0_f64).exp();
+        Some((jb, p_value))
     } else {
         None
     }
@@ -1314,12 +1406,15 @@ struct KGAStats {
     kurtosis:         Option<f64>,
     gini_coefficient: Option<f64>,
     atkinson_index:   Option<f64>,
+    theil_index:      Option<f64>,
+    mean_ad:          Option<f64>,
 }
 
-/// Statistics for Shannon Entropy
+/// Statistics for Shannon Entropy and Simpson's Diversity Index
 #[derive(Clone, Default)]
 struct EntropyStats {
-    entropy: Option<f64>,
+    entropy:            Option<f64>,
+    simpsons_diversity: Option<f64>,
 }
 
 /// Online algorithm state for correlation/covariance computation
@@ -3234,6 +3329,8 @@ fn compute_all_kga_from_reader(
                     kurtosis:         None,
                     gini_coefficient: None,
                     atkinson_index:   None,
+                    theil_index:      None,
+                    mean_ad:          None,
                 },
             );
             continue;
@@ -3262,12 +3359,60 @@ fn compute_all_kga_from_reader(
             None, // geometric sum not precalculated
         );
 
+        // Compute Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
+        // Only for positive values (Theil index is undefined for non-positive values)
+        // Uses mean of positive values only, so it works even when overall mean is <= 0
+        #[allow(clippy::cast_precision_loss)]
+        let theil_val = {
+            // First pass: compute sum and count of positive values
+            let mut pos_sum = 0.0_f64;
+            let mut pos_count: usize = 0;
+            for &v in &values {
+                if v > 0.0 {
+                    pos_sum += v;
+                    pos_count += 1;
+                }
+            }
+
+            if pos_count >= 2 {
+                let n = pos_count as f64;
+                let pos_mean = pos_sum / n;
+                if pos_mean > f64::EPSILON {
+                    // Second pass: accumulate Theil sum over positive values
+                    let mut theil_sum = 0.0_f64;
+                    for &v in &values {
+                        if v > 0.0 {
+                            let ratio = v / pos_mean;
+                            theil_sum += ratio * ratio.ln();
+                        }
+                    }
+                    Some(theil_sum / n)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        // Compute Mean Absolute Deviation from mean: (1/n) * Σ|x_i - mean|
+        #[allow(clippy::cast_precision_loss)]
+        let mean_ad_val = if let Some(mean_val) = precalc_mean {
+            let n = values.len() as f64;
+            let sum_abs_dev: f64 = values.iter().map(|&x| (x - mean_val).abs()).sum();
+            Some(sum_abs_dev / n)
+        } else {
+            None
+        };
+
         all_stats.insert(
             field_name,
             KGAStats {
                 kurtosis:         kurtosis_val,
                 gini_coefficient: gini_val,
                 atkinson_index:   atkinson_val,
+                theil_index:      theil_val,
+                mean_ad:          mean_ad_val,
             },
         );
     }
@@ -3349,7 +3494,13 @@ fn compute_all_entropy(input_path: &Path) -> CliResult<HashMap<String, EntropySt
         let total_count = field_totals.get(&field_name).copied().unwrap_or(0);
 
         if total_count == 0 {
-            entropy_stats.insert(field_name, EntropyStats { entropy: None });
+            entropy_stats.insert(
+                field_name,
+                EntropyStats {
+                    entropy:            None,
+                    simpsons_diversity: None,
+                },
+            );
             continue;
         }
 
@@ -3363,30 +3514,37 @@ fn compute_all_entropy(input_path: &Path) -> CliResult<HashMap<String, EntropySt
                     || (v.starts_with("<ALL") && v.contains("UNIQUE"))
             });
 
-        let entropy = if is_all_unique {
+        let (entropy, simpsons) = if is_all_unique {
             // For all-unique fields, each value appears exactly once
             // Entropy = log2(n) where n is the number of unique values (which equals total_count)
             // Formula: -Σ p_i * log2(p_i) where p_i = 1/n for each of n values
             // = -n * (1/n) * log2(1/n) = -log2(1/n) = log2(n)
-            (total_count as f64).log2()
+            let entropy = (total_count as f64).log2();
+            // Simpson's: 1 - Σ(p_i²) = 1 - n*(1/n)² = 1 - 1/n
+            let simpsons = 1.0 - 1.0 / total_count as f64;
+            (entropy, simpsons)
         } else {
             // Compute Shannon Entropy: H(X) = -Σ p_i * log2(p_i)
+            // and Simpson's Diversity: 1 - Σ(p_i²)
             let mut entropy = 0.0;
+            let mut sum_p_squared = 0.0;
             let total = total_count as f64;
 
             for count in frequencies.values() {
                 if *count > 0 {
                     let p = *count as f64 / total;
                     entropy -= p * p.log2();
+                    sum_p_squared += p * p;
                 }
             }
-            entropy
+            (entropy, 1.0 - sum_p_squared)
         };
 
         entropy_stats.insert(
             field_name,
             EntropyStats {
-                entropy: Some(entropy),
+                entropy:            Some(entropy),
+                simpsons_diversity: Some(simpsons),
             },
         );
     }
@@ -3586,7 +3744,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let sum_idx = headers.iter().position(|h| h == "sum");
     let skewness_idx = headers.iter().position(|h| h == "skewness");
     let cardinality_idx = headers.iter().position(|h| h == "cardinality");
-    // let nullcount_idx = headers.iter().position(|h| h == "nullcount");
+    let n_positive_idx = headers.iter().position(|h| h == "n_positive");
+    let n_negative_idx = headers.iter().position(|h| h == "n_negative");
+    let n_zero_idx = headers.iter().position(|h| h == "n_zero");
+    let kurtosis_idx = headers.iter().position(|h| h == "kurtosis");
     let lower_outer_fence_idx = headers.iter().position(|h| h == "lower_outer_fence");
     let lower_inner_fence_idx = headers.iter().position(|h| h == "lower_inner_fence");
     let upper_inner_fence_idx = headers.iter().position(|h| h == "upper_inner_fence");
@@ -3728,6 +3889,31 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         new_column_indices.insert("mad_stddev_ratio".to_string(), new_columns.len() - 1);
     }
 
+    // Trimean: (Q1 + 2*median + Q3) / 4 - Tukey's robust central tendency estimator
+    if q1_idx.is_some()
+        && (median_idx.is_some() || q2_median_idx.is_some())
+        && q3_idx.is_some()
+        && !column_exists("trimean")
+    {
+        new_columns.push("trimean".to_string());
+        new_column_indices.insert("trimean".to_string(), new_columns.len() - 1);
+    }
+
+    // Midhinge: (Q1 + Q3) / 2 - midpoint of the middle 50%
+    if q1_idx.is_some() && q3_idx.is_some() && !column_exists("midhinge") {
+        new_columns.push("midhinge".to_string());
+        new_column_indices.insert("midhinge".to_string(), new_columns.len() - 1);
+    }
+
+    // Robust CV: MAD / median - outlier-resistant coefficient of variation
+    if mad_idx.is_some()
+        && (median_idx.is_some() || q2_median_idx.is_some())
+        && !column_exists("robust_cv")
+    {
+        new_columns.push("robust_cv".to_string());
+        new_column_indices.insert("robust_cv".to_string(), new_columns.len() - 1);
+    }
+
     // Add kurtosis column (requires reading raw data, computed for numeric/date types)
     // Only add if --advanced flag is set
     if args.flag_advanced && !column_exists("kurtosis") {
@@ -3746,6 +3932,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         new_column_indices.insert("bimodality_coefficient".to_string(), new_columns.len() - 1);
     }
 
+    // Add Jarque-Bera test statistic (requires skewness and kurtosis)
+    // Only add if --advanced flag is set. Kurtosis can come from this run (new column)
+    // or from a previous run (existing column in stats CSV).
+    if args.flag_advanced
+        && skewness_idx.is_some()
+        && (new_column_indices.contains_key("kurtosis") || kurtosis_idx.is_some())
+        && n_positive_idx.is_some()
+        && n_negative_idx.is_some()
+        && n_zero_idx.is_some()
+        && !column_exists("jarque_bera")
+    {
+        new_columns.push("jarque_bera".to_string());
+        new_column_indices.insert("jarque_bera".to_string(), new_columns.len() - 1);
+        new_columns.push("jarque_bera_pvalue".to_string());
+        new_column_indices.insert("jarque_bera_pvalue".to_string(), new_columns.len() - 1);
+    }
+
     // Add Gini coefficient column (requires reading raw data, computed for numeric/date types)
     // Only add if --advanced flag is set
     if args.flag_advanced && !column_exists("gini_coefficient") {
@@ -3758,6 +3961,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_advanced && !column_exists(&atkinson_index_col_name) {
         new_columns.push(atkinson_index_col_name.clone());
         new_column_indices.insert(atkinson_index_col_name.clone(), new_columns.len() - 1);
+    }
+
+    // Add Theil Index column (requires reading raw data, computed for numeric/date types)
+    // Only add if --advanced flag is set
+    if args.flag_advanced && !column_exists("theil_index") {
+        new_columns.push("theil_index".to_string());
+        new_column_indices.insert("theil_index".to_string(), new_columns.len() - 1);
+    }
+
+    // Add Mean Absolute Deviation from mean (requires reading raw data)
+    // Only add if --advanced flag is set
+    if args.flag_advanced && !column_exists("mean_ad") {
+        new_columns.push("mean_ad".to_string());
+        new_column_indices.insert("mean_ad".to_string(), new_columns.len() - 1);
     }
 
     // Add Shannon Entropy column (requires reading raw data, computed for all field types)
@@ -3773,6 +3990,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     {
         new_columns.push("normalized_entropy".to_string());
         new_column_indices.insert("normalized_entropy".to_string(), new_columns.len() - 1);
+    }
+
+    // Simpson's Diversity Index: 1 - Σ(p_i²)
+    // Computed alongside entropy from frequency data, works for all field types
+    if new_column_indices.contains_key("shannon_entropy")
+        && !column_exists("simpsons_diversity_index")
+    {
+        new_columns.push("simpsons_diversity_index".to_string());
+        new_column_indices.insert(
+            "simpsons_diversity_index".to_string(),
+            new_columns.len() - 1,
+        );
     }
 
     // Add XSD type column (computed for all field types based on type and min/max)
@@ -3958,12 +4187,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "median_mean_ratio",
             "iqr_range_ratio",
             "mad_stddev_ratio",
+            "trimean",
+            "midhinge",
+            "robust_cv",
             "kurtosis",
             "bimodality_coefficient",
+            "jarque_bera",
+            "jarque_bera_pvalue",
             "gini_coefficient",
             "atkinson_index",
+            "theil_index",
+            "mean_ad",
             "shannon_entropy",
             "normalized_entropy",
+            "simpsons_diversity_index",
             "xsd_type",
             "outliers_extreme_lower_cnt",
         ];
@@ -4008,7 +4245,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // (with their precalculated stats)
     let needs_kga = new_column_indices.contains_key("kurtosis")
         || new_column_indices.contains_key("gini_coefficient")
-        || new_column_indices.contains_key("atkinson_index");
+        || new_column_indices.contains_key("atkinson_index")
+        || new_column_indices.contains_key("theil_index")
+        || new_column_indices.contains_key("mean_ad");
 
     // First pass: collect field information from stats records
     if needs_outlier_counting || needs_winsorized_trimmed {
@@ -4737,6 +4976,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         }
 
+        // Write Simpson's Diversity Index from pre-computed results (works for all field types)
+        if let Some(idx) = new_column_indices.get("simpsons_diversity_index")
+            && !field_name.is_empty()
+            && let Some(entropy_stats_val) = entropy_stats.get(field_name)
+            && let Some(simpsons_val) = entropy_stats_val.simpsons_diversity
+        {
+            new_values[*idx] = util::round_num(simpsons_val, args.flag_round);
+        }
+
         // Only compute other stats for numeric/date types
         let Some(field_type) = field_type_opt else {
             // For unrecognized types, write existing fields + new values directly
@@ -4869,6 +5117,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 new_values[*idx] = util::round_num(val, args.flag_round);
             }
 
+            if let Some(idx) = new_column_indices.get("trimean")
+                && let Some(val) = compute_trimean(q1, median, q3)
+            {
+                new_values[*idx] = util::round_num(val, args.flag_round);
+            }
+
+            if let Some(idx) = new_column_indices.get("midhinge")
+                && let Some(val) = compute_midhinge(q1, q3)
+            {
+                new_values[*idx] = util::round_num(val, args.flag_round);
+            }
+
+            if let Some(idx) = new_column_indices.get("robust_cv")
+                && let Some(val) = compute_robust_cv(mad, median)
+            {
+                new_values[*idx] = util::round_num(val, args.flag_round);
+            }
+
             // Compute Bimodality Coefficient (requires skewness and kurtosis)
             if let Some(idx) = new_column_indices.get("bimodality_coefficient")
                 && !field_name.is_empty()
@@ -4880,6 +5146,47 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     .and_then(parse_float_opt);
                 if let Some(val) = compute_bimodality_coefficient(skewness, Some(kurtosis_val)) {
                     new_values[*idx] = util::round_num(val, args.flag_round);
+                }
+            }
+
+            // Compute Jarque-Bera test (requires skewness and kurtosis)
+            // Prefer kurtosis from KGA stats when available, otherwise fall back
+            // to the kurtosis value already present in the stats CSV record.
+            if new_column_indices.contains_key("jarque_bera") && !field_name.is_empty() {
+                let kurtosis_from_kga = kga_stats
+                    .get(field_name)
+                    .and_then(|kga_stats_val| kga_stats_val.kurtosis);
+                let kurtosis_from_stats = kurtosis_idx
+                    .and_then(|idx| record.get(idx))
+                    .and_then(parse_float_opt);
+                let kurtosis_val = kurtosis_from_kga.or(kurtosis_from_stats);
+
+                if let Some(kurtosis_val) = kurtosis_val {
+                    let skewness = skewness_idx
+                        .and_then(|idx| record.get(idx))
+                        .and_then(parse_float_opt);
+                    // Compute n from n_positive + n_negative + n_zero
+                    let n_pos = n_positive_idx
+                        .and_then(|idx| record.get(idx))
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or(0);
+                    let n_neg = n_negative_idx
+                        .and_then(|idx| record.get(idx))
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or(0);
+                    let n_z = n_zero_idx
+                        .and_then(|idx| record.get(idx))
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or(0);
+                    let n = n_pos + n_neg + n_z;
+                    if let Some((jb, pval)) = compute_jarque_bera(skewness, Some(kurtosis_val), n) {
+                        if let Some(idx) = new_column_indices.get("jarque_bera") {
+                            new_values[*idx] = util::round_num(jb, args.flag_round);
+                        }
+                        if let Some(idx) = new_column_indices.get("jarque_bera_pvalue") {
+                            new_values[*idx] = util::round_num(pval, args.flag_round);
+                        }
+                    }
                 }
             }
 
@@ -5257,6 +5564,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     && let Some(idx) = new_column_indices.get(&atkinson_index_col_name)
                 {
                     new_values[*idx] = util::round_num(atkinson_val, args.flag_round);
+                }
+
+                // Theil Index
+                if let Some(theil_val) = stats.theil_index
+                    && let Some(idx) = new_column_indices.get("theil_index")
+                {
+                    new_values[*idx] = util::round_num(theil_val, args.flag_round);
+                }
+
+                // Mean Absolute Deviation from mean
+                if let Some(mean_ad_val) = stats.mean_ad
+                    && let Some(idx) = new_column_indices.get("mean_ad")
+                {
+                    new_values[*idx] = util::round_num(mean_ad_val, args.flag_round);
                 }
             }
         }

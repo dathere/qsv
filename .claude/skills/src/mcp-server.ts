@@ -6,6 +6,8 @@
  * to Claude Desktop and other MCP clients.
  */
 
+// Low-level Server is intentionally used for advanced dispatch/deferred-loading patterns
+// that McpServer's high-level API does not support.
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {

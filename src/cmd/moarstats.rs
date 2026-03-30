@@ -776,7 +776,7 @@ fn compute_mad_stddev_ratio(mad: Option<f64>, stddev: Option<f64>) -> Option<f64
 #[inline]
 fn compute_trimean(q1: Option<f64>, median: Option<f64>, q3: Option<f64>) -> Option<f64> {
     if let (Some(q1_val), Some(median_val), Some(q3_val)) = (q1, median, q3) {
-        Some((q1_val + 2.0 * median_val + q3_val) / 4.0)
+        Some((2.0f64.mul_add(median_val, q1_val) + q3_val) / 4.0)
     } else {
         None
     }
@@ -785,9 +785,9 @@ fn compute_trimean(q1: Option<f64>, median: Option<f64>, q3: Option<f64>) -> Opt
 /// Compute Midhinge: (Q1 + Q3) / 2
 /// Midpoint of the middle 50% of data, a robust central tendency measure.
 #[inline]
-fn compute_midhinge(q1: Option<f64>, q3: Option<f64>) -> Option<f64> {
+const fn compute_midhinge(q1: Option<f64>, q3: Option<f64>) -> Option<f64> {
     if let (Some(q1_val), Some(q3_val)) = (q1, q3) {
-        Some((q1_val + q3_val) / 2.0)
+        Some(f64::midpoint(q1_val, q3_val))
     } else {
         None
     }
@@ -819,7 +819,7 @@ fn compute_jarque_bera(skewness: Option<f64>, kurtosis: Option<f64>, n: u64) -> 
     if let (Some(skew_val), Some(kurt_val)) = (skewness, kurtosis) {
         #[allow(clippy::cast_precision_loss)]
         let n_f64 = n as f64;
-        let jb = (n_f64 / 6.0) * (skew_val * skew_val + (kurt_val * kurt_val / 4.0));
+        let jb = (n_f64 / 6.0) * skew_val.mul_add(skew_val, kurt_val * kurt_val / 4.0);
         // Upper-tail p-value from chi-squared distribution with 2 degrees of freedom
         // For chi-squared(2), the survival function (1 - CDF) is e^(-x/2)
         let p_value = (-jb / 2.0_f64).exp();

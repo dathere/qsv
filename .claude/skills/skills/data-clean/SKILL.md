@@ -1,7 +1,8 @@
 ---
 name: data-clean
-version: 18.0.0
-license: MIT
+description: Clean a CSV/TSV/Excel file - fix headers, trim whitespace, remove duplicates, validate
+user-invocable: true
+argument-hint: "<file>"
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff
@@ -18,8 +19,6 @@ allowed-tools:
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
-argument-hint: "<file>"
-description: Clean a CSV/TSV/Excel file - fix headers, trim whitespace, remove duplicates, validate
 ---
 
 # Data Clean

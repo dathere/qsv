@@ -1,3 +1,8 @@
+---
+name: data-quality
+description: Quality dimensions quick reference and remediation decision tree for tabular data assessment
+---
+
 # Data Quality Assessment with qsv
 
 For the full step-by-step profiling workflow, use the `/data-profile` command. This skill provides quick-reference guidance for quality assessment and remediation decisions.

@@ -1,7 +1,8 @@
 ---
 name: csv-query
-version: 18.0.0
-license: MIT
+description: Run SQL queries against CSV/TSV/Excel files using Polars SQL engine
+user-invocable: true
+argument-hint: "<file> [query]"
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff
@@ -24,8 +25,6 @@ allowed-tools:
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
-argument-hint: "<file> [query]"
-description: Run SQL queries against CSV/TSV/Excel files using Polars SQL engine
 ---
 
 # CSV Query

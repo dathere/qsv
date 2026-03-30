@@ -1,7 +1,8 @@
 ---
 name: data-validate
-version: 18.0.0
-license: MIT
+description: Validate data and analysis before sharing - methodology, accuracy, bias, and data quality checks
+user-invocable: true
+argument-hint: "<file or analysis>"
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff
@@ -25,8 +26,6 @@ allowed-tools:
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
-argument-hint: "<file or analysis>"
-description: Validate data and analysis before sharing - methodology, accuracy, bias, and data quality checks
 ---
 
 # Data Validate

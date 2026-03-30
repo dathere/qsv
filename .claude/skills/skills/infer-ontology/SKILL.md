@@ -1,7 +1,7 @@
 ---
 name: infer-ontology
-version: 18.0.0
-license: MIT
+description: Infer a semantic ontology from all files in the working directory - entities, attributes, relationships, domain taxonomy, and cross-file join paths. Outputs ONTOLOGY.md.
+user-invocable: true
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff
@@ -22,7 +22,6 @@ allowed-tools:
   - mcp__qsv__qsv_list_files
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
-description: Infer a semantic ontology from all files in the working directory - entities, attributes, relationships, domain taxonomy, and cross-file join paths. Outputs ONTOLOGY.md.
 ---
 
 # Infer Ontology

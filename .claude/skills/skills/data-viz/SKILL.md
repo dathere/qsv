@@ -1,7 +1,8 @@
 ---
 name: data-viz
-version: 18.0.0
-license: MIT
+description: Create publication-quality visualizations from CSV/TSV/Excel data using Python
+user-invocable: true
+argument-hint: "<file> [chart type]"
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff
@@ -24,8 +25,6 @@ allowed-tools:
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
-argument-hint: "<file> [chart type]"
-description: Create publication-quality visualizations from CSV/TSV/Excel data using Python
 ---
 
 # Data Viz

@@ -1,3 +1,8 @@
+---
+name: csv-wrangling
+description: Standard workflow order, tool selection matrix, and composition patterns for qsv CSV data wrangling
+---
+
 # CSV Wrangling with qsv
 
 ## Standard Workflow Order

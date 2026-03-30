@@ -1,7 +1,8 @@
 ---
 name: data-join
-version: 18.0.0
-license: MIT
+description: Join two datasets with automatic strategy selection (joinp vs join vs sqlp)
+user-invocable: true
+argument-hint: "<file1> <file2>"
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff
@@ -21,8 +22,6 @@ allowed-tools:
   - mcp__qsv__qsv_search_tools
   - mcp__qsv__qsv_get_working_dir
   - mcp__qsv__qsv_set_working_dir
-argument-hint: "<file1> <file2>"
-description: Join two datasets with automatic strategy selection (joinp vs join vs sqlp)
 ---
 
 # Data Join

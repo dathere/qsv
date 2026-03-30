@@ -1,3 +1,8 @@
+---
+name: genai-disclaimer
+description: Standard disclaimer and attribution templates for AI-generated or AI-assisted data analysis outputs
+---
+
 # GenAI Disclaimer
 
 Standard disclaimers and attribution notices for AI-generated or AI-assisted data analysis outputs.

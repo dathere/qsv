@@ -4,8 +4,7 @@
  *
  * Creates a lightweight ZIP containing ONLY the workflow layer:
  * - .claude-plugin/plugin.json (manifest)
- * - skills/ (domain knowledge SKILL.md files)
- * - commands/ (slash command .md files)
+ * - skills/ (domain knowledge and user-invocable SKILL.md files)
  * - agents/ (subagent .md files)
  * - hooks/hooks.json (hook definitions)
  * - scripts/qsv-utils.cjs (shared utilities for hook scripts)
@@ -44,7 +43,6 @@ const required = [
   '.claude-plugin/plugin.json',
   'hooks/hooks.json',
   'skills/',
-  'commands/',
   'agents/',
   'scripts/qsv-utils.cjs',
   'scripts/cowork-setup.cjs',
@@ -112,10 +110,6 @@ archive.file(join(rootDir, '.claude-plugin/plugin.json'), { name: '.claude-plugi
 // Add domain knowledge skills
 console.log('  Adding skills/...');
 archive.glob('**/*', { cwd: join(rootDir, 'skills'), ignore: ['.*', '**/.*'] }, { prefix: 'skills' });
-
-// Add slash commands
-console.log('  Adding commands/...');
-archive.glob('**/*', { cwd: join(rootDir, 'commands'), ignore: ['.*', '**/.*'] }, { prefix: 'commands' });
 
 // Add subagents
 console.log('  Adding agents/...');

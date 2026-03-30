@@ -55,9 +55,9 @@ Currently computes the following 25 additional univariate statistics:
     Midpoint of the middle 50% of data. A robust central tendency measure
     that complements the mean and median.
     https://en.wikipedia.org/wiki/Midhinge
-13. Robust CV: MAD / median
-    Robust Coefficient of Variation using MAD and median instead of stddev and mean.
-    Resistant to outliers, useful for comparing variability of skewed distributions.
+13. Robust CV: MAD / |median|
+    Robust Coefficient of Variation using MAD and the magnitude of the median.
+    Always non-negative. Resistant to outliers, useful for comparing variability.
     https://en.wikipedia.org/wiki/Robust_measures_of_scale
 14. Kurtosis: Measures the "tailedness" of the distribution (excess kurtosis).
     Positive values indicate heavy tails, negative values indicate light tails.
@@ -799,7 +799,7 @@ fn compute_midhinge(q1: Option<f64>, q3: Option<f64>) -> Option<f64> {
 fn compute_robust_cv(mad: Option<f64>, median: Option<f64>) -> Option<f64> {
     if let (Some(mad_val), Some(median_val)) = (mad, median) {
         if median_val.abs() > f64::EPSILON {
-            Some(mad_val / median_val)
+            Some(mad_val / median_val.abs())
         } else {
             None
         }
@@ -820,8 +820,8 @@ fn compute_jarque_bera(skewness: Option<f64>, kurtosis: Option<f64>, n: u64) -> 
         #[allow(clippy::cast_precision_loss)]
         let n_f64 = n as f64;
         let jb = (n_f64 / 6.0) * (skew_val * skew_val + (kurt_val * kurt_val / 4.0));
-        // p-value from chi-squared distribution with 2 degrees of freedom
-        // CDF of chi-squared(2) is 1 - e^(-x/2)
+        // Upper-tail p-value from chi-squared distribution with 2 degrees of freedom
+        // For chi-squared(2), the survival function (1 - CDF) is e^(-x/2)
         let p_value = (-jb / 2.0_f64).exp();
         Some((jb, p_value))
     } else {
@@ -3361,28 +3361,29 @@ fn compute_all_kga_from_reader(
 
         // Compute Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
         // Only for positive values (Theil index is undefined for non-positive values)
+        // Uses mean of positive values only, so it works even when overall mean is <= 0
         #[allow(clippy::cast_precision_loss)]
-        let theil_val = if let Some(mean_val) = precalc_mean
-            && mean_val > f64::EPSILON
-        {
+        let theil_val = {
             let positive_values: Vec<f64> = values.iter().copied().filter(|&v| v > 0.0).collect();
             if positive_values.len() >= 2 {
                 let n = positive_values.len() as f64;
                 let pos_mean = positive_values.iter().sum::<f64>() / n;
-                let theil: f64 = positive_values
-                    .iter()
-                    .map(|&x| {
-                        let ratio = x / pos_mean;
-                        ratio * ratio.ln()
-                    })
-                    .sum::<f64>()
-                    / n;
-                Some(theil)
+                if pos_mean > f64::EPSILON {
+                    let theil: f64 = positive_values
+                        .iter()
+                        .map(|&x| {
+                            let ratio = x / pos_mean;
+                            ratio * ratio.ln()
+                        })
+                        .sum::<f64>()
+                        / n;
+                    Some(theil)
+                } else {
+                    None
+                }
             } else {
                 None
             }
-        } else {
-            None
         };
 
         // Compute Mean Absolute Deviation from mean: (1/n) * Σ|x_i - mean|
@@ -3737,6 +3738,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let n_positive_idx = headers.iter().position(|h| h == "n_positive");
     let n_negative_idx = headers.iter().position(|h| h == "n_negative");
     let n_zero_idx = headers.iter().position(|h| h == "n_zero");
+    let kurtosis_idx = headers.iter().position(|h| h == "kurtosis");
     let lower_outer_fence_idx = headers.iter().position(|h| h == "lower_outer_fence");
     let lower_inner_fence_idx = headers.iter().position(|h| h == "lower_inner_fence");
     let upper_inner_fence_idx = headers.iter().position(|h| h == "upper_inner_fence");
@@ -3922,10 +3924,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Add Jarque-Bera test statistic (requires skewness and kurtosis)
-    // Only add if --advanced flag is set (since it requires kurtosis)
+    // Only add if --advanced flag is set. Kurtosis can come from this run (new column)
+    // or from a previous run (existing column in stats CSV).
     if args.flag_advanced
         && skewness_idx.is_some()
-        && new_column_indices.contains_key("kurtosis")
+        && (new_column_indices.contains_key("kurtosis") || kurtosis_idx.is_some())
         && n_positive_idx.is_some()
         && n_negative_idx.is_some()
         && n_zero_idx.is_some()
@@ -5138,34 +5141,42 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
 
             // Compute Jarque-Bera test (requires skewness and kurtosis)
-            if new_column_indices.contains_key("jarque_bera")
-                && !field_name.is_empty()
-                && let Some(kga_stats_val) = kga_stats.get(field_name)
-                && let Some(kurtosis_val) = kga_stats_val.kurtosis
-            {
-                let skewness = skewness_idx
+            // Prefer kurtosis from KGA stats when available, otherwise fall back
+            // to the kurtosis value already present in the stats CSV record.
+            if new_column_indices.contains_key("jarque_bera") && !field_name.is_empty() {
+                let kurtosis_from_kga = kga_stats
+                    .get(field_name)
+                    .and_then(|kga_stats_val| kga_stats_val.kurtosis);
+                let kurtosis_from_stats = kurtosis_idx
                     .and_then(|idx| record.get(idx))
                     .and_then(parse_float_opt);
-                // Compute n from n_positive + n_negative + n_zero
-                let n_pos = n_positive_idx
-                    .and_then(|idx| record.get(idx))
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .unwrap_or(0);
-                let n_neg = n_negative_idx
-                    .and_then(|idx| record.get(idx))
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .unwrap_or(0);
-                let n_z = n_zero_idx
-                    .and_then(|idx| record.get(idx))
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .unwrap_or(0);
-                let n = n_pos + n_neg + n_z;
-                if let Some((jb, pval)) = compute_jarque_bera(skewness, Some(kurtosis_val), n) {
-                    if let Some(idx) = new_column_indices.get("jarque_bera") {
-                        new_values[*idx] = util::round_num(jb, args.flag_round);
-                    }
-                    if let Some(idx) = new_column_indices.get("jarque_bera_pvalue") {
-                        new_values[*idx] = util::round_num(pval, args.flag_round);
+                let kurtosis_val = kurtosis_from_kga.or(kurtosis_from_stats);
+
+                if let Some(kurtosis_val) = kurtosis_val {
+                    let skewness = skewness_idx
+                        .and_then(|idx| record.get(idx))
+                        .and_then(parse_float_opt);
+                    // Compute n from n_positive + n_negative + n_zero
+                    let n_pos = n_positive_idx
+                        .and_then(|idx| record.get(idx))
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or(0);
+                    let n_neg = n_negative_idx
+                        .and_then(|idx| record.get(idx))
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or(0);
+                    let n_z = n_zero_idx
+                        .and_then(|idx| record.get(idx))
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or(0);
+                    let n = n_pos + n_neg + n_z;
+                    if let Some((jb, pval)) = compute_jarque_bera(skewness, Some(kurtosis_val), n) {
+                        if let Some(idx) = new_column_indices.get("jarque_bera") {
+                            new_values[*idx] = util::round_num(jb, args.flag_round);
+                        }
+                        if let Some(idx) = new_column_indices.get("jarque_bera_pvalue") {
+                            new_values[*idx] = util::round_num(pval, args.flag_round);
+                        }
                     }
                 }
             }

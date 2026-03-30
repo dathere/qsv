@@ -793,8 +793,8 @@ fn compute_midhinge(q1: Option<f64>, q3: Option<f64>) -> Option<f64> {
     }
 }
 
-/// Compute Robust Coefficient of Variation: MAD / median
-/// Uses robust measures (MAD and median) instead of stddev and mean.
+/// Compute Robust Coefficient of Variation: MAD / |median|
+/// Uses robust measures (MAD and median magnitude) instead of stddev and mean.
 #[inline]
 fn compute_robust_cv(mad: Option<f64>, median: Option<f64>) -> Option<f64> {
     if let (Some(mad_val), Some(median_val)) = (mad, median) {
@@ -3364,20 +3364,29 @@ fn compute_all_kga_from_reader(
         // Uses mean of positive values only, so it works even when overall mean is <= 0
         #[allow(clippy::cast_precision_loss)]
         let theil_val = {
-            let positive_values: Vec<f64> = values.iter().copied().filter(|&v| v > 0.0).collect();
-            if positive_values.len() >= 2 {
-                let n = positive_values.len() as f64;
-                let pos_mean = positive_values.iter().sum::<f64>() / n;
+            // First pass: compute sum and count of positive values
+            let mut pos_sum = 0.0_f64;
+            let mut pos_count: usize = 0;
+            for &v in &values {
+                if v > 0.0 {
+                    pos_sum += v;
+                    pos_count += 1;
+                }
+            }
+
+            if pos_count >= 2 {
+                let n = pos_count as f64;
+                let pos_mean = pos_sum / n;
                 if pos_mean > f64::EPSILON {
-                    let theil: f64 = positive_values
-                        .iter()
-                        .map(|&x| {
-                            let ratio = x / pos_mean;
-                            ratio * ratio.ln()
-                        })
-                        .sum::<f64>()
-                        / n;
-                    Some(theil)
+                    // Second pass: accumulate Theil sum over positive values
+                    let mut theil_sum = 0.0_f64;
+                    for &v in &values {
+                        if v > 0.0 {
+                            let ratio = v / pos_mean;
+                            theil_sum += ratio * ratio.ln();
+                        }
+                    }
+                    Some(theil_sum / n)
                 } else {
                     None
                 }

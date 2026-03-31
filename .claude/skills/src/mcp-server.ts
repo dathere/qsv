@@ -800,7 +800,7 @@ class QsvMcpServer {
               additionalInputFiles: meta?.additionalInputFiles ?? [],
               durationMs: meta?.durationMs ?? elapsedMs,
               success: meta?.success ?? !isError,
-              errorMessage: isError ? (result as { content?: Array<{ text?: string }> }).content?.[0]?.text : undefined,
+              errorMessage: isError ? ((result as { content?: Array<{ text?: string }> }).content?.[0]?.text ?? "").slice(0, MAX_ARGS_LOG_LEN) : undefined,
             });
           } catch (err) {
             console.error(`[PipelineManifest] Failed to record step: ${getErrorMessage(err)}`);
@@ -1545,6 +1545,10 @@ function setupShutdownHandlers(manifest: PipelineManifest | null): void {
     // Prevent the timeout from keeping the process alive
     forceExitTimer.unref();
 
+    // Initiate shutdown first — prevents new tool calls from being accepted,
+    // so no new recordStep() calls will start after this point.
+    initiateShutdown();
+
     // Finalize pipeline manifest (sync — hashing was done incrementally,
     // so this only writes two small files)
     if (manifest) {
@@ -1553,9 +1557,6 @@ function setupShutdownHandlers(manifest: PipelineManifest | null): void {
         console.error(`[Server] Pipeline manifest written: ${result.jsonPath}`);
       }
     }
-
-    // Initiate shutdown
-    initiateShutdown();
 
     // Kill all child processes
     killAllProcesses();

@@ -788,6 +788,10 @@ class QsvMcpServer {
         // Record pipeline step for reproducibility manifest
         if (this.pipelineManifest && name.startsWith("qsv_")) {
           const meta = (result as Record<string | symbol, unknown>)[PIPELINE_METADATA] as PipelineMetadata | undefined;
+          const rawErr = isError ? ((result as { content?: Array<{ text?: string }> }).content?.[0]?.text ?? "") : undefined;
+          const errorMessage = rawErr !== undefined
+            ? (rawErr.length > MAX_ARGS_LOG_LEN ? rawErr.slice(0, MAX_ARGS_LOG_LEN) + "…[truncated]" : rawErr)
+            : undefined;
           try {
             await this.pipelineManifest.recordStep({
               invocationId,
@@ -800,7 +804,7 @@ class QsvMcpServer {
               additionalInputFiles: meta?.additionalInputFiles ?? [],
               durationMs: meta?.durationMs ?? elapsedMs,
               success: meta?.success ?? !isError,
-              errorMessage: isError ? (() => { const raw = (result as { content?: Array<{ text?: string }> }).content?.[0]?.text ?? ""; return raw.length > MAX_ARGS_LOG_LEN ? raw.slice(0, MAX_ARGS_LOG_LEN) + "…[truncated]" : raw; })() : undefined,
+              errorMessage,
             });
           } catch (err) {
             console.error(`[PipelineManifest] Failed to record step: ${getErrorMessage(err)}`);

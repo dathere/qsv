@@ -424,7 +424,7 @@ impl OutputMode {
                             max_value:      true,
                             distinct_count: true,
                             null_count:     true,
-                            // binary_statistics_truncate_length: Some(64),
+                            binary_statistics_truncate_length: Some(64),
                         }
                     } else {
                         StatisticsOptions {
@@ -432,7 +432,7 @@ impl OutputMode {
                             max_value:      false,
                             distinct_count: false,
                             null_count:     false,
-                            // binary_statistics_truncate_length: None,
+                            binary_statistics_truncate_length: None,
                         }
                     };
 

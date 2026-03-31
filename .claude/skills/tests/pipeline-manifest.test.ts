@@ -404,6 +404,12 @@ test("PipelineManifest: file inventory reclassifies input→intermediate when fi
     const entry = json.file_inventory[dataFile];
     assert.ok(entry, "data.csv should be in file inventory");
     assert.strictEqual(entry.role, "intermediate", "File used as both input and output should be intermediate");
+
+    // blake3 and size_bytes should reflect the output step's values (updated, not original input)
+    const outputStep = json.steps.find(s => s.invocation_id === "inv-2");
+    assert.ok(outputStep?.output, "Output step should have output hash");
+    assert.strictEqual(entry.blake3, outputStep.output.blake3, "blake3 should match output step");
+    assert.strictEqual(entry.size_bytes, outputStep.output.size_bytes, "size_bytes should match output step");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -732,6 +738,55 @@ test("consolidatePipelineManifest: filters out empty/whitespace url and query", 
     const manifest: PipelineManifestJson = JSON.parse(readFileSync(join(dir, "pipeline.json"), "utf-8"));
     // Only the valid URL should survive; empty/whitespace/null entries filtered out
     assert.deepStrictEqual(manifest.steps[0].web_sources, ["https://valid.com"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("consolidatePipelineManifest: reclassifies input→intermediate and uses min/max timestamps", async () => {
+  const consolidatePipelineManifest = await loadConsolidate();
+
+  const dir = makeTempDir();
+  try {
+    // Step 1: reads data.csv (input), step 2: writes data.csv (output) — in-place overwrite
+    const step1: PipelineStep = {
+      step: 1, invocation_id: "inv-1", tool: "qsv_stats",
+      command: "qsv stats data.csv", args: {}, reason: null,
+      timestamp: "2026-03-30T12:00:05Z", duration_ms: 50, success: true,
+      kind: "exploratory", deterministic: true,
+      input: { file: "data.csv", blake3: "hash-input", size_bytes: 100 },
+      output: null, additional_inputs: [],
+    };
+    const step2: PipelineStep = {
+      step: 2, invocation_id: "inv-2", tool: "qsv_sort",
+      command: "qsv sort data.csv --output data.csv", args: {}, reason: null,
+      timestamp: "2026-03-30T12:00:01Z", duration_ms: 80, success: true,
+      kind: "transformative", deterministic: true,
+      input: { file: "data.csv", blake3: "hash-input", size_bytes: 100 },
+      output: { file: "data.csv", blake3: "hash-output", size_bytes: 120 },
+      additional_inputs: [],
+    };
+
+    writeFileSync(
+      join(dir, ".qsv-pipeline-steps.jsonl"),
+      [step1, step2].map(e => JSON.stringify(e)).join("\n") + "\n",
+    );
+
+    consolidatePipelineManifest(dir, "test-session");
+
+    const manifest: PipelineManifestJson = JSON.parse(readFileSync(join(dir, "pipeline.json"), "utf-8"));
+
+    // data.csv was input then output → intermediate with output hash/size
+    const entry = manifest.file_inventory["data.csv"];
+    assert.ok(entry);
+    assert.strictEqual(entry.role, "intermediate");
+    assert.strictEqual(entry.blake3, "hash-output", "Should have output hash");
+    assert.strictEqual(entry.size_bytes, 120, "Should have output size");
+
+    // Session timestamps should use min/max (step2 has earlier timestamp).
+    // new Date().toISOString() normalizes to millisecond format.
+    assert.strictEqual(manifest.session.started_at, "2026-03-30T12:00:01.000Z", "started_at should be min timestamp");
+    assert.strictEqual(manifest.session.ended_at, "2026-03-30T12:00:05.000Z", "ended_at should be max timestamp");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -155,21 +155,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 hasher.finalize_xof().fill(&mut buf);
                 output_writer.write_all(&buf)?;
             }
-        } else if default_length {
-            // Fast path: stack-allocated hash + hex via blake3's to_hex()
-            let hex = hasher.finalize().to_hex();
-            if args.flag_no_names {
-                writeln!(output_writer, "{hex}")?;
-            } else if args.flag_tag {
-                writeln!(output_writer, "BLAKE3 ({name}) = {hex}")?;
-            } else {
-                writeln!(output_writer, "{hex}  {name}")?;
-            }
         } else {
-            // Custom length: xof path with manual hex encoding
-            let mut buf = vec![0u8; args.flag_length];
-            hasher.finalize_xof().fill(&mut buf);
-            let hex = bytes_to_hex(&buf);
+            let hex = if default_length {
+                // Fast path: stack-allocated hash + hex via blake3's to_hex()
+                hasher.finalize().to_hex().to_string()
+            } else {
+                // Custom length: xof path with manual hex encoding
+                let mut buf = vec![0u8; args.flag_length];
+                hasher.finalize_xof().fill(&mut buf);
+                bytes_to_hex(&buf)
+            };
             if args.flag_no_names {
                 writeln!(output_writer, "{hex}")?;
             } else if args.flag_tag {

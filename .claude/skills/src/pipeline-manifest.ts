@@ -328,9 +328,12 @@ export class PipelineManifest {
             first_seen_step: step.step,
             role: "output",
           };
-        } else if (existing.role === "input") {
-          existing.role = "intermediate";
-          // Update hash/size to reflect the output version
+        } else {
+          // Reclassify input→intermediate; always update hash/size to reflect
+          // the latest output version (handles both input→output and repeated outputs)
+          if (existing.role === "input") {
+            existing.role = "intermediate";
+          }
           existing.blake3 = step.output.blake3;
           existing.size_bytes = step.output.size_bytes;
         }

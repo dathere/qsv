@@ -627,7 +627,7 @@ test("consolidatePipelineManifest: skips rebuild when valid pipeline.json exists
   }
 });
 
-test("consolidatePipelineManifest: rebuilds when pipeline.json exists but pipeline.sh missing", async () => {
+test("consolidatePipelineManifest: generates pipeline.sh from existing pipeline.json when sh is missing", async () => {
   const consolidatePipelineManifest = await loadConsolidate();
 
   const dir = makeTempDir();
@@ -636,16 +636,16 @@ test("consolidatePipelineManifest: rebuilds when pipeline.json exists but pipeli
     const existingManifest = {
       version: "1.0.0",
       session: { id: "partial-session", started_at: "2026-03-30T12:00:00Z", ended_at: "2026-03-30T12:01:00Z", qsv_version: "18.0.0", mcp_server_version: "18.0.5", working_directory: dir },
-      steps: [{ step: 1, tool: "qsv_stats", command: "qsv stats data.csv" }],
+      steps: [{ step: 1, tool: "qsv_select", command: "qsv select name data.csv", kind: "transformative", success: true, deterministic: true }],
       file_inventory: {},
     };
     writeFileSync(join(dir, "pipeline.json"), JSON.stringify(existingManifest), "utf-8");
     // Intentionally NOT writing pipeline.sh
 
-    // Write JSONL with a step
+    // Write JSONL (simulating crash before cleanup)
     const step: PipelineStep = {
-      step: 1, invocation_id: "inv-1", tool: "qsv_select",
-      command: "qsv select name data.csv", args: {}, reason: null,
+      step: 1, invocation_id: "inv-1", tool: "qsv_sort",
+      command: "qsv sort data.csv", args: {}, reason: null,
       timestamp: "2026-03-30T12:00:30Z", duration_ms: 50, success: true,
       kind: "transformative", deterministic: true, input: null, output: null, additional_inputs: [],
     };
@@ -653,13 +653,17 @@ test("consolidatePipelineManifest: rebuilds when pipeline.json exists but pipeli
 
     consolidatePipelineManifest(dir, "rebuild-session");
 
-    // pipeline.json should be rebuilt from JSONL (overwriting the partial one)
-    const manifest: PipelineManifestJson = JSON.parse(readFileSync(join(dir, "pipeline.json"), "utf-8"));
-    assert.strictEqual(manifest.session.id, "rebuild-session", "Should rebuild from JSONL, not preserve partial manifest");
-    assert.strictEqual(manifest.steps[0].tool, "qsv_select", "Should have JSONL step");
+    // pipeline.json should be PRESERVED (not overwritten from JSONL)
+    const manifest = JSON.parse(readFileSync(join(dir, "pipeline.json"), "utf-8"));
+    assert.strictEqual(manifest.session.id, "partial-session", "Should preserve server-written manifest");
+    assert.strictEqual(manifest.session.qsv_version, "18.0.0", "Should keep original qsv_version");
+    assert.strictEqual(manifest.steps[0].tool, "qsv_select", "Should have original step, not JSONL step");
 
-    // pipeline.sh should now exist
+    // pipeline.sh should now exist and contain the command from pipeline.json
     assert.ok(existsSync(join(dir, "pipeline.sh")), "Should generate missing pipeline.sh");
+    const sh = readFileSync(join(dir, "pipeline.sh"), "utf-8");
+    assert.ok(sh.includes("qsv select name data.csv"), "pipeline.sh should have commands from existing manifest");
+    assert.ok(!sh.includes("qsv sort"), "pipeline.sh should NOT have JSONL commands");
 
     // JSONL should be cleaned up
     assert.ok(!existsSync(join(dir, ".qsv-pipeline-steps.jsonl")));

@@ -167,7 +167,9 @@ export class PipelineManifest {
     errorMessage?: string;
     category?: string;
   }): Promise<void> {
-    this.stepCounter++;
+    // Capture step number before any awaits to prevent concurrent calls
+    // from seeing a stale/shared counter value.
+    const stepNo = ++this.stepCounter;
 
     const kind = classifyKind(params.toolName);
     const { deterministic, seed } = isDeterministic(params.toolName, params.toolArgs);
@@ -197,7 +199,7 @@ export class PipelineManifest {
     this.pendingWebSources = [];
 
     const step: PipelineStep = {
-      step: this.stepCounter,
+      step: stepNo,
       invocation_id: params.invocationId,
       tool: params.toolName,
       command: params.commandLine ?? "",

@@ -3094,15 +3094,18 @@ export async function handleToolCall(
           console.error(`[MCP Tools] Could not append moarstats note to result: unexpected content structure`);
         }
       }
-      // Attach pipeline metadata for reproducibility manifest
+      // Attach pipeline metadata for reproducibility manifest.
+      // Note: formatToolResult can return isError (e.g., temp file I/O failure)
+      // even though the qsv command itself succeeded — derive success from the result.
       const finalOut = (formattedResult as Record<string | symbol, unknown>)[FINAL_OUTPUT_FILE] as string | undefined;
+      const formatSuccess = !("isError" in formattedResult && formattedResult.isError === true);
       (formattedResult as Record<string | symbol, unknown>)[PIPELINE_METADATA] = {
         inputFile,
         outputFile: finalOut,
         commandLine: result.metadata?.command,
         durationMs: result.metadata?.duration,
         category: skill.category,
-        success: true,
+        success: formatSuccess,
         additionalInputFiles: collectAdditionalInputFiles(skill, params),
       } satisfies PipelineMetadata;
       return formattedResult;

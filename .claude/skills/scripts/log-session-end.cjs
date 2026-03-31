@@ -120,6 +120,9 @@ function buildSummary(sessionId, stats) {
  * Consolidate .qsv-pipeline-steps.jsonl into pipeline.json + pipeline.sh.
  * This is the crash-recovery path: if the MCP server finalized cleanly,
  * the JSONL file will already be deleted and this is a no-op.
+ *
+ * Note: The replay script generation logic mirrors PipelineManifest.generateReplayScript()
+ * in src/pipeline-manifest.ts. Changes to the script format should be applied in both places.
  */
 function consolidatePipelineManifest(cwd, sessionId) {
   const jsonlPath = join(cwd, '.qsv-pipeline-steps.jsonl');

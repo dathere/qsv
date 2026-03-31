@@ -25,11 +25,12 @@ import type {
 // ── Pipeline Metadata (for reproducibility manifest) ─────────────────────────
 
 /**
- * Well-known Symbol for attaching pipeline metadata to MCP tool results.
+ * Well-known Symbols for attaching pipeline metadata to MCP tool results.
  * Symbol properties are invisible to JSON.stringify, so they never leak
  * into the MCP protocol response.
  */
 export const PIPELINE_METADATA = Symbol.for("qsv.pipelineMetadata");
+export const FINAL_OUTPUT_FILE = Symbol.for("qsv.finalOutputFile");
 
 /**
  * Metadata about a tool invocation's inputs/outputs, attached to the result
@@ -1904,9 +1905,6 @@ function buildSkillExecParams(
 }
 
 /**
- * Format successful tool result, handling temp files and performance tips
- */
-/**
  * Collect additional input files from tool params for the pipeline manifest.
  * These are file-type positional args (excluding the primary "input") and
  * FILE_PATH_INPUT_OPTIONS that reference input files.
@@ -1937,6 +1935,7 @@ function collectAdditionalInputFiles(
   return files;
 }
 
+/** Format successful tool result, handling temp files and performance tips. */
 async function formatToolResult(
   result: import("./types.js").SkillResult,
   commandName: string,
@@ -2051,7 +2050,7 @@ async function formatToolResult(
   }
 
   const formatted = successResult(responseText);
-  (formatted as Record<string, unknown>)._finalOutputFile = finalOutputFile;
+  (formatted as Record<string | symbol, unknown>)[FINAL_OUTPUT_FILE] = finalOutputFile;
   return formatted;
 }
 
@@ -3096,7 +3095,7 @@ export async function handleToolCall(
         }
       }
       // Attach pipeline metadata for reproducibility manifest
-      const finalOut = (formattedResult as Record<string, unknown>)._finalOutputFile as string | undefined;
+      const finalOut = (formattedResult as Record<string | symbol, unknown>)[FINAL_OUTPUT_FILE] as string | undefined;
       (formattedResult as Record<string | symbol, unknown>)[PIPELINE_METADATA] = {
         inputFile,
         outputFile: finalOut,

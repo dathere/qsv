@@ -7,7 +7,7 @@
  */
 
 import { execFile, execFileSync } from "node:child_process";
-import { appendFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { appendFileSync, readFileSync, existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { stat as fsStat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -285,43 +285,44 @@ export class PipelineManifest {
     const inventory: PipelineManifestJson["file_inventory"] = {};
 
     for (const step of this.steps) {
-      // Input file
-      if (step.input?.file && !inventory[step.input.file]) {
-        inventory[step.input.file] = {
-          blake3: step.input.blake3,
-          size_bytes: step.input.size_bytes,
-          first_seen_step: step.step,
-          role: "input",
-        };
-      }
-
-      // Output file
-      if (step.output?.file) {
-        if (!inventory[step.output.file]) {
-          inventory[step.output.file] = {
-            blake3: step.output.blake3,
-            size_bytes: step.output.size_bytes,
+      // Input file: create if new, or reclassify prior output to intermediate
+      if (step.input?.file) {
+        const existing = inventory[step.input.file];
+        if (!existing) {
+          inventory[step.input.file] = {
+            blake3: step.input.blake3,
+            size_bytes: step.input.size_bytes,
             first_seen_step: step.step,
-            role: "output",
+            role: "input",
           };
-        }
-        // If a file was previously seen as an output and is now an input,
-        // mark it as intermediate
-        if (step.input?.file && inventory[step.input.file]?.role === "output") {
-          inventory[step.input.file].role = "intermediate";
+        } else if (existing.role === "output") {
+          existing.role = "intermediate";
         }
       }
 
-      // Additional inputs
+      // Additional inputs: same reclassification logic
       for (const ai of step.additional_inputs) {
-        if (!inventory[ai.file]) {
+        const existing = inventory[ai.file];
+        if (!existing) {
           inventory[ai.file] = {
             blake3: ai.blake3,
             size_bytes: ai.size_bytes,
             first_seen_step: step.step,
             role: "input",
           };
+        } else if (existing.role === "output") {
+          existing.role = "intermediate";
         }
+      }
+
+      // Output file
+      if (step.output?.file && !inventory[step.output.file]) {
+        inventory[step.output.file] = {
+          blake3: step.output.blake3,
+          size_bytes: step.output.size_bytes,
+          first_seen_step: step.step,
+          role: "output",
+        };
       }
     }
 
@@ -428,14 +429,62 @@ export class PipelineManifest {
       );
     }
 
-    // Clean up incremental JSONL
+    // Clean up incremental JSONL (merge any web_source entries first)
+    const jsonlPath = join(this.workingDir, JSONL_FILENAME);
     try {
-      unlinkSync(join(this.workingDir, JSONL_FILENAME));
+      if (existsSync(jsonlPath)) {
+        this.mergeWebSourcesFromJsonl(jsonlPath);
+        unlinkSync(jsonlPath);
+      }
     } catch {
-      // ignore — may not exist
+      // ignore — may not exist or be inaccessible
     }
 
     return { jsonPath, shPath };
+  }
+
+  /**
+   * Merge web_source entries from the JSONL file into in-memory steps.
+   * Hook scripts (log-web-results.cjs) write web_source entries to the JSONL
+   * from a separate process. On clean shutdown, we merge these into the
+   * nearest subsequent step by timestamp before writing the final manifest.
+   */
+  private mergeWebSourcesFromJsonl(jsonlPath: string): void {
+    let content: string;
+    try {
+      content = readFileSync(jsonlPath, "utf-8");
+    } catch {
+      return;
+    }
+
+    const webSources: Array<{ url: string; timestamp: string }> = [];
+    for (const line of content.split("\n").filter(Boolean)) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.type === "web_source" && entry.url) {
+          webSources.push({ url: entry.url, timestamp: entry.timestamp });
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (webSources.length === 0) return;
+
+    // Attach each web_source to the nearest subsequent step by timestamp
+    for (const ws of webSources) {
+      const wsTime = new Date(ws.timestamp).getTime();
+      // Find the first step with a timestamp >= the web source
+      const target = this.steps.find(
+        (s) => new Date(s.timestamp).getTime() >= wsTime,
+      );
+      if (target) {
+        if (!target.web_sources) target.web_sources = [];
+        if (!target.web_sources.includes(ws.url)) {
+          target.web_sources.push(ws.url);
+        }
+      }
+    }
   }
 }
 

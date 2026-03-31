@@ -503,3 +503,56 @@ test("consolidatePipelineManifest: no-op when JSONL absent", async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("consolidatePipelineManifest: attaches web_source to next step", async () => {
+  const { createRequire } = await import("node:module");
+  const { fileURLToPath } = await import("node:url");
+  const { resolve, dirname } = await import("node:path");
+
+  const require2 = createRequire(import.meta.url);
+  const __filename2 = fileURLToPath(import.meta.url);
+  const projectRoot = resolve(dirname(__filename2), "..", "..");
+  const { consolidatePipelineManifest } = require2(resolve(projectRoot, "scripts", "log-session-end.cjs"));
+
+  const dir = makeTempDir();
+  try {
+    // Write a web_source entry followed by a pipeline step
+    const webSource = {
+      type: "web_source",
+      tool: "WebFetch",
+      url: "https://example.com/data.csv",
+      timestamp: "2026-03-30T12:00:00Z",
+    };
+    const step: PipelineStep = {
+      step: 1,
+      invocation_id: "inv-1",
+      tool: "qsv_sqlp",
+      command: 'qsv sqlp data.csv "SELECT * FROM _t"',
+      args: { sql: "SELECT * FROM _t" },
+      reason: null,
+      timestamp: "2026-03-30T12:00:01Z",
+      duration_ms: 200,
+      success: true,
+      kind: "transformative",
+      deterministic: true,
+      input: null,
+      output: null,
+      additional_inputs: [],
+    };
+
+    writeFileSync(
+      join(dir, ".qsv-pipeline-steps.jsonl"),
+      JSON.stringify(webSource) + "\n" + JSON.stringify(step) + "\n",
+    );
+
+    consolidatePipelineManifest(dir, "test-session");
+
+    const jsonPath = join(dir, "pipeline.json");
+    assert.ok(existsSync(jsonPath));
+    const manifest: PipelineManifestJson = JSON.parse(readFileSync(jsonPath, "utf-8"));
+    assert.strictEqual(manifest.steps.length, 1);
+    assert.deepStrictEqual(manifest.steps[0].web_sources, ["https://example.com/data.csv"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

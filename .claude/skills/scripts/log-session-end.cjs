@@ -146,6 +146,14 @@ function consolidatePipelineManifest(cwd, sessionId) {
     }
   }
 
+  // Sort all entries by timestamp to handle interleaved writes from
+  // multiple processes (MCP server + hook scripts)
+  allEntries.sort((a, b) => {
+    const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return ta - tb;
+  });
+
   // Attach web_source URLs to the next chronological pipeline step
   let pendingWebSources = [];
   for (const entry of allEntries) {
@@ -167,38 +175,47 @@ function consolidatePipelineManifest(cwd, sessionId) {
   }
 
   // Build file inventory
+  // Note: reclassification logic mirrors PipelineManifest.buildFileInventory()
+  // in src/pipeline-manifest.ts — changes should be applied in both places.
   const inventory = {};
   for (const step of steps) {
-    if (step.input && step.input.file && !inventory[step.input.file]) {
-      inventory[step.input.file] = {
-        blake3: step.input.blake3,
-        size_bytes: step.input.size_bytes,
-        first_seen_step: step.step,
-        role: 'input',
-      };
-    }
-    if (step.output && step.output.file) {
-      if (!inventory[step.output.file]) {
-        inventory[step.output.file] = {
-          blake3: step.output.blake3,
-          size_bytes: step.output.size_bytes,
+    // Input: create if new, or reclassify prior output to intermediate
+    if (step.input && step.input.file) {
+      const existing = inventory[step.input.file];
+      if (!existing) {
+        inventory[step.input.file] = {
+          blake3: step.input.blake3,
+          size_bytes: step.input.size_bytes,
           first_seen_step: step.step,
-          role: 'output',
+          role: 'input',
         };
-      }
-      if (step.input && step.input.file && inventory[step.input.file] && inventory[step.input.file].role === 'output') {
-        inventory[step.input.file].role = 'intermediate';
+      } else if (existing.role === 'output') {
+        existing.role = 'intermediate';
       }
     }
+    // Additional inputs: same reclassification logic
     for (const ai of (step.additional_inputs || [])) {
-      if (!inventory[ai.file]) {
+      if (!ai || !ai.file) continue;
+      const existingAi = inventory[ai.file];
+      if (!existingAi) {
         inventory[ai.file] = {
           blake3: ai.blake3,
           size_bytes: ai.size_bytes,
           first_seen_step: step.step,
           role: 'input',
         };
+      } else if (existingAi.role === 'output') {
+        existingAi.role = 'intermediate';
       }
+    }
+    // Output: create if first seen
+    if (step.output && step.output.file && !inventory[step.output.file]) {
+      inventory[step.output.file] = {
+        blake3: step.output.blake3,
+        size_bytes: step.output.size_bytes,
+        first_seen_step: step.step,
+        role: 'output',
+      };
     }
   }
 

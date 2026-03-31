@@ -785,24 +785,26 @@ class QsvMcpServer {
           }).catch(() => {});
         }
 
-        // Record pipeline step for reproducibility manifest (fire-and-forget)
+        // Record pipeline step for reproducibility manifest
         if (this.pipelineManifest && name.startsWith("qsv_")) {
           const meta = (result as Record<string | symbol, unknown>)[PIPELINE_METADATA] as PipelineMetadata | undefined;
-          this.pipelineManifest.recordStep({
-            invocationId,
-            toolName: name,
-            toolArgs: toolArgs ?? {},
-            reason: reason !== name ? reason : null,
-            commandLine: meta?.commandLine ?? null,
-            inputFile: meta?.inputFile ?? null,
-            outputFile: meta?.outputFile ?? null,
-            additionalInputFiles: meta?.additionalInputFiles ?? [],
-            durationMs: meta?.durationMs ?? elapsedMs,
-            success: meta?.success ?? !isError,
-            errorMessage: isError ? (result as { content?: Array<{ text?: string }> }).content?.[0]?.text : undefined,
-          }).catch((err) => {
+          try {
+            await this.pipelineManifest.recordStep({
+              invocationId,
+              toolName: name,
+              toolArgs: toolArgs ?? {},
+              reason: reason !== name ? reason : null,
+              commandLine: meta?.commandLine ?? null,
+              inputFile: meta?.inputFile ?? null,
+              outputFile: meta?.outputFile ?? null,
+              additionalInputFiles: meta?.additionalInputFiles ?? [],
+              durationMs: meta?.durationMs ?? elapsedMs,
+              success: meta?.success ?? !isError,
+              errorMessage: isError ? (result as { content?: Array<{ text?: string }> }).content?.[0]?.text : undefined,
+            });
+          } catch (err) {
             console.error(`[PipelineManifest] Failed to record step: ${getErrorMessage(err)}`);
-          });
+          }
         }
 
         return result;

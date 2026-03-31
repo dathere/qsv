@@ -392,6 +392,17 @@ export class PipelineManifest {
       return null;
     }
 
+    // Merge web_source entries from JSONL BEFORE serializing the manifest.
+    // Hook scripts (log-web-results.cjs) write these from a separate process.
+    const jsonlPath = join(this.workingDir, JSONL_FILENAME);
+    try {
+      if (existsSync(jsonlPath)) {
+        this.mergeWebSourcesFromJsonl(jsonlPath);
+      }
+    } catch {
+      // ignore — may not exist or be inaccessible
+    }
+
     const ended = endTime ?? new Date().toISOString();
     const manifest: PipelineManifestJson = {
       version: MANIFEST_VERSION,
@@ -429,15 +440,11 @@ export class PipelineManifest {
       );
     }
 
-    // Clean up incremental JSONL (merge any web_source entries first)
-    const jsonlPath = join(this.workingDir, JSONL_FILENAME);
+    // Clean up incremental JSONL
     try {
-      if (existsSync(jsonlPath)) {
-        this.mergeWebSourcesFromJsonl(jsonlPath);
-        unlinkSync(jsonlPath);
-      }
+      unlinkSync(jsonlPath);
     } catch {
-      // ignore — may not exist or be inaccessible
+      // ignore — may not exist
     }
 
     return { jsonPath, shPath };
@@ -462,7 +469,10 @@ export class PipelineManifest {
       try {
         const entry = JSON.parse(line);
         if (entry.type === "web_source" && entry.url) {
-          webSources.push({ url: entry.url, timestamp: entry.timestamp });
+          webSources.push({
+            url: entry.url,
+            timestamp: entry.timestamp || new Date(0).toISOString(),
+          });
         }
       } catch {
         continue;
@@ -473,10 +483,10 @@ export class PipelineManifest {
 
     // Attach each web_source to the nearest subsequent step by timestamp
     for (const ws of webSources) {
-      const wsTime = new Date(ws.timestamp).getTime();
+      const wsTime = new Date(ws.timestamp).getTime() || 0;
       // Find the first step with a timestamp >= the web source
       const target = this.steps.find(
-        (s) => new Date(s.timestamp).getTime() >= wsTime,
+        (s) => (new Date(s.timestamp).getTime() || 0) >= wsTime,
       );
       if (target) {
         if (!target.web_sources) target.web_sources = [];

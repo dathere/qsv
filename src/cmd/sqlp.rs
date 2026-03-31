@@ -420,18 +420,18 @@ impl OutputMode {
 
                     let statistics_options = if args.flag_statistics {
                         StatisticsOptions {
-                            min_value:      true,
-                            max_value:      true,
+                            min_value: true,
+                            max_value: true,
                             distinct_count: true,
-                            null_count:     true,
+                            null_count: true,
                             binary_statistics_truncate_length: Some(64),
                         }
                     } else {
                         StatisticsOptions {
-                            min_value:      false,
-                            max_value:      false,
+                            min_value: false,
+                            max_value: false,
                             distinct_count: false,
-                            null_count:     false,
+                            null_count: false,
                             binary_statistics_truncate_length: None,
                         }
                     };

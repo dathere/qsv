@@ -329,12 +329,12 @@ fn blake3_output_file() {
 }
 
 #[test]
-fn blake3_num_threads() {
-    let wrk = Workdir::new("blake3_num_threads");
+fn blake3_jobs() {
+    let wrk = Workdir::new("blake3_jobs");
     wrk.create_from_string("hello.txt", "hello");
 
     let mut cmd = wrk.command("blake3");
-    cmd.arg("--num-threads")
+    cmd.arg("--jobs")
         .arg("1")
         .arg("--no-names")
         .arg(wrk.path("hello.txt"));

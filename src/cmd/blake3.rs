@@ -19,7 +19,7 @@ blake3 options:
                          Cannot be used with --keyed.
     -l, --length <LEN>   The number of output bytes, before hex encoding.
                          [default: 32]
-    --num-threads <NUM>  The maximum number of threads to use for hashing.
+    -j, --jobs <NUM>     The number of jobs to run in parallel for hashing.
                          When not set, uses the number of CPUs.
                          Set to 1 to disable multithreading.
     --no-mmap            Disable memory mapping. Also disables multithreading.
@@ -49,18 +49,18 @@ use crate::{CliError, CliResult, config, util};
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input:        Vec<String>,
-    flag_keyed:       bool,
-    flag_derive_key:  Option<String>,
-    flag_length:      usize,
-    flag_num_threads: Option<usize>,
-    flag_no_mmap:     bool,
-    flag_no_names:    bool,
-    flag_raw:         bool,
-    flag_tag:         bool,
-    flag_check:       bool,
-    flag_output:      Option<String>,
-    flag_quiet:       bool,
+    arg_input:       Vec<String>,
+    flag_keyed:      bool,
+    flag_derive_key: Option<String>,
+    flag_length:     usize,
+    flag_jobs:       Option<usize>,
+    flag_no_mmap:    bool,
+    flag_no_names:   bool,
+    flag_raw:        bool,
+    flag_tag:        bool,
+    flag_check:      bool,
+    flag_output:     Option<String>,
+    flag_quiet:      bool,
 }
 
 /// The hashing mode to use.
@@ -111,18 +111,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         HashMode::Default
     };
 
-    // Configure rayon thread pool for num-threads
-    if let Some(num_threads) = args.flag_num_threads {
-        let threads = if num_threads == 0 {
-            num_cpus::get()
-        } else {
-            num_threads
-        };
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build_global()
-            .ok(); // Ignore error if pool is already initialized
-    }
+    // Configure rayon thread pool
+    util::njobs(args.flag_jobs);
 
     // Set up output
     let mut output_writer: Box<dyn Write> = match &args.flag_output {

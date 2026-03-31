@@ -152,11 +152,12 @@ fn blake3_no_mmap() {
     let hash_mmap: String = wrk.stdout(&mut cmd1);
 
     // Hash without mmap
-    let mut cmd2 = wrk.command("blake3");
-    cmd2.arg("--no-names")
+    let mut cmd_2 = wrk.command("blake3");
+    cmd_2
+        .arg("--no-names")
         .arg("--no-mmap")
         .arg(wrk.path("hello.txt"));
-    let hash_no_mmap: String = wrk.stdout(&mut cmd2);
+    let hash_no_mmap: String = wrk.stdout(&mut cmd_2);
 
     assert_eq!(
         hash_mmap.trim(),
@@ -179,9 +180,9 @@ fn blake3_derive_key() {
     let hash_derived: String = wrk.stdout(&mut cmd);
 
     // Hash without derive-key
-    let mut cmd2 = wrk.command("blake3");
-    cmd2.arg("--no-names").arg(wrk.path("hello.txt"));
-    let hash_default: String = wrk.stdout(&mut cmd2);
+    let mut cmd_2 = wrk.command("blake3");
+    cmd_2.arg("--no-names").arg(wrk.path("hello.txt"));
+    let hash_default: String = wrk.stdout(&mut cmd_2);
 
     // They should be different
     assert_ne!(

@@ -195,13 +195,11 @@ fn hash_input(
         let path = Path::new(input);
         if no_mmap {
             // Read file without mmap, single-threaded, streaming
-            let file =
+            let mut file =
                 fs::File::open(path).map_err(|e| CliError::Other(format!("{input}: {e}")))?;
-            let mut reader =
-                io::BufReader::with_capacity(config::DEFAULT_RDR_BUFFER_CAPACITY, file);
             let mut buf = [0u8; 8192];
             loop {
-                let n = reader.read(&mut buf)?;
+                let n = file.read(&mut buf)?;
                 if n == 0 {
                     break;
                 }

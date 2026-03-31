@@ -92,9 +92,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Determine hash mode
     let hash_mode = if args.flag_keyed {
-        if args.arg_input.is_empty() {
+        if args.arg_input.is_empty() || args.arg_input.iter().any(|i| i == "-") {
             return fail_incorrectusage_clierror!(
-                "--keyed requires file arguments (stdin is used for the key)."
+                "--keyed requires file arguments and cannot read from stdin (stdin is used for \
+                 the key)."
             );
         }
         let mut key = [0u8; blake3::KEY_LEN];
@@ -179,24 +180,37 @@ fn hash_input(
     };
 
     let name = if input == "-" {
-        // Read from stdin
-        let mut buf = Vec::new();
-        stdin().lock().read_to_end(&mut buf)?;
-        hasher.update(&buf);
+        // Read from stdin incrementally to avoid unbounded memory usage
+        let mut stdin_locked = stdin().lock();
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = stdin_locked.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
         "-".to_string()
     } else {
         let path = Path::new(input);
-        if !path.exists() {
-            return fail_clierror!("{input}: No such file or directory");
-        }
         if no_mmap {
-            // Read file without mmap, single-threaded
-            let data = fs::read(path)?;
-            hasher.update(&data);
+            // Read file without mmap, single-threaded, streaming
+            let file =
+                fs::File::open(path).map_err(|e| CliError::Other(format!("{input}: {e}")))?;
+            let mut reader =
+                io::BufReader::with_capacity(config::DEFAULT_RDR_BUFFER_CAPACITY, file);
+            let mut buf = [0u8; 8192];
+            loop {
+                let n = reader.read(&mut buf)?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buf[..n]);
+            }
         } else {
             hasher
                 .update_mmap_rayon(path)
-                .map_err(|e| CliError::Other(format!("Failed to hash {input}: {e}")))?;
+                .map_err(|e| CliError::Other(format!("{input}: {e}")))?;
         }
         input.to_string()
     };
@@ -278,11 +292,10 @@ fn check_mode(
     output_writer.flush()?;
 
     if failures > 0 {
-        werr!(
+        return fail_clierror!(
             "blake3: WARNING: {failures} computed checksum{} did NOT match",
             if failures == 1 { "" } else { "s" }
         );
-        return fail!("");
     }
     if total == 0 {
         return fail_clierror!("No checksums found in input files.");

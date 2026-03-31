@@ -324,14 +324,19 @@ function consolidatePipelineManifest(cwd, sessionId) {
   }
 
   const shPath = join(cwd, 'pipeline.sh');
+  let shWritten = false;
   try {
     writeFileSync(shPath, shLines.join('\n'), { encoding: 'utf-8', mode: 0o755 });
+    shWritten = true;
   } catch (err) {
     process.stderr.write(`[log-session-end] Failed to write pipeline.sh: ${err.message}\n`);
   }
 
-  // Clean up JSONL
-  try { unlinkSync(jsonlPath); } catch { /* ignore */ }
+  // Only delete JSONL when both files were written successfully,
+  // consistent with PipelineManifest.finalize() behavior.
+  if (shWritten) {
+    try { unlinkSync(jsonlPath); } catch { /* ignore */ }
+  }
 }
 
 // Export for testing

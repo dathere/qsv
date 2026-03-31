@@ -112,7 +112,7 @@ export class PipelineManifest {
   private steps: PipelineStep[] = [];
   private stepCounter = 0;
   private b3sumAvailable: boolean;
-  private hashCache = new Map<string, { blake3: string; mtimeMs: number }>();
+  private hashCache = new Map<string, { blake3: string | null; mtimeMs: number }>();
   private pendingWebSources: string[] = [];
 
   constructor(
@@ -165,7 +165,6 @@ export class PipelineManifest {
     durationMs: number;
     success: boolean;
     errorMessage?: string;
-    category?: string;
   }): Promise<void> {
     // Capture step number before any awaits to prevent concurrent calls
     // from seeing a stale/shared counter value.
@@ -276,6 +275,8 @@ export class PipelineManifest {
       console.error(
         `[PipelineManifest] b3sum failed for ${filePath}: ${err instanceof Error ? err.message : err}`,
       );
+      // Cache negative result to avoid repeated timeouts/failures for the same file
+      this.hashCache.set(filePath, { blake3: null, mtimeMs: fileStats.mtimeMs });
       return result;
     }
   }

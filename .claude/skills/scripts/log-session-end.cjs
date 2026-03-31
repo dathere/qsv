@@ -130,14 +130,15 @@ function consolidatePipelineManifest(cwd, sessionId) {
   const jsonlPath = join(cwd, '.qsv-pipeline-steps.jsonl');
   if (!existsSync(jsonlPath)) return; // MCP server finalized cleanly — nothing to do
 
-  // Crash-recovery guard: if pipeline.json already exists and is valid,
-  // the MCP server wrote it before crashing (but didn't delete the JSONL).
-  // Treat the existing manifest as authoritative — don't clobber it.
+  // Crash-recovery guard: if both pipeline.json and pipeline.sh exist and
+  // pipeline.json is valid, the MCP server fully finalized before crashing
+  // (but didn't delete the JSONL). Treat the existing manifest as authoritative.
+  // If pipeline.sh is missing, fall through to rebuild both from JSONL.
   const manifestPath = join(cwd, 'pipeline.json');
-  if (existsSync(manifestPath)) {
+  if (existsSync(manifestPath) && existsSync(join(cwd, 'pipeline.sh'))) {
     try {
       JSON.parse(readFileSync(manifestPath, 'utf-8'));
-      // Valid JSON — just clean up the stale JSONL
+      // Both files exist and manifest is valid — clean up stale JSONL
       try { unlinkSync(jsonlPath); } catch { /* ignore */ }
       return;
     } catch {

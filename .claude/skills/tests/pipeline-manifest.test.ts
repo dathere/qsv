@@ -559,6 +559,7 @@ test("consolidatePipelineManifest: skips rebuild when valid pipeline.json exists
       file_inventory: {},
     };
     writeFileSync(join(dir, "pipeline.json"), JSON.stringify(existingManifest), "utf-8");
+    writeFileSync(join(dir, "pipeline.sh"), "#!/usr/bin/env bash\nqsv stats data.csv\n", { mode: 0o755 });
 
     // Write a JSONL with a different step (simulating crash before JSONL cleanup)
     const step: PipelineStep = {

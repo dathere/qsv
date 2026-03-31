@@ -41,7 +41,6 @@ export interface PipelineMetadata {
   outputFile?: string;
   commandLine?: string;
   durationMs?: number;
-  category?: string;
   success: boolean;
   additionalInputFiles?: Array<{ file: string; param: string }>;
 }
@@ -3104,7 +3103,7 @@ export async function handleToolCall(
         outputFile: finalOut,
         commandLine: result.metadata?.command,
         durationMs: result.metadata?.duration,
-        category: skill.category,
+
         success: formatSuccess,
         additionalInputFiles: collectAdditionalInputFiles(skill, params),
       } satisfies PipelineMetadata;
@@ -3123,7 +3122,7 @@ export async function handleToolCall(
         outputFile,
         commandLine: result.metadata?.command,
         durationMs: result.metadata?.duration,
-        category: skill.category,
+
         success: false,
         additionalInputFiles: collectAdditionalInputFiles(skill, params),
       } satisfies PipelineMetadata;

@@ -584,6 +584,47 @@ test("consolidatePipelineManifest: skips rebuild when valid pipeline.json exists
   }
 });
 
+test("consolidatePipelineManifest: rebuilds when pipeline.json exists but pipeline.sh missing", async () => {
+  const consolidatePipelineManifest = await loadConsolidate();
+
+  const dir = makeTempDir();
+  try {
+    // Write a valid pipeline.json but NO pipeline.sh (simulating crash between the two writes)
+    const existingManifest = {
+      version: "1.0.0",
+      session: { id: "partial-session", started_at: "2026-03-30T12:00:00Z", ended_at: "2026-03-30T12:01:00Z", qsv_version: "18.0.0", mcp_server_version: "18.0.5", working_directory: dir },
+      steps: [{ step: 1, tool: "qsv_stats", command: "qsv stats data.csv" }],
+      file_inventory: {},
+    };
+    writeFileSync(join(dir, "pipeline.json"), JSON.stringify(existingManifest), "utf-8");
+    // Intentionally NOT writing pipeline.sh
+
+    // Write JSONL with a step
+    const step: PipelineStep = {
+      step: 1, invocation_id: "inv-1", tool: "qsv_select",
+      command: "qsv select name data.csv", args: {}, reason: null,
+      timestamp: "2026-03-30T12:00:30Z", duration_ms: 50, success: true,
+      kind: "transformative", deterministic: true, input: null, output: null, additional_inputs: [],
+    };
+    writeFileSync(join(dir, ".qsv-pipeline-steps.jsonl"), JSON.stringify(step) + "\n");
+
+    consolidatePipelineManifest(dir, "rebuild-session");
+
+    // pipeline.json should be rebuilt from JSONL (overwriting the partial one)
+    const manifest: PipelineManifestJson = JSON.parse(readFileSync(join(dir, "pipeline.json"), "utf-8"));
+    assert.strictEqual(manifest.session.id, "rebuild-session", "Should rebuild from JSONL, not preserve partial manifest");
+    assert.strictEqual(manifest.steps[0].tool, "qsv_select", "Should have JSONL step");
+
+    // pipeline.sh should now exist
+    assert.ok(existsSync(join(dir, "pipeline.sh")), "Should generate missing pipeline.sh");
+
+    // JSONL should be cleaned up
+    assert.ok(!existsSync(join(dir, ".qsv-pipeline-steps.jsonl")));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("consolidatePipelineManifest: web_search entries produce search: prefix", async () => {
   const consolidatePipelineManifest = await loadConsolidate();
 

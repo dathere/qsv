@@ -3103,7 +3103,6 @@ export async function handleToolCall(
         outputFile: finalOut,
         commandLine: result.metadata?.command,
         durationMs: result.metadata?.duration,
-
         success: formatSuccess,
         additionalInputFiles: collectAdditionalInputFiles(skill, params),
       } satisfies PipelineMetadata;
@@ -3122,7 +3121,6 @@ export async function handleToolCall(
         outputFile,
         commandLine: result.metadata?.command,
         durationMs: result.metadata?.duration,
-
         success: false,
         additionalInputFiles: collectAdditionalInputFiles(skill, params),
       } satisfies PipelineMetadata;

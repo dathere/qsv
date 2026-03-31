@@ -109,11 +109,12 @@ fn main() -> QsvExitCode {
     #[cfg(all(feature = "apply", feature = "feature_capable"))]
     enabled_commands.push_str("    apply       Apply series of transformations to a column\n");
 
-    enabled_commands.push_str(
-        "    behead      Drop header from CSV file
-    blake3      Compute BLAKE3 cryptographic hashes of files
-    cat         Concatenate by row or column\n",
-    );
+    enabled_commands.push_str("    behead      Drop header from CSV file\n");
+
+    #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+    enabled_commands.push_str("    blake3      Compute BLAKE3 cryptographic hashes of files\n");
+
+    enabled_commands.push_str("    cat         Concatenate by row or column\n");
 
     #[cfg(all(feature = "clipboard", feature = "feature_capable"))]
     enabled_commands
@@ -412,6 +413,7 @@ enum Command {
     #[cfg(all(feature = "apply", feature = "feature_capable"))]
     Apply,
     Behead,
+    #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
     Blake3,
     Cat,
     #[cfg(all(feature = "clipboard", feature = "feature_capable"))]
@@ -520,6 +522,7 @@ impl Command {
         CURRENT_COMMAND.get_or_init(|| argv[1].to_lowercase());
         match self {
             Command::Behead => cmd::behead::run(argv),
+            #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
             Command::Blake3 => cmd::blake3::run(argv),
             #[cfg(all(feature = "apply", feature = "feature_capable"))]
             Command::Apply => cmd::apply::run(argv),

@@ -676,8 +676,8 @@ test("consolidatePipelineManifest: preserves JSONL when pipeline.sh write fails 
   const consolidatePipelineManifest = await loadConsolidate();
   const { chmodSync } = await import("node:fs");
 
-  // Skip on non-root systems where chmod is effective
-  if (process.getuid?.() === 0) return;
+  // Skip when running as root (chmod won't enforce) or on Windows (no POSIX perms)
+  if (process.getuid?.() === 0 || process.platform === "win32") return;
 
   const dir = makeTempDir();
   try {

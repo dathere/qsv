@@ -112,7 +112,7 @@ export class PipelineManifest {
   private steps: PipelineStep[] = [];
   private stepCounter = 0;
   private b3sumAvailable: boolean;
-  private hashCache = new Map<string, { blake3: string | null; mtimeMs: number }>();
+  private hashCache = new Map<string, { blake3: string | null; mtimeMs: number; size: number }>();
   private pendingWebSources: string[] = [];
 
   constructor(
@@ -169,6 +169,9 @@ export class PipelineManifest {
     // Capture step number before any awaits to prevent concurrent calls
     // from seeing a stale/shared counter value.
     const stepNo = ++this.stepCounter;
+    // Capture timestamp before any awaits so it reflects when the tool
+    // call completed, not when hashing finished.
+    const stepTimestamp = new Date().toISOString();
 
     const kind = classifyKind(params.toolName);
     const { deterministic, seed } = isDeterministic(params.toolName, params.toolArgs);
@@ -204,7 +207,7 @@ export class PipelineManifest {
       command: params.commandLine ?? "",
       args: params.toolArgs,
       reason: params.reason,
-      timestamp: new Date().toISOString(),
+      timestamp: stepTimestamp,
       duration_ms: params.durationMs,
       success: params.success,
       kind,
@@ -258,7 +261,7 @@ export class PipelineManifest {
 
     // Check cache
     const cached = this.hashCache.get(filePath);
-    if (cached && cached.mtimeMs === fileStats.mtimeMs) {
+    if (cached && cached.mtimeMs === fileStats.mtimeMs && cached.size === fileStats.size) {
       return { ...result, blake3: cached.blake3 };
     }
 
@@ -269,14 +272,14 @@ export class PipelineManifest {
         { timeout: B3SUM_TIMEOUT_MS },
       );
       const hash = stdout.trim();
-      this.hashCache.set(filePath, { blake3: hash, mtimeMs: fileStats.mtimeMs });
+      this.hashCache.set(filePath, { blake3: hash, mtimeMs: fileStats.mtimeMs, size: fileStats.size });
       return { ...result, blake3: hash };
     } catch (err) {
       console.error(
         `[PipelineManifest] b3sum failed for ${filePath}: ${err instanceof Error ? err.message : err}`,
       );
       // Cache negative result to avoid repeated timeouts/failures for the same file
-      this.hashCache.set(filePath, { blake3: null, mtimeMs: fileStats.mtimeMs });
+      this.hashCache.set(filePath, { blake3: null, mtimeMs: fileStats.mtimeMs, size: fileStats.size });
       return result;
     }
   }

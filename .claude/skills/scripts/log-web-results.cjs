@@ -114,7 +114,7 @@ if (require.main === module) {
           entry = { type: 'web_source', tool: toolName, url, timestamp: new Date().toISOString() };
         }
       } else if (toolName === 'WebSearch') {
-        const query = toolInput.query || toolInput.search_query || '';
+        const query = (toolInput.query || toolInput.search_query || '').trim();
         if (query) {
           entry = { type: 'web_search', tool: toolName, query, timestamp: new Date().toISOString() };
         }

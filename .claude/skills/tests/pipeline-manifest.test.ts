@@ -423,15 +423,7 @@ test("PipelineManifest: web sources are attached to steps", async () => {
 // ── Hook script consolidation test ────────────────────────────────────────
 
 test("consolidatePipelineManifest: builds manifest from JSONL", async () => {
-  // Test the CJS function from log-session-end.cjs
-  const { createRequire } = await import("node:module");
-  const { fileURLToPath } = await import("node:url");
-  const { resolve, dirname } = await import("node:path");
-
-  const require2 = createRequire(import.meta.url);
-  const __filename2 = fileURLToPath(import.meta.url);
-  const projectRoot = resolve(dirname(__filename2), "..", "..");
-  const { consolidatePipelineManifest } = require2(resolve(projectRoot, "scripts", "log-session-end.cjs"));
+  const consolidatePipelineManifest = await loadConsolidate();
 
   const dir = makeTempDir();
   try {
@@ -484,14 +476,7 @@ test("consolidatePipelineManifest: builds manifest from JSONL", async () => {
 });
 
 test("consolidatePipelineManifest: no-op when JSONL absent", async () => {
-  const { createRequire } = await import("node:module");
-  const { fileURLToPath } = await import("node:url");
-  const { resolve, dirname } = await import("node:path");
-
-  const require2 = createRequire(import.meta.url);
-  const __filename2 = fileURLToPath(import.meta.url);
-  const projectRoot = resolve(dirname(__filename2), "..", "..");
-  const { consolidatePipelineManifest } = require2(resolve(projectRoot, "scripts", "log-session-end.cjs"));
+  const consolidatePipelineManifest = await loadConsolidate();
 
   const dir = makeTempDir();
   try {
@@ -504,15 +489,19 @@ test("consolidatePipelineManifest: no-op when JSONL absent", async () => {
   }
 });
 
-test("consolidatePipelineManifest: attaches web_source to next step", async () => {
+// Helper to load the CJS consolidation function (avoids repeating dynamic imports)
+async function loadConsolidate() {
   const { createRequire } = await import("node:module");
   const { fileURLToPath } = await import("node:url");
   const { resolve, dirname } = await import("node:path");
-
   const require2 = createRequire(import.meta.url);
   const __filename2 = fileURLToPath(import.meta.url);
   const projectRoot = resolve(dirname(__filename2), "..", "..");
-  const { consolidatePipelineManifest } = require2(resolve(projectRoot, "scripts", "log-session-end.cjs"));
+  return require2(resolve(projectRoot, "scripts", "log-session-end.cjs")).consolidatePipelineManifest;
+}
+
+test("consolidatePipelineManifest: attaches web_source to next step", async () => {
+  const consolidatePipelineManifest = await loadConsolidate();
 
   const dir = makeTempDir();
   try {
@@ -552,6 +541,118 @@ test("consolidatePipelineManifest: attaches web_source to next step", async () =
     const manifest: PipelineManifestJson = JSON.parse(readFileSync(jsonPath, "utf-8"));
     assert.strictEqual(manifest.steps.length, 1);
     assert.deepStrictEqual(manifest.steps[0].web_sources, ["https://example.com/data.csv"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("consolidatePipelineManifest: skips rebuild when valid pipeline.json exists", async () => {
+  const consolidatePipelineManifest = await loadConsolidate();
+
+  const dir = makeTempDir();
+  try {
+    // Write a valid pipeline.json (as if MCP server wrote it)
+    const existingManifest = {
+      version: "1.0.0",
+      session: { id: "server-session", started_at: "2026-03-30T12:00:00Z", ended_at: "2026-03-30T12:01:00Z", qsv_version: "18.0.0", mcp_server_version: "18.0.5", working_directory: dir },
+      steps: [{ step: 1, tool: "qsv_stats", command: "qsv stats data.csv" }],
+      file_inventory: {},
+    };
+    writeFileSync(join(dir, "pipeline.json"), JSON.stringify(existingManifest), "utf-8");
+
+    // Write a JSONL with a different step (simulating crash before JSONL cleanup)
+    const step: PipelineStep = {
+      step: 1, invocation_id: "inv-1", tool: "qsv_select",
+      command: "qsv select name data.csv", args: {}, reason: null,
+      timestamp: "2026-03-30T12:00:30Z", duration_ms: 50, success: true,
+      kind: "transformative", deterministic: true, input: null, output: null, additional_inputs: [],
+    };
+    writeFileSync(join(dir, ".qsv-pipeline-steps.jsonl"), JSON.stringify(step) + "\n");
+
+    consolidatePipelineManifest(dir, "crash-session");
+
+    // The existing pipeline.json should NOT be overwritten
+    const manifest = JSON.parse(readFileSync(join(dir, "pipeline.json"), "utf-8"));
+    assert.strictEqual(manifest.session.id, "server-session", "Should preserve server-written manifest");
+    assert.strictEqual(manifest.steps[0].tool, "qsv_stats", "Should have original step, not JSONL step");
+
+    // JSONL should be cleaned up
+    assert.ok(!existsSync(join(dir, ".qsv-pipeline-steps.jsonl")), "Stale JSONL should be deleted");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("consolidatePipelineManifest: web_search entries produce search: prefix", async () => {
+  const consolidatePipelineManifest = await loadConsolidate();
+
+  const dir = makeTempDir();
+  try {
+    const webSearch = {
+      type: "web_search",
+      tool: "WebSearch",
+      query: "qsv tutorial",
+      timestamp: "2026-03-30T12:00:00Z",
+    };
+    const webSource = {
+      type: "web_source",
+      tool: "WebFetch",
+      url: "https://example.com/docs",
+      timestamp: "2026-03-30T12:00:01Z",
+    };
+    const step: PipelineStep = {
+      step: 1, invocation_id: "inv-1", tool: "qsv_sqlp",
+      command: "qsv sqlp data.csv", args: {}, reason: null,
+      timestamp: "2026-03-30T12:00:02Z", duration_ms: 100, success: true,
+      kind: "transformative", deterministic: true, input: null, output: null, additional_inputs: [],
+    };
+
+    writeFileSync(
+      join(dir, ".qsv-pipeline-steps.jsonl"),
+      [webSearch, webSource, step].map(e => JSON.stringify(e)).join("\n") + "\n",
+    );
+
+    consolidatePipelineManifest(dir, "test-session");
+
+    const manifest: PipelineManifestJson = JSON.parse(readFileSync(join(dir, "pipeline.json"), "utf-8"));
+    assert.deepStrictEqual(manifest.steps[0].web_sources, [
+      "search:qsv tutorial",
+      "https://example.com/docs",
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("consolidatePipelineManifest: filters out empty/whitespace url and query", async () => {
+  const consolidatePipelineManifest = await loadConsolidate();
+
+  const dir = makeTempDir();
+  try {
+    const emptyUrl = { type: "web_source", tool: "WebFetch", url: "", timestamp: "2026-03-30T12:00:00Z" };
+    const whitespaceUrl = { type: "web_source", tool: "WebFetch", url: "   ", timestamp: "2026-03-30T12:00:01Z" };
+    const nullUrl = { type: "web_source", tool: "WebFetch", url: null, timestamp: "2026-03-30T12:00:02Z" };
+    const emptyQuery = { type: "web_search", tool: "WebSearch", query: "", timestamp: "2026-03-30T12:00:03Z" };
+    const whitespaceQuery = { type: "web_search", tool: "WebSearch", query: "  ", timestamp: "2026-03-30T12:00:04Z" };
+    const validUrl = { type: "web_source", tool: "WebFetch", url: "https://valid.com", timestamp: "2026-03-30T12:00:05Z" };
+    const step: PipelineStep = {
+      step: 1, invocation_id: "inv-1", tool: "qsv_select",
+      command: "qsv select name data.csv", args: {}, reason: null,
+      timestamp: "2026-03-30T12:00:06Z", duration_ms: 50, success: true,
+      kind: "transformative", deterministic: true, input: null, output: null, additional_inputs: [],
+    };
+
+    writeFileSync(
+      join(dir, ".qsv-pipeline-steps.jsonl"),
+      [emptyUrl, whitespaceUrl, nullUrl, emptyQuery, whitespaceQuery, validUrl, step]
+        .map(e => JSON.stringify(e)).join("\n") + "\n",
+    );
+
+    consolidatePipelineManifest(dir, "test-session");
+
+    const manifest: PipelineManifestJson = JSON.parse(readFileSync(join(dir, "pipeline.json"), "utf-8"));
+    // Only the valid URL should survive; empty/whitespace/null entries filtered out
+    assert.deepStrictEqual(manifest.steps[0].web_sources, ["https://valid.com"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

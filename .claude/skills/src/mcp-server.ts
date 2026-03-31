@@ -800,7 +800,7 @@ class QsvMcpServer {
               additionalInputFiles: meta?.additionalInputFiles ?? [],
               durationMs: meta?.durationMs ?? elapsedMs,
               success: meta?.success ?? !isError,
-              errorMessage: isError ? ((result as { content?: Array<{ text?: string }> }).content?.[0]?.text ?? "").slice(0, MAX_ARGS_LOG_LEN) : undefined,
+              errorMessage: isError ? (() => { const raw = (result as { content?: Array<{ text?: string }> }).content?.[0]?.text ?? ""; return raw.length > MAX_ARGS_LOG_LEN ? raw.slice(0, MAX_ARGS_LOG_LEN) + "…[truncated]" : raw; })() : undefined,
             });
           } catch (err) {
             console.error(`[PipelineManifest] Failed to record step: ${getErrorMessage(err)}`);

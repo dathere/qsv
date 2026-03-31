@@ -198,6 +198,9 @@ function consolidatePipelineManifest(cwd, sessionId) {
     return;
   }
 
+  // Sort steps by step number for consistency with PipelineManifest.finalize()
+  steps.sort((a, b) => (a.step || 0) - (b.step || 0));
+
   // Build file inventory
   // Note: reclassification logic mirrors PipelineManifest.buildFileInventory()
   // in src/pipeline-manifest.ts — changes should be applied in both places.

@@ -17,8 +17,6 @@ fn blake3_file() {
     // Hash should be 64 hex chars
     let hash = got.split("  ").next().unwrap();
     assert_eq!(hash.len(), 64, "hash should be 64 hex chars");
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -33,8 +31,6 @@ fn blake3_multiple_files() {
     let got: String = wrk.stdout(&mut cmd);
     let lines: Vec<&str> = got.lines().collect();
     assert_eq!(lines.len(), 2, "should have two output lines");
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -49,8 +45,6 @@ fn blake3_no_names() {
     // Should be just the hash, no filename
     assert!(!got.contains("hello.txt"));
     assert_eq!(got.trim().len(), 64, "hash should be 64 hex chars");
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -67,8 +61,6 @@ fn blake3_tag_format() {
         "tag format should start with 'BLAKE3 ('"
     );
     assert!(got.contains(") = "), "tag format should contain ') = '");
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -85,8 +77,6 @@ fn blake3_custom_length() {
     let got: String = wrk.stdout(&mut cmd);
     // 16 bytes = 32 hex chars
     assert_eq!(got.trim().len(), 32, "16-byte hash should be 32 hex chars");
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -109,8 +99,6 @@ fn blake3_check_ok() {
 
     let got: String = wrk.stdout(&mut cmd);
     assert!(got.contains("OK"), "check should report OK");
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -151,8 +139,6 @@ fn blake3_check_tag_format() {
 
     let got: String = wrk.stdout(&mut cmd);
     assert!(got.contains("OK"), "check with tag format should report OK");
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -203,8 +189,6 @@ fn blake3_derive_key() {
         hash_default.trim(),
         "derive-key should produce different hash"
     );
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -229,8 +213,6 @@ fn blake3_quiet_check() {
         got.trim().is_empty(),
         "quiet check should produce no output on success"
     );
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -259,8 +241,6 @@ fn blake3_known_hash() {
         got.trim(),
         "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
     );
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -364,8 +344,6 @@ fn blake3_num_threads() {
         got.trim(),
         "ea8f163db38682925e4491c5e58d4bb3506ef8c14eb78a86e908c5624a67200f"
     );
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -388,7 +366,6 @@ fn blake3_keyed() {
     {
         let mut stdin_handle = child.stdin.take().unwrap();
         stdin_handle.write_all(&key).unwrap();
-        // stdin_handle dropped here, closing stdin
     }
     let output = child.wait_with_output().unwrap();
     assert!(

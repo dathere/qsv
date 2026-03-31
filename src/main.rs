@@ -111,6 +111,7 @@ fn main() -> QsvExitCode {
 
     enabled_commands.push_str(
         "    behead      Drop header from CSV file
+    blake3      Compute BLAKE3 cryptographic hashes of files
     cat         Concatenate by row or column\n",
     );
 
@@ -411,6 +412,7 @@ enum Command {
     #[cfg(all(feature = "apply", feature = "feature_capable"))]
     Apply,
     Behead,
+    Blake3,
     Cat,
     #[cfg(all(feature = "clipboard", feature = "feature_capable"))]
     Clipboard,
@@ -505,7 +507,10 @@ impl Command {
         let argv = &*argv;
 
         assert!(argv.len() > 1);
-        if !argv[1].chars().all(char::is_lowercase) {
+        if !argv[1]
+            .chars()
+            .all(|c| c.is_lowercase() || c.is_ascii_digit())
+        {
             return fail_incorrectusage_clierror!(
                 "qsv expects commands in lowercase. Did you mean '{}'?",
                 argv[1].to_lowercase()
@@ -515,6 +520,7 @@ impl Command {
         CURRENT_COMMAND.get_or_init(|| argv[1].to_lowercase());
         match self {
             Command::Behead => cmd::behead::run(argv),
+            Command::Blake3 => cmd::blake3::run(argv),
             #[cfg(all(feature = "apply", feature = "feature_capable"))]
             Command::Apply => cmd::apply::run(argv),
             Command::Cat => cmd::cat::run(argv),

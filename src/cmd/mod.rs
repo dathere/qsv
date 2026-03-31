@@ -4,6 +4,7 @@ pub mod apply;
 pub mod applydp;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod behead;
+pub mod blake3;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod cat;
 #[cfg(feature = "clipboard")]

@@ -21,6 +21,29 @@ import type {
   FilesystemProviderExtended,
   SkillCategory,
 } from "./types.js";
+
+// ── Pipeline Metadata (for reproducibility manifest) ─────────────────────────
+
+/**
+ * Well-known Symbol for attaching pipeline metadata to MCP tool results.
+ * Symbol properties are invisible to JSON.stringify, so they never leak
+ * into the MCP protocol response.
+ */
+export const PIPELINE_METADATA = Symbol.for("qsv.pipelineMetadata");
+
+/**
+ * Metadata about a tool invocation's inputs/outputs, attached to the result
+ * via the PIPELINE_METADATA symbol so the server can record it in the manifest.
+ */
+export interface PipelineMetadata {
+  inputFile?: string;
+  outputFile?: string;
+  commandLine?: string;
+  durationMs?: number;
+  category?: string;
+  success: boolean;
+  additionalInputFiles?: Array<{ file: string; param: string }>;
+}
 import { runQsvSimple } from "./executor.js";
 import type { SkillExecutor } from "./executor.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -1883,6 +1906,37 @@ function buildSkillExecParams(
 /**
  * Format successful tool result, handling temp files and performance tips
  */
+/**
+ * Collect additional input files from tool params for the pipeline manifest.
+ * These are file-type positional args (excluding the primary "input") and
+ * FILE_PATH_INPUT_OPTIONS that reference input files.
+ */
+function collectAdditionalInputFiles(
+  skill: QsvSkill,
+  params: Record<string, unknown>,
+): Array<{ file: string; param: string }> {
+  const files: Array<{ file: string; param: string }> = [];
+
+  // File-type positional args (excluding "input")
+  for (const arg of skill.command.args) {
+    if (arg.type === "file" && arg.name !== "input" && params[arg.name]) {
+      const value = String(params[arg.name]);
+      if (value) files.push({ file: value, param: arg.name });
+    }
+  }
+
+  // FILE_PATH_INPUT_OPTIONS
+  for (const [key, value] of Object.entries(params)) {
+    if (!value || typeof value !== "string") continue;
+    const flag = paramKeyToFlag(key);
+    if (FILE_PATH_INPUT_OPTIONS.has(flag)) {
+      files.push({ file: value, param: flag });
+    }
+  }
+
+  return files;
+}
+
 async function formatToolResult(
   result: import("./types.js").SkillResult,
   commandName: string,
@@ -1895,6 +1949,10 @@ async function formatToolResult(
   const workDir = currentWorkingDir;
 
   let responseText = "";
+  // Track the final output file path for the pipeline manifest.
+  // For auto-created temp files, this becomes the renamed path in the working dir
+  // (or undefined if the temp file was small enough to return inline and deleted).
+  let finalOutputFile: string | undefined = outputFile;
 
   if (outputFile) {
     if (autoCreatedTempFile) {
@@ -1927,6 +1985,7 @@ async function formatToolResult(
             }
           }
           console.error(`[MCP Tools] Saved large output to: ${savedPath}`);
+          finalOutputFile = savedPath;
 
           responseText = `✅ Large output saved to file (too large to display in chat)\n\n`;
           responseText += `File: ${savedFileName}\n`;
@@ -1951,6 +2010,7 @@ async function formatToolResult(
           }
 
           responseText = fileContents;
+          finalOutputFile = undefined; // temp file was deleted; output is inline
         }
       } catch (readError) {
         console.error(
@@ -1990,7 +2050,9 @@ async function formatToolResult(
     responseText += `Use qsv_command or read this file to view the bivariate correlation results.`;
   }
 
-  return successResult(responseText);
+  const formatted = successResult(responseText);
+  (formatted as Record<string, unknown>)._finalOutputFile = finalOutputFile;
+  return formatted;
 }
 
 /** In-flight Parquet conversions keyed by CSV path — prevents duplicate concurrent work */
@@ -3033,6 +3095,17 @@ export async function handleToolCall(
           console.error(`[MCP Tools] Could not append moarstats note to result: unexpected content structure`);
         }
       }
+      // Attach pipeline metadata for reproducibility manifest
+      const finalOut = (formattedResult as Record<string, unknown>)._finalOutputFile as string | undefined;
+      (formattedResult as Record<string | symbol, unknown>)[PIPELINE_METADATA] = {
+        inputFile,
+        outputFile: finalOut,
+        commandLine: result.metadata?.command,
+        durationMs: result.metadata?.duration,
+        category: skill.category,
+        success: true,
+        additionalInputFiles: collectAdditionalInputFiles(skill, params),
+      } satisfies PipelineMetadata;
       return formattedResult;
     } else {
       const cmdLine = result.metadata?.command ? `\nCommand: ${result.metadata.command}` : "";
@@ -3041,7 +3114,18 @@ export async function handleToolCall(
       const errorMsg = parquetConversionWarning
         ? `${engineHeader}${parquetConversionWarning}\n\nError executing ${commandName}:\n${stderr}${cmdLine}`
         : `${engineHeader}Error executing ${commandName}:\n${stderr}${cmdLine}`;
-      return errorResult(errorMsg);
+      const errResult = errorResult(errorMsg);
+      // Attach pipeline metadata even for failures
+      (errResult as Record<string | symbol, unknown>)[PIPELINE_METADATA] = {
+        inputFile,
+        outputFile,
+        commandLine: result.metadata?.command,
+        durationMs: result.metadata?.duration,
+        category: skill.category,
+        success: false,
+        additionalInputFiles: collectAdditionalInputFiles(skill, params),
+      } satisfies PipelineMetadata;
+      return errResult;
     }
   } catch (error: unknown) {
     return errorResult(`Unexpected error: ${getErrorMessage(error)}`);

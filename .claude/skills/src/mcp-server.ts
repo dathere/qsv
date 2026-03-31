@@ -60,6 +60,8 @@ import { scanDirectory } from "./browse-directory.js";
 import { VERSION } from "./version.js";
 import { getErrorMessage, errorResult, successResult, completedDirResult } from "./utils.js";
 import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
+import { PipelineManifest } from "./pipeline-manifest.js";
+import { PIPELINE_METADATA, type PipelineMetadata } from "./mcp-tools.js";
 
 /**
  * Directories under $HOME that the browse-directory tool must never enter.
@@ -168,6 +170,9 @@ class QsvMcpServer {
   /** Raw client extensions captured before Zod strips them from capabilities */
   private rawClientExtensions: Record<string, unknown> | undefined;
 
+  /** Pipeline manifest for reproducibility — records tool steps with BLAKE3 hashes. */
+  private pipelineManifest: PipelineManifest | null = null;
+
   /**
    * Dispatch map for tool handlers, keyed by tool name.
    * Initialized in the constructor after all dependencies are set.
@@ -261,6 +266,16 @@ class QsvMcpServer {
 
     // Check for updates (if enabled)
     await this.checkForUpdates();
+
+    // Initialize pipeline manifest for reproducibility
+    const qsvVersion = config.qsvValidation?.version ?? "unknown";
+    this.pipelineManifest = new PipelineManifest(
+      randomUUID(),
+      this.filesystemProvider.getWorkingDirectory(),
+      qsvVersion,
+      VERSION,
+    );
+    console.error("[Init] ✓ Pipeline manifest initialized");
 
     // Register tool handlers
     console.error("[Init] Registering tool handlers...");
@@ -757,7 +772,8 @@ class QsvMcpServer {
         const result = await dispatch();
 
         // Log end with elapsed time
-        const elapsedSecs = ((Date.now() - startTime) / 1000).toFixed(2);
+        const elapsedMs = Date.now() - startTime;
+        const elapsedSecs = (elapsedMs / 1000).toFixed(2);
         const isError = "isError" in result && result.isError === true;
         if (auditLogEnabled && !skipAuditLog && (config.mcpLogLevel === "info" || isError)) {
           const endMsg = isError
@@ -767,6 +783,26 @@ class QsvMcpServer {
             timeoutMs: 5_000,
             cwd: this.filesystemProvider.getWorkingDirectory(),
           }).catch(() => {});
+        }
+
+        // Record pipeline step for reproducibility manifest (fire-and-forget)
+        if (this.pipelineManifest && name.startsWith("qsv_")) {
+          const meta = (result as Record<string | symbol, unknown>)[PIPELINE_METADATA] as PipelineMetadata | undefined;
+          this.pipelineManifest.recordStep({
+            invocationId,
+            toolName: name,
+            toolArgs: toolArgs ?? {},
+            reason: reason !== name ? reason : null,
+            commandLine: meta?.commandLine ?? null,
+            inputFile: meta?.inputFile ?? null,
+            outputFile: meta?.outputFile ?? null,
+            additionalInputFiles: meta?.additionalInputFiles ?? [],
+            durationMs: meta?.durationMs ?? elapsedMs,
+            success: meta?.success ?? !isError,
+            errorMessage: isError ? (result as { content?: Array<{ text?: string }> }).content?.[0]?.text : undefined,
+          }).catch((err) => {
+            console.error(`[PipelineManifest] Failed to record step: ${getErrorMessage(err)}`);
+          });
         }
 
         return result;
@@ -1078,6 +1114,11 @@ class QsvMcpServer {
     }
   }
 
+  /** Expose the pipeline manifest for shutdown finalization. */
+  getPipelineManifest(): PipelineManifest | null {
+    return this.pipelineManifest;
+  }
+
   /**
    * Update the working directory for both filesystem provider and executor.
    * Returns the resolved working directory path.
@@ -1087,6 +1128,7 @@ class QsvMcpServer {
     const resolved = this.filesystemProvider.getWorkingDirectory();
     this.executor.setWorkingDirectory(resolved);
     setToolsWorkingDir(resolved);
+    this.pipelineManifest?.updateWorkingDir(resolved);
     return resolved;
   }
 
@@ -1479,7 +1521,7 @@ class QsvMcpServer {
 /**
  * Graceful shutdown handler
  */
-function setupShutdownHandlers(): void {
+function setupShutdownHandlers(manifest: PipelineManifest | null): void {
   const SHUTDOWN_TIMEOUT_MS = 2000; // 2 seconds max for graceful shutdown
   let shutdownInProgress = false;
 
@@ -1500,6 +1542,15 @@ function setupShutdownHandlers(): void {
 
     // Prevent the timeout from keeping the process alive
     forceExitTimer.unref();
+
+    // Finalize pipeline manifest (sync — hashing was done incrementally,
+    // so this only writes two small files)
+    if (manifest) {
+      const result = manifest.finalize();
+      if (result) {
+        console.error(`[Server] Pipeline manifest written: ${result.jsonPath}`);
+      }
+    }
 
     // Initiate shutdown
     initiateShutdown();
@@ -1536,8 +1587,8 @@ async function main(): Promise<void> {
     await server.initialize();
     await server.start();
 
-    // Setup graceful shutdown handlers
-    setupShutdownHandlers();
+    // Setup graceful shutdown handlers (pass manifest for finalization)
+    setupShutdownHandlers(server.getPipelineManifest());
 
     console.error(
       "[Server] Ready to accept requests (Press Ctrl+C to shutdown)",

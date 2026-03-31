@@ -438,20 +438,25 @@ export class PipelineManifest {
       return null;
     }
 
+    let shWritten = false;
     try {
       writeFileSync(shPath, this.generateReplayScript(), { encoding: "utf-8", mode: 0o755 });
       console.error(`[PipelineManifest] Wrote ${shPath}`);
+      shWritten = true;
     } catch (err) {
       console.error(
         `[PipelineManifest] Failed to write pipeline.sh: ${err instanceof Error ? err.message : err}`,
       );
     }
 
-    // Clean up incremental JSONL
-    try {
-      unlinkSync(jsonlPath);
-    } catch {
-      // ignore — may not exist
+    // Only delete JSONL when both files were written successfully.
+    // If pipeline.sh failed, keep the JSONL so crash-recovery can regenerate it.
+    if (shWritten) {
+      try {
+        unlinkSync(jsonlPath);
+      } catch {
+        // ignore — may not exist
+      }
     }
 
     return { jsonPath, shPath };
@@ -488,16 +493,24 @@ export class PipelineManifest {
 
     if (webSources.length === 0) return;
 
-    // Attach each web provenance entry to the nearest subsequent step by timestamp
+    // Attach each web provenance entry to the step with the minimal timestamp
+    // that is still >= wsTime. This handles non-monotonic timestamps from
+    // concurrent tool calls (step order and timestamp order can diverge).
     for (const ws of webSources) {
       const wsTime = new Date(ws.timestamp).getTime() || 0;
-      const target = this.steps.find(
-        (s) => (new Date(s.timestamp).getTime() || 0) >= wsTime,
-      );
-      if (target) {
-        if (!target.web_sources) target.web_sources = [];
-        if (!target.web_sources.includes(ws.value)) {
-          target.web_sources.push(ws.value);
+      let bestStep: PipelineStep | undefined;
+      let bestTime = Infinity;
+      for (const s of this.steps) {
+        const sTime = new Date(s.timestamp).getTime() || 0;
+        if (sTime >= wsTime && sTime < bestTime) {
+          bestTime = sTime;
+          bestStep = s;
+        }
+      }
+      if (bestStep) {
+        if (!bestStep.web_sources) bestStep.web_sources = [];
+        if (!bestStep.web_sources.includes(ws.value)) {
+          bestStep.web_sources.push(ws.value);
         }
       }
     }

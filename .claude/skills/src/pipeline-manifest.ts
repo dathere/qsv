@@ -384,7 +384,7 @@ export class PipelineManifest {
   /**
    * Finalize the manifest: write pipeline.json and pipeline.sh, clean up JSONL.
    */
-  finalize(endTime?: string): { jsonPath: string; shPath: string } | null {
+  finalize(endTime?: string): { jsonPath: string; shPath: string | null } | null {
     if (this.steps.length === 0) {
       // Clean up empty JSONL if it exists
       try {
@@ -459,7 +459,7 @@ export class PipelineManifest {
       }
     }
 
-    return { jsonPath, shPath };
+    return { jsonPath, shPath: shWritten ? shPath : null };
   }
 
   /**

@@ -233,6 +233,7 @@ test("PipelineManifest: finalize writes pipeline.json and pipeline.sh", async ()
     assert.strictEqual(json.steps[0].kind, "transformative");
 
     // Check pipeline.sh
+    assert.ok(result.shPath, "shPath should not be null");
     assert.ok(existsSync(result.shPath));
     const sh = readFileSync(result.shPath, "utf-8");
     assert.ok(sh.includes("#!/usr/bin/env bash"));
@@ -695,6 +696,94 @@ test("consolidatePipelineManifest: filters out empty/whitespace url and query", 
     const manifest: PipelineManifestJson = JSON.parse(readFileSync(join(dir, "pipeline.json"), "utf-8"));
     // Only the valid URL should survive; empty/whitespace/null entries filtered out
     assert.deepStrictEqual(manifest.steps[0].web_sources, ["https://valid.com"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("PipelineManifest: finalize returns shPath=null and preserves JSONL when pipeline.sh write fails", async () => {
+  const dir = makeTempDir();
+  try {
+    const manifest = new PipelineManifest("test-session", dir, "18.0.0", "18.0.5");
+
+    await manifest.recordStep({
+      invocationId: "inv-1",
+      toolName: "qsv_select",
+      toolArgs: {},
+      reason: null,
+      commandLine: "qsv select name input.csv",
+      inputFile: null,
+      outputFile: null,
+      additionalInputFiles: [],
+      durationMs: 50,
+      success: true,
+    });
+
+    // Make pipeline.sh path a directory so writeFileSync fails
+    const shDir = join(dir, "pipeline.sh");
+    mkdirSync(shDir);
+
+    const result = manifest.finalize("2026-03-30T12:00:00Z");
+    assert.ok(result, "finalize should return non-null");
+    assert.ok(existsSync(result.jsonPath), "pipeline.json should exist");
+    assert.strictEqual(result.shPath, null, "shPath should be null when write fails");
+
+    // JSONL should be preserved (not deleted) for crash-recovery
+    assert.ok(existsSync(join(dir, ".qsv-pipeline-steps.jsonl")), "JSONL should be preserved");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("PipelineManifest: mergeWebSourcesFromJsonl attaches to closest-timestamp step", async () => {
+  const dir = makeTempDir();
+  try {
+    const manifest = new PipelineManifest("test-session", dir, "18.0.0", "18.0.5");
+
+    // Record two steps with out-of-order timestamps (simulating concurrent hashing)
+    // Step 1 finishes later (timestamp 12:00:05) despite being invoked first
+    // Step 2 finishes earlier (timestamp 12:00:02)
+    await manifest.recordStep({
+      invocationId: "inv-1", toolName: "qsv_select", toolArgs: {},
+      reason: null, commandLine: "qsv select a", inputFile: null, outputFile: null,
+      additionalInputFiles: [], durationMs: 100, success: true,
+    });
+    await manifest.recordStep({
+      invocationId: "inv-2", toolName: "qsv_sort", toolArgs: {},
+      reason: null, commandLine: "qsv sort a", inputFile: null, outputFile: null,
+      additionalInputFiles: [], durationMs: 50, success: true,
+    });
+
+    // Manually set non-monotonic timestamps to simulate concurrent completion
+    const steps = manifest.getSteps() as PipelineStep[];
+    (steps[0] as { timestamp: string }).timestamp = "2026-03-30T12:00:05Z"; // step 1 finished late
+    (steps[1] as { timestamp: string }).timestamp = "2026-03-30T12:00:02Z"; // step 2 finished early
+
+    // Write a web_source entry with timestamp between the two step timestamps
+    const jsonlPath = join(dir, ".qsv-pipeline-steps.jsonl");
+    // Read existing JSONL and append web_source
+    const existingJsonl = readFileSync(jsonlPath, "utf-8");
+    const webSource = { type: "web_source", tool: "WebFetch", url: "https://example.com", timestamp: "2026-03-30T12:00:03Z" };
+    writeFileSync(jsonlPath, existingJsonl + JSON.stringify(webSource) + "\n");
+
+    const result = manifest.finalize("2026-03-30T12:01:00Z");
+    assert.ok(result);
+
+    const json: PipelineManifestJson = JSON.parse(readFileSync(result.jsonPath, "utf-8"));
+
+    // The web source at 12:00:03 should attach to step 2 (timestamp 12:00:05)
+    // which has the minimal timestamp >= 12:00:03, NOT step 1 (which is first in array)
+    // Actually step 1 has timestamp 12:00:05 and step 2 has 12:00:02.
+    // After sort by step number: [step1(ts:05), step2(ts:02)]
+    // Web source at 12:00:03: minimal ts >= 03 is step1(05), not step2(02).
+    const step1 = json.steps.find(s => s.invocation_id === "inv-1");
+    const step2 = json.steps.find(s => s.invocation_id === "inv-2");
+    assert.ok(step1);
+    assert.ok(step2);
+    // step1 has timestamp 12:00:05 >= 12:00:03, step2 has 12:00:02 < 12:00:03
+    // So web source attaches to step1 (the one with minimal timestamp >= wsTime)
+    assert.deepStrictEqual(step1.web_sources, ["https://example.com"]);
+    assert.strictEqual(step2.web_sources, undefined);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -19,15 +19,15 @@ blake3 options:
                          Cannot be used with --keyed.
     -l, --length <LEN>   The number of output bytes, before hex encoding.
                          [default: 32]
-    -j, --jobs <NUM>     The number of jobs to run in parallel for hashing.
-                         When not set, uses the number of CPUs.
-                         Set to 1 to disable multithreading.
     --no-mmap            Disable memory mapping. Also disables multithreading.
     --no-names           Omit filenames in the output.
     --raw                Write raw output bytes to stdout, rather than hex.
                          Only a single input is allowed. --no-names is implied.
     --tag                Output checksums in tagged format.
     -c, --check          Read blake3 sums from the input files and check them.
+    -j, --jobs <arg>     The number of jobs to run in parallel for hashing.
+                         When not set, uses the number of CPUs detected.
+                         Set to 1 to disable multithreading.
 
 Common options:
     -h, --help           Display this message
@@ -53,12 +53,12 @@ struct Args {
     flag_keyed:      bool,
     flag_derive_key: Option<String>,
     flag_length:     usize,
-    flag_jobs:       Option<usize>,
     flag_no_mmap:    bool,
     flag_no_names:   bool,
     flag_raw:        bool,
     flag_tag:        bool,
     flag_check:      bool,
+    flag_jobs:       Option<usize>,
     flag_output:     Option<String>,
     flag_quiet:      bool,
 }

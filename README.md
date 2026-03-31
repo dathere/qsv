@@ -27,7 +27,8 @@
 | --- | --- |
 | [apply](docs/help/apply.md)✨<br>📇🚀🧠🤖🔣👆| Apply series of string, date, math & currency transformations to given CSV column/s. It also has some basic [NLP](https://en.wikipedia.org/wiki/Natural_language_processing) functions ([similarity](https://crates.io/crates/strsim), [sentiment analysis](https://crates.io/crates/vader_sentiment), [profanity](https://docs.rs/censor/latest/censor/), [eudex](https://github.com/ticki/eudex#eudex-a-blazingly-fast-phonetic-reductionhashing-algorithm), [language](https://crates.io/crates/whatlang) & [name gender](https://github.com/Raduc4/gender_guesser?tab=readme-ov-file#gender-guesser)) detection.  |
 | [applydp](docs/help/applydp.md)✨<br>📇🚀🔣👆 ![CKAN](docs/images/ckan.png)| <a name="applydp_deeplink"></a>applydp is a slimmed-down version of `apply` with only [Datapusher+](https://github.com/dathere/datapusher-plus) relevant subcommands/operations (`qsvdp` binary variant only). |
-| [behead](docs/help/behead.md) | Drop headers from a CSV.  |
+| [behead](docs/help/behead.md) | Drop headers from a CSV. |
+| [blake3](docs/help/blake3.md)<br>🚀 | Compute or check BLAKE3 hashes of files. |
 | [cat](docs/help/cat.md)<br>🗄️ | Concatenate CSV files by row or by column. |
 | [clipboard](docs/help/clipboard.md)✨<br>🖥️ | Provide input from the clipboard or save output to the clipboard. |
 | [color](docs/help/color.md)✨<br>🐻‍❄️🖥️ | Outputs tabular data as a pretty, colorized table that always fits into the terminal. Apart from CSV and its dialects, Arrow, Avro/IPC, Parquet, JSON array & JSONL formats are supported with the "polars" feature. |

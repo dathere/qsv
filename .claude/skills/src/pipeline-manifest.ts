@@ -392,6 +392,10 @@ export class PipelineManifest {
       return null;
     }
 
+    // Sort steps by step number to ensure correct order despite concurrent
+    // recordStep() calls (async hashing can cause out-of-order pushes).
+    this.steps.sort((a, b) => a.step - b.step);
+
     // Merge web_source entries from JSONL BEFORE serializing the manifest.
     // Hook scripts (log-web-results.cjs) write these from a separate process.
     const jsonlPath = join(this.workingDir, JSONL_FILENAME);

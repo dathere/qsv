@@ -236,19 +236,35 @@ function consolidatePipelineManifest(cwd, sessionId) {
         existingAi.role = 'intermediate';
       }
     }
-    // Output: create if first seen
-    if (step.output && step.output.file && !inventory[step.output.file]) {
-      inventory[step.output.file] = {
-        blake3: step.output.blake3,
-        size_bytes: step.output.size_bytes,
-        first_seen_step: step.step,
-        role: 'output',
-      };
+    // Output: create if new, or reclassify prior input to intermediate
+    if (step.output && step.output.file) {
+      const existingOut = inventory[step.output.file];
+      if (!existingOut) {
+        inventory[step.output.file] = {
+          blake3: step.output.blake3,
+          size_bytes: step.output.size_bytes,
+          first_seen_step: step.step,
+          role: 'output',
+        };
+      } else if (existingOut.role === 'input') {
+        existingOut.role = 'intermediate';
+        existingOut.blake3 = step.output.blake3;
+        existingOut.size_bytes = step.output.size_bytes;
+      }
     }
   }
 
-  const firstTs = steps[0].timestamp || new Date().toISOString();
-  const lastTs = steps[steps.length - 1].timestamp || new Date().toISOString();
+  // Compute session bounds as min/max of all step timestamps (step order
+  // and timestamp order can diverge under concurrent tool calls).
+  let minTs = Infinity;
+  let maxTs = -Infinity;
+  for (const step of steps) {
+    const t = step.timestamp ? new Date(step.timestamp).getTime() : 0;
+    if (t && t < minTs) minTs = t;
+    if (t && t > maxTs) maxTs = t;
+  }
+  const firstTs = minTs !== Infinity ? new Date(minTs).toISOString() : new Date().toISOString();
+  const lastTs = maxTs !== -Infinity ? new Date(maxTs).toISOString() : new Date().toISOString();
 
   const manifest = {
     version: '1.0.0',

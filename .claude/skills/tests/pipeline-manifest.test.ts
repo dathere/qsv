@@ -373,6 +373,42 @@ test("PipelineManifest: file inventory tracks roles correctly", async () => {
   }
 });
 
+test("PipelineManifest: file inventory reclassifies input→intermediate when file is later produced as output", async () => {
+  const dir = makeTempDir();
+  const dataFile = join(dir, "data.csv");
+  writeFileSync(dataFile, "name,age\nAlice,30\nBob,25\n");
+  try {
+    const manifest = new PipelineManifest("test-session", dir, "18.0.0", "18.0.5");
+
+    // Step 1: read data.csv as input
+    await manifest.recordStep({
+      invocationId: "inv-1", toolName: "qsv_stats", toolArgs: {},
+      reason: null, commandLine: "qsv stats data.csv",
+      inputFile: dataFile, outputFile: null,
+      additionalInputFiles: [], durationMs: 50, success: true,
+    });
+
+    // Step 2: overwrite data.csv as output (e.g., in-place sort)
+    await manifest.recordStep({
+      invocationId: "inv-2", toolName: "qsv_sort", toolArgs: {},
+      reason: null, commandLine: "qsv sort --output data.csv data.csv",
+      inputFile: dataFile, outputFile: dataFile,
+      additionalInputFiles: [], durationMs: 80, success: true,
+    });
+
+    const result = manifest.finalize("2026-03-30T12:00:00Z");
+    assert.ok(result);
+    const json: PipelineManifestJson = JSON.parse(readFileSync(result.jsonPath, "utf-8"));
+
+    // data.csv was first an input, then an output → should be intermediate
+    const entry = json.file_inventory[dataFile];
+    assert.ok(entry, "data.csv should be in file inventory");
+    assert.strictEqual(entry.role, "intermediate", "File used as both input and output should be intermediate");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("PipelineManifest: web sources are attached to steps", async () => {
   const dir = makeTempDir();
   try {

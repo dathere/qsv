@@ -318,14 +318,22 @@ export class PipelineManifest {
         }
       }
 
-      // Output file
-      if (step.output?.file && !inventory[step.output.file]) {
-        inventory[step.output.file] = {
-          blake3: step.output.blake3,
-          size_bytes: step.output.size_bytes,
-          first_seen_step: step.step,
-          role: "output",
-        };
+      // Output file: create if new, or reclassify prior input to intermediate
+      if (step.output?.file) {
+        const existing = inventory[step.output.file];
+        if (!existing) {
+          inventory[step.output.file] = {
+            blake3: step.output.blake3,
+            size_bytes: step.output.size_bytes,
+            first_seen_step: step.step,
+            role: "output",
+          };
+        } else if (existing.role === "input") {
+          existing.role = "intermediate";
+          // Update hash/size to reflect the output version
+          existing.blake3 = step.output.blake3;
+          existing.size_bytes = step.output.size_bytes;
+        }
       }
     }
 

@@ -792,10 +792,15 @@ class QsvMcpServer {
           const errorMessage = rawErr !== undefined
             ? (rawErr.length > MAX_ARGS_LOG_LEN ? rawErr.slice(0, MAX_ARGS_LOG_LEN) + "…[truncated]" : rawErr)
             : undefined;
+          // For qsv_command, derive the actual tool name from args so
+          // classifyKind/isDeterministic work correctly on the underlying command.
+          const pipelineToolName = name === "qsv_command" && typeof (toolArgs ?? {}).command === "string"
+            ? `qsv_${(toolArgs as { command: string }).command}`
+            : name;
           try {
             await this.pipelineManifest.recordStep({
               invocationId,
-              toolName: name,
+              toolName: pipelineToolName,
               toolArgs: toolArgs ?? {},
               reason: reason !== name ? reason : null,
               commandLine: meta?.commandLine ?? null,

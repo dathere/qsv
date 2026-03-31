@@ -7,6 +7,8 @@
 
 const { execFile } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
+const { appendFileSync } = require('node:fs');
+const { join } = require('node:path');
 const { findQsvMcpBinary, truncateMessage, readStdin } = require('./qsv-utils.cjs');
 
 /**
@@ -101,5 +103,31 @@ if (require.main === module) {
         process.stderr.write(`[log-web-results] qsv log failed: ${err.message}\n`);
       }
     });
+
+    // Append web provenance to pipeline JSONL.
+    // WebFetch → web_source with URL, WebSearch → web_search with query string.
+    try {
+      let entry = null;
+      if (toolName === 'WebFetch') {
+        const url = sanitizeUrl(toolInput.url || '');
+        if (url) {
+          entry = { type: 'web_source', tool: toolName, url, timestamp: new Date().toISOString() };
+        }
+      } else if (toolName === 'WebSearch') {
+        const query = (toolInput.query || toolInput.search_query || '').trim();
+        if (query) {
+          entry = { type: 'web_search', tool: toolName, query, timestamp: new Date().toISOString() };
+        }
+      }
+      if (entry) {
+        appendFileSync(
+          join(cwd, '.qsv-pipeline-steps.jsonl'),
+          JSON.stringify(entry) + '\n',
+          'utf-8',
+        );
+      }
+    } catch {
+      // Pipeline JSONL may not exist yet or cwd may be inaccessible — ignore
+    }
   });
 }

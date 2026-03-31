@@ -186,10 +186,15 @@ function consolidatePipelineManifest(cwd, sessionId) {
       const existingSteps = existingManifest.steps || [];
       const shFromManifest = generateReplayScriptFromManifest(existingSteps, existingManifest.session?.id || sessionId);
       const shPath = join(cwd, 'pipeline.sh');
+      let shWrittenFromManifest = false;
       try {
         writeFileSync(shPath, shFromManifest, { encoding: 'utf-8', mode: 0o755 });
+        shWrittenFromManifest = true;
       } catch { /* best effort */ }
-      try { unlinkSync(jsonlPath); } catch { /* ignore */ }
+      // Only delete JSONL if pipeline.sh was written successfully
+      if (shWrittenFromManifest) {
+        try { unlinkSync(jsonlPath); } catch { /* ignore */ }
+      }
       return;
     } catch {
       // Invalid/corrupt — fall through to rebuild from JSONL

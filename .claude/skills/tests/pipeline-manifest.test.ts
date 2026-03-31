@@ -672,6 +672,44 @@ test("consolidatePipelineManifest: generates pipeline.sh from existing pipeline.
   }
 });
 
+test("consolidatePipelineManifest: preserves JSONL when pipeline.sh write fails (generate-from-manifest path)", async () => {
+  const consolidatePipelineManifest = await loadConsolidate();
+  const { chmodSync } = await import("node:fs");
+
+  // Skip on non-root systems where chmod is effective
+  if (process.getuid?.() === 0) return;
+
+  const dir = makeTempDir();
+  try {
+    // Create a subdirectory and make it read-only so pipeline.sh can't be written
+    const roDir = join(dir, "readonly");
+    mkdirSync(roDir);
+
+    // Write a valid pipeline.json inside the read-only dir
+    const existingManifest = {
+      version: "1.0.0",
+      session: { id: "test-session", started_at: "2026-03-30T12:00:00Z", ended_at: "2026-03-30T12:01:00Z", qsv_version: "18.0.0", mcp_server_version: "18.0.5", working_directory: roDir },
+      steps: [{ step: 1, tool: "qsv_select", command: "qsv select name data.csv", kind: "transformative", success: true, deterministic: true }],
+      file_inventory: {},
+    };
+    writeFileSync(join(roDir, "pipeline.json"), JSON.stringify(existingManifest), "utf-8");
+    writeFileSync(join(roDir, ".qsv-pipeline-steps.jsonl"), '{"step":1}\n');
+
+    // Make directory read-only to prevent pipeline.sh creation
+    chmodSync(roDir, 0o555);
+
+    consolidatePipelineManifest(roDir, "test-session");
+
+    // JSONL should be preserved (pipeline.sh write failed due to read-only dir)
+    assert.ok(existsSync(join(roDir, ".qsv-pipeline-steps.jsonl")), "JSONL should be preserved when pipeline.sh write fails");
+
+    // Restore permissions for cleanup
+    chmodSync(roDir, 0o755);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("consolidatePipelineManifest: web_search entries produce search: prefix", async () => {
   const consolidatePipelineManifest = await loadConsolidate();
 

@@ -142,16 +142,34 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!("--raw only supports a single input.");
     }
 
-    for input in &inputs {
-        let (hash_bytes, name) = hash_input(input, &hash_mode, args.flag_no_mmap)?;
+    let default_length = args.flag_length == 32;
 
-        // Produce output based on length
-        let output_bytes = finalize_to_bytes(&hash_bytes, args.flag_length);
+    for input in &inputs {
+        let (hasher, name) = hash_input(input, &hash_mode, args.flag_no_mmap)?;
 
         if args.flag_raw {
-            output_writer.write_all(&output_bytes)?;
+            if default_length {
+                output_writer.write_all(hasher.finalize().as_bytes())?;
+            } else {
+                let mut buf = vec![0u8; args.flag_length];
+                hasher.finalize_xof().fill(&mut buf);
+                output_writer.write_all(&buf)?;
+            }
+        } else if default_length {
+            // Fast path: stack-allocated hash + hex via blake3's to_hex()
+            let hex = hasher.finalize().to_hex();
+            if args.flag_no_names {
+                writeln!(output_writer, "{hex}")?;
+            } else if args.flag_tag {
+                writeln!(output_writer, "BLAKE3 ({name}) = {hex}")?;
+            } else {
+                writeln!(output_writer, "{hex}  {name}")?;
+            }
         } else {
-            let hex = bytes_to_hex(&output_bytes);
+            // Custom length: xof path with manual hex encoding
+            let mut buf = vec![0u8; args.flag_length];
+            hasher.finalize_xof().fill(&mut buf);
+            let hex = bytes_to_hex(&buf);
             if args.flag_no_names {
                 writeln!(output_writer, "{hex}")?;
             } else if args.flag_tag {
@@ -167,12 +185,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 }
 
 /// Hash a single input (file path or "-" for stdin).
-/// Returns the blake3 OutputReader and the display name.
-fn hash_input(
-    input: &str,
-    mode: &HashMode,
-    no_mmap: bool,
-) -> CliResult<(blake3::OutputReader, String)> {
+/// Returns the populated Hasher and the display name.
+fn hash_input(input: &str, mode: &HashMode, no_mmap: bool) -> CliResult<(blake3::Hasher, String)> {
     let mut hasher = match mode {
         HashMode::Default => blake3::Hasher::new(),
         HashMode::Keyed(key) => blake3::Hasher::new_keyed(key),
@@ -180,31 +194,14 @@ fn hash_input(
     };
 
     let name = if input == "-" {
-        // Read from stdin incrementally to avoid unbounded memory usage
-        let mut stdin_locked = stdin().lock();
-        let mut buf = [0u8; 8192];
-        loop {
-            let n = stdin_locked.read(&mut buf)?;
-            if n == 0 {
-                break;
-            }
-            hasher.update(&buf[..n]);
-        }
+        hasher.update_reader(stdin().lock())?;
         "-".to_string()
     } else {
         let path = Path::new(input);
         if no_mmap {
-            // Read file without mmap, single-threaded, streaming
-            let mut file =
+            let file =
                 fs::File::open(path).map_err(|e| CliError::Other(format!("{input}: {e}")))?;
-            let mut buf = [0u8; 8192];
-            loop {
-                let n = file.read(&mut buf)?;
-                if n == 0 {
-                    break;
-                }
-                hasher.update(&buf[..n]);
-            }
+            hasher.update_reader(file)?;
         } else {
             hasher
                 .update_mmap_rayon(path)
@@ -213,15 +210,7 @@ fn hash_input(
         input.to_string()
     };
 
-    Ok((hasher.finalize_xof(), name))
-}
-
-/// Read `length` bytes from the blake3 output reader.
-fn finalize_to_bytes(output: &blake3::OutputReader, length: usize) -> Vec<u8> {
-    let mut buf = vec![0u8; length];
-    let mut reader = output.clone();
-    reader.fill(&mut buf);
-    buf
+    Ok((hasher, name))
 }
 
 /// Convert bytes to lowercase hex string.
@@ -271,10 +260,16 @@ fn check_mode(
                 return fail_clierror!("Invalid hex checksum in {checkfile}: {expected_hash}");
             }
 
-            let (output_reader, _) = hash_input(&filename, hash_mode, args.flag_no_mmap)?;
+            let (hasher, _) = hash_input(&filename, hash_mode, args.flag_no_mmap)?;
             let expected_len = expected_hash.len() / 2;
-            let actual_bytes = finalize_to_bytes(&output_reader, expected_len);
-            let actual_hex = bytes_to_hex(&actual_bytes);
+
+            let actual_hex = if expected_len == 32 {
+                hasher.finalize().to_hex().to_string()
+            } else {
+                let mut buf = vec![0u8; expected_len];
+                hasher.finalize_xof().fill(&mut buf);
+                bytes_to_hex(&buf)
+            };
 
             if actual_hex == expected_hash {
                 if !args.flag_quiet {

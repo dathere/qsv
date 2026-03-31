@@ -45,7 +45,7 @@ use std::{
 
 use serde::Deserialize;
 
-use crate::{CliResult, config, util};
+use crate::{CliError, CliResult, config, util};
 
 #[derive(Deserialize)]
 struct Args {
@@ -263,8 +263,13 @@ fn check_mode(
                 parse_standard_line(line)?
             };
 
+            // Validate hex string
+            if expected_hash.len() % 2 != 0 || !expected_hash.chars().all(|c| c.is_ascii_hexdigit())
+            {
+                return fail_clierror!("Invalid hex checksum in {checkfile}: {expected_hash}");
+            }
+
             let (output_reader, _) = hash_input(&filename, hash_mode, args.flag_no_mmap)?;
-            // Determine expected length from the hex string
             let expected_len = expected_hash.len() / 2;
             let actual_bytes = finalize_to_bytes(&output_reader, expected_len);
             let actual_hex = bytes_to_hex(&actual_bytes);
@@ -318,5 +323,3 @@ fn parse_tag_line(line: &str) -> CliResult<(String, String)> {
         fail_clierror!("Invalid tag line: {line}")
     }
 }
-
-use crate::CliError;

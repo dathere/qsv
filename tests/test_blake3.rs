@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, io::Write, process};
 
 use crate::workdir::Workdir;
 
@@ -261,4 +261,164 @@ fn blake3_known_hash() {
     );
 
     wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn blake3_raw_output() {
+    let wrk = Workdir::new("blake3_raw_output");
+    wrk.create_from_string("hello.txt", "hello");
+
+    let mut cmd = wrk.command("blake3");
+    cmd.arg("--raw")
+        .arg("--length")
+        .arg("16")
+        .arg(wrk.path("hello.txt"));
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    // --raw with --length 16 should produce exactly 16 raw bytes
+    assert_eq!(
+        output.stdout.len(),
+        16,
+        "raw output should be exactly 16 bytes"
+    );
+}
+
+#[test]
+fn blake3_raw_default_length() {
+    let wrk = Workdir::new("blake3_raw_default_length");
+    wrk.create_from_string("hello.txt", "hello");
+
+    let mut cmd = wrk.command("blake3");
+    cmd.arg("--raw").arg(wrk.path("hello.txt"));
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    // Default length is 32 bytes
+    assert_eq!(
+        output.stdout.len(),
+        32,
+        "raw output should be exactly 32 bytes by default"
+    );
+}
+
+#[test]
+fn blake3_stdin_dash() {
+    let wrk = Workdir::new("blake3_stdin_dash");
+
+    let mut cmd = wrk.command("blake3");
+    cmd.arg("--no-names").arg("-");
+    cmd.stdin(process::Stdio::piped());
+    cmd.stdout(process::Stdio::piped());
+    cmd.stderr(process::Stdio::piped());
+
+    let mut child = cmd.spawn().unwrap();
+    {
+        let mut stdin_handle = child.stdin.take().unwrap();
+        stdin_handle.write_all(b"hello").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Should match the known blake3 hash of "hello"
+    assert_eq!(
+        stdout.trim(),
+        "ea8f163db38682925e4491c5e58d4bb3506ef8c14eb78a86e908c5624a67200f"
+    );
+}
+
+#[test]
+fn blake3_output_file() {
+    let wrk = Workdir::new("blake3_output_file");
+    wrk.create_from_string("hello.txt", "hello");
+
+    let out_file = wrk.path("output.txt").to_string_lossy().to_string();
+    let mut cmd = wrk.command("blake3");
+    cmd.arg("--no-names")
+        .arg("--output")
+        .arg(&out_file)
+        .arg(wrk.path("hello.txt"));
+
+    wrk.assert_success(&mut cmd);
+
+    let got = fs::read_to_string(&out_file).unwrap();
+    assert_eq!(
+        got.trim(),
+        "ea8f163db38682925e4491c5e58d4bb3506ef8c14eb78a86e908c5624a67200f"
+    );
+}
+
+#[test]
+fn blake3_num_threads() {
+    let wrk = Workdir::new("blake3_num_threads");
+    wrk.create_from_string("hello.txt", "hello");
+
+    let mut cmd = wrk.command("blake3");
+    cmd.arg("--num-threads")
+        .arg("1")
+        .arg("--no-names")
+        .arg(wrk.path("hello.txt"));
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(
+        got.trim(),
+        "ea8f163db38682925e4491c5e58d4bb3506ef8c14eb78a86e908c5624a67200f"
+    );
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn blake3_keyed() {
+    let wrk = Workdir::new("blake3_keyed");
+    wrk.create_from_string("hello.txt", "hello");
+
+    // Create a 32-byte key (all zeros for simplicity)
+    let key = [0u8; 32];
+
+    let mut cmd = wrk.command("blake3");
+    cmd.arg("--keyed")
+        .arg("--no-names")
+        .arg(wrk.path("hello.txt"));
+    cmd.stdin(process::Stdio::piped());
+    cmd.stdout(process::Stdio::piped());
+    cmd.stderr(process::Stdio::piped());
+
+    let mut child = cmd.spawn().unwrap();
+    {
+        let mut stdin_handle = child.stdin.take().unwrap();
+        stdin_handle.write_all(&key).unwrap();
+        // stdin_handle dropped here, closing stdin
+    }
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "keyed hashing should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let keyed_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    assert_eq!(keyed_hash.len(), 64, "keyed hash should be 64 hex chars");
+
+    // Keyed hash should differ from default hash
+    assert_ne!(
+        keyed_hash, "ea8f163db38682925e4491c5e58d4bb3506ef8c14eb78a86e908c5624a67200f",
+        "keyed hash should differ from default hash"
+    );
+}
+
+#[test]
+fn blake3_check_invalid_hex() {
+    let wrk = Workdir::new("blake3_check_invalid_hex");
+    wrk.create_from_string("hello.txt", "hello");
+
+    // Write a checksum with odd-length (invalid) hex
+    let checksum_path = wrk.path("checksums.txt");
+    let hello_path = wrk.path("hello.txt").to_string_lossy().to_string();
+    fs::write(&checksum_path, format!("abc  {hello_path}\n")).unwrap();
+
+    let mut cmd = wrk.command("blake3");
+    cmd.arg("--check").arg(&checksum_path);
+
+    wrk.assert_err(&mut cmd);
 }

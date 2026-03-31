@@ -128,6 +128,21 @@ function consolidatePipelineManifest(cwd, sessionId) {
   const jsonlPath = join(cwd, '.qsv-pipeline-steps.jsonl');
   if (!existsSync(jsonlPath)) return; // MCP server finalized cleanly — nothing to do
 
+  // Crash-recovery guard: if pipeline.json already exists and is valid,
+  // the MCP server wrote it before crashing (but didn't delete the JSONL).
+  // Treat the existing manifest as authoritative — don't clobber it.
+  const manifestPath = join(cwd, 'pipeline.json');
+  if (existsSync(manifestPath)) {
+    try {
+      JSON.parse(readFileSync(manifestPath, 'utf-8'));
+      // Valid JSON — just clean up the stale JSONL
+      try { unlinkSync(jsonlPath); } catch { /* ignore */ }
+      return;
+    } catch {
+      // Invalid/corrupt — fall through to rebuild from JSONL
+    }
+  }
+
   let content;
   try {
     content = readFileSync(jsonlPath, 'utf-8');
@@ -154,11 +169,18 @@ function consolidatePipelineManifest(cwd, sessionId) {
     return ta - tb;
   });
 
-  // Attach web_source URLs to the next chronological pipeline step
+  // Attach web provenance entries to the next chronological pipeline step.
+  // web_source entries have a URL, web_search entries have a query string.
   let pendingWebSources = [];
   for (const entry of allEntries) {
     if (entry.type === 'web_source') {
-      pendingWebSources.push(entry.url);
+      const url = typeof entry.url === 'string' ? entry.url.trim() : '';
+      if (url) pendingWebSources.push(url);
+      continue;
+    }
+    if (entry.type === 'web_search') {
+      const query = typeof entry.query === 'string' ? entry.query.trim() : '';
+      if (query) pendingWebSources.push(`search:${query}`);
       continue;
     }
     // It's a pipeline step

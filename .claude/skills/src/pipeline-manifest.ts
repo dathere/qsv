@@ -464,15 +464,15 @@ export class PipelineManifest {
       return;
     }
 
-    const webSources: Array<{ url: string; timestamp: string }> = [];
+    const webSources: Array<{ value: string; timestamp: string }> = [];
     for (const line of content.split("\n").filter(Boolean)) {
       try {
         const entry = JSON.parse(line);
-        if (entry.type === "web_source" && entry.url) {
-          webSources.push({
-            url: entry.url,
-            timestamp: entry.timestamp || new Date(0).toISOString(),
-          });
+        const ts = entry.timestamp || new Date(0).toISOString();
+        if (entry.type === "web_source" && typeof entry.url === "string" && entry.url.trim()) {
+          webSources.push({ value: entry.url.trim(), timestamp: ts });
+        } else if (entry.type === "web_search" && typeof entry.query === "string" && entry.query.trim()) {
+          webSources.push({ value: `search:${entry.query.trim()}`, timestamp: ts });
         }
       } catch {
         continue;
@@ -481,17 +481,16 @@ export class PipelineManifest {
 
     if (webSources.length === 0) return;
 
-    // Attach each web_source to the nearest subsequent step by timestamp
+    // Attach each web provenance entry to the nearest subsequent step by timestamp
     for (const ws of webSources) {
       const wsTime = new Date(ws.timestamp).getTime() || 0;
-      // Find the first step with a timestamp >= the web source
       const target = this.steps.find(
         (s) => (new Date(s.timestamp).getTime() || 0) >= wsTime,
       );
       if (target) {
         if (!target.web_sources) target.web_sources = [];
-        if (!target.web_sources.includes(ws.url)) {
-          target.web_sources.push(ws.url);
+        if (!target.web_sources.includes(ws.value)) {
+          target.web_sources.push(ws.value);
         }
       }
     }

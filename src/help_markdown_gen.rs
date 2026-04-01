@@ -585,10 +585,13 @@ fn generate_command_markdown(
         );
         md.push_str("|--------|------|-------------|--------|\n");
         for opt in options {
+            // Use non-breaking hyphen (U+2011) so flags don't word-wrap on hyphens
+            let nb_flag = opt.flag.replace('-', "\u{2011}");
             let option_display = if let Some(short) = &opt.short {
-                format!("&nbsp;`{short},`<br>`{}`&nbsp;", opt.flag)
+                let nb_short = short.replace('-', "\u{2011}");
+                format!("&nbsp;`{nb_short},`<br>`{nb_flag}`&nbsp;")
             } else {
-                format!("&nbsp;`{}`&nbsp;", opt.flag)
+                format!("&nbsp;`{nb_flag}`&nbsp;")
             };
             let default_str = opt
                 .default

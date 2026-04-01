@@ -38,6 +38,8 @@ mod test_apply;
 mod test_applydp;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_behead;
+#[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+mod test_blake3;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_cat;
 #[cfg(all(

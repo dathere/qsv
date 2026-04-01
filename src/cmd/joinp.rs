@@ -513,7 +513,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             {
                 // If the tolerance is a positive integer, it is tolerance number of rows.
                 // Otherwise, it is a tolerance date language spec.
-                if let Ok(numeric_tolerance) = atoi_simd::parse_pos::<u64>(tolerance.as_bytes()) {
+                if let Ok(numeric_tolerance) =
+                    atoi_simd::parse_pos::<u64, false>(tolerance.as_bytes())
+                {
                     asof_options.tolerance = Some(numeric_tolerance.into());
                 } else {
                     asof_options.tolerance_str = Some(tolerance.into());

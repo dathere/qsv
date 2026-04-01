@@ -518,7 +518,7 @@ where
 {
     match xs.next() {
         Some(bytes) => {
-            if let Ok(i) = atoi_simd::parse::<i64>(bytes) {
+            if let Ok(i) = atoi_simd::parse::<i64, false, false>(bytes) {
                 Some(Number::Int(i))
             } else {
                 // If parsing as i64 failed, try parsing as f64
@@ -620,6 +620,6 @@ fn collect_number_from_bytes(bytes: &[u8], start: usize) -> (i64, usize) {
     }
 
     // Parse the number using SIMD-optimized parsing
-    let num = atoi_simd::parse::<i64>(&bytes[start..pos]).unwrap_or(0);
+    let num = atoi_simd::parse::<i64, false, false>(&bytes[start..pos]).unwrap_or(0);
     (num, pos)
 }

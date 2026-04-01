@@ -2499,7 +2499,7 @@ impl Args {
         let max_chunk_memory_mb = if let Ok(val) = std::env::var("QSV_FREQ_CHUNK_MEMORY_MB") {
             // if valid, set max chunk memory
             // if invalid (cannot be parsed as u64), use CPU-based chunking
-            atoi_simd::parse::<u64>(val.as_bytes()).ok()
+            atoi_simd::parse::<u64, false, false>(val.as_bytes()).ok()
         } else {
             Some(0) // default to dynamic sizing
         };
@@ -3629,17 +3629,18 @@ fn add_stat<T: ToString>(field_stats: &mut Vec<FieldStats>, name: &str, value: O
         let val_string = val.to_string();
 
         // Try to parse as integer first
-        let json_value = if let Ok(int_val) = atoi_simd::parse::<i64>(val_string.as_bytes()) {
-            JsonValue::Number(int_val.into())
-        } else if let Ok(float_val) = fast_float2::parse(&val_string) {
-            JsonValue::Number(
-                serde_json::Number::from_f64(float_val)
-                    .unwrap_or_else(|| serde_json::Number::from(0)),
-            )
-        } else {
-            // Fall back to string
-            JsonValue::String(val_string)
-        };
+        let json_value =
+            if let Ok(int_val) = atoi_simd::parse::<i64, false, false>(val_string.as_bytes()) {
+                JsonValue::Number(int_val.into())
+            } else if let Ok(float_val) = fast_float2::parse(&val_string) {
+                JsonValue::Number(
+                    serde_json::Number::from_f64(float_val)
+                        .unwrap_or_else(|| serde_json::Number::from(0)),
+                )
+            } else {
+                // Fall back to string
+                JsonValue::String(val_string)
+            };
 
         field_stats.push(FieldStats {
             name:  name.to_string(),

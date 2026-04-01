@@ -421,7 +421,7 @@ pub fn infer_schema_from_stats(
                     field_map.insert(
                         "minimum".to_string(),
                         Value::Number(Number::from(
-                            atoi_simd::parse::<i64>(min.as_bytes()).unwrap(),
+                            atoi_simd::parse::<i64, false, false>(min.as_bytes()).unwrap(),
                         )),
                     );
                 }
@@ -430,7 +430,7 @@ pub fn infer_schema_from_stats(
                     field_map.insert(
                         "maximum".to_string(),
                         Value::Number(Number::from(
-                            atoi_simd::parse::<i64>(max.as_bytes()).unwrap(),
+                            atoi_simd::parse::<i64, false, false>(max.as_bytes()).unwrap(),
                         )),
                     );
                 }
@@ -438,7 +438,8 @@ pub fn infer_schema_from_stats(
                 // enum constraint
                 if let Some(values) = unique_values_map.get(&header_string) {
                     for value in values {
-                        let int_value = atoi_simd::parse::<i64>(value.as_bytes()).unwrap();
+                        let int_value =
+                            atoi_simd::parse::<i64, false, false>(value.as_bytes()).unwrap();
                         enum_list.push(Value::Number(Number::from(int_value)));
                     }
                 }

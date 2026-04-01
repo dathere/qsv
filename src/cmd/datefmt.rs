@@ -164,7 +164,7 @@ impl FromStr for TimestampResolution {
 
 #[inline]
 fn unix_timestamp(input: &str, resolution: TimestampResolution) -> Option<DateTime<Utc>> {
-    let Ok(ts_input_val) = atoi_simd::parse::<i64>(input.as_bytes()) else {
+    let Ok(ts_input_val) = atoi_simd::parse::<i64, false, false>(input.as_bytes()) else {
         return None;
     };
 

@@ -696,6 +696,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "atoi_simd"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3cdb3708a128e559a30fb830e8a77a5022ee6902806925c216658652b452a44"
+dependencies = [
+ "debug_unsafe",
+ "rustversion",
+]
+
+[[package]]
 name = "atomic"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1181,7 +1191,7 @@ name = "calamine"
 version = "0.34.0"
 source = "git+https://github.com/tafia/calamine?rev=c040bc9#c040bc91865855afc08cf4b094067fc5f894c45c"
 dependencies = [
- "atoi_simd",
+ "atoi_simd 0.17.0",
  "byteorder",
  "chrono",
  "codepage",
@@ -3949,9 +3959,9 @@ checksum = "2c4a545a15244c7d945065b5d392b2d2d7f21526fba56ce51467b06ed445e8f7"
 
 [[package]]
 name = "libc"
-version = "0.2.183"
+version = "0.2.184"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
+checksum = "48f5d2a454e16a5ea0f4ced81bd44e4cfc7bd3a507b61887c99fd3538b28e4af"
 
 [[package]]
 name = "libflate"
@@ -5126,7 +5136,7 @@ name = "polars-arrow"
 version = "0.53.0"
 source = "git+https://github.com/pola-rs/polars?rev=0a5a8a0#0a5a8a0ab03682688843e2a402e658a29019bed0"
 dependencies = [
- "atoi_simd",
+ "atoi_simd 0.17.0",
  "avro-schema",
  "bitflags 2.11.0",
  "bytemuck",
@@ -5182,7 +5192,7 @@ name = "polars-compute"
 version = "0.53.0"
 source = "git+https://github.com/pola-rs/polars?rev=0a5a8a0#0a5a8a0ab03682688843e2a402e658a29019bed0"
 dependencies = [
- "atoi_simd",
+ "atoi_simd 0.17.0",
  "bytemuck",
  "chrono",
  "either",
@@ -5310,7 +5320,7 @@ version = "0.53.0"
 source = "git+https://github.com/pola-rs/polars?rev=0a5a8a0#0a5a8a0ab03682688843e2a402e658a29019bed0"
 dependencies = [
  "async-trait",
- "atoi_simd",
+ "atoi_simd 0.17.0",
  "blake3",
  "bytes",
  "chrono",
@@ -5649,7 +5659,7 @@ name = "polars-time"
 version = "0.53.0"
 source = "git+https://github.com/pola-rs/polars?rev=0a5a8a0#0a5a8a0ab03682688843e2a402e658a29019bed0"
 dependencies = [
- "atoi_simd",
+ "atoi_simd 0.17.0",
  "bytemuck",
  "chrono",
  "chrono-tz",
@@ -5984,7 +5994,7 @@ dependencies = [
  "anstream",
  "arboard",
  "assert-json-diff",
- "atoi_simd",
+ "atoi_simd 0.18.1",
  "base62",
  "base64-simd",
  "bitvec",
@@ -6090,7 +6100,7 @@ dependencies = [
  "strsim",
  "strum 0.28.0",
  "strum_macros 0.28.0",
- "sysinfo 0.37.2",
+ "sysinfo 0.38.4",
  "tempfile",
  "terminal-colorsaurus",
  "textwrap",

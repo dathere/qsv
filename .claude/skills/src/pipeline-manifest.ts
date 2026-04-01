@@ -70,7 +70,7 @@ export interface PipelineManifestJson {
 
 const MANIFEST_VERSION = "1.0.0";
 const JSONL_FILENAME = ".qsv-pipeline-steps.jsonl";
-const B3SUM_TIMEOUT_MS = 30_000;
+const BLAKE3_TIMEOUT_MS = 30_000;
 const MAX_HASHABLE_SIZE = 10 * 1024 * 1024 * 1024; // 10 GB
 
 /** Tools that are metadata/infrastructure — not data operations. */
@@ -272,7 +272,7 @@ export class PipelineManifest {
       const { stdout } = await execFileAsync(
         this.qsvBinPath,
         ["blake3", "--no-names", filePath],
-        { timeout: B3SUM_TIMEOUT_MS },
+        { timeout: BLAKE3_TIMEOUT_MS },
       );
       const hash = stdout.trim();
       this.hashCache.set(filePath, { blake3: hash, mtimeMs: fileStats.mtimeMs, size: fileStats.size });

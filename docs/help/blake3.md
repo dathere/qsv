@@ -1,6 +1,6 @@
 # blake3
 
-> Compute or check BLAKE3 hashes of files.
+> Compute or check [BLAKE3](https://github.com/BLAKE3-team/BLAKE3/?tab=readme-ov-file#blake3) hashes of files.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/blake3.rs](https://github.com/dathere/qsv/blob/master/src/cmd/blake3.rs)** | [🚀](TableOfContents.md#legend "multithreaded even without an index.")
 

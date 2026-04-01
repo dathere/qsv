@@ -1,7 +1,7 @@
 /**
  * Pipeline Manifest — records every qsv tool invocation for reproducibility.
  *
- * Accumulates steps in-memory during a session, hashes files via `b3sum` CLI,
+ * Accumulates steps in-memory during a session, hashes files via `qsv blake3`,
  * and serializes to `pipeline.json` + `pipeline.sh` at session end.
  * An incremental `.qsv-pipeline-steps.jsonl` provides crash resilience.
  */
@@ -70,7 +70,7 @@ export interface PipelineManifestJson {
 
 const MANIFEST_VERSION = "1.0.0";
 const JSONL_FILENAME = ".qsv-pipeline-steps.jsonl";
-const B3SUM_TIMEOUT_MS = 30_000;
+const BLAKE3_TIMEOUT_MS = 30_000;
 const MAX_HASHABLE_SIZE = 10 * 1024 * 1024 * 1024; // 10 GB
 
 /** Tools that are metadata/infrastructure — not data operations. */
@@ -111,7 +111,8 @@ export class PipelineManifest {
   private mcpServerVersion: string;
   private steps: PipelineStep[] = [];
   private stepCounter = 0;
-  private b3sumAvailable: boolean;
+  private blake3Available: boolean;
+  private qsvBinPath: string;
   private hashCache = new Map<string, { blake3: string | null; mtimeMs: number; size: number }>();
   private pendingWebSources: string[] = [];
 
@@ -120,13 +121,15 @@ export class PipelineManifest {
     workingDir: string,
     qsvVersion: string,
     mcpServerVersion: string,
+    qsvBinPath: string = "qsv",
   ) {
     this.sessionId = sessionId;
     this.startedAt = new Date().toISOString();
     this.workingDir = workingDir;
     this.qsvVersion = qsvVersion;
     this.mcpServerVersion = mcpServerVersion;
-    this.b3sumAvailable = detectB3sum();
+    this.qsvBinPath = qsvBinPath;
+    this.blake3Available = detectBlake3(qsvBinPath);
   }
 
   /** Update the working directory (called when user changes it mid-session). */
@@ -134,9 +137,9 @@ export class PipelineManifest {
     this.workingDir = newDir;
   }
 
-  /** Check if b3sum is available. */
-  isB3sumAvailable(): boolean {
-    return this.b3sumAvailable;
+  /** Check if qsv blake3 is available. */
+  isBlake3Available(): boolean {
+    return this.blake3Available;
   }
 
   /** Get collected steps (for testing). */
@@ -237,7 +240,7 @@ export class PipelineManifest {
   }
 
   /**
-   * Hash a file using b3sum CLI.
+   * Hash a file using qsv blake3.
    * Caches by path + mtime to avoid redundant hashing.
    */
   async hashFile(filePath: string): Promise<FileHash | null> {
@@ -256,7 +259,7 @@ export class PipelineManifest {
       size_bytes: fileStats.size,
     };
 
-    if (!this.b3sumAvailable) return result;
+    if (!this.blake3Available) return result;
     if (fileStats.size > MAX_HASHABLE_SIZE) return result;
 
     // Check cache
@@ -267,16 +270,16 @@ export class PipelineManifest {
 
     try {
       const { stdout } = await execFileAsync(
-        "b3sum",
-        ["--no-names", filePath],
-        { timeout: B3SUM_TIMEOUT_MS },
+        this.qsvBinPath,
+        ["blake3", "--no-names", filePath],
+        { timeout: BLAKE3_TIMEOUT_MS },
       );
       const hash = stdout.trim();
       this.hashCache.set(filePath, { blake3: hash, mtimeMs: fileStats.mtimeMs, size: fileStats.size });
       return { ...result, blake3: hash };
     } catch (err) {
       console.error(
-        `[PipelineManifest] b3sum failed for ${filePath}: ${err instanceof Error ? err.message : err}`,
+        `[PipelineManifest] qsv blake3 failed for ${filePath}: ${err instanceof Error ? err.message : err}`,
       );
       // Cache negative result to avoid repeated timeouts/failures for the same file
       this.hashCache.set(filePath, { blake3: null, mtimeMs: fileStats.mtimeMs, size: fileStats.size });
@@ -583,16 +586,16 @@ export function isDeterministic(
 }
 
 /**
- * Detect whether `b3sum` is available on PATH.
+ * Detect whether `qsv blake3` is available.
  */
-export function detectB3sum(): boolean {
+export function detectBlake3(qsvBinPath: string): boolean {
   try {
-    execFileSync("b3sum", ["--version"], { timeout: 5_000, stdio: "ignore" });
-    console.error("[PipelineManifest] b3sum detected — BLAKE3 hashing enabled");
+    execFileSync(qsvBinPath, ["blake3", "--help"], { timeout: 5_000, stdio: "ignore" });
+    console.error("[PipelineManifest] qsv blake3 detected — BLAKE3 hashing enabled");
     return true;
   } catch {
     console.error(
-      "[PipelineManifest] b3sum not found — BLAKE3 hashing disabled (install: cargo install b3sum)",
+      "[PipelineManifest] qsv blake3 not available — BLAKE3 hashing disabled",
     );
     return false;
   }

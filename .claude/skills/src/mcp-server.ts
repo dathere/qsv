@@ -274,6 +274,7 @@ class QsvMcpServer {
       this.filesystemProvider.getWorkingDirectory(),
       qsvVersion,
       VERSION,
+      config.qsvBinPath,
     );
     console.error("[Init] ✓ Pipeline manifest initialized");
 

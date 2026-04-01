@@ -18,14 +18,14 @@ Finally, as [qsv's DSL](../README.md#luau_deeplink) (👑), `luau` will gain eve
 
 ## Building qsv with python feature
 
-If you wish to build qsv with the `python` feature, make sure you have the development libraries for the desired Python version (Python 3.8 and above are supported) installed when doing so (e.g. on Debian/Ubuntu - `apt-get install python-dev`; on CentOS/RedHat/Amazon Linux - `yum install python-devel`; on Windows and macOS - use the [Python installer](https://www.python.org/downloads/) for the desired version).
+If you wish to build qsv with the `python` feature, make sure you have the development libraries for the desired Python version (Python 3.10 and above are supported) installed when doing so (e.g. on Debian/Ubuntu - `apt-get install python-dev`; on CentOS/RedHat/Amazon Linux - `yum install python-devel`; on Windows and macOS - use the [Python installer](https://www.python.org/downloads/) for the desired version).
 
 If you plan to distribute your manually built `qsv` with the `python` feature, `qsv` will look for the specific version of Python shared libraries (libpython* on Linux/macOS, python*.dll on Windows) against which it was compiled starting with the current directory & abort with an error if not found, detailing the Python library it was looking for. 
 
 Note that this will happen on qsv startup, even if you're NOT running the `py` command.
 
 When building from source - [PyO3](https://pyo3.rs) - the underlying crate that enables the `python` feature, uses a build script to determine the Python version & set the correct linker arguments. By default it uses the python3 executable.
-You can override this by setting `PYO3_PYTHON` (e.g., `PYO3_PYTHON=python3.7`), before installing/compiling qsv. See the [PyO3 User Guide](https://pyo3.rs/latest/building-and-distribution.html) for more information.
+You can override this by setting `PYO3_PYTHON` (e.g., `PYO3_PYTHON=python3.10`), before installing/compiling qsv. See the [PyO3 User Guide](https://pyo3.rs/latest/building-and-distribution.html) for more information.
 
 Consider using the [`luau`](/src/cmd/luau.rs#L2) command instead of the [`py`](/src/cmd/python.rs#L2) command if the operation you're trying to do can be done with `luau` - as `luau` is statically linked, has no external dependencies, much faster than `py`, can do aggregations, supports random access, has a bevy of qsv helper functions, and allows mapping of multiple new columns. 
 

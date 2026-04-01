@@ -2,7 +2,7 @@
 
 Validates CSV against [JSON Schema](https://json-schema.org/), or just against [RFC 4180](https://www.loc.gov/preservation/digital/formats/fdd/fdd000323.shtml).
 
-Uses [Stranger6667/jsonschema-rs](https://github.com/Stranger6667/jsonschema-rs) as validation engine, and supports JSON Schema Draft 4, 6, and 7.
+Uses [Stranger6667/jsonschema-rs](https://github.com/Stranger6667/jsonschema-rs) as validation engine, and supports JSON Schema Draft 4, 6, 7, 2019-09, and 2020-12.
 
 ## Usage Examples
 

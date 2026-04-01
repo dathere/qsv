@@ -3620,12 +3620,12 @@ fn run_inference_options(
     if let Some(sql_results) = &args.flag_sql_results
         && has_sql_query
     {
-        // Check if file exists and is writeable, or can be created
+        // Check if file exists and is writable, or can be created
         let sql_results_path = Path::new(sql_results);
         if sql_results_path.exists() {
             if fs::metadata(sql_results_path)?.permissions().readonly() {
                 return fail_clierror!(
-                    "SQL results file exists but is not writeable: {}",
+                    "SQL results file exists but is not writable: {}",
                     sql_results_path.display()
                 );
             }

@@ -236,7 +236,7 @@ Computed using the [nearest-rank method](https://en.wikipedia.org/wiki/Percentil
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
-| `percentiles` | Variable | Custom percentiles of sorted values. | Nearest rank method for user-defined list. Weighted: weighted nearest-rank method. Multiple percentiles are separated by `QSV_STATS_SEPARATOR` (default: `|`). Special values: "deciles" expands to "10,20,30,40,50,60,70,80,90" and "quintiles" expands to "20,40,60,80". Default: "5,10,40,60,90,95". For dates/datetimes, values are returned in RFC3339 format. |
+| `percentiles` | Variable | Custom percentiles of sorted values. | Nearest rank method for user-defined list. Weighted: weighted nearest-rank method. Multiple percentiles separated by `QSV_STATS_SEPARATOR` (default: `\|`). Special values: "deciles" → "10,20,30,40,50,60,70,80,90", "quintiles" → "20,40,60,80". Default: "5,10,40,60,90,95". For dates/datetimes, values in RFC3339 format. |
 
 ### File-Level Metadata (JSON Cache)
 

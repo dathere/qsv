@@ -165,7 +165,7 @@ test("PipelineManifest: hashFile returns null for non-existent file", async () =
   }
 });
 
-test("PipelineManifest: hashFile returns size even without b3sum", async () => {
+test("PipelineManifest: hashFile returns size even without qsv blake3", async () => {
   const dir = makeTempDir();
   const testFile = join(dir, "test.csv");
   writeFileSync(testFile, "name,age\nAlice,30\n");
@@ -175,7 +175,7 @@ test("PipelineManifest: hashFile returns size even without b3sum", async () => {
     assert.ok(result, "Should return file hash info");
     assert.ok(result.size_bytes > 0, "Should have positive size");
     assert.strictEqual(result.file, testFile);
-    // blake3 will be null if b3sum is not installed, or a hex string if it is
+    // blake3 will be null if qsv blake3 is not available, or a hex string if it is
     if (result.blake3 !== null) {
       assert.ok(typeof result.blake3 === "string" && result.blake3.length === 64, "BLAKE3 hash should be 64 hex chars");
     }

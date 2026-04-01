@@ -88,12 +88,12 @@ qsv scoresql --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`--json`&nbsp; | flag | Output results as JSON instead of human-readable report. |  |
-| &nbsp;`--duckdb`&nbsp; | flag | Use DuckDB for query plan analysis instead of Polars. Uses the QSV_DUCKDB_PATH environment variable if set, otherwise looks for "duckdb" in PATH. |  |
-| &nbsp;`--try-parsedates`&nbsp; | flag | Automatically try to parse dates/datetimes and time. |  |
-| &nbsp;`--infer-len`&nbsp; | string | Number of rows to scan when inferring schema. | `10000` |
-| &nbsp;`--ignore-errors`&nbsp; | flag | Ignore errors when parsing CSVs. |  |
-| &nbsp;`--truncate-ragged-lines`&nbsp; | flag | Truncate lines with more fields than the header. |  |
+| &nbsp;`‑‑json`&nbsp; | flag | Output results as JSON instead of human-readable report. |  |
+| &nbsp;`‑‑duckdb`&nbsp; | flag | Use DuckDB for query plan analysis instead of Polars. Uses the QSV_DUCKDB_PATH environment variable if set, otherwise looks for "duckdb" in PATH. |  |
+| &nbsp;`‑‑try‑parsedates`&nbsp; | flag | Automatically try to parse dates/datetimes and time. |  |
+| &nbsp;`‑‑infer‑len`&nbsp; | string | Number of rows to scan when inferring schema. | `10000` |
+| &nbsp;`‑‑ignore‑errors`&nbsp; | flag | Ignore errors when parsing CSVs. |  |
+| &nbsp;`‑‑truncate‑ragged‑lines`&nbsp; | flag | Truncate lines with more fields than the header. |  |
 
 <a name="common-options"></a>
 
@@ -101,10 +101,10 @@ qsv scoresql --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
-| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
-| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. | `,` |
-| &nbsp;`-q,`<br>`--quiet`&nbsp; | flag | Do not print informational messages to stderr. |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. | `,` |
+| &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not print informational messages to stderr. |  |
 
 ---
 **Source:** [`src/cmd/scoresql.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/scoresql.rs)

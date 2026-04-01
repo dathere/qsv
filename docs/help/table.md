@@ -43,10 +43,10 @@ qsv table --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-w,`<br>`--width`&nbsp; | string | The minimum width of each column. | `2` |
-| &nbsp;`-p,`<br>`--pad`&nbsp; | string | The minimum number of spaces between each column. | `2` |
-| &nbsp;`-a,`<br>`--align`&nbsp; | string | How entries should be aligned in a column. Options: "left", "right", "center". "leftendtab" & "leftfwf" "leftendtab" is a special alignment that similar to "left" but with whitespace padding ending with a tab character. The resulting output still validates as a valid TSV file, while also being more human-readable (aka "aligned" TSV). "leftfwf" is similar to "left" with Fixed Width Format allgnment. The first line is a comment (prefixed with "#") that enumerates the position (1-based, comma-separated) of each column. | `left` |
-| &nbsp;`-c,`<br>`--condense`&nbsp; | string | Limits the length of each field to the value specified. If the field is UTF-8 encoded, then <arg> refers to the number of code points. Otherwise, it refers to the number of bytes. |  |
+| &nbsp;`‑w,`<br>`‑‑width`&nbsp; | string | The minimum width of each column. | `2` |
+| &nbsp;`‑p,`<br>`‑‑pad`&nbsp; | string | The minimum number of spaces between each column. | `2` |
+| &nbsp;`‑a,`<br>`‑‑align`&nbsp; | string | How entries should be aligned in a column. Options: "left", "right", "center". "leftendtab" & "leftfwf" "leftendtab" is a special alignment that similar to "left" but with whitespace padding ending with a tab character. The resulting output still validates as a valid TSV file, while also being more human-readable (aka "aligned" TSV). "leftfwf" is similar to "left" with Fixed Width Format allgnment. The first line is a comment (prefixed with "#") that enumerates the position (1-based, comma-separated) of each column. | `left` |
+| &nbsp;`‑c,`<br>`‑‑condense`&nbsp; | string | Limits the length of each field to the value specified. If the field is UTF-8 encoded, then <arg> refers to the number of code points. Otherwise, it refers to the number of bytes. |  |
 
 <a name="common-options"></a>
 
@@ -54,10 +54,10 @@ qsv table --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
-| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
-| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| &nbsp;`--memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`‑‑memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
 
 ---
 **Source:** [`src/cmd/table.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/table.rs)

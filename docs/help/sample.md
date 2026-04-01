@@ -207,8 +207,8 @@ qsv sample --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`--seed`&nbsp; | string | Random Number Generator (RNG) seed. |  |
-| &nbsp;`--rng`&nbsp; | string | The Random Number Generator (RNG) algorithm to use. | `standard` |
+| &nbsp;`‑‑seed`&nbsp; | string | Random Number Generator (RNG) seed. |  |
+| &nbsp;`‑‑rng`&nbsp; | string | The Random Number Generator (RNG) algorithm to use. | `standard` |
 
 <a name="sampling-methods-options"></a>
 
@@ -216,12 +216,12 @@ qsv sample --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`--bernoulli`&nbsp; | flag | Use Bernoulli sampling instead of indexed or reservoir sampling. When this flag is set, <sample-size> must be between 0 and 1 and represents the probability of selecting each record. |  |
-| &nbsp;`--systematic`&nbsp; | string | Use systematic sampling (every nth record as specified by <sample-size>). If <arg> is "random", the starting point is randomly chosen between 0 & n. If <arg> is "first", the starting point is the first record. The sample size must be a whole number. Uses CONSTANT memory - O(1). |  |
-| &nbsp;`--stratified`&nbsp; | string | Use stratified sampling. The strata column is specified by <col>. Can be either a column name or 0-based column index. The sample size must be a whole number. Uses MEMORY PROPORTIONAL to the number of strata (s) and samples per stratum (k) - O(s*k). |  |
-| &nbsp;`--weighted`&nbsp; | string | Use weighted sampling. The weight column is specified by <col>. Can be either a column name or 0-based column index. The column will be parsed as a number. Records with non-number weights will be skipped. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k). |  |
-| &nbsp;`--cluster`&nbsp; | string | Use cluster sampling. The cluster column is specified by <col>. Can be either a column name or 0-based column index. Uses MEMORY PROPORTIONAL to the number of clusters (c) - O(c). |  |
-| &nbsp;`--timeseries`&nbsp; | string | Use time-series sampling. The time column is specified by <col>. Can be either a column name or 0-based column index. Sorts records by the specified time column and then groups by time intervals and selects one record per interval. Supports various date formats (19 formats recognized by qsv-dateparser). Uses MEMORY PROPORTIONAL to the number of records - O(n). |  |
+| &nbsp;`‑‑bernoulli`&nbsp; | flag | Use Bernoulli sampling instead of indexed or reservoir sampling. When this flag is set, <sample-size> must be between 0 and 1 and represents the probability of selecting each record. |  |
+| &nbsp;`‑‑systematic`&nbsp; | string | Use systematic sampling (every nth record as specified by <sample-size>). If <arg> is "random", the starting point is randomly chosen between 0 & n. If <arg> is "first", the starting point is the first record. The sample size must be a whole number. Uses CONSTANT memory - O(1). |  |
+| &nbsp;`‑‑stratified`&nbsp; | string | Use stratified sampling. The strata column is specified by <col>. Can be either a column name or 0-based column index. The sample size must be a whole number. Uses MEMORY PROPORTIONAL to the number of strata (s) and samples per stratum (k) - O(s*k). |  |
+| &nbsp;`‑‑weighted`&nbsp; | string | Use weighted sampling. The weight column is specified by <col>. Can be either a column name or 0-based column index. The column will be parsed as a number. Records with non-number weights will be skipped. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k). |  |
+| &nbsp;`‑‑cluster`&nbsp; | string | Use cluster sampling. The cluster column is specified by <col>. Can be either a column name or 0-based column index. Uses MEMORY PROPORTIONAL to the number of clusters (c) - O(c). |  |
+| &nbsp;`‑‑timeseries`&nbsp; | string | Use time-series sampling. The time column is specified by <col>. Can be either a column name or 0-based column index. Sorts records by the specified time column and then groups by time intervals and selects one record per interval. Supports various date formats (19 formats recognized by qsv-dateparser). Uses MEMORY PROPORTIONAL to the number of records - O(n). |  |
 
 <a name="time-series-sampling-options"></a>
 
@@ -229,7 +229,7 @@ qsv sample --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`--ts-interval`&nbsp; | string | Time interval for grouping records. Format: <number><unit> where unit is h (hour), d (day), w (week), m (month), y (year). |  |
+| &nbsp;`‑‑ts‑interval`&nbsp; | string | Time interval for grouping records. Format: <number><unit> where unit is h (hour), d (day), w (week), m (month), y (year). |  |
 
 <a name="common-options"></a>
 
@@ -237,10 +237,10 @@ qsv sample --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
-| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
-| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will be considered as part of the population to sample from. (When not set, the first row is the header row and will always appear in the output.) |  |
-| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will be considered as part of the population to sample from. (When not set, the first row is the header row and will always appear in the output.) |  |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/sample.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/sample.rs)

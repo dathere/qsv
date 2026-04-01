@@ -211,11 +211,11 @@ qsv applydp --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-c,`<br>`--new-column`&nbsp; | string | Put the transformed values in a new column instead. |  |
-| &nbsp;`-r,`<br>`--rename`&nbsp; | string | New name for the transformed column. |  |
-| &nbsp;`-C,`<br>`--comparand=<string>`&nbsp; | string | The string to compare against for replace & similarity operations. |  |
-| &nbsp;`-R,`<br>`--replacement=<string>`&nbsp; | string | The string to use for the replace & emptyreplace operations. |  |
-| &nbsp;`-f,`<br>`--formatstr=<string>`&nbsp; | string | This option is used by several subcommands: |  |
+| &nbsp;`‑c,`<br>`‑‑new‑column`&nbsp; | string | Put the transformed values in a new column instead. |  |
+| &nbsp;`‑r,`<br>`‑‑rename`&nbsp; | string | New name for the transformed column. |  |
+| &nbsp;`‑C,`<br>`‑‑comparand=<string>`&nbsp; | string | The string to compare against for replace & similarity operations. |  |
+| &nbsp;`‑R,`<br>`‑‑replacement=<string>`&nbsp; | string | The string to use for the replace & emptyreplace operations. |  |
+| &nbsp;`‑f,`<br>`‑‑formatstr=<string>`&nbsp; | string | This option is used by several subcommands: |  |
 
 <a name="operations-options"></a>
 
@@ -223,8 +223,8 @@ qsv applydp --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| &nbsp;`-b,`<br>`--batch`&nbsp; | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
 
 <a name="common-options"></a>
 
@@ -232,10 +232,10 @@ qsv applydp --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
-| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
-| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. |  |
-| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. |  |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/applydp.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/applydp.rs)

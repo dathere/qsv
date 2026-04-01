@@ -48,7 +48,7 @@ qsv clipboard --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-s,`<br>`--save`&nbsp; | flag | Save output to clipboard. |  |
+| &nbsp;`‑s,`<br>`‑‑save`&nbsp; | flag | Save output to clipboard. |  |
 
 <a name="common-options"></a>
 
@@ -56,7 +56,7 @@ qsv clipboard --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 
 ---
 **Source:** [`src/cmd/clipboard.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/clipboard.rs)

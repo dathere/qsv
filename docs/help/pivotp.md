@@ -46,20 +46,20 @@ qsv pivotp --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-i,`<br>`--index`&nbsp; | string | The column(s) to use as the index (row labels). Specify multiple columns by separating them with a comma. The output will have one row for each unique combination of the index's values. If None, all remaining columns not specified on --on and --values will be used. At least one of --index and --values must be specified. |  |
-| &nbsp;`-v,`<br>`--values`&nbsp; | string | The column(s) containing values to aggregate. If an aggregation is specified, these are the values on which the aggregation will be computed. If None, all remaining columns not specified on --on and --index will be used. At least one of --index and --values must be specified. |  |
-| &nbsp;`-a,`<br>`--agg`&nbsp; | string | The aggregation function to use: first - First value encountered last - Last value encountered sum - Sum of values min - Minimum value max - Maximum value mean - Average value median - Median value len - Count of values item - Get single value from group. Raises error if there are multiple values. smart - use value column data type & statistics to pick an aggregation. When moarstats has been run, leverages outlier profile and Pearson skewness for smarter selection. With moarstats --advanced, also uses kurtosis, bimodality, entropy and Gini coefficient. Will only work if there is one value column, otherwise it falls back to `first` | `smart` |
-| &nbsp;`--sort-columns`&nbsp; | flag | Sort the transposed columns by name. |  |
-| &nbsp;`--maintain-order`&nbsp; | flag | Maintain the order of the input columns. |  |
-| &nbsp;`--col-separator`&nbsp; | string | The separator in generated column names in case of multiple --values columns. | `_` |
-| &nbsp;`--validate`&nbsp; | flag | Validate a pivot by checking the pivot column(s)' cardinality. |  |
-| &nbsp;`--try-parsedates`&nbsp; | flag | When set, will attempt to parse columns as dates. |  |
-| &nbsp;`--infer-len`&nbsp; | string | Number of rows to scan when inferring schema. Set to 0 to scan entire file. | `10000` |
-| &nbsp;`--decimal-comma`&nbsp; | flag | Use comma as decimal separator when READING the input. Note that you will need to specify an alternate --delimiter. |  |
-| &nbsp;`--ignore-errors`&nbsp; | flag | Skip rows that can't be parsed. |  |
-| &nbsp;`--grand-total`&nbsp; | flag | Append a grand total row summing all numeric pivot columns. The first index column will contain "Grand <total-label>". |  |
-| &nbsp;`--subtotal`&nbsp; | flag | Insert subtotal rows after each group in the first index column. The second index column will contain the total label. Requires 2+ index columns. |  |
-| &nbsp;`--total-label`&nbsp; | string | Custom label for total rows. | `Total` |
+| &nbsp;`‑i,`<br>`‑‑index`&nbsp; | string | The column(s) to use as the index (row labels). Specify multiple columns by separating them with a comma. The output will have one row for each unique combination of the index's values. If None, all remaining columns not specified on --on and --values will be used. At least one of --index and --values must be specified. |  |
+| &nbsp;`‑v,`<br>`‑‑values`&nbsp; | string | The column(s) containing values to aggregate. If an aggregation is specified, these are the values on which the aggregation will be computed. If None, all remaining columns not specified on --on and --index will be used. At least one of --index and --values must be specified. |  |
+| &nbsp;`‑a,`<br>`‑‑agg`&nbsp; | string | The aggregation function to use: first - First value encountered last - Last value encountered sum - Sum of values min - Minimum value max - Maximum value mean - Average value median - Median value len - Count of values item - Get single value from group. Raises error if there are multiple values. smart - use value column data type & statistics to pick an aggregation. When moarstats has been run, leverages outlier profile and Pearson skewness for smarter selection. With moarstats --advanced, also uses kurtosis, bimodality, entropy and Gini coefficient. Will only work if there is one value column, otherwise it falls back to `first` | `smart` |
+| &nbsp;`‑‑sort‑columns`&nbsp; | flag | Sort the transposed columns by name. |  |
+| &nbsp;`‑‑maintain‑order`&nbsp; | flag | Maintain the order of the input columns. |  |
+| &nbsp;`‑‑col‑separator`&nbsp; | string | The separator in generated column names in case of multiple --values columns. | `_` |
+| &nbsp;`‑‑validate`&nbsp; | flag | Validate a pivot by checking the pivot column(s)' cardinality. |  |
+| &nbsp;`‑‑try‑parsedates`&nbsp; | flag | When set, will attempt to parse columns as dates. |  |
+| &nbsp;`‑‑infer‑len`&nbsp; | string | Number of rows to scan when inferring schema. Set to 0 to scan entire file. | `10000` |
+| &nbsp;`‑‑decimal‑comma`&nbsp; | flag | Use comma as decimal separator when READING the input. Note that you will need to specify an alternate --delimiter. |  |
+| &nbsp;`‑‑ignore‑errors`&nbsp; | flag | Skip rows that can't be parsed. |  |
+| &nbsp;`‑‑grand‑total`&nbsp; | flag | Append a grand total row summing all numeric pivot columns. The first index column will contain "Grand <total-label>". |  |
+| &nbsp;`‑‑subtotal`&nbsp; | flag | Insert subtotal rows after each group in the first index column. The second index column will contain the total label. Requires 2+ index columns. |  |
+| &nbsp;`‑‑total‑label`&nbsp; | string | Custom label for total rows. | `Total` |
 
 <a name="common-options"></a>
 
@@ -67,10 +67,10 @@ qsv pivotp --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
-| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
-| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
-| &nbsp;`-q,`<br>`--quiet`&nbsp; | flag | Do not return smart aggregation chosen nor pivot result shape to stderr. |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not return smart aggregation chosen nor pivot result shape to stderr. |  |
 
 ---
 **Source:** [`src/cmd/pivotp.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/pivotp.rs)

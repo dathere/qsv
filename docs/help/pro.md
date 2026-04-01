@@ -45,7 +45,7 @@ qsv pro --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 
 ---
 **Source:** [`src/cmd/pro.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/pro.rs)

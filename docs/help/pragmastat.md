@@ -194,18 +194,18 @@ qsv pragmastat --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-t,`<br>`--twosample`&nbsp; | flag | Compute two-sample estimators for all column pairs. |  |
-| &nbsp;`--compare1`&nbsp; | string | One-sample confirmatory analysis. Test center/spread against thresholds. Format: metric:value[,metric:value,...]. Mutually exclusive with --twosample and --compare2. |  |
-| &nbsp;`--compare2`&nbsp; | string | Two-sample confirmatory analysis. Test shift/ratio/disparity against thresholds. Format: metric:value[,metric:value,...]. Mutually exclusive with --twosample and --compare1. |  |
-| &nbsp;`-s,`<br>`--select`&nbsp; | string | Select columns for analysis. Uses qsv's column selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed. |  |
-| &nbsp;`-m,`<br>`--misrate`&nbsp; | string | Probability that bounds fail to contain the true parameter. Lower values produce wider bounds. Must be achievable for the given sample size. | `0.001` |
-| &nbsp;`--standalone`&nbsp; | flag | Output one-sample results as standalone CSV instead of appending to the stats cache. |  |
-| &nbsp;`--stats-options`&nbsp; | string | Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace. | `--infer-dates --infer-boolean --mad --quartiles --force --stats-jsonl` |
-| &nbsp;`--round`&nbsp; | string | Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule. | `4` |
-| &nbsp;`--force`&nbsp; | flag | Force recomputing ps_* columns even if they already exist in the stats cache. |  |
-| &nbsp;`--subsample`&nbsp; | string | Randomly subsample N values per column before computing. Speeds up large datasets while maintaining statistical robustness. Recommended: 10000-50000 for exploratory analysis. |  |
-| &nbsp;`--seed`&nbsp; | string | Seed for reproducible subsampling. If not specified, defaults to 42 when --subsample is used. |  |
-| &nbsp;`--no-bounds`&nbsp; | flag | Skip confidence bounds computation (~2x faster). Incompatible with --compare1/--compare2. |  |
+| &nbsp;`‑t,`<br>`‑‑twosample`&nbsp; | flag | Compute two-sample estimators for all column pairs. |  |
+| &nbsp;`‑‑compare1`&nbsp; | string | One-sample confirmatory analysis. Test center/spread against thresholds. Format: metric:value[,metric:value,...]. Mutually exclusive with --twosample and --compare2. |  |
+| &nbsp;`‑‑compare2`&nbsp; | string | Two-sample confirmatory analysis. Test shift/ratio/disparity against thresholds. Format: metric:value[,metric:value,...]. Mutually exclusive with --twosample and --compare1. |  |
+| &nbsp;`‑s,`<br>`‑‑select`&nbsp; | string | Select columns for analysis. Uses qsv's column selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed. |  |
+| &nbsp;`‑m,`<br>`‑‑misrate`&nbsp; | string | Probability that bounds fail to contain the true parameter. Lower values produce wider bounds. Must be achievable for the given sample size. | `0.001` |
+| &nbsp;`‑‑standalone`&nbsp; | flag | Output one-sample results as standalone CSV instead of appending to the stats cache. |  |
+| &nbsp;`‑‑stats‑options`&nbsp; | string | Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace. | `--infer-dates --infer-boolean --mad --quartiles --force --stats-jsonl` |
+| &nbsp;`‑‑round`&nbsp; | string | Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule. | `4` |
+| &nbsp;`‑‑force`&nbsp; | flag | Force recomputing ps_* columns even if they already exist in the stats cache. |  |
+| &nbsp;`‑‑subsample`&nbsp; | string | Randomly subsample N values per column before computing. Speeds up large datasets while maintaining statistical robustness. Recommended: 10000-50000 for exploratory analysis. |  |
+| &nbsp;`‑‑seed`&nbsp; | string | Seed for reproducible subsampling. If not specified, defaults to 42 when --subsample is used. |  |
+| &nbsp;`‑‑no‑bounds`&nbsp; | flag | Skip confidence bounds computation (~2x faster). Incompatible with --compare1/--compare2. |  |
 
 <a name="common-options"></a>
 
@@ -213,12 +213,12 @@ qsv pragmastat --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
-| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
-| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
-| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be treated as headers. |  |
-| &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| &nbsp;`--memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. Not valid for stdin. |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be treated as headers. |  |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`‑‑memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. Not valid for stdin. |  |
 
 ---
 **Source:** [`src/cmd/pragmastat.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/pragmastat.rs)

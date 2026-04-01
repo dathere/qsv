@@ -33,6 +33,7 @@
   - [One-Sample Mode (Default)](#one-sample-mode-default)
   - [Two-Sample Mode](#two-sample-mode)
   - [Options](#options)
+  - [Performance Characteristics](#performance-characteristics)
   - [When Values Are Blank](#when-values-are-blank)
 - [frequency](#frequency)
   - [Frequency Table Output](#frequency-table-output)
@@ -489,7 +490,7 @@ See: [Outlier](https://en.wikipedia.org/wiki/Outlier)
 
 ## `pragmastat`
 
-The `pragmastat` command computes robust, median-of-pairwise statistics using the [Pragmastat library](https://pragmastat.dev/) (v11.0.0). Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
+The `pragmastat` command computes robust, median-of-pairwise statistics using the [Pragmastat library](https://pragmastat.dev/) (v12.0.0). Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
 
 Sourced from `src/cmd/pragmastat.rs`.
 
@@ -544,6 +545,33 @@ Output columns: `field_x, field_y, n_x, n_y, shift, ratio, disparity, shift_lowe
 | `--jobs <arg>` / `-j` | number of CPUs | The number of jobs to run in parallel. When not set, defaults to the number of CPUs detected. |
 | `--memcheck` | off | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. Not valid for stdin. |
 
+### Performance Characteristics
+
+**Algorithmic Complexity**
+
+All Pragmastat estimators avoid naïve O(n²) pairwise enumeration by using implicit‑matrix selection and binary‑search techniques (see [pragmastat.dev/synopsis](https://pragmastat.dev/synopsis/)):
+
+| Estimator(s) | Complexity | Technique |
+|:---|:---|:---|
+| `center`, `center_bounds` | O(n log n) | Monahan's implicit‑matrix selection + SignedRankMargin |
+| `spread`, `spread_bounds` | O(n log n) | Monahan's selection for differences + disjoint‑pair sign‑test inversion |
+| `shift`, `shift_bounds`, `ratio`, `ratio_bounds` | O((n+m) log L) | Value‑space binary search over pairwise differences; L = value range |
+| `disparity`, `disparity_bounds` | O((n+m) log L + n log n + m log m) | Bonferroni split combining shift bounds + average spread bounds |
+
+These are per‑column (one‑sample) or per‑pair (two‑sample) complexities. Randomization primitives (xoshiro256++) are O(1) per draw.
+
+**qsv Implementation Optimizations**
+
+- **Parallel computation** — Columns (one‑sample) and column pairs (two‑sample) are processed in parallel via Rayon; controlled by `--jobs`.
+- **Parallel indexed CSV reading** — Files with ≥ 10,000 rows and a `.csv.idx` index are read in parallel chunks using a ThreadPool with crossbeam channels and deterministic seeking.
+- **`--subsample N`** — Partial Fisher‑Yates shuffle keeps only N values per column before computing, with deterministic per‑column seeding (`--seed` defaults to 42). Provides ~100× speedup on large datasets while preserving statistical robustness. Recommended: 10,000–50,000 for exploratory analysis.
+- **`--no-bounds`** — Skips confidence bound computation for ~2× speedup when only point estimates are needed.
+- **Combined `--subsample` + `--no-bounds`** — ~200× speedup for quick exploratory analysis on large datasets.
+- **Stats cache integration** — When a fresh `.stats.csv.data.jsonl` cache exists, non‑numeric columns are automatically filtered out before computation, and Date/DateTime type detection is read from the cache rather than re‑inferred.
+- **Pre‑computed log arrays** — In two‑sample mode, `ln()` transformations are computed once per column in parallel and shared across all pairs, avoiding redundant O(n) passes.
+- **SIMD‑accelerated parsing** — Uses `simdutf8` for UTF‑8 validation, `fast_float2` for float parsing, and `simd_json` (little‑endian) for cache deserialization.
+- **Pre‑allocated buffers** — Column vectors are sized to estimated row counts, and chunk buffers are pre‑allocated before parallel reads to minimize reallocations.
+
 ### When Values Are Blank
 
 Cells are empty (blank) when:
@@ -552,7 +580,7 @@ Cells are empty (blank) when:
 - **Sparity required:** `spread`, `spread_lower`, `spread_upper`, `disparity`, `disparity_lower`, and `disparity_upper` need real variability (not tie-dominant data)
 - **Insufficient data for bounds:** All bounds columns need enough data for the requested misrate; try a higher misrate or more data
 
-See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/releases/download/v11.0.0/pragmastat-v11.0.0.pdf), [pragmastat.dev](https://pragmastat.dev/)
+See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.0.0/pragmastat-v12.0.0.pdf), [pragmastat.dev](https://pragmastat.dev/)
 
 ## `frequency`
 

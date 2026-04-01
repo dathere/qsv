@@ -1,5 +1,13 @@
 # CLAUDE.md
 
+## General Rules
+
+When unsure how to use a project tool or publish workflow, check existing docs first (e.g., marketplace docs, plugin docs) before guessing. Never fabricate CLI flags.
+
+## Documentation
+
+When counting items in documentation (tools, commands, features), always verify counts by explicitly listing and numbering each item. Never estimate counts.
+
 ## Tools & commands
 
 - Build qsv: `cargo build --locked --bin qsv -F all_features`
@@ -25,3 +33,15 @@ Adding a new command requires changes in multiple places:
 5. Create `tests/test_yourcommand.rs`
 6. Add usage text with examples and link to test file
 7. Update README.md with command description
+
+## Rust / qsv Development
+
+For qsv Rust work: after editing code, always run `cargo test` and `cargo clippy` before committing. For feature-gated code, test with the relevant feature flag enabled.
+
+## Code Review Response
+
+For Copilot/code review responses: apply the fix, run tests, commit, and reply to the review comment. Do not dismiss review findings without verifying them in code first.
+
+## Debugging
+
+When debugging, state your hypothesis explicitly before investigating. If the first hypothesis fails, don't try variations of the same idea — step back and consider fundamentally different root causes.

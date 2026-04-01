@@ -943,9 +943,10 @@ pub fn mem_file_check(
 
     let conservative_memcheck_work = get_envvar_flag("QSV_MEMORY_CHECK") || conservative_memcheck;
 
-    let mut mem_pct = env::var("QSV_FREEMEMORY_HEADROOM_PCT")
-        .map_or(DEFAULT_FREEMEMORY_HEADROOM_PCT, |val| {
-            atoi_simd::parse::<u8>(val.as_bytes()).unwrap_or(DEFAULT_FREEMEMORY_HEADROOM_PCT)
+    let mut mem_pct =
+        env::var("QSV_FREEMEMORY_HEADROOM_PCT").map_or(DEFAULT_FREEMEMORY_HEADROOM_PCT, |val| {
+            atoi_simd::parse::<u8, false, false>(val.as_bytes())
+                .unwrap_or(DEFAULT_FREEMEMORY_HEADROOM_PCT)
         });
 
     // if QSV_FREEMEMORY_HEADROOM_PCT is 0, we skip the memory check

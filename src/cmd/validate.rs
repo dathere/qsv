@@ -1970,7 +1970,7 @@ fn to_json_instance(
                 }
             },
             JSONtypes::Integer => {
-                if let Ok(int) = atoi_simd::parse::<i64>(value) {
+                if let Ok(int) = atoi_simd::parse::<i64, false, false>(value) {
                     Value::Number(Number::from(int))
                 } else {
                     return fail_clierror!(

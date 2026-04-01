@@ -547,7 +547,7 @@ fn parse_timestamp(
     };
 
     // Try parsing as Unix timestamp first (simple integer check)
-    if let Ok(ts_val) = atoi_simd::parse::<i64>(value) {
+    if let Ok(ts_val) = atoi_simd::parse::<i64, false, false>(value) {
         // Try as seconds first
         if let Some(dt) = Utc.timestamp_opt(ts_val, 0).single() {
             return Ok(dt);

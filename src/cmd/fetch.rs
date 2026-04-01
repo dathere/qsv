@@ -1190,7 +1190,7 @@ pub fn get_ratelimit_header_value<'a>(
 /// return 1 if the value is 0
 pub fn parse_ratelimit_header_value(value: Option<&HeaderValue>, sentinel_value: u64) -> u64 {
     value.map_or(sentinel_value, |v| {
-        atoi_simd::parse_pos::<u64>(v.to_str().unwrap().as_bytes()).unwrap_or(1)
+        atoi_simd::parse_pos::<u64, false>(v.to_str().unwrap().as_bytes()).unwrap_or(1)
     })
 }
 
@@ -1404,7 +1404,7 @@ fn get_response(
                 // wait before retrying, which is a valid value
                 // however, we don't want to do date-parsing here, so we just
                 // wait timeout_secs seconds before retrying
-                atoi_simd::parse_pos::<u64>(retry_after.to_str().unwrap().as_bytes())
+                atoi_simd::parse_pos::<u64, false>(retry_after.to_str().unwrap().as_bytes())
                     .unwrap_or(timeout_secs)
             } else {
                 parse_ratelimit_header_value(ratelimit_reset.or(ratelimit_reset_sec), 0)

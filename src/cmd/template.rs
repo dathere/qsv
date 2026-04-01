@@ -483,7 +483,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         if i == headers_len - 1 {
                             // set the last field to QSV_ROWNO
                             // safety: we set row_no earlier in the batch loop
-                            row_number = atoi_simd::parse::<u64>(field.as_bytes()).unwrap();
+                            row_number =
+                                atoi_simd::parse::<u64, false, false>(field.as_bytes()).unwrap();
                             context.insert(
                                 std::borrow::Cow::Borrowed(QSV_ROWNO),
                                 BorrowedValue::String(std::borrow::Cow::Borrowed(field)),
@@ -505,7 +506,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         // when headers are defined, the last one is QSV_ROWNO
                         if header == QSV_ROWNO {
                             // safety: we set row_no earlier in the batch loop
-                            row_number = atoi_simd::parse::<u64>(field.as_bytes()).unwrap();
+                            row_number =
+                                atoi_simd::parse::<u64, false, false>(field.as_bytes()).unwrap();
                         }
                     }
                 }
@@ -646,7 +648,7 @@ fn format_float(value: &Value, precision: u32) -> String {
 fn human_count(value: &Value) -> String {
     if value.kind() == ValueKind::String {
         let s = value.as_str().unwrap().as_bytes();
-        atoi_simd::parse::<u64>(s).map_or_else(
+        atoi_simd::parse::<u64, false, false>(s).map_or_else(
             |_| {
                 if EMPTY_FILTER_ERROR.load(Ordering::Relaxed) {
                     FILTER_ERROR.get().unwrap().clone()

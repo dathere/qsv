@@ -1690,7 +1690,7 @@ impl Args {
         let max_chunk_memory_mb = if let Ok(val) = std::env::var("QSV_STATS_CHUNK_MEMORY_MB") {
             // if valid, set max chunk memory
             // if invalid or non-positive, use CPU-based chunking
-            atoi_simd::parse::<u64>(val.as_bytes()).ok()
+            atoi_simd::parse::<u64, false, false>(val.as_bytes()).ok()
         } else {
             Some(0) // default to dynamic sizing
         };
@@ -3620,8 +3620,9 @@ impl Stats {
                             std::env::var("QSV_ANTIMODES_LEN").map_or(
                                 DEFAULT_ANTIMODES_LEN,
                                 |val| {
-                                    let parsed = atoi_simd::parse::<usize>(val.as_bytes())
-                                        .unwrap_or(DEFAULT_ANTIMODES_LEN);
+                                    let parsed =
+                                        atoi_simd::parse::<usize, false, false>(val.as_bytes())
+                                            .unwrap_or(DEFAULT_ANTIMODES_LEN);
                                     // if 0, disable length limiting
                                     if parsed == 0 { usize::MAX } else { parsed }
                                 },
@@ -3722,8 +3723,9 @@ impl Stats {
                                 std::env::var("QSV_ANTIMODES_LEN").map_or(
                                     DEFAULT_ANTIMODES_LEN,
                                     |val| {
-                                        let parsed = atoi_simd::parse::<usize>(val.as_bytes())
-                                            .unwrap_or(DEFAULT_ANTIMODES_LEN);
+                                        let parsed =
+                                            atoi_simd::parse::<usize, false, false>(val.as_bytes())
+                                                .unwrap_or(DEFAULT_ANTIMODES_LEN);
                                         // if 0, disable length limiting
                                         if parsed == 0 { usize::MAX } else { parsed }
                                     },
@@ -4386,7 +4388,7 @@ impl FieldType {
 
         // an int can be a float, but once we've seen a float, we can't go back to an int
         if current_type != FieldType::TFloat
-            && let Ok(samp_int) = atoi_simd::parse::<i64>(sample)
+            && let Ok(samp_int) = atoi_simd::parse::<i64, false, false>(sample)
         {
             // Check for integer, with leading zero check for strings like zip codes
             // safety: we know sample is not null as we checked earlier
@@ -4663,7 +4665,9 @@ impl TypedMinMax {
                     let max_length = STATS_STRING_MAX_LENGTH.get_or_init(|| {
                         std::env::var("QSV_STATS_STRING_MAX_LENGTH")
                             .ok()
-                            .and_then(|s| atoi_simd::parse::<usize>(s.as_bytes()).ok())
+                            .and_then(|s| {
+                                atoi_simd::parse::<usize, false, false>(s.as_bytes()).ok()
+                            })
                     });
 
                     let (min_str, max_str) = if let Some(max_len) = *max_length {

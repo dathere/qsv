@@ -45,10 +45,10 @@ qsv headers --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-j,`<br>`--just-names`&nbsp; | flag | Only show the header names (hide column index). This is automatically enabled if more than one input is given. |  |
-| &nbsp;`-J,`<br>`--just-count`&nbsp; | flag | Only show the number of headers. |  |
-| &nbsp;`--intersect`&nbsp; | flag | Shows the intersection of all headers in all of the inputs given. |  |
-| &nbsp;`--trim`&nbsp; | flag | Trim space & quote characters from header name. |  |
+| &nbsp;`‑j,`<br>`‑‑just‑names`&nbsp; | flag | Only show the header names (hide column index). This is automatically enabled if more than one input is given. |  |
+| &nbsp;`‑J,`<br>`‑‑just‑count`&nbsp; | flag | Only show the number of headers. |  |
+| &nbsp;`‑‑intersect`&nbsp; | flag | Shows the intersection of all headers in all of the inputs given. |  |
+| &nbsp;`‑‑trim`&nbsp; | flag | Trim space & quote characters from header name. |  |
 
 <a name="common-options"></a>
 
@@ -56,8 +56,8 @@ qsv headers --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
-| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/headers.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/headers.rs)

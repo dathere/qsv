@@ -116,8 +116,8 @@ qsv exclude --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-i,`<br>`--ignore-case`&nbsp; | flag | When set, matching is done case insensitively. |  |
-| &nbsp;`-v,`<br>`--invert`&nbsp; | flag | When set, matching rows will be the only ones included, forming set intersection, instead of the ones discarded. |  |
+| &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | When set, matching is done case insensitively. |  |
+| &nbsp;`‑v,`<br>`‑‑invert`&nbsp; | flag | When set, matching rows will be the only ones included, forming set intersection, instead of the ones discarded. |  |
 
 <a name="common-options"></a>
 
@@ -125,10 +125,10 @@ qsv exclude --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
-| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
-| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
-| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/exclude.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/exclude.rs)

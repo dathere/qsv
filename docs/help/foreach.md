@@ -66,9 +66,9 @@ qsv foreach --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-u,`<br>`--unify`&nbsp; | flag | If the output of the executed command is a CSV, unify the result by skipping headers on each subsequent command. Does not work when --dry-run is true. |  |
-| &nbsp;`-c,`<br>`--new-column`&nbsp; | string | If unifying, add a new column with given name and copying the value of the current input file line. |  |
-| &nbsp;`--dry-run`&nbsp; | string | If set to true (the default for safety reasons), the commands are sent to stdout instead of executing them. If set to a file, the commands will be written to the specified text file instead of executing them. Only if set to false will the commands be actually executed. | `true` |
+| &nbsp;`‑u,`<br>`‑‑unify`&nbsp; | flag | If the output of the executed command is a CSV, unify the result by skipping headers on each subsequent command. Does not work when --dry-run is true. |  |
+| &nbsp;`‑c,`<br>`‑‑new‑column`&nbsp; | string | If unifying, add a new column with given name and copying the value of the current input file line. |  |
+| &nbsp;`‑‑dry‑run`&nbsp; | string | If set to true (the default for safety reasons), the commands are sent to stdout instead of executing them. If set to a file, the commands will be written to the specified text file instead of executing them. Only if set to false will the commands be actually executed. | `true` |
 
 <a name="common-options"></a>
 
@@ -76,10 +76,10 @@ qsv foreach --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
-| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the file will be considered to have no headers. |  |
-| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| &nbsp;`-p,`<br>`--progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the file will be considered to have no headers. |  |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |
 
 ---
 **Source:** [`src/cmd/foreach.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/foreach.rs)

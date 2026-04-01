@@ -226,19 +226,19 @@ qsv to --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-k,`<br>`--print-package`&nbsp; | flag | Print statistics as datapackage, by default will print field summary. |  |
-| &nbsp;`-u,`<br>`--dump`&nbsp; | flag | Create database dump file for use with `psql` or `sqlite3` command line tools (postgres/sqlite only). |  |
-| &nbsp;`-a,`<br>`--stats`&nbsp; | flag | Produce extra statistics about the data beyond just type guessing. |  |
-| &nbsp;`-c,`<br>`--stats-csv`&nbsp; | string | Output stats as CSV to specified file. |  |
-| &nbsp;`-q,`<br>`--quiet`&nbsp; | flag | Do not print out field summary. |  |
-| &nbsp;`-s,`<br>`--schema`&nbsp; | string | The schema to load the data into. (postgres only). |  |
-| &nbsp;`-d,`<br>`--drop`&nbsp; | flag | Drop tables before loading new data into them (postgres/sqlite only). |  |
-| &nbsp;`-e,`<br>`--evolve`&nbsp; | flag | If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only). |  |
-| &nbsp;`-i,`<br>`--pipe`&nbsp; | flag | Adjust output format for piped data (omits row counts and field format columns). |  |
-| &nbsp;`-t,`<br>`--table`&nbsp; | string | Use this as the table/sheet name (postgres/sqlite/xlsx/ods). Overrides the default name derived from the input filename. When reading from stdin, the default table name is "stdin". Only valid with a single input file. For postgres/sqlite: must start with a letter or underscore, contain only alphanumeric characters and underscores (max 63). For xlsx/ods: used as sheet name (max 31 chars, cannot contain \ / * [ ] : ?). |  |
-| &nbsp;`-p,`<br>`--separator`&nbsp; | string | For xlsx, use this character to help truncate xlsx sheet names. Defaults to space. |  |
-| &nbsp;`-A,`<br>`--all-strings`&nbsp; | flag | Convert all fields to strings. |  |
-| &nbsp;`-j,`<br>`--jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`‑k,`<br>`‑‑print‑package`&nbsp; | flag | Print statistics as datapackage, by default will print field summary. |  |
+| &nbsp;`‑u,`<br>`‑‑dump`&nbsp; | flag | Create database dump file for use with `psql` or `sqlite3` command line tools (postgres/sqlite only). |  |
+| &nbsp;`‑a,`<br>`‑‑stats`&nbsp; | flag | Produce extra statistics about the data beyond just type guessing. |  |
+| &nbsp;`‑c,`<br>`‑‑stats‑csv`&nbsp; | string | Output stats as CSV to specified file. |  |
+| &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not print out field summary. |  |
+| &nbsp;`‑s,`<br>`‑‑schema`&nbsp; | string | The schema to load the data into. (postgres only). |  |
+| &nbsp;`‑d,`<br>`‑‑drop`&nbsp; | flag | Drop tables before loading new data into them (postgres/sqlite only). |  |
+| &nbsp;`‑e,`<br>`‑‑evolve`&nbsp; | flag | If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only). |  |
+| &nbsp;`‑i,`<br>`‑‑pipe`&nbsp; | flag | Adjust output format for piped data (omits row counts and field format columns). |  |
+| &nbsp;`‑t,`<br>`‑‑table`&nbsp; | string | Use this as the table/sheet name (postgres/sqlite/xlsx/ods). Overrides the default name derived from the input filename. When reading from stdin, the default table name is "stdin". Only valid with a single input file. For postgres/sqlite: must start with a letter or underscore, contain only alphanumeric characters and underscores (max 63). For xlsx/ods: used as sheet name (max 31 chars, cannot contain \ / * [ ] : ?). |  |
+| &nbsp;`‑p,`<br>`‑‑separator`&nbsp; | string | For xlsx, use this character to help truncate xlsx sheet names. Defaults to space. |  |
+| &nbsp;`‑A,`<br>`‑‑all‑strings`&nbsp; | flag | Convert all fields to strings. |  |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 
 <a name="common-options"></a>
 
@@ -246,8 +246,8 @@ qsv to --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
-| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/to.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/to.rs)

@@ -67,10 +67,10 @@ qsv partition --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`--filename`&nbsp; | string | A filename template to use when constructing the names of the output files.  The string '{}' will be replaced by a value based on the partition column, but sanitized for shell safety. | `{}.csv` |
-| &nbsp;`-p,`<br>`--prefix-length`&nbsp; | string | Truncate the partition column after the specified number of bytes when creating the output file. |  |
-| &nbsp;`--drop`&nbsp; | flag | Drop the partition column from results. |  |
-| &nbsp;`--limit`&nbsp; | string | Limit the number of simultaneously open files. Useful for partitioning large datasets with many unique values to avoid "too many open files" errors. Data is processed in batches until all unique values are processed. If not set, it will be automatically set to the system limit with a 10% safety margin. If set to 0, it will process all data at once, regardless of the system's open files limit. |  |
+| &nbsp;`‑‑filename`&nbsp; | string | A filename template to use when constructing the names of the output files.  The string '{}' will be replaced by a value based on the partition column, but sanitized for shell safety. | `{}.csv` |
+| &nbsp;`‑p,`<br>`‑‑prefix‑length`&nbsp; | string | Truncate the partition column after the specified number of bytes when creating the output file. |  |
+| &nbsp;`‑‑drop`&nbsp; | flag | Drop the partition column from results. |  |
+| &nbsp;`‑‑limit`&nbsp; | string | Limit the number of simultaneously open files. Useful for partitioning large datasets with many unique values to avoid "too many open files" errors. Data is processed in batches until all unique values are processed. If not set, it will be automatically set to the system limit with a 10% safety margin. If set to 0, it will process all data at once, regardless of the system's open files limit. |  |
 
 <a name="common-options"></a>
 
@@ -78,9 +78,9 @@ qsv partition --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
-| &nbsp;`-n,`<br>`--no-headers`&nbsp; | flag | When set, the first row will NOT be interpreted as column names. Otherwise, the first row will appear in all chunks as the header row. |  |
-| &nbsp;`-d,`<br>`--delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will NOT be interpreted as column names. Otherwise, the first row will appear in all chunks as the header row. |  |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/partition.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/partition.rs)

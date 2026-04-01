@@ -67,10 +67,10 @@ qsv geoconvert --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-g,`<br>`--geometry`&nbsp; | string | The name of the column that has WKT geometry. Alternative to --latitude and --longitude. |  |
-| &nbsp;`-y,`<br>`--latitude`&nbsp; | string | The name of the column with northing values. |  |
-| &nbsp;`-x,`<br>`--longitude`&nbsp; | string | The name of the column with easting values. |  |
-| &nbsp;`-l,`<br>`--max-length`&nbsp; | string | The maximum column length when the output format is CSV. Oftentimes, the geometry column is too long to fit in a CSV file, causing other tools like Python & PostgreSQL to fail. If a column is too long, it will be truncated to the specified length and an ellipsis ("...") will be appended. |  |
+| &nbsp;`‑g,`<br>`‑‑geometry`&nbsp; | string | The name of the column that has WKT geometry. Alternative to --latitude and --longitude. |  |
+| &nbsp;`‑y,`<br>`‑‑latitude`&nbsp; | string | The name of the column with northing values. |  |
+| &nbsp;`‑x,`<br>`‑‑longitude`&nbsp; | string | The name of the column with easting values. |  |
+| &nbsp;`‑l,`<br>`‑‑max‑length`&nbsp; | string | The maximum column length when the output format is CSV. Oftentimes, the geometry column is too long to fit in a CSV file, causing other tools like Python & PostgreSQL to fail. If a column is too long, it will be truncated to the specified length and an ellipsis ("...") will be appended. |  |
 
 <a name="common-options"></a>
 
@@ -78,8 +78,8 @@ qsv geoconvert --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`-h,`<br>`--help`&nbsp; | flag | Display this message |  |
-| &nbsp;`-o,`<br>`--output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
 
 ---
 **Source:** [`src/cmd/geoconvert.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/geoconvert.rs)

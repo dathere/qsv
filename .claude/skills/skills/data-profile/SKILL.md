@@ -19,6 +19,8 @@ allowed-tools:
   - mcp__qsv__qsv_sqlp
   - mcp__qsv__qsv_joinp
   - mcp__qsv__qsv_command
+  # Documentation
+  - mcp__qsv__qsv_describegpt
   # Workspace
   - mcp__qsv__qsv_list_files
   - mcp__qsv__qsv_get_working_dir
@@ -63,15 +65,57 @@ Profile the given tabular data file to understand its structure, types, and dist
 
 12. **Preview data**: Run `qsv_slice` with `len: 5` to show the first 5 rows as a sample.
 
-13. **Document**: Using the statistics (steps 5-6) and frequency distributions (step 7) already collected, generate the following:
+13. **Document**: Generate a Data Dictionary, Dataset Description, and Tags as JSON.
 
-    **a) Data Dictionary** — Present a table with one row per column. Include the `field`, `type`, `Label`, and `Description` columns (in that order), followed by key stats columns (`nullcount`, `cardinality`, `min`, `max`, `mean`, `sortiness`, `stddev`, `variance`, `cv`, `sparsity` where applicable):
-    - `Label`: Human-readable version of the field name (e.g., `customer_id` → `Customer ID`, `avg_txn_amt` → `Average Transaction Amount`)
-    - `Description`: 1-5 sentence description of the field informed by its type, statistics and frequency distribution
+    **13a) Primary — use `describegpt`**: Run `qsv_describegpt` with `all: true, format: "JSON"` and `output: "<filestem>.describegpt.json"`. If the user provided a Tag Vocabulary file, also pass `tag_vocab: "<vocab_file>"`. This produces a structured JSON file with three top-level objects: `Dictionary`, `Description`, and `Tags`. Each of these contains a `response` (the main content), optional `reasoning`, and `token_usage` metadata. The data dictionary itself is under `Dictionary.response.fields`, as an array of field descriptors with keys like `name`, `null_count`, `cardinality`, `min`, `max`, `mean`, and `stddev`. Present the results to the user. When MCP sampling is unavailable but the tool still returns prompts, follow those prompts by issuing a follow-up call with `_llm_responses` instead of using the agent fallback.
 
-    **b) Dataset Description** — Write 3-10 sentences describing the entire dataset: what it represents, its scope (row count, column count, date range if applicable), key characteristics, notable quality issues found during profiling, and potential use cases.
+    **13b) Fallback — agent generation**: If `describegpt` encounters a tool error or times out, or if following its prompts via `_llm_responses` is not possible, fall back to generating the same artifacts from the statistics (steps 5-6) and frequency distributions (step 7). Save the result as `<filestem>.profile.json` using the same canonical structure as `describegpt`, for example:
 
-    **c) Tags** — Infer 5-15 semantic tags for the dataset based on column names, data types, value distributions, and domain characteristics. If a controlled Tag Vocabulary is provided by the user, constrain tag choices to that vocabulary only.
+    ```json
+    {
+      "Dictionary": {
+        "response": {
+          "fields": [
+            {
+              "name": "column_name",
+              "type": "Integer",
+              "label": "Column Name",
+              "description": "1-5 sentence description informed by type, stats, and frequency distribution",
+              "null_count": 0,
+              "cardinality": 100,
+              "min": "0",
+              "max": "999",
+              "mean": "450.5",
+              "stddev": "120.3"
+            }
+          ],
+          "enum_threshold": 20,
+          "num_examples": 5,
+          "truncate_str": 80,
+          "attribution": "agent_fallback"
+        },
+        "reasoning": "",
+        "token_usage": { "prompt": 0, "completion": 0, "total": 0, "elapsed": 0 }
+      },
+      "Description": {
+        "response": "3-10 sentences describing the dataset: what it represents, scope, key characteristics, quality issues, and potential use cases.",
+        "reasoning": "",
+        "token_usage": { "prompt": 0, "completion": 0, "total": 0, "elapsed": 0 }
+      },
+      "Tags": {
+        "response": ["tag1", "tag2", "tag3"],
+        "reasoning": "",
+        "token_usage": { "prompt": 0, "completion": 0, "total": 0, "elapsed": 0 }
+      }
+    }
+    ```
+
+    For the fallback dictionary entries (under `Dictionary.response.fields`):
+    - `label`: Human-readable version of the field name (e.g., `customer_id` → `Customer ID`)
+    - `description`: 1-5 sentence description informed by type, statistics, and frequency distribution
+    - Include key stats fields (`null_count`, `cardinality`, `min`, `max`, `mean`, `sortiness`, `stddev`, `variance`, `cv`, `sparsity`) where applicable
+
+    For the fallback tags (under `Tags.response`): Infer 5-15 semantic tags based on column names, data types, value distributions, and domain characteristics. If a controlled Tag Vocabulary is provided, constrain choices to that vocabulary only.
 
 ## Quality Dimensions
 
@@ -238,7 +282,7 @@ Present a summary with:
 - **Column overview**: table with name, type, nulls, cardinality, min, max, mean (where applicable)
 - **Key observations**: unique identifiers, high-null columns, type mismatches, notable distributions
 - **Data quality flags**: any issues found (high sparsity, mixed types, ragged rows)
-- **Data Dictionary, Description & Tags**: LLM-generated documentation derived from stats cache and frequency distributions (step 13)
+- **Data Dictionary, Description & Tags**: JSON documentation generated via `describegpt` (step 13a), or manually from stats cache and frequency distributions as fallback (step 13b)
 
 ### Quality Report Checklist
 
@@ -257,7 +301,7 @@ Present a summary with:
 - [ ] **Referential integrity** verified across related files if provided (joinp --left-anti)
 - [ ] **PII/PHI patterns** detected via searchset (privacy)
 - [ ] **Injection payloads** scanned for CSV/formula and SQL injection patterns (searchset)
-- [ ] **Data Dictionary** with Label and Description per column, dataset Description, and Tags (step 13)
+- [ ] **Data Dictionary** with Label and Description per column, dataset Description, and Tags — via `describegpt --format JSON` (step 13a) or agent fallback (step 13b)
 
 ## Common Data Quality Fixes
 

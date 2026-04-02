@@ -88,20 +88,24 @@ Profile the given tabular data file to understand its structure, types, and dist
               "mean": "450.5",
               "stddev": "120.3"
             }
-          ]
+          ],
+          "enum_threshold": 20,
+          "num_examples": 5,
+          "truncate_str": 80,
+          "attribution": "manual_fallback"
         },
         "reasoning": "",
-        "token_usage": {}
+        "token_usage": { "prompt": 0, "completion": 0, "total": 0, "elapsed": 0 }
       },
       "Description": {
         "response": "3-10 sentences describing the dataset: what it represents, scope, key characteristics, quality issues, and potential use cases.",
         "reasoning": "",
-        "token_usage": {}
+        "token_usage": { "prompt": 0, "completion": 0, "total": 0, "elapsed": 0 }
       },
       "Tags": {
         "response": ["tag1", "tag2", "tag3"],
         "reasoning": "",
-        "token_usage": {}
+        "token_usage": { "prompt": 0, "completion": 0, "total": 0, "elapsed": 0 }
       }
     }
     ```

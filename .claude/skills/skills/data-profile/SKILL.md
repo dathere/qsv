@@ -67,37 +67,51 @@ Profile the given tabular data file to understand its structure, types, and dist
 
 13. **Document**: Generate a Data Dictionary, Dataset Description, and Tags as JSON.
 
-    **13a) Primary — use `describegpt`**: Run `qsv_describegpt` with `all: true, format: "JSON"` and `output: "<filestem>.describegpt.json"`. If the user provided a Tag Vocabulary file, also pass `tag_vocab: "<vocab_file>"`. This produces a structured JSON file with `dictionary`, `description`, and `tags` keys. Present the results to the user.
+    **13a) Primary — use `describegpt`**: Run `qsv_describegpt` with `all: true, format: "JSON"` and `output: "<filestem>.describegpt.json"`. If the user provided a Tag Vocabulary file, also pass `tag_vocab: "<vocab_file>"`. This produces a structured JSON file with three top-level objects: `Dictionary`, `Description`, and `Tags`. Each of these contains a `response` (the main content), optional `reasoning`, and `token_usage` metadata. The data dictionary itself is under `Dictionary.response.fields`, as an array of field descriptors with keys like `name`, `null_count`, `cardinality`, `min`, `max`, `mean`, and `stddev`. Present the results to the user. When MCP sampling is unavailable but the tool still returns prompts, follow those prompts by issuing a follow-up call with `_llm_responses` instead of using the manual fallback.
 
-    **13b) Fallback — manual generation**: If `describegpt` fails (MCP sampling unavailable, tool error, timeout), fall back to generating the same artifacts manually from the statistics (steps 5-6) and frequency distributions (step 7). Save the result as `<filestem>.profile.json` with this structure:
+    **13b) Fallback — manual generation**: If `describegpt` encounters a tool error or times out, or if following its prompts via `_llm_responses` is not possible, fall back to generating the same artifacts manually from the statistics (steps 5-6) and frequency distributions (step 7). Save the result as `<filestem>.profile.json` using the same canonical structure as `describegpt`, for example:
 
     ```json
     {
-      "dictionary": [
-        {
-          "field": "column_name",
-          "type": "Integer",
-          "label": "Column Name",
-          "description": "1-5 sentence description informed by type, stats, and frequency distribution",
-          "nullcount": 0,
-          "cardinality": 100,
-          "min": "0",
-          "max": "999",
-          "mean": "450.5",
-          "stddev": "120.3"
-        }
-      ],
-      "description": "3-10 sentences describing the dataset: what it represents, scope, key characteristics, quality issues, and potential use cases.",
-      "tags": ["tag1", "tag2", "tag3"]
+      "Dictionary": {
+        "response": {
+          "fields": [
+            {
+              "name": "column_name",
+              "type": "Integer",
+              "label": "Column Name",
+              "description": "1-5 sentence description informed by type, stats, and frequency distribution",
+              "null_count": 0,
+              "cardinality": 100,
+              "min": "0",
+              "max": "999",
+              "mean": "450.5",
+              "stddev": "120.3"
+            }
+          ]
+        },
+        "reasoning": "",
+        "token_usage": {}
+      },
+      "Description": {
+        "response": "3-10 sentences describing the dataset: what it represents, scope, key characteristics, quality issues, and potential use cases.",
+        "reasoning": "",
+        "token_usage": {}
+      },
+      "Tags": {
+        "response": ["tag1", "tag2", "tag3"],
+        "reasoning": "",
+        "token_usage": {}
+      }
     }
     ```
 
-    For the fallback dictionary entries:
+    For the fallback dictionary entries (under `Dictionary.response.fields`):
     - `label`: Human-readable version of the field name (e.g., `customer_id` → `Customer ID`)
     - `description`: 1-5 sentence description informed by type, statistics, and frequency distribution
-    - Include key stats columns (`nullcount`, `cardinality`, `min`, `max`, `mean`, `sortiness`, `stddev`, `variance`, `cv`, `sparsity`) where applicable
+    - Include key stats fields (`null_count`, `cardinality`, `min`, `max`, `mean`, `sortiness`, `stddev`, `variance`, `cv`, `sparsity`) where applicable
 
-    For the fallback tags: Infer 5-15 semantic tags based on column names, data types, value distributions, and domain characteristics. If a controlled Tag Vocabulary is provided, constrain choices to that vocabulary only.
+    For the fallback tags (under `Tags.response`): Infer 5-15 semantic tags based on column names, data types, value distributions, and domain characteristics. If a controlled Tag Vocabulary is provided, constrain choices to that vocabulary only.
 
 ## Quality Dimensions
 

@@ -67,9 +67,9 @@ Profile the given tabular data file to understand its structure, types, and dist
 
 13. **Document**: Generate a Data Dictionary, Dataset Description, and Tags as JSON.
 
-    **13a) Primary — use `describegpt`**: Run `qsv_describegpt` with `all: true, format: "JSON"` and `output: "<filestem>.describegpt.json"`. If the user provided a Tag Vocabulary file, also pass `tag_vocab: "<vocab_file>"`. This produces a structured JSON file with three top-level objects: `Dictionary`, `Description`, and `Tags`. Each of these contains a `response` (the main content), optional `reasoning`, and `token_usage` metadata. The data dictionary itself is under `Dictionary.response.fields`, as an array of field descriptors with keys like `name`, `null_count`, `cardinality`, `min`, `max`, `mean`, and `stddev`. Present the results to the user. When MCP sampling is unavailable but the tool still returns prompts, follow those prompts by issuing a follow-up call with `_llm_responses` instead of using the manual fallback.
+    **13a) Primary — use `describegpt`**: Run `qsv_describegpt` with `all: true, format: "JSON"` and `output: "<filestem>.describegpt.json"`. If the user provided a Tag Vocabulary file, also pass `tag_vocab: "<vocab_file>"`. This produces a structured JSON file with three top-level objects: `Dictionary`, `Description`, and `Tags`. Each of these contains a `response` (the main content), optional `reasoning`, and `token_usage` metadata. The data dictionary itself is under `Dictionary.response.fields`, as an array of field descriptors with keys like `name`, `null_count`, `cardinality`, `min`, `max`, `mean`, and `stddev`. Present the results to the user. When MCP sampling is unavailable but the tool still returns prompts, follow those prompts by issuing a follow-up call with `_llm_responses` instead of using the agent fallback.
 
-    **13b) Fallback — manual generation**: If `describegpt` encounters a tool error or times out, or if following its prompts via `_llm_responses` is not possible, fall back to generating the same artifacts manually from the statistics (steps 5-6) and frequency distributions (step 7). Save the result as `<filestem>.profile.json` using the same canonical structure as `describegpt`, for example:
+    **13b) Fallback — agent generation**: If `describegpt` encounters a tool error or times out, or if following its prompts via `_llm_responses` is not possible, fall back to generating the same artifacts from the statistics (steps 5-6) and frequency distributions (step 7). Save the result as `<filestem>.profile.json` using the same canonical structure as `describegpt`, for example:
 
     ```json
     {
@@ -92,7 +92,7 @@ Profile the given tabular data file to understand its structure, types, and dist
           "enum_threshold": 20,
           "num_examples": 5,
           "truncate_str": 80,
-          "attribution": "manual_fallback"
+          "attribution": "agent_fallback"
         },
         "reasoning": "",
         "token_usage": { "prompt": 0, "completion": 0, "total": 0, "elapsed": 0 }
@@ -301,7 +301,7 @@ Present a summary with:
 - [ ] **Referential integrity** verified across related files if provided (joinp --left-anti)
 - [ ] **PII/PHI patterns** detected via searchset (privacy)
 - [ ] **Injection payloads** scanned for CSV/formula and SQL injection patterns (searchset)
-- [ ] **Data Dictionary** with Label and Description per column, dataset Description, and Tags — via `describegpt --format JSON` (step 13a) or manual fallback (step 13b)
+- [ ] **Data Dictionary** with Label and Description per column, dataset Description, and Tags — via `describegpt --format JSON` (step 13a) or agent fallback (step 13b)
 
 ## Common Data Quality Fixes
 

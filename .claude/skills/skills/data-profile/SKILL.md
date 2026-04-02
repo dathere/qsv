@@ -283,7 +283,7 @@ Present a summary with:
 - [ ] **Referential integrity** verified across related files if provided (joinp --left-anti)
 - [ ] **PII/PHI patterns** detected via searchset (privacy)
 - [ ] **Injection payloads** scanned for CSV/formula and SQL injection patterns (searchset)
-- [ ] **Data Dictionary** with Label and Description per column, dataset Description, and Tags — via `describegpt --json` (step 13a) or manual fallback (step 13b)
+- [ ] **Data Dictionary** with Label and Description per column, dataset Description, and Tags — via `describegpt --format JSON` (step 13a) or manual fallback (step 13b)
 
 ## Common Data Quality Fixes
 

@@ -115,6 +115,7 @@ Once the core setup is complete, you can add more MCP servers to give Claude acc
 |--------|-----------------|
 | **US Census Bureau** | Population, demographics, economics — via a local Docker container |
 | **Wikidata** | The free, structured knowledge graph maintained by the Wikimedia Foundation |
+| **FBI Crime Data** | Crime statistics, arrests, hate crimes, NIBRS incidents, law enforcement data |
 
 See **[ADDITIONAL_SERVERS.md](./ADDITIONAL_SERVERS.md)** for installation instructions.
 
@@ -149,7 +150,7 @@ See **[ADDITIONAL_SERVERS.md](./ADDITIONAL_SERVERS.md)** for installation instru
 
 ## What's Next
 
-- **Add more data sources** — Install the US Census Bureau and Wikidata MCP servers: [ADDITIONAL_SERVERS.md](./ADDITIONAL_SERVERS.md)
+- **Add more data sources** — Install the US Census Bureau, Wikidata, and FBI Crime Data MCP servers: [ADDITIONAL_SERVERS.md](./ADDITIONAL_SERVERS.md)
 - **Learn about file access** — Supported formats, security, and configuration: [FILESYSTEM_USAGE.md](./FILESYSTEM_USAGE.md)
 - **Full technical reference** — [Desktop Extension Reference](../desktop/README-MCPB.md) | [MCP Server README](../../README-MCP.md)
 - **All qsv commands** — [github.com/dathere/qsv](https://github.com/dathere/qsv#commands)

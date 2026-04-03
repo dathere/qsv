@@ -51,6 +51,22 @@ allowed-tools:
   - mcp__bls__get_popular_series
   - mcp__bls__get_all_surveys
   - mcp__bls__get_survey
+  # FBI Crime Data MCP (when fbi-crime-data server is available)
+  - mcp__fbi-crime-data__get_summarized_crime_data
+  - mcp__fbi-crime-data__get_nibrs_data
+  - mcp__fbi-crime-data__get_arrest_data
+  - mcp__fbi-crime-data__get_crime_trends
+  - mcp__fbi-crime-data__get_nibrs_estimation
+  - mcp__fbi-crime-data__get_hate_crime_data
+  - mcp__fbi-crime-data__get_expanded_homicide_data
+  - mcp__fbi-crime-data__get_expanded_property_data
+  - mcp__fbi-crime-data__get_police_employment
+  - mcp__fbi-crime-data__get_leoka_data
+  - mcp__fbi-crime-data__get_lesdc_data
+  - mcp__fbi-crime-data__get_use_of_force_data
+  - mcp__fbi-crime-data__lookup_agency
+  - mcp__fbi-crime-data__get_reference_data
+  - mcp__fbi-crime-data__manage_cache
 ---
 
 # Policy Analyst Agent
@@ -109,9 +125,32 @@ Use `WebSearch` and `WebFetch` to access public government data for context, ben
 - **Fallback**: CSV data available from bls.gov/data/ via `WebSearch`/`WebFetch`. Series IDs follow documented patterns (e.g., LAUS: `LASST${FIPS}00000000${measure}`).
 
 ### FBI Crime Data
-- **UCR/NIBRS**: Uniform Crime Reporting and National Incident-Based Reporting System.
-- CSV downloads from the Crime Data Explorer (crime-data-explorer.fr.cloud.gov).
+- **UCR/NIBRS**: Uniform Crime Reporting (SRS) and National Incident-Based Reporting System data from the Crime Data Explorer API.
 - Note: UCR-to-NIBRS transition (2021) creates a methodological break in time series — flag this when comparing pre/post 2021 data.
+- **When the `fbi-crime-data` MCP server is available**, use its tools for direct structured access:
+  - **Core Crime Data:**
+    - `get_summarized_crime_data` — SRS crime statistics: rates, actual counts, clearances for violent crime, property crime, homicide, rape, robbery, assault, burglary, larceny, motor vehicle theft, arson
+    - `get_nibrs_data` — incident-based data across 70+ offense categories (more granular than SRS summaries)
+    - `get_arrest_data` — arrest counts by offense with optional demographic breakdowns (sex, race)
+    - `get_crime_trends` — national percent changes across 10 major crime types
+    - `get_nibrs_estimation` — NIBRS national estimates by state, region, agency type, or population size
+  - **Specialized Crime Data:**
+    - `get_hate_crime_data` — hate crime incidents by bias motivation (30+ categories)
+    - `get_expanded_homicide_data` — Supplementary Homicide Reports: victim/offender demographics, weapons, circumstances
+    - `get_expanded_property_data` — stolen/recovered property values for burglary, larceny, motor vehicle theft, robbery
+  - **Law Enforcement Data:**
+    - `get_police_employment` — officer and civilian employee counts by gender, rates per 1,000 population
+    - `get_leoka_data` — officers killed and assaulted: weapons, circumstances, demographics
+    - `get_lesdc_data` — law enforcement suicide statistics: demographics, race, duty status
+    - `get_use_of_force_data` — use of force incidents resulting in death, serious injury, or firearm discharge
+  - **Reference & Lookup:**
+    - `lookup_agency` — find law enforcement agencies by state, ORI code, or judicial district
+    - `get_reference_data` — state lists, offense/bias code lookups, data refresh dates
+    - `manage_cache` — view cache stats, clear all entries, or clear only expired entries
+  - **Workflow**: `get_reference_data` (lookup valid codes/states) → `lookup_agency` (find agencies/ORIs) → query tools (`get_summarized_crime_data`, `get_nibrs_data`, etc.)
+  - **Date formats**: Most tools use `mm-yyyy` (e.g., `01-2020`); `get_police_employment` and `get_crime_trends` use `yyyy`.
+  - **Rate limits**: 1,000 requests/hour with `FBI_API_KEY` environment variable; 30 requests/hour with DEMO_KEY.
+- **Fallback**: CSV downloads from the Crime Data Explorer (cde.ucr.cjis.gov) via `WebSearch`/`WebFetch`.
 
 ### Wikidata
 - Structured knowledge graph for entity enrichment: geographic coordinates, population figures, administrative classifications, demographic context.
@@ -142,7 +181,7 @@ Use `WebSearch` and `WebFetch` to access public government data for context, ben
    - Run `qsv_frequency` with `limit: 10` for value distributions
    Then detect cross-file relationships by comparing column names, cardinality, and value overlap across files. Classify as 1:1, 1:N, or M:N based on cardinality ratios. Synthesize all findings into `ONTOLOGY.md` with entities, attributes, relationships, domain taxonomy, controlled vocabularies, and data quality flags. Use the ontology to identify which files are relevant to the policy questions, how they connect (foreign keys, shared dimensions), and what quality issues to account for.
 3. **Establish baseline**: Compute historical trends using `qsv_sqlp`. Calculate year-over-year changes, period averages, and identify the baseline period for comparison.
-4. **Cross-reference**: Pull benchmark data from Census (prefer `mcp-census-api` tools when available), BLS (prefer `bls` MCP tools when available), FBI, or Wikidata (prefer `Wikidata MCP` tools when available). Fall back to `WebSearch`/`WebFetch` for sources without dedicated MCP servers. Join external data with local datasets using `qsv_joinp` or `qsv_sqlp`. For temporal cross-referencing where dates don't align exactly (e.g., annual budgets to monthly CPI, quarterly QCEW to fiscal years), prefer `qsv_joinp --asof` with `strategy: "backward", allow_exact_matches: true` to match each record to the most recent reference value.
+4. **Cross-reference**: Pull benchmark data from Census (prefer `mcp-census-api` tools when available), BLS (prefer `bls` MCP tools when available), FBI (prefer `fbi-crime-data` MCP tools when available), or Wikidata (prefer `Wikidata MCP` tools when available). Fall back to `WebSearch`/`WebFetch` for sources without dedicated MCP servers. Join external data with local datasets using `qsv_joinp` or `qsv_sqlp`. For temporal cross-referencing where dates don't align exactly (e.g., annual budgets to monthly CPI, quarterly QCEW to fiscal years), prefer `qsv_joinp --asof` with `strategy: "backward", allow_exact_matches: true` to match each record to the most recent reference value.
 5. **Temporal analysis**: Use `qsv_sqlp` window functions for trend decomposition — moving averages, rate-of-change, cumulative totals. Flag inflection points and structural breaks in time series.
 6. **Comparative analysis**: Benchmark against peer jurisdictions, state averages, and national figures. Normalize for population, inflation, or other relevant denominators.
 7. **Synthesize findings**: Summarize the evidence with confidence levels. Include spend-vs-outcomes efficiency findings when budget data is available. Identify causal factors where supported, and flag where evidence is correlational only.

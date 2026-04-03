@@ -644,9 +644,9 @@ fn to_parquet(
         },
         PqtCompression::Zstd => {
             let level = flag_compress_level.unwrap_or(DEFAULT_ZSTD_COMPRESSION_LEVEL);
-            if !(1..=22).contains(&level) {
+            if !(-7..=22).contains(&level) {
                 return fail_incorrectusage_clierror!(
-                    "invalid zstd compression level {level}. Valid values are 1 through 22."
+                    "invalid zstd compression level {level}. Valid values are -7 through 22."
                 );
             }
             ParquetCompression::Zstd(Some(ZstdLevel::try_new(level)?))

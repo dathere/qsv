@@ -215,7 +215,7 @@ Usage:
     qsv to sqlite [options] <sqlite> [<input>...]
     qsv to xlsx [options] <xlsx> [<input>...]
     qsv to ods [options] <ods> [<input>...]
-    qsv to parquet [options] <parquet_dir> [<input>...]
+    qsv to parquet [options] <parquet> [<input>...]
     qsv to datapackage [options] <datapackage> [<input>...]
     qsv to --help
 
@@ -287,7 +287,7 @@ struct Args {
     cmd_ods:             bool,
     arg_ods:             Option<String>,
     cmd_parquet:         bool,
-    arg_parquet_dir:     Option<String>,
+    arg_parquet:         Option<String>,
     cmd_datapackage:     bool,
     arg_datapackage:     Option<String>,
     arg_input:           Vec<PathBuf>,
@@ -485,7 +485,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         arg_input = process_input(arg_input, &tmpdir, "")?;
         apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
         return to_parquet(
-            args.arg_parquet_dir.expect("checked above"),
+            args.arg_parquet.expect("checked above"),
             arg_input,
             args.flag_delimiter,
             args.flag_compression,
@@ -606,7 +606,7 @@ fn apply_table_rename(
 
 #[cfg(feature = "polars")]
 fn to_parquet(
-    arg_parquet_dir: String,
+    arg_parquet: String,
     arg_input: Vec<PathBuf>,
     flag_delimiter: Option<Delimiter>,
     flag_compression: Option<String>,
@@ -614,7 +614,7 @@ fn to_parquet(
     flag_all_strings: bool,
     quiet: bool,
 ) -> CliResult<()> {
-    let output_dir = PathBuf::from(&arg_parquet_dir);
+    let output_dir = PathBuf::from(&arg_parquet);
     std::fs::create_dir_all(&output_dir)?;
 
     // Parse compression codec
@@ -693,7 +693,7 @@ fn to_parquet(
 
 #[cfg(not(feature = "polars"))]
 fn to_parquet(
-    _arg_parquet_dir: String,
+    _arg_parquet: String,
     _arg_input: Vec<PathBuf>,
     _flag_delimiter: Option<Delimiter>,
     _flag_compression: Option<String>,

@@ -1017,10 +1017,13 @@ fn to_parquet_basic() {
     assert!(parquet_file.exists(), "parquet file should be created");
 
     // Read back and verify contents
-    let df = polars::prelude::LazyFrame::scan_parquet(&parquet_file, Default::default())
-        .unwrap()
-        .collect()
-        .unwrap();
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
     assert_eq!(df.height(), 2, "should have 2 rows");
     assert_eq!(df.width(), 2, "should have 2 columns");
     assert_eq!(

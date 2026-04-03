@@ -2,6 +2,8 @@
 
 These optional MCP servers extend Claude Desktop with access to external data sources. Install them after completing the [Getting Started guide](./START_HERE.md).
 
+> **Note:** The Census Bureau, BLS, and FBI Crime Data servers provide **U.S.-only data** — they are useful only when analyzing U.S. jurisdictions. The Wikidata server provides worldwide structured data.
+
 [< Back to Start Here](./START_HERE.md)
 
 ---

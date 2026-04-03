@@ -91,7 +91,7 @@ Reference these domain knowledge files for best practices:
 
 ## Data Sources
 
-Use `WebSearch` and `WebFetch` to access public government data for context, benchmarks, and cross-referencing. When the Census or Wikidata MCP servers are available, prefer their dedicated tools for structured, reliable access.
+Use `WebSearch` and `WebFetch` to access public government data for context, benchmarks, and cross-referencing. When MCP servers are available, prefer their dedicated tools for structured, reliable access. Note that the Census Bureau, BLS, and FBI Crime Data MCP servers provide **U.S.-only data** — use them only when analyzing U.S. jurisdictions. For non-U.S. analysis, use `WebSearch`/`WebFetch` to find equivalent national data sources, and Wikidata for structured entity lookups worldwide.
 
 ### U.S. Census Bureau
 - **American Community Survey (ACS)**: 1-year estimates (areas 65K+ population), 5-year estimates (all geographies). Demographics, income, housing, education, commuting.

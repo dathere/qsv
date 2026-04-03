@@ -352,7 +352,7 @@ Speaking of Excel, if you're having trouble opening qsv-generated CSV files in E
 
 The `to` command converts CSVs to Parquet, Excel `.xlsx`, LibreOffice/OpenOffice Calc `.ods` & [Data Package](https://datahub.io/docs/data-packages/tabular) formats, and populates [PostgreSQL](https://www.postgresql.org) and [SQLite](https://www.sqlite.org/index.html) databases.
 
-The `sqlp` command returns query results in CSV, JSON, JSONL, Parquet, [Apache Arrow IPC](https://arrow.apache.org/docs/format/Columnar.html#ipc-file-format) & [Apache AVRO](https://avro.apache.org) formats. Polars SQL also supports reading external files directly in various formats with its `read_csv`, `read_ndjson`, `read_parquet` & `read_ipc` [table functions](https://github.com/pola-rs/polars/blob/91a423fea2dc067837db65c3608e3cbc1112a6fc/crates/polars-sql/src/table_functions.rs#L18-L43).
+The `sqlp` command returns query results in CSV, JSON, JSONL, [Parquet](https://parquet.apache.org), [Apache Arrow IPC](https://arrow.apache.org/docs/format/Columnar.html#ipc-file-format) & [Apache AVRO](https://avro.apache.org) formats. Polars SQL also supports reading external files directly in various formats with its `read_csv`, `read_ndjson`, `read_parquet` & `read_ipc` [table functions](https://github.com/pola-rs/polars/blob/91a423fea2dc067837db65c3608e3cbc1112a6fc/crates/polars-sql/src/table_functions.rs#L18-L43).
 
 The `sniff` command can also detect the mime type of any file with the `--no-infer` or `--just-mime` options, may it be local or remote (http and https schemes supported).
 It can detect more than 130 file formats, including MS Office/Open Document files, JSON, XML, PDF, PNG, JPEG and specialized geospatial formats like GPX, GML, KML, TML, TMX, TSX, TTML.

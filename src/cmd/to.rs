@@ -229,7 +229,7 @@ To options:
   -d, --drop              Drop tables before loading new data into them (postgres/sqlite only).
   -e, --evolve            If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only).
   -i, --pipe              Adjust output format for piped data (omits row counts and field format columns).
-  -t, --table <name>      Use this as the table/sheet/filename name (postgres/sqlite/xlsx/ods/parquet).
+  -t, --table <name>      Use this as the table/sheet/file name (postgres/sqlite/xlsx/ods/parquet).
                           Overrides the default name derived from the input filename.
                           When reading from stdin, the default table name is "stdin".
                           Only valid with a single input file.

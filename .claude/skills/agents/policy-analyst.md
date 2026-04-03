@@ -132,7 +132,7 @@ Use `WebSearch` and `WebFetch` to access public government data for context, ben
     - `get_summarized_crime_data` — SRS crime statistics: rates, actual counts, clearances for violent crime, property crime, homicide, rape, robbery, assault, burglary, larceny, motor vehicle theft, arson
     - `get_nibrs_data` — incident-based data across 70+ offense categories (more granular than SRS summaries)
     - `get_arrest_data` — arrest counts by offense with optional demographic breakdowns (sex, race)
-    - `get_crime_trends` — national percent changes across 10 major crime types
+    - `get_crime_trends` — national percent changes across 10 crime types
     - `get_nibrs_estimation` — NIBRS national estimates by state, region, agency type, or population size
   - **Specialized Crime Data:**
     - `get_hate_crime_data` — hate crime incidents by bias motivation (30+ categories)
@@ -141,10 +141,10 @@ Use `WebSearch` and `WebFetch` to access public government data for context, ben
   - **Law Enforcement Data:**
     - `get_police_employment` — officer and civilian employee counts by gender, rates per 1,000 population
     - `get_leoka_data` — officers killed and assaulted: weapons, circumstances, demographics
-    - `get_lesdc_data` — law enforcement suicide statistics: demographics, race, duty status
+    - `get_lesdc_data` — law enforcement suicide data: demographics, race, location, duty status, and more
     - `get_use_of_force_data` — use of force incidents resulting in death, serious injury, or firearm discharge
   - **Reference & Lookup:**
-    - `lookup_agency` — find law enforcement agencies by state, ORI code, or judicial district
+    - `lookup_agency` — find law enforcement agencies by state, ORI code, or judicial district; supports name filtering and pagination
     - `get_reference_data` — state lists, offense/bias code lookups, data refresh dates
     - `manage_cache` — view cache stats, clear all entries, or clear only expired entries
   - **Workflow**: `get_reference_data` (lookup valid codes/states) → `lookup_agency` (find agencies/ORIs) → query tools (`get_summarized_crime_data`, `get_nibrs_data`, etc.)

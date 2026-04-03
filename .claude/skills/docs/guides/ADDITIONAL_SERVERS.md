@@ -418,7 +418,7 @@ If Claude returns Wikidata entity information (like Q937), the server is working
 
 ## 4. FBI Crime Data MCP Server
 
-The [FBI Crime Data MCP Server](https://github.com/dathere/fbi-crime-data-mcp) gives Claude access to the FBI's [Crime Data Explorer](https://cde.ucr.cjis.gov/) API — query crime statistics, arrest data, hate crimes, NIBRS incidents, law enforcement employment, and more.
+The [FBI Crime Data MCP Server](https://github.com/dathere/fbi-crime-data-mcp) gives Claude access to the [FBI's Crime Data Explorer API](https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/docApi) — query crime statistics, arrest data, hate crimes, NIBRS incidents, law enforcement employment, and more.
 
 This one is lightweight — no Docker or database required. You just need **Python/uv** and a free **API key**.
 
@@ -431,7 +431,7 @@ This one is lightweight — no Docker or database required. You just need **Pyth
 - Hate crime incidents by bias motivation
 - Expanded homicide and property crime details
 - Law enforcement employment, use of force, and officer safety data
-- Agency lookup by state, ORI code, or judicial district
+- Agency lookup by state, ORI code, or judicial district — with optional name filtering and pagination
 
 ### Install Prerequisites
 
@@ -460,7 +460,7 @@ scoop install uv
 3. Check your email for the API key — it arrives almost instantly
 4. **Save your API key** somewhere handy (you'll need it in a moment)
 
-> **Note:** Without an API key, the server falls back to `DEMO_KEY` which is limited to 30 requests per hour. With a registered key, you get 1,000 requests per hour.
+> **Note:** Without an API key, the server falls back to `DEMO_KEY` which is limited to 30 requests per IP per hour. With a registered key, you get 1,000 requests per hour (rolling window).
 
 ### Add to Claude Desktop Config
 

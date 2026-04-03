@@ -619,17 +619,28 @@ fn to_parquet(
 
     // Parse compression codec
     let compression_str = flag_compression.unwrap_or_default();
-    let compression: PqtCompression = compression_str
-        .parse()
-        .map_err(|e: String| CliError::Other(e))?;
+    let compression: PqtCompression = match compression_str.parse() {
+        Ok(compression) => compression,
+        Err(_e) => {
+            return fail_incorrectusage_clierror!(
+                "invalid --compression value '{compression_str}'. Valid codecs are: uncompressed, \
+                 snappy, lz4raw, gzip, zstd."
+            );
+        },
+    };
 
     let parquet_compression = match compression {
         PqtCompression::Uncompressed => ParquetCompression::Uncompressed,
         PqtCompression::Snappy => ParquetCompression::Snappy,
         PqtCompression::Lz4Raw => ParquetCompression::Lz4Raw,
         PqtCompression::Gzip => {
-            let level = flag_compress_level.unwrap_or(DEFAULT_GZIP_COMPRESSION_LEVEL.into()) as u8;
-            ParquetCompression::Gzip(Some(GzipLevel::try_new(level)?))
+            let level = flag_compress_level.unwrap_or(DEFAULT_GZIP_COMPRESSION_LEVEL.into());
+            if !(1..=9).contains(&level) {
+                return fail_incorrectusage_clierror!(
+                    "invalid gzip compression level {level}. Valid values are 1 through 9."
+                );
+            }
+            ParquetCompression::Gzip(Some(GzipLevel::try_new(level as u8)?))
         },
         PqtCompression::Zstd => {
             let level = flag_compress_level.unwrap_or(DEFAULT_ZSTD_COMPRESSION_LEVEL);

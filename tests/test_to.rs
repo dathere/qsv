@@ -1096,7 +1096,23 @@ fn to_parquet_compression_snappy() {
 
     wrk.assert_success(&mut cmd);
 
-    assert!(output_dir.join("data.parquet").exists());
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists());
+
+    // Read back and verify the file is valid parquet with correct contents
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 2, "should have 2 rows");
+    assert_eq!(
+        df.get_column_names(),
+        &["name", "value"],
+        "column names should match"
+    );
 }
 
 #[test]

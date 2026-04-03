@@ -1,6 +1,6 @@
 # to
 
-> Convert CSV files to [PostgreSQL](https://www.postgresql.org), [SQLite](https://www.sqlite.org/index.html), Excel (XLSX), [LibreOffice Calc](https://www.libreoffice.org/discover/calc/) (ODS) and [Data Package](https://datahub.io/docs/data-packages/tabular).
+> Convert CSV files to [Parquet](https://parquet.apache.org), [PostgreSQL](https://www.postgresql.org), [SQLite](https://www.sqlite.org/index.html), Excel (XLSX), [LibreOffice Calc](https://www.libreoffice.org/discover/calc/) (ODS) and [Data Package](https://datahub.io/docs/data-packages/tabular).
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/to.rs](https://github.com/dathere/qsv/blob/master/src/cmd/to.rs)** | [🚀](TableOfContents.md#legend "multithreaded even without an index.")[🗄️](TableOfContents.md#legend "Extended input support.")
 
@@ -11,7 +11,53 @@
 
 ## Description [↩](#nav)
 
-Convert CSV files to PostgreSQL, SQLite, Excel XLSX, ODS and Data Package.
+Convert CSV files to Parquet, PostgreSQL, SQLite, Excel XLSX, ODS and Data Package.
+
+### Parquet
+
+Convert CSV files to Parquet format. Each input CSV produces a separate .parquet file
+in the specified output directory. The output directory will be created if it does not exist.
+
+Requires the `polars` feature to be enabled.
+
+Compression can be specified with --compression (default: zstd).
+Supported values: zstd, gzip, snappy, lz4raw, uncompressed.
+Use --compress-level to set the compression level for gzip (default: 6) or zstd (default: 3).
+
+
+<a name="examples"></a>
+
+## Examples [↩](#nav)
+
+Convert `file1.csv` and `file2.csv` to parquet files in output_dir/
+```console
+qsv to parquet output_dir file1.csv file2.csv
+```
+
+Convert all CSVs in a directory to parquet.
+```console
+qsv to parquet output_dir dir1
+```
+
+Convert files listed in the 'input.infile-list' to parquet.
+```console
+qsv to parquet output_dir input.infile-list
+```
+
+Convert with snappy compression.
+```console
+qsv to parquet output_dir --compression snappy file1.csv
+```
+
+Convert with zstd compression at level 10.
+```console
+qsv to parquet output_dir --compression zstd --compress-level 10 file1.csv
+```
+
+Convert from stdin with a custom filename.
+```console
+cat data.csv | qsv to parquet output_dir --table mydata -
+```
 
 ### Postgresql
 
@@ -19,14 +65,7 @@ To convert to postgres you need to supply connection string.
 The format is described here - <https://docs.rs/postgres/latest/postgres/config/struct.Config.html#examples-1>.
 Additionally you can use `env=MY_ENV_VAR` and qsv will get the connection string from the
 environment variable `MY_ENV_VAR`.
-
 If using the `--dump` option instead of a connection string put a name of a file or `-` for stdout.
-
-
-<a name="examples"></a>
-
-## Examples [↩](#nav)
-
 Load `file1.csv` and `file2.csv' file to local database `test`, with user `testuser`, and password `pass`.
 ```console
 qsv to postgres 'postgres://testuser:pass@localhost/test' file1.csv file2.csv
@@ -212,6 +251,7 @@ For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/
 ## Usage [↩](#nav)
 
 ```console
+qsv to parquet [options] <parquet> [<input>...]
 qsv to postgres [options] <postgres> [<input>...]
 qsv to sqlite [options] <sqlite> [<input>...]
 qsv to xlsx [options] <xlsx> [<input>...]
@@ -224,7 +264,7 @@ qsv to --help
 
 ## To Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑k,`<br>`‑‑print‑package`&nbsp; | flag | Print statistics as datapackage, by default will print field summary. |  |
 | &nbsp;`‑u,`<br>`‑‑dump`&nbsp; | flag | Create database dump file for use with `psql` or `sqlite3` command line tools (postgres/sqlite only). |  |
@@ -235,8 +275,10 @@ qsv to --help
 | &nbsp;`‑d,`<br>`‑‑drop`&nbsp; | flag | Drop tables before loading new data into them (postgres/sqlite only). |  |
 | &nbsp;`‑e,`<br>`‑‑evolve`&nbsp; | flag | If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only). |  |
 | &nbsp;`‑i,`<br>`‑‑pipe`&nbsp; | flag | Adjust output format for piped data (omits row counts and field format columns). |  |
-| &nbsp;`‑t,`<br>`‑‑table`&nbsp; | string | Use this as the table/sheet name (postgres/sqlite/xlsx/ods). Overrides the default name derived from the input filename. When reading from stdin, the default table name is "stdin". Only valid with a single input file. For postgres/sqlite: must start with a letter or underscore, contain only alphanumeric characters and underscores (max 63). For xlsx/ods: used as sheet name (max 31 chars, cannot contain \ / * [ ] : ?). |  |
+| &nbsp;`‑t,`<br>`‑‑table`&nbsp; | string | Use this as the table/sheet/filename name (postgres/sqlite/xlsx/ods/parquet). Overrides the default name derived from the input filename. When reading from stdin, the default table name is "stdin". Only valid with a single input file. For postgres/sqlite: must start with a letter or underscore, contain only alphanumeric characters and underscores (max 63). For xlsx/ods: used as sheet name (max 31 chars, cannot contain \ / * [ ] : ?). |  |
 | &nbsp;`‑p,`<br>`‑‑separator`&nbsp; | string | For xlsx, use this character to help truncate xlsx sheet names. Defaults to space. |  |
+| &nbsp;`‑‑compression`&nbsp; | string | Parquet compression codec (parquet only). Valid values: zstd (default), gzip, snappy, lz4raw, uncompressed. |  |
+| &nbsp;`‑‑compress‑level`&nbsp; | string | Compression level (parquet only). For gzip: 1-9 (default: 6). For zstd: -7 to 22 (default: 3). Ignored for other codecs. |  |
 | &nbsp;`‑A,`<br>`‑‑all‑strings`&nbsp; | flag | Convert all fields to strings. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 

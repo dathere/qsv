@@ -1,5 +1,42 @@
 static USAGE: &str = r#"
-Convert CSV files to PostgreSQL, SQLite, Excel XLSX, ODS and Data Package.
+Convert CSV files to Parquet, PostgreSQL, SQLite, Excel XLSX, ODS and Data Package.
+
+PARQUET
+=======
+Convert CSV files to Parquet format. Each input CSV produces a separate .parquet file
+in the specified output directory. The output directory will be created if it does not exist.
+
+Requires the `polars` feature to be enabled.
+
+Compression can be specified with --compression (default: zstd).
+Supported values: zstd, gzip, snappy, lz4raw, uncompressed.
+Use --compress-level to set the compression level for gzip (default: 6) or zstd (default: 3).
+
+Examples:
+
+Convert `file1.csv` and `file2.csv` to parquet files in output_dir/
+
+  $ qsv to parquet output_dir file1.csv file2.csv
+
+Convert all CSVs in a directory to parquet.
+
+  $ qsv to parquet output_dir dir1
+
+Convert files listed in the 'input.infile-list' to parquet.
+
+  $ qsv to parquet output_dir input.infile-list
+
+Convert with snappy compression.
+
+  $ qsv to parquet output_dir --compression snappy file1.csv
+
+Convert with zstd compression at level 10.
+
+  $ qsv to parquet output_dir --compression zstd --compress-level 10 file1.csv
+
+Convert from stdin with a custom filename.
+
+  $ cat data.csv | qsv to parquet output_dir --table mydata -
 
 POSTGRESQL
 ==========
@@ -145,43 +182,6 @@ Load from stdin with a custom sheet name.
 
   $ cat data.csv | qsv to ods output.ods --table "Monthly Report" -
 
-PARQUET
-=======
-Convert CSV files to Parquet format. Each input CSV produces a separate .parquet file
-in the specified output directory. The output directory will be created if it does not exist.
-
-Requires the `polars` feature to be enabled.
-
-Compression can be specified with --compression (default: zstd).
-Supported values: zstd, gzip, snappy, lz4raw, uncompressed.
-Use --compress-level to set the compression level for gzip (default: 6) or zstd (default: 3).
-
-Examples:
-
-Convert `file1.csv` and `file2.csv` to parquet files in output_dir/
-
-  $ qsv to parquet output_dir file1.csv file2.csv
-
-Convert all CSVs in a directory to parquet.
-
-  $ qsv to parquet output_dir dir1
-
-Convert files listed in the 'input.infile-list' to parquet.
-
-  $ qsv to parquet output_dir input.infile-list
-
-Convert with snappy compression.
-
-  $ qsv to parquet output_dir --compression snappy file1.csv
-
-Convert with zstd compression at level 10.
-
-  $ qsv to parquet output_dir --compression zstd --compress-level 10 file1.csv
-
-Convert from stdin with a custom filename.
-
-  $ cat data.csv | qsv to parquet output_dir --table mydata -
-
 DATA PACKAGE
 ============
 Generate a datapackage, which contains stats and information about what is in the CSV files.
@@ -211,11 +211,11 @@ For all other conversions you can output the datapackage created by specifying `
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_to.rs.
 
 Usage:
+    qsv to parquet [options] <parquet> [<input>...]
     qsv to postgres [options] <postgres> [<input>...]
     qsv to sqlite [options] <sqlite> [<input>...]
     qsv to xlsx [options] <xlsx> [<input>...]
     qsv to ods [options] <ods> [<input>...]
-    qsv to parquet [options] <parquet> [<input>...]
     qsv to datapackage [options] <datapackage> [<input>...]
     qsv to --help
 

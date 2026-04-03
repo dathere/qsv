@@ -989,3 +989,148 @@ fn to_table_preserves_original_file() {
 //         ]
 //     );
 // }
+
+// ===== Parquet tests (require polars feature) =====
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_basic() {
+    let wrk = Workdir::new("to_parquet_basic");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["city", "pop"],
+            svec!["Boston", "685000"],
+            svec!["New York", "8300000"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists(), "parquet file should be created");
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_multiple() {
+    let wrk = Workdir::new("to_parquet_multiple");
+    wrk.create(
+        "cities.csv",
+        vec![
+            svec!["city", "state"],
+            svec!["Boston", "MA"],
+            svec!["Albany", "NY"],
+        ],
+    );
+    wrk.create(
+        "places.csv",
+        vec![
+            svec!["place", "city"],
+            svec!["Fenway Park", "Boston"],
+            svec!["Capitol", "Albany"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("cities.csv")
+        .arg("places.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        output_dir.join("cities.parquet").exists(),
+        "cities.parquet should be created"
+    );
+    assert!(
+        output_dir.join("places.parquet").exists(),
+        "places.parquet should be created"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_compression_snappy() {
+    let wrk = Workdir::new("to_parquet_snappy");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "value"],
+            svec!["alpha", "1"],
+            svec!["beta", "2"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--compression")
+        .arg("snappy")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    assert!(output_dir.join("data.parquet").exists());
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_custom_table() {
+    let wrk = Workdir::new("to_parquet_table");
+    wrk.create(
+        "data.csv",
+        vec![svec!["col1", "col2"], svec!["a", "1"], svec!["b", "2"]],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--table")
+        .arg("custom_name")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        output_dir.join("custom_name.parquet").exists(),
+        "parquet file should use custom table name"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_dir() {
+    let wrk = Workdir::new("to_parquet_dir");
+
+    // Create a subdirectory with CSV files
+    let input_dir = wrk.path("input_csvs");
+    std::fs::create_dir_all(&input_dir).unwrap();
+    std::fs::write(input_dir.join("file1.csv"), "name,value\nalpha,1\nbeta,2\n").unwrap();
+    std::fs::write(
+        input_dir.join("file2.csv"),
+        "city,state\nBoston,MA\nAlbany,NY\n",
+    )
+    .unwrap();
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg(input_dir.to_string_lossy().as_ref());
+
+    wrk.assert_success(&mut cmd);
+
+    assert!(output_dir.join("file1.parquet").exists());
+    assert!(output_dir.join("file2.parquet").exists());
+}

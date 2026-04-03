@@ -1166,3 +1166,79 @@ fn to_parquet_dir() {
     assert!(output_dir.join("file1.parquet").exists());
     assert!(output_dir.join("file2.parquet").exists());
 }
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_invalid_compression() {
+    let wrk = Workdir::new("to_parquet_invalid_compression");
+    wrk.create(
+        "data.csv",
+        vec![svec!["name", "value"], svec!["alpha", "1"]],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--compression")
+        .arg("bogus")
+        .arg("data.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("invalid --compression value"),
+        "Expected invalid compression error, got: {stderr}"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_gzip_level_out_of_range() {
+    let wrk = Workdir::new("to_parquet_gzip_level_oor");
+    wrk.create(
+        "data.csv",
+        vec![svec!["name", "value"], svec!["alpha", "1"]],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--compression")
+        .arg("gzip")
+        .arg("--compress-level")
+        .arg("0")
+        .arg("data.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("invalid gzip compression level"),
+        "Expected gzip level error, got: {stderr}"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_zstd_level_out_of_range() {
+    let wrk = Workdir::new("to_parquet_zstd_level_oor");
+    wrk.create(
+        "data.csv",
+        vec![svec!["name", "value"], svec!["alpha", "1"]],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--compression")
+        .arg("zstd")
+        .arg("--compress-level")
+        .arg("99")
+        .arg("data.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("invalid zstd compression level"),
+        "Expected zstd level error, got: {stderr}"
+    );
+}

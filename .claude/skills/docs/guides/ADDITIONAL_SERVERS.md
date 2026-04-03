@@ -1,4 +1,4 @@
-# Additional MCP Servers — Census + Wikidata
+# Additional MCP Servers — Census + Wikidata + FBI Crime Data
 
 These optional MCP servers extend Claude Desktop with access to external data sources. Install them after completing the [Getting Started guide](./START_HERE.md).
 
@@ -11,7 +11,8 @@ These optional MCP servers extend Claude Desktop with access to external data so
 1. [How to Edit the Claude Desktop Config File](#1-how-to-edit-the-claude-desktop-config-file)
 2. [US Census Bureau MCP Server](#2-us-census-bureau-mcp-server)
 3. [Wikidata MCP Server](#3-wikidata-mcp-server)
-4. [Combined Config Example](#4-combined-config-example)
+4. [FBI Crime Data MCP Server](#4-fbi-crime-data-mcp-server)
+5. [Combined Config Example](#5-combined-config-example)
 
 ---
 
@@ -413,7 +414,90 @@ If Claude returns Wikidata entity information (like Q937), the server is working
 
 ---
 
-## 4. Combined Config Example
+## 4. FBI Crime Data MCP Server
+
+The [FBI Crime Data MCP Server](https://github.com/dathere/fbi-crime-data-mcp) gives Claude access to the FBI's [Crime Data Explorer](https://cde.ucr.cjis.gov/) API — query crime statistics, arrest data, hate crimes, NIBRS incidents, law enforcement employment, and more.
+
+This one is lightweight — no Docker or database required. You just need **Python/uv** and a free **API key**.
+
+### What This Provides
+
+- Crime statistics (violent crime, property crime, homicide, etc.) — rates, actuals, clearances
+- NIBRS incident-based data across 70+ offense types
+- Arrest data with demographic breakdowns
+- National crime trends and percent changes
+- Hate crime incidents by bias motivation
+- Expanded homicide and property crime details
+- Law enforcement employment, use of force, and officer safety data
+- Agency lookup by state, ORI code, or judicial district
+
+### Install Prerequisites
+
+The FBI Crime Data MCP server runs via `uvx` (part of `uv`), so you just need `uv` installed.
+
+#### macOS
+
+> **Need Homebrew?** See the [Census section above](#install-prerequisites) for Homebrew installation instructions.
+
+```bash
+brew install uv
+```
+
+#### Windows
+
+> **Need Scoop?** See the [Census section above](#install-prerequisites-1) for Scoop installation instructions.
+
+```powershell
+scoop install uv
+```
+
+### Get an API Key
+
+1. Go to: **<https://api.data.gov/signup/>**
+2. Fill out the form (name and email)
+3. Check your email for the API key — it arrives almost instantly
+4. **Save your API key** somewhere handy (you'll need it in a moment)
+
+> **Note:** Without an API key, the server falls back to `DEMO_KEY` which is limited to 30 requests per hour. With a registered key, you get 1,000 requests per hour.
+
+### Add to Claude Desktop Config
+
+Open the Claude Desktop config file (see [Section 1](#1-how-to-edit-the-claude-desktop-config-file)) and add this inside `"mcpServers"`:
+
+```json
+"fbi-crime-data": {
+  "command": "uvx",
+  "args": ["fbi-crime-data-mcp"],
+  "env": {
+    "FBI_API_KEY": "YOUR_FBI_API_KEY"
+  }
+}
+```
+
+Replace `YOUR_FBI_API_KEY` with the API key from your email.
+
+> **Note:** This works on both macOS and Windows — `uvx` handles downloading and running the server automatically. No cloning or local setup needed.
+
+### Verify FBI Crime Data Server
+
+Close and reopen Claude Desktop. Then start a new conversation and ask:
+
+> "What are the national crime trends for 2023?"
+
+If Claude returns FBI crime statistics, the server is working.
+
+### FBI Crime Data Troubleshooting
+
+| Problem | Solution |
+| ------- | -------- |
+| "uvx: command not found" | Make sure `uv` is installed (`brew install uv` on macOS, `scoop install uv` on Windows). |
+| "API rate limit exceeded" | Register for a free API key at <https://api.data.gov/signup/> and set `FBI_API_KEY` in the config. Without a key, the limit is 30 requests/hour. |
+| Server starts but returns no data | Some data endpoints have limited date ranges. Try a recent year (2022 or 2023). Use `get_reference_data` to check available data. |
+| Invalid API key error | Double-check your API key. You can request a new one at <https://api.data.gov/signup/>. |
+
+---
+
+## 5. Combined Config Example
 
 After setting up all servers, your config file should look something like this:
 
@@ -443,6 +527,13 @@ After setting up all servers, your config file should look something like this:
     },
     "Wikidata MCP": {
       "url": "https://wd-mcp.wmcloud.org/mcp/"
+    },
+    "fbi-crime-data": {
+      "command": "uvx",
+      "args": ["fbi-crime-data-mcp"],
+      "env": {
+        "FBI_API_KEY": "YOUR_FBI_API_KEY"
+      }
     }
   }
 }
@@ -474,13 +565,20 @@ After setting up all servers, your config file should look something like this:
     },
     "Wikidata MCP": {
       "url": "https://wd-mcp.wmcloud.org/mcp/"
+    },
+    "fbi-crime-data": {
+      "command": "uvx",
+      "args": ["fbi-crime-data-mcp"],
+      "env": {
+        "FBI_API_KEY": "YOUR_FBI_API_KEY"
+      }
     }
   }
 }
 ```
 
-> **Important:** The `qsv` entry is managed by the MCPB installer — you shouldn't need to edit it by hand. The qsv binary path is auto-detected. The Census and Wikidata entries are added manually.
+> **Important:** The `qsv` entry is managed by the MCPB installer — you shouldn't need to edit it by hand. The qsv binary path is auto-detected. The Census, Wikidata, and FBI Crime Data entries are added manually.
 
 ---
 
-*Last updated: 2026-03-18*
+*Last updated: 2026-04-03*

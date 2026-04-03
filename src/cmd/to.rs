@@ -215,7 +215,7 @@ Usage:
     qsv to sqlite [options] <sqlite> [<input>...]
     qsv to xlsx [options] <xlsx> [<input>...]
     qsv to ods [options] <ods> [<input>...]
-    qsv to parquet [options] <parquet> [<input>...]
+    qsv to parquet [options] <parquet_dir> [<input>...]
     qsv to datapackage [options] <datapackage> [<input>...]
     qsv to --help
 
@@ -229,7 +229,7 @@ To options:
   -d, --drop              Drop tables before loading new data into them (postgres/sqlite only).
   -e, --evolve            If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only).
   -i, --pipe              Adjust output format for piped data (omits row counts and field format columns).
-  -t, --table <name>      Use this as the table/sheet name (postgres/sqlite/xlsx/ods).
+  -t, --table <name>      Use this as the table/sheet/filename name (postgres/sqlite/xlsx/ods/parquet).
                           Overrides the default name derived from the input filename.
                           When reading from stdin, the default table name is "stdin".
                           Only valid with a single input file.
@@ -287,7 +287,7 @@ struct Args {
     cmd_ods:             bool,
     arg_ods:             Option<String>,
     cmd_parquet:         bool,
-    arg_parquet:         Option<String>,
+    arg_parquet_dir:     Option<String>,
     cmd_datapackage:     bool,
     arg_datapackage:     Option<String>,
     arg_input:           Vec<PathBuf>,
@@ -385,9 +385,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         if args.cmd_parquet {
             // parquet uses table name as output filename — disallow path separators
-            if table_name.contains(&['/', '\\', '\0'][..]) {
+            // and Windows-invalid filename characters
+            if table_name
+                .contains(&['/', '\\', '\0', ':', '*', '?', '"', '<', '>', '|', '[', ']'][..])
+            {
                 return fail_incorrectusage_clierror!(
-                    "--table name cannot contain path separators for parquet."
+                    "--table name cannot contain path separators or special characters (/ \\ : * \
+                     ? \" < > | [ ]) for parquet."
                 );
             }
         }
@@ -478,14 +482,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         debug!("conversion to ODS complete");
     } else if args.cmd_parquet {
         debug!("converting to Parquet");
-        arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
+        arg_input = process_input(arg_input, &tmpdir, "")?;
         apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
         return to_parquet(
-            args.arg_parquet.expect("checked above"),
+            args.arg_parquet_dir.expect("checked above"),
             arg_input,
             args.flag_delimiter,
             args.flag_compression,
             args.flag_compress_level,
+            args.flag_all_strings,
             args.flag_quiet,
         );
     } else if args.cmd_datapackage {
@@ -601,14 +606,15 @@ fn apply_table_rename(
 
 #[cfg(feature = "polars")]
 fn to_parquet(
-    arg_parquet: String,
+    arg_parquet_dir: String,
     arg_input: Vec<PathBuf>,
     flag_delimiter: Option<Delimiter>,
     flag_compression: Option<String>,
     flag_compress_level: Option<i32>,
+    flag_all_strings: bool,
     quiet: bool,
 ) -> CliResult<()> {
-    let output_dir = PathBuf::from(&arg_parquet);
+    let output_dir = PathBuf::from(&arg_parquet_dir);
     std::fs::create_dir_all(&output_dir)?;
 
     // Parse compression codec
@@ -642,6 +648,13 @@ fn to_parquet(
             .unwrap_or("output");
         let output_path = output_dir.join(format!("{filestem}.parquet"));
 
+        if output_path.exists() {
+            return fail_clierror!(
+                "Output file '{}' already exists. Cannot overwrite.",
+                output_path.display()
+            );
+        }
+
         debug!("converting {input_path:?} to {output_path:?}");
 
         let mut df = CsvReadOptions::default()
@@ -650,12 +663,21 @@ fn to_parquet(
             .try_into_reader_with_file_path(Some(input_path.clone()))?
             .finish()?;
 
+        if flag_all_strings {
+            let column_names = df.get_column_names_owned();
+            for column_name in column_names {
+                let casted = df
+                    .column(column_name.as_str())?
+                    .cast(&polars::prelude::DataType::String)?;
+                df.with_column(casted)?;
+            }
+        }
+
         let row_count = df.height();
 
         let file = std::fs::File::create(&output_path)?;
-        #[allow(clippy::decimal_bitwise_operands)]
         ParquetWriter::new(file)
-            .with_row_group_size(Some(768 ^ 2))
+            .with_row_group_size(Some(768 * 768))
             .with_compression(parquet_compression)
             .finish(&mut df)?;
 
@@ -671,11 +693,12 @@ fn to_parquet(
 
 #[cfg(not(feature = "polars"))]
 fn to_parquet(
-    _arg_parquet: String,
+    _arg_parquet_dir: String,
     _arg_input: Vec<PathBuf>,
     _flag_delimiter: Option<Delimiter>,
     _flag_compression: Option<String>,
     _flag_compress_level: Option<i32>,
+    _flag_all_strings: bool,
     _quiet: bool,
 ) -> CliResult<()> {
     fail_clierror!(

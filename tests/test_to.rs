@@ -1015,6 +1015,19 @@ fn to_parquet_basic() {
 
     let parquet_file = output_dir.join("data.parquet");
     assert!(parquet_file.exists(), "parquet file should be created");
+
+    // Read back and verify contents
+    let df = polars::prelude::LazyFrame::scan_parquet(&parquet_file, Default::default())
+        .unwrap()
+        .collect()
+        .unwrap();
+    assert_eq!(df.height(), 2, "should have 2 rows");
+    assert_eq!(df.width(), 2, "should have 2 columns");
+    assert_eq!(
+        df.get_column_names(),
+        &["city", "pop"],
+        "column names should match"
+    );
 }
 
 #[test]

@@ -1,5 +1,42 @@
 static USAGE: &str = r#"
-Convert CSV files to PostgreSQL, SQLite, Excel XLSX, ODS and Data Package.
+Convert CSV files to Parquet, PostgreSQL, SQLite, Excel XLSX, ODS and Data Package.
+
+PARQUET
+=======
+Convert CSV files to Parquet format. Each input CSV produces a separate .parquet file
+in the specified output directory. The output directory will be created if it does not exist.
+
+Requires the `polars` feature to be enabled.
+
+Compression can be specified with --compression (default: zstd).
+Supported values: zstd, gzip, snappy, lz4raw, uncompressed.
+Use --compress-level to set the compression level for gzip (default: 6) or zstd (default: 3).
+
+Examples:
+
+Convert `file1.csv` and `file2.csv` to parquet files in output_dir/
+
+  $ qsv to parquet output_dir file1.csv file2.csv
+
+Convert all CSVs in a directory to parquet.
+
+  $ qsv to parquet output_dir dir1
+
+Convert files listed in the 'input.infile-list' to parquet.
+
+  $ qsv to parquet output_dir input.infile-list
+
+Convert with snappy compression.
+
+  $ qsv to parquet output_dir --compression snappy file1.csv
+
+Convert with zstd compression at level 10.
+
+  $ qsv to parquet output_dir --compression zstd --compress-level 10 file1.csv
+
+Convert from stdin with a custom filename.
+
+  $ cat data.csv | qsv to parquet output_dir --table mydata -
 
 POSTGRESQL
 ==========
@@ -174,6 +211,7 @@ For all other conversions you can output the datapackage created by specifying `
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_to.rs.
 
 Usage:
+    qsv to parquet [options] <parquet> [<input>...]
     qsv to postgres [options] <postgres> [<input>...]
     qsv to sqlite [options] <sqlite> [<input>...]
     qsv to xlsx [options] <xlsx> [<input>...]
@@ -191,7 +229,7 @@ To options:
   -d, --drop              Drop tables before loading new data into them (postgres/sqlite only).
   -e, --evolve            If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only).
   -i, --pipe              Adjust output format for piped data (omits row counts and field format columns).
-  -t, --table <name>      Use this as the table/sheet name (postgres/sqlite/xlsx/ods).
+  -t, --table <name>      Use this as the table/sheet/file name (postgres/sqlite/xlsx/ods/parquet).
                           Overrides the default name derived from the input filename.
                           When reading from stdin, the default table name is "stdin".
                           Only valid with a single input file.
@@ -201,6 +239,11 @@ To options:
                           cannot contain \ / * [ ] : ?).
   -p, --separator <arg>   For xlsx, use this character to help truncate xlsx sheet names.
                           Defaults to space.
+      --compression <arg>  Parquet compression codec (parquet only).
+                           Valid values: zstd (default), gzip, snappy, lz4raw, uncompressed.
+      --compress-level <arg>  Compression level (parquet only).
+                              For gzip: 1-9 (default: 6). For zstd: -7 to 22 (default: 3).
+                              Ignored for other codecs.
   -A, --all-strings       Convert all fields to strings.
   -j, --jobs <arg>        The number of jobs to run in parallel.
                           When not set, the number of jobs is set to the number of CPUs detected.
@@ -218,6 +261,11 @@ use csvs_convert::{
     csvs_to_sqlite_with_options, csvs_to_xlsx_with_options, make_datapackage,
 };
 use log::debug;
+#[cfg(feature = "polars")]
+use polars::{
+    polars_utils::compression::{GzipLevel, ZstdLevel},
+    prelude::*,
+};
 use serde::Deserialize;
 
 use crate::{
@@ -230,31 +278,35 @@ use crate::{
 #[allow(dead_code)]
 #[derive(Deserialize)]
 struct Args {
-    cmd_postgres:       bool,
-    arg_postgres:       Option<String>,
-    cmd_sqlite:         bool,
-    arg_sqlite:         Option<String>,
-    cmd_xlsx:           bool,
-    arg_xlsx:           Option<String>,
-    cmd_ods:            bool,
-    arg_ods:            Option<String>,
-    cmd_datapackage:    bool,
-    arg_datapackage:    Option<String>,
-    arg_input:          Vec<PathBuf>,
-    flag_delimiter:     Option<Delimiter>,
-    flag_schema:        Option<String>,
-    flag_separator:     Option<String>,
-    flag_all_strings:   bool,
-    flag_dump:          bool,
-    flag_drop:          bool,
-    flag_evolve:        bool,
-    flag_stats:         bool,
-    flag_stats_csv:     Option<String>,
-    flag_jobs:          Option<usize>,
-    flag_table:         Option<String>,
-    flag_print_package: bool,
-    flag_quiet:         bool,
-    flag_pipe:          bool,
+    cmd_postgres:        bool,
+    arg_postgres:        Option<String>,
+    cmd_sqlite:          bool,
+    arg_sqlite:          Option<String>,
+    cmd_xlsx:            bool,
+    arg_xlsx:            Option<String>,
+    cmd_ods:             bool,
+    arg_ods:             Option<String>,
+    cmd_parquet:         bool,
+    arg_parquet:         Option<String>,
+    cmd_datapackage:     bool,
+    arg_datapackage:     Option<String>,
+    arg_input:           Vec<PathBuf>,
+    flag_delimiter:      Option<Delimiter>,
+    flag_schema:         Option<String>,
+    flag_separator:      Option<String>,
+    flag_all_strings:    bool,
+    flag_dump:           bool,
+    flag_drop:           bool,
+    flag_evolve:         bool,
+    flag_stats:          bool,
+    flag_stats_csv:      Option<String>,
+    flag_jobs:           Option<usize>,
+    flag_table:          Option<String>,
+    flag_compression:    Option<String>,
+    flag_compress_level: Option<i32>,
+    flag_print_package:  bool,
+    flag_quiet:          bool,
+    flag_pipe:           bool,
 }
 
 impl From<csvs_convert::Error> for CliError {
@@ -271,6 +323,38 @@ impl From<csvs_convert::DescribeError> for CliError {
 
 static EMPTY_STDIN_ERRMSG: &str =
     "No data on stdin. Need to add connection string as first argument then the input CSVs";
+
+#[cfg(feature = "polars")]
+static DEFAULT_GZIP_COMPRESSION_LEVEL: u8 = 6;
+#[cfg(feature = "polars")]
+static DEFAULT_ZSTD_COMPRESSION_LEVEL: i32 = 3;
+
+#[cfg(feature = "polars")]
+#[derive(Default, Copy, Clone)]
+enum PqtCompression {
+    Uncompressed,
+    Gzip,
+    Snappy,
+    #[default]
+    Zstd,
+    Lz4Raw,
+}
+
+#[cfg(feature = "polars")]
+impl std::str::FromStr for PqtCompression {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "uncompressed" => Ok(PqtCompression::Uncompressed),
+            "gzip" => Ok(PqtCompression::Gzip),
+            "snappy" => Ok(PqtCompression::Snappy),
+            "lz4raw" => Ok(PqtCompression::Lz4Raw),
+            "zstd" | "" => Ok(PqtCompression::Zstd),
+            _ => Err(format!("Invalid Parquet compression format: {s}")),
+        }
+    }
+}
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
@@ -298,6 +382,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             return fail_incorrectusage_clierror!(
                 "--table cannot be used with the datapackage subcommand."
             );
+        }
+        if args.cmd_parquet {
+            // parquet uses table name as output filename — disallow path separators
+            // and Windows-invalid filename characters
+            if table_name
+                .contains(&['/', '\\', '\0', ':', '*', '?', '"', '<', '>', '|', '[', ']'][..])
+            {
+                return fail_incorrectusage_clierror!(
+                    "--table name cannot contain path separators or special characters (/ \\ : * \
+                     ? \" < > | [ ]) for parquet."
+                );
+            }
         }
         if table_name.is_empty() {
             return fail_incorrectusage_clierror!("--table name must not be empty.");
@@ -384,6 +480,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         output =
             csvs_to_ods_with_options(args.arg_ods.expect("checked above"), arg_input, options)?;
         debug!("conversion to ODS complete");
+    } else if args.cmd_parquet {
+        debug!("converting to Parquet");
+        arg_input = process_input(arg_input, &tmpdir, "")?;
+        apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
+        return to_parquet(
+            args.arg_parquet.expect("checked above"),
+            arg_input,
+            args.flag_delimiter,
+            args.flag_compression,
+            args.flag_compress_level,
+            args.flag_all_strings,
+            args.flag_quiet,
+        );
     } else if args.cmd_datapackage {
         debug!("creating Data Package");
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
@@ -399,7 +508,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         debug!("Data Package complete");
     } else {
         return fail_clierror!(
-            "Need to supply either xlsx, ods, postgres, sqlite, datapackage as subcommand"
+            "Need to supply either parquet, xlsx, ods, postgres, sqlite, datapackage as subcommand"
         );
     }
 
@@ -493,4 +602,123 @@ fn apply_table_rename(
         *path = new_path;
     }
     Ok(())
+}
+
+#[cfg(feature = "polars")]
+fn to_parquet(
+    arg_parquet: String,
+    arg_input: Vec<PathBuf>,
+    flag_delimiter: Option<Delimiter>,
+    flag_compression: Option<String>,
+    flag_compress_level: Option<i32>,
+    flag_all_strings: bool,
+    quiet: bool,
+) -> CliResult<()> {
+    let output_dir = PathBuf::from(&arg_parquet);
+    std::fs::create_dir_all(&output_dir)?;
+
+    // Parse compression codec
+    let compression_str = flag_compression.unwrap_or_default();
+    let compression: PqtCompression = match compression_str.parse() {
+        Ok(compression) => compression,
+        Err(_e) => {
+            return fail_incorrectusage_clierror!(
+                "invalid --compression value '{compression_str}'. Valid codecs are: uncompressed, \
+                 snappy, lz4raw, gzip, zstd."
+            );
+        },
+    };
+
+    let parquet_compression = match compression {
+        PqtCompression::Uncompressed => ParquetCompression::Uncompressed,
+        PqtCompression::Snappy => ParquetCompression::Snappy,
+        PqtCompression::Lz4Raw => ParquetCompression::Lz4Raw,
+        PqtCompression::Gzip => {
+            let level = flag_compress_level.unwrap_or(DEFAULT_GZIP_COMPRESSION_LEVEL.into());
+            if !(1..=9).contains(&level) {
+                return fail_incorrectusage_clierror!(
+                    "invalid gzip compression level {level}. Valid values are 1 through 9."
+                );
+            }
+            ParquetCompression::Gzip(Some(GzipLevel::try_new(level as u8)?))
+        },
+        PqtCompression::Zstd => {
+            let level = flag_compress_level.unwrap_or(DEFAULT_ZSTD_COMPRESSION_LEVEL);
+            if !(-7..=22).contains(&level) {
+                return fail_incorrectusage_clierror!(
+                    "invalid zstd compression level {level}. Valid values are -7 through 22."
+                );
+            }
+            ParquetCompression::Zstd(Some(ZstdLevel::try_new(level)?))
+        },
+    };
+
+    let delimiter = flag_delimiter
+        .map(config::Delimiter::as_byte)
+        .unwrap_or(b',');
+
+    for input_path in &arg_input {
+        let filestem = input_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
+        let output_path = output_dir.join(format!("{filestem}.parquet"));
+
+        if output_path.exists() {
+            return fail_clierror!(
+                "Output file '{}' already exists. Cannot overwrite.",
+                output_path.display()
+            );
+        }
+
+        debug!("converting {input_path:?} to {output_path:?}");
+
+        let mut df = CsvReadOptions::default()
+            .with_has_header(true)
+            .with_parse_options(CsvParseOptions::default().with_separator(delimiter))
+            .try_into_reader_with_file_path(Some(input_path.clone()))?
+            .finish()?;
+
+        if flag_all_strings {
+            let column_names = df.get_column_names_owned();
+            for column_name in column_names {
+                let casted = df
+                    .column(column_name.as_str())?
+                    .cast(&polars::prelude::DataType::String)?;
+                df.with_column(casted)?;
+            }
+        }
+
+        let row_count = df.height();
+
+        let file = std::fs::File::create(&output_path)?;
+        ParquetWriter::new(file)
+            .with_row_group_size(Some(768 * 768))
+            .with_compression(parquet_compression)
+            .finish(&mut df)?;
+
+        if !quiet {
+            eprintln!("Wrote '{filestem}.parquet' ({row_count} rows)");
+        }
+
+        debug!("wrote {output_path:?}");
+    }
+
+    Ok(())
+}
+
+#[cfg(not(feature = "polars"))]
+fn to_parquet(
+    _arg_parquet: String,
+    _arg_input: Vec<PathBuf>,
+    _flag_delimiter: Option<Delimiter>,
+    _flag_compression: Option<String>,
+    _flag_compress_level: Option<i32>,
+    _flag_all_strings: bool,
+    _quiet: bool,
+) -> CliResult<()> {
+    fail_clierror!(
+        "The parquet subcommand requires the 'polars' feature.\nPlease install qsv with the \
+         'polars' feature enabled."
+    )
 }

@@ -67,6 +67,8 @@ allowed-tools:
   - mcp__fbi-crime-data__lookup_agency
   - mcp__fbi-crime-data__get_reference_data
   - mcp__fbi-crime-data__manage_cache
+  - mcp__fbi-crime-data__get_cde_homepage_summary
+  - mcp__fbi-crime-data__read_spillover
 ---
 
 # Policy Analyst Agent
@@ -128,6 +130,8 @@ Use `WebSearch` and `WebFetch` to access public government data for context, ben
 - **UCR/NIBRS**: Uniform Crime Reporting (SRS) and National Incident-Based Reporting System data from the Crime Data Explorer API.
 - Note: UCR-to-NIBRS transition (2021) creates a methodological break in time series — flag this when comparing pre/post 2021 data.
 - **When the `fbi-crime-data` MCP server is available**, use its tools for direct structured access:
+  - **Overview:**
+    - `get_cde_homepage_summary` — Crime Data Explorer overview: mission, data freshness, key national trends, and available datasets
   - **Core Crime Data:**
     - `get_summarized_crime_data` — SRS crime statistics: rates, actual counts, clearances for violent crime, property crime, homicide, rape, robbery, assault, burglary, larceny, motor vehicle theft, arson
     - `get_nibrs_data` — incident-based data across 70+ offense categories (more granular than SRS summaries)
@@ -147,7 +151,8 @@ Use `WebSearch` and `WebFetch` to access public government data for context, ben
     - `lookup_agency` — find law enforcement agencies by state, ORI code, or judicial district; supports name filtering and pagination
     - `get_reference_data` — state lists, offense/bias code lookups, data refresh dates
     - `manage_cache` — view cache stats, clear all entries, or clear only expired entries
-  - **Workflow**: `get_reference_data` (lookup valid codes/states) → `lookup_agency` (find agencies/ORIs) → query tools (`get_summarized_crime_data`, `get_nibrs_data`, etc.)
+    - `read_spillover` — retrieve large API responses saved to disk when they exceeded the normal response size limit
+  - **Workflow**: `get_cde_homepage_summary` (orientation: data freshness, national trends) → `get_reference_data` (lookup valid codes/states) → `lookup_agency` (find agencies/ORIs) → query tools (`get_summarized_crime_data`, `get_nibrs_data`, etc.). If any response indicates data was saved to disk, use `read_spillover` to retrieve it.
   - **Date formats**: Most tools use `mm-yyyy` (e.g., `01-2020`); `get_police_employment` and `get_crime_trends` use `yyyy`.
   - **Rate limits**: 1,000 requests/hour with `FBI_API_KEY` environment variable; 30 requests/hour with DEMO_KEY.
 - **Fallback**: CSV downloads from the Crime Data Explorer (cde.ucr.cjis.gov) via `WebSearch`/`WebFetch`.

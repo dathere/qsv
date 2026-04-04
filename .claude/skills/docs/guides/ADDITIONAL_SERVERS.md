@@ -432,6 +432,8 @@ This one is lightweight — no Docker or database required. You just need **Pyth
 - Expanded homicide and property crime details
 - Law enforcement employment, use of force, and officer safety data
 - Agency lookup by state, ORI code, or judicial district — with optional name filtering and pagination
+- Crime Data Explorer homepage summary — mission, data freshness dates, and national trend highlights
+- Automatic spillover handling for large API responses saved to disk
 
 ### Install Prerequisites
 
@@ -487,6 +489,12 @@ Close and reopen Claude Desktop. Then start a new conversation and ask:
 > "What are the national crime trends for 2023?"
 
 If Claude returns FBI crime statistics, the server is working.
+
+You can also try:
+
+> "Give me an overview of the FBI Crime Data Explorer"
+
+This tests the `get_cde_homepage_summary` tool.
 
 ### FBI Crime Data Troubleshooting
 

@@ -1941,6 +1941,7 @@ where
             // Get mutable reference to stats for this field
             // safety: chunk_stats is pre-populated with all field names
             let Some(stats) = chunk_stats.get_mut(field_name) else {
+                debug_assert!(false, "chunk_stats missing expected key: {field_name}");
                 continue;
             };
 
@@ -2269,6 +2270,7 @@ where
             // Get mutable reference to stats for this field pair
             // safety: chunk_stats is pre-populated with all field pair indices
             let Some(stats) = chunk_stats.get_mut(&(*idx1, *idx2)) else {
+                debug_assert!(false, "chunk_stats missing expected key: ({idx1}, {idx2})");
                 continue;
             };
 
@@ -2403,6 +2405,7 @@ fn count_all_outliers_from_reader(
             // Get mutable reference to stats for this field
             // safety: all_stats is pre-populated with all field names
             let Some(stats) = all_stats.get_mut(field_name) else {
+                debug_assert!(false, "all_stats missing expected key: {field_name}");
                 continue;
             };
 

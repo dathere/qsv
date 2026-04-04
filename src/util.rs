@@ -1097,8 +1097,10 @@ pub fn create_index_for_file(path: &Path, rconfig: &Config) -> CliResult<()> {
 
 /// Samples records from a CSV file for memory estimation.
 ///
-/// This function reads the first `sample_size` records from the CSV file
-/// to estimate average record size for memory-aware chunking.
+/// Reads the first `sample_size` records for a quick estimate of average record size.
+/// First-N sampling is intentionally chosen over reservoir sampling here because this
+/// function is called before the main processing loop — a full-file scan would negate
+/// the benefit of the estimate.
 ///
 /// # Arguments
 ///
@@ -1110,8 +1112,6 @@ pub fn create_index_for_file(path: &Path, rconfig: &Config) -> CliResult<()> {
 /// * `Some(Vec<ByteRecord>)` - Sample records if available
 /// * `None` - If no records could be sampled
 pub fn sample_records(rconfig: &Config, sample_size: usize) -> Option<Vec<ByteRecord>> {
-    // TODO: getting the first 1000 records is simple, but we should
-    // revisit this in the future for a more sophisticated sampling method.
     let mut samples = Vec::with_capacity(sample_size);
     if let Ok(mut sample_rdr) = rconfig.reader() {
         let _ = sample_rdr.byte_headers(); // consume header row
@@ -2059,8 +2059,8 @@ pub fn decompress_snappy_file(
     // Proceed with decompression since we've validated the file
     let mut snappy_file = std::fs::File::open(path.clone())?;
     let mut snappy_reader = snap::read::FrameDecoder::new(&mut snappy_file);
-    // safety: we know that the file_stem() will not be None as we opened the file above
-    let file_stem = Path::new(&path).file_stem().unwrap().to_str().unwrap();
+    // safety: we know that file_stem() will not be None as we opened the file above
+    let file_stem = Path::new(&path).file_stem().unwrap().to_string_lossy();
     let decompressed_filepath = tmpdir
         .path()
         .join(format!("qsv_temp_decompressed__{file_stem}"));

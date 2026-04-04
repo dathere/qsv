@@ -176,6 +176,8 @@ export async function executeDescribegptWithSampling(
       let responseText = "";
       if (samplingResult.content && typeof samplingResult.content === "object" && "text" in samplingResult.content) {
         responseText = (samplingResult.content as { text: string }).text;
+      } else if (samplingResult.content) {
+        console.warn(`[MCP Sampling] Phase "${phase.kind}": received non-text content type — expected TextContent but got:`, typeof samplingResult.content === "object" && "type" in samplingResult.content ? (samplingResult.content as { type: string }).type : "unknown");
       }
 
       phaseResponses.push({

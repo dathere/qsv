@@ -586,7 +586,13 @@ function releaseSlot(): void {
       // The callback increments activeOperationCount for the new operation,
       // so we must also decrement for the releasing operation to keep the
       // count correct (net effect: count stays the same).
-      waiter.callback();
+      try {
+        waiter.callback();
+      } catch (err) {
+        // callback() is a simple resolve — this should never happen, but guard
+        // against a count mismatch if it does (callback failed to increment).
+        console.warn("releaseSlot: waiter callback threw unexpectedly:", err);
+      }
       if (activeOperationCount > 0) {
         activeOperationCount--;
       } else {
@@ -761,9 +767,14 @@ async function parseStatsCsv(statsFile: string): Promise<Map<string, { type: str
     return null;
   }
 
+  const expectedCols = header.length;
   const result = new Map<string, { type: string; min: string; max: string }>();
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCSVLine(lines[i]);
+    if (cols.length < expectedCols) {
+      console.error(`[MCP Tools] DuckDB Parquet: Row ${i} has ${cols.length} fields, expected ${expectedCols} — skipping: ${statsFile}`);
+      continue;
+    }
     const field = cols[fieldIdx];
     if (field) {
       result.set(field, {

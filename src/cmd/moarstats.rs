@@ -1939,7 +1939,10 @@ where
             };
 
             // Get mutable reference to stats for this field
-            let stats = chunk_stats.get_mut(field_name).unwrap();
+            // safety: chunk_stats is pre-populated with all field names
+            let Some(stats) = chunk_stats.get_mut(field_name) else {
+                continue;
+            };
 
             // Update sums and count
             stats.sum_all += val;
@@ -2264,7 +2267,10 @@ where
             };
 
             // Get mutable reference to stats for this field pair
-            let stats = chunk_stats.get_mut(&(*idx1, *idx2)).unwrap();
+            // safety: chunk_stats is pre-populated with all field pair indices
+            let Some(stats) = chunk_stats.get_mut(&(*idx1, *idx2)) else {
+                continue;
+            };
 
             // Get bytes only for numeric parsing (date fields use strings from cache)
             value_bytes_x = record.get(field1_info.col_idx).unwrap_or(&[]);
@@ -2395,7 +2401,10 @@ fn count_all_outliers_from_reader(
             };
 
             // Get mutable reference to stats for this field
-            let stats = all_stats.get_mut(field_name).unwrap();
+            // safety: all_stats is pre-populated with all field names
+            let Some(stats) = all_stats.get_mut(field_name) else {
+                continue;
+            };
 
             // Update sums and count
             stats.sum_all += val;

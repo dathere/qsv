@@ -1061,7 +1061,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Some(ref output_file) => {
             // no need to use buffered writer here, as CsvWriter already does that
             let path = Path::new(&output_file);
-            Box::new(File::create(path).unwrap()) as Box<dyn Write>
+            Box::new(File::create(path)?) as Box<dyn Write>
         },
         None => Box::new(io::stdout()) as Box<dyn Write>,
     };

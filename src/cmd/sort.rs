@@ -522,11 +522,10 @@ where
                 Some(Number::Int(i))
             } else {
                 // If parsing as i64 failed, try parsing as f64
-                if let Ok(f) = from_utf8(bytes).unwrap().parse::<f64>() {
-                    Some(Number::Float(f))
-                } else {
-                    None
-                }
+                from_utf8(bytes)
+                    .ok()
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .map(Number::Float)
             }
         },
         None => None,

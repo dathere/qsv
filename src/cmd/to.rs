@@ -708,7 +708,7 @@ fn to_parquet(
 
 #[cfg(not(feature = "polars"))]
 fn to_parquet(
-    _arg_parquet: String,
+    _arg_parquet: &str,
     _arg_input: Vec<PathBuf>,
     _flag_delimiter: Option<Delimiter>,
     _flag_compression: Option<String>,

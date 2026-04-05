@@ -35,15 +35,20 @@ const slotWaiters: SlotWaiter[] = [];
 
 /**
  * Maximum queue size for backpressure. When the waiter queue reaches this size,
- * new acquireSlot() calls return false immediately to prevent unbounded queueing.
+ * new acquireSlot() calls return "backpressure" immediately to prevent unbounded
+ * queueing. Declared as `let` solely for test-only overrides via _testConcurrency.
  */
 let MAX_QUEUE_SIZE = 64;
 
+/** Result of acquireSlot: true (acquired), "timeout", or "backpressure". */
+export type SlotResult = true | "timeout" | "backpressure";
+
 /**
  * Acquire a concurrency slot, waiting up to timeoutMs if all slots are busy.
- * Returns true if slot acquired, false if timed out or queue is full.
+ * Returns true if slot acquired, "timeout" if waited too long, or
+ * "backpressure" if the waiter queue is full.
  */
-export async function acquireSlot(timeoutMs: number): Promise<boolean> {
+export async function acquireSlot(timeoutMs: number): Promise<SlotResult> {
   // IMPORTANT: The check-then-increment below is safe because it's synchronous
   // (no `await` between check and increment). Node.js single-threaded execution
   // guarantees atomicity for synchronous code. Do NOT insert an `await` here.
@@ -62,17 +67,17 @@ export async function acquireSlot(timeoutMs: number): Promise<boolean> {
 
   // Backpressure: reject immediately if queue is full
   if (slotWaiters.length >= MAX_QUEUE_SIZE) {
-    return false; // backpressure: queue full
+    return "backpressure";
   }
 
   // No immediate slot — wait in queue
-  return new Promise<boolean>((resolve) => {
+  return new Promise<SlotResult>((resolve) => {
     const waiter: SlotWaiter = { settled: false, callback: () => {} };
 
     const timer = setTimeout(() => {
       if (!waiter.settled) {
         waiter.settled = true;
-        resolve(false);
+        resolve("timeout");
       }
     }, timeoutMs);
 

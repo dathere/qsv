@@ -51,7 +51,7 @@ test("acquireSlot times out when all slots busy", async () => {
 
     // Second acquire should time out (slot is full)
     const ok2 = await acquireSlot(100);
-    assert.strictEqual(ok2, false);
+    assert.strictEqual(ok2, "timeout");
     assert.strictEqual(getActiveOperationCount(), 1);
   } finally {
     teardown(saved);
@@ -94,7 +94,7 @@ test("releaseSlot skips timed-out waiters", async () => {
 
     // Queue a waiter that will time out
     const timedOut = await acquireSlot(50);
-    assert.strictEqual(timedOut, false);
+    assert.strictEqual(timedOut, "timeout");
     // Ensure timer callbacks have fired
     await new Promise((r) => setTimeout(r, 20));
     assert.strictEqual(getSlotWaiterCount(), 1); // still in queue
@@ -118,8 +118,8 @@ test("releaseSlot skips multiple timed-out waiters then hands off to live one", 
     // all settled waiters from the array)
     const t1 = await acquireSlot(50);
     const t2 = await acquireSlot(50);
-    assert.strictEqual(t1, false);
-    assert.strictEqual(t2, false);
+    assert.strictEqual(t1, "timeout");
+    assert.strictEqual(t2, "timeout");
     // Ensure timer callbacks have fired
     await new Promise((r) => setTimeout(r, 20));
     assert.strictEqual(getSlotWaiterCount(), 1); // only last settled waiter remains
@@ -174,7 +174,7 @@ test("acquireSlot prunes settled waiters from middle of array, not just front", 
 
     // Queue a waiter with a short timeout that will settle while the first stays live
     const shortResult = await acquireSlot(50);
-    assert.strictEqual(shortResult, false);
+    assert.strictEqual(shortResult, "timeout");
     // Wait for the short-timeout waiter to settle
     await new Promise((r) => setTimeout(r, 70));
 
@@ -221,7 +221,7 @@ test("acquireSlot rejects when queue exceeds MAX_QUEUE_SIZE", async () => {
     assert.strictEqual(getActiveOperationCount(), 1);
 
     // Queue up to the limit — these will wait (with long timeouts)
-    const waiters: Promise<boolean>[] = [];
+    const waiters: Promise<true | "timeout" | "backpressure">[] = [];
     for (let i = 0; i < 3; i++) {
       waiters.push(acquireSlot(5000));
     }
@@ -229,7 +229,7 @@ test("acquireSlot rejects when queue exceeds MAX_QUEUE_SIZE", async () => {
 
     // Next acquire should be rejected immediately (backpressure)
     const rejected = await acquireSlot(5000);
-    assert.strictEqual(rejected, false, "Should reject when queue is full");
+    assert.strictEqual(rejected, "backpressure", "Should reject when queue is full");
     // Queue count should still be 3, not 4
     assert.strictEqual(getSlotWaiterCount(), 3);
 
@@ -261,7 +261,7 @@ test("backpressure allows new waiters after queue drains", async () => {
 
     // Rejected — queue full
     const rejected = await acquireSlot(100);
-    assert.strictEqual(rejected, false);
+    assert.strictEqual(rejected, "backpressure");
 
     // Release slot — hands off to waiter1, draining the queue
     releaseSlot();

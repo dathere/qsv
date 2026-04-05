@@ -344,14 +344,14 @@ export async function handleToolCall(
   server?: Server,
 ) {
   // Acquire concurrency slot (queue if all slots are busy)
-  const acquired = await acquireSlot(config.concurrencyWaitTimeoutMs);
-  if (!acquired) {
+  const slotResult = await acquireSlot(config.concurrencyWaitTimeoutMs);
+  if (slotResult !== true) {
     const activeOps = getActiveOperationCount();
-    return errorResult(
-      `Operation queued but timed out after ${Math.round(config.concurrencyWaitTimeoutMs / 1000)}s waiting for a slot. ` +
-      `${activeOps} operation${activeOps !== 1 ? "s" : ""} still running. ` +
-      `Try running operations sequentially.`,
-    );
+    const reason = slotResult === "backpressure"
+      ? `Concurrency queue is full (${activeOps} operations running). `
+      : `Operation queued but timed out after ${Math.round(config.concurrencyWaitTimeoutMs / 1000)}s waiting for a slot. ` +
+        `${activeOps} operation${activeOps !== 1 ? "s" : ""} still running. `;
+    return errorResult(reason + `Try running operations sequentially.`);
   }
 
   try {

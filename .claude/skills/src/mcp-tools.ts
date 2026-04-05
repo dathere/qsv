@@ -9,69 +9,37 @@
  *   parquet-bridge.ts    — Parquet/DuckDB conversion, schema, stats
  *   tool-definitions.ts  — Tool creation functions
  *   tool-handlers.ts     — Dispatch and handlers
+ *
+ * Only symbols consumed by external callers (mcp-server.ts, index.ts, tests)
+ * are re-exported here. Sibling modules import directly from each other.
  */
 
 // ── tool-constants ──────────────────────────────────────────────────────────
 export {
   PIPELINE_METADATA,
-  FINAL_OUTPUT_FILE,
   MAX_LOG_MESSAGE_LEN,
-  ALWAYS_FILE_COMMANDS,
-  METADATA_COMMANDS,
-  NON_TABULAR_COMMANDS,
-  BINARY_OUTPUT_FORMATS,
-  FILE_PATH_INPUT_OPTIONS,
-  FILE_PATH_OUTPUT_OPTIONS,
   isBinaryOutputFormat,
-  LARGE_FILE_THRESHOLD_BYTES,
-  MAX_MCP_RESPONSE_SIZE,
   COMMON_COMMANDS,
-  LOG_ENTRY_TYPES,
-  AUTO_INDEX_SIZE_MB,
 } from "./tool-constants.js";
 export type { PipelineMetadata } from "./tool-constants.js";
 
-// ── command-guidance ────────────────────────────────────────────────────────
-export {
-  COMMAND_GUIDANCE,
-  enhanceParameterDescription,
-  enhanceDescription,
-} from "./command-guidance.js";
-export type { CommandGuidance } from "./command-guidance.js";
-
 // ── concurrency ─────────────────────────────────────────────────────────────
 export {
-  activeProcesses,
-  acquireSlot,
-  releaseSlot,
-  isShuttingDown,
   initiateShutdown,
   killAllProcesses,
   getActiveProcessCount,
   getActiveOperationCount,
   _testConcurrency,
 } from "./concurrency.js";
+export type { SlotResult } from "./concurrency.js";
 
 // ── file-operations ─────────────────────────────────────────────────────────
 export {
-  statOrNull,
   setToolsWorkingDir,
   getToolsWorkingDir,
-  getCurrentWorkingDir,
-  runQsvWithTimeout,
   buildConversionArgs,
-  mapSchemaType,
-  autoIndexIfNeeded,
-  shouldUseTempFile,
-  resolveAndConvertInputFile,
-  buildFileNotFoundError,
   paramKeyToFlag,
   looksLikeFilePath,
-  resolveFilePathParams,
-  buildSkillExecParams,
-  collectAdditionalInputFiles,
-  formatToolResult,
-  resolveParamAliases,
 } from "./file-operations.js";
 
 // ── parquet-bridge ──────────────────────────────────────────────────────────
@@ -83,11 +51,6 @@ export {
   isCsvLikeFile,
   getParquetPath,
   ensureParquet,
-  ensureStatsCache,
-  ensurePolarsSchema,
-  convertCsvToParquet,
-  suggestDuckDbFixes,
-  tryDuckDbExecution,
 } from "./parquet-bridge.js";
 
 // ── tool-definitions ────────────────────────────────────────────────────────

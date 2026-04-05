@@ -95,6 +95,9 @@ jobs:
         shell: bash
         env:
           NODE_ENV: test
+          # Force use of qsv (full binary) which includes the `to` command.
+          # The released qsvmcp may not yet include `to` until the next release.
+          QSV_MCP_BIN_PATH: qsv
 
       - name: Test build output
         run: |

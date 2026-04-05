@@ -461,6 +461,17 @@ export async function handleToolCall(
             // Try DuckDB execution (single-table path)
             const duckDbResult = await tryDuckDbExecution(sql, parquetFile, params, outputFile);
             if (duckDbResult !== null) {
+              // Attach pipeline metadata for parity with the sqlp path
+              const duckDbSuccess = !("isError" in duckDbResult && duckDbResult.isError === true);
+              (duckDbResult as Record<string | symbol, unknown>)[PIPELINE_METADATA] = {
+                inputFile,
+                outputFile,
+                commandLine: `duckdb -c "${sql}"`,
+                success: duckDbSuccess,
+              } satisfies PipelineMetadata;
+              if (outputFile) {
+                (duckDbResult as Record<string | symbol, unknown>)[FINAL_OUTPUT_FILE] = outputFile;
+              }
               return duckDbResult;
             }
 
@@ -794,16 +805,22 @@ export async function handleGenericCommand(
       }
     }
 
-    // Flatten nested 'args' object
+    // Flatten nested 'args' object (reject arrays)
     if (params.args && typeof params.args === "object") {
+      if (Array.isArray(params.args)) {
+        return errorResult("'args' must be a plain object, not an array. Example: {\"column\": \"name\"}");
+      }
       const argsObj = params.args as Record<string, unknown>;
       for (const [key, value] of Object.entries(argsObj)) {
         if (!BLOCKED_KEYS.has(key)) flattenedParams[key] = value;
       }
     }
 
-    // Flatten nested 'options' object
+    // Flatten nested 'options' object (reject arrays)
     if (params.options && typeof params.options === "object") {
+      if (Array.isArray(params.options)) {
+        return errorResult("'options' must be a plain object, not an array. Example: {\"--sort\": true}");
+      }
       const optionsObj = params.options as Record<string, unknown>;
       for (const [key, value] of Object.entries(optionsObj)) {
         if (!BLOCKED_KEYS.has(key)) flattenedParams[key] = value;
@@ -1272,7 +1289,7 @@ export async function handleToParquetCall(
     const statsStatus = needStats ? "generated" : "reused (up-to-date)";
     const schemaStatus = schemaSkipped ? "skipped (DuckDB)" : needSchema ? "generated" : "reused (up-to-date)";
 
-    return successResult(
+    const result = successResult(
       `✅ Successfully converted CSV to Parquet with optimized schema\n\n` +
       `Input: ${inputFile}\n` +
       `Output: ${outputPath}${fileSizeInfo}\n` +
@@ -1287,8 +1304,25 @@ export async function handleToParquetCall(
         ? `🦆 DuckDB detected — qsv_sqlp will auto-route SQL queries through DuckDB for this file.`
         : `Use: qsv_sqlp with input_file="SKIP_INPUT" and sql="SELECT ... FROM read_parquet('${outputPath}')".`),
     );
+    (result as Record<string | symbol, unknown>)[PIPELINE_METADATA] = {
+      inputFile,
+      outputFile: outputPath,
+      commandLine: `qsv_to_parquet (${engine})`,
+      durationMs: duration,
+      success: true,
+    } satisfies PipelineMetadata;
+    (result as Record<string | symbol, unknown>)[FINAL_OUTPUT_FILE] = outputPath;
+    return result;
   } catch (error: unknown) {
-    return errorResult(`Error converting CSV to Parquet: ${getErrorMessage(error)}`);
+    const errResult = errorResult(`Error converting CSV to Parquet: ${getErrorMessage(error)}`);
+    (errResult as Record<string | symbol, unknown>)[PIPELINE_METADATA] = {
+      inputFile,
+      outputFile: resolvedOutputFile,
+      commandLine: "qsv_to_parquet",
+      durationMs: Date.now() - startTime,
+      success: false,
+    } satisfies PipelineMetadata;
+    return errResult;
   }
 }
 

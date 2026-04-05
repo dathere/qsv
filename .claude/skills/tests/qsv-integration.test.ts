@@ -12,7 +12,7 @@ import { config } from '../src/config.js';
 import { SkillLoader } from '../src/loader.js';
 import { SkillExecutor } from '../src/executor.js';
 import { FilesystemResourceProvider } from '../src/mcp-filesystem.js';
-import { QSV_AVAILABLE, TO_PARQUET_AVAILABLE, createTestDir, createTestCSV, cleanupTestDir } from './test-helpers.js';
+import { QSV_AVAILABLE, PARQUET_TOOL_AVAILABLE, createTestDir, createTestCSV, cleanupTestDir } from './test-helpers.js';
 
 test('qsv_count returns row count', { skip: !QSV_AVAILABLE }, async () => {
   const testDir = await createTestDir();
@@ -373,7 +373,7 @@ test('filesystem provider deduplicates concurrent metadata requests', { skip: !Q
 // qsv_to_parquet Date Detection Integration Tests
 // ============================================================================
 
-test('qsv_to_parquet converts CSV with date columns and uses --infer-dates', { skip: !TO_PARQUET_AVAILABLE }, async () => {
+test('qsv_to_parquet converts CSV with date columns and uses --infer-dates', { skip: !PARQUET_TOOL_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {
@@ -408,10 +408,12 @@ test('qsv_to_parquet converts CSV with date columns and uses --infer-dates', { s
     const statsStat = await stat(statsPath);
     assert.ok(statsStat.size > 0, 'Stats cache should be generated');
 
-    // Verify Polars schema was generated (appends .pschema.json to full filename)
-    const schemaPath = csvPath + '.pschema.json';
-    const schemaStat = await stat(schemaPath);
-    assert.ok(schemaStat.size > 0, 'Polars schema should be generated');
+    // Verify Polars schema was generated (only when qsv to parquet was used; DuckDB skips it)
+    if (!output.includes('skipped (DuckDB)')) {
+      const schemaPath = csvPath + '.pschema.json';
+      const schemaStat = await stat(schemaPath);
+      assert.ok(schemaStat.size > 0, 'Polars schema should be generated');
+    }
 
     // Read the stats cache and verify date columns were detected as DateTime
     // (--infer-dates --dates-whitelist sniff should cause stats to type them as DateTime)
@@ -433,7 +435,7 @@ test('qsv_to_parquet converts CSV with date columns and uses --infer-dates', { s
   }
 });
 
-test('qsv_to_parquet converts CSV without date columns', { skip: !TO_PARQUET_AVAILABLE }, async () => {
+test('qsv_to_parquet converts CSV without date columns', { skip: !PARQUET_TOOL_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {
@@ -466,15 +468,18 @@ test('qsv_to_parquet converts CSV without date columns', { skip: !TO_PARQUET_AVA
     const statsStat = await stat(statsPath);
     assert.ok(statsStat.size > 0, 'Stats cache should be generated');
 
-    const schemaPath = csvPath + '.pschema.json';
-    const schemaStat = await stat(schemaPath);
-    assert.ok(schemaStat.size > 0, 'Polars schema should be generated');
+    // Polars schema only generated when qsv to parquet was used; DuckDB skips it
+    if (!output.includes('skipped (DuckDB)')) {
+      const schemaPath = csvPath + '.pschema.json';
+      const schemaStat = await stat(schemaPath);
+      assert.ok(schemaStat.size > 0, 'Polars schema should be generated');
+    }
   } finally {
     await cleanupTestDir(testDir);
   }
 });
 
-test('qsv_to_parquet defaults output path from input extension', { skip: !TO_PARQUET_AVAILABLE }, async () => {
+test('qsv_to_parquet defaults output path from input extension', { skip: !PARQUET_TOOL_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {
@@ -502,7 +507,7 @@ test('qsv_to_parquet defaults output path from input extension', { skip: !TO_PAR
   }
 });
 
-test('qsv_to_parquet skips regeneration when stats and schema are up-to-date', { skip: !TO_PARQUET_AVAILABLE }, async () => {
+test('qsv_to_parquet skips regeneration when stats and schema are up-to-date', { skip: !PARQUET_TOOL_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {
@@ -522,22 +527,29 @@ test('qsv_to_parquet skips regeneration when stats and schema are up-to-date', {
     assert.ok(!result1.isError, 'First conversion should succeed');
     const output1 = result1.content[0].text || '';
     assert.ok(output1.includes('Stats cache: generated'), 'First run should generate stats');
-    assert.ok(output1.includes('Polars schema: generated'), 'First run should generate schema');
+    // DuckDB skips schema; qsv to parquet generates it
+    assert.ok(
+      output1.includes('Polars schema: generated') || output1.includes('Polars schema: skipped (DuckDB)'),
+      'First run should generate or skip schema depending on engine',
+    );
 
-    // Second conversion - should reuse existing stats and schema
+    // Second conversion - should reuse existing stats (and schema if applicable)
     const result2 = await handleToParquetCall({
       input_file: csvPath,
       output_file: parquetPath,
     });
     assert.ok(!result2.isError, 'Second conversion should succeed');
     const output2 = result2.content[0].text || '';
-    assert.ok(output2.includes('reused (up-to-date)'), 'Second run should reuse cached files');
+    assert.ok(
+      output2.includes('reused (up-to-date)') || output2.includes('skipped (DuckDB)'),
+      'Second run should reuse cached files or skip schema',
+    );
   } finally {
     await cleanupTestDir(testDir);
   }
 });
 
-test('handleToParquetCall produces output at exact path via directory/stem decomposition', { skip: !TO_PARQUET_AVAILABLE }, async () => {
+test('handleToParquetCall produces output at exact path via directory/stem decomposition', { skip: !PARQUET_TOOL_AVAILABLE }, async () => {
   // Verifies the `to parquet` fallback correctly decomposes the output path into
   // a directory + stem (via --table), producing the file at the expected location.
   const testDir = await createTestDir();
@@ -698,7 +710,7 @@ test('handleToolCall prefers "output_file" over "output" when both present', { s
   }
 });
 
-test('handleToParquetCall accepts "output" as alias for "output_file"', { skip: !TO_PARQUET_AVAILABLE }, async () => {
+test('handleToParquetCall accepts "output" as alias for "output_file"', { skip: !PARQUET_TOOL_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {
@@ -760,7 +772,7 @@ test('handleToolCall accepts "input" as alias for "input_file"', { skip: !QSV_AV
   }
 });
 
-test('handleToParquetCall accepts "input" as alias for "input_file"', { skip: !TO_PARQUET_AVAILABLE }, async () => {
+test('handleToParquetCall accepts "input" as alias for "input_file"', { skip: !PARQUET_TOOL_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {
@@ -787,7 +799,7 @@ test('handleToParquetCall accepts "input" as alias for "input_file"', { skip: !T
   }
 });
 
-test('handleToParquetCall prefers "input_file" over "input" when both present', { skip: !TO_PARQUET_AVAILABLE }, async () => {
+test('handleToParquetCall prefers "input_file" over "input" when both present', { skip: !PARQUET_TOOL_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {

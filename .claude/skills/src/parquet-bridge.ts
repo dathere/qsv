@@ -327,11 +327,11 @@ export async function convertCsvToParquet(
   try { await unlink(effectiveParquetPath); } catch { /* ignore: file may not exist */ }
 
   console.error(`[MCP Tools] Fallback: Converting to Parquet via qsv to parquet`);
-  // --compression and --try-parse-dates were added after qsv 18.0.0;
-  // omit them for backward compatibility (zstd is the default in newer versions).
+  // --compression omitted: zstd is the default in versions that support it.
   const toParquetArgs = [
     "to", "parquet", outputDir,
     "--table", outputStem,
+    "--try-parse-dates",
     inputFile,
   ];
   try {

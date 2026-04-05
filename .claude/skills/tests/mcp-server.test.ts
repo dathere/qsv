@@ -125,9 +125,12 @@ test("createToolDefinition includes input_file, output_file, and help properties
   assert.ok("help" in tool.inputSchema.properties);
 });
 
-test("createToolDefinition marks input_file as required", () => {
+test("createToolDefinition does not mark input_file as required (help-only calls need no input)", () => {
   const tool = createToolDefinition(mockSkill);
-  assert.ok(tool.inputSchema.required?.includes("input_file"));
+  assert.ok(!tool.inputSchema.required?.includes("input_file"),
+    "input_file should not be in required — it is enforced at runtime to allow help=true calls");
+  assert.ok("input_file" in tool.inputSchema.properties, "input_file should still be in properties");
+  assert.ok("help" in tool.inputSchema.properties, "help should be in properties");
 });
 
 test("createToolDefinition maps options correctly", () => {
@@ -219,7 +222,8 @@ test("createSearchToolsTool returns valid tool definition", () => {
 test("handleSearchToolsCall returns error for empty query", async () => {
   const loader = new SkillLoader();
   const result = await handleSearchToolsCall({ query: "" }, loader);
-  assert.ok(result.content[0].text.includes("Error"));
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text.includes("query"));
 });
 
 test("handleSearchToolsCall marks tools in loadedTools set", async () => {

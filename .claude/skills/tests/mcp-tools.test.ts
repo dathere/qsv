@@ -3,6 +3,7 @@
  */
 
 import { test } from 'node:test';
+import { sep } from 'node:path';
 import assert from 'node:assert';
 import {
   handleToolCall,
@@ -17,6 +18,7 @@ import {
   ensureParquet,
   parseCSVLine,
   detectDelimiter,
+  statsFilePath,
   isDateDtype,
   patchSchemaAmPmDates,
   createLogTool,
@@ -132,7 +134,7 @@ test('handleSearchToolsCall requires query parameter', async () => {
   const result = await handleSearchToolsCall({}, loader);
 
   assert.ok(result.content.length > 0);
-  assert.ok(result.content[0].text?.includes('Error'));
+  assert.strictEqual(result.isError, true);
   assert.ok(result.content[0].text?.includes('query'));
 });
 
@@ -455,6 +457,39 @@ test('detectDelimiter returns semicolon for .ssv files', () => {
 test('detectDelimiter defaults to comma for unknown extensions', () => {
   assert.strictEqual(detectDelimiter('data.txt'), ',');
   assert.strictEqual(detectDelimiter('data.json'), ',');
+});
+
+// ============================================================================
+// statsFilePath Tests
+// ============================================================================
+
+test('statsFilePath strips .csv extension and appends .stats.csv', () => {
+  // Use path.join for platform-correct separators (Windows uses backslash)
+  const input = ['', 'tmp', 'cities.csv'].join(sep);
+  const expected = ['', 'tmp', 'cities.stats.csv'].join(sep);
+  assert.strictEqual(statsFilePath(input), expected);
+});
+
+test('statsFilePath strips .tsv extension', () => {
+  const input = ['', 'tmp', 'data.tsv'].join(sep);
+  const expected = ['', 'tmp', 'data.stats.csv'].join(sep);
+  assert.strictEqual(statsFilePath(input), expected);
+});
+
+test('statsFilePath strips only last extension for .csv.sz', () => {
+  const input = ['', 'tmp', 'file.csv.sz'].join(sep);
+  const expected = ['', 'tmp', 'file.csv.stats.csv'].join(sep);
+  assert.strictEqual(statsFilePath(input), expected);
+});
+
+test('statsFilePath handles file without directory', () => {
+  assert.strictEqual(statsFilePath('data.csv'), 'data.stats.csv');
+});
+
+test('statsFilePath strips .ssv extension', () => {
+  const input = ['', 'path', 'to', 'data.ssv'].join(sep);
+  const expected = ['', 'path', 'to', 'data.stats.csv'].join(sep);
+  assert.strictEqual(statsFilePath(input), expected);
 });
 
 // ============================================================================

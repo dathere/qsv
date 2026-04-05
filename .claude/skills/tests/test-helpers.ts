@@ -7,10 +7,12 @@
  * - qsv availability check
  */
 
+import { execFileSync } from "child_process";
 import { writeFile, mkdtemp, rm, realpath } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { config } from "../src/config.js";
+import { detectDuckDb, resetDuckDbState } from "../src/duckdb.js";
 
 /**
  * Whether a valid qsv binary is available for integration tests.
@@ -19,6 +21,48 @@ import { config } from "../src/config.js";
  * Usage: test("name", { skip: !QSV_AVAILABLE }, async () => { ... })
  */
 export const QSV_AVAILABLE: boolean = config.qsvValidation.valid;
+
+/**
+ * Whether the detected qsv binary supports `to parquet`.
+ * Checks both that the `to` command exists AND that it supports the `parquet`
+ * subcommand (added after qsv 18.0.0). Older releases have `to` but only for
+ * PostgreSQL/SQLite/XLSX/ODS/DataPackage — not Parquet.
+ *
+ * Usage: test("name", { skip: !TO_PARQUET_AVAILABLE }, async () => { ... })
+ */
+export const TO_PARQUET_AVAILABLE: boolean = (() => {
+  if (!QSV_AVAILABLE || !config.qsvValidation.availableCommands?.includes("to")) {
+    return false;
+  }
+  try {
+    const help = execFileSync(config.qsvBinPath, ["to", "--help"], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    return /\bparquet\b/i.test(help);
+  } catch {
+    return false;
+  }
+})();
+
+/**
+ * Whether DuckDB is available for integration tests.
+ * useDuckDb defaults to true, so we just need to probe for the binary.
+ */
+export const DUCKDB_AVAILABLE: boolean = (() => {
+  try {
+    resetDuckDbState();
+    return detectDuckDb().status === "available";
+  } catch {
+    return false;
+  }
+})();
+
+/**
+ * Whether Parquet conversion is available via either `qsv to parquet` or DuckDB.
+ * Use this for tests that exercise `handleToParquetCall` which tries both engines.
+ */
+export const PARQUET_TOOL_AVAILABLE: boolean = TO_PARQUET_AVAILABLE || DUCKDB_AVAILABLE;
 
 /**
  * Create a temporary test directory with a unique name.

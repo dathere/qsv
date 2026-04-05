@@ -20,7 +20,7 @@ import {
 } from "../src/duckdb.js";
 import { config } from "../src/config.js";
 import { handleToParquetCall } from "../src/mcp-tools.js";
-import { createTestDir, cleanupTestDir, createTestCSV, QSV_AVAILABLE } from "./test-helpers.js";
+import { createTestDir, cleanupTestDir, createTestCSV, DUCKDB_AVAILABLE } from "./test-helpers.js";
 
 // ============================================================
 // SQL Translation Tests
@@ -423,9 +423,9 @@ describe("DuckDB detection state", () => {
     assert.deepStrictEqual(secondStatus, firstStatus);
   });
 
-  test("isDuckDbEnabled returns false by default", () => {
-    // Default config has useDuckDb: false (opt-in)
-    assert.strictEqual(isDuckDbEnabled(), false);
+  test("isDuckDbEnabled returns true by default", () => {
+    // Default config has useDuckDb: true (auto-detect)
+    assert.strictEqual(isDuckDbEnabled(), true);
   });
 });
 
@@ -433,29 +433,9 @@ describe("DuckDB detection state", () => {
 // DuckDB Live Integration Tests
 // ============================================================
 
-// Snapshot the original config value once so both the IIFE and the describe
-// block's after() hook restore to the same value (avoids dual save/restore).
+// Snapshot the original config value so the describe block's after() hook
+// can restore it after tests that force-enable DuckDB.
 const savedUseDuckDb = config.useDuckDb;
-
-// Detect DuckDB availability for skip flags (must run at module scope since
-// node:test evaluates `skip` options at registration time). Uses try/catch/finally
-// to guarantee config is restored even if detection throws.
-// NOTE: This temporarily mutates config.useDuckDb because detectDuckDb() checks
-// isDuckDbEnabled() which reads config.useDuckDb (defaults to false). The mutation
-// is scoped to the IIFE and restored in the finally block. Tests in this file must
-// run serially (the default for node:test) to avoid cross-test config races.
-const DUCKDB_AVAILABLE = (() => {
-  try {
-    (config as Record<string, unknown>).useDuckDb = true;
-    resetDuckDbState();
-    return detectDuckDb().status === "available";
-  } catch {
-    return false;
-  } finally {
-    (config as Record<string, unknown>).useDuckDb = savedUseDuckDb;
-    resetDuckDbState();
-  }
-})();
 
 // 100-row NYC 311 sample fixture (55KB, checked into the repo)
 // Resolve from project root (dist/ compiled output → source tests/fixtures/)
@@ -577,7 +557,7 @@ describe("DuckDB live integration", { concurrency: false }, () => {
     assert.ok(header.includes("cnt"), "Header should contain 'cnt'");
   });
 
-  test("qsv_to_parquet → DuckDB SQL query end-to-end", { skip: !(DUCKDB_AVAILABLE && QSV_AVAILABLE), timeout: 30_000 }, async () => {
+  test("qsv_to_parquet → DuckDB SQL query end-to-end", { skip: !DUCKDB_AVAILABLE, timeout: 30_000 }, async () => {
     const dir = await createTestDir("duckdb-qsv-parquet");
     try {
       // Create a small test CSV in the temp dir

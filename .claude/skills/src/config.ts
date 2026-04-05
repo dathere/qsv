@@ -879,11 +879,11 @@ export const config = {
 
   /**
    * Whether to use DuckDB for SQL queries when available
-   * When true, SQL queries are routed through DuckDB if detected
-   * When false (default), always use sqlp (Polars SQL)
-   * Default: false (opt-in — most users won't have DuckDB installed)
+   * When true (default), SQL queries are routed through DuckDB if detected
+   * When false, always use sqlp (Polars SQL)
+   * Default: true (DuckDB is auto-detected; disable with QSV_MCP_USE_DUCKDB=false)
    */
-  useDuckDb: getBooleanEnv("QSV_MCP_USE_DUCKDB", false),
+  useDuckDb: getBooleanEnv("QSV_MCP_USE_DUCKDB", true),
 
   /**
    * MCP audit log level controlling the qsvmcp.log audit trail.

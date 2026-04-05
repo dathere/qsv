@@ -486,7 +486,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
         return to_parquet(
             args.arg_parquet.as_ref().expect("checked above"),
-            &arg_input,
+            arg_input,
             args.flag_delimiter,
             args.flag_compression,
             args.flag_compress_level,
@@ -607,7 +607,7 @@ fn apply_table_rename(
 #[cfg(feature = "polars")]
 fn to_parquet(
     arg_parquet: &str,
-    arg_input: &[PathBuf],
+    arg_input: Vec<PathBuf>,
     flag_delimiter: Option<Delimiter>,
     flag_compression: Option<String>,
     flag_compress_level: Option<i32>,

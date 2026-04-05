@@ -701,31 +701,33 @@ fn to_parquet(
             .with_has_header(true)
             .with_separator(delimiter);
 
-        // Check if a .pschema.json schema file exists and is current
-        let schema_file = PathBuf::from(format!(
-            "{}.pschema.json",
-            input_path.canonicalize()?.display()
-        ));
-        let valid_schema_exists = schema_file.exists()
-            && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?
+        if let Some(infer_len) = flag_infer_len {
             // if --infer-len is explicitly set (even to 0), ignore existing schema file
-            && flag_infer_len.is_none();
-
-        if valid_schema_exists {
-            let file = std::fs::File::open(&schema_file)?;
-            let mut buf_reader = BufReader::new(file);
-            let mut schema_json = String::with_capacity(100);
-            buf_reader.read_to_string(&mut schema_json)?;
-            let schema: Schema = serde_json::from_str(&schema_json)?;
-            debug!("using schema file: {}", schema_file.display());
-            lazy_csv_reader = lazy_csv_reader.with_schema(Some(Arc::new(schema)));
-        } else {
-            let infer_len = match flag_infer_len {
-                None => Some(1000), // default to 1000 rows when not specified
-                Some(0) => None,    // 0 means scan all rows
-                some_len => some_len,
+            let infer_len = match infer_len {
+                0 => None, // 0 means scan all rows
+                some_len => Some(some_len),
             };
             lazy_csv_reader = lazy_csv_reader.with_infer_schema_length(infer_len);
+        } else {
+            // Check if a .pschema.json schema file exists and is current
+            let schema_file = PathBuf::from(format!(
+                "{}.pschema.json",
+                input_path.canonicalize()?.display()
+            ));
+            let valid_schema_exists = schema_file.exists()
+                && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?;
+
+            if valid_schema_exists {
+                let file = std::fs::File::open(&schema_file)?;
+                let mut buf_reader = BufReader::new(file);
+                let mut schema_json = String::with_capacity(100);
+                buf_reader.read_to_string(&mut schema_json)?;
+                let schema: Schema = serde_json::from_str(&schema_json)?;
+                debug!("using schema file: {}", schema_file.display());
+                lazy_csv_reader = lazy_csv_reader.with_schema(Some(Arc::new(schema)));
+            } else {
+                lazy_csv_reader = lazy_csv_reader.with_infer_schema_length(Some(1000));
+            }
         }
 
         let mut lf = lazy_csv_reader

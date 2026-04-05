@@ -1348,7 +1348,7 @@ fn to_parquet_pschema() {
         "score should be Float32 per pschema"
     );
 
-    // Clean up the schema file (it's outside the workdir)
+    // Clean up the pschema file
     let _ = std::fs::remove_file(&schema_path);
 }
 
@@ -1356,12 +1356,13 @@ fn to_parquet_pschema() {
 #[cfg(feature = "polars")]
 fn to_parquet_pschema_ignored_when_infer_len_set() {
     let wrk = Workdir::new("to_parquet_pschema_infer_len");
+    // Use age=300 which overflows UInt8 (max 255) — if pschema were applied, this would fail
     wrk.create(
         "data.csv",
         vec![
             svec!["name", "age", "score"],
-            svec!["Alice", "30", "95.5"],
-            svec!["Bob", "25", "88.0"],
+            svec!["Alice", "300", "95.5"],
+            svec!["Bob", "250", "88.0"],
         ],
     );
 
@@ -1382,25 +1383,10 @@ fn to_parquet_pschema_ignored_when_infer_len_set() {
         .arg("100")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let parquet_file = output_dir.join("data.parquet");
-    let df = polars::prelude::LazyFrame::scan_parquet(
-        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
-        Default::default(),
-    )
-    .unwrap()
-    .collect()
-    .unwrap();
-
     // When --infer-len is set, the pschema should be ignored and polars infers the types.
-    // Polars will infer age as Int64 (not UInt8 from pschema).
-    let schema = df.schema();
-    assert_ne!(
-        schema.get("age").unwrap(),
-        &polars::prelude::DataType::UInt8,
-        "age should NOT be UInt8 when --infer-len overrides pschema"
-    );
+    // Conversion succeeds because age=300 is valid for inferred integer types, but would
+    // overflow UInt8 if the pschema were applied.
+    wrk.assert_success(&mut cmd);
 
     let _ = std::fs::remove_file(&schema_path);
 }
@@ -1409,12 +1395,13 @@ fn to_parquet_pschema_ignored_when_infer_len_set() {
 #[cfg(feature = "polars")]
 fn to_parquet_pschema_ignored_when_infer_len_zero() {
     let wrk = Workdir::new("to_parquet_pschema_infer_len_zero");
+    // Use age=300 which overflows UInt8 (max 255) — if pschema were applied, this would fail
     wrk.create(
         "data.csv",
         vec![
             svec!["name", "age", "score"],
-            svec!["Alice", "30", "95.5"],
-            svec!["Bob", "25", "88.0"],
+            svec!["Alice", "300", "95.5"],
+            svec!["Bob", "250", "88.0"],
         ],
     );
 
@@ -1435,24 +1422,10 @@ fn to_parquet_pschema_ignored_when_infer_len_zero() {
         .arg("0")
         .arg("data.csv");
 
+    // --infer-len 0 means scan all rows for inference, ignoring pschema.
+    // Conversion succeeds because age=300 is valid for inferred integer types, but would
+    // overflow UInt8 if the pschema were applied.
     wrk.assert_success(&mut cmd);
-
-    let parquet_file = output_dir.join("data.parquet");
-    let df = polars::prelude::LazyFrame::scan_parquet(
-        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
-        Default::default(),
-    )
-    .unwrap()
-    .collect()
-    .unwrap();
-
-    // --infer-len 0 means scan all rows for inference, ignoring pschema
-    let schema = df.schema();
-    assert_ne!(
-        schema.get("age").unwrap(),
-        &polars::prelude::DataType::UInt8,
-        "age should NOT be UInt8 when --infer-len 0 overrides pschema"
-    );
 
     let _ = std::fs::remove_file(&schema_path);
 }

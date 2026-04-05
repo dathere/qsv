@@ -44,7 +44,13 @@ Common options:
     -q, --quiet            Do not display enum/const list inferencing messages.
 "#;
 
-use std::{fmt::Write, path::PathBuf, str::FromStr};
+use std::{
+    fmt::Write,
+    fs::File,
+    io::{self, BufWriter, Write as IoWrite},
+    path::PathBuf,
+    str::FromStr,
+};
 
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
@@ -166,13 +172,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let mut rdr = conf.reader()?;
 
-    // TODO: instead of abusing csv writer to write jsonl file
-    // just use a normal buffered writer
-    let mut wtr = Config::new(args.flag_output.as_ref())
-        .flexible(true)
-        .no_headers(true)
-        .quote_style(csv::QuoteStyle::Never)
-        .writer()?;
+    let mut wtr: Box<dyn IoWrite> = match args.flag_output {
+        Some(ref output_file) => Box::new(BufWriter::new(File::create(output_file)?)),
+        None => Box::new(BufWriter::new(io::stdout().lock())),
+    };
 
     let headers = rdr.headers()?.clone();
 
@@ -371,21 +374,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
                 json_string.pop(); // remove last comma
                 json_string.push('}');
-                record.clear();
-                record.push_field(&json_string);
-                record
+                json_string
             })
             .collect_into_vec(&mut batch_results);
 
         // rayon collect() guarantees original order, so we can just append results each batch
-        for result_record in &batch_results {
-            wtr.write_record(result_record)?;
+        for json_line in &batch_results {
+            wtr.write_all(json_line.as_bytes())?;
+            wtr.write_all(b"\n")?;
         }
 
         batch.clear();
     } // end of batch loop
 
-    Ok(wtr.flush()?)
+    wtr.flush()?;
+    Ok(())
 }
 
 #[inline]

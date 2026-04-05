@@ -485,7 +485,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         arg_input = process_input(arg_input, &tmpdir, "")?;
         apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
         return to_parquet(
-            args.arg_parquet.expect("checked above"),
+            args.arg_parquet.as_ref().expect("checked above"),
             arg_input,
             args.flag_delimiter,
             args.flag_compression,
@@ -606,7 +606,7 @@ fn apply_table_rename(
 
 #[cfg(feature = "polars")]
 fn to_parquet(
-    arg_parquet: String,
+    arg_parquet: &str,
     arg_input: Vec<PathBuf>,
     flag_delimiter: Option<Delimiter>,
     flag_compression: Option<String>,
@@ -634,7 +634,8 @@ fn to_parquet(
         PqtCompression::Snappy => ParquetCompression::Snappy,
         PqtCompression::Lz4Raw => ParquetCompression::Lz4Raw,
         PqtCompression::Gzip => {
-            let level = flag_compress_level.unwrap_or(DEFAULT_GZIP_COMPRESSION_LEVEL.into());
+            let level =
+                flag_compress_level.unwrap_or_else(|| DEFAULT_GZIP_COMPRESSION_LEVEL.into());
             if !(1..=9).contains(&level) {
                 return fail_incorrectusage_clierror!(
                     "invalid gzip compression level {level}. Valid values are 1 through 9."
@@ -653,11 +654,9 @@ fn to_parquet(
         },
     };
 
-    let delimiter = flag_delimiter
-        .map(config::Delimiter::as_byte)
-        .unwrap_or(b',');
+    let delimiter = flag_delimiter.map_or(b',', config::Delimiter::as_byte);
 
-    for input_path in &arg_input {
+    for input_path in arg_input {
         let filestem = input_path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -671,24 +670,24 @@ fn to_parquet(
             );
         }
 
-        debug!("converting {input_path:?} to {output_path:?}");
+        debug!(
+            "converting {} to {}",
+            input_path.display(),
+            output_path.display()
+        );
 
-        let mut df = CsvReadOptions::default()
+        // Use LazyFrame for optimized query planning and efficient column casting
+        let input_path_str = input_path.to_string_lossy();
+        let mut lf = LazyCsvReader::new(PlRefPath::new(&*input_path_str))
             .with_has_header(true)
-            .with_parse_options(CsvParseOptions::default().with_separator(delimiter))
-            .try_into_reader_with_file_path(Some(input_path.clone()))?
+            .with_separator(delimiter)
             .finish()?;
 
         if flag_all_strings {
-            let column_names = df.get_column_names_owned();
-            for column_name in column_names {
-                let casted = df
-                    .column(column_name.as_str())?
-                    .cast(&polars::prelude::DataType::String)?;
-                df.with_column(casted)?;
-            }
+            lf = lf.with_columns([col("*").cast(DataType::String)]);
         }
 
+        let mut df = lf.collect()?;
         let row_count = df.height();
 
         let file = std::fs::File::create(&output_path)?;
@@ -701,7 +700,7 @@ fn to_parquet(
             eprintln!("Wrote '{filestem}.parquet' ({row_count} rows)");
         }
 
-        debug!("wrote {output_path:?}");
+        debug!("wrote {}", output_path.display());
     }
 
     Ok(())
@@ -709,7 +708,7 @@ fn to_parquet(
 
 #[cfg(not(feature = "polars"))]
 fn to_parquet(
-    _arg_parquet: String,
+    _arg_parquet: &str,
     _arg_input: Vec<PathBuf>,
     _flag_delimiter: Option<Delimiter>,
     _flag_compression: Option<String>,

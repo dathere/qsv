@@ -1242,3 +1242,48 @@ fn to_parquet_zstd_level_out_of_range() {
         "Expected zstd level error, got: {stderr}"
     );
 }
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_all_strings() {
+    let wrk = Workdir::new("to_parquet_all_strings");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "95.5"],
+            svec!["Bob", "25", "88.0"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--all-strings")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists(), "parquet file should be created");
+
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 2);
+
+    // All columns should be String type when --all-strings is used
+    let schema = df.schema();
+    for (name, dtype) in schema.iter() {
+        assert_eq!(
+            dtype,
+            &polars::prelude::DataType::String,
+            "column '{name}' should be String, got {dtype:?}"
+        );
+    }
+}

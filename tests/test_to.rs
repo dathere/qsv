@@ -1493,17 +1493,30 @@ fn to_parquet_pschema_via_schema_cmd() {
         &polars::prelude::DataType::String,
         "name should be String per pschema"
     );
-    // age should be a numeric type per pschema (exact type depends on qsv stats inference)
+    // age should be a numeric type per pschema — verify both pschema and parquet agree
     let age_pschema_type = pschema_fields["age"].as_str().unwrap();
     assert!(
         !age_pschema_type.is_empty(),
         "pschema should have a type for age"
     );
-    // score should be a float type per pschema
+    let age_parquet_type = parquet_schema.get("age").unwrap();
+    assert!(
+        age_parquet_type.is_integer(),
+        "age parquet type should be numeric per pschema '{age_pschema_type}', got \
+         {age_parquet_type:?}"
+    );
+
+    // score should be a float type per pschema — verify both pschema and parquet agree
     let score_pschema_type = pschema_fields["score"].as_str().unwrap();
     assert!(
         score_pschema_type.contains("Float") || score_pschema_type.contains("Decimal"),
         "score pschema type should be a float/decimal type, got {score_pschema_type}"
+    );
+    let score_parquet_type = parquet_schema.get("score").unwrap();
+    assert!(
+        score_parquet_type.is_float() || score_parquet_type.is_decimal(),
+        "score parquet type should be float/decimal per pschema '{score_pschema_type}', got \
+         {score_parquet_type:?}"
     );
 }
 
@@ -1552,10 +1565,10 @@ fn to_parquet_infer_len_zero_full_file() {
 
     // Verify data integrity: the large value in row 4 should be preserved
     let value_col = df.column("value").unwrap();
-    let col_str = format!("{value_col:?}");
-    assert!(
-        col_str.contains("100000"),
-        "large value 100000 should be preserved, got {col_str}"
+    let row3_value = value_col.i64().unwrap().get(3).unwrap();
+    assert_eq!(
+        row3_value, 100000,
+        "large value 100000 in row 4 should be preserved"
     );
 }
 

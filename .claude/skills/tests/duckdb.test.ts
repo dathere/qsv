@@ -20,7 +20,7 @@ import {
 } from "../src/duckdb.js";
 import { config } from "../src/config.js";
 import { handleToParquetCall } from "../src/mcp-tools.js";
-import { createTestDir, cleanupTestDir, createTestCSV, TO_AVAILABLE } from "./test-helpers.js";
+import { createTestDir, cleanupTestDir, createTestCSV, TO_PARQUET_AVAILABLE } from "./test-helpers.js";
 
 // ============================================================
 // SQL Translation Tests
@@ -577,7 +577,7 @@ describe("DuckDB live integration", { concurrency: false }, () => {
     assert.ok(header.includes("cnt"), "Header should contain 'cnt'");
   });
 
-  test("qsv_to_parquet → DuckDB SQL query end-to-end", { skip: !(DUCKDB_AVAILABLE && TO_AVAILABLE), timeout: 30_000 }, async () => {
+  test("qsv_to_parquet → DuckDB SQL query end-to-end", { skip: !(DUCKDB_AVAILABLE && TO_PARQUET_AVAILABLE), timeout: 30_000 }, async () => {
     const dir = await createTestDir("duckdb-qsv-parquet");
     try {
       // Create a small test CSV in the temp dir

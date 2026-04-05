@@ -7,6 +7,7 @@
  * - qsv availability check
  */
 
+import { execFileSync } from "child_process";
 import { writeFile, mkdtemp, rm, realpath } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -21,15 +22,27 @@ import { config } from "../src/config.js";
 export const QSV_AVAILABLE: boolean = config.qsvValidation.valid;
 
 /**
- * Whether the detected qsv binary supports the `to` command.
- * The `to` command is only available in the full `qsv` binary, not `qsvmcp`.
- * Tests that exercise Parquet conversion via `to` should skip when this is false.
+ * Whether the detected qsv binary supports `to parquet`.
+ * Checks both that the `to` command exists AND that it supports the `parquet`
+ * subcommand (added after qsv 18.0.0). Older releases have `to` but only for
+ * PostgreSQL/SQLite/XLSX/ODS/DataPackage — not Parquet.
  *
- * Usage: test("name", { skip: !TO_AVAILABLE }, async () => { ... })
+ * Usage: test("name", { skip: !TO_PARQUET_AVAILABLE }, async () => { ... })
  */
-export const TO_AVAILABLE: boolean =
-  QSV_AVAILABLE &&
-  (config.qsvValidation.availableCommands?.includes("to") ?? false);
+export const TO_PARQUET_AVAILABLE: boolean = (() => {
+  if (!QSV_AVAILABLE || !config.qsvValidation.availableCommands?.includes("to")) {
+    return false;
+  }
+  try {
+    const help = execFileSync(config.qsvBinPath, ["to", "--help"], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    return help.includes("parquet");
+  } catch {
+    return false;
+  }
+})();
 
 /**
  * Create a temporary test directory with a unique name.

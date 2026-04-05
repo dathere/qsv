@@ -12,7 +12,7 @@ import { config } from '../src/config.js';
 import { SkillLoader } from '../src/loader.js';
 import { SkillExecutor } from '../src/executor.js';
 import { FilesystemResourceProvider } from '../src/mcp-filesystem.js';
-import { QSV_AVAILABLE, TO_AVAILABLE, createTestDir, createTestCSV, cleanupTestDir } from './test-helpers.js';
+import { QSV_AVAILABLE, TO_PARQUET_AVAILABLE, createTestDir, createTestCSV, cleanupTestDir } from './test-helpers.js';
 
 test('qsv_count returns row count', { skip: !QSV_AVAILABLE }, async () => {
   const testDir = await createTestDir();
@@ -373,7 +373,7 @@ test('filesystem provider deduplicates concurrent metadata requests', { skip: !Q
 // qsv_to_parquet Date Detection Integration Tests
 // ============================================================================
 
-test('qsv_to_parquet converts CSV with date columns and uses --infer-dates', { skip: !TO_AVAILABLE }, async () => {
+test('qsv_to_parquet converts CSV with date columns and uses --infer-dates', { skip: !TO_PARQUET_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {
@@ -433,7 +433,7 @@ test('qsv_to_parquet converts CSV with date columns and uses --infer-dates', { s
   }
 });
 
-test('qsv_to_parquet converts CSV without date columns', { skip: !TO_AVAILABLE }, async () => {
+test('qsv_to_parquet converts CSV without date columns', { skip: !TO_PARQUET_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {
@@ -474,7 +474,7 @@ test('qsv_to_parquet converts CSV without date columns', { skip: !TO_AVAILABLE }
   }
 });
 
-test('qsv_to_parquet defaults output path from input extension', { skip: !TO_AVAILABLE }, async () => {
+test('qsv_to_parquet defaults output path from input extension', { skip: !TO_PARQUET_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {
@@ -502,7 +502,7 @@ test('qsv_to_parquet defaults output path from input extension', { skip: !TO_AVA
   }
 });
 
-test('qsv_to_parquet skips regeneration when stats and schema are up-to-date', { skip: !TO_AVAILABLE }, async () => {
+test('qsv_to_parquet skips regeneration when stats and schema are up-to-date', { skip: !TO_PARQUET_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {
@@ -537,7 +537,7 @@ test('qsv_to_parquet skips regeneration when stats and schema are up-to-date', {
   }
 });
 
-test('handleToParquetCall produces output at exact path via directory/stem decomposition', { skip: !TO_AVAILABLE }, async () => {
+test('handleToParquetCall produces output at exact path via directory/stem decomposition', { skip: !TO_PARQUET_AVAILABLE }, async () => {
   // Verifies the `to parquet` fallback correctly decomposes the output path into
   // a directory + stem (via --table), producing the file at the expected location.
   const testDir = await createTestDir();
@@ -698,7 +698,7 @@ test('handleToolCall prefers "output_file" over "output" when both present', { s
   }
 });
 
-test('handleToParquetCall accepts "output" as alias for "output_file"', { skip: !TO_AVAILABLE }, async () => {
+test('handleToParquetCall accepts "output" as alias for "output_file"', { skip: !TO_PARQUET_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {
@@ -760,7 +760,7 @@ test('handleToolCall accepts "input" as alias for "input_file"', { skip: !QSV_AV
   }
 });
 
-test('handleToParquetCall accepts "input" as alias for "input_file"', { skip: !TO_AVAILABLE }, async () => {
+test('handleToParquetCall accepts "input" as alias for "input_file"', { skip: !TO_PARQUET_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {
@@ -787,7 +787,7 @@ test('handleToParquetCall accepts "input" as alias for "input_file"', { skip: !T
   }
 });
 
-test('handleToParquetCall prefers "input_file" over "input" when both present', { skip: !TO_AVAILABLE }, async () => {
+test('handleToParquetCall prefers "input_file" over "input" when both present', { skip: !TO_PARQUET_AVAILABLE }, async () => {
   const testDir = await createTestDir();
 
   try {

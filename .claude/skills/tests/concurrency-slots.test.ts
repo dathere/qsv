@@ -12,7 +12,7 @@ import {
 } from "../src/mcp-tools.js";
 import { config } from "../src/config.js";
 
-const { acquireSlot, releaseSlot, getSlotWaiterCount, setMaxConcurrent, reset } =
+const { acquireSlot, releaseSlot, getSlotWaiterCount, setMaxConcurrent, setMaxQueueSize, getMaxQueueSize, reset } =
   _testConcurrency;
 
 function setup(maxConcurrent: number): number {
@@ -203,6 +203,82 @@ test("acquireSlot prunes settled waiters from middle of array, not just front", 
     assert.strictEqual(getActiveOperationCount(), 0);
     assert.strictEqual(getSlotWaiterCount(), 0);
   } finally {
+    teardown(saved);
+  }
+});
+
+// ============================================================================
+// Backpressure Tests (MAX_QUEUE_SIZE)
+// ============================================================================
+
+test("acquireSlot rejects when queue exceeds MAX_QUEUE_SIZE", async () => {
+  const saved = setup(1);
+  const savedQueueSize = getMaxQueueSize();
+  setMaxQueueSize(3); // small limit for testing
+  try {
+    // Fill the slot
+    await acquireSlot(100);
+    assert.strictEqual(getActiveOperationCount(), 1);
+
+    // Queue up to the limit — these will wait (with long timeouts)
+    const waiters: Promise<boolean>[] = [];
+    for (let i = 0; i < 3; i++) {
+      waiters.push(acquireSlot(5000));
+    }
+    assert.strictEqual(getSlotWaiterCount(), 3);
+
+    // Next acquire should be rejected immediately (backpressure)
+    const rejected = await acquireSlot(5000);
+    assert.strictEqual(rejected, false, "Should reject when queue is full");
+    // Queue count should still be 3, not 4
+    assert.strictEqual(getSlotWaiterCount(), 3);
+
+    // Clean up: release all
+    for (let i = 0; i < 3; i++) {
+      releaseSlot();
+    }
+    for (const w of waiters) {
+      await w;
+    }
+    releaseSlot();
+  } finally {
+    setMaxQueueSize(savedQueueSize);
+    teardown(saved);
+  }
+});
+
+test("backpressure allows new waiters after queue drains", async () => {
+  const saved = setup(1);
+  const savedQueueSize = getMaxQueueSize();
+  setMaxQueueSize(1);
+  try {
+    // Fill the slot
+    await acquireSlot(100);
+
+    // Fill the queue (1 waiter)
+    const waiter1 = acquireSlot(5000);
+    assert.strictEqual(getSlotWaiterCount(), 1);
+
+    // Rejected — queue full
+    const rejected = await acquireSlot(100);
+    assert.strictEqual(rejected, false);
+
+    // Release slot — hands off to waiter1, draining the queue
+    releaseSlot();
+    const result = await waiter1;
+    assert.strictEqual(result, true);
+    assert.strictEqual(getSlotWaiterCount(), 0);
+
+    // Now a new waiter should be accepted
+    const waiter2 = acquireSlot(5000);
+    assert.strictEqual(getSlotWaiterCount(), 1);
+
+    releaseSlot();
+    const result2 = await waiter2;
+    assert.strictEqual(result2, true);
+    releaseSlot();
+  } finally {
+    setMaxQueueSize(savedQueueSize);
     teardown(saved);
   }
 });

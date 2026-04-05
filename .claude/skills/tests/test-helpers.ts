@@ -21,6 +21,17 @@ import { config } from "../src/config.js";
 export const QSV_AVAILABLE: boolean = config.qsvValidation.valid;
 
 /**
+ * Whether the detected qsv binary supports the `to` command.
+ * The `to` command is only available in the full `qsv` binary, not `qsvmcp`.
+ * Tests that exercise Parquet conversion via `to` should skip when this is false.
+ *
+ * Usage: test("name", { skip: !TO_AVAILABLE }, async () => { ... })
+ */
+export const TO_AVAILABLE: boolean =
+  QSV_AVAILABLE &&
+  (config.qsvValidation.availableCommands?.includes("to") ?? false);
+
+/**
  * Create a temporary test directory with a unique name.
  * Uses mkdtemp for guaranteed uniqueness and realpath for
  * Windows 8.3 short path compatibility.

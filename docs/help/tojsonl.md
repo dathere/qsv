@@ -55,7 +55,7 @@ qsv tojsonl --help
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. Use "-" to explicitly write to stdout. |  |
 | &nbsp;`‑‑memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not display enum/const list inferencing messages. |  |
 

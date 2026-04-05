@@ -264,7 +264,7 @@ qsv to --help
 
 ## To Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑k,`<br>`‑‑print‑package`&nbsp; | flag | Print statistics as datapackage, by default will print field summary. |  |
 | &nbsp;`‑u,`<br>`‑‑dump`&nbsp; | flag | Create database dump file for use with `psql` or `sqlite3` command line tools (postgres/sqlite only). |  |
@@ -272,6 +272,8 @@ qsv to --help
 | &nbsp;`‑c,`<br>`‑‑stats‑csv`&nbsp; | string | Output stats as CSV to specified file. |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not print out field summary. |  |
 | &nbsp;`‑s,`<br>`‑‑schema`&nbsp; | string | The schema to load the data into. (postgres only). |  |
+| &nbsp;`‑‑infer‑len`&nbsp; | string | The number of rows to use for schema inference (parquet only). Note that even if a pschema.json file exists for an input file, specifying a non-zero infer-len will cause qsv to ignore the pschema.json and infer the schema from the CSV data instead. Set to 0 to infer from all rows (not recommended for large files). |  |
+| &nbsp;`‑‑try‑parse‑dates`&nbsp; | flag | Attempt to parse date/datetime columns with polars' date inference logic. This may result in more accurate date parsing, but can be slower on large files. (parquet only). |  |
 | &nbsp;`‑d,`<br>`‑‑drop`&nbsp; | flag | Drop tables before loading new data into them (postgres/sqlite only). |  |
 | &nbsp;`‑e,`<br>`‑‑evolve`&nbsp; | flag | If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only). |  |
 | &nbsp;`‑i,`<br>`‑‑pipe`&nbsp; | flag | Adjust output format for piped data (omits row counts and field format columns). |  |

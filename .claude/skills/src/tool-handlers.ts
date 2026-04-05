@@ -1001,7 +1001,8 @@ export async function handleSearchToolsCall(
   loader: SkillLoader,
   loadedTools?: Set<string>,
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
-  const query = params.query as string;
+  const rawQuery = params.query;
+  const query = typeof rawQuery === "string" ? rawQuery : rawQuery != null ? String(rawQuery) : "";
   const category = params.category as string | undefined;
   const limit = Math.min(Math.max(1, (params.limit as number) || 5), 20);
 

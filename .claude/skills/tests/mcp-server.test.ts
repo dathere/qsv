@@ -125,9 +125,12 @@ test("createToolDefinition includes input_file, output_file, and help properties
   assert.ok("help" in tool.inputSchema.properties);
 });
 
-test("createToolDefinition marks input_file as required", () => {
+test("createToolDefinition does not mark input_file as required (help-only calls need no input)", () => {
   const tool = createToolDefinition(mockSkill);
-  assert.ok(tool.inputSchema.required?.includes("input_file"));
+  assert.ok(!tool.inputSchema.required?.includes("input_file"),
+    "input_file should not be in required — it is enforced at runtime to allow help=true calls");
+  assert.ok("input_file" in tool.inputSchema.properties, "input_file should still be in properties");
+  assert.ok("help" in tool.inputSchema.properties, "help should be in properties");
 });
 
 test("createToolDefinition maps options correctly", () => {

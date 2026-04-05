@@ -110,7 +110,7 @@ export const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   },
   validate: {
     whenToUse: "Validate against JSON Schema. Check data quality, type correctness. Also use this without a JSON Schema to check if a CSV is well-formed.",
-    commonPattern: "Iterate: qsv_schema ��� validate → fix → validate until clean.",
+    commonPattern: "Iterate: qsv_schema → validate → fix → validate until clean.",
     needsIndexHint: true,
   },
   sqlp: {

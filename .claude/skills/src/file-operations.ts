@@ -535,7 +535,7 @@ export async function resolveFilePathParams(
 
     // Special case: luau --begin/--end accept both inline scripts and file paths
     const isAmbiguousFileOption = (flag === "--begin" || flag === "--end")
-      && skill.name === "luau"
+      && skill.command.subcommand === "luau"
       && looksLikeFilePath(value);
 
     if (isFilePathOption || isAmbiguousFileOption) {

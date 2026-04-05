@@ -22,11 +22,16 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
     input_file: {
       type: "string",
       description:
-        "Path to input CSV file. Use absolute paths for reliability.",
+        "Path to input CSV file. Use absolute paths for reliability. Required for command execution, but may be omitted when help=true.",
+    },
+    help: {
+      type: "boolean",
+      description: "Set to true to view command documentation instead of executing.",
     },
   };
 
-  const required: string[] = ["input_file"];
+  // input_file is enforced at runtime (not in schema) so help-only calls work
+  const required: string[] = [];
 
   // Add positional arguments
   if (skill.command.args && Array.isArray(skill.command.args)) {
@@ -154,7 +159,7 @@ Common commands via this tool: join, sort, dedup, rename, validate, sample, temp
             "Optional human-readable reason for this invocation, recorded in the MCP audit log. If omitted, the tool name is used.",
         },
       },
-      required: ["command", "input_file"],
+      required: ["command"],
     },
   };
 }

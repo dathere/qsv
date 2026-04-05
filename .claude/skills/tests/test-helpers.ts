@@ -38,7 +38,7 @@ export const TO_PARQUET_AVAILABLE: boolean = (() => {
       encoding: "utf8",
       timeout: 5000,
     });
-    return help.includes("parquet");
+    return /\bparquet\b/i.test(help);
   } catch {
     return false;
   }

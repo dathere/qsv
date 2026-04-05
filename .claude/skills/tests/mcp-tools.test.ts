@@ -132,7 +132,7 @@ test('handleSearchToolsCall requires query parameter', async () => {
   const result = await handleSearchToolsCall({}, loader);
 
   assert.ok(result.content.length > 0);
-  assert.ok(result.content[0].text?.includes('Error'));
+  assert.strictEqual(result.isError, true);
   assert.ok(result.content[0].text?.includes('query'));
 });
 

@@ -222,7 +222,8 @@ test("createSearchToolsTool returns valid tool definition", () => {
 test("handleSearchToolsCall returns error for empty query", async () => {
   const loader = new SkillLoader();
   const result = await handleSearchToolsCall({ query: "" }, loader);
-  assert.ok(result.content[0].text.includes("Error"));
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text.includes("query"));
 });
 
 test("handleSearchToolsCall marks tools in loadedTools set", async () => {

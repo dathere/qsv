@@ -303,7 +303,7 @@ function buildDescribegptArgs(
   };
 
   // Build a reverse lookup: normalized param name → CLI flag
-  // This handles params passed as "dictionary", "--dictionary", or "—dictionary"
+  // This handles params passed as "dictionary" or "--dictionary"
   const reverseLookup = new Map<string, string>();
   for (const [param, flag] of Object.entries(flagMap)) {
     reverseLookup.set(param, flag);
@@ -1000,26 +1000,17 @@ export async function handleSearchToolsCall(
   params: Record<string, unknown>,
   loader: SkillLoader,
   loadedTools?: Set<string>,
-): Promise<{ content: Array<{ type: string; text: string }> }> {
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   const rawQuery = params.query;
   if (rawQuery != null && typeof rawQuery !== "string" && typeof rawQuery !== "number") {
-    return {
-      content: [{ type: "text", text: "Error: query parameter must be a string or number" }],
-    };
+    return errorResult("query parameter must be a string or number");
   }
   const query = typeof rawQuery === "string" ? rawQuery : typeof rawQuery === "number" ? String(rawQuery) : "";
   const category = params.category as string | undefined;
   const limit = Math.min(Math.max(1, (params.limit as number) || 5), 20);
 
   if (!query || query.trim().length === 0) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: "Error: query parameter is required",
-        },
-      ],
-    };
+    return errorResult("query parameter is required");
   }
 
   // Ensure all skills are loaded

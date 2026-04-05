@@ -86,13 +86,6 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
       "Path to output CSV file (optional). Use absolute paths for reliability. For large results, a temp file is automatically used if omitted.",
   };
 
-  // Add help flag (universally available for all qsv commands)
-  properties.help = {
-    type: "boolean",
-    description:
-      "Display detailed help text for this command (equivalent to --help flag). Returns usage documentation instead of executing the command.",
-  };
-
   // Add _reason meta-parameter for audit logging
   properties._reason = {
     type: "string",

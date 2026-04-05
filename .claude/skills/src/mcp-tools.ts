@@ -4018,7 +4018,7 @@ export async function handleToParquetCall(
     return successResult(
       `✅ Successfully converted CSV to Parquet with optimized schema\n\n` +
       `Input: ${inputFile}\n` +
-      `Output: ${resolvedOutputFile}${fileSizeInfo}\n` +
+      `Output: ${outputPath}${fileSizeInfo}\n` +
       `Engine: ${engine}\n` +
       `Stats: ${statsFile}\n` +
       `Schema: ${schemaFile}\n` +
@@ -4028,7 +4028,7 @@ export async function handleToParquetCall(
       `The Parquet file is now ready for fast SQL queries.\n` +
       (getDuckDbStatus().status === "available"
         ? `🦆 DuckDB detected — qsv_sqlp will auto-route SQL queries through DuckDB for this file.`
-        : `Use: qsv_sqlp with input_file="SKIP_INPUT" and sql="SELECT ... FROM read_parquet('${resolvedOutputFile}')".`),
+        : `Use: qsv_sqlp with input_file="SKIP_INPUT" and sql="SELECT ... FROM read_parquet('${outputPath}')".`),
     );
   } catch (error: unknown) {
     return errorResult(`Error converting CSV to Parquet: ${getErrorMessage(error)}`);

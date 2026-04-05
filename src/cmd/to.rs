@@ -221,13 +221,23 @@ Usage:
 
 To options:
   -k, --print-package     Print statistics as datapackage, by default will print field summary.
-  -u, --dump              Create database dump file for use with `psql` or `sqlite3` command line tools (postgres/sqlite only).
+  -u, --dump              Create database dump file for use with `psql` or `sqlite3` command line tools
+                          (postgres/sqlite only).
   -a, --stats             Produce extra statistics about the data beyond just type guessing.
   -c, --stats-csv <path>  Output stats as CSV to specified file.
   -q, --quiet             Do not print out field summary.
   -s, --schema <arg>      The schema to load the data into. (postgres only).
+  --infer-len <rows>      The number of rows to use for schema inference (parquet only).
+                          Note that even if a pschema.json file exists for an input file,
+                          explicitly specifying infer-len will cause qsv to ignore the pschema.json and
+                          infer the schema from the CSV data instead, including when set to 0.
+                          Set to 0 to infer from all rows (not recommended for large files).
+  --try-parse-dates       Attempt to parse date/datetime columns with polars' date inference logic.
+                          This may result in more accurate date parsing, but can be slower on large files.
+                          (parquet only).
   -d, --drop              Drop tables before loading new data into them (postgres/sqlite only).
-  -e, --evolve            If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only).
+  -e, --evolve            If loading into existing db, alter existing tables so that new data will load.
+                          (postgres/sqlite only).
   -i, --pipe              Adjust output format for piped data (omits row counts and field format columns).
   -t, --table <name>      Use this as the table/sheet/file name (postgres/sqlite/xlsx/ods/parquet).
                           Overrides the default name derived from the input filename.
@@ -256,6 +266,8 @@ Common options:
 
 use std::{io::Write, path::PathBuf};
 
+#[cfg(feature = "polars")]
+use std::io::{BufReader, Read};
 use csvs_convert::{
     DescribeOptions, Options, csvs_to_ods_with_options, csvs_to_postgres_with_options,
     csvs_to_sqlite_with_options, csvs_to_xlsx_with_options, make_datapackage,
@@ -278,35 +290,37 @@ use crate::{
 #[allow(dead_code)]
 #[derive(Deserialize)]
 struct Args {
-    cmd_postgres:        bool,
-    arg_postgres:        Option<String>,
-    cmd_sqlite:          bool,
-    arg_sqlite:          Option<String>,
-    cmd_xlsx:            bool,
-    arg_xlsx:            Option<String>,
-    cmd_ods:             bool,
-    arg_ods:             Option<String>,
-    cmd_parquet:         bool,
-    arg_parquet:         Option<String>,
-    cmd_datapackage:     bool,
-    arg_datapackage:     Option<String>,
-    arg_input:           Vec<PathBuf>,
-    flag_delimiter:      Option<Delimiter>,
-    flag_schema:         Option<String>,
-    flag_separator:      Option<String>,
-    flag_all_strings:    bool,
-    flag_dump:           bool,
-    flag_drop:           bool,
-    flag_evolve:         bool,
-    flag_stats:          bool,
-    flag_stats_csv:      Option<String>,
-    flag_jobs:           Option<usize>,
-    flag_table:          Option<String>,
-    flag_compression:    Option<String>,
-    flag_compress_level: Option<i32>,
-    flag_print_package:  bool,
-    flag_quiet:          bool,
-    flag_pipe:           bool,
+    cmd_postgres:         bool,
+    arg_postgres:         Option<String>,
+    cmd_sqlite:           bool,
+    arg_sqlite:           Option<String>,
+    cmd_xlsx:             bool,
+    arg_xlsx:             Option<String>,
+    cmd_ods:              bool,
+    arg_ods:              Option<String>,
+    cmd_parquet:          bool,
+    arg_parquet:          Option<String>,
+    cmd_datapackage:      bool,
+    arg_datapackage:      Option<String>,
+    arg_input:            Vec<PathBuf>,
+    flag_delimiter:       Option<Delimiter>,
+    flag_schema:          Option<String>,
+    flag_infer_len:       Option<usize>,
+    flag_try_parse_dates: bool,
+    flag_separator:       Option<String>,
+    flag_all_strings:     bool,
+    flag_dump:            bool,
+    flag_drop:            bool,
+    flag_evolve:          bool,
+    flag_stats:           bool,
+    flag_stats_csv:       Option<String>,
+    flag_jobs:            Option<usize>,
+    flag_table:           Option<String>,
+    flag_compression:     Option<String>,
+    flag_compress_level:  Option<i32>,
+    flag_print_package:   bool,
+    flag_quiet:           bool,
+    flag_pipe:            bool,
 }
 
 impl From<csvs_convert::Error> for CliError {
@@ -491,6 +505,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             args.flag_compression,
             args.flag_compress_level,
             args.flag_all_strings,
+            args.flag_infer_len,
+            args.flag_try_parse_dates,
             args.flag_quiet,
         );
     } else if args.cmd_datapackage {
@@ -612,6 +628,8 @@ fn to_parquet(
     flag_compression: Option<String>,
     flag_compress_level: Option<i32>,
     flag_all_strings: bool,
+    flag_infer_len: Option<usize>,
+    flag_try_parse_dates: bool,
     quiet: bool,
 ) -> CliResult<()> {
     let output_dir = PathBuf::from(&arg_parquet);
@@ -678,9 +696,41 @@ fn to_parquet(
 
         // Use LazyFrame for optimized query planning and efficient column casting
         let input_path_str = input_path.to_string_lossy();
-        let mut lf = LazyCsvReader::new(PlRefPath::new(&*input_path_str))
+        let mut lazy_csv_reader = LazyCsvReader::new(PlRefPath::new(&*input_path_str))
             .with_has_header(true)
-            .with_separator(delimiter)
+            .with_separator(delimiter);
+
+        if let Some(infer_len) = flag_infer_len {
+            // if --infer-len is explicitly set (even to 0), ignore existing schema file
+            let infer_len = match infer_len {
+                0 => None, // 0 means scan all rows
+                some_len => Some(some_len),
+            };
+            lazy_csv_reader = lazy_csv_reader.with_infer_schema_length(infer_len);
+        } else {
+            // Check if a .pschema.json schema file exists and is current
+            let schema_file = PathBuf::from(format!(
+                "{}.pschema.json",
+                input_path.canonicalize()?.display()
+            ));
+            let valid_schema_exists = schema_file.exists()
+                && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?;
+
+            if valid_schema_exists {
+                let file = std::fs::File::open(&schema_file)?;
+                let mut buf_reader = BufReader::new(file);
+                let mut schema_json = String::with_capacity(100);
+                buf_reader.read_to_string(&mut schema_json)?;
+                let schema: Schema = serde_json::from_str(&schema_json)?;
+                debug!("using schema file: {}", schema_file.display());
+                lazy_csv_reader = lazy_csv_reader.with_schema(Some(Arc::new(schema)));
+            } else {
+                lazy_csv_reader = lazy_csv_reader.with_infer_schema_length(Some(1000));
+            }
+        }
+
+        let mut lf = lazy_csv_reader
+            .with_try_parse_dates(flag_try_parse_dates)
             .finish()?;
 
         if flag_all_strings {
@@ -714,6 +764,8 @@ fn to_parquet(
     _flag_compression: Option<String>,
     _flag_compress_level: Option<i32>,
     _flag_all_strings: bool,
+    _flag_infer_len: Option<usize>,
+    _flag_try_parse_dates: bool,
     _quiet: bool,
 ) -> CliResult<()> {
     fail_clierror!(

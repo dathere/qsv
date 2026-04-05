@@ -52,6 +52,7 @@ export {
   isCsvLikeFile,
   getParquetPath,
   ensureParquet,
+  statsFilePath,
 } from "./parquet-bridge.js";
 
 // ── tool-definitions ────────────────────────────────────────────────────────

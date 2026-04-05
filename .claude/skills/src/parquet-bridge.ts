@@ -4,7 +4,7 @@
 
 import { spawn } from "child_process";
 import { readFile, writeFile, open, stat, unlink, mkdir } from "fs/promises";
-import { basename, dirname, join } from "path";
+import { basename, dirname, join, parse } from "path";
 import { isShuttingDown, activeProcesses } from "./concurrency.js";
 import { statOrNull, runQsvWithTimeout, getCurrentWorkingDir } from "./file-operations.js";
 import {
@@ -643,11 +643,22 @@ export async function ensureParquet(inputFile: string): Promise<string> {
  * This is Step 1 of the Parquet conversion pipeline and is needed by both
  * the DuckDB and sqlp paths.
  */
+/**
+ * Compute the stats cache file path for a given input file.
+ * Mirrors qsv's Rust `stats_path()`: `{parent}/{file_stem}.stats.csv`.
+ * e.g. `/tmp/cities.csv` → `/tmp/cities.stats.csv`
+ *      `/tmp/data.tsv.sz` → `/tmp/data.tsv.stats.csv`
+ */
+export function statsFilePath(inputFile: string): string {
+  const { dir, name } = parse(inputFile);
+  return join(dir, `${name}.stats.csv`);
+}
+
 export async function ensureStatsCache(
   inputFile: string,
 ): Promise<{ needStats: boolean; statsFile: string }> {
   const qsvBin = config.qsvBinPath;
-  const statsFile = inputFile + ".stats.csv";
+  const statsFile = statsFilePath(inputFile);
 
   const [inputFileStats, existingStats] = await Promise.all([
     statOrNull(inputFile),

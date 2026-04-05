@@ -16,6 +16,7 @@ import type {
 import { formatBytes, getErrorMessage } from "./utils.js";
 import { config as appConfig } from "./config.js";
 import { runQsvSimple } from "./executor.js";
+import { statsFilePath } from "./parquet-bridge.js";
 
 /**
  * Expand tilde (~) in paths to the user's home directory
@@ -482,7 +483,7 @@ export class FilesystemResourceProvider {
 
     try {
       // Check for stats cache file
-      const statsFile = `${filePath}.stats.csv`;
+      const statsFile = statsFilePath(filePath);
       try {
         await access(statsFile);
         metadata.hasStatsCache = true;

@@ -17,6 +17,7 @@ import {
   ensureParquet,
   parseCSVLine,
   detectDelimiter,
+  statsFilePath,
   isDateDtype,
   patchSchemaAmPmDates,
   createLogTool,
@@ -455,6 +456,30 @@ test('detectDelimiter returns semicolon for .ssv files', () => {
 test('detectDelimiter defaults to comma for unknown extensions', () => {
   assert.strictEqual(detectDelimiter('data.txt'), ',');
   assert.strictEqual(detectDelimiter('data.json'), ',');
+});
+
+// ============================================================================
+// statsFilePath Tests
+// ============================================================================
+
+test('statsFilePath strips .csv extension and appends .stats.csv', () => {
+  assert.strictEqual(statsFilePath('/tmp/cities.csv'), '/tmp/cities.stats.csv');
+});
+
+test('statsFilePath strips .tsv extension', () => {
+  assert.strictEqual(statsFilePath('/tmp/data.tsv'), '/tmp/data.stats.csv');
+});
+
+test('statsFilePath strips only last extension for .csv.sz', () => {
+  assert.strictEqual(statsFilePath('/tmp/file.csv.sz'), '/tmp/file.csv.stats.csv');
+});
+
+test('statsFilePath handles file without directory', () => {
+  assert.strictEqual(statsFilePath('data.csv'), 'data.stats.csv');
+});
+
+test('statsFilePath strips .ssv extension', () => {
+  assert.strictEqual(statsFilePath('/path/to/data.ssv'), '/path/to/data.stats.csv');
 });
 
 // ============================================================================

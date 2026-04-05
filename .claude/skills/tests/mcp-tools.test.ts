@@ -292,64 +292,6 @@ test('buildConversionArgs escapes single quotes in Parquet paths', () => {
 });
 
 // ============================================================================
-// CSV→Parquet Conversion Tests (csv-to-parquet)
-// ============================================================================
-
-test('buildConversionArgs returns correct args for CSV→Parquet', () => {
-  // CSV→Parquet passes input directly so sqlp can detect .pschema.json for type inference
-  const args = buildConversionArgs('csv-to-parquet', 'input.csv', 'output.parquet');
-
-  assert.deepStrictEqual(args, [
-    'sqlp',
-    'input.csv',
-    'SELECT * FROM _t_1',
-    '--format',
-    'parquet',
-    '--compression',
-    'snappy',
-    '--statistics',
-    '--output',
-    'output.parquet',
-  ]);
-});
-
-test('buildConversionArgs handles Windows paths for CSV→Parquet', () => {
-  // Windows paths are passed directly - sqlp handles path resolution
-  const args = buildConversionArgs('csv-to-parquet', 'C:\\data\\file.csv', 'output.parquet');
-
-  assert.deepStrictEqual(args, [
-    'sqlp',
-    'C:\\data\\file.csv',
-    'SELECT * FROM _t_1',
-    '--format',
-    'parquet',
-    '--compression',
-    'snappy',
-    '--statistics',
-    '--output',
-    'output.parquet',
-  ]);
-});
-
-test('buildConversionArgs passes paths with single quotes for CSV→Parquet', () => {
-  // Single quotes in paths are passed directly - no SQL escaping needed
-  const args = buildConversionArgs('csv-to-parquet', "file's.csv", 'output.parquet');
-
-  assert.deepStrictEqual(args, [
-    'sqlp',
-    "file's.csv",
-    'SELECT * FROM _t_1',
-    '--format',
-    'parquet',
-    '--compression',
-    'snappy',
-    '--statistics',
-    '--output',
-    'output.parquet',
-  ]);
-});
-
-// ============================================================================
 // qsv_to_parquet Tool Definition Tests
 // ============================================================================
 

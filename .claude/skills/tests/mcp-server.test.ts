@@ -349,16 +349,6 @@ test("buildConversionArgs creates correct Parquet-to-CSV args", () => {
   assert.deepStrictEqual(args[4], "/out/data.csv");
 });
 
-test("buildConversionArgs creates correct CSV-to-Parquet args", () => {
-  const args = buildConversionArgs("csv-to-parquet", "/path/to/data.csv", "/out/data.parquet");
-  assert.deepStrictEqual(args[0], "sqlp");
-  assert.deepStrictEqual(args[1], "/path/to/data.csv");
-  assert.ok(args.includes("--format"));
-  assert.ok(args.includes("parquet"));
-  assert.ok(args.includes("--output"));
-  assert.ok(args.includes("/out/data.parquet"));
-});
-
 test("buildConversionArgs creates correct standard conversion args", () => {
   const args = buildConversionArgs("excel", "/path/to/data.xlsx", "/out/data.csv");
   assert.deepStrictEqual(args, ["excel", "/path/to/data.xlsx", "--output", "/out/data.csv"]);

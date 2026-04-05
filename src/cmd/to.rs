@@ -264,11 +264,10 @@ Common options:
                            Must be a single character. (default: ,)
 "#;
 
-use std::{
-    io::{BufReader, Read, Write},
-    path::PathBuf,
-};
+use std::{io::Write, path::PathBuf};
 
+#[cfg(feature = "polars")]
+use std::io::{BufReader, Read};
 use csvs_convert::{
     DescribeOptions, Options, csvs_to_ods_with_options, csvs_to_postgres_with_options,
     csvs_to_sqlite_with_options, csvs_to_xlsx_with_options, make_datapackage,

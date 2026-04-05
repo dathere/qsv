@@ -948,12 +948,12 @@ async function convertCsvToParquet(
       } catch (error: unknown) {
         // Clean up partial parquet on DuckDB failure, then fall through to sqlp
         try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
-        console.error(`[MCP Tools] DuckDB runtime failure, falling back to sqlp: ${getErrorMessage(error)}`);
+        console.error(`[MCP Tools] DuckDB runtime failure, falling back to qsv to parquet: ${getErrorMessage(error)}`);
       }
     }
     if (sql === null) {
-      // SQL generation failed (stats cache unreadable, path validation, or delimiter issue) — fall through to sqlp
-      console.error(`[MCP Tools] DuckDB: SQL generation failed (see earlier log for details), falling back to sqlp`);
+      // SQL generation failed (stats cache unreadable, path validation, or delimiter issue) — fall through to qsv to parquet
+      console.error(`[MCP Tools] DuckDB: SQL generation failed (see earlier log for details), falling back to qsv to parquet`);
     }
   }
 
@@ -3989,11 +3989,11 @@ export async function handleToParquetCall(
   const startTime = Date.now();
 
   try {
-    // Step 1: Ensure stats cache is up-to-date (needed by both DuckDB and sqlp paths)
+    // Step 1: Ensure stats cache is up-to-date (needed by both DuckDB and qsv to parquet paths)
     const { needStats, statsFile } = await ensureStatsCache(inputFile);
 
     // Step 3: Convert to Parquet (DuckDB with ZSTD when available, qsv to parquet with ZSTD otherwise)
-    // Schema generation (Steps 2-2.5) is deferred to the sqlp fallback path only
+    // Schema generation (Steps 2-2.5) is deferred to the qsv to parquet fallback path only
     const { engine, needSchema, schemaFile, schemaSkipped } = await convertCsvToParquet(inputFile, resolvedOutputFile, statsFile);
     const duration = Date.now() - startTime;
 

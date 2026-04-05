@@ -459,6 +459,7 @@ export async function handleToolCall(
             }
 
             // Try DuckDB execution (single-table path)
+            const duckDbStart = Date.now();
             const duckDbResult = await tryDuckDbExecution(sql, parquetFile, params, outputFile);
             if (duckDbResult !== null) {
               // Attach pipeline metadata for parity with the sqlp path
@@ -466,7 +467,8 @@ export async function handleToolCall(
               (duckDbResult as Record<string | symbol, unknown>)[PIPELINE_METADATA] = {
                 inputFile,
                 outputFile,
-                commandLine: `duckdb -c "${sql}"`,
+                commandLine: `duckdb -c ${JSON.stringify(sql)}`,
+                durationMs: Date.now() - duckDbStart,
                 success: duckDbSuccess,
               } satisfies PipelineMetadata;
               if (outputFile) {

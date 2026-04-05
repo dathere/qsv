@@ -51,9 +51,10 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
         properties[arg.name].enum = arg.enum;
       }
 
-      if (arg.required) {
-        required.push(arg.name);
-      }
+      // Positional args enforced at runtime (not in schema) so help-only calls work
+      // if (arg.required) {
+      //   required.push(arg.name);
+      // }
     }
   }
 

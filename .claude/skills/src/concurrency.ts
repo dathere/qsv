@@ -174,6 +174,13 @@ export function getActiveOperationCount(): number {
 }
 
 /**
+ * Get the current queue size and limit for backpressure reporting.
+ */
+export function getQueueStatus(): { queued: number; maxQueue: number } {
+  return { queued: slotWaiters.length, maxQueue: MAX_QUEUE_SIZE };
+}
+
+/**
  * Test-only exports for concurrency slot logic.
  * Exported to enable unit testing of acquireSlot/releaseSlot behavior.
  */

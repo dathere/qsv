@@ -32,7 +32,7 @@ import {
   isBinaryOutputFormat,
 } from "./tool-constants.js";
 import type { PipelineMetadata } from "./tool-constants.js";
-import { acquireSlot, releaseSlot, getActiveOperationCount } from "./concurrency.js";
+import { acquireSlot, releaseSlot, getActiveOperationCount, getQueueStatus } from "./concurrency.js";
 import {
   getCurrentWorkingDir,
   resolveAndConvertInputFile,
@@ -347,10 +347,11 @@ export async function handleToolCall(
   const slotResult = await acquireSlot(config.concurrencyWaitTimeoutMs);
   if (slotResult !== true) {
     const activeOps = getActiveOperationCount();
+    const { queued, maxQueue } = getQueueStatus();
     const reason = slotResult === "backpressure"
-      ? `Concurrency queue is full (${activeOps} operations running). `
+      ? `Concurrency queue is full (${queued}/${maxQueue} queued, ${activeOps} running). `
       : `Operation queued but timed out after ${Math.round(config.concurrencyWaitTimeoutMs / 1000)}s waiting for a slot. ` +
-        `${activeOps} operation${activeOps !== 1 ? "s" : ""} still running. `;
+        `${activeOps} operation${activeOps !== 1 ? "s" : ""} still running, ${queued} queued. `;
     return errorResult(reason + `Try running operations sequentially.`);
   }
 
@@ -782,11 +783,13 @@ export async function handleGenericCommand(
     // Flatten nested args and options objects into the params
     // This handles cases where Claude passes:
     // {"command": "luau", "args": {...}, "options": {...}, "input_file": "...", "output_file": "..."}
-    const flattenedParams: Record<string, unknown> = {};
+    // Use null-prototype object to prevent prototype pollution from user-controlled keys
+    const flattenedParams: Record<string, unknown> = Object.create(null);
+    const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
     // Copy top-level params (except 'args' and 'options')
     for (const [key, value] of Object.entries(params)) {
-      if (key !== "args" && key !== "options") {
+      if (key !== "args" && key !== "options" && !BLOCKED_KEYS.has(key)) {
         flattenedParams[key] = value;
       }
     }
@@ -795,7 +798,7 @@ export async function handleGenericCommand(
     if (params.args && typeof params.args === "object") {
       const argsObj = params.args as Record<string, unknown>;
       for (const [key, value] of Object.entries(argsObj)) {
-        flattenedParams[key] = value;
+        if (!BLOCKED_KEYS.has(key)) flattenedParams[key] = value;
       }
     }
 
@@ -803,7 +806,7 @@ export async function handleGenericCommand(
     if (params.options && typeof params.options === "object") {
       const optionsObj = params.options as Record<string, unknown>;
       for (const [key, value] of Object.entries(optionsObj)) {
-        flattenedParams[key] = value;
+        if (!BLOCKED_KEYS.has(key)) flattenedParams[key] = value;
       }
     }
 

@@ -929,7 +929,7 @@ async function convertCsvToParquet(
   inputFile: string,
   parquetPath: string,
   statsFile: string,
-): Promise<{ engine: string; needSchema: boolean; schemaFile: string; schemaSkipped: boolean }> {
+): Promise<{ engine: string; needSchema: boolean; schemaFile: string; schemaSkipped: boolean; outputPath: string }> {
   const state = detectDuckDb();
 
   if (state.status === "available") {
@@ -944,7 +944,8 @@ async function convertCsvToParquet(
 
       try {
         await spawnDuckDbCommands(state.binPath, dbPath, sql);
-        return { engine: `DuckDB v${state.version} (ZSTD)`, needSchema: false, schemaFile: "N/A (DuckDB)", schemaSkipped: true };
+        // DuckDB writes directly to parquetPath (not directory-based)
+        return { engine: `DuckDB v${state.version} (ZSTD)`, needSchema: false, schemaFile: "N/A (DuckDB)", schemaSkipped: true, outputPath: parquetPath };
       } catch (error: unknown) {
         // Clean up partial parquet on DuckDB failure, then fall back to qsv to parquet
         try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
@@ -988,7 +989,7 @@ async function convertCsvToParquet(
     const message = `Parquet conversion failed for ${inputFile} \u2192 ${effectiveParquetPath}: ${getErrorMessage(error)}`;
     throw new Error(message, { cause: error });
   }
-  return { engine: "qsv to parquet (ZSTD)", needSchema, schemaFile, schemaSkipped: false };
+  return { engine: "qsv to parquet (ZSTD)", needSchema, schemaFile, schemaSkipped: false, outputPath: effectiveParquetPath };
 }
 
 /**
@@ -2258,24 +2259,26 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
   const { statsFile } = await ensureStatsCache(inputFile);
 
   // Step 3: Convert to Parquet (DuckDB with ZSTD when available, qsv to parquet with ZSTD otherwise)
-  const { engine } = await convertCsvToParquet(inputFile, parquetPath, statsFile);
+  const { engine, outputPath } = await convertCsvToParquet(inputFile, parquetPath, statsFile);
   console.error(`[MCP Tools] ensureParquet: Conversion engine: ${engine}`);
 
-  // Verify the output file was actually created and is non-empty
+  // Verify the output file was actually created and is non-empty.
+  // Use outputPath (the actual file written) rather than parquetPath (the requested path),
+  // since the fallback engine may normalize the path (e.g. ensure .parquet extension).
   let outStats;
   try {
-    outStats = await stat(parquetPath);
+    outStats = await stat(outputPath);
   } catch (error: unknown) {
-    console.warn(`[MCP Tools] Output file stat failed after conversion: ${parquetPath}`, error);
-    throw new Error(`Parquet conversion completed but output file not found: ${parquetPath}`);
+    console.warn(`[MCP Tools] Output file stat failed after conversion: ${outputPath}`, error);
+    throw new Error(`Parquet conversion completed but output file not found: ${outputPath}`);
   }
   if (outStats.size === 0) {
-    try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
-    throw new Error(`Parquet conversion produced an empty file: ${parquetPath}`);
+    try { await unlink(outputPath); } catch { /* ignore: cleanup */ }
+    throw new Error(`Parquet conversion produced an empty file: ${outputPath}`);
   }
 
-  console.error(`[MCP Tools] ensureParquet: Successfully converted to ${parquetPath}`);
-  return parquetPath;
+  console.error(`[MCP Tools] ensureParquet: Successfully converted to ${outputPath}`);
+  return outputPath;
 }
 
 /**
@@ -3997,16 +4000,16 @@ export async function handleToParquetCall(
 
     // Step 3: Convert to Parquet (DuckDB with ZSTD when available, qsv to parquet with ZSTD otherwise)
     // Schema generation (Steps 2-2.5) is deferred to the qsv to parquet fallback path only
-    const { engine, needSchema, schemaFile, schemaSkipped } = await convertCsvToParquet(inputFile, resolvedOutputFile, statsFile);
+    const { engine, needSchema, schemaFile, schemaSkipped, outputPath } = await convertCsvToParquet(inputFile, resolvedOutputFile, statsFile);
     const duration = Date.now() - startTime;
 
-    // Get output file size for reporting
+    // Get output file size for reporting — use outputPath (actual file written)
     let fileSizeInfo = "";
     try {
-      const outputStats = await stat(resolvedOutputFile);
+      const outputStats = await stat(outputPath);
       fileSizeInfo = ` (${formatBytes(outputStats.size)})`;
     } catch (error: unknown) {
-      console.warn(`[MCP Tools] Could not stat output file for size reporting: ${resolvedOutputFile}`, error);
+      console.warn(`[MCP Tools] Could not stat output file for size reporting: ${outputPath}`, error);
     }
 
     const statsStatus = needStats ? "generated" : "reused (up-to-date)";

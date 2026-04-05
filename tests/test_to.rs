@@ -1287,3 +1287,252 @@ fn to_parquet_all_strings() {
         );
     }
 }
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_pschema() {
+    let wrk = Workdir::new("to_parquet_pschema");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "95.5"],
+            svec!["Bob", "25", "88.0"],
+        ],
+    );
+
+    // Create a pschema.json that forces specific types
+    let csv_path = wrk.path("data.csv").canonicalize().unwrap();
+    let schema_path = format!("{}.pschema.json", csv_path.display());
+    std::fs::write(
+        &schema_path,
+        r#"{"fields":{"name":"String","age":"UInt8","score":"Float32"},"metadata":null}"#,
+    )
+    .unwrap();
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists(), "parquet file should be created");
+
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 2);
+
+    // Verify the schema matches the pschema.json types
+    let schema = df.schema();
+    assert_eq!(
+        schema.get("name").unwrap(),
+        &polars::prelude::DataType::String,
+        "name should be String"
+    );
+    assert_eq!(
+        schema.get("age").unwrap(),
+        &polars::prelude::DataType::UInt8,
+        "age should be UInt8 per pschema"
+    );
+    assert_eq!(
+        schema.get("score").unwrap(),
+        &polars::prelude::DataType::Float32,
+        "score should be Float32 per pschema"
+    );
+
+    // Clean up the schema file (it's outside the workdir)
+    let _ = std::fs::remove_file(&schema_path);
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_pschema_ignored_when_infer_len_set() {
+    let wrk = Workdir::new("to_parquet_pschema_infer_len");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "95.5"],
+            svec!["Bob", "25", "88.0"],
+        ],
+    );
+
+    // Create a pschema.json that forces age to UInt8
+    let csv_path = wrk.path("data.csv").canonicalize().unwrap();
+    let schema_path = format!("{}.pschema.json", csv_path.display());
+    std::fs::write(
+        &schema_path,
+        r#"{"fields":{"name":"String","age":"UInt8","score":"Float32"},"metadata":null}"#,
+    )
+    .unwrap();
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--infer-len")
+        .arg("100")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+
+    // When --infer-len is set, the pschema should be ignored and polars infers the types.
+    // Polars will infer age as Int64 (not UInt8 from pschema).
+    let schema = df.schema();
+    assert_ne!(
+        schema.get("age").unwrap(),
+        &polars::prelude::DataType::UInt8,
+        "age should NOT be UInt8 when --infer-len overrides pschema"
+    );
+
+    let _ = std::fs::remove_file(&schema_path);
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_pschema_ignored_when_infer_len_zero() {
+    let wrk = Workdir::new("to_parquet_pschema_infer_len_zero");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "95.5"],
+            svec!["Bob", "25", "88.0"],
+        ],
+    );
+
+    // Create a pschema.json that forces age to UInt8
+    let csv_path = wrk.path("data.csv").canonicalize().unwrap();
+    let schema_path = format!("{}.pschema.json", csv_path.display());
+    std::fs::write(
+        &schema_path,
+        r#"{"fields":{"name":"String","age":"UInt8","score":"Float32"},"metadata":null}"#,
+    )
+    .unwrap();
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--infer-len")
+        .arg("0")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+
+    // --infer-len 0 means scan all rows for inference, ignoring pschema
+    let schema = df.schema();
+    assert_ne!(
+        schema.get("age").unwrap(),
+        &polars::prelude::DataType::UInt8,
+        "age should NOT be UInt8 when --infer-len 0 overrides pschema"
+    );
+
+    let _ = std::fs::remove_file(&schema_path);
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_infer_len() {
+    let wrk = Workdir::new("to_parquet_infer_len");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "value"],
+            svec!["alpha", "1"],
+            svec!["beta", "2"],
+            svec!["gamma", "3"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--infer-len")
+        .arg("2")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists());
+
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 3, "should have 3 rows");
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_try_parse_dates() {
+    let wrk = Workdir::new("to_parquet_try_parse_dates");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "date"],
+            svec!["Alice", "2024-01-15"],
+            svec!["Bob", "2024-06-30"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--try-parse-dates")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists());
+
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 2);
+
+    // With --try-parse-dates, the date column should be parsed as Date type
+    let schema = df.schema();
+    assert_eq!(
+        schema.get("date").unwrap(),
+        &polars::prelude::DataType::Date,
+        "date column should be Date type with --try-parse-dates"
+    );
+}

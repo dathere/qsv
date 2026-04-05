@@ -12,6 +12,7 @@ import { writeFile, mkdtemp, rm, realpath } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { config } from "../src/config.js";
+import { detectDuckDb, resetDuckDbState } from "../src/duckdb.js";
 
 /**
  * Whether a valid qsv binary is available for integration tests.
@@ -43,6 +44,30 @@ export const TO_PARQUET_AVAILABLE: boolean = (() => {
     return false;
   }
 })();
+
+/**
+ * Whether DuckDB is available for integration tests.
+ * Temporarily enables the useDuckDb config flag to probe for the binary.
+ */
+export const DUCKDB_AVAILABLE: boolean = (() => {
+  const savedUseDuckDb = config.useDuckDb;
+  try {
+    (config as Record<string, unknown>).useDuckDb = true;
+    resetDuckDbState();
+    return detectDuckDb().status === "available";
+  } catch {
+    return false;
+  } finally {
+    (config as Record<string, unknown>).useDuckDb = savedUseDuckDb;
+    resetDuckDbState();
+  }
+})();
+
+/**
+ * Whether Parquet conversion is available via either `qsv to parquet` or DuckDB.
+ * Use this for tests that exercise `handleToParquetCall` which tries both engines.
+ */
+export const PARQUET_TOOL_AVAILABLE: boolean = TO_PARQUET_AVAILABLE || DUCKDB_AVAILABLE;
 
 /**
  * Create a temporary test directory with a unique name.

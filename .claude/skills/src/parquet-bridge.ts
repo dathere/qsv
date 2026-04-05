@@ -351,8 +351,8 @@ export async function convertCsvToParquet(
  */
 export function detectDelimiter(filePath: string): string {
   const lower = filePath.toLowerCase();
-  if (lower.endsWith(".tsv") || lower.endsWith(".tab")) return "\t";
-  if (lower.endsWith(".ssv")) return ";";
+  if (lower.endsWith(".tsv") || lower.endsWith(".tab") || lower.endsWith(".tsv.sz") || lower.endsWith(".tab.sz")) return "\t";
+  if (lower.endsWith(".ssv") || lower.endsWith(".ssv.sz")) return ";";
   return ",";
 }
 

@@ -1005,12 +1005,13 @@ export async function handleSearchToolsCall(
   loadedTools?: Set<string>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   const rawQuery = params.query;
-  if (rawQuery != null && typeof rawQuery !== "string" && typeof rawQuery !== "number") {
-    return errorResult("query parameter must be a string or number");
+  if (rawQuery != null && typeof rawQuery !== "string") {
+    return errorResult("query parameter must be a string");
   }
-  const query = typeof rawQuery === "string" ? rawQuery : typeof rawQuery === "number" ? String(rawQuery) : "";
+  const query = typeof rawQuery === "string" ? rawQuery : "";
   const category = params.category as string | undefined;
-  const limit = Math.min(Math.max(1, (params.limit as number) || 5), 20);
+  const rawLimit = Number(params.limit);
+  const limit = Math.min(Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 5), 20);
 
   if (!query || query.trim().length === 0) {
     return errorResult("query parameter is required");

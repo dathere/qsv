@@ -25,7 +25,7 @@ It's a fork of xsv with extensive additional functionality.
 - `src/config.rs` — CSV reader/writer config
 - `.claude/skills/src/` — TypeScript MCP server source (21 files)
 - `.claude/skills/qsv/` — 51 auto-generated skill JSON files
-- `tests/` — Rust test files (65 test modules)
+- `tests/` — Rust test files (`tests/tests.rs` declares 71 `mod test_*;` modules, including feature-gated ones)
 - `.claude/skills/tests/` — TypeScript test files
 - `.claude/skills/agents/` — 3 subagents (data-analyst, data-wrangler, policy-analyst)
 - `.claude/skills/skills/` — 15 domain knowledge skills

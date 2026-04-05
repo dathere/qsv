@@ -4,7 +4,7 @@
 qsv is a high-performance CSV data-wrangling toolkit in Rust (version 18.0, MSRV 1.94, Edition 2024). It features:
 - 71 commands with conditional compilation via feature flags
 - 4 binary variants (qsv, qsvmcp, qsvlite, qsvdp) with different feature sets
-- Comprehensive test coverage with 65 test modules (one per command)
+- Broad automated test coverage across 71 test modules (many feature-gated); test modules do not map one-to-one with commands
 - Strong parallel processing and SIMD optimizations
 - TypeScript MCP server integration for Claude Desktop
 
@@ -220,7 +220,7 @@ required-features = ["datapusher_plus"]  # = geocode + self_update
 ## 5. Testing Coverage and Quality
 
 ### Test File Organization
-**Location**: `tests/` directory, 65 test modules
+**Location**: `tests/` directory, 71 test modules (including feature-gated)
 
 **Test Coverage by Category**:
 | Category | Count | Examples |
@@ -314,14 +314,15 @@ mod test_sqlp;
 
 ### Coverage Analysis
 
-**All 71 Commands Tested**:
-- ✓ Core commands (count, select, cat, etc.) — comprehensive
-- ✓ Advanced commands (sqlp, joinp, luau, python) — feature-gated
-- ✓ Edge cases (empty files, malformed CSVs, large files)
+**Most Core Commands Have Integration Tests**:
+- ✓ Core commands (count, select, cat, etc.) — broadly covered
+- ✓ Many advanced commands (sqlp, joinp, luau, python) — feature-gated
+- ✓ Edge cases (empty files, malformed CSVs, large files) covered in many command tests
+- `fetchpost` is tested within `test_fetch.rs` (shared module)
 
-**Missing Test Module** (if exists):
-- `test_applydp.rs` — `#[cfg(feature = "datapusher_plus")]`
-- Tests are conditional on feature set compilation
+**Feature-gated Test Modules**:
+- `test_applydp.rs` exists and is included from `tests/tests.rs` behind `#[cfg(feature = "datapusher_plus")]`
+- Coverage varies by compiled feature set, so command-test parity is not 1:1
 
 **Negative/Error Cases**:
 - Test utility `wrk.stdout()` captures output
@@ -545,7 +546,7 @@ clipboard, color, lens, prompt
 | **Parallel Processing** | Excellent | 32 commands using rayon, memory-aware chunking |
 | **SIMD Optimization** | Advanced | Custom CSV fork, 5+ SIMD deps, runtime dispatch |
 | **Error Handling** | Robust | 8 error types, detailed context, logging integration |
-| **Testing** | Strong | 65 test modules, integration tests, property-based testing |
+| **Testing** | Strong | 71 test modules (feature-gated), integration tests, property-based testing |
 | **I/O Abstraction** | Clean | Config-driven CSV handling, format detection, compression |
 | **Documentation** | Excellent | Auto-generated help markdown, MCP guidance hints |
 | **MCP Integration** | Production-Ready | 51 auto-generated skills, 21 source files, streaming executor, resource limits |

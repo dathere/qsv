@@ -39,6 +39,7 @@ Common options:
     -d, --delimiter <arg>  The field delimiter for reading CSV data.
                            Must be a single character. (default: ,)
     -o, --output <file>    Write output to <file> instead of stdout.
+                           Use "-" to explicitly write to stdout.
     --memcheck             Check if there is enough memory to load the entire
                            CSV into memory using CONSERVATIVE heuristics.
     -q, --quiet            Do not display enum/const list inferencing messages.

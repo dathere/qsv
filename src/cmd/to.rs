@@ -229,8 +229,8 @@ To options:
   -s, --schema <arg>      The schema to load the data into. (postgres only).
   --infer-len <rows>      The number of rows to use for schema inference (parquet only).
                           Note that even if a pschema.json file exists for an input file,
-                          specifying a non-zero infer-len will cause qsv to ignore the pschema.json and
-                          infer the schema from the CSV data instead.
+                          explicitly specifying infer-len will cause qsv to ignore the pschema.json and
+                          infer the schema from the CSV data instead, including when set to 0.
                           Set to 0 to infer from all rows (not recommended for large files).
   --try-parse-dates       Attempt to parse date/datetime columns with polars' date inference logic.
                           This may result in more accurate date parsing, but can be slower on large files.

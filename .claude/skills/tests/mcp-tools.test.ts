@@ -3,6 +3,7 @@
  */
 
 import { test } from 'node:test';
+import { sep } from 'node:path';
 import assert from 'node:assert';
 import {
   handleToolCall,
@@ -463,15 +464,22 @@ test('detectDelimiter defaults to comma for unknown extensions', () => {
 // ============================================================================
 
 test('statsFilePath strips .csv extension and appends .stats.csv', () => {
-  assert.strictEqual(statsFilePath('/tmp/cities.csv'), '/tmp/cities.stats.csv');
+  // Use path.join for platform-correct separators (Windows uses backslash)
+  const input = ['', 'tmp', 'cities.csv'].join(sep);
+  const expected = ['', 'tmp', 'cities.stats.csv'].join(sep);
+  assert.strictEqual(statsFilePath(input), expected);
 });
 
 test('statsFilePath strips .tsv extension', () => {
-  assert.strictEqual(statsFilePath('/tmp/data.tsv'), '/tmp/data.stats.csv');
+  const input = ['', 'tmp', 'data.tsv'].join(sep);
+  const expected = ['', 'tmp', 'data.stats.csv'].join(sep);
+  assert.strictEqual(statsFilePath(input), expected);
 });
 
 test('statsFilePath strips only last extension for .csv.sz', () => {
-  assert.strictEqual(statsFilePath('/tmp/file.csv.sz'), '/tmp/file.csv.stats.csv');
+  const input = ['', 'tmp', 'file.csv.sz'].join(sep);
+  const expected = ['', 'tmp', 'file.csv.stats.csv'].join(sep);
+  assert.strictEqual(statsFilePath(input), expected);
 });
 
 test('statsFilePath handles file without directory', () => {
@@ -479,7 +487,9 @@ test('statsFilePath handles file without directory', () => {
 });
 
 test('statsFilePath strips .ssv extension', () => {
-  assert.strictEqual(statsFilePath('/path/to/data.ssv'), '/path/to/data.stats.csv');
+  const input = ['', 'path', 'to', 'data.ssv'].join(sep);
+  const expected = ['', 'path', 'to', 'data.stats.csv'].join(sep);
+  assert.strictEqual(statsFilePath(input), expected);
 });
 
 // ============================================================================

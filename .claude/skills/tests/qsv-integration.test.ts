@@ -888,7 +888,7 @@ test('handleToolCall prefers "input_file" over "input" when both present', { ski
 // Polars SQL Engine Header Tests
 // ============================================================================
 
-test('qsv_sqlp success output includes Polars SQL engine header', { skip: !QSV_AVAILABLE }, async () => {
+test('qsv_sqlp success output includes SQL engine header', { skip: !QSV_AVAILABLE }, async () => {
   const testDir = await createTestDir();
   const loader = new SkillLoader();
   const executor = new SkillExecutor();
@@ -915,8 +915,8 @@ test('qsv_sqlp success output includes Polars SQL engine header', { skip: !QSV_A
     assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
     const output = result.content[0].text || '';
     assert.ok(
-      output.startsWith('🐻‍❄️ Engine: Polars SQL'),
-      `sqlp output should start with Polars SQL engine header, got: ${output.substring(0, 80)}`,
+      output.startsWith('🐻‍❄️ Engine: Polars SQL') || output.startsWith('🦆 Engine: DuckDB'),
+      `sqlp output should start with SQL engine header, got: ${output.substring(0, 80)}`,
     );
   } finally {
     await cleanupTestDir(testDir);
@@ -958,15 +958,17 @@ test('qsv_sqlp success with parquet warning has correct ordering: engine header 
     assert.ok(!result.isError, `Command should succeed: ${result.content[0].text}`);
     const output = result.content[0].text || '';
 
-    // Engine header must appear first
+    // Engine header must appear first (either Polars or DuckDB)
     assert.ok(
-      output.startsWith('🐻‍❄️ Engine: Polars SQL'),
+      output.startsWith('🐻‍❄️ Engine: Polars SQL') || output.startsWith('🦆 Engine: DuckDB'),
       `Output should start with engine header, got: ${output.substring(0, 100)}`,
     );
 
     // Parquet warning must be present and appear after engine header but before data
     const warningIndex = output.indexOf('[Warning] Parquet auto-conversion was skipped');
-    const engineIndex = output.indexOf('🐻‍❄️ Engine: Polars SQL');
+    const polarsIndex = output.indexOf('🐻‍❄️ Engine: Polars SQL');
+    const duckdbIndex = output.indexOf('🦆 Engine: DuckDB');
+    const engineIndex = polarsIndex >= 0 ? polarsIndex : duckdbIndex;
     assert.ok(
       warningIndex !== -1,
       'Parquet warning should be present in output (read-only dir should prevent parquet creation)',
@@ -990,7 +992,7 @@ test('qsv_sqlp success with parquet warning has correct ordering: engine header 
   }
 });
 
-test('qsv_sqlp error output includes Polars SQL engine header', { skip: !QSV_AVAILABLE }, async () => {
+test('qsv_sqlp error output includes SQL engine header', { skip: !QSV_AVAILABLE }, async () => {
   const testDir = await createTestDir();
   const loader = new SkillLoader();
   const executor = new SkillExecutor();
@@ -1018,15 +1020,15 @@ test('qsv_sqlp error output includes Polars SQL engine header', { skip: !QSV_AVA
     assert.ok(result.isError, 'Command should fail with invalid SQL syntax');
     const output = result.content[0].text || '';
     assert.ok(
-      output.startsWith('🐻‍❄️ Engine: Polars SQL'),
-      `sqlp error output should start with Polars SQL engine header, got: ${output.substring(0, 80)}`,
+      output.startsWith('🐻‍❄️ Engine: Polars SQL') || output.startsWith('🦆 Engine: DuckDB'),
+      `sqlp error output should start with SQL engine header, got: ${output.substring(0, 80)}`,
     );
   } finally {
     await cleanupTestDir(testDir);
   }
 });
 
-test('non-sqlp commands do not include Polars SQL engine header', { skip: !QSV_AVAILABLE }, async () => {
+test('non-sqlp commands do not include SQL engine header', { skip: !QSV_AVAILABLE }, async () => {
   const testDir = await createTestDir();
   const loader = new SkillLoader();
   const executor = new SkillExecutor();
@@ -1050,8 +1052,8 @@ test('non-sqlp commands do not include Polars SQL engine header', { skip: !QSV_A
     assert.ok(!result.isError, 'Command should succeed');
     const output = result.content[0].text || '';
     assert.ok(
-      !output.includes('🐻‍❄️ Engine: Polars SQL'),
-      `Non-sqlp command should not include Polars SQL engine header, got: ${output.substring(0, 80)}`,
+      !output.includes('🐻‍❄️ Engine: Polars SQL') && !output.includes('🦆 Engine: DuckDB'),
+      `Non-sqlp command should not include SQL engine header, got: ${output.substring(0, 80)}`,
     );
   } finally {
     await cleanupTestDir(testDir);

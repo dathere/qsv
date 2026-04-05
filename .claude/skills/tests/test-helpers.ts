@@ -47,19 +47,14 @@ export const TO_PARQUET_AVAILABLE: boolean = (() => {
 
 /**
  * Whether DuckDB is available for integration tests.
- * Temporarily enables the useDuckDb config flag to probe for the binary.
+ * useDuckDb defaults to true, so we just need to probe for the binary.
  */
 export const DUCKDB_AVAILABLE: boolean = (() => {
-  const savedUseDuckDb = config.useDuckDb;
   try {
-    (config as Record<string, unknown>).useDuckDb = true;
     resetDuckDbState();
     return detectDuckDb().status === "available";
   } catch {
     return false;
-  } finally {
-    (config as Record<string, unknown>).useDuckDb = savedUseDuckDb;
-    resetDuckDbState();
   }
 })();
 

@@ -127,7 +127,7 @@ npm run mcpb:package
 
 | Category | Count | Skills |
 |----------|-------|--------|
-| **utility** | 23 | cat, clipboard, count, headers, index, input, partition, pseudo, reverse, sniff, split, template, etc. |
+| **utility** | 22 | cat, clipboard, count, headers, index, input, partition, pseudo, reverse, sniff, split, template, etc. |
 | **transformation** | 5 | rename, replace, transpose, etc. |
 | **aggregation** | 5 | frequency, moarstats, stats, count, pragmastat |
 | **conversion** | 5 | excel, json, jsonl, tojsonl, etc. |
@@ -140,9 +140,9 @@ npm run mcpb:package
 
 **Total Statistics:**
 - **Skills**: 51 commands
-- **Usage Examples**: 180 from documentation
-- **Options**: 607 command-line options
-- **Arguments**: 89 positional arguments
+- **Usage Examples**: 174 from documentation
+- **Options**: 604 command-line options
+- **Arguments**: 87 positional arguments
 
 ## Project Structure
 
@@ -451,7 +451,7 @@ MIT
 **Version**: 18.0.5
 **Generator**: `qsv --update-mcp-skills`
 **Skills**: 51 commands
-**Usage Examples**: 180 from documentation
+**Usage Examples**: 174 from documentation
 **Parsing**: qsv-docopt (robust, accurate)
 **Features**: MCP server, filesystem access, type-safe execution
 **Status**: ✅ Production Ready

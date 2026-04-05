@@ -1268,6 +1268,18 @@ export async function handleToParquetCall(
     return errorResult(reservedCachePathError(resolvedOutputFile));
   }
 
+  // Acquire concurrency slot — Parquet conversion spawns child processes
+  const slotResult = await acquireSlot(config.concurrencyWaitTimeoutMs);
+  if (slotResult !== true) {
+    const activeOps = getActiveOperationCount();
+    const { queued, maxQueue } = getQueueStatus();
+    const reason = slotResult === "backpressure"
+      ? `Concurrency queue is full (${queued}/${maxQueue} queued, ${activeOps} running). `
+      : `Operation queued but timed out after ${Math.round(config.concurrencyWaitTimeoutMs / 1000)}s waiting for a slot. ` +
+        `${activeOps} operation${activeOps !== 1 ? "s" : ""} still running, ${queued} queued. `;
+    return errorResult(reason + `Try running operations sequentially.`);
+  }
+
   const startTime = Date.now();
 
   try {
@@ -1325,6 +1337,8 @@ export async function handleToParquetCall(
       success: false,
     } satisfies PipelineMetadata;
     return errResult;
+  } finally {
+    releaseSlot();
   }
 }
 

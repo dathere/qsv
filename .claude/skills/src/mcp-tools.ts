@@ -967,7 +967,10 @@ async function convertCsvToParquet(
   // `to parquet` always writes `{outputDir}/{table}.parquet`, so compute the effective path
   // to ensure unlink/stat/reporting are consistent even if parquetPath has a non-.parquet extension.
   const outputDir = dirname(parquetPath);
-  const outputStem = basename(parquetPath, ".parquet");
+  // Strip .parquet extension case-insensitively to derive the table name stem.
+  // basename() only strips exact case matches, so "out.PARQUET" would not be stripped.
+  const base = basename(parquetPath);
+  const outputStem = base.replace(/\.parquet$/i, "") || base;
   const effectiveParquetPath = join(outputDir, outputStem + ".parquet");
 
   // Remove existing parquet file — `to parquet` won't overwrite

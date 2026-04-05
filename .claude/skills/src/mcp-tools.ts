@@ -648,8 +648,6 @@ async function runQsvWithTimeout(
  * Handles different patterns:
  * - Excel/JSONL: qsv <cmd> <input> --output <output>
  * - Parquet→CSV: qsv sqlp SKIP_INPUT "select * from read_parquet('<input>')" --output <output>
- * - CSV→Parquet: qsv sqlp <input> "SELECT * FROM _t_1" --format parquet --output <output>
- *   (passes input directly so sqlp can detect .pschema.json for type inference)
  */
 export function buildConversionArgs(
   conversionCmd: string,
@@ -664,21 +662,6 @@ export function buildConversionArgs(
     const escapedPath = normalizedPath.replace(/'/g, "''");
     const sql = `select * from read_parquet('${escapedPath}')`;
     return ["sqlp", "SKIP_INPUT", sql, "--output", outputFile];
-  }
-  if (conversionCmd === "csv-to-parquet") {
-    // CSV→Parquet conversion: pass input directly so sqlp can detect .pschema.json for type inference
-    return [
-      "sqlp",
-      inputFile,
-      "SELECT * FROM _t_1",
-      "--format",
-      "parquet",
-      "--compression",
-      "snappy",
-      "--statistics",
-      "--output",
-      outputFile,
-    ];
   }
   // Standard: qsv <cmd> <input> --output <output>
   return [conversionCmd, inputFile, "--output", outputFile];
@@ -938,7 +921,8 @@ async function spawnDuckDbCommands(
 const MAX_STDERR_SIZE = 1024 * 1024;
 
 /**
- * Convert CSV to Parquet, using DuckDB (with ZSTD) when available, falling back to sqlp (Snappy).
+ * Convert CSV to Parquet, using DuckDB (with ZSTD) when available,
+ * falling back to `qsv to parquet` (ZSTD, with --try-parse-dates).
  * Returns the engine description string for reporting.
  */
 async function convertCsvToParquet(
@@ -973,21 +957,35 @@ async function convertCsvToParquet(
     }
   }
 
-  // Fallback: generate Polars schema (Steps 2 + 2.5), then run sqlp
+  // Fallback: generate Polars schema (Step 2, no AM/PM patching — --try-parse-dates handles it)
   const { needSchema, schemaFile } = await ensurePolarsSchema(inputFile);
 
-  console.error(`[MCP Tools] Fallback: Converting to Parquet via sqlp (Snappy)`);
-  const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, parquetPath);
+  // Use `qsv to parquet` with ZSTD compression and native date parsing.
+  // `to parquet` reads .pschema.json automatically when present (see to.rs:711-729).
+  // It uses directory-based output, so we pass the parent dir and use --table for the filename stem.
+  const outputDir = dirname(parquetPath);
+  const outputStem = basename(parquetPath, ".parquet");
+
+  // Remove existing parquet file — `to parquet` won't overwrite
+  try { await unlink(parquetPath); } catch { /* ignore: file may not exist */ }
+
+  console.error(`[MCP Tools] Fallback: Converting to Parquet via qsv to parquet (ZSTD)`);
+  const toParquetArgs = [
+    "to", "parquet", outputDir,
+    "--table", outputStem,
+    "--compression", "zstd",
+    "--try-parse-dates",
+    inputFile,
+  ];
   try {
-    await runQsvWithTimeout(config.qsvBinPath, conversionArgs);
+    await runQsvWithTimeout(config.qsvBinPath, toParquetArgs);
   } catch (error: unknown) {
-    // Clean up partial parquet on sqlp failure
+    // Clean up partial parquet on failure
     try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
     const message = `Parquet conversion failed for ${inputFile} \u2192 ${parquetPath}: ${getErrorMessage(error)}`;
-    // Wrap the original error to add context while preserving it as the cause
     throw new Error(message, { cause: error });
   }
-  return { engine: "qsv sqlp (Snappy)", needSchema, schemaFile, schemaSkipped: false };
+  return { engine: "qsv to parquet (ZSTD)", needSchema, schemaFile, schemaSkipped: false };
 }
 
 /**
@@ -2200,12 +2198,17 @@ async function ensureStatsCache(
 
 /**
  * Ensure the Polars schema (.pschema.json) is up-to-date for the given input file.
- * This covers Steps 2 and 2.5 (schema generation + AM/PM date patching).
- * Only needed for the sqlp fallback path — DuckDB does its own type mapping.
+ * Covers Step 2 (schema generation) and optionally Step 2.5 (AM/PM date patching).
+ *
+ * The `to parquet` fallback uses --try-parse-dates for native date handling,
+ * so AM/PM patching is only needed for the sqlp path (kept for backward compatibility
+ * in case sqlp is used elsewhere).
  */
 async function ensurePolarsSchema(
   inputFile: string,
+  options: { patchAmPmDates?: boolean } = {},
 ): Promise<{ needSchema: boolean; schemaFile: string }> {
+  const { patchAmPmDates = false } = options;
   const qsvBin = config.qsvBinPath;
   const schemaFile = inputFile + ".pschema.json";
 
@@ -2238,8 +2241,10 @@ async function ensurePolarsSchema(
   }
 
   // Step 2.5: Patch schema for AM/PM date formats that Polars can't parse
-  // Always run — idempotent; covers schemas generated before AM/PM patching was introduced
-  await patchSchemaAndLog(inputFile, schemaFile);
+  // Only needed for sqlp path; `to parquet` uses --try-parse-dates instead
+  if (patchAmPmDates) {
+    await patchSchemaAndLog(inputFile, schemaFile);
+  }
 
   return { needSchema, schemaFile };
 }
@@ -3898,7 +3903,7 @@ export function createToParquetTool(): McpToolDefinition {
 
 /**
  * Handle qsv_to_parquet tool call
- * Converts CSV to Parquet using sqlp's read_csv and --format parquet
+ * Converts CSV to Parquet using DuckDB (primary) or `qsv to parquet` (fallback)
  */
 export async function handleToParquetCall(
   params: Record<string, unknown>,

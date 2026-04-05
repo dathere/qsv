@@ -396,7 +396,7 @@ distrib_features = [
     "to",
 ]
 all_features = ["distrib_features", "magika", "self_update", "ui"]
-qsvmcp = ["feature_capable", "geocode", "luau", "mcp", "polars", "self_update"]
+qsvmcp = ["feature_capable", "geocode", "luau", "mcp", "polars", "self_update", "to"]
 apply = [
     "base62",
     "base64-simd",

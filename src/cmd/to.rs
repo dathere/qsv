@@ -743,6 +743,13 @@ fn to_parquet(
         let file = std::fs::File::create(&output_path)?;
         ParquetWriter::new(file)
             .with_row_group_size(Some(768 * 768))
+            .with_statistics(StatisticsOptions {
+                min_value:                          true,
+                max_value:                          true,
+                distinct_count:                     true,
+                null_count:                         true,
+                binary_statistics_truncate_length:   Some(64),
+            })
             .with_compression(parquet_compression)
             .finish(&mut df)?;
 

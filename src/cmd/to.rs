@@ -629,7 +629,7 @@ fn to_parquet(
     flag_compression: Option<String>,
     flag_compress_level: Option<i32>,
     flag_all_strings: bool,
-    flag_all_infer_len: Option<usize>,
+    flag_infer_len: Option<usize>,
     flag_try_parse_dates: bool,
     quiet: bool,
 ) -> CliResult<()> {
@@ -709,7 +709,7 @@ fn to_parquet(
         let valid_schema_exists = schema_file.exists()
             && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?
             // if --infer-len is explicitly set (even to 0), ignore existing schema file
-            && flag_all_infer_len.is_none();
+            && flag_infer_len.is_none();
 
         if valid_schema_exists {
             let file = std::fs::File::open(&schema_file)?;
@@ -720,7 +720,7 @@ fn to_parquet(
             debug!("using schema file: {}", schema_file.display());
             lazy_csv_reader = lazy_csv_reader.with_schema(Some(Arc::new(schema)));
         } else {
-            let infer_len = match flag_all_infer_len {
+            let infer_len = match flag_infer_len {
                 None => Some(1000), // default to 1000 rows when not specified
                 Some(0) => None,    // 0 means scan all rows
                 some_len => some_len,
@@ -763,7 +763,7 @@ fn to_parquet(
     _flag_compression: Option<String>,
     _flag_compress_level: Option<i32>,
     _flag_all_strings: bool,
-    _flag_all_infer_len: Option<usize>,
+    _flag_infer_len: Option<usize>,
     _flag_try_parse_dates: bool,
     _quiet: bool,
 ) -> CliResult<()> {

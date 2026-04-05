@@ -639,11 +639,6 @@ export async function ensureParquet(inputFile: string): Promise<string> {
 }
 
 /**
- * Ensure the stats cache (.stats.csv) is up-to-date for the given input file.
- * This is Step 1 of the Parquet conversion pipeline and is needed by both
- * the DuckDB and sqlp paths.
- */
-/**
  * Compute the stats cache file path for a given input file.
  * Mirrors qsv's Rust `stats_path()`: `{parent}/{file_stem}.stats.csv`.
  * e.g. `/tmp/cities.csv` → `/tmp/cities.stats.csv`
@@ -654,6 +649,11 @@ export function statsFilePath(inputFile: string): string {
   return join(dir, `${name}.stats.csv`);
 }
 
+/**
+ * Ensure the stats cache (.stats.csv) is up-to-date for the given input file.
+ * This is Step 1 of the Parquet conversion pipeline and is needed by both
+ * the DuckDB and sqlp paths.
+ */
 export async function ensureStatsCache(
   inputFile: string,
 ): Promise<{ needStats: boolean; statsFile: string }> {

@@ -39,6 +39,7 @@ Common options:
     -d, --delimiter <arg>  The field delimiter for reading CSV data.
                            Must be a single character. (default: ,)
     -o, --output <file>    Write output to <file> instead of stdout.
+                           Use "-" to explicitly write to stdout.
     --memcheck             Check if there is enough memory to load the entire
                            CSV into memory using CONSERVATIVE heuristics.
     -q, --quiet            Do not display enum/const list inferencing messages.
@@ -173,8 +174,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut rdr = conf.reader()?;
 
     let mut wtr: Box<dyn IoWrite> = match args.flag_output {
-        Some(ref output_file) => Box::new(BufWriter::new(File::create(output_file)?)),
-        None => Box::new(BufWriter::new(io::stdout().lock())),
+        Some(ref output_file) if output_file != "-" => {
+            Box::new(BufWriter::new(File::create(output_file)?))
+        },
+        _ => Box::new(BufWriter::new(io::stdout().lock())),
     };
 
     let headers = rdr.headers()?.clone();

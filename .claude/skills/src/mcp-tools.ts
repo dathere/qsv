@@ -946,7 +946,7 @@ async function convertCsvToParquet(
         await spawnDuckDbCommands(state.binPath, dbPath, sql);
         return { engine: `DuckDB v${state.version} (ZSTD)`, needSchema: false, schemaFile: "N/A (DuckDB)", schemaSkipped: true };
       } catch (error: unknown) {
-        // Clean up partial parquet on DuckDB failure, then fall through to sqlp
+        // Clean up partial parquet on DuckDB failure, then fall back to qsv to parquet
         try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
         console.error(`[MCP Tools] DuckDB runtime failure, falling back to qsv to parquet: ${getErrorMessage(error)}`);
       }
@@ -963,11 +963,14 @@ async function convertCsvToParquet(
   // Use `qsv to parquet` with ZSTD compression and native date parsing.
   // `to parquet` reads .pschema.json automatically when present (see to.rs:711-729).
   // It uses directory-based output, so we pass the parent dir and use --table for the filename stem.
+  // `to parquet` always writes `{outputDir}/{table}.parquet`, so compute the effective path
+  // to ensure unlink/stat/reporting are consistent even if parquetPath has a non-.parquet extension.
   const outputDir = dirname(parquetPath);
   const outputStem = basename(parquetPath, ".parquet");
+  const effectiveParquetPath = join(outputDir, outputStem + ".parquet");
 
   // Remove existing parquet file — `to parquet` won't overwrite
-  try { await unlink(parquetPath); } catch { /* ignore: file may not exist */ }
+  try { await unlink(effectiveParquetPath); } catch { /* ignore: file may not exist */ }
 
   console.error(`[MCP Tools] Fallback: Converting to Parquet via qsv to parquet (ZSTD)`);
   const toParquetArgs = [
@@ -981,8 +984,8 @@ async function convertCsvToParquet(
     await runQsvWithTimeout(config.qsvBinPath, toParquetArgs);
   } catch (error: unknown) {
     // Clean up partial parquet on failure
-    try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
-    const message = `Parquet conversion failed for ${inputFile} \u2192 ${parquetPath}: ${getErrorMessage(error)}`;
+    try { await unlink(effectiveParquetPath); } catch { /* ignore: cleanup */ }
+    const message = `Parquet conversion failed for ${inputFile} \u2192 ${effectiveParquetPath}: ${getErrorMessage(error)}`;
     throw new Error(message, { cause: error });
   }
   return { engine: "qsv to parquet (ZSTD)", needSchema, schemaFile, schemaSkipped: false };

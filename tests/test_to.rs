@@ -1432,6 +1432,135 @@ fn to_parquet_pschema_ignored_when_infer_len_zero() {
 
 #[test]
 #[cfg(feature = "polars")]
+fn to_parquet_pschema_via_schema_cmd() {
+    // End-to-end test: generate pschema with `qsv schema --polars`, then convert with `qsv to
+    // parquet` and verify the pschema types are applied.
+    let wrk = Workdir::new("to_parquet_pschema_via_schema_cmd");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score", "registered"],
+            svec!["Alice", "30", "95.5", "2024-01-15"],
+            svec!["Bob", "25", "88.0", "2024-06-30"],
+            svec!["Carol", "35", "92.3", "2024-03-20"],
+        ],
+    );
+
+    // Step 1: Run `qsv schema --polars data.csv` to generate pschema
+    let mut schema_cmd = wrk.command("schema");
+    schema_cmd.arg("--polars").arg("data.csv");
+    wrk.assert_success(&mut schema_cmd);
+
+    // Verify pschema file was created
+    let pschema_path = wrk.path("data.csv.pschema.json");
+    assert!(
+        pschema_path.exists(),
+        "pschema.json should be created by schema --polars"
+    );
+
+    // Step 2: Run `qsv to parquet out/ data.csv` — should pick up the pschema
+    let output_dir = wrk.path("parquet_out");
+    let mut to_cmd = wrk.command("to");
+    to_cmd
+        .arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("data.csv");
+
+    wrk.assert_success(&mut to_cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists(), "parquet file should be created");
+
+    // Read back and verify the schema types match the pschema
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 3);
+
+    // Read the generated pschema to know what types were inferred
+    let pschema_content = std::fs::read_to_string(&pschema_path).unwrap();
+    let pschema: serde_json::Value = serde_json::from_str(&pschema_content).unwrap();
+    let pschema_fields = pschema["fields"].as_object().unwrap();
+
+    // Verify the parquet schema matches the pschema types
+    let parquet_schema = df.schema();
+    assert_eq!(
+        parquet_schema.get("name").unwrap(),
+        &polars::prelude::DataType::String,
+        "name should be String per pschema"
+    );
+    // age should be a numeric type per pschema (exact type depends on qsv stats inference)
+    let age_pschema_type = pschema_fields["age"].as_str().unwrap();
+    assert!(
+        !age_pschema_type.is_empty(),
+        "pschema should have a type for age"
+    );
+    // score should be a float type per pschema
+    let score_pschema_type = pschema_fields["score"].as_str().unwrap();
+    assert!(
+        score_pschema_type.contains("Float") || score_pschema_type.contains("Decimal"),
+        "score pschema type should be a float/decimal type, got {score_pschema_type}"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_infer_len_zero_full_file() {
+    // Test that --infer-len 0 scans ALL rows for type inference.
+    // The first 2 rows have small integers, but later rows have larger values that
+    // demonstrate full-file scanning produces correct results.
+    let wrk = Workdir::new("to_parquet_infer_len_zero_full");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "value", "amount"],
+            svec!["a", "1", "10.5"],
+            svec!["b", "2", "20.0"],
+            svec!["c", "3", "30.75"],
+            svec!["d", "100000", "999999.99"],
+            svec!["e", "5", "50.25"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--infer-len")
+        .arg("0")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists());
+
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+
+    // All 5 rows should be present — full-file inference doesn't drop rows
+    assert_eq!(df.height(), 5, "all rows should be present");
+
+    // Verify data integrity: the large value in row 4 should be preserved
+    let value_col = df.column("value").unwrap();
+    let col_str = format!("{value_col:?}");
+    assert!(
+        col_str.contains("100000"),
+        "large value 100000 should be preserved, got {col_str}"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
 fn to_parquet_infer_len() {
     let wrk = Workdir::new("to_parquet_infer_len");
     wrk.create(

@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { readFile, stat, access, chmod } from 'fs/promises';
+import { readFile, stat, access, chmod, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { handleToolCall, handleToParquetCall } from '../src/mcp-tools.js';
 import { config } from '../src/config.js';
@@ -532,6 +532,45 @@ test('qsv_to_parquet skips regeneration when stats and schema are up-to-date', {
     assert.ok(!result2.isError, 'Second conversion should succeed');
     const output2 = result2.content[0].text || '';
     assert.ok(output2.includes('reused (up-to-date)'), 'Second run should reuse cached files');
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('handleToParquetCall produces output at exact path via directory/stem decomposition', { skip: !QSV_AVAILABLE }, async () => {
+  // Verifies the `to parquet` fallback correctly decomposes the output path into
+  // a directory + stem (via --table), producing the file at the expected location.
+  const testDir = await createTestDir();
+
+  try {
+    const csvPath = await createTestCSV(
+      testDir,
+      'decomp.csv',
+      'id,name,value\n1,Alice,100\n2,Bob,200\n'
+    );
+
+    // Request a custom output path in a subdirectory
+    const subDir = join(testDir, 'sub');
+    await mkdir(subDir, { recursive: true });
+    const parquetPath = join(subDir, 'custom_name.parquet');
+
+    const result = await handleToParquetCall({
+      input_file: csvPath,
+      output_file: parquetPath,
+    });
+
+    assert.ok(!result.isError, `Conversion should succeed: ${result.content[0].text}`);
+
+    // Verify the parquet file was created at the exact requested path
+    const parquetStat = await stat(parquetPath);
+    assert.ok(parquetStat.size > 0, 'Parquet file should be created at the exact output path');
+
+    // Verify engine info is reported (either DuckDB or qsv to parquet)
+    const output = result.content[0].text || '';
+    assert.ok(
+      output.includes('DuckDB') || output.includes('qsv to parquet'),
+      'Should report the conversion engine used'
+    );
   } finally {
     await cleanupTestDir(testDir);
   }

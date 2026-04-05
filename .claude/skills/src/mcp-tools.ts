@@ -648,8 +648,6 @@ async function runQsvWithTimeout(
  * Handles different patterns:
  * - Excel/JSONL: qsv <cmd> <input> --output <output>
  * - Parquet→CSV: qsv sqlp SKIP_INPUT "select * from read_parquet('<input>')" --output <output>
- * - CSV→Parquet: qsv sqlp <input> "SELECT * FROM _t_1" --format parquet --output <output>
- *   (passes input directly so sqlp can detect .pschema.json for type inference)
  */
 export function buildConversionArgs(
   conversionCmd: string,
@@ -664,21 +662,6 @@ export function buildConversionArgs(
     const escapedPath = normalizedPath.replace(/'/g, "''");
     const sql = `select * from read_parquet('${escapedPath}')`;
     return ["sqlp", "SKIP_INPUT", sql, "--output", outputFile];
-  }
-  if (conversionCmd === "csv-to-parquet") {
-    // CSV→Parquet conversion: pass input directly so sqlp can detect .pschema.json for type inference
-    return [
-      "sqlp",
-      inputFile,
-      "SELECT * FROM _t_1",
-      "--format",
-      "parquet",
-      "--compression",
-      "snappy",
-      "--statistics",
-      "--output",
-      outputFile,
-    ];
   }
   // Standard: qsv <cmd> <input> --output <output>
   return [conversionCmd, inputFile, "--output", outputFile];
@@ -938,14 +921,15 @@ async function spawnDuckDbCommands(
 const MAX_STDERR_SIZE = 1024 * 1024;
 
 /**
- * Convert CSV to Parquet, using DuckDB (with ZSTD) when available, falling back to sqlp (Snappy).
+ * Convert CSV to Parquet, using DuckDB (with ZSTD) when available,
+ * falling back to `qsv to parquet` (ZSTD, with --try-parse-dates).
  * Returns the engine description string for reporting.
  */
 async function convertCsvToParquet(
   inputFile: string,
   parquetPath: string,
   statsFile: string,
-): Promise<{ engine: string; needSchema: boolean; schemaFile: string; schemaSkipped: boolean }> {
+): Promise<{ engine: string; needSchema: boolean; schemaFile: string; schemaSkipped: boolean; outputPath: string }> {
   const state = detectDuckDb();
 
   if (state.status === "available") {
@@ -960,34 +944,52 @@ async function convertCsvToParquet(
 
       try {
         await spawnDuckDbCommands(state.binPath, dbPath, sql);
-        return { engine: `DuckDB v${state.version} (ZSTD)`, needSchema: false, schemaFile: "N/A (DuckDB)", schemaSkipped: true };
+        // DuckDB writes directly to parquetPath (not directory-based)
+        return { engine: `DuckDB v${state.version} (ZSTD)`, needSchema: false, schemaFile: "N/A (DuckDB)", schemaSkipped: true, outputPath: parquetPath };
       } catch (error: unknown) {
-        // Clean up partial parquet on DuckDB failure, then fall through to sqlp
+        // Clean up partial parquet on DuckDB failure, then fall back to qsv to parquet
         try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
-        console.error(`[MCP Tools] DuckDB runtime failure, falling back to sqlp: ${getErrorMessage(error)}`);
+        console.error(`[MCP Tools] DuckDB runtime failure, falling back to qsv to parquet: ${getErrorMessage(error)}`);
       }
     }
     if (sql === null) {
-      // SQL generation failed (stats cache unreadable, path validation, or delimiter issue) — fall through to sqlp
-      console.error(`[MCP Tools] DuckDB: SQL generation failed (see earlier log for details), falling back to sqlp`);
+      // SQL generation failed (stats cache unreadable, path validation, or delimiter issue) — fall through to qsv to parquet
+      console.error(`[MCP Tools] DuckDB: SQL generation failed (see earlier log for details), falling back to qsv to parquet`);
     }
   }
 
-  // Fallback: generate Polars schema (Steps 2 + 2.5), then run sqlp
+  // Fallback: generate Polars schema (Step 2, no AM/PM patching — --try-parse-dates handles it)
   const { needSchema, schemaFile } = await ensurePolarsSchema(inputFile);
 
-  console.error(`[MCP Tools] Fallback: Converting to Parquet via sqlp (Snappy)`);
-  const conversionArgs = buildConversionArgs("csv-to-parquet", inputFile, parquetPath);
+  // Use `qsv to parquet` with ZSTD compression and native date parsing.
+  // `to parquet` reads .pschema.json automatically when present (see to.rs:711-729).
+  // It uses directory-based output, so we pass the parent dir and use --table for the filename stem.
+  // `to parquet` always writes `{outputDir}/{table}.parquet`, so compute the effective path
+  // to ensure unlink/stat/reporting are consistent even if parquetPath has a non-.parquet extension.
+  const outputDir = dirname(parquetPath);
+  const outputStem = basename(parquetPath, ".parquet");
+  const effectiveParquetPath = join(outputDir, outputStem + ".parquet");
+
+  // Remove existing parquet file — `to parquet` won't overwrite
+  try { await unlink(effectiveParquetPath); } catch { /* ignore: file may not exist */ }
+
+  console.error(`[MCP Tools] Fallback: Converting to Parquet via qsv to parquet (ZSTD)`);
+  const toParquetArgs = [
+    "to", "parquet", outputDir,
+    "--table", outputStem,
+    "--compression", "zstd",
+    "--try-parse-dates",
+    inputFile,
+  ];
   try {
-    await runQsvWithTimeout(config.qsvBinPath, conversionArgs);
+    await runQsvWithTimeout(config.qsvBinPath, toParquetArgs);
   } catch (error: unknown) {
-    // Clean up partial parquet on sqlp failure
-    try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
-    const message = `Parquet conversion failed for ${inputFile} \u2192 ${parquetPath}: ${getErrorMessage(error)}`;
-    // Wrap the original error to add context while preserving it as the cause
+    // Clean up partial parquet on failure
+    try { await unlink(effectiveParquetPath); } catch { /* ignore: cleanup */ }
+    const message = `Parquet conversion failed for ${inputFile} \u2192 ${effectiveParquetPath}: ${getErrorMessage(error)}`;
     throw new Error(message, { cause: error });
   }
-  return { engine: "qsv sqlp (Snappy)", needSchema, schemaFile, schemaSkipped: false };
+  return { engine: "qsv to parquet (ZSTD)", needSchema, schemaFile, schemaSkipped: false, outputPath: effectiveParquetPath };
 }
 
 /**
@@ -2200,12 +2202,17 @@ async function ensureStatsCache(
 
 /**
  * Ensure the Polars schema (.pschema.json) is up-to-date for the given input file.
- * This covers Steps 2 and 2.5 (schema generation + AM/PM date patching).
- * Only needed for the sqlp fallback path — DuckDB does its own type mapping.
+ * Covers Step 2 (schema generation) and optionally Step 2.5 (AM/PM date patching).
+ *
+ * The `to parquet` fallback uses --try-parse-dates for native date handling,
+ * so AM/PM patching is only needed for the sqlp path (kept for backward compatibility
+ * in case sqlp is used elsewhere).
  */
 async function ensurePolarsSchema(
   inputFile: string,
+  options: { patchAmPmDates?: boolean } = {},
 ): Promise<{ needSchema: boolean; schemaFile: string }> {
+  const { patchAmPmDates = false } = options;
   const qsvBin = config.qsvBinPath;
   const schemaFile = inputFile + ".pschema.json";
 
@@ -2238,8 +2245,10 @@ async function ensurePolarsSchema(
   }
 
   // Step 2.5: Patch schema for AM/PM date formats that Polars can't parse
-  // Always run — idempotent; covers schemas generated before AM/PM patching was introduced
-  await patchSchemaAndLog(inputFile, schemaFile);
+  // Only needed for sqlp path; `to parquet` uses --try-parse-dates instead
+  if (patchAmPmDates) {
+    await patchSchemaAndLog(inputFile, schemaFile);
+  }
 
   return { needSchema, schemaFile };
 }
@@ -2249,25 +2258,27 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
 
   const { statsFile } = await ensureStatsCache(inputFile);
 
-  // Step 3: Convert to Parquet (DuckDB with ZSTD when available, sqlp with Snappy otherwise)
-  const { engine } = await convertCsvToParquet(inputFile, parquetPath, statsFile);
+  // Step 3: Convert to Parquet (DuckDB with ZSTD when available, qsv to parquet with ZSTD otherwise)
+  const { engine, outputPath } = await convertCsvToParquet(inputFile, parquetPath, statsFile);
   console.error(`[MCP Tools] ensureParquet: Conversion engine: ${engine}`);
 
-  // Verify the output file was actually created and is non-empty
+  // Verify the output file was actually created and is non-empty.
+  // Use outputPath (the actual file written) rather than parquetPath (the requested path),
+  // since the fallback engine may normalize the path (e.g. ensure .parquet extension).
   let outStats;
   try {
-    outStats = await stat(parquetPath);
+    outStats = await stat(outputPath);
   } catch (error: unknown) {
-    console.warn(`[MCP Tools] Output file stat failed after conversion: ${parquetPath}`, error);
-    throw new Error(`Parquet conversion completed but output file not found: ${parquetPath}`);
+    console.warn(`[MCP Tools] Output file stat failed after conversion: ${outputPath}`, error);
+    throw new Error(`Parquet conversion completed but output file not found: ${outputPath}`);
   }
   if (outStats.size === 0) {
-    try { await unlink(parquetPath); } catch { /* ignore: cleanup */ }
-    throw new Error(`Parquet conversion produced an empty file: ${parquetPath}`);
+    try { await unlink(outputPath); } catch { /* ignore: cleanup */ }
+    throw new Error(`Parquet conversion produced an empty file: ${outputPath}`);
   }
 
-  console.error(`[MCP Tools] ensureParquet: Successfully converted to ${parquetPath}`);
-  return parquetPath;
+  console.error(`[MCP Tools] ensureParquet: Successfully converted to ${outputPath}`);
+  return outputPath;
 }
 
 /**
@@ -3898,7 +3909,7 @@ export function createToParquetTool(): McpToolDefinition {
 
 /**
  * Handle qsv_to_parquet tool call
- * Converts CSV to Parquet using sqlp's read_csv and --format parquet
+ * Converts CSV to Parquet using DuckDB (primary) or `qsv to parquet` (fallback)
  */
 export async function handleToParquetCall(
   params: Record<string, unknown>,
@@ -3984,21 +3995,21 @@ export async function handleToParquetCall(
   const startTime = Date.now();
 
   try {
-    // Step 1: Ensure stats cache is up-to-date (needed by both DuckDB and sqlp paths)
+    // Step 1: Ensure stats cache is up-to-date (needed by both DuckDB and qsv to parquet paths)
     const { needStats, statsFile } = await ensureStatsCache(inputFile);
 
-    // Step 3: Convert to Parquet (DuckDB with ZSTD when available, sqlp with Snappy otherwise)
-    // Schema generation (Steps 2-2.5) is deferred to the sqlp fallback path only
-    const { engine, needSchema, schemaFile, schemaSkipped } = await convertCsvToParquet(inputFile, resolvedOutputFile, statsFile);
+    // Step 3: Convert to Parquet (DuckDB with ZSTD when available, qsv to parquet with ZSTD otherwise)
+    // Schema generation (Steps 2-2.5) is deferred to the qsv to parquet fallback path only
+    const { engine, needSchema, schemaFile, schemaSkipped, outputPath } = await convertCsvToParquet(inputFile, resolvedOutputFile, statsFile);
     const duration = Date.now() - startTime;
 
-    // Get output file size for reporting
+    // Get output file size for reporting — use outputPath (actual file written)
     let fileSizeInfo = "";
     try {
-      const outputStats = await stat(resolvedOutputFile);
+      const outputStats = await stat(outputPath);
       fileSizeInfo = ` (${formatBytes(outputStats.size)})`;
     } catch (error: unknown) {
-      console.warn(`[MCP Tools] Could not stat output file for size reporting: ${resolvedOutputFile}`, error);
+      console.warn(`[MCP Tools] Could not stat output file for size reporting: ${outputPath}`, error);
     }
 
     const statsStatus = needStats ? "generated" : "reused (up-to-date)";

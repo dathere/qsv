@@ -335,8 +335,8 @@ mod test_sqlp;
 
 ### Parallel Processing (Rayon)
 
-**17 Commands Using Parallel Processing** (direct rayon imports in src/cmd/):
-Commands: `apply`, `applydp`, `datefmt`, `dedup`, `excel`, `geocode`, `jsonl`, `moarstats`, `pragmastat`, `sample`, `schema`, `sort`, `split`, `stats`, `template`, `tojsonl`, `validate`
+**18 Commands Using Parallel Processing** (direct rayon imports in src/cmd/):
+Commands: `apply`, `applydp`, `count`, `datefmt`, `dedup`, `excel`, `geocode`, `jsonl`, `moarstats`, `pragmastat`, `sample`, `schema`, `sort`, `split`, `stats`, `template`, `tojsonl`, `validate`
 
 **Patterns**:
 - `use rayon::prelude::*;` imports parallel iterators

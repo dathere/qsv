@@ -541,9 +541,9 @@ clipboard, color, lens, prompt
 
 | Metric | Status | Evidence |
 |--------|--------|----------|
-| **Command Coverage** | Comprehensive | 71 commands, all tested |
+| **Command Coverage** | Comprehensive | 71 commands; 71 feature-gated test modules with shared/conditional coverage |
 | **Feature Isolation** | Excellent | Conditional compilation gates, feature presets |
-| **Parallel Processing** | Excellent | 32 commands using rayon, memory-aware chunking |
+| **Parallel Processing** | Excellent | 18 commands using rayon, memory-aware chunking |
 | **SIMD Optimization** | Advanced | Custom CSV fork, 5+ SIMD deps, runtime dispatch |
 | **Error Handling** | Robust | 8 error types, detailed context, logging integration |
 | **Testing** | Strong | 71 test modules (feature-gated), integration tests, property-based testing |

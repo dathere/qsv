@@ -173,8 +173,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut rdr = conf.reader()?;
 
     let mut wtr: Box<dyn IoWrite> = match args.flag_output {
-        Some(ref output_file) => Box::new(BufWriter::new(File::create(output_file)?)),
-        None => Box::new(BufWriter::new(io::stdout().lock())),
+        Some(ref output_file) if output_file != "-" => {
+            Box::new(BufWriter::new(File::create(output_file)?))
+        },
+        _ => Box::new(BufWriter::new(io::stdout().lock())),
     };
 
     let headers = rdr.headers()?.clone();

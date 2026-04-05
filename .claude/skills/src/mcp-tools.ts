@@ -2254,7 +2254,7 @@ async function doParquetConversion(inputFile: string, parquetPath: string): Prom
 
   const { statsFile } = await ensureStatsCache(inputFile);
 
-  // Step 3: Convert to Parquet (DuckDB with ZSTD when available, sqlp with Snappy otherwise)
+  // Step 3: Convert to Parquet (DuckDB with ZSTD when available, qsv to parquet with ZSTD otherwise)
   const { engine } = await convertCsvToParquet(inputFile, parquetPath, statsFile);
   console.error(`[MCP Tools] ensureParquet: Conversion engine: ${engine}`);
 
@@ -3992,7 +3992,7 @@ export async function handleToParquetCall(
     // Step 1: Ensure stats cache is up-to-date (needed by both DuckDB and sqlp paths)
     const { needStats, statsFile } = await ensureStatsCache(inputFile);
 
-    // Step 3: Convert to Parquet (DuckDB with ZSTD when available, sqlp with Snappy otherwise)
+    // Step 3: Convert to Parquet (DuckDB with ZSTD when available, qsv to parquet with ZSTD otherwise)
     // Schema generation (Steps 2-2.5) is deferred to the sqlp fallback path only
     const { engine, needSchema, schemaFile, schemaSkipped } = await convertCsvToParquet(inputFile, resolvedOutputFile, statsFile);
     const duration = Date.now() - startTime;

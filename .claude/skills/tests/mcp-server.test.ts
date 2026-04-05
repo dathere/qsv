@@ -349,9 +349,6 @@ test("buildConversionArgs creates correct Parquet-to-CSV args", () => {
   assert.deepStrictEqual(args[4], "/out/data.csv");
 });
 
-// CSV→Parquet conversion is now handled directly by `qsv to parquet`,
-// not through buildConversionArgs. See convertCsvToParquet() in mcp-tools.ts.
-
 test("buildConversionArgs creates correct standard conversion args", () => {
   const args = buildConversionArgs("excel", "/path/to/data.xlsx", "/out/data.csv");
   assert.deepStrictEqual(args, ["excel", "/path/to/data.xlsx", "--output", "/out/data.csv"]);

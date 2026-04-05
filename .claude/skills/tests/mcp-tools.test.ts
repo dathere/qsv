@@ -292,10 +292,6 @@ test('buildConversionArgs escapes single quotes in Parquet paths', () => {
 });
 
 // ============================================================================
-// CSV→Parquet conversion is now handled directly by `qsv to parquet` in convertCsvToParquet(),
-// not through buildConversionArgs. See convertCsvToParquet() in mcp-tools.ts.
-
-// ============================================================================
 // qsv_to_parquet Tool Definition Tests
 // ============================================================================
 

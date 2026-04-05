@@ -10,6 +10,7 @@ import {
   _testConcurrency,
   getActiveOperationCount,
 } from "../src/mcp-tools.js";
+import type { SlotResult } from "../src/mcp-tools.js";
 import { config } from "../src/config.js";
 
 const { acquireSlot, releaseSlot, getSlotWaiterCount, setMaxConcurrent, setMaxQueueSize, getMaxQueueSize, reset } =
@@ -221,7 +222,7 @@ test("acquireSlot rejects when queue exceeds MAX_QUEUE_SIZE", async () => {
     assert.strictEqual(getActiveOperationCount(), 1);
 
     // Queue up to the limit — these will wait (with long timeouts)
-    const waiters: Promise<true | "timeout" | "backpressure">[] = [];
+    const waiters: Promise<SlotResult>[] = [];
     for (let i = 0; i < 3; i++) {
       waiters.push(acquireSlot(5000));
     }

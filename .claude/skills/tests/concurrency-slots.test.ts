@@ -9,6 +9,7 @@ import assert from "node:assert";
 import {
   _testConcurrency,
   getActiveOperationCount,
+  getQueueStatus,
 } from "../src/mcp-tools.js";
 import type { SlotResult } from "../src/mcp-tools.js";
 import { config } from "../src/config.js";
@@ -278,6 +279,47 @@ test("backpressure allows new waiters after queue drains", async () => {
     const result2 = await waiter2;
     assert.strictEqual(result2, true);
     releaseSlot();
+  } finally {
+    setMaxQueueSize(savedQueueSize);
+    teardown(saved);
+  }
+});
+
+test("getQueueStatus returns correct queue size and limit", async () => {
+  const saved = setup(1);
+  const savedQueueSize = getMaxQueueSize();
+  setMaxQueueSize(3);
+  try {
+    // Initially: no waiters
+    const initial = getQueueStatus();
+    assert.strictEqual(initial.queued, 0);
+    assert.strictEqual(initial.maxQueue, 3);
+
+    // Fill the single slot
+    const r1 = await acquireSlot(100);
+    assert.strictEqual(r1, true);
+
+    // Queue two waiters
+    const waiter1 = acquireSlot(5000);
+    const waiter2 = acquireSlot(5000);
+
+    // Allow waiters to register
+    await new Promise((r) => setTimeout(r, 10));
+    const afterQueue = getQueueStatus();
+    assert.strictEqual(afterQueue.queued, 2);
+    assert.strictEqual(afterQueue.maxQueue, 3);
+
+    // Release slots to drain waiters
+    releaseSlot();
+    const r2 = await waiter1;
+    assert.strictEqual(r2, true);
+    releaseSlot();
+    const r3 = await waiter2;
+    assert.strictEqual(r3, true);
+    releaseSlot();
+
+    const afterDrain = getQueueStatus();
+    assert.strictEqual(afterDrain.queued, 0);
   } finally {
     setMaxQueueSize(savedQueueSize);
     teardown(saved);

@@ -29,6 +29,7 @@ export {
   killAllProcesses,
   getActiveProcessCount,
   getActiveOperationCount,
+  getQueueStatus,
   _testConcurrency,
 } from "./concurrency.js";
 export type { SlotResult } from "./concurrency.js";

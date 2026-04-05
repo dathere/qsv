@@ -52,9 +52,6 @@ export function createToolDefinition(skill: QsvSkill): McpToolDefinition {
       }
 
       // Positional args enforced at runtime (not in schema) so help-only calls work
-      // if (arg.required) {
-      //   required.push(arg.name);
-      // }
     }
   }
 

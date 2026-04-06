@@ -4,60 +4,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [19.0.0] - 2026-04-06
 
-## What's Changed
-* build(deps): bump rustls-webpki from 0.103.9 to 0.103.10 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3632
-* refactor(plugin): refine joinp asof guidance by @jqnatividad in https://github.com/dathere/qsv/pull/3633
-* Refactor policy analyst agent uses moarstats by @jqnatividad in https://github.com/dathere/qsv/pull/3634
-* feat(pivotp): totals by @jqnatividad in https://github.com/dathere/qsv/pull/3635
-* build(deps): bump redis from 1.0.5 to 1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3636
-* docs: fix 27 stale claims found in documentation audit by @jqnatividad in https://github.com/dathere/qsv/pull/3637
-* feat(plugin): make policy analyst agent BLS MCP Server aware by @jqnatividad in https://github.com/dathere/qsv/pull/3638
-* build(deps): bump cached from 0.58.0 to 0.59.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3639
-* build(deps): bump toml from 1.0.7+spec-1.1.0 to 1.1.0+spec-1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3640
-* docs(mcp): consolidate install guides into single START_HERE.md by @jqnatividad in https://github.com/dathere/qsv/pull/3641
-* refactor(mcp): more reliable userprompt logging using hooks by @jqnatividad in https://github.com/dathere/qsv/pull/3642
-* feat(mcp): more logging - Stop (so we log each turn) and SessionEnd (log each Session) by @jqnatividad in https://github.com/dathere/qsv/pull/3643
-* feat(mcp): log WebSearch and WebFetch results for citation by @jqnatividad in https://github.com/dathere/qsv/pull/3645
-* Mcp doc audit 2026 03 26 by @jqnatividad in https://github.com/dathere/qsv/pull/3646
-* publish(mcp): 18.0.5 release of MCP Server and Cowork plugin by @jqnatividad in https://github.com/dathere/qsv/pull/3647
-* build(deps): bump rust_decimal from 1.40.0 to 1.41.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3648
-* build(deps): bump file-format from 0.28.0 to 0.29.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3649
-* build(deps): bump path-to-regexp from 8.3.0 to 8.4.0 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3652
-* deps: bump jaq from 2 to 3; jaq-json from 1 to 2 by @jqnatividad in https://github.com/dathere/qsv/pull/3653
-* feat(moar): even moar stats by @jqnatividad in https://github.com/dathere/qsv/pull/3654
-* refactor(plugin): migrate commands to skills by @jqnatividad in https://github.com/dathere/qsv/pull/3655
-* feat(plugin): Cowork plugin project reproducibility manifest by @jqnatividad in https://github.com/dathere/qsv/pull/3657
-* feat: add blake3 command by @jqnatividad in https://github.com/dathere/qsv/pull/3658
-* refactor(plugin): replace b3sum dependency with built-in qsv blake3 by @jqnatividad in https://github.com/dathere/qsv/pull/3659
-* build(deps): bump toml from 1.1.0+spec-1.1.0 to 1.1.1+spec-1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3660
-* build(deps): bump human-panic from 2.0.6 to 2.0.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3661
-* docs(help): suppress linebreaks on help md for options by using non-breaking hyphens by @jqnatividad in https://github.com/dathere/qsv/pull/3662
-* deps: bump atoi simd and sysinfo by @jqnatividad in https://github.com/dathere/qsv/pull/3663
-* build(deps): bump toml from 1.1.1+spec-1.1.0 to 1.1.2+spec-1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3664
-* build(deps): bump minijinja from 2.18.0 to 2.19.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3666
-* build(deps): bump minijinja-contrib from 2.18.0 to 2.19.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3665
-* build(deps): bump pyo3 from 0.28.2 to 0.28.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3667
-* refactor(mcp): improve `data-profile` skill by @jqnatividad in https://github.com/dathere/qsv/pull/3668
-* build(deps-dev): bump lodash from 4.17.23 to 4.18.1 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3669
-* build(deps): bump human-panic from 2.0.7 to 2.0.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3670
-* build(deps): bump indexmap from 2.13.0 to 2.13.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3671
-* build(deps): bump tokio from 1.50.0 to 1.51.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3672
-* feat(mcp): use our FBI Crime Data MCP Server by @jqnatividad in https://github.com/dathere/qsv/pull/3673
-* feat(to): re-add `to parquet` subcommand powered by Polars by @jqnatividad in https://github.com/dathere/qsv/pull/3674
-* feat(mcp): Update for FBI Crime Data MCP 0.3.0 - Add CDE homepage sum… by @jqnatividad in https://github.com/dathere/qsv/pull/3675
-* chore: Serena optimization by @jqnatividad in https://github.com/dathere/qsv/pull/3676
-* build(deps): bump redis from 1.1.0 to 1.2.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3677
-* build(deps): bump semver from 1.0.27 to 1.0.28 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3678
-* refactor(to): use LazyFrame for parquet conversion by @jqnatividad in https://github.com/dathere/qsv/pull/3679
-* feat(to): add pschema.json support, --infer-len and --try-parse-dates for parquet by @jqnatividad in https://github.com/dathere/qsv/pull/3680
-* refactor(mcp): replace sqlp fallback with `to parquet` for Parquet conversion by @jqnatividad in https://github.com/dathere/qsv/pull/3681
-* refactor(mcp): split mcp-tools.ts into focused modules by @jqnatividad in https://github.com/dathere/qsv/pull/3682
-* build(deps): bump self_update from 0.43.1 to 0.44.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3683
-* feat: switch default allocator from mimalloc to jemalloc by @jqnatividad in https://github.com/dathere/qsv/pull/3684
-* build(deps): bump jsonschema from 0.45.0 to 0.45.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3685
+### Added
+- `blake3`: new BLAKE3 hashing command https://github.com/dathere/qsv/pull/3658
+- `to parquet`: re-add subcommand powered by Polars https://github.com/dathere/qsv/pull/3674
+- `to parquet`: pschema.json support, --infer-len and --try-parse-dates https://github.com/dathere/qsv/pull/3680
+- `pivotp`: totals support https://github.com/dathere/qsv/pull/3635
+- `moarstats`: even moar stats https://github.com/dathere/qsv/pull/3654
 
+### Changed
+- `to parquet`: use LazyFrame for parquet conversion https://github.com/dathere/qsv/pull/3679
+- `tojsonl`: implement proper JSONL writer instead of abusing CSV writer
+- Document first-N sampling; use to_string_lossy
+- `help`: suppress linebreaks for options by using non-breaking hyphens https://github.com/dathere/qsv/pull/3662
+- Switch default allocator from mimalloc to jemalloc - the default allocator of polars https://github.com/dathere/qsv/pull/3684
+- deps: bump jaq from 2 to 3; jaq-json from 1 to 2 https://github.com/dathere/qsv/pull/3653
+- deps: bump polars to latest upstream
+- deps: bump atoi simd and sysinfo https://github.com/dathere/qsv/pull/3663
+- Add debug_assert! to moarstats map lookups
+- Remove some unwraps
+
+### Fixed
+- docs: fix 27 stale claims found in documentation audit https://github.com/dathere/qsv/pull/3637
+- docs: correct 5 documentation inaccuracies found during audit
+- typo: `|` character not escaped, prematurely truncating content
+
+### Dependencies
+- bump cached from 0.58.0 to 0.59.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3639
+- bump file-format from 0.28.0 to 0.29.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3649
+- bump human-panic from 2.0.6 to 2.0.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3661
+- bump human-panic from 2.0.7 to 2.0.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3670
+- bump indexmap from 2.13.0 to 2.13.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3671
+- bump jsonschema from 0.45.0 to 0.45.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3685
+- bump lodash from 4.17.23 to 4.18.1 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3669
+- bump minijinja from 2.18.0 to 2.19.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3666
+- bump minijinja-contrib from 2.18.0 to 2.19.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3665
+- bump path-to-regexp from 8.3.0 to 8.4.0 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3652
+- bump pyo3 from 0.28.2 to 0.28.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3667
+- bump redis from 1.0.5 to 1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3636
+- bump redis from 1.1.0 to 1.2.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3677
+- bump rust_decimal from 1.40.0 to 1.41.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3648
+- bump rustls-webpki from 0.103.9 to 0.103.10 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3632
+- bump self_update from 0.43.1 to 0.44.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3683
+- bump semver from 1.0.27 to 1.0.28 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3678
+- bump tokio from 1.50.0 to 1.51.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3672
+- bump toml from 1.0.7 to 1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3640
+- bump toml from 1.1.0 to 1.1.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3660
+- bump toml from 1.1.1 to 1.1.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3664
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/18.0.0...19.0.0
 

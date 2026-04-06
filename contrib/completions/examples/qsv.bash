@@ -18,6 +18,9 @@ _qsv() {
             qsv,behead)
                 cmd="qsv__behead"
                 ;;
+            qsv,blake3)
+                cmd="qsv__blake3"
+                ;;
             qsv,cat)
                 cmd="qsv__cat"
                 ;;
@@ -360,6 +363,9 @@ _qsv() {
             qsv__help,behead)
                 cmd="qsv__help__behead"
                 ;;
+            qsv__help,blake3)
+                cmd="qsv__help__blake3"
+                ;;
             qsv__help,cat)
                 cmd="qsv__help__cat"
                 ;;
@@ -657,6 +663,9 @@ _qsv() {
             qsv__help__to,ods)
                 cmd="qsv__help__to__ods"
                 ;;
+            qsv__help__to,parquet)
+                cmd="qsv__help__to__parquet"
+                ;;
             qsv__help__to,postgres)
                 cmd="qsv__help__to__postgres"
                 ;;
@@ -762,6 +771,9 @@ _qsv() {
             qsv__to,ods)
                 cmd="qsv__to__ods"
                 ;;
+            qsv__to,parquet)
+                cmd="qsv__to__parquet"
+                ;;
             qsv__to,postgres)
                 cmd="qsv__to__postgres"
                 ;;
@@ -779,6 +791,9 @@ _qsv() {
                 ;;
             qsv__to__help,ods)
                 cmd="qsv__to__help__ods"
+                ;;
+            qsv__to__help,parquet)
+                cmd="qsv__to__help__parquet"
                 ;;
             qsv__to__help,postgres)
                 cmd="qsv__to__help__postgres"
@@ -808,7 +823,7 @@ _qsv() {
 
     case "${cmd}" in
         qsv)
-            opts="-V -h --list --envlist --update --updatenow --version --help apply behead cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert headers index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats table template to tojsonl transpose validate help"
+            opts="-V -h --list --envlist --update --updatenow --version --help apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert headers index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats table template to tojsonl transpose validate help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -822,17 +837,25 @@ _qsv() {
             return 0
             ;;
         qsv__apply)
-            opts="-R -j -c -C -p -f -d -b -r -n -o -h --replacement --jobs --new-column --comparand --progressbar --formatstr --delimiter --batch --rename --no-headers --output --help calcconv dynfmt emptyreplace operations help"
+            opts="-f -o -j -r -C -R -d -b -p -n -c -h --formatstr --output --jobs --rename --comparand --replacement --delimiter --batch --progressbar --no-headers --new-column --help calcconv dynfmt emptyreplace operations help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --replacement)
+                --formatstr)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -R)
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -844,11 +867,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --new-column)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -c)
+                -r)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -860,11 +883,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --formatstr)
+                --replacement)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -f)
+                -R)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -884,19 +907,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --new-column)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -908,17 +923,25 @@ _qsv() {
             return 0
             ;;
         qsv__apply__calcconv)
-            opts="-R -j -c -C -p -f -d -b -r -n -o -h --replacement --jobs --new-column --comparand --progressbar --formatstr --delimiter --batch --rename --no-headers --output --help"
+            opts="-f -o -j -r -C -R -d -b -p -n -c -h --formatstr --output --jobs --rename --comparand --replacement --delimiter --batch --progressbar --no-headers --new-column --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --replacement)
+                --formatstr)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -R)
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -930,11 +953,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --new-column)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -c)
+                -r)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -946,11 +969,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --formatstr)
+                --replacement)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -f)
+                -R)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -970,19 +993,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --new-column)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -994,17 +1009,25 @@ _qsv() {
             return 0
             ;;
         qsv__apply__dynfmt)
-            opts="-R -j -c -C -p -f -d -b -r -n -o -h --replacement --jobs --new-column --comparand --progressbar --formatstr --delimiter --batch --rename --no-headers --output --help"
+            opts="-f -o -j -r -C -R -d -b -p -n -c -h --formatstr --output --jobs --rename --comparand --replacement --delimiter --batch --progressbar --no-headers --new-column --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --replacement)
+                --formatstr)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -R)
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1016,11 +1039,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --new-column)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -c)
+                -r)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1032,11 +1055,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --formatstr)
+                --replacement)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -f)
+                -R)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1056,19 +1079,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --new-column)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1080,17 +1095,25 @@ _qsv() {
             return 0
             ;;
         qsv__apply__emptyreplace)
-            opts="-R -j -c -C -p -f -d -b -r -n -o -h --replacement --jobs --new-column --comparand --progressbar --formatstr --delimiter --batch --rename --no-headers --output --help"
+            opts="-f -o -j -r -C -R -d -b -p -n -c -h --formatstr --output --jobs --rename --comparand --replacement --delimiter --batch --progressbar --no-headers --new-column --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --replacement)
+                --formatstr)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -R)
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1102,11 +1125,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --new-column)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -c)
+                -r)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1118,11 +1141,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --formatstr)
+                --replacement)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -f)
+                -R)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1142,19 +1165,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --new-column)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1250,17 +1265,25 @@ _qsv() {
             return 0
             ;;
         qsv__apply__operations)
-            opts="-R -j -c -C -p -f -d -b -r -n -o -h --replacement --jobs --new-column --comparand --progressbar --formatstr --delimiter --batch --rename --no-headers --output --help"
+            opts="-f -o -j -r -C -R -d -b -p -n -c -h --formatstr --output --jobs --rename --comparand --replacement --delimiter --batch --progressbar --no-headers --new-column --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --replacement)
+                --formatstr)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -R)
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1272,11 +1295,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --new-column)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -c)
+                -r)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1288,11 +1311,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --formatstr)
+                --replacement)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -f)
+                -R)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1312,19 +1335,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --new-column)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1357,8 +1372,50 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__blake3)
+            opts="-j -c -o -q -l -h --jobs --keyed --no-names --tag --check --output --raw --quiet --no-mmap --length --derive-key --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --length)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --derive-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__cat)
-            opts="-N -d -p -n -o -g -h --group-name --delimiter --flexible --pad --no-headers --output --group --help columns rows rowskey help"
+            opts="-p -N -g -o -n -d -h --pad --group-name --flexible --group --output --no-headers --delimiter --help columns rows rowskey help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1372,11 +1429,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
+                --group)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
+                -g)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1388,11 +1445,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --group)
+                --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -g)
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1404,7 +1461,7 @@ _qsv() {
             return 0
             ;;
         qsv__cat__columns)
-            opts="-N -d -p -n -o -g -h --group-name --delimiter --flexible --pad --no-headers --output --group --help"
+            opts="-p -N -g -o -n -d -h --pad --group-name --flexible --group --output --no-headers --delimiter --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1418,11 +1475,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
+                --group)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
+                -g)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1434,11 +1491,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --group)
+                --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -g)
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1520,7 +1577,7 @@ _qsv() {
             return 0
             ;;
         qsv__cat__rows)
-            opts="-N -d -p -n -o -g -h --group-name --delimiter --flexible --pad --no-headers --output --group --help"
+            opts="-p -N -g -o -n -d -h --pad --group-name --flexible --group --output --no-headers --delimiter --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1534,11 +1591,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
+                --group)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
+                -g)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1550,11 +1607,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --group)
+                --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -g)
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1566,7 +1623,7 @@ _qsv() {
             return 0
             ;;
         qsv__cat__rowskey)
-            opts="-N -d -p -n -o -g -h --group-name --delimiter --flexible --pad --no-headers --output --group --help"
+            opts="-p -N -g -o -n -d -h --pad --group-name --flexible --group --output --no-headers --delimiter --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1580,11 +1637,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
+                --group)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
+                -g)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1596,11 +1653,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --group)
+                --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -g)
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1626,7 +1683,7 @@ _qsv() {
             return 0
             ;;
         qsv__color)
-            opts="-n -d -t -C -o -h --row-numbers --delimiter --title --color --memcheck --output --help"
+            opts="-d -o -n -C -t -h --delimiter --output --row-numbers --memcheck --color --title --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1640,19 +1697,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --title)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -t)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --title)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1664,7 +1721,7 @@ _qsv() {
             return 0
             ;;
         qsv__count)
-            opts="-H -f -n -d -h --human-readable --flexible --width --no-headers --width-no-delims --json --low-memory --no-polars --delimiter --help"
+            opts="-f -n -H -d -h --width --flexible --width-no-delims --no-headers --json --no-polars --human-readable --low-memory --delimiter --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1686,13 +1743,21 @@ _qsv() {
             return 0
             ;;
         qsv__datefmt)
-            opts="-j -b -n -d -c -r -o -p -R -h --utc --input-tz --keep-zero-time --default-tz --jobs --batch --no-headers --delimiter --new-column --rename --prefer-dmy --output --output-tz --zulu --progressbar --formatstr --ts-resolution --help"
+            opts="-p -R -j -r -o -n -b -c -d -h --progressbar --input-tz --ts-resolution --default-tz --jobs --output-tz --rename --utc --keep-zero-time --zulu --output --no-headers --batch --prefer-dmy --new-column --delimiter --formatstr --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --input-tz)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ts-resolution)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -R)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1708,27 +1773,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
+                --output-tz)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1748,19 +1793,31 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --output-tz)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 --formatstr)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --ts-resolution)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -R)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1772,20 +1829,12 @@ _qsv() {
             return 0
             ;;
         qsv__dedup)
-            opts="-d -N -H -i -j -o -s -q -D -n -h --delimiter --numeric --human-readable --ignore-case --jobs --output --select --sorted --quiet --dupes-output --memcheck --no-headers --help"
+            opts="-j -N -q -o -H -s -n -D -d -i -h --jobs --numeric --memcheck --quiet --output --human-readable --select --no-headers --dupes-output --delimiter --sorted --ignore-case --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --jobs)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -1818,6 +1867,14 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -1826,33 +1883,13 @@ _qsv() {
             return 0
             ;;
         qsv__describegpt)
-            opts="-A -o -t -k -p -m -q -u -h --language --prepare-context --all --num-examples --ckan-api --sql-results --process-response --fresh --output --num-tags --session --sample-size --truncate-str --addl-props --addl-cols-list --max-tokens --api-key --no-cache --prompt --score-max-retries --flush-cache --enum-threshold --description --forget --ckan-token --tags --fewshot-examples --session-len --model --export-prompt --timeout --no-score-sql --redis-cache --disk-cache-dir --quiet --base-url --tag-vocab --stats-options --prompt-file --score-threshold --dictionary --user-agent --addl-cols --freq-options --format --cache-dir --help"
+            opts="-m -q -A -o -k -u -t -p -h --freq-options --no-cache --num-tags --score-threshold --flush-cache --model --user-agent --addl-props --addl-cols-list --quiet --disk-cache-dir --tags --truncate-str --enum-threshold --all --fewshot-examples --cache-dir --output --timeout --ckan-api --prepare-context --format --score-max-retries --dictionary --addl-cols --description --api-key --fresh --num-examples --ckan-token --base-url --session --max-tokens --tag-vocab --process-response --sample-size --session-len --stats-options --prompt-file --redis-cache --language --forget --sql-results --no-score-sql --export-prompt --prompt --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --language)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --num-examples)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --ckan-api)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --sql-results)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
+                --freq-options)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1860,63 +1897,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --session)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --sample-size)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --truncate-str)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --addl-props)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --addl-cols-list)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --max-tokens)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -t)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --api-key)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --prompt)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -p)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --score-max-retries)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --enum-threshold)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --ckan-token)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --session-len)
+                --score-threshold)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1928,7 +1909,39 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --export-prompt)
+                --user-agent)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --addl-props)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --addl-cols-list)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --disk-cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --truncate-str)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --enum-threshold)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1936,7 +1949,31 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --disk-cache-dir)
+                --ckan-api)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --format)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --score-max-retries)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --num-examples)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-token)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1948,7 +1985,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --session)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --max-tokens)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --tag-vocab)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sample-size)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --session-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1960,23 +2017,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --score-threshold)
+                --language)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --user-agent)
+                --sql-results)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --freq-options)
+                --export-prompt)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --format)
+                --prompt)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                -p)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1988,28 +2045,12 @@ _qsv() {
             return 0
             ;;
         qsv__diff)
-            opts="-j -k -o -d -h --no-headers-left --jobs --delimiter-output --delimiter-right --no-headers-output --no-headers-right --sort-columns --key --output --delimiter --delimiter-left --drop-equal-fields --help"
+            opts="-k -d -o -j -h --sort-columns --key --no-headers-left --delimiter --drop-equal-fields --no-headers-right --output --delimiter-right --jobs --delimiter-output --no-headers-output --delimiter-left --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --jobs)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -j)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --delimiter-output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --delimiter-right)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --sort-columns)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -2022,6 +2063,14 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -2030,11 +2079,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
+                --delimiter-right)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter-output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2050,7 +2107,7 @@ _qsv() {
             return 0
             ;;
         qsv__edit)
-            opts="-n -o -i -h --no-headers --output --in-place --help"
+            opts="-i -o -n -h --in-place --output --no-headers --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2072,12 +2129,32 @@ _qsv() {
             return 0
             ;;
         qsv__enum)
-            opts="-o -n -d -c -h --output --uuid4 --start --no-headers --increment --delimiter --new-column --constant --uuid7 --copy --hash --help"
+            opts="-c -o -n -d -h --uuid7 --new-column --start --constant --increment --uuid4 --output --no-headers --hash --delimiter --copy --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --start)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --constant)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --increment)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -2086,11 +2163,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --start)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --increment)
+                --hash)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2102,23 +2175,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --constant)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --copy)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --hash)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2130,21 +2187,33 @@ _qsv() {
             return 0
             ;;
         qsv__excel)
-            opts="-o -q -d -j -s -h --header-row --output --quiet --delimiter --trim --date-format --flexible --jobs --keep-zero-time --table --range --error-format --metadata --cell --sheet --help"
+            opts="-s -d -j -q -o -h --date-format --cell --error-format --range --sheet --flexible --delimiter --header-row --jobs --table --keep-zero-time --quiet --output --metadata --trim --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --header-row)
+                --date-format)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --output)
+                --cell)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -o)
+                --error-format)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --range)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sheet)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2156,7 +2225,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --date-format)
+                --header-row)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2172,27 +2241,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --range)
+                --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --error-format)
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 --metadata)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --cell)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --sheet)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2204,25 +2261,25 @@ _qsv() {
             return 0
             ;;
         qsv__exclude)
-            opts="-d -o -i -v -n -h --delimiter --output --ignore-case --invert --no-headers --help"
+            opts="-n -i -v -o -d -h --no-headers --ignore-case --invert --output --delimiter --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2272,7 +2329,7 @@ _qsv() {
             return 0
             ;;
         qsv__extdedup)
-            opts="-s -H -n -q -D -d -h --select --human-readable --temp-dir --no-headers --quiet --dupes-output --memory-limit --no-output --delimiter --help"
+            opts="-s -H -d -q -D -n -h --no-output --select --memory-limit --human-readable --temp-dir --delimiter --quiet --dupes-output --no-headers --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2286,7 +2343,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --memory-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --temp-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2298,18 +2367,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --memory-limit)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -2318,29 +2375,13 @@ _qsv() {
             return 0
             ;;
         qsv__extsort)
-            opts="-n -d -R -s -j -h --no-headers --delimiter --memory-limit --reverse --select --jobs --tmp-dir --help"
+            opts="-n -j -s -d -R -h --memory-limit --no-headers --jobs --select --tmp-dir --delimiter --reverse --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --memory-limit)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --select)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2352,7 +2393,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --select)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --tmp-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2364,61 +2421,17 @@ _qsv() {
             return 0
             ;;
         qsv__fetch)
-            opts="-p -H -c -o -d -n -h --max-errors --flush-cache --jaq --cookies --progressbar --user-agent --no-cache --jaqfile --timeout --pretty --http-header --new-column --disk-cache-dir --output --report --delimiter --cache-error --rate-limit --max-retries --no-headers --store-error --url-template --mem-cache-size --redis-cache --disk-cache --help"
+            opts="-p -d -n -c -o -H -h --jaqfile --store-error --progressbar --url-template --delimiter --report --cache-error --redis-cache --no-headers --new-column --jaq --cookies --no-cache --output --rate-limit --http-header --max-errors --max-retries --timeout --disk-cache --user-agent --mem-cache-size --disk-cache-dir --pretty --flush-cache --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --max-errors)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --jaq)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --user-agent)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --jaqfile)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --http-header)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -H)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --disk-cache-dir)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --report)
+                --url-template)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2430,7 +2443,43 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --report)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jaq)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --rate-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --http-header)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -H)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --max-errors)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2438,11 +2487,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --url-template)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --user-agent)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 --mem-cache-size)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --disk-cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2454,7 +2511,7 @@ _qsv() {
             return 0
             ;;
         qsv__fetchpost)
-            opts="-j -d -o -t -p -c -n -H -h --cookies --rate-limit --jaqfile --pretty --globals-json --max-retries --delimiter --report --output --payload-tpl --no-cache --disk-cache --timeout --compress --redis-cache --store-error --max-errors --flush-cache --progressbar --content-type --mem-cache-size --disk-cache-dir --new-column --no-headers --cache-error --jaq --http-header --user-agent --help"
+            opts="-p -n -o -d -c -t -H -j -h --progressbar --no-headers --rate-limit --report --content-type --redis-cache --output --jaqfile --pretty --compress --delimiter --new-column --jaq --cache-error --mem-cache-size --cookies --user-agent --store-error --max-retries --payload-tpl --http-header --globals-json --no-cache --disk-cache-dir --flush-cache --max-errors --disk-cache --timeout --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2464,31 +2521,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --jaqfile)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --globals-json)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -j)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --max-retries)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --report)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --content-type)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2500,31 +2537,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --payload-tpl)
+                --jaqfile)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -t)
+                --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --max-errors)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --content-type)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --mem-cache-size)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --disk-cache-dir)
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2540,6 +2561,26 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --mem-cache-size)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --user-agent)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --max-retries)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --payload-tpl)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --http-header)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -2548,7 +2589,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --user-agent)
+                --globals-json)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --disk-cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --max-errors)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2560,33 +2617,17 @@ _qsv() {
             return 0
             ;;
         qsv__fill)
-            opts="-f -o -d -n -g -v -b -h --first --output --delimiter --no-headers --groupby --default --backfill --help"
+            opts="-d -b -n -f -v -g -o -h --delimiter --backfill --no-headers --first --default --groupby --output --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --groupby)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -g)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2598,6 +2639,22 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --groupby)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -g)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -2606,12 +2663,32 @@ _qsv() {
             return 0
             ;;
         qsv__fixlengths)
-            opts="-r -i -o -l -d -q -h --remove-empty --insert --quote --escape --output --length --delimiter --quiet --help"
+            opts="-q -l -d -r -i -o -h --quiet --length --escape --delimiter --remove-empty --insert --quote --output --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --length)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --escape)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --insert)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -2624,31 +2701,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --escape)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --length)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -l)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2660,7 +2717,7 @@ _qsv() {
             return 0
             ;;
         qsv__flatten)
-            opts="-d -c -n -s -f -h --delimiter --condense --no-headers --separator --field-separator --help"
+            opts="-d -s -n -f -c -h --delimiter --separator --no-headers --field-separator --condense --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2671,14 +2728,6 @@ _qsv() {
                     return 0
                     ;;
                 -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --condense)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2698,6 +2747,14 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --condense)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -2706,20 +2763,12 @@ _qsv() {
             return 0
             ;;
         qsv__fmt)
-            opts="-d -o -t -h --delimiter --output --quote --ascii --out-delimiter --quote-always --escape --crlf --no-final-newline --quote-never --help"
+            opts="-o -t -d -h --crlf --output --out-delimiter --no-final-newline --delimiter --ascii --quote --quote-always --quote-never --escape --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -2728,15 +2777,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --quote)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --out-delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --quote)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2752,12 +2809,20 @@ _qsv() {
             return 0
             ;;
         qsv__foreach)
-            opts="-c -p -n -u -d -h --new-column --progressbar --dry-run --no-headers --unify --delimiter --help"
+            opts="-d -n -p -u -c -h --delimiter --no-headers --progressbar --unify --new-column --dry-run --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --new-column)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -2770,14 +2835,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -2786,7 +2843,7 @@ _qsv() {
             return 0
             ;;
         qsv__frequency)
-            opts="-j -d -n -u -l -r -a -s -i -o -h --force --frequency-jsonl --jobs --toon --delimiter --no-headers --no-trim --all-unique-text --pct-dec-places --no-stats --unq-limit --stats-filter --json --limit --high-card-threshold --other-sorted --rank-strategy --high-card-pct --lmt-threshold --vis-whitespace --pretty-json --other-text --memcheck --asc --select --no-nulls --pct-nulls --ignore-case --no-float --output --no-other --null-text --null-sorted --weight --help"
+            opts="-j -r -u -i -d -n -a -o -l -s -h --jobs --high-card-threshold --rank-strategy --no-float --frequency-jsonl --pretty-json --unq-limit --weight --no-trim --force --other-sorted --ignore-case --no-other --stats-filter --no-stats --lmt-threshold --json --pct-dec-places --no-nulls --other-text --high-card-pct --vis-whitespace --toon --delimiter --all-unique-text --pct-nulls --null-text --memcheck --no-headers --asc --null-sorted --output --limit --select --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2797,42 +2854,6 @@ _qsv() {
                     return 0
                     ;;
                 -j)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --all-unique-text)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --pct-dec-places)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --unq-limit)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -u)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --stats-filter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --limit)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -l)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2848,7 +2869,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --high-card-pct)
+                --no-float)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --unq-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -u)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --stats-filter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2856,7 +2893,47 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --pct-dec-places)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --other-text)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --high-card-pct)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --all-unique-text)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --null-text)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2868,26 +2945,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --no-float)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --null-text)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -2896,45 +2953,21 @@ _qsv() {
             return 0
             ;;
         qsv__geocode)
-            opts="-r -c -k -o -b -d -l -f -j -p -h --min-score --invalid-result --admin1 --rename --new-column --k_weight --output --force --country --batch --delimiter --language --formatstr --jobs --cache-dir --languages --cities-url --progressbar --timeout --help countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow reverse reversenow suggest suggestnow help"
+            opts="-o -d -r -k -f -j -c -b -l -p -h --admin1 --country --min-score --output --force --delimiter --rename --k_weight --invalid-result --formatstr --jobs --timeout --new-column --languages --cache-dir --batch --language --progressbar --cities-url --help countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow reverse reversenow suggest suggestnow help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --min-score)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --invalid-result)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --admin1)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --country)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --k_weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
+                --min-score)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2943,18 +2976,6 @@ _qsv() {
                     return 0
                     ;;
                 -o)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --country)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2966,11 +2987,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --language)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2990,7 +3023,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2998,11 +3039,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cities-url)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3014,45 +3071,21 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__countryinfo)
-            opts="-r -c -k -o -b -d -l -f -j -p -h --min-score --invalid-result --admin1 --rename --new-column --k_weight --output --force --country --batch --delimiter --language --formatstr --jobs --cache-dir --languages --cities-url --progressbar --timeout --help"
+            opts="-o -d -r -k -f -j -c -b -l -p -h --admin1 --country --min-score --output --force --delimiter --rename --k_weight --invalid-result --formatstr --jobs --timeout --new-column --languages --cache-dir --batch --language --progressbar --cities-url --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --min-score)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --invalid-result)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --admin1)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --country)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --k_weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
+                --min-score)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3064,18 +3097,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --country)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -3084,11 +3105,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --language)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3108,7 +3141,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3116,11 +3157,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cities-url)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3132,45 +3189,21 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__countryinfonow)
-            opts="-r -c -k -o -b -d -l -f -j -p -h --min-score --invalid-result --admin1 --rename --new-column --k_weight --output --force --country --batch --delimiter --language --formatstr --jobs --cache-dir --languages --cities-url --progressbar --timeout --help"
+            opts="-o -d -r -k -f -j -c -b -l -p -h --admin1 --country --min-score --output --force --delimiter --rename --k_weight --invalid-result --formatstr --jobs --timeout --new-column --languages --cache-dir --batch --language --progressbar --cities-url --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --min-score)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --invalid-result)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --admin1)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --country)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --k_weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
+                --min-score)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3182,18 +3215,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --country)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -3202,11 +3223,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --language)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3226,7 +3259,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3234,11 +3275,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cities-url)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3446,45 +3503,21 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__index__check)
-            opts="-r -c -k -o -b -d -l -f -j -p -h --min-score --invalid-result --admin1 --rename --new-column --k_weight --output --force --country --batch --delimiter --language --formatstr --jobs --cache-dir --languages --cities-url --progressbar --timeout --help"
+            opts="-o -d -r -k -f -j -c -b -l -p -h --admin1 --country --min-score --output --force --delimiter --rename --k_weight --invalid-result --formatstr --jobs --timeout --new-column --languages --cache-dir --batch --language --progressbar --cities-url --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --min-score)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --invalid-result)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --admin1)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --country)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --k_weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
+                --min-score)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3496,18 +3529,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --country)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -3516,11 +3537,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --language)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3540,7 +3573,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3548,11 +3589,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cities-url)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3564,45 +3621,21 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__index__load)
-            opts="-r -c -k -o -b -d -l -f -j -p -h --min-score --invalid-result --admin1 --rename --new-column --k_weight --output --force --country --batch --delimiter --language --formatstr --jobs --cache-dir --languages --cities-url --progressbar --timeout --help"
+            opts="-o -d -r -k -f -j -c -b -l -p -h --admin1 --country --min-score --output --force --delimiter --rename --k_weight --invalid-result --formatstr --jobs --timeout --new-column --languages --cache-dir --batch --language --progressbar --cities-url --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --min-score)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --invalid-result)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --admin1)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --country)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --k_weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
+                --min-score)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3614,18 +3647,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --country)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -3634,11 +3655,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --language)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3658,7 +3691,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3666,11 +3707,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cities-url)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3682,45 +3739,21 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__index__reset)
-            opts="-r -c -k -o -b -d -l -f -j -p -h --min-score --invalid-result --admin1 --rename --new-column --k_weight --output --force --country --batch --delimiter --language --formatstr --jobs --cache-dir --languages --cities-url --progressbar --timeout --help"
+            opts="-o -d -r -k -f -j -c -b -l -p -h --admin1 --country --min-score --output --force --delimiter --rename --k_weight --invalid-result --formatstr --jobs --timeout --new-column --languages --cache-dir --batch --language --progressbar --cities-url --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --min-score)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --invalid-result)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --admin1)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --country)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --k_weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
+                --min-score)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3732,18 +3765,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --country)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -3752,11 +3773,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --language)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3776,7 +3809,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3784,11 +3825,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cities-url)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3800,45 +3857,21 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__index__update)
-            opts="-r -c -k -o -b -d -l -f -j -p -h --min-score --invalid-result --admin1 --rename --new-column --k_weight --output --force --country --batch --delimiter --language --formatstr --jobs --cache-dir --languages --cities-url --progressbar --timeout --help"
+            opts="-o -d -r -k -f -j -c -b -l -p -h --admin1 --country --min-score --output --force --delimiter --rename --k_weight --invalid-result --formatstr --jobs --timeout --new-column --languages --cache-dir --batch --language --progressbar --cities-url --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --min-score)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --invalid-result)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --admin1)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --country)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --k_weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
+                --min-score)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3850,18 +3883,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --country)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -3870,11 +3891,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --language)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3894,7 +3927,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3902,11 +3943,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cities-url)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3918,45 +3975,21 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__iplookup)
-            opts="-r -c -k -o -b -d -l -f -j -p -h --min-score --invalid-result --admin1 --rename --new-column --k_weight --output --force --country --batch --delimiter --language --formatstr --jobs --cache-dir --languages --cities-url --progressbar --timeout --help"
+            opts="-o -d -r -k -f -j -c -b -l -p -h --admin1 --country --min-score --output --force --delimiter --rename --k_weight --invalid-result --formatstr --jobs --timeout --new-column --languages --cache-dir --batch --language --progressbar --cities-url --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --min-score)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --invalid-result)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --admin1)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --country)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --k_weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
+                --min-score)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3968,18 +4001,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --country)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -3988,11 +4009,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --language)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4012,7 +4045,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4020,11 +4061,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cities-url)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4036,45 +4093,21 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__iplookupnow)
-            opts="-r -c -k -o -b -d -l -f -j -p -h --min-score --invalid-result --admin1 --rename --new-column --k_weight --output --force --country --batch --delimiter --language --formatstr --jobs --cache-dir --languages --cities-url --progressbar --timeout --help"
+            opts="-o -d -r -k -f -j -c -b -l -p -h --admin1 --country --min-score --output --force --delimiter --rename --k_weight --invalid-result --formatstr --jobs --timeout --new-column --languages --cache-dir --batch --language --progressbar --cities-url --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --min-score)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --invalid-result)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --admin1)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --country)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --k_weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
+                --min-score)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4086,18 +4119,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --country)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -4106,11 +4127,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --language)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4130,7 +4163,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4138,11 +4179,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cities-url)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4154,45 +4211,21 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__reverse)
-            opts="-r -c -k -o -b -d -l -f -j -p -h --min-score --invalid-result --admin1 --rename --new-column --k_weight --output --force --country --batch --delimiter --language --formatstr --jobs --cache-dir --languages --cities-url --progressbar --timeout --help"
+            opts="-o -d -r -k -f -j -c -b -l -p -h --admin1 --country --min-score --output --force --delimiter --rename --k_weight --invalid-result --formatstr --jobs --timeout --new-column --languages --cache-dir --batch --language --progressbar --cities-url --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --min-score)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --invalid-result)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --admin1)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --country)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --k_weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
+                --min-score)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4204,18 +4237,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --country)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -4224,11 +4245,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --language)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4248,7 +4281,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4256,11 +4297,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cities-url)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4272,45 +4329,21 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__reversenow)
-            opts="-r -c -k -o -b -d -l -f -j -p -h --min-score --invalid-result --admin1 --rename --new-column --k_weight --output --force --country --batch --delimiter --language --formatstr --jobs --cache-dir --languages --cities-url --progressbar --timeout --help"
+            opts="-o -d -r -k -f -j -c -b -l -p -h --admin1 --country --min-score --output --force --delimiter --rename --k_weight --invalid-result --formatstr --jobs --timeout --new-column --languages --cache-dir --batch --language --progressbar --cities-url --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --min-score)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --invalid-result)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --admin1)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --country)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --k_weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
+                --min-score)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4322,18 +4355,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --country)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -4342,11 +4363,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --language)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4366,7 +4399,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4374,11 +4415,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cities-url)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4390,45 +4447,21 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__suggest)
-            opts="-r -c -k -o -b -d -l -f -j -p -h --min-score --invalid-result --admin1 --rename --new-column --k_weight --output --force --country --batch --delimiter --language --formatstr --jobs --cache-dir --languages --cities-url --progressbar --timeout --help"
+            opts="-o -d -r -k -f -j -c -b -l -p -h --admin1 --country --min-score --output --force --delimiter --rename --k_weight --invalid-result --formatstr --jobs --timeout --new-column --languages --cache-dir --batch --language --progressbar --cities-url --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --min-score)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --invalid-result)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --admin1)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --country)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --k_weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
+                --min-score)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4440,18 +4473,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --country)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -4460,11 +4481,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --language)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4484,7 +4517,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4492,11 +4533,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cities-url)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4508,45 +4565,21 @@ _qsv() {
             return 0
             ;;
         qsv__geocode__suggestnow)
-            opts="-r -c -k -o -b -d -l -f -j -p -h --min-score --invalid-result --admin1 --rename --new-column --k_weight --output --force --country --batch --delimiter --language --formatstr --jobs --cache-dir --languages --cities-url --progressbar --timeout --help"
+            opts="-o -d -r -k -f -j -c -b -l -p -h --admin1 --country --min-score --output --force --delimiter --rename --k_weight --invalid-result --formatstr --jobs --timeout --new-column --languages --cache-dir --batch --language --progressbar --cities-url --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --min-score)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --invalid-result)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --admin1)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rename)
+                --country)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -r)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --new-column)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --k_weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -k)
+                --min-score)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4558,18 +4591,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --country)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -4578,11 +4599,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --language)
+                --rename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4602,7 +4635,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-dir)
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4610,11 +4651,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cities-url)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4626,28 +4683,12 @@ _qsv() {
             return 0
             ;;
         qsv__geoconvert)
-            opts="-o -y -x -l -g -h --output --latitude --longitude --max-length --geometry --help"
+            opts="-x -o -g -y -l -h --longitude --output --geometry --latitude --max-length --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --latitude)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -y)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --longitude)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -4656,11 +4697,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --max-length)
+                --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -l)
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4672,6 +4713,22 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --latitude)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -y)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --max-length)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -4680,7 +4737,7 @@ _qsv() {
             return 0
             ;;
         qsv__headers)
-            opts="-J -j -d -h --trim --just-count --intersect --just-names --delimiter --help"
+            opts="-d -J -j -h --trim --delimiter --just-count --intersect --just-names --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -4702,7 +4759,7 @@ _qsv() {
             return 0
             ;;
         qsv__help)
-            opts="apply behead cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert headers index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats table template to tojsonl transpose validate help"
+            opts="apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert headers index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats table template to tojsonl transpose validate help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -4786,6 +4843,20 @@ _qsv() {
             return 0
             ;;
         qsv__help__behead)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__help__blake3)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -6046,7 +6117,7 @@ _qsv() {
             return 0
             ;;
         qsv__help__to)
-            opts="datapackage ods postgres sqlite xlsx"
+            opts="datapackage ods parquet postgres sqlite xlsx"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -6074,6 +6145,20 @@ _qsv() {
             return 0
             ;;
         qsv__help__to__ods)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__help__to__parquet)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -6208,25 +6293,25 @@ _qsv() {
             return 0
             ;;
         qsv__input)
-            opts="-d -o -h --quote --comment --trim-headers --escape --encoding-errors --delimiter --skip-lines --no-quoting --quote-style --trim-fields --output --skip-lastlines --auto-skip --help"
+            opts="-o -d -h --skip-lastlines --encoding-errors --output --delimiter --quote-style --escape --trim-fields --comment --auto-skip --quote --no-quoting --trim-headers --skip-lines --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --quote)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --comment)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --escape)
+                --skip-lastlines)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 --encoding-errors)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6238,23 +6323,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --skip-lines)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --quote-style)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --output)
+                --escape)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -o)
+                --comment)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --skip-lastlines)
+                --quote)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --skip-lines)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6266,20 +6351,12 @@ _qsv() {
             return 0
             ;;
         qsv__join)
-            opts="-i -o -n -d -z -h --left-semi --right-semi --ignore-case --output --full --right --left --nulls --no-headers --delimiter --right-anti --ignore-leading-zeros --cross --left-anti --keys-output --help"
+            opts="-d -o -n -z -i -h --delimiter --left-anti --right --right-anti --nulls --keys-output --output --no-headers --ignore-leading-zeros --cross --ignore-case --right-semi --full --left --left-semi --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -6292,40 +6369,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
-        qsv__joinp)
-            opts="-i -q -o -N -z -d -X -h --decimal-comma --coalesce --validate --right_by --right-semi --maintain-order --infer-len --ignore-case --quiet --non-equi --left --output --filter-right --norm-unicode --no-sort --time-format --ignore-leading-zeros --null-value --low-memory --nulls --cross --ignore-errors --tolerance --sql-filter --filter-left --left_by --strategy --datetime-format --right --cache-schema --float-precision --full --delimiter --streaming --no-optimizations --left-semi --right-anti --asof --date-format --try-parsedates --left-anti --allow-exact-matches --help"
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                --validate)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --right_by)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --maintain-order)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --infer-len)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --non-equi)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -6334,7 +6377,21 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --filter-right)
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__joinp)
+            opts="-z -N -q -d -X -o -i -h --streaming --time-format --low-memory --ignore-leading-zeros --norm-unicode --right-semi --tolerance --asof --no-sort --null-value --non-equi --infer-len --try-parsedates --strategy --left-anti --decimal-comma --left_by --quiet --right_by --right-anti --coalesce --nulls --cache-schema --date-format --left --no-optimizations --delimiter --filter-right --validate --sql-filter --full --float-precision --datetime-format --allow-exact-matches --output --cross --left-semi --right --filter-left --maintain-order --ignore-errors --ignore-case --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --time-format)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6346,7 +6403,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --time-format)
+                --tolerance)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6354,19 +6411,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --tolerance)
+                --non-equi)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --sql-filter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --filter-left)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --left_by)
+                --infer-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6374,7 +6423,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --datetime-format)
+                --left_by)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --right_by)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6382,7 +6435,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --float-precision)
+                --date-format)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6394,7 +6447,39 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --date-format)
+                --filter-right)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --validate)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sql-filter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --float-precision)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --datetime-format)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --filter-left)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --maintain-order)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6406,21 +6491,21 @@ _qsv() {
             return 0
             ;;
         qsv__json)
-            opts="-s -o -h --select --jaq --output --help"
+            opts="-s -o -h --jaq --select --output --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --jaq)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --select)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -s)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --jaq)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6440,25 +6525,25 @@ _qsv() {
             return 0
             ;;
         qsv__jsonl)
-            opts="-j -b -d -o -h --jobs --batch --delimiter --ignore-errors --output --help"
+            opts="-b -j -d -o -h --ignore-errors --batch --jobs --delimiter --output --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --jobs)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -j)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --batch)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6486,21 +6571,17 @@ _qsv() {
             return 0
             ;;
         qsv__lens)
-            opts="-d -m -S -W -A -f -P -t -i -h --delimiter --find --filter --monochrome --streaming-stdin --columns --wrap-mode --debug --auto-reload --freeze-columns --prompt --no-headers --echo-column --tab-separated --ignore-case --help"
+            opts="-W -m -A -t -S -f -i -d -P -h --wrap-mode --filter --no-headers --monochrome --find --auto-reload --tab-separated --debug --streaming-stdin --freeze-columns --echo-column --ignore-case --delimiter --columns --prompt --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --delimiter)
+                --wrap-mode)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --find)
+                -W)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6508,15 +6589,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --columns)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --wrap-mode)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -W)
+                --find)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6528,15 +6601,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --echo-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --columns)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --prompt)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -P)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --echo-column)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6562,7 +6647,7 @@ _qsv() {
             return 0
             ;;
         qsv__luau)
-            opts="-p -r -n -d -B -o -g -E -h --timeout --colindex --ckan-api --progressbar --remap --ckan-token --no-headers --delimiter --begin --output --no-globals --cache-dir --end --max-errors --help filter map help"
+            opts="-n -o -B -d -g -p -r -E -h --timeout --no-headers --output --begin --ckan-token --delimiter --no-globals --colindex --progressbar --remap --max-errors --ckan-api --end --cache-dir --help filter map help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -6572,7 +6657,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --ckan-api)
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --begin)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -B)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6588,23 +6685,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --begin)
+                --max-errors)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -B)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --cache-dir)
+                --ckan-api)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6616,7 +6701,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --max-errors)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6628,7 +6713,7 @@ _qsv() {
             return 0
             ;;
         qsv__luau__filter)
-            opts="-p -r -n -d -B -o -g -E -h --timeout --colindex --ckan-api --progressbar --remap --ckan-token --no-headers --delimiter --begin --output --no-globals --cache-dir --end --max-errors --help"
+            opts="-n -o -B -d -g -p -r -E -h --timeout --no-headers --output --begin --ckan-token --delimiter --no-globals --colindex --progressbar --remap --max-errors --ckan-api --end --cache-dir --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -6638,7 +6723,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --ckan-api)
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --begin)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -B)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6654,23 +6751,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --begin)
+                --max-errors)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -B)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --cache-dir)
+                --ckan-api)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6682,7 +6767,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --max-errors)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6750,7 +6835,7 @@ _qsv() {
             return 0
             ;;
         qsv__luau__map)
-            opts="-p -r -n -d -B -o -g -E -h --timeout --colindex --ckan-api --progressbar --remap --ckan-token --no-headers --delimiter --begin --output --no-globals --cache-dir --end --max-errors --help"
+            opts="-n -o -B -d -g -p -r -E -h --timeout --no-headers --output --begin --ckan-token --delimiter --no-globals --colindex --progressbar --remap --max-errors --ckan-api --end --cache-dir --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -6760,7 +6845,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --ckan-api)
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --begin)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -B)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6776,23 +6873,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --begin)
+                --max-errors)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -B)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --cache-dir)
+                --ckan-api)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6804,7 +6889,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --max-errors)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6816,45 +6901,17 @@ _qsv() {
             return 0
             ;;
         qsv__moarstats)
-            opts="-K -C -e -o -J -S -B -p -j -T -h --join-keys --cardinality-threshold --epsilon --output --round --join-inputs --bivariate-stats --pct-thresholds --xsd-gdate-scan --advanced --bivariate --progressbar --use-percentiles --jobs --join-type --stats-options --force --help"
+            opts="-T -J -S -p -e -B -o -C -K -j -h --force --join-type --join-inputs --bivariate-stats --stats-options --round --use-percentiles --xsd-gdate-scan --progressbar --pct-thresholds --epsilon --bivariate --output --advanced --cardinality-threshold --join-keys --jobs --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --join-keys)
+                --join-type)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -K)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --cardinality-threshold)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -C)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --epsilon)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -e)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --round)
+                -T)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6874,11 +6931,51 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --pct-thresholds)
+                --stats-options)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --round)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 --xsd-gdate-scan)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --pct-thresholds)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --epsilon)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -e)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cardinality-threshold)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --join-keys)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -K)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6887,18 +6984,6 @@ _qsv() {
                     return 0
                     ;;
                 -j)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --join-type)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -T)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --stats-options)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6910,12 +6995,16 @@ _qsv() {
             return 0
             ;;
         qsv__partition)
-            opts="-p -n -d -h --prefix-length --limit --filename --no-headers --delimiter --drop --help"
+            opts="-n -p -d -h --filename --drop --no-headers --prefix-length --delimiter --limit --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --filename)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --prefix-length)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -6924,19 +7013,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --limit)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --filename)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6948,7 +7033,7 @@ _qsv() {
             return 0
             ;;
         qsv__pivotp)
-            opts="-o -i -q -v -d -a -h --output --index --col-separator --validate --try-parsedates --quiet --decimal-comma --sort-columns --maintain-order --values --infer-len --delimiter --agg --ignore-errors --help"
+            opts="-o -d -q -a -i -v -h --output --delimiter --quiet --maintain-order --try-parsedates --sort-columns --infer-len --agg --validate --decimal-comma --index --total-label --values --ignore-errors --grand-total --subtotal --col-separator --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -6962,35 +7047,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --index)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -i)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --col-separator)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --values)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -v)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --infer-len)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --infer-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7002,6 +7067,30 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --index)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -i)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --total-label)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --values)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -v)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --col-separator)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -7010,28 +7099,12 @@ _qsv() {
             return 0
             ;;
         qsv__pragmastat)
-            opts="-n -d -o -s -m -t -j -h --stats-options --memcheck --subsample --force --no-headers --no-bounds --delimiter --output --round --select --standalone --compare1 --misrate --compare2 --twosample --seed --jobs --help"
+            opts="-o -t -j -s -n -d -m -h --output --no-bounds --standalone --compare1 --force --twosample --compare2 --memcheck --round --subsample --jobs --select --no-headers --seed --delimiter --misrate --stats-options --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --stats-options)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --subsample)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -7040,7 +7113,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --compare1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compare2)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --round)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --subsample)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7052,7 +7145,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --compare1)
+                --seed)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7064,19 +7165,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --compare2)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --seed)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --jobs)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -j)
+                --stats-options)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7186,33 +7275,17 @@ _qsv() {
             return 0
             ;;
         qsv__prompt)
-            opts="-d -F -q -f -m -o -h --workdir --filters --quiet --fd-output --save-fname --base-delay-ms --msg --output --help"
+            opts="-f -o -m -q -F -d -h --fd-output --output --msg --quiet --base-delay-ms --filters --workdir --save-fname --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --workdir)
+                --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --filters)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -F)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --save-fname)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --base-delay-ms)
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7224,11 +7297,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --output)
+                --base-delay-ms)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -o)
+                --filters)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -F)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --workdir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --save-fname)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7240,24 +7329,12 @@ _qsv() {
             return 0
             ;;
         qsv__pseudo)
-            opts="-n -d -o -h --no-headers --delimiter --formatstr --output --increment --start --help"
+            opts="-o -n -d -h --output --increment --formatstr --no-headers --delimiter --start --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --formatstr)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -7267,6 +7344,18 @@ _qsv() {
                     return 0
                     ;;
                 --increment)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --formatstr)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7282,7 +7371,7 @@ _qsv() {
             return 0
             ;;
         qsv__py)
-            opts="-d -p -b -f -n -o -h --delimiter --progressbar --batch --helper --no-headers --output --help filter map help"
+            opts="-n -d -b -p -f -o -h --no-headers --delimiter --batch --progressbar --helper --output --help filter map help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -7328,7 +7417,7 @@ _qsv() {
             return 0
             ;;
         qsv__py__filter)
-            opts="-d -p -b -f -n -o -h --delimiter --progressbar --batch --helper --no-headers --output --help"
+            opts="-n -d -b -p -f -o -h --no-headers --delimiter --batch --progressbar --helper --output --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -7430,7 +7519,7 @@ _qsv() {
             return 0
             ;;
         qsv__py__map)
-            opts="-d -p -b -f -n -o -h --delimiter --progressbar --batch --helper --no-headers --output --help"
+            opts="-n -d -b -p -f -o -h --no-headers --delimiter --batch --progressbar --helper --output --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -7476,25 +7565,25 @@ _qsv() {
             return 0
             ;;
         qsv__rename)
-            opts="-n -d -o -h --no-headers --delimiter --pairwise --output --help"
+            opts="-n -o -d -h --no-headers --output --pairwise --delimiter --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7506,25 +7595,17 @@ _qsv() {
             return 0
             ;;
         qsv__replace)
-            opts="-q -d -n -i -u -s -j -o -p -h --quiet --exact --delimiter --no-headers --ignore-case --unicode --select --size-limit --not-one --dfa-size-limit --jobs --output --progressbar --literal --help"
+            opts="-o -u -i -s -j -q -p -d -n -h --output --not-one --size-limit --unicode --ignore-case --dfa-size-limit --select --jobs --quiet --literal --exact --progressbar --delimiter --no-headers --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --delimiter)
+                --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --select)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -s)
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7536,6 +7617,14 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --select)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --jobs)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -7544,11 +7633,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --output)
+                --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -o)
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7560,7 +7649,7 @@ _qsv() {
             return 0
             ;;
         qsv__reverse)
-            opts="-o -n -d -h --output --no-headers --delimiter --memcheck --help"
+            opts="-n -o -d -h --no-headers --output --delimiter --memcheck --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -7590,24 +7679,12 @@ _qsv() {
             return 0
             ;;
         qsv__safenames)
-            opts="-d -o -h --delimiter --prefix --reserved --output --mode --help"
+            opts="-o -d -h --reserved --output --mode --prefix --delimiter --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --prefix)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --reserved)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -7624,45 +7701,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
-        qsv__sample)
-            opts="-d -o -n -h --max-size --ts-interval --ts-input-tz --timeout --systematic --user-agent --rng --delimiter --stratified --bernoulli --cluster --seed --ts-prefer-dmy --force --ts-aggregate --weighted --timeseries --ts-adaptive --ts-start --output --no-headers --help"
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                --max-size)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --ts-interval)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --ts-input-tz)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --timeout)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --systematic)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --user-agent)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --rng)
+                --prefix)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7674,7 +7713,21 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --stratified)
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__sample)
+            opts="-n -d -o -h --force --no-headers --ts-start --cluster --ts-adaptive --max-size --rng --ts-interval --ts-aggregate --seed --user-agent --bernoulli --systematic --timeseries --stratified --delimiter --timeout --weighted --ts-input-tz --ts-prefer-dmy --output --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --ts-start)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7682,7 +7735,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --seed)
+                --ts-adaptive)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --max-size)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rng)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ts-interval)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7690,7 +7755,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --weighted)
+                --seed)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --user-agent)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --systematic)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7698,11 +7771,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --ts-adaptive)
+                --stratified)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --ts-start)
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --weighted)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ts-input-tz)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7722,17 +7811,29 @@ _qsv() {
             return 0
             ;;
         qsv__schema)
-            opts="-j -n -i -d -o -h --jobs --no-headers --force --ignore-case --delimiter --memcheck --strict-formats --output --polars --strict-dates --prefer-dmy --dates-whitelist --enum-threshold --pattern-columns --stdout --help"
+            opts="-j -d -i -n -o -h --dates-whitelist --stdout --polars --jobs --pattern-columns --enum-threshold --delimiter --ignore-case --strict-formats --no-headers --memcheck --prefer-dmy --output --force --strict-dates --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --dates-whitelist)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --jobs)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --pattern-columns)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --enum-threshold)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7749,18 +7850,6 @@ _qsv() {
                     return 0
                     ;;
                 -o)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --dates-whitelist)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --enum-threshold)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --pattern-columns)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7772,7 +7861,7 @@ _qsv() {
             return 0
             ;;
         qsv__scoresql)
-            opts="-o -q -d -h --truncate-ragged-lines --output --infer-len --try-parsedates --duckdb --ignore-errors --quiet --json --delimiter --help"
+            opts="-q -o -d -h --quiet --truncate-ragged-lines --output --delimiter --duckdb --infer-len --json --try-parsedates --ignore-errors --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -7786,15 +7875,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --infer-len)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --infer-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7806,13 +7895,17 @@ _qsv() {
             return 0
             ;;
         qsv__search)
-            opts="-v -n -i -d -c -p -f -j -u -q -Q -s -o -h --literal --size-limit --invert-match --no-headers --exact --json --ignore-case --delimiter --count --progressbar --preview-match --not-one --flag --jobs --unicode --quiet --quick --select --output --dfa-size-limit --help"
+            opts="-q -v -i -n -u -Q -d -j -p -s -o -c -f -h --quiet --literal --invert-match --ignore-case --no-headers --dfa-size-limit --unicode --quick --preview-match --delimiter --jobs --progressbar --not-one --select --output --json --exact --count --flag --size-limit --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --size-limit)
+                --dfa-size-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --preview-match)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7821,18 +7914,6 @@ _qsv() {
                     return 0
                     ;;
                 -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --preview-match)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --flag)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -f)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7860,7 +7941,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --dfa-size-limit)
+                --flag)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --size-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7872,7 +7961,7 @@ _qsv() {
             return 0
             ;;
         qsv__searchset)
-            opts="-s -i -f -c -p -j -q -u -o -n -Q -d -v -h --select --dfa-size-limit --literal --flag-matches-only --ignore-case --not-one --flag --count --progressbar --json --unmatched-output --quiet --unicode --output --no-headers --quick --jobs --delimiter --size-limit --exact --invert-match --help"
+            opts="-s -o -d -n -f -u -i -p -v -j -q -Q -c -h --not-one --select --output --dfa-size-limit --delimiter --no-headers --size-limit --flag --unicode --flag-matches-only --ignore-case --progressbar --exact --invert-match --json --jobs --quiet --unmatched-output --quick --count --literal --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -7886,22 +7975,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --dfa-size-limit)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --flag)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -f)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --unmatched-output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -7910,7 +7983,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --jobs)
+                --dfa-size-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7926,6 +7999,22 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --flag)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --unmatched-output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -7934,21 +8023,21 @@ _qsv() {
             return 0
             ;;
         qsv__select)
-            opts="-S -R -d -n -o -h --sort --random --seed --delimiter --no-headers --output --help"
+            opts="-n -S -R -d -o -h --no-headers --sort --random --delimiter --seed --output --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --seed)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --seed)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7968,33 +8057,17 @@ _qsv() {
             return 0
             ;;
         qsv__slice)
-            opts="-e -s -o -l -i -n -d -h --end --start --json --invert --output --len --index --no-headers --delimiter --help"
+            opts="-d -l -i -e -o -n -s -h --delimiter --len --json --index --end --output --invert --no-headers --start --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --end)
+                --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -e)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --start)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -s)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --output)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -o)
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8014,11 +8087,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
+                --end)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
+                -e)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --start)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8030,12 +8119,16 @@ _qsv() {
             return 0
             ;;
         qsv__snappy)
-            opts="-o -p -j -q -h --timeout --output --progressbar --jobs --user-agent --quiet --help check compress decompress validate help"
+            opts="-q -p -o -j -h --user-agent --timeout --quiet --progressbar --output --jobs --help check compress decompress validate help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --user-agent)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --timeout)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -8053,10 +8146,6 @@ _qsv() {
                     return 0
                     ;;
                 -j)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --user-agent)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8068,12 +8157,16 @@ _qsv() {
             return 0
             ;;
         qsv__snappy__check)
-            opts="-o -p -j -q -h --timeout --output --progressbar --jobs --user-agent --quiet --help"
+            opts="-q -p -o -j -h --user-agent --timeout --quiet --progressbar --output --jobs --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --user-agent)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --timeout)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -8091,10 +8184,6 @@ _qsv() {
                     return 0
                     ;;
                 -j)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --user-agent)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8106,12 +8195,16 @@ _qsv() {
             return 0
             ;;
         qsv__snappy__compress)
-            opts="-o -p -j -q -h --timeout --output --progressbar --jobs --user-agent --quiet --help"
+            opts="-q -p -o -j -h --user-agent --timeout --quiet --progressbar --output --jobs --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --user-agent)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --timeout)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -8129,10 +8222,6 @@ _qsv() {
                     return 0
                     ;;
                 -j)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --user-agent)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8144,12 +8233,16 @@ _qsv() {
             return 0
             ;;
         qsv__snappy__decompress)
-            opts="-o -p -j -q -h --timeout --output --progressbar --jobs --user-agent --quiet --help"
+            opts="-q -p -o -j -h --user-agent --timeout --quiet --progressbar --output --jobs --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --user-agent)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --timeout)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -8167,10 +8260,6 @@ _qsv() {
                     return 0
                     ;;
                 -j)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --user-agent)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8266,12 +8355,16 @@ _qsv() {
             return 0
             ;;
         qsv__snappy__validate)
-            opts="-o -p -j -q -h --timeout --output --progressbar --jobs --user-agent --quiet --help"
+            opts="-q -p -o -j -h --user-agent --timeout --quiet --progressbar --output --jobs --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --user-agent)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --timeout)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -8289,10 +8382,6 @@ _qsv() {
                     return 0
                     ;;
                 -j)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --user-agent)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8304,21 +8393,25 @@ _qsv() {
             return 0
             ;;
         qsv__sniff)
-            opts="-d -Q -p -h --quote --stats-types --no-infer --user-agent --sample --delimiter --timeout --quick --json --just-mime --progressbar --pretty-json --harvest-mode --save-urlsample --prefer-dmy --help"
+            opts="-Q -d -p -h --sample --prefer-dmy --stats-types --quick --save-urlsample --quote --timeout --delimiter --progressbar --pretty-json --json --user-agent --harvest-mode --no-infer --just-mime --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --sample)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --save-urlsample)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --quote)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --user-agent)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --sample)
+                --timeout)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8330,11 +8423,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --timeout)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --save-urlsample)
+                --user-agent)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8346,17 +8435,33 @@ _qsv() {
             return 0
             ;;
         qsv__sort)
-            opts="-R -n -N -u -i -o -j -d -s -h --reverse --no-headers --numeric --natural --faster --unique --ignore-case --output --random --jobs --memcheck --rng --delimiter --select --seed --help"
+            opts="-d -R -s -j -n -N -i -u -o -h --random --seed --delimiter --rng --natural --faster --reverse --select --memcheck --jobs --no-headers --numeric --ignore-case --unique --output --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --output)
+                --seed)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -o)
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rng)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --select)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8368,27 +8473,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rng)
+                --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --select)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -s)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --seed)
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8400,25 +8489,25 @@ _qsv() {
             return 0
             ;;
         qsv__sortcheck)
-            opts="-i -p -d -n -s -h --ignore-case --json --progressbar --delimiter --pretty-json --all --no-headers --select --help"
+            opts="-i -s -d -n -p -h --ignore-case --all --select --delimiter --json --no-headers --progressbar --pretty-json --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --select)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -s)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8430,13 +8519,17 @@ _qsv() {
             return 0
             ;;
         qsv__split)
-            opts="-c -d -k -s -q -j -n -h --filter-ignore-errors --pad --chunks --delimiter --kb-size --filter --size --filename --quiet --jobs --no-headers --filter-cleanup --help"
+            opts="-s -c -k -n -d -j -q -h --filter-cleanup --size --chunks --pad --filter --kb-size --filter-ignore-errors --filename --no-headers --delimiter --jobs --quiet --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --pad)
+                --size)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8448,11 +8541,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
+                --pad)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
+                --filter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8464,19 +8557,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --filter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --size)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -s)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --filename)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8496,13 +8585,13 @@ _qsv() {
             return 0
             ;;
         qsv__sqlp)
-            opts="-q -o -d -h --ignore-errors --wnull-value --low-memory --decimal-comma --statistics --date-format --no-optimizations --compression --infer-len --float-precision --compress-level --quiet --try-parsedates --output --delimiter --time-format --cache-schema --format --streaming --datetime-format --rnull-values --truncate-ragged-lines --help"
+            opts="-d -q -o -h --streaming --ignore-errors --time-format --date-format --float-precision --wnull-value --delimiter --no-optimizations --quiet --try-parsedates --rnull-values --decimal-comma --low-memory --cache-schema --compress-level --truncate-ragged-lines --output --datetime-format --statistics --infer-len --compression --format --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --wnull-value)
+                --time-format)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8510,15 +8599,23 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --compression)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --infer-len)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --float-precision)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --wnull-value)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rnull-values)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8534,27 +8631,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --time-format)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --format)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --datetime-format)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --rnull-values)
+                --infer-len)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compression)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --format)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8566,21 +8655,25 @@ _qsv() {
             return 0
             ;;
         qsv__stats)
-            opts="-o -d -c -E -j -n -s -h --percentile-list --nulls --infer-boolean --output --typesonly --boolean-patterns --cardinality --infer-dates --force --stats-jsonl --mode --median --delimiter --cache-threshold --prefer-dmy --memcheck --everything --quartiles --jobs --no-headers --weight --vis-whitespace --percentiles --dates-whitelist --round --select --mad --help"
+            opts="-o -d -E -n -s -j -c -h --mode --output --round --percentile-list --boolean-patterns --cardinality --delimiter --nulls --dates-whitelist --vis-whitespace --everything --infer-dates --percentiles --prefer-dmy --force --weight --no-headers --infer-boolean --typesonly --stats-jsonl --memcheck --quartiles --median --select --mad --jobs --cache-threshold --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --percentile-list)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --round)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --percentile-list)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8596,31 +8689,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --cache-threshold)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --jobs)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -j)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --weight)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --dates-whitelist)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --round)
+                --weight)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8632,6 +8705,22 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-threshold)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -8640,41 +8729,25 @@ _qsv() {
             return 0
             ;;
         qsv__table)
-            opts="-p -c -d -o -a -w -h --pad --condense --memcheck --delimiter --output --align --width --help"
+            opts="-o -p -a -c -w -d -h --output --pad --memcheck --align --condense --width --delimiter --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --pad)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -p)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --condense)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --pad)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8686,11 +8759,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --condense)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --width)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -w)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8702,13 +8791,13 @@ _qsv() {
             return 0
             ;;
         qsv__template)
-            opts="-b -t -o -n -j -p -h --cache-dir --customfilter-error --template --batch --template-file --delimiter --output --no-headers --globals-json --outfilename --progressbar --outsubdir-size --ckan-api --timeout --ckan-token --jobs --help"
+            opts="-o -j -b -t -n -p -h --outsubdir-size --customfilter-error --delimiter --template --outfilename --output --globals-json --cache-dir --jobs --batch --timeout --template-file --ckan-api --ckan-token --no-headers --progressbar --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --cache-dir)
+                --outsubdir-size)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8716,27 +8805,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --template)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --template-file)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -t)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --delimiter)
+                --outfilename)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8756,15 +8833,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --outfilename)
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --outsubdir-size)
+                --jobs)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --ckan-api)
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8772,11 +8853,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --ckan-token)
+                --template-file)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --jobs)
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-api)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-token)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8788,33 +8877,13 @@ _qsv() {
             return 0
             ;;
         qsv__to)
-            opts="-p -s -u -k -e -d -c -i -t -q -A -j -a -h --separator --schema --dump --print-package --evolve --drop --stats-csv --pipe --table --quiet --all-strings --delimiter --jobs --stats --help datapackage ods postgres sqlite xlsx help"
+            opts="-k -i -e -q -t -u -c -d -s -a -j -A -p -h --print-package --pipe --infer-len --evolve --quiet --table --dump --stats-csv --drop --schema --try-parse-dates --stats --jobs --all-strings --delimiter --separator --compression --compress-level --help datapackage ods parquet postgres sqlite xlsx help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --separator)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -p)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --schema)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -s)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --stats-csv)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
+                --infer-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8826,7 +8895,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
+                --stats-csv)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --schema)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8835,6 +8916,26 @@ _qsv() {
                     return 0
                     ;;
                 -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --separator)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compression)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress-level)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8846,33 +8947,13 @@ _qsv() {
             return 0
             ;;
         qsv__to__datapackage)
-            opts="-p -s -u -k -e -d -c -i -t -q -A -j -a -h --separator --schema --dump --print-package --evolve --drop --stats-csv --pipe --table --quiet --all-strings --delimiter --jobs --stats --help"
+            opts="-k -i -e -q -t -u -c -d -s -a -j -A -p -h --print-package --pipe --infer-len --evolve --quiet --table --dump --stats-csv --drop --schema --try-parse-dates --stats --jobs --all-strings --delimiter --separator --compression --compress-level --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --separator)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -p)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --schema)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -s)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --stats-csv)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
+                --infer-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8884,7 +8965,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
+                --stats-csv)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --schema)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8896,6 +8989,26 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --separator)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compression)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -8904,7 +9017,7 @@ _qsv() {
             return 0
             ;;
         qsv__to__help)
-            opts="datapackage ods postgres sqlite xlsx help"
+            opts="datapackage ods parquet postgres sqlite xlsx help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -8946,6 +9059,20 @@ _qsv() {
             return 0
             ;;
         qsv__to__help__ods)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__to__help__parquet)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -9002,33 +9129,13 @@ _qsv() {
             return 0
             ;;
         qsv__to__ods)
-            opts="-p -s -u -k -e -d -c -i -t -q -A -j -a -h --separator --schema --dump --print-package --evolve --drop --stats-csv --pipe --table --quiet --all-strings --delimiter --jobs --stats --help"
+            opts="-k -i -e -q -t -u -c -d -s -a -j -A -p -h --print-package --pipe --infer-len --evolve --quiet --table --dump --stats-csv --drop --schema --try-parse-dates --stats --jobs --all-strings --delimiter --separator --compression --compress-level --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --separator)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -p)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --schema)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -s)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --stats-csv)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
+                --infer-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9040,7 +9147,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
+                --stats-csv)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --schema)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9049,6 +9168,96 @@ _qsv() {
                     return 0
                     ;;
                 -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --separator)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compression)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress-level)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__to__parquet)
+            opts="-k -i -e -q -t -u -c -d -s -a -j -A -p -h --print-package --pipe --infer-len --evolve --quiet --table --dump --stats-csv --drop --schema --try-parse-dates --stats --jobs --all-strings --delimiter --separator --compression --compress-level --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --infer-len)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --table)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --stats-csv)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --schema)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --separator)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compression)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress-level)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9060,33 +9269,13 @@ _qsv() {
             return 0
             ;;
         qsv__to__postgres)
-            opts="-p -s -u -k -e -d -c -i -t -q -A -j -a -h --separator --schema --dump --print-package --evolve --drop --stats-csv --pipe --table --quiet --all-strings --delimiter --jobs --stats --help"
+            opts="-k -i -e -q -t -u -c -d -s -a -j -A -p -h --print-package --pipe --infer-len --evolve --quiet --table --dump --stats-csv --drop --schema --try-parse-dates --stats --jobs --all-strings --delimiter --separator --compression --compress-level --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --separator)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -p)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --schema)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -s)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --stats-csv)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
+                --infer-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9098,7 +9287,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
+                --stats-csv)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --schema)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9107,6 +9308,26 @@ _qsv() {
                     return 0
                     ;;
                 -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --separator)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compression)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress-level)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9118,33 +9339,13 @@ _qsv() {
             return 0
             ;;
         qsv__to__sqlite)
-            opts="-p -s -u -k -e -d -c -i -t -q -A -j -a -h --separator --schema --dump --print-package --evolve --drop --stats-csv --pipe --table --quiet --all-strings --delimiter --jobs --stats --help"
+            opts="-k -i -e -q -t -u -c -d -s -a -j -A -p -h --print-package --pipe --infer-len --evolve --quiet --table --dump --stats-csv --drop --schema --try-parse-dates --stats --jobs --all-strings --delimiter --separator --compression --compress-level --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --separator)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -p)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --schema)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -s)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --stats-csv)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
+                --infer-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9156,7 +9357,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
+                --stats-csv)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --schema)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9165,6 +9378,26 @@ _qsv() {
                     return 0
                     ;;
                 -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --separator)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compression)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress-level)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9176,33 +9409,13 @@ _qsv() {
             return 0
             ;;
         qsv__to__xlsx)
-            opts="-p -s -u -k -e -d -c -i -t -q -A -j -a -h --separator --schema --dump --print-package --evolve --drop --stats-csv --pipe --table --quiet --all-strings --delimiter --jobs --stats --help"
+            opts="-k -i -e -q -t -u -c -d -s -a -j -A -p -h --print-package --pipe --infer-len --evolve --quiet --table --dump --stats-csv --drop --schema --try-parse-dates --stats --jobs --all-strings --delimiter --separator --compression --compress-level --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --separator)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -p)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --schema)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -s)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --stats-csv)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -c)
+                --infer-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9214,7 +9427,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --delimiter)
+                --stats-csv)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --schema)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9223,6 +9448,26 @@ _qsv() {
                     return 0
                     ;;
                 -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --separator)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -p)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compression)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress-level)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9234,17 +9479,17 @@ _qsv() {
             return 0
             ;;
         qsv__tojsonl)
-            opts="-o -j -d -b -q -h --output --memcheck --trim --jobs --delimiter --no-boolean --batch --quiet --help"
+            opts="-q -b -j -d -o -h --memcheck --trim --quiet --batch --jobs --no-boolean --delimiter --output --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --output)
+                --batch)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -o)
+                -b)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9264,11 +9509,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --batch)
+                --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -b)
+                -o)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9280,7 +9525,7 @@ _qsv() {
             return 0
             ;;
         qsv__transpose)
-            opts="-m -d -o -s -h --multipass --delimiter --memcheck --long --output --select --help"
+            opts="-d -m -s -o -h --memcheck --delimiter --multipass --select --output --long --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -9294,7 +9539,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --long)
+                --select)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9306,11 +9555,7 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --select)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -s)
+                --long)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9322,44 +9567,12 @@ _qsv() {
             return 0
             ;;
         qsv__validate)
-            opts="-p -b -q -j -n -d -h --json --progressbar --email-display-text --invalid --cache-dir --ckan-token --backtrack-limit --dfa-size-limit --pretty-json --fail-fast --batch --email-domain-literal --email-required-tld --ckan-api --quiet --valid --jobs --no-headers --size-limit --delimiter --email-min-subdomains --timeout --valid-output --no-format-validation --trim --fancy-regex --help schema help"
+            opts="-j -d -p -q -b -n -h --email-domain-literal --valid --pretty-json --json --jobs --size-limit --no-format-validation --ckan-api --email-required-tld --trim --delimiter --backtrack-limit --ckan-token --progressbar --timeout --quiet --dfa-size-limit --fail-fast --fancy-regex --batch --cache-dir --no-headers --invalid --valid-output --email-min-subdomains --email-display-text --help schema help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --invalid)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --cache-dir)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --ckan-token)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --backtrack-limit)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --dfa-size-limit)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --ckan-api)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --valid)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -9376,6 +9589,10 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --ckan-api)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -9384,7 +9601,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --email-min-subdomains)
+                --backtrack-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-token)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9392,7 +9613,31 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --dfa-size-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --valid-output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --email-min-subdomains)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9446,44 +9691,12 @@ _qsv() {
             return 0
             ;;
         qsv__validate__schema)
-            opts="-p -b -q -j -n -d -h --json --progressbar --email-display-text --invalid --cache-dir --ckan-token --backtrack-limit --dfa-size-limit --pretty-json --fail-fast --batch --email-domain-literal --email-required-tld --ckan-api --quiet --valid --jobs --no-headers --size-limit --delimiter --email-min-subdomains --timeout --valid-output --no-format-validation --trim --fancy-regex --help"
+            opts="-j -d -p -q -b -n -h --email-domain-literal --valid --pretty-json --json --jobs --size-limit --no-format-validation --ckan-api --email-required-tld --trim --delimiter --backtrack-limit --ckan-token --progressbar --timeout --quiet --dfa-size-limit --fail-fast --fancy-regex --batch --cache-dir --no-headers --invalid --valid-output --email-min-subdomains --email-display-text --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
-                --invalid)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --cache-dir)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --ckan-token)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --backtrack-limit)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --dfa-size-limit)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --batch)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -b)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --ckan-api)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --valid)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -9500,6 +9713,10 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --ckan-api)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -9508,7 +9725,11 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --email-min-subdomains)
+                --backtrack-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-token)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9516,7 +9737,31 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --dfa-size-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --valid-output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --email-min-subdomains)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

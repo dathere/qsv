@@ -32,8 +32,8 @@ jobs:
             os-name: windows
             target: x86_64-pc-windows-msvc
             architecture: x86_64
-            addl-build-args: --features=apply,luau,fetch,nightly,to,self_update,polars
-            default-features:
+            addl-build-args: --features=mimalloc,apply,luau,fetch,nightly,to,self_update,polars
+            default-features: --no-default-features
             addl-qsvdp-features:
           - os: windows-latest
             os-name: windows

@@ -39,8 +39,8 @@ jobs:
             target: aarch64-pc-windows-msvc
             architecture: aarch64
             use-cross: false
-            addl-build-args: --features=apply,fetch,foreach,luau,polars,self_update,ui
-            default-features:
+            addl-build-args: --features=mimalloc,apply,fetch,foreach,luau,polars,self_update,ui
+            default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags: -C target-cpu=native

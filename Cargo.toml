@@ -284,6 +284,7 @@ terminal-colorsaurus = { version = "1.0", optional = true }
 textwrap = { version = "0.16", features = ["terminal_size"] }
 thousands = { version = "0.2", optional = true }
 threadpool = "1.8"
+tikv-jemallocator = { version = "0.6", optional = true }
 titlecase = { version = "3", optional = true }
 tokio = { version = "1", features = ["parking_lot", "rt-multi-thread"] }
 unicode-width = { version = "0.2", optional = true }
@@ -377,12 +378,12 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=py-1.39.3:8bdbabb
+# QSV_POLARS_REV=py-1.39.3:bb93ba8
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.39.3", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "8bdbabb", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "bb93ba8", optional = true }
 
 [features]
-default = ["mimalloc"]
+default = ["jemallocator"]
 distrib_features = [
     "feature_capable",
     "apply",
@@ -441,6 +442,7 @@ lens = ["csvlens"]
 lite = []
 datapusher_plus = ["geocode", "self_update"]
 ui = ["clipboard", "color", "prompt", "lens"]
+jemallocator = ["tikv-jemallocator"]
 feature_capable = []
 nightly = [
     "crc32fast/nightly",

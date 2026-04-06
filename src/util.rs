@@ -591,12 +591,14 @@ pub fn version() -> String {
         .map_or("Unknown", |cpu| cpu.brand().trim());
     let physical_cpu_count = System::physical_core_count().unwrap_or(0);
 
-    #[cfg(feature = "mimalloc")]
+    #[cfg(all(feature = "mimalloc", not(feature = "jemallocator")))]
     let malloc_kind = {
         let mimalloc_version = mimalloc::MiMalloc.version();
         format!("mimalloc {mimalloc_version}")
     };
-    #[cfg(not(feature = "mimalloc"))]
+    #[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
+    let malloc_kind = "jemalloc";
+    #[cfg(not(any(feature = "mimalloc", feature = "jemallocator")))]
     let malloc_kind = "standard";
     let (qsvtype, maj, min, pat, pre, rustversion) = (
         option_env!("CARGO_BIN_NAME"),
@@ -648,7 +650,7 @@ pub fn show_env_vars() {
     for (n, v) in env::vars_os() {
         // safety: we know that the env::vars_os() will not fail
         let env_var = n.into_string().unwrap();
-        #[cfg(feature = "mimalloc")]
+        #[cfg(all(feature = "mimalloc", not(feature = "jemallocator")))]
         if env_var.starts_with("QSV_")
             || env_var.starts_with("MIMALLOC_")
             || OTHER_ENV_VARS.contains(&env_var.to_ascii_lowercase().as_str())
@@ -656,7 +658,16 @@ pub fn show_env_vars() {
             env_var_set = true;
             woutinfo!("{env_var}: {v:?}");
         }
-        #[cfg(not(feature = "mimalloc"))]
+        #[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
+        if env_var.starts_with("QSV_")
+            || env_var.starts_with("JEMALLOC_")
+            || env_var == "MALLOC_CONF"
+            || OTHER_ENV_VARS.contains(&env_var.to_ascii_lowercase().as_str())
+        {
+            env_var_set = true;
+            woutinfo!("{env_var}: {v:?}");
+        }
+        #[cfg(not(any(feature = "mimalloc", feature = "jemallocator")))]
         if env_var.starts_with("QSV_")
             || OTHER_ENV_VARS.contains(&env_var.to_ascii_lowercase().as_str())
         {

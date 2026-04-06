@@ -67,11 +67,11 @@ jobs:
             target: x86_64-pc-windows-msvc
             architecture: x86_64
             use-cross: false
-            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,prompt,foreach
-            default-features:
-            addl-qsvlite-features:
-            addl-qsvdp-features:
-            addl-rustflags: 
+            addl-build-args: --features=mimalloc,apply,luau,fetch,self_update,geocode,polars,to,lens,prompt,foreach
+            default-features: --no-default-features
+            addl-qsvlite-features: mimalloc
+            addl-qsvdp-features: mimalloc
+            addl-rustflags:
           # - os: windows-latest
           #   os-name: windows
           #   target: i686-pc-windows-msvc
@@ -87,11 +87,11 @@ jobs:
             target: x86_64-pc-windows-gnu
             architecture: x86_64
             use-cross: false
-            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,prompt
+            addl-build-args: --features=mimalloc,apply,luau,fetch,self_update,geocode,polars,to,lens,prompt
             default-features: --no-default-features
-            addl-qsvlite-features:
-            addl-qsvdp-features:
-            addl-rustflags: 
+            addl-qsvlite-features: mimalloc
+            addl-qsvdp-features: mimalloc
+            addl-rustflags:
           # - os: macos-12
           #   os-name: macos
           #   target: x86_64-apple-darwin
@@ -193,7 +193,7 @@ jobs:
         command: build
         use-cross: ${{ matrix.job.use-cross }}
         toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsvmcp --features=qsvmcp --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+        args: --release --locked --bin qsvmcp ${{ matrix.job.addl-qsvlite-features != '' && format('--features=qsvmcp,{0}', matrix.job.addl-qsvlite-features) || '--features=qsvmcp' }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |

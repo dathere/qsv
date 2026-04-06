@@ -97,11 +97,25 @@ rustc --print target-features
 ## Memory Management
 ### Memory Allocator
 
-qsv supports two memory allocators: mimalloc and the standard allocator.
+qsv supports three memory allocators: jemalloc, mimalloc and the standard allocator.
 
-By default, qsv uses [mimalloc](https://github.com/microsoft/mimalloc), a performance-oriented allocator from Microsoft.
+By default, qsv uses [jemalloc](https://jemalloc.net), a general purpose allocator that is also the default Linux allocator used by the [Pola.rs](https://www.pola.rs) project for its python bindings, as benchmarks have shown that it [performs better than mimalloc on some platforms](https://docs.rs/polars/latest/polars/#custom-allocator).
 
-If you don't want to use mimalloc, use the `--no-default-features` flag when installing/compiling qsv, e.g.:
+You can also use [mimalloc](https://github.com/microsoft/mimalloc), a performance-oriented allocator from Microsoft.
+
+If you want to use an alternate allocator, use the `--no-default-features` flag when installing/compiling qsv, e.g.:
+
+#### To use mimalloc
+
+```bash
+cargo install qsv --path . --no-default-features --features all_features,mimalloc
+```
+
+or
+
+```bash
+cargo build --release --no-default-features --features all_features,mimalloc
+```
 
 #### To use the standard allocator
 
@@ -115,7 +129,7 @@ or
 cargo build --release --no-default-features --features all_features
 ```
 
-To find out what memory allocator qsv is using, run `qsv --version`. After the qsv version number, the allocator used is displayed ("`standard`" or "`mimalloc`"). Note that mimalloc is not supported on the `x86_64-pc-windows-gnu` and `arm` targets, and you'll need to use the "standard" allocator on those platforms.
+To find out what memory allocator qsv is using, run `qsv --version`. After the qsv version number, the allocator used is displayed ("`standard`", "`mimalloc`" or "`jemalloc`"). Note that jemalloc is not supported on Windows targets, and you'll need to use the "mimalloc" or "standard" allocator on those platforms.
 
 ### Out-of-Memory (OOM) Prevention
 Most qsv commands use a "streaming" approach to processing CSVs - "streaming" in the input record-by-record while processing it. This allows it to process arbitrarily large CSVs with constant memory.
@@ -172,7 +186,7 @@ To find out your jobs setting, call `qsv --version`.
 ## Version details
 The `--version` option shows a lot of information about qsv. It displays:
 * qsv version
-* the memory allocator (`standard` or `mimalloc`)
+* the memory allocator (`standard`, `mimalloc` or `jemalloc`)
 * all enabled features (`apply`, `fetch`, `foreach`, `geocode`, `luau`, `magika`, `polars`, `prompt`, `python`, `self_update` & `to`)
 * Python version linked if the `python` feature was enabled
 * Luau version embedded if the `luau` feature was enabled
@@ -190,7 +204,7 @@ $ qsv --version
 qsv 18.0.0-mimalloc 315-apply;fetch;foreach;geocode;Luau 0.709;magika;to;polars-0.53.0:802550b;self_update-16-16;51.20 GiB-1.26 GiB-0 B-64.00 GiB (aarch64-apple-darwin compiled with Rust 1.93;macOS 26.4-Darwin 25.4.0;Apple M4 Max-16) prebuilt
 ```
 
-Shows that I'm running qsv version 18.0.0, with the `mimalloc` allocator (instead of `standard`), build number 315, and I have:
+Shows that I'm running qsv version 18.0.0, with the `mimalloc` allocator (instead of `standard` or `jemalloc`), build number 315, and I have:
 - the `apply`, `fetch`, `foreach`, `geocode`, `luau`, `magika`, `to`, `polars` and `self_update` features enabled,
 - the exact version of the embedded Luau interpreter (Luau 0.709),
 - Polars with its version metadata (polars-0.53.0:802550b),

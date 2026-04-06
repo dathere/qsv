@@ -10,9 +10,16 @@ use crate::{
     config::SPONSOR_MESSAGE,
 };
 
-#[cfg(feature = "mimalloc")]
+#[cfg(all(feature = "mimalloc", feature = "jemallocator"))]
+compile_error!("Features `mimalloc` and `jemallocator` are mutually exclusive. Enable only one.");
+
+#[cfg(all(feature = "mimalloc", not(feature = "jemallocator")))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+#[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 static COMMAND_LIST: &str = r#"
     behead      Drop header from CSV file

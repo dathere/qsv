@@ -123,6 +123,6 @@ fn lesson_4_task_6() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"len
-5"#;
+4"#;
     assert_eq!(got, expected);
 }

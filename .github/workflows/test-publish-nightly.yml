@@ -20,6 +20,7 @@ jobs:
             architecture: x86_64
             addl-build-args: --features=apply,luau,fetch,foreach,nightly,to,self_update,polars
             default-features:
+            addl-qsvlite-features:
             addl-qsvdp-features:
           # - os: ubuntu-latest
           #   os-name: linux
@@ -32,16 +33,18 @@ jobs:
             os-name: windows
             target: x86_64-pc-windows-msvc
             architecture: x86_64
-            addl-build-args: --features=apply,luau,fetch,nightly,to,self_update,polars
-            default-features:
-            addl-qsvdp-features:
+            addl-build-args: --features=mimalloc,apply,luau,fetch,nightly,to,self_update,polars
+            default-features: --no-default-features
+            addl-qsvlite-features: mimalloc
+            addl-qsvdp-features: mimalloc
           - os: windows-latest
             os-name: windows
             target: x86_64-pc-windows-gnu
             architecture: x86_64
-            addl-build-args: --features=apply,luau,fetch,nightly,self_update,polars
-            default-features: --no-default-features 
-            addl-qsvdp-features:
+            addl-build-args: --features=mimalloc,apply,luau,fetch,nightly,self_update,polars
+            default-features: --no-default-features
+            addl-qsvlite-features: mimalloc
+            addl-qsvdp-features: mimalloc
           # - os: macos-latest
           #   os-name: macos
           #   target: x86_64-apple-darwin
@@ -86,7 +89,7 @@ jobs:
         command: build
         use-cross: false
         toolchain: ${{ matrix.rust }}
-        args: --profile release-nightly --bin qsvlite -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --features=lite,self_update --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+        args: --profile release-nightly --bin qsvlite -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort ${{ matrix.job.addl-qsvlite-features != '' && format('--features=lite,self_update,{0}', matrix.job.addl-qsvlite-features) || '--features=lite,self_update' }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Build qsvdp-nightly
       env:
         RUSTFLAGS: --emit=asm

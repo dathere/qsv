@@ -64,6 +64,8 @@ Several dependencies also have environment variables that influence qsv's perfor
   When incorporating qsv into a data pipeline that runs in batch mode, particularly with very large CSV files using qsv commands that load entire CSV files into memory, you can fine tune qsv's memory allocator run-time behavior using the environment variables for the allocator you're using:
 
   * [mimalloc](https://github.com/microsoft/mimalloc#environment-options)
+
+  * [jemalloc](https://jemalloc.net/jemalloc.3.html#environment)
     
 * Network Access ([reqwest](https://docs.rs/reqwest/latest/reqwest/))   
   qsv uses reqwest and will honor [proxy settings](https://docs.rs/reqwest/latest/reqwest/index.html#proxies) set through the `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` & `NO_PROXY` environment variables.
@@ -76,7 +78,7 @@ Several dependencies also have environment variables that influence qsv's perfor
   * `POLARS_BACKTRACE_IN_ERR` - if set to 1, includes backtrace in polars-related error messages.
   
 > ℹ️ **NOTE:** To get a list of all active qsv-relevant environment variables, run `qsv --envlist`.
-Relevant env vars are defined as anything that starts with `QSV_`, `MIMALLOC_` & the proxy variables listed above.
+Relevant env vars always include anything that starts with `QSV_` & the proxy variables listed above. Allocator-specific env vars are build-dependent: `MIMALLOC_` vars are included when qsv is built with mimalloc support, and `JEMALLOC_` & `MALLOC_CONF` vars are included when qsv is built with jemalloc support.
 
 ## MCP Server Environment Variables
 

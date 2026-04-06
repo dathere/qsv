@@ -75,7 +75,7 @@ cargo build --release --bin qsvdp --features datapusher_plus
 
 Notes:
 - The command list shown by `qsv --list` depends on the enabled features at build time.
-- Two general-purpose allocators are available: mimalloc (default) and standard. You can choose between them via feature flags depending on your platform and needs.
+- Optional general-purpose allocators can be enabled via features (e.g., jemalloc (default), mimalloc) depending on your platform and needs.
 
 ---
 

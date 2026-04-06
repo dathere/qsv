@@ -14,6 +14,10 @@ use crate::{
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+#[cfg(feature = "tikv-jemallocator")]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 static COMMAND_LIST: &str = r#"
     behead      Drop header from CSV file
     cat         Concatenate by row or column

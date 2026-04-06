@@ -105,7 +105,7 @@
 🧠: expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.  
 🗄️: [Extended input support](#extended-input-support).  
 🗃️: [Limited Extended input support](#limited-extended-input-support).  
-🐻‍❄️: command powered/accelerated by [![polars 0.53.0:py_1.39.3:8bdbabb](https://img.shields.io/badge/polars-0.53.0:py_1.39.3_8bdbabb-blue?logo=polars
+🐻‍❄️: command powered/accelerated by [![polars 0.53.0:py_1.39.3:bb93ba8](https://img.shields.io/badge/polars-0.53.0:py_1.39.3_bb93ba8-blue?logo=polars
 )](https://github.com/pola-rs/polars/releases/tag/py-1.39.3) vectorized query engine.  
 🤖: command uses Natural Language Processing or Generative AI.  
 🏎️: multithreaded and/or faster when an index (📇) is available.  
@@ -461,7 +461,7 @@ See [Luau vs Python](docs/INTERPRETERS.md) for more info.
 Another "interpreter" included with qsv is [MiniJinja](https://docs.rs/minijinja/latest/minijinja/), which is used in the `template` and `fetchpost` commands.
 
 ## Memory Management
-qsv supports two memory allocators - mimalloc (default) and the standard allocator.<br>See [Memory Allocator](docs/PERFORMANCE.md#memory-allocator) for more info.
+qsv supports three memory allocators - jemalloc (default), mimalloc and the standard allocator.<br>See [Memory Allocator](docs/PERFORMANCE.md#memory-allocator) for more info.
 
 It also has Out-of-Memory prevention, with two modes - NORMAL (default) & CONSERVATIVE.<br>See [Out-of-Memory Prevention](docs/PERFORMANCE.md#out-of-memory-oom-prevention) for more info.
 
@@ -542,9 +542,9 @@ cargo t luau -F feature_capable,luau
 # that have "count" in the testname - e.g. test_geocode_countryinfo
 cargo t test_count -F feature_capable,luau,polars
 
-# to test using the standard allocator
-# instead of the default mimalloc allocator
-cargo t --no-default-features -F all_features
+# to test using an alternate allocator
+# other than the default jemalloc allocator
+cargo t --no-default-features -F all_features,mimalloc
 ```
 
 ## License

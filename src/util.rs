@@ -596,7 +596,9 @@ pub fn version() -> String {
         let mimalloc_version = mimalloc::MiMalloc.version();
         format!("mimalloc {mimalloc_version}")
     };
-    #[cfg(not(feature = "mimalloc"))]
+    #[cfg(feature = "tikv-jemallocator")]
+    let malloc_kind = "jemalloc";
+    #[cfg(not(any(feature = "mimalloc", feature = "tikv-jemallocator")))]
     let malloc_kind = "standard";
     let (qsvtype, maj, min, pat, pre, rustversion) = (
         option_env!("CARGO_BIN_NAME"),
@@ -656,7 +658,16 @@ pub fn show_env_vars() {
             env_var_set = true;
             woutinfo!("{env_var}: {v:?}");
         }
-        #[cfg(not(feature = "mimalloc"))]
+        #[cfg(feature = "tikv-jemallocator")]
+        if env_var.starts_with("QSV_")
+            || env_var.starts_with("JEMALLOC_")
+            || env_var.starts_with("MALLOC_CONF")
+            || OTHER_ENV_VARS.contains(&env_var.to_ascii_lowercase().as_str())
+        {
+            env_var_set = true;
+            woutinfo!("{env_var}: {v:?}");
+        }
+        #[cfg(not(any(feature = "mimalloc", feature = "tikv-jemallocator")))]
         if env_var.starts_with("QSV_")
             || OTHER_ENV_VARS.contains(&env_var.to_ascii_lowercase().as_str())
         {

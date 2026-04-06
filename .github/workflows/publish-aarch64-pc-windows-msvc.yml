@@ -41,8 +41,8 @@ jobs:
             use-cross: false
             addl-build-args: --features=mimalloc,apply,fetch,foreach,luau,polars,self_update,ui
             default-features: --no-default-features
-            addl-qsvlite-features:
-            addl-qsvdp-features:
+            addl-qsvlite-features: mimalloc
+            addl-qsvdp-features: mimalloc
             addl-rustflags: -C target-cpu=native
 
     steps:

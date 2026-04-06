@@ -44,8 +44,8 @@ jobs:
             architecture: x86_64
             addl-build-args: --features=mimalloc,apply,fetch,nightly,self_update,polars,geocode,to,lens,prompt,nightly-polars
             default-features: --no-default-features
-            addl-qsvlite-features:
-            addl-qsvdp-features:
+            addl-qsvlite-features: mimalloc
+            addl-qsvdp-features: mimalloc
             addl-rustflags: -C target-cpu=native -Z unstable-options -C panic=immediate-abort
 
     steps:
@@ -101,7 +101,7 @@ jobs:
         command: build
         use-cross: false
         toolchain: ${{ matrix.rust }}
-        args: --profile release-nightly --bin qsvmcp -Z build-std=std --features=qsvmcp,nightly --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+        args: --profile release-nightly --bin qsvmcp -Z build-std=std --features=qsvmcp,nightly,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     # TODO: Add qsvdp-nightly build back in after v5.0.3, be sure to copy qsvdp binaries below
     # - name: Build qsvdp-nightly
     #   env:

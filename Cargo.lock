@@ -6760,7 +6760,6 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64",
  "bytes",
- "futures-channel",
  "futures-core",
  "futures-util",
  "h2",
@@ -7261,16 +7260,16 @@ checksum = "b12e76d157a900eb52e81bc6e9f3069344290341720e9178cde2407113ac8d89"
 
 [[package]]
 name = "self_update"
-version = "0.43.1"
+version = "0.44.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6644febaa58f323b28f7321d04e24d0020d117c27619ab869d6abdf76be9aac6"
+checksum = "2e79722b5a505d4ddc77527455a97244e9e8c4c07533ff44cf4421cce7bb6d17"
 dependencies = [
  "http 1.4.0",
  "indicatif",
  "log",
  "quick-xml 0.38.4",
  "regex",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "self-replace",
  "semver",
  "serde",

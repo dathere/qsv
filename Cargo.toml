@@ -258,7 +258,7 @@ rfd = { version = "0.17", optional = true }
 rust_decimal = { version = "1.41", default-features = false }
 sanitize-filename = { version = "0.6", optional = true }
 simd-json = "0.17"
-self_update = { version = "0.43", features = [
+self_update = { version = "0.44", features = [
     "archive-zip",
     "compression-zip-deflate",
     "reqwest",

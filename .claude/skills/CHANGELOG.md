@@ -5,6 +5,25 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [19.0.0] - 2026-04-06
+
+### Added
+- **FBI Crime Data MCP Server** integration with CDE homepage summary & spillover tools (#3673, #3675)
+- **Project reproducibility manifest** for Cowork plugin (#3657)
+
+### Changed
+- **Modular refactor** — split `mcp-tools.ts` into focused modules (#3682)
+- **Parquet conversion** — replaced sqlp fallback with `to parquet` (#3681)
+- **Guards and logging** added to MCP tools/sampling
+- **`data-profile` skill** improved (#3668)
+- **`tojsonl` skill** updated
+- **Plugin agents** — policy-analyst uses MoarStats and BLS MCP Server (#3634, #3638); replaced b3sum dependency with built-in qsv blake3 (#3659)
+- **Plugin skills** — migrated commands to skills (#3655); refined joinp asof guidance (#3633)
+- **Documentation** — updated tool counts, Census/BLS/FBI jurisdictional notes, Cowork troubleshooting links, spreadsheet format clarification, intentional use of low-level Server API documented
+
+### Fixed
+- **Plugin** — corrected plugin wording and skill count in START_HERE guide; policy-analyst references infer-ontology workflow directly; use quadruple backticks for ONTOLOGY.md template
+
 ## [18.0.5] - 2026-03-27
 
 ### Added

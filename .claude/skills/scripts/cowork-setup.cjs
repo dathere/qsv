@@ -16,7 +16,7 @@ function output(additionalContext) {
 }
 
 // Minimum qsv version required — keep in sync with manifest.json _meta.minimum_qsv_version
-const MINIMUM_QSV_VERSION = '18.0.0';
+const MINIMUM_QSV_VERSION = '19.0.0';
 
 /**
  * Check if qsvmcp or qsv binary is available.

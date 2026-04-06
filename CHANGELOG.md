@@ -4,9 +4,72 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [18.0.0] - 2026-03-20
+## [Unreleased]
 
-Score your SQL before you run it, compare distributions with pragmatic stats, and pivot smarter — 18.0.0 deepens qsv's "think before you act" philosophy with a new `scoresql` command that analyzes queries against cached statistics *before* execution, catching anti-patterns, type mismatches, and missing indexes up front. `pragmastat` gains comparison options and stats-cache awareness, `pivotp` auto-validates cardinality via moarstats, and `to` now writes named tables to XLSX/ODS workbooks. Under the hood, FMA-accurate `mul_add` ops replace manual arithmetic across the codebase, and Polars moves to 0.53.0.
+## What's Changed
+* build(deps): bump rustls-webpki from 0.103.9 to 0.103.10 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3632
+* refactor(plugin): refine joinp asof guidance by @jqnatividad in https://github.com/dathere/qsv/pull/3633
+* Refactor policy analyst agent uses moarstats by @jqnatividad in https://github.com/dathere/qsv/pull/3634
+* feat(pivotp): totals by @jqnatividad in https://github.com/dathere/qsv/pull/3635
+* build(deps): bump redis from 1.0.5 to 1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3636
+* docs: fix 27 stale claims found in documentation audit by @jqnatividad in https://github.com/dathere/qsv/pull/3637
+* feat(plugin): make policy analyst agent BLS MCP Server aware by @jqnatividad in https://github.com/dathere/qsv/pull/3638
+* build(deps): bump cached from 0.58.0 to 0.59.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3639
+* build(deps): bump toml from 1.0.7+spec-1.1.0 to 1.1.0+spec-1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3640
+* docs(mcp): consolidate install guides into single START_HERE.md by @jqnatividad in https://github.com/dathere/qsv/pull/3641
+* refactor(mcp): more reliable userprompt logging using hooks by @jqnatividad in https://github.com/dathere/qsv/pull/3642
+* feat(mcp): more logging - Stop (so we log each turn) and SessionEnd (log each Session) by @jqnatividad in https://github.com/dathere/qsv/pull/3643
+* feat(mcp): log WebSearch and WebFetch results for citation by @jqnatividad in https://github.com/dathere/qsv/pull/3645
+* Mcp doc audit 2026 03 26 by @jqnatividad in https://github.com/dathere/qsv/pull/3646
+* publish(mcp): 18.0.5 release of MCP Server and Cowork plugin by @jqnatividad in https://github.com/dathere/qsv/pull/3647
+* build(deps): bump rust_decimal from 1.40.0 to 1.41.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3648
+* build(deps): bump file-format from 0.28.0 to 0.29.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3649
+* build(deps): bump path-to-regexp from 8.3.0 to 8.4.0 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3652
+* deps: bump jaq from 2 to 3; jaq-json from 1 to 2 by @jqnatividad in https://github.com/dathere/qsv/pull/3653
+* feat(moar): even moar stats by @jqnatividad in https://github.com/dathere/qsv/pull/3654
+* refactor(plugin): migrate commands to skills by @jqnatividad in https://github.com/dathere/qsv/pull/3655
+* feat(plugin): Cowork plugin project reproducibility manifest by @jqnatividad in https://github.com/dathere/qsv/pull/3657
+* feat: add blake3 command by @jqnatividad in https://github.com/dathere/qsv/pull/3658
+* refactor(plugin): replace b3sum dependency with built-in qsv blake3 by @jqnatividad in https://github.com/dathere/qsv/pull/3659
+* build(deps): bump toml from 1.1.0+spec-1.1.0 to 1.1.1+spec-1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3660
+* build(deps): bump human-panic from 2.0.6 to 2.0.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3661
+* docs(help): suppress linebreaks on help md for options by using non-breaking hyphens by @jqnatividad in https://github.com/dathere/qsv/pull/3662
+* deps: bump atoi simd and sysinfo by @jqnatividad in https://github.com/dathere/qsv/pull/3663
+* build(deps): bump toml from 1.1.1+spec-1.1.0 to 1.1.2+spec-1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3664
+* build(deps): bump minijinja from 2.18.0 to 2.19.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3666
+* build(deps): bump minijinja-contrib from 2.18.0 to 2.19.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3665
+* build(deps): bump pyo3 from 0.28.2 to 0.28.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3667
+* refactor(mcp): improve `data-profile` skill by @jqnatividad in https://github.com/dathere/qsv/pull/3668
+* build(deps-dev): bump lodash from 4.17.23 to 4.18.1 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3669
+* build(deps): bump human-panic from 2.0.7 to 2.0.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3670
+* build(deps): bump indexmap from 2.13.0 to 2.13.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3671
+* build(deps): bump tokio from 1.50.0 to 1.51.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3672
+* feat(mcp): use our FBI Crime Data MCP Server by @jqnatividad in https://github.com/dathere/qsv/pull/3673
+* feat(to): re-add `to parquet` subcommand powered by Polars by @jqnatividad in https://github.com/dathere/qsv/pull/3674
+* feat(mcp): Update for FBI Crime Data MCP 0.3.0 - Add CDE homepage sum… by @jqnatividad in https://github.com/dathere/qsv/pull/3675
+* chore: Serena optimization by @jqnatividad in https://github.com/dathere/qsv/pull/3676
+* build(deps): bump redis from 1.1.0 to 1.2.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3677
+* build(deps): bump semver from 1.0.27 to 1.0.28 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3678
+* refactor(to): use LazyFrame for parquet conversion by @jqnatividad in https://github.com/dathere/qsv/pull/3679
+* feat(to): add pschema.json support, --infer-len and --try-parse-dates for parquet by @jqnatividad in https://github.com/dathere/qsv/pull/3680
+* refactor(mcp): replace sqlp fallback with `to parquet` for Parquet conversion by @jqnatividad in https://github.com/dathere/qsv/pull/3681
+* refactor(mcp): split mcp-tools.ts into focused modules by @jqnatividad in https://github.com/dathere/qsv/pull/3682
+* build(deps): bump self_update from 0.43.1 to 0.44.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3683
+* feat: switch default allocator from mimalloc to jemalloc by @jqnatividad in https://github.com/dathere/qsv/pull/3684
+* build(deps): bump jsonschema from 0.45.0 to 0.45.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3685
+
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/18.0.0...19.0.0
+
+## [18.0.0] - 2026-03-20 **_The "StatsSighting" Cowork Plugin Release_**
+
+"StatsSighting" is like "VibeCoding" but for iterative, blazing-fast, deep data analysis. "Stats" for Statistics. "Sight" for Insight - doing a comprehensive statistical profile of datasets first to inform the analysis pipeline.
+
+The Claude Cowork Plugin comes with several agents - the "Data Analyst Agent" for deep data exploration and analysis, the "Data Wrangler Agent" for transformation and cleaning, and the "Policy Analyst Agent" for helping with policy evaluation and decision-making. Each agent has a specific role and skill set, with a shared emphasis on leveraging the qsv MCP Server's profiling and querying capabilities to understand the data before acting on it.
+
+The qsv MCP server received major enhancements - including session logging, DuckDB-powered Parquet conversion, SQL translation hardening, and interactive working directory elicitation.
+
+The core qsv suite also gets significant updates in this release, including the new `scoresql` command for pre-query SQL analysis, smarter `pragmastat` with stats-cache integration and comparison mode, `pivotp` optimizations with moarstats awareness, and formatted table output for `to`. 
 
 ---
 
@@ -34,6 +97,7 @@ The `to` command gains a `--table` option for CSV, XLSX and ODS output, letting 
 - `pragmastat`: add `--compare1` and `--compare2` options [#3591](https://github.com/dathere/qsv/pull/3591)
 - `pragmastat`: use stats cache to only process numeric/date/datetime columns [#3593](https://github.com/dathere/qsv/pull/3593)
 - `pragmastat`: write results to stats cache [#3596](https://github.com/dathere/qsv/pull/3596)
+- `pragmastat`: multiple performance optimizations [#3595](https://github.com/dathere/qsv/pull/3595), [#3611](https://github.com/dathere/qsv/pull/3611)
 - `pivotp`: smarter pivoting with moarstats integration [#3606](https://github.com/dathere/qsv/pull/3606)
 - `describegpt`: scoresql integration [#3624](https://github.com/dathere/qsv/pull/3624)
 
@@ -46,11 +110,9 @@ The `to` command gains a `--table` option for CSV, XLSX and ODS output, letting 
 - Polars bumped to 0.53.0 (py-1.39.x series)
 
 ### Fixed
-- `stats`: perf regression caused by memory-aware chunking logic error [#3598](https://github.com/dathere/qsv/pull/3598)
+- `stats`: fixed big performance regression caused by memory-aware chunking logic error [#3598](https://github.com/dathere/qsv/pull/3598)
 - `help`: fine-tune markdown generation of docopt usage text [#3600](https://github.com/dathere/qsv/pull/3600)
 
-### Performance
-- `pragmastat`: multiple performance optimizations [#3595](https://github.com/dathere/qsv/pull/3595), [#3611](https://github.com/dathere/qsv/pull/3611)
 
 ### Dependencies
 - Polars 0.53.0 (py-1.39.3)
@@ -64,6 +126,9 @@ The `to` command gains a `--table` option for CSV, XLSX and ODS output, letting 
 - Various other dependency bumps (toml, toon-format, tempfile, redis, libc, sysinfo, once_cell, spreadsheet-ods)
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/17.0.0...18.0.0
+
+> [!NOTE]
+> qsv 18.0.0 is not published to crates.io. qsv depends on an unreleased git revision of Polars, and cargo publish strips [patch.crates-io] entries, causing dependency resolution to fail against the published Polars v0.53.0 on crates.io (which caps chrono <=0.4.41, incompatible with chrono 0.4.44). This will be resolved once Polars publishes a new crates.io release with updated chrono support. In the meantime, install qsv via the prebuilt binaries, various package managers, or by building from source.
 
 ## [17.0.0] - 2026-03-03 **_"The User 🧑🏻 and Agent 🤖 Experience (UAX) Release"_**
 

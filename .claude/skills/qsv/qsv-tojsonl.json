@@ -38,7 +38,7 @@
       {
         "flag": "--output",
         "type": "string",
-        "description": "Write output to <file> instead of stdout."
+        "description": "Write output to <file> instead of stdout. Use \"-\" to explicitly write to stdout."
       },
       {
         "flag": "--trim",

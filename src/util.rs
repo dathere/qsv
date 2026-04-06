@@ -591,7 +591,7 @@ pub fn version() -> String {
         .map_or("Unknown", |cpu| cpu.brand().trim());
     let physical_cpu_count = System::physical_core_count().unwrap_or(0);
 
-    #[cfg(feature = "mimalloc")]
+    #[cfg(all(feature = "mimalloc", not(feature = "jemallocator")))]
     let malloc_kind = {
         let mimalloc_version = mimalloc::MiMalloc.version();
         format!("mimalloc {mimalloc_version}")
@@ -650,7 +650,7 @@ pub fn show_env_vars() {
     for (n, v) in env::vars_os() {
         // safety: we know that the env::vars_os() will not fail
         let env_var = n.into_string().unwrap();
-        #[cfg(feature = "mimalloc")]
+        #[cfg(all(feature = "mimalloc", not(feature = "jemallocator")))]
         if env_var.starts_with("QSV_")
             || env_var.starts_with("MIMALLOC_")
             || OTHER_ENV_VARS.contains(&env_var.to_ascii_lowercase().as_str())

@@ -43,6 +43,9 @@ use crate::{
     config::SPONSOR_MESSAGE,
 };
 
+#[cfg(all(feature = "mimalloc", feature = "tikv-jemallocator"))]
+compile_error!("Features `mimalloc` and `jemallocator` are mutually exclusive. Enable only one.");
+
 #[cfg(feature = "mimalloc")]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;

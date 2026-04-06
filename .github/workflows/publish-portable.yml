@@ -193,7 +193,7 @@ jobs:
         command: build
         use-cross: ${{ matrix.job.use-cross }}
         toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsvmcp --features=qsvmcp,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+        args: --release --locked --bin qsvmcp ${{ matrix.job.addl-qsvlite-features != '' && format('--features=qsvmcp,{0}', matrix.job.addl-qsvlite-features) || '--features=qsvmcp' }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |

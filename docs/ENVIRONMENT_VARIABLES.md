@@ -78,7 +78,7 @@ Several dependencies also have environment variables that influence qsv's perfor
   * `POLARS_BACKTRACE_IN_ERR` - if set to 1, includes backtrace in polars-related error messages.
   
 > ℹ️ **NOTE:** To get a list of all active qsv-relevant environment variables, run `qsv --envlist`.
-Relevant env vars always include anything that starts with `QSV_`, `MALLOC_CONF` & the proxy variables listed above. Allocator-specific env vars are build-dependent: `MIMALLOC_` vars are included when qsv is built with mimalloc support, and `JEMALLOC_` vars are included when qsv is built with jemalloc support.
+Relevant env vars always include anything that starts with `QSV_` & the proxy variables listed above. Allocator-specific env vars are build-dependent: `MIMALLOC_` vars are included when qsv is built with mimalloc support, and `JEMALLOC_` & `MALLOC_CONF` vars are included when qsv is built with jemalloc support.
 
 ## MCP Server Environment Variables
 

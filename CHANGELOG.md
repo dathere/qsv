@@ -4,7 +4,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [19.0.0] - 2026-04-06
+## [19.0.0] - 2026-04-07 🔐 "The FAIR Answers Release" 📐
+
+The [Reproducibility Crisis in Scientific Research](https://scienceinsights.org/what-is-reproducibility-and-the-replication-crisis/) is one of the principal motivators for FAIR Principles for Data Management.
+
+With AI increasingly used in data pipelines, the need for reproducibility and auditability has become even more critical as "hallucinations" and "non-deterministic outputs" are inherent challenges in Generative AI.
+
+That's why in this release, we instrumented qsv with several features to help users track, audit, and reproduce their data wrangling workflows more effectively. As FAIR Principles do not only apply to data, we also want FAIR Answers - with the last R representing "Reproducible":
+
+- **Enhanced Logging**: The `qsv_log` tool now supports structured logging with JSON output, making it easier to parse and analyze logs for reproducibility audits.
+- **NEW blake3 Command**: A new `blake3` command computes [BLAKE3](https://blake3.io) hashes of files or data streams, providing a fast and reliable way to verify data integrity and track file versions in workflows. Unlike the oft-used SHA-256 hash, BLAKE3 is up to 16 times faster without sacrificing security, making it ideal for large datasets and iterative processing.
+- **Cowork Project Reproducibility Manifest**: Building on the Cowork Project support released in 18.0.0, the qsv Cowork Plugin now creates a Project Reproducibility Manifest - a structured log of all prompts, commands, and outputs generated during a Cowork session. This manifest can be used for detailed audits of the data wrangling process, helping users understand how specific outputs were derived and enabling them to reproduce or modify the workflow with confidence.
+- **Even Moarstats**: The `moarstats` command gets even "moar" statistical tests and metrics ([Trimean](https://en.wikipedia.org/wiki/Trimean), [Midhinge](https://en.wikipedia.org/wiki/Midhinge), [Robust CV](https://en.wikipedia.org/wiki/Coefficient_of_variation#Robust_CV), [Jarque-Bera](https://en.wikipedia.org/wiki/Jarque%E2%80%93Bera_test), [Theil Index](https://en.wikipedia.org/wiki/Theil_index), [Mean Absolute Deviation](https://en.wikipedia.org/wiki/Mean_absolute_deviation) and [Simpson's Diversity Index](https://en.wikipedia.org/wiki/Simpson%27s_diversity_index)), giving users deeper insights into their data distributions and relationships, which can be crucial for reproducibility in data analysis.
+- **To Parquet Improvements**: The `to parquet` command is re-added with a new implementation powered by Polars' LazyFrame API, providing faster and more reliable CSV-to-Parquet conversion with better schema inference and support for complex data types. New options like `--infer-len` and `--try-parse-dates` enhance the accuracy of type inference, further improving the fidelity of Parquet outputs for faster downstream analysis and reproducibility.
+
+Detailed MCP Server and Cowork Plugin changes are documented in the [MCP CHANGELOG](https://github.com/dathere/qsv/blob/master/.claude/skills/CHANGELOG.md).
+
+---
 
 ### Added
 - `blake3`: new BLAKE3 hashing command https://github.com/dathere/qsv/pull/3658
@@ -19,9 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document first-N sampling; use to_string_lossy
 - `help`: suppress linebreaks for options by using non-breaking hyphens https://github.com/dathere/qsv/pull/3662
 - Switch default allocator from mimalloc to jemalloc - the default allocator of polars https://github.com/dathere/qsv/pull/3684
-- deps: bump jaq from 2 to 3; jaq-json from 1 to 2 https://github.com/dathere/qsv/pull/3653
-- deps: bump polars to latest upstream
-- deps: bump atoi simd and sysinfo https://github.com/dathere/qsv/pull/3663
 - Add debug_assert! to moarstats map lookups
 - Remove some unwraps
 
@@ -31,16 +44,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - typo: `|` character not escaped, prematurely truncating content
 
 ### Dependencies
+- bump atoi simd and sysinfo https://github.com/dathere/qsv/pull/3663
 - bump cached from 0.58.0 to 0.59.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3639
 - bump file-format from 0.28.0 to 0.29.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3649
 - bump human-panic from 2.0.6 to 2.0.7 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3661
 - bump human-panic from 2.0.7 to 2.0.8 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3670
 - bump indexmap from 2.13.0 to 2.13.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3671
+- bump jaq from 2 to 3; jaq-json from 1 to 2 https://github.com/dathere/qsv/pull/3653
 - bump jsonschema from 0.45.0 to 0.45.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3685
 - bump lodash from 4.17.23 to 4.18.1 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3669
 - bump minijinja from 2.18.0 to 2.19.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3666
 - bump minijinja-contrib from 2.18.0 to 2.19.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3665
 - bump path-to-regexp from 8.3.0 to 8.4.0 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3652
+- bump polars to latest upstream at the time of release (rev efe654e)
 - bump pyo3 from 0.28.2 to 0.28.3 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3667
 - bump redis from 1.0.5 to 1.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3636
 - bump redis from 1.1.0 to 1.2.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3677

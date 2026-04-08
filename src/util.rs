@@ -1391,6 +1391,8 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
 
     let cache_path = expand_tilde("~/.qsv-cache").map(|p| p.join(UPDATE_CHECK_CACHE_FILE));
 
+    let curr_version = cargo_crate_version!();
+
     if check_only
         && let Some(ref cp) = cache_path
         && let Ok(contents) = std::fs::read_to_string(cp)
@@ -1403,7 +1405,6 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
             .unwrap_or(0);
         if update_check_ttl > 0 && now.saturating_sub(ts) < update_check_ttl {
             // Cache is fresh — use cached version without hitting GitHub
-            let curr_version = self_update::cargo_crate_version!();
             log::info!(
                 "Using cached update check: {cached_version} (age: {}s, ttl: {update_check_ttl}s)",
                 now.saturating_sub(ts)
@@ -1424,8 +1425,10 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
                 } else {
                     winfo!("Up to date ({curr_version})... no update required.");
                 }
+                return Ok(false);
             }
-            return Ok(false);
+            // cached version failed semver parse — fall through to live check
+            log::warn!("Cached version string is not valid semver, ignoring cache");
         }
     }
 
@@ -1434,8 +1437,6 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
     // Use GitHub token if available to avoid API rate limiting (60 req/hr unauthenticated
     // vs 5,000 req/hr authenticated).
     let github_token = std::env::var("QSV_GITHUB_TOKEN").ok();
-
-    let curr_version = cargo_crate_version!();
     let mut release_list_builder = self_update::backends::github::ReleaseList::configure();
     release_list_builder.repo_owner("dathere").repo_name("qsv");
     if let Some(ref token) = github_token {

@@ -20,7 +20,7 @@
 | `QSV_CKAN_API` | The CKAN Action API endpoint to use with the `luau` qsv_register_lookup() helper function when using the "ckan://" scheme. |
 | `QSV_CKAN_TOKEN`| The CKAN token to use with the `luau` qsv_register_lookup() helper function when using the "ckan://" scheme. Only required to access private resources. |
 | `QSV_COMMENT_CHAR` | set to an ascii character. If set, any lines(including the header) that start with this character are ignored. |
-| `QSV_MAX_JOBS` | number of jobs to use for multithreaded commands (currently `apply`, `applydp`, `datefmt`, `dedup`, `diff`, `excel`, `extsort`, `frequency`, `geocode`, `joinp`, `jsonl`, `moarstats`, `pivotp`, `pragmastat`, `replace`, `sample`, `schema`, `search`, `searchset`, `snappy`, `sort`, `split`, `sqlp`, `stats`, `template`, `to`, `tojsonl` & `validate`). If not set, max_jobs is set to the detected number of logical processors.  See [Multithreading](docs/PERFORMANCE.md#multithreading) for more info. |
+| `QSV_MAX_JOBS` | number of jobs to use for multithreaded commands (currently `apply`, `applydp`, `blake3`, `datefmt`, `dedup`, `diff`, `excel`, `extsort`, `frequency`, `geocode`, `joinp`, `jsonl`, `moarstats`, `pivotp`, `pragmastat`, `replace`, `sample`, `schema`, `search`, `searchset`, `snappy`, `sort`, `split`, `sqlp`, `stats`, `template`, `to`, `tojsonl` & `validate`). If not set, max_jobs is set to the detected number of logical processors.  See [Multithreading](docs/PERFORMANCE.md#multithreading) for more info. |
 | `QSV_NO_UPDATE` | if set, prohibit self-update version check for the latest qsv release published on GitHub. |
 | `QSV_LLM_BASE_URL` | The LLM API URL to use with the `describegpt` command. |
 | `QSV_LLM_APIKEY` | The API key of the supported LLM service to use with the `describegpt` command. |
@@ -115,7 +115,7 @@ These environment variables configure the MCP server behavior:
 | `QSV_MCP_SERVER_INSTRUCTIONS` | Custom server instructions that override built-in workflow guidance. Leave empty to use built-in defaults. | `""` (empty) |
 | `QSV_MCP_EXPOSE_ALL_TOOLS` | When set to `true`, expose all tools at startup instead of using deferred loading (core tools only). Useful for AI clients that don't support deferred tool loading. | Auto-detect |
 | `QSV_MCP_DUCKDB_BIN_PATH` | Full path to the DuckDB binary. If not set, auto-detects from PATH. | `""` (auto-detect) |
-| `QSV_MCP_USE_DUCKDB` | Enable DuckDB for SQL queries when available. When `false`, always uses `sqlp` (Polars SQL). | `false` |
+| `QSV_MCP_USE_DUCKDB` | Enable DuckDB for SQL queries when available. When `false`, always uses `sqlp` (Polars SQL). | `true` |
 | `QSV_MCP_OUTPUT_FORMAT` | Output format for qsv command results. Valid values: `"tsv"` or `"csv"`. | `tsv` |
 | `QSV_MCP_ENABLE_APPS` | Enable MCP Apps UI features (e.g., `qsv_browse_directory` interactive directory browser). | `true` |
 

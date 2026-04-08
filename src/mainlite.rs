@@ -154,7 +154,7 @@ fn main() -> QsvExitCode {
         None => {
             werr!(
                 "qsvlite is a suite of CSV command line utilities.\n\nPlease choose one of the \
-                 following 49 commands:\n{COMMAND_LIST}\n\n{SPONSOR_MESSAGE}",
+                 following 50 commands:\n{COMMAND_LIST}\n\n{SPONSOR_MESSAGE}",
             );
 
             // if no command is specified, auto-check for updates 50% of the time

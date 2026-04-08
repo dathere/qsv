@@ -301,7 +301,7 @@ Not the tiny 10-row sample.csv file, but all 2.7 million rows in the 124MB `wcp.
 
 Indeed we can — because `qsv` is designed for speed - written in [Rust](https://www.rust-lang.org/) with 
 [amortized memory allocations](https://blog.burntsushi.net/csv/#amortizing-allocations), using the 
-performance-focused [mimalloc](https://github.com/microsoft/mimalloc) allocator.
+performance-focused [jemalloc](https://github.com/jemalloc/jemalloc) allocator.
 
 ```
 $ qsv join --ignore-case Country wcp.csv iso2 country_continent.csv |

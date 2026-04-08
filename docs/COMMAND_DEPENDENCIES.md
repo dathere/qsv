@@ -30,6 +30,7 @@ The following "smart" commands (🪄) use the stats cache (`stats.csv.data.jsonl
 *   **`tojsonl`**: Uses the stats cache via `infer_schema_from_stats` for JSON data type inference.
 *   **`moarstats`**: Reads `.stats.csv` files to add extended statistics.
 *   **`scoresql`**: Analyzes SQL queries against stats, moarstats, and frequency caches to produce performance scores with optimization suggestions.
+*   **`pragmastat`**: Reads the stats JSONL cache directly to auto-filter non-numeric columns and support Date/DateTime columns.
 
 ## 3. Dependency on `frequency` (created via `qsv frequency`)
 *   **`schema`**: Uses frequency distributions internally to identify "low cardinality" columns and automatically build `enum` constraints for the generated JSON Schema.

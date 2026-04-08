@@ -50,7 +50,7 @@
 | [fixlengths](docs/help/fixlengths.md) | Force a CSV to have same-length records by either padding or truncating them. |
 | [flatten](docs/help/flatten.md) | A flattened view of CSV records. Useful for viewing one record at a time.<br />e.g. `qsv slice -i 5 data.csv \| qsv flatten`. |
 | [fmt](docs/help/fmt.md) | Reformat a CSV with different delimiters, record terminators or quoting rules. (Supports ASCII delimited data.)  |
-| [foreach](docs/help/foreach.md)✨<br>📇 | Execute a shell command once per record in a given CSV file. |
+| [foreach](docs/help/foreach.md)✨ | Execute a shell command once per record in a given CSV file. |
 | [frequency](docs/help/frequency.md)<br>📇😣🏎️👆🪄![Luau](docs/images/luau.png) | Build [frequency distribution tables](https://en.wikipedia.org/wiki/Frequency_(statistics)) of each column. Uses multithreading to go faster if an index is present (Examples: [CSV](scripts/nyc311-1m.freqs.csv) [JSON](scripts/nyc311-1m.freqs.json) [TOON](scripts/nyc311-1m.freqs.toon)). |
 | [geocode](docs/help/geocode.md)✨<br>📇🧠🌐🚀🔣👆🌎 | Geocodes a location against an updatable local copy of the [Geonames](https://www.geonames.org/) cities & the [Maxmind GeoLite2](https://www.maxmind.com/en/geolite-free-ip-geolocation-data) databases. With caching and multi-threading, it geocodes up to 360,000 records/sec! |
 | [geoconvert](docs/help/geoconvert.md)✨<br>🌎 | Convert between various spatial formats and CSV/SVG including GeoJSON, SHP, and more. |
@@ -221,7 +221,7 @@ sudo xbps-install qsv
 conda install conda-forge::qsv
 ```
 
-Note that qsv provided by these package managers/distros enable different features (Homebrew, for instance, only enables the `apply`, `fetch`, `foreach`, `lens`, `luau` and `to` features. However, it does automatically install shell completion for `bash`, `fish` and `zsh` shells).
+Note that qsv provided by these package managers/distros enable different features (Homebrew, for instance, enables the `apply`, `fetch`, `foreach`, `geocode`, `lens`, `luau` and `to` features. However, it does automatically install shell completion for `bash`, `fish` and `zsh` shells).
 
 To find out what features are enabled in a package/distro's qsv, run `qsv --version` ([more info](https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#version-details)).
 
@@ -289,7 +289,7 @@ There are five binary variants of qsv:
 
 * `qsv` - [feature](#feature-flags)-capable(✨), with the [prebuilt binaries](https://github.com/dathere/qsv/releases/latest) enabling all applicable features except Python [^3]
 * `qsvpy` - same as `qsv` but with the Python feature enabled. Three subvariants are available - qsvpy311, qsvpy312 & qsvpy313 - which are compiled with the latest patch version of Python 3.11, 3.12 & 3.13 respectively. We need to have a binary for each Python version as Python is dynamically linked ([more info](docs/INTERPRETERS.md#building-qsv-with-python-feature)).
-* `qsvmcp` - optimized for [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server use with geocode, luau, mcp, polars, and self_update features enabled. Shares `src/main.rs` with `qsv`.
+* `qsvmcp` - optimized for [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server use with geocode, luau, mcp, polars, self_update, and to features enabled. Shares `src/main.rs` with `qsv`.
 * `qsvlite` - all features disabled (~16% of the size of `qsv`). If you are migrating from [xsv](https://github.com/BurntSushi/xsv) and want the same experience and feature set, this is the variant for you.
 * `qsvdp` - optimized for use with [DataPusher+](https://github.com/dathere/datapusher-plus) with only DataPusher+ relevant commands; an embedded [`luau`](#luau_deeplink) interpreter; [`applydp`](#applydp_deeplink), a slimmed-down version of the `apply` feature; the `--progressbar` option disabled; and the self-update only checking for new releases, requiring an explicit `--update` (~16% of the the size of `qsv`).
 
@@ -493,7 +493,7 @@ Luau will also serve as the backbone of a whole library of **qsv recipes** - reu
  as command line interfaces go :shrug:. Its commands have numerous options but have sensible defaults. The usage text is written for a data analyst audience, not developers; and there are numerous examples in the usage text, with the tests doubling as examples as well. With [qsv pro](https://qsvpro.dathere.com), it has much expanded functionality while being easier to use with its Graphical User Interface.
 * **As Secure as Possible** - qsv is designed to be secure. It has no external runtime dependencies, is [written](https://aws.amazon.com/blogs/opensource/why-aws-loves-rust-and-how-wed-like-to-help/) [in](https://msrc.microsoft.com/blog/2019/07/why-rust-for-safe-systems-programming/) [Rust](https://opensource.googleblog.com/2023/06/rust-fact-vs-fiction-5-insights-from-googles-rust-journey-2022.html), and its codebase is automatically audited for security vulnerabilities with automated [DevSkim](https://github.com/microsoft/DevSkim#devskim), ["cargo audit"](https://rustsec.org) and [Codacy](https://app.codacy.com/gh/dathere/qsv/dashboard) Github Actions workflows.  
 It uses the latest stable Rust version, with an aggressive MSRV policy and the latest version of all its dependencies.
-It has an extensive test suite with more than 2,500 tests, including several [property tests](https://medium.com/criteo-engineering/introduction-to-property-based-testing-f5236229d237) which [randomly generate](https://github.com/BurntSushi/quickcheck#quickcheck) parameters for oft-used commands.   
+It has an extensive test suite with more than 2,900 tests, including several [property tests](https://medium.com/criteo-engineering/introduction-to-property-based-testing-f5236229d237) which [randomly generate](https://github.com/BurntSushi/quickcheck#quickcheck) parameters for oft-used commands.   
 Its prebuilt binary archives are [zipsigned](https://github.com/Kijewski/zipsign#zipsign), so you can [verify their integrity](#verifying-the-integrity-of-the-prebuilt-binaries-zip-archives). Its self-update mechanism automatically verifies the integrity of the prebuilt binaries archive before applying an update.
 See [Security](SECURITY.md) for more info.
 * **As Easy to Contribute to as Possible** - qsv is designed to be easy to contribute to, with a focus on maintainability. It's modular architecture allows the easy addition of self-contained commands gated by feature flags, the source code is heavily commented, the usage text is embedded, and there are helper functions that make it easy to create additional commands and supporting tests. See [Features](docs/FEATURES.md) and [Contributing](CONTRIBUTING.md) for more info.
@@ -506,7 +506,7 @@ It can process well-formed CSVs in _any_ language so long as its UTF-8 encoded. 
 Finally, though the default Geonames index of the `geocode` command is English-only, the index can be rebuilt with the `geocode index-update` subcommand with the `--languages` option to return place names in multiple languages ([with support for 254 languages](http://download.geonames.org/export/dump/alternatenames/)).
 
 ## Testing
-qsv has ~2,525 tests in the [tests](https://github.com/dathere/qsv/tree/master/tests) directory.
+qsv has ~3,000 tests in the [tests](https://github.com/dathere/qsv/tree/master/tests) directory.
 Each command has its own test suite in a separate file with the convention `test_<COMMAND>.rs`.
 Apart from preventing regressions, the tests also serve as good illustrative examples, and are often linked from the usage text of each corresponding command.
 

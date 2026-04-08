@@ -1362,6 +1362,9 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
     use self_update::cargo_crate_version;
     const GITHUB_RATELIMIT_MSG: &str =
         "Github is rate-limiting self-update checks at the moment. Try again in an hour.";
+    // default update check cache TTL: 24 hours
+    const DEFAULT_UPDATE_CHECK_TTL_SECS: u64 = 86_400;
+    const UPDATE_CHECK_CACHE_FILE: &str = ".update_check";
 
     if get_envvar_flag("QSV_NO_UPDATE") {
         return Ok(false);
@@ -1378,14 +1381,67 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
         Err(e) => return fail_format!("Can't get the exec path: {e}"),
     };
 
+    // --- Update check cache ---
+    // For passive checks (check_only), use a local cache to avoid hitting the GitHub API
+    // on every invocation. The cache file stores "latest_version,epoch_secs".
+    let update_check_ttl = std::env::var("QSV_UPDATE_CHECK_TTL_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_UPDATE_CHECK_TTL_SECS);
+
+    let cache_path = expand_tilde("~/.qsv-cache").map(|p| p.join(UPDATE_CHECK_CACHE_FILE));
+
+    if check_only
+        && let Some(ref cp) = cache_path
+        && let Ok(contents) = std::fs::read_to_string(cp)
+        && let Some((cached_version, cached_ts)) = contents.trim().split_once(',')
+        && let Ok(ts) = cached_ts.parse::<u64>()
+    {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        if update_check_ttl > 0 && now.saturating_sub(ts) < update_check_ttl {
+            // Cache is fresh — use cached version without hitting GitHub
+            let curr_version = self_update::cargo_crate_version!();
+            log::info!(
+                "Using cached update check: {cached_version} (age: {}s, ttl: {update_check_ttl}s)",
+                now.saturating_sub(ts)
+            );
+            if let (Ok(cached_sv), Ok(curr_sv)) = (
+                semver::Version::parse(cached_version),
+                semver::Version::parse(curr_version),
+            ) {
+                if cached_sv > curr_sv {
+                    eprintln!(
+                        "Update {cached_version} available. Current version is {curr_version}."
+                    );
+                    eprintln!(
+                        "Release notes: \
+                         https://github.com/dathere/qsv/releases/tag/{cached_version}\n"
+                    );
+                    winfo!("Use the --update option to upgrade {bin_name} to the latest release.");
+                } else {
+                    winfo!("Up to date ({curr_version})... no update required.");
+                }
+            }
+            return Ok(false);
+        }
+    }
+
     winfo!("Checking GitHub for updates...");
 
+    // Use GitHub token if available to avoid API rate limiting (60 req/hr unauthenticated
+    // vs 5,000 req/hr authenticated).
+    let github_token = std::env::var("QSV_GITHUB_TOKEN").ok();
+
     let curr_version = cargo_crate_version!();
-    let releases = match self_update::backends::github::ReleaseList::configure()
-        .repo_owner("dathere")
-        .repo_name("qsv")
-        .build()
-    {
+    let mut release_list_builder = self_update::backends::github::ReleaseList::configure();
+    release_list_builder.repo_owner("dathere").repo_name("qsv");
+    if let Some(ref token) = github_token {
+        release_list_builder.auth_token(token);
+    }
+    let releases = match release_list_builder.build() {
         Ok(releases_list) => match releases_list.fetch() {
             Ok(releases) => releases,
             _ => {
@@ -1397,6 +1453,18 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
         },
     };
     let latest_release = &releases[0].version;
+
+    // Write the update check cache (best-effort, ignore errors)
+    if let Some(ref cp) = cache_path {
+        if let Some(parent) = cp.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = std::fs::write(cp, format!("{latest_release},{now}"));
+    }
 
     log::info!("Current version: {curr_version} Latest Release: {latest_release}");
 
@@ -1412,7 +1480,8 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
         eprintln!("Update {latest_release} available. Current version is {curr_version}.");
         eprintln!("Release notes: https://github.com/dathere/qsv/releases/tag/{latest_release}\n");
         if QSV_KIND.starts_with("prebuilt") && !check_only {
-            match self_update::backends::github::Update::configure()
+            let mut update_builder = self_update::backends::github::Update::configure();
+            update_builder
                 .repo_owner("dathere")
                 .repo_name("qsv")
                 .bin_name(&bin_name)
@@ -1420,9 +1489,11 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
                 .show_output(false)
                 .no_confirm(no_confirm)
                 .current_version(curr_version)
-                .verifying_keys([*include_bytes!("qsv-zipsign-public.key")])
-                .build()
-            {
+                .verifying_keys([*include_bytes!("qsv-zipsign-public.key")]);
+            if let Some(ref token) = github_token {
+                update_builder.auth_token(token);
+            }
+            match update_builder.build() {
                 Ok(update_job) => match update_job.update() {
                     Ok(status) => {
                         updated = true;

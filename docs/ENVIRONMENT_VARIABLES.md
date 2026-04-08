@@ -22,6 +22,8 @@
 | `QSV_COMMENT_CHAR` | set to an ascii character. If set, any lines(including the header) that start with this character are ignored. |
 | `QSV_MAX_JOBS` | number of jobs to use for multithreaded commands (currently `apply`, `applydp`, `blake3`, `datefmt`, `dedup`, `diff`, `excel`, `extsort`, `frequency`, `geocode`, `joinp`, `jsonl`, `moarstats`, `pivotp`, `pragmastat`, `replace`, `sample`, `schema`, `search`, `searchset`, `snappy`, `sort`, `split`, `sqlp`, `stats`, `template`, `to`, `tojsonl` & `validate`). If not set, max_jobs is set to the detected number of logical processors.  See [Multithreading](docs/PERFORMANCE.md#multithreading) for more info. |
 | `QSV_NO_UPDATE` | if set, prohibit self-update version check for the latest qsv release published on GitHub. |
+| `QSV_GITHUB_TOKEN` | GitHub personal access token (PAT) for authenticated API requests during self-update checks. Unauthenticated requests are limited to 60/hr per IP; authenticated requests get 5,000/hr. A fine-grained PAT with no permissions (public repo read-only) is sufficient. |
+| `QSV_UPDATE_CHECK_TTL_SECS` | Time-to-live in seconds for the local update check cache (`~/.qsv-cache/.update_check`). Passive update checks (`qsv help`, random no-command check) use this cache to avoid hitting the GitHub API on every invocation. Set to `0` to always check. (default: 86400 — 24 hours) |
 | `QSV_LLM_BASE_URL` | The LLM API URL to use with the `describegpt` command. |
 | `QSV_LLM_APIKEY` | The API key of the supported LLM service to use with the `describegpt` command. |
 | `QSV_LLM_MODEL` | The LLM Model to use with the `describegpt` command. |

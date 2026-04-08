@@ -158,9 +158,22 @@ QSV_COMMENT_CHAR = '#'
 # if true, skips mime-type checking of input files. 
 # QSV_SKIP_FORMAT_CHECK = False
 
-# if true, prohibit self-update version check for the latest qsv release 
+# if true, prohibit self-update version check for the latest qsv release
 # published on GitHub.
 QSV_NO_UPDATE = False
+
+# GitHub personal access token (PAT) for authenticated API requests during
+# self-update checks. Unauthenticated requests are limited to 60/hr per IP;
+# authenticated requests get 5,000/hr. A fine-grained PAT with no permissions
+# (public repo read-only) is sufficient.
+# QSV_GITHUB_TOKEN = ghp_YOUR_TOKEN_HERE
+
+# Time-to-live in seconds for the local update check cache
+# (~/.qsv-cache/.update_check). Passive update checks (e.g. `qsv help`,
+# random no-command check) use this cache to avoid hitting the GitHub API
+# on every invocation. Set to 0 to always check.
+# (default (seconds): 86400 (24 hours))
+# QSV_UPDATE_CHECK_TTL_SECS = 86400
 
 # if true, date parsing will prefer DMY format. Otherwise, prefer MDY format.
 # Dates like 01/02/03 will be interpreted as 2003-02-01 if true, 

@@ -221,7 +221,7 @@ sudo xbps-install qsv
 conda install conda-forge::qsv
 ```
 
-Note that qsv provided by these package managers/distros enable different features (Homebrew, for instance, only enables the `apply`, `fetch`, `foreach`, `lens`, `luau` and `to` features. However, it does automatically install shell completion for `bash`, `fish` and `zsh` shells).
+Note that qsv provided by these package managers/distros enable different features (Homebrew, for instance, enables the `apply`, `fetch`, `foreach`, `geocode`, `lens`, `luau` and `to` features. However, it does automatically install shell completion for `bash`, `fish` and `zsh` shells).
 
 To find out what features are enabled in a package/distro's qsv, run `qsv --version` ([more info](https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#version-details)).
 

@@ -169,7 +169,7 @@ QSV_NO_UPDATE = False
 # QSV_GITHUB_TOKEN = ghp_YOUR_TOKEN_HERE
 
 # Time-to-live in seconds for the local update check cache
-# (~/.qsv-cache/.update_check). Passive update checks (e.g. `qsv help`,
+# (.update_check file in QSV_CACHE_DIR, defaulting to ~/.qsv-cache). Passive update checks (e.g. `qsv help`,
 # random no-command check) use this cache to avoid hitting the GitHub API
 # on every invocation. Set to 0 to always check.
 # (default (seconds): 86400 (24 hours))

@@ -1361,7 +1361,7 @@ pub fn init_logger() -> CliResult<(String, flexi_logger::LoggerHandle)> {
 pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, String> {
     use self_update::cargo_crate_version;
     const GITHUB_RATELIMIT_MSG: &str =
-        "Github is rate-limiting self-update checks at the moment. Try again in an hour.";
+        "GitHub is rate-limiting self-update checks at the moment. Try again in an hour.";
     // default update check cache TTL: 24 hours
     const DEFAULT_UPDATE_CHECK_TTL_SECS: u64 = 86_400;
     const UPDATE_CHECK_CACHE_FILE: &str = ".update_check";
@@ -1389,7 +1389,12 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(DEFAULT_UPDATE_CHECK_TTL_SECS);
 
-    let cache_path = expand_tilde("~/.qsv-cache").map(|p| p.join(UPDATE_CHECK_CACHE_FILE));
+    let cache_path = std::env::var("QSV_CACHE_DIR")
+        .ok()
+        .filter(|dir| !dir.is_empty())
+        .and_then(|dir| expand_tilde(&dir))
+        .or_else(|| expand_tilde("~/.qsv-cache"))
+        .map(|p| p.join(UPDATE_CHECK_CACHE_FILE));
 
     let curr_version = cargo_crate_version!();
 
@@ -1436,7 +1441,9 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
 
     // Use GitHub token if available to avoid API rate limiting (60 req/hr unauthenticated
     // vs 5,000 req/hr authenticated).
-    let github_token = std::env::var("QSV_GITHUB_TOKEN").ok();
+    let github_token = std::env::var("QSV_GITHUB_TOKEN")
+        .ok()
+        .filter(|t| !t.trim().is_empty());
     let mut release_list_builder = self_update::backends::github::ReleaseList::configure();
     release_list_builder.repo_owner("dathere").repo_name("qsv");
     if let Some(ref token) = github_token {

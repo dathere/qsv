@@ -89,6 +89,7 @@ Note: Line 17 in the same file correctly stated 62/71 — the table simply hadn'
 - `sample`: Uses `rconfig.indexed()` — **CORRECT**
 - `frequency`: Uses `args.rconfig().indexed()` — **CORRECT**
 - `replace`: Uses `rconfig.indexed()` — **CORRECT**
+- `pragmastat`: Uses `rconfig.indexed()` at line 573, parallel indexed reading at line 952 — **CORRECT**
 - `sortcheck`: No index usage — **WRONG** (fixed)
 
 ### QSV_MAX_JOBS command list verification
@@ -105,9 +106,9 @@ All fixes applied. Changes are limited to documentation files only — no code c
 
 ## Files Modified
 
-1. `/Users/joelnatividad/GitHub/qsv/README.md` — test counts, sortcheck icon, size percentages, typo
-2. `/Users/joelnatividad/GitHub/qsv/.claude/skills/README-MCP.md` — command count table
-3. `/Users/joelnatividad/GitHub/qsv/.claude-plugin/marketplace.json` — metadata description count
-4. `/Users/joelnatividad/GitHub/qsv/docs/PERFORMANCE.md` — added pragmastat to OOM list
-5. `/Users/joelnatividad/GitHub/qsv/.claude/skills/README.md` — usage examples count
-6. `/Users/joelnatividad/GitHub/qsv/docs/help/TableOfContents.md` — sortcheck icon
+1. `README.md` — test counts, sortcheck icon, size percentages, typo
+2. `.claude/skills/README-MCP.md` — command count table
+3. `.claude-plugin/marketplace.json` — metadata description count
+4. `docs/PERFORMANCE.md` — added pragmastat to OOM list
+5. `.claude/skills/README.md` — usage examples count
+6. `docs/help/TableOfContents.md` — sortcheck icon

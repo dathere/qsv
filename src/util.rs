@@ -1388,12 +1388,12 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
     {
         Ok(releases_list) => match releases_list.fetch() {
             Ok(releases) => releases,
-            _ => {
-                return fail!(GITHUB_RATELIMIT_MSG);
+            Err(e) => {
+                return fail!(format!("{GITHUB_RATELIMIT_MSG}: {e}"));
             },
         },
-        _ => {
-            return fail!(GITHUB_RATELIMIT_MSG);
+        Err(e) => {
+            return fail!(format!("{GITHUB_RATELIMIT_MSG}: {e}"));
         },
     };
     let latest_release = &releases[0].version;

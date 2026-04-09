@@ -354,6 +354,9 @@ kiddo = { git = "https://github.com/sdd/kiddo", rev = "2056051"}
 # use upstream of mimalloc with unreleased fixes
 mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "7daf67f", optional = true }
 
+# use our patched fork until our PR is merged with GitHub-backend fixes
+self_update = { git = "https://github.com/jqnatividad/self_update", branch = "gh-pagination-fix-redux" }
+
 # use our patched fork of sled to get rid of unmaintained instant
 sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }
 

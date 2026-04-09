@@ -7264,8 +7264,7 @@ checksum = "b12e76d157a900eb52e81bc6e9f3069344290341720e9178cde2407113ac8d89"
 [[package]]
 name = "self_update"
 version = "0.44.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e79722b5a505d4ddc77527455a97244e9e8c4c07533ff44cf4421cce7bb6d17"
+source = "git+https://github.com/jqnatividad/self_update?branch=gh-pagination-fix-redux#472ba10bc942b0a046c10138d982284554992019"
 dependencies = [
  "http 1.4.0",
  "indicatif",

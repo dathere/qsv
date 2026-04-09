@@ -167,10 +167,7 @@ libc = "0.2"
 log = "0.4"
 magika = { version = "1.0", optional = true }
 memmap2 = "0.9"
-
-# enable if you want to use mimalloc as the global allocator
-# mimalloc = { version = "0.1", default-features = false, features = ["extended", "v3"], optional = true }
-
+mimalloc = { version = "0.1", default-features = false, features = ["extended", "v3"], optional = true }
 minijinja = { version = "2", features = [
     "json",
     "loop_controls",
@@ -353,6 +350,9 @@ json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-cs
 
 # use latest upstream now that our PR has been merged while awaiting a new release
 kiddo = { git = "https://github.com/sdd/kiddo", rev = "2056051"}
+
+# use upstream of mimalloc with unreleased fixes
+mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "7daf67f", optional = true }
 
 # use our patched fork of sled to get rid of unmaintained instant
 sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }

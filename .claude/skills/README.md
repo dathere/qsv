@@ -29,7 +29,7 @@ This directory contains:
 Each skill file provides:
 - **Command specification**: Binary, subcommand, arguments, and options (parsed with qsv-docopt)
 - **Rich descriptions**: Extracted from usage text
-- **Usage examples**: Real usage examples from documentation (180 total)
+- **Usage examples**: Real usage examples from documentation (174 total)
 - **Type information**: Inferred parameter types and validation
 - **Performance hints**: Memory usage, streaming capability, indexing benefits
 - **Links to tests**: For additional context and validation

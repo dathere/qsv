@@ -1214,9 +1214,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.59"
+version = "1.2.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7a4d3ec6524d28a329fc53654bbadc9bdd7b0431f5d65f1a56ffb28a1ee5283"
+checksum = "43c5703da9466b66a946814e1adf53ea2c90f10063b86290cc9eb67ce3478a20"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -7270,7 +7270,7 @@ checksum = "b12e76d157a900eb52e81bc6e9f3069344290341720e9178cde2407113ac8d89"
 [[package]]
 name = "self_update"
 version = "0.44.0"
-source = "git+https://github.com/jqnatividad/self_update?branch=gh-pagination-fix#f865e985a8602f3a634c87b433913753a411db62"
+source = "git+https://github.com/jaemk/self_update?rev=17af1e9#17af1e981e43f561232e0bf2735c431a1739f0b5"
 dependencies = [
  "http 1.4.0",
  "indicatif",

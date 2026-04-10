@@ -8,7 +8,7 @@
 > qsv complements these tools and skills with its own purpose-built data-wrangling tools/skills - exposed through the MCP Server (and optional Cowork plugin with specialized agents). The key advantages:   
 >   
 > - **Scale** — qsv handles millions of rows with ease; Python/pandas would choke or crawl at that scale.   
-> - **Speed** — often orders of magnitude faster. Its statistical commands in particular, compute [140+ measures](../../../../docs/STATS_DEFINITIONS.md) on a million-row CSV in seconds.
+> - **Speed** — qsv is often orders of magnitude faster. Its statistical commands in particular, compute [140+ measures](../../../../docs/STATS_DEFINITIONS.md) on a million-row CSV in seconds. This is because it's built with Rust using the Polars query engine, and is highly parallelized and able to handle larger than-memory datasets. In contrast, Python/pandas is single-threaded and memory-bound, making it frustratingly slow for large files.
 > - **Ontology** - qsv's statistical measures are leveraged to create and infer neuro-symbolic data dictionaries along with an extensible data ontology - enabling deeper understanding of your data's structure, quality, and relationships — all easily modifiable and extensible by users without having to learn formal schema languages or graph databases.
 > - **Logging** — both the MCP Server and Cowork plugin log all prompts, operations, parameters, and results in a structured format for reproducibility, debugging, and auditability.   
 >

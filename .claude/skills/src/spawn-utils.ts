@@ -81,12 +81,12 @@ export function spawnWithTimeout(options: SpawnWithTimeoutOptions): Promise<Spaw
     let stdoutTruncated = false;
     let stderrTruncated = false;
     let timedOut = false;
-    let processExited = false;
+    let processExited = false;  // guards SIGKILL after SIGTERM
+    let finalized = false;      // ensures finish() runs exactly once
     let timer: ReturnType<typeof setTimeout> | null = null;
     let killTimer: ReturnType<typeof setTimeout> | null = null;
 
     const clearTimers = () => {
-      processExited = true;
       if (timer) { clearTimeout(timer); timer = null; }
       if (killTimer) { clearTimeout(killTimer); killTimer = null; }
     };
@@ -105,6 +105,11 @@ export function spawnWithTimeout(options: SpawnWithTimeoutOptions): Promise<Spaw
 
     // ── stdin ───────────────────────────────────────────────────────────
     if (stdin !== undefined) {
+      proc.stdin!.on("error", (err) => {
+        // EPIPE is expected if the child exits before consuming all input.
+        const msg = err?.message ?? String(err);
+        stderr += `\n[STDIN ERROR] ${msg}`;
+      });
       proc.stdin!.write(stdin);
       proc.stdin!.end();
     }
@@ -137,10 +142,13 @@ export function spawnWithTimeout(options: SpawnWithTimeoutOptions): Promise<Spaw
       stderr += data;
     });
 
-    // Shared finalizer: clears timers, calls onExit exactly once, resolves.
+    // Shared finalizer: clears timers, calls onExit exactly once, resolves once.
     const finish = (result: SpawnResult) => {
+      if (finalized) return;
+      finalized = true;
+      processExited = true;
       clearTimers();
-      if (!processExited) { processExited = true; onExit?.(proc); }
+      onExit?.(proc);
       resolve(result);
     };
 

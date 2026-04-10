@@ -194,7 +194,7 @@ odht = "0.3"
 # ort is needed by magika for ONNX runtime; download-binaries fetches prebuilt binaries
 ort = { version = "2.0.0-rc.11", default-features = false, features = ["download-binaries", "tls-rustls"], optional = true }
 phf = { version = "0.13", features = ["macros"] }
-pragmastat = "12.0"
+pragmastat = "12.1"
 polars = { version = "0.53", features = [
     "asof_join",
     "avro",

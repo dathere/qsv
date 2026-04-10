@@ -2,6 +2,11 @@
 
 **qsv** is a free, open-source data-wrangling toolkit that gives Claude the ability to work directly with data files on your computer — CSV, Excel, JSONL, Parquet, and more with blazing speed. It offers hundreds of built-in functions for data transformation, analysis, and validation, but typically requires being comfortable with command-line tools.
 
+> [!NOTE]   
+> Q: Why do I need qsv? Don't AI chatbots have built-in data-wrangling capabilities?   
+> A: Chatbots actually do not have built-in data-wrangling capabilities - they use "tools" like python and libraries like pandas to perform data operations. The qsv MCP Server and Cowork Plugin expose qsv as a tool.   
+> It can handle datasets that would be too slow or too big for python/pandas - it is often several orders of magnitude faster and can handle millions of rows with ease. It's suite of statistical commands in particular - can compute [135+ statistical measures](../../../../docs/STATS_DEFINITIONS.md) in a few seconds on a million-row CSV - a python-based approach would struggle with that scale, and even if it could, it would be much, much slower.
+
 With the qsv MCP Server and Cowork plugin, you can use all of qsv's power through natural language commands in **Claude Desktop** — no programming required. Just ask Claude to analyze, clean, transform, or visualize your data files, and it will translate your requests into qsv commands behind the scenes.
 
 No uploads, no file size limits, no data leaving your machine.
@@ -13,8 +18,7 @@ No uploads, no file size limits, no data leaving your machine.
 ## What You'll Need
 
 - **Claude Desktop** — [download here](https://claude.ai/download)
-- An **internet connection** for downloads
-- About **10 minutes** of your time
+- About **5 minutes** of your time
 
 ---
 

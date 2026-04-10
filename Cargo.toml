@@ -351,9 +351,6 @@ json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-cs
 # use latest upstream now that our PR has been merged while awaiting a new release
 kiddo = { git = "https://github.com/sdd/kiddo", rev = "2056051"}
 
-# use upstream of mimalloc with unreleased fixes
-mimalloc = { git = "https://github.com/purpleprotocol/mimalloc_rust", rev = "7daf67f", optional = true }
-
 # use our patched fork until our PR is merged with GitHub-backend fixes
 self_update = { git = "https://github.com/jqnatividad/self_update", branch = "gh-pagination-fix-redux" }
 

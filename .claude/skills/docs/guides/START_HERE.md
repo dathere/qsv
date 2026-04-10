@@ -9,9 +9,10 @@
 >   
 > - **Scale** — qsv handles millions of rows with ease; Python/pandas would choke or crawl at that scale.   
 > - **Speed** — often orders of magnitude faster. Its statistical commands in particular, compute [140+ measures](../../../../docs/STATS_DEFINITIONS.md) on a million-row CSV in seconds.
+> - **Ontology** - qsv's statistical measures are leveraged to create and infer neuro-symbolic data dictionaries along with an extensible data ontology - enabling deeper understanding of your data's structure, quality, and relationships — all easily modifiable and extensible by users without having to learn formal schema languages or graph databases.
 > - **Logging** — both the MCP Server and Cowork plugin log all prompts, operations, parameters, and results in a structured format for reproducibility, debugging, and auditability.   
 >
-> Combined - scale, speed and logging enables **["StatsSighting"](https://github.com/dathere/qsv/releases/tag/18.0.0)** - [iterative, traceable, "what-if" data exploration](https://dathere.github.io/peoples-api-demos/NYC-Housing-Policy-SOD2026/#what-this-is---an-ai-accelerated-policy-analysis-workbench) in conversation. Ask follow-up questions, tweak parameters, get results in seconds — effectively steering the analysis in real time. Otherwise, using Python/pandas for this kind of iterative exploration would be frustratingly slow and cumbersome.
+> Combined - scale, speed, ontology and logging enables **["StatsSighting"](https://github.com/dathere/qsv/releases/tag/18.0.0)** - [iterative, traceable, "what-if" data exploration](https://dathere.github.io/peoples-api-demos/NYC-Housing-Policy-SOD2026/#what-this-is---an-ai-accelerated-policy-analysis-workbench) in conversation. Ask follow-up questions, tweak parameters, get results in seconds — effectively steering the analysis in real time. Otherwise, using Python/pandas for this kind of iterative exploration would be frustratingly slow and cumbersome.
 
 With the qsv MCP Server and Claude Cowork plugin, you can use all of qsv's power through natural language commands in your AI agent — no programming required. Just ask it to analyze, clean, transform, or visualize your data files, and it will translate your requests into qsv commands behind the scenes.
 

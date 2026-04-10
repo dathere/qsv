@@ -3,10 +3,15 @@
 **qsv** is a free, open-source data-wrangling toolkit that gives Claude the ability to work directly with data files on your computer — CSV, Excel, JSONL, Parquet, and more with blazing speed. It offers hundreds of built-in functions for data transformation, analysis, and validation, but typically requires being comfortable with command-line tools.
 
 > [!NOTE]   
-> Q: Why do I need qsv? Don't AI chatbots have built-in data-wrangling capabilities?   
-> A: Chatbots actually do not have built-in data-wrangling capabilities - they use "tools" like python and libraries like pandas to perform data operations. The qsv MCP Server and Cowork Plugin expose qsv as a tool.   
-> It can handle datasets that would be too slow or too big for python/pandas - it is often several orders of magnitude faster and can handle millions of rows with ease. It's suite of statistical commands in particular - can compute [135+ statistical measures](../../../../docs/STATS_DEFINITIONS.md) in a few seconds on a million-row CSV - a python-based approach would struggle with that scale, and even if it could, it would be much, much slower.   
-> This speed and scale enables ["StatsSighting"](https://github.com/dathere/qsv/releases/tag/18.0.0) - [an iterative, "what-if" data exploration](https://dathere.github.io/peoples-api-demos/NYC-Housing-Policy-SOD2026/#what-this-is---an-ai-accelerated-policy-analysis-workbench) in a conversational setting with the Agent that would be impractical with python. You can ask follow-up questions, make tweaks, and get results in seconds, keeping the flow of analysis going without interruption, as you effectively "steer" the data analysis in real time.
+> **Q: Why do I need qsv? Don't AI chatbots already handle data?**   
+> A: AI chatbots don't have built-in data-wrangling — they rely on "tools" like Python and libraries like pandas, guided by internal "skills."
+> qsv complements these tools and skills with its own purpose-built data-wrangling tools/skills - exposed through the MCP Server (and optional Cowork plugin with specialized agents). The key advantages:   
+>   
+> - **Scale** — qsv handles millions of rows with ease; Python/pandas would choke or crawl at that scale.   
+> - **Speed** — often orders of magnitude faster. Its statistical commands in particular, compute [140+ measures](../../../../docs/STATS_DEFINITIONS.md) on a million-row CSV in seconds.
+> - **Logging** — both the MCP Server and Cowork plugin log all prompts, operations, parameters, and results in a structured format for reproducibility, debugging, and auditability.   
+>
+> Combined - scale, speed and logging enables **["StatsSighting"](https://github.com/dathere/qsv/releases/tag/18.0.0)** - [iterative, traceable, "what-if" data exploration](https://dathere.github.io/peoples-api-demos/NYC-Housing-Policy-SOD2026/#what-this-is---an-ai-accelerated-policy-analysis-workbench) in conversation. Ask follow-up questions, tweak parameters, get results in seconds — effectively steering the analysis in real time. Otherwise, using Python/pandas for this kind of iterative exploration would be frustratingly slow and cumbersome.
 
 With the qsv MCP Server and Claude Cowork plugin, you can use all of qsv's power through natural language commands in your AI agent — no programming required. Just ask it to analyze, clean, transform, or visualize your data files, and it will translate your requests into qsv commands behind the scenes.
 

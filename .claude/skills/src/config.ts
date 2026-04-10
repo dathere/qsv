@@ -890,15 +890,16 @@ export const config = {
    * - "info" (default): Log all tool invocations (start/end with timing)
    * - "off": Disable MCP audit logging entirely
    * - "error": Log only failed tool invocations
+   * - "debug": Like "info" but also enables verbose executor/process logging to stderr
    */
   mcpLogLevel: (() => {
     const val = getStringEnv("QSV_MCP_LOG_LEVEL", "info").toLowerCase();
-    const valid = ["off", "error", "info"];
+    const valid = ["off", "error", "info", "debug"];
     if (!valid.includes(val)) {
       console.error(`[Config] Invalid QSV_MCP_LOG_LEVEL: "${val}", using default: "info"`);
       return "info" as const;
     }
-    return val as "off" | "error" | "info";
+    return val as "off" | "error" | "info" | "debug";
   })(),
 
   /**

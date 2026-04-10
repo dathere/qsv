@@ -6,11 +6,12 @@
  * for better PostgreSQL compatibility and performance.
  */
 
-import { execFileSync, spawn, type ChildProcess } from "child_process";
+import { execFileSync, type ChildProcess } from "child_process";
 import { statSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { config } from "./config.js";
+import { spawnWithTimeout } from "./spawn-utils.js";
 
 /**
  * Timeout for DuckDB binary validation in milliseconds (5 seconds)
@@ -464,82 +465,40 @@ export async function executeDuckDbQuery(
   // For parquet format, no output flag needed (COPY handles it)
   args.push("-c", fullSql);
 
-  return new Promise((resolve, reject) => {
-    const proc = spawn(binPath, args, {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    options?.onSpawn?.(proc);
-
-    let stdout = "";
-    let stderr = "";
-    let stdoutTruncated = false;
-    let timedOut = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let killTimer: ReturnType<typeof setTimeout> | null = null;
-
-    timer = setTimeout(() => {
-      timedOut = true;
-      proc.kill("SIGTERM");
-      killTimer = setTimeout(() => {
-        if (proc.exitCode === null) {
-          try { proc.kill("SIGKILL"); } catch { /* ignore */ }
-          proc.unref();
-        }
-      }, 1000);
-    }, timeoutMs);
-
-    proc.stdout!.on("data", (chunk) => {
-      const data = chunk.toString();
-      if (stdout.length + data.length > maxOutputSize) {
-        if (!stdoutTruncated) {
-          stdoutTruncated = true;
-          stdout += "\n\n[OUTPUT TRUNCATED - Result too large. Use --format parquet with --output to write to file.]\n";
-        }
-        return;
-      }
-      stdout += data;
-    });
-
-    proc.stderr!.on("data", (chunk) => {
-      if (stderr.length < MAX_STDERR_SIZE) {
-        stderr += chunk.toString();
-        if (stderr.length > MAX_STDERR_SIZE) {
-          stderr = stderr.slice(0, MAX_STDERR_SIZE) + "\n[STDERR TRUNCATED]";
-        }
-      }
-    });
-
-    proc.on("close", (exitCode) => {
-      if (timer) clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      options?.onExit?.(proc);
-
-      if (timedOut) {
-        resolve({
-          output: stdout,
-          version,
-          exitCode: 124,
-          stderr: stderr + `\n[TIMEOUT] DuckDB query exceeded ${timeoutMs}ms timeout.`,
-        });
-        return;
-      }
-
-      resolve({
-        output: format === "parquet" ? `Parquet file written to: ${options?.outputFile}` : stdout,
-        version,
-        exitCode: exitCode ?? 0,
-        stderr,
-      });
-    });
-
-    proc.on("error", (err) => {
-      if (timer) clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      options?.onExit?.(proc);
-
-      // Binary-level failure (e.g., ENOENT)
-      reject(err);
-    });
+  const result = await spawnWithTimeout({
+    binary: binPath,
+    args,
+    timeoutMs,
+    maxStdoutSize: maxOutputSize,
+    stdoutTruncationMsg:
+      "\n\n[OUTPUT TRUNCATED - Result too large. Use --format parquet with --output to write to file.]\n",
+    maxStderrSize: MAX_STDERR_SIZE,
+    onSpawn: options?.onSpawn,
+    onExit: options?.onExit,
   });
+
+  // Surface spawn errors or signal kills as exceptions
+  if (result.exitCode === null && !result.timedOut) {
+    throw new Error(
+      result.signal
+        ? `DuckDB query failed (killed by signal ${result.signal}): ${result.stderr}`
+        : (result.stderr || "DuckDB process failed to start"),
+    );
+  }
+
+  if (result.timedOut) {
+    return {
+      output: result.stdout,
+      version,
+      exitCode: 124,
+      stderr: result.stderr + `\n[TIMEOUT] DuckDB query exceeded ${timeoutMs}ms timeout.`,
+    };
+  }
+
+  return {
+    output: format === "parquet" ? `Parquet file written to: ${options?.outputFile}` : result.stdout,
+    version,
+    exitCode: result.exitCode ?? 0,
+    stderr: result.stderr,
+  };
 }

@@ -172,3 +172,8 @@ export const LOG_ENTRY_TYPES = new Set([
  * Auto-indexing threshold in MB
  */
 export const AUTO_INDEX_SIZE_MB = 10;
+
+/**
+ * Grace period (ms) between SIGTERM and SIGKILL when killing timed-out processes.
+ */
+export const KILL_GRACE_PERIOD_MS = 1000;

@@ -7,6 +7,7 @@ import { spawn, type ChildProcess } from "child_process";
 import type { QsvSkill, Option, SkillParams, SkillResult } from "./types.js";
 import { config } from "./config.js";
 import { compareVersions } from "./utils.js";
+import { spawnWithTimeout } from "./spawn-utils.js";
 
 /** Minimum qsv binary version that supports --frequency-jsonl */
 const FREQUENCY_JSONL_MIN_VERSION = "16.1.0";
@@ -358,9 +359,21 @@ export class SkillExecutor {
   }
 
   /**
+   * Signal-to-exit-code mapping (128 + signal number).
+   * SIGTERM=15 → 143, SIGKILL=9 → 137, SIGINT=2 → 130
+   */
+  private static readonly SIGNAL_EXIT_CODES: Record<string, number> = {
+    SIGTERM: 143,
+    SIGKILL: 137,
+    SIGINT: 130,
+    SIGHUP: 129,
+    SIGQUIT: 131,
+  };
+
+  /**
    * Run qsv command with timeout handling
    */
-  private runQsv(
+  private async runQsv(
     args: string[],
     params: SkillParams,
     timeoutMs: number,
@@ -369,172 +382,51 @@ export class SkillExecutor {
     stdout: string;
     stderr: string;
   }> {
-    return new Promise((resolve, reject) => {
-      // Log the full command for debugging
-      const fullCommand = `${this.qsvBinary} ${args.join(" ")}`;
-      console.error(`[Executor] Running command: ${fullCommand}`);
-      console.error(`[Executor] Binary path: ${this.qsvBinary}`);
+    const debug = config.mcpLogLevel === "debug";
+    if (debug) {
+      console.error(`[Executor] Running command: ${this.qsvBinary} ${args.join(" ")}`);
       console.error(`[Executor] Working directory: ${this.workingDirectory}`);
-      console.error(`[Executor] Args:`, JSON.stringify(args));
       console.error(`[Executor] Timeout: ${timeoutMs}ms`);
+    }
 
-      const proc = spawn(this.qsvBinary, args, {
-        stdio: ["pipe", "pipe", "pipe"],
-        cwd: this.workingDirectory,
-      });
-
-      let stdout = "";
-      let stderr = "";
-      let stdoutTruncated = false;
-      let timedOut = false;
-      let processExited = false;
-      let timer: ReturnType<typeof setTimeout> | null = null;
-      let killTimer: ReturnType<typeof setTimeout> | null = null;
-      const MAX_OUTPUT_SIZE = 50 * 1024 * 1024; // 50MB limit to prevent memory issues (stdout and stderr)
-
-      // Cleanup helper to clear both timers and mark process as exited
-      const clearTimers = () => {
-        processExited = true;
-        if (timer) { clearTimeout(timer); timer = null; }
-        if (killTimer) { clearTimeout(killTimer); killTimer = null; }
-      };
-
-      // Set up timeout handler
-      timer = setTimeout(() => {
-        timedOut = true;
-        console.error(
-          `[Executor] Process timed out after ${timeoutMs}ms, sending SIGTERM`,
-        );
-        proc.kill("SIGTERM");
-
-        // Give process a moment to terminate gracefully, then send SIGKILL
-        killTimer = setTimeout(() => {
-          // Only send SIGKILL if process hasn't exited yet
-          // Check both our flag (set on 'close') and proc.exitCode (set on 'exit')
-          // since 'exit' fires before 'close' when process terminates
-          if (!processExited && proc.exitCode === null) {
-            console.error(`[Executor] Process did not terminate, sending SIGKILL`);
-            try {
-              proc.kill("SIGKILL");
-            } catch {
-              // Process may have already exited between the check and kill
-              console.error(`[Executor] SIGKILL failed (process may have already exited)`);
-            }
-            // Ensure parent process won't wait for this child
-            proc.unref();
-          }
-        }, 1000);
-      }, timeoutMs);
-
-      // Handle input
-      if (params.stdin) {
-        proc.stdin.write(params.stdin);
-        proc.stdin.end();
-      } else {
-        proc.stdin.end();
-      }
-
-      // Collect output with size limit
-      proc.stdout.on("data", (chunk) => {
-        const chunkStr = chunk.toString();
-
-        // Check if adding this chunk would exceed the limit
-        if (stdout.length + chunkStr.length > MAX_OUTPUT_SIZE) {
-          if (!stdoutTruncated) {
-            stdoutTruncated = true;
-            console.error(
-              `[Executor] WARNING: stdout exceeded ${MAX_OUTPUT_SIZE / 1024 / 1024}MB limit, truncating output. Consider using --output to write to a file instead.`,
-            );
-            stdout +=
-              "\n\n[OUTPUT TRUNCATED - Result too large for display. Use --output option to write to a file.]\n";
-          }
-          // Stop accumulating to prevent memory issues
-          return;
-        }
-
-        stdout += chunkStr;
-      });
-
-      let stderrTruncated = false;
-      proc.stderr.on("data", (chunk) => {
-        const data = chunk.toString();
-        if (stderr.length + data.length > MAX_OUTPUT_SIZE) {
-          if (!stderrTruncated) {
-            stderrTruncated = true;
-            console.error(
-              `[Executor] WARNING: stderr exceeded ${MAX_OUTPUT_SIZE / 1024 / 1024}MB limit, truncating.`,
-            );
-            stderr +=
-              "\n\n[STDERR TRUNCATED - Too much diagnostic output.]\n";
-          }
-          return;
-        }
-        stderr += data;
-        console.error(`[Executor] stderr: ${data}`);
-      });
-
-      proc.on("close", (exitCode, signal) => {
-        clearTimers();
-
-        console.error(`[Executor] Process exited with code: ${exitCode}, signal: ${signal}`);
-        console.error(`[Executor] stdout length: ${stdout.length}`);
-        console.error(`[Executor] stderr length: ${stderr.length}`);
-
-        // If process was terminated due to timeout, return exit code 124
-        if (timedOut) {
-          resolve({
-            exitCode: 124, // Standard timeout exit code (like GNU timeout)
-            stdout,
-            stderr:
-              stderr +
-              `\n[TIMEOUT] Process exceeded ${timeoutMs}ms timeout and was terminated.`,
-          });
-          return;
-        }
-
-        // Handle signal termination: if exitCode is null but signal is present,
-        // the process was killed by a signal (external SIGTERM/SIGKILL, etc.)
-        // Treat this as a failure rather than coercing to success (exit code 0)
-        if (exitCode === null && signal) {
-          // Map common signals to conventional exit codes (128 + signal number)
-          // SIGTERM=15 -> 143, SIGKILL=9 -> 137, SIGINT=2 -> 130
-          const signalExitCodes: Record<string, number> = {
-            SIGTERM: 143,
-            SIGKILL: 137,
-            SIGINT: 130,
-            SIGHUP: 129,
-            SIGQUIT: 131,
-          };
-          const signalExitCode = signalExitCodes[signal] ?? 128;
-          resolve({
-            exitCode: signalExitCode,
-            stdout,
-            stderr: stderr + `\n[SIGNAL] Process was terminated by signal: ${signal}`,
-          });
-          return;
-        }
-
-        resolve({
-          exitCode: exitCode ?? 0,
-          stdout,
-          stderr,
-        });
-      });
-
-      proc.on("error", (err) => {
-        clearTimers();
-
-        // If we already handled timeout, log the error but don't reject
-        // (the timeout handler already resolved the promise)
-        if (timedOut) {
-          console.error(`[Executor] Process error after timeout (suppressed):`, err.message);
-          return;
-        }
-
-        console.error(`[Executor] Process error:`, err);
-        reject(err);
-      });
+    const result = await spawnWithTimeout({
+      binary: this.qsvBinary,
+      args,
+      cwd: this.workingDirectory,
+      timeoutMs,
+      stdin: params.stdin,
+      stdoutTruncationMsg:
+        "\n\n[OUTPUT TRUNCATED - Result too large for display. Use --output option to write to a file.]\n",
     });
+
+    if (debug) {
+      console.error(`[Executor] Process exited: code=${result.exitCode}, signal=${result.signal}`);
+      console.error(`[Executor] stdout length: ${result.stdout.length}, stderr length: ${result.stderr.length}`);
+    }
+
+    if (result.timedOut) {
+      return {
+        exitCode: 124, // Standard timeout exit code (like GNU timeout)
+        stdout: result.stdout,
+        stderr: result.stderr + `\n[TIMEOUT] Process exceeded ${timeoutMs}ms timeout and was terminated.`,
+      };
+    }
+
+    // Handle signal termination: map signals to conventional exit codes
+    if (result.exitCode === null && result.signal) {
+      const signalExitCode = SkillExecutor.SIGNAL_EXIT_CODES[result.signal] ?? 128;
+      return {
+        exitCode: signalExitCode,
+        stdout: result.stdout,
+        stderr: result.stderr + `\n[SIGNAL] Process was terminated by signal: ${result.signal}`,
+      };
+    }
+
+    return {
+      exitCode: result.exitCode ?? 0,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
   }
 
   /**

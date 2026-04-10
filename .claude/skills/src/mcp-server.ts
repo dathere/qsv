@@ -681,7 +681,7 @@ class QsvMcpServer {
       const auditLogEnabled = config.mcpLogLevel !== "off";
       // Skip automatic audit logging for qsv_log to avoid recursive noise
       const skipAuditLog = name === "qsv_log";
-      if (config.mcpLogLevel === "info" && !skipAuditLog) {
+      if ((config.mcpLogLevel === "info" || config.mcpLogLevel === "debug") && !skipAuditLog) {
         runQsvSimple(config.qsvBinPath, ["log", name, `s-${invocationId}`, startMsg], {
           timeoutMs: 5_000,
           cwd: this.filesystemProvider.getWorkingDirectory(),
@@ -776,7 +776,7 @@ class QsvMcpServer {
         const elapsedMs = Date.now() - startTime;
         const elapsedSecs = (elapsedMs / 1000).toFixed(2);
         const isError = "isError" in result && result.isError === true;
-        if (auditLogEnabled && !skipAuditLog && (config.mcpLogLevel === "info" || isError)) {
+        if (auditLogEnabled && !skipAuditLog && (config.mcpLogLevel === "info" || config.mcpLogLevel === "debug" || isError)) {
           const endMsg = isError
             ? `error(${elapsedSecs}s): tool returned error`
             : `ok(${elapsedSecs}s)`;

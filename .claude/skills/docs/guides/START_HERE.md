@@ -5,9 +5,10 @@
 > [!NOTE]   
 > Q: Why do I need qsv? Don't AI chatbots have built-in data-wrangling capabilities?   
 > A: Chatbots actually do not have built-in data-wrangling capabilities - they use "tools" like python and libraries like pandas to perform data operations. The qsv MCP Server and Cowork Plugin expose qsv as a tool.   
-> It can handle datasets that would be too slow or too big for python/pandas - it is often several orders of magnitude faster and can handle millions of rows with ease. It's suite of statistical commands in particular - can compute [135+ statistical measures](../../../../docs/STATS_DEFINITIONS.md) in a few seconds on a million-row CSV - a python-based approach would struggle with that scale, and even if it could, it would be much, much slower.
+> It can handle datasets that would be too slow or too big for python/pandas - it is often several orders of magnitude faster and can handle millions of rows with ease. It's suite of statistical commands in particular - can compute [135+ statistical measures](../../../../docs/STATS_DEFINITIONS.md) in a few seconds on a million-row CSV - a python-based approach would struggle with that scale, and even if it could, it would be much, much slower.   
+> This speed and scale enables ["StatsSighting"](https://github.com/dathere/qsv/releases/tag/18.0.0) - [an iterative, "what-if" data exploration](https://dathere.github.io/peoples-api-demos/NYC-Housing-Policy-SOD2026/#what-this-is---an-ai-accelerated-policy-analysis-workbench) in a conversational setting with the Agent that would be impractical with python. You can ask follow-up questions, make tweaks, and get results in seconds, keeping the flow of analysis going without interruption, as you effectively "steer" the data analysis in real time.
 
-With the qsv MCP Server and Cowork plugin, you can use all of qsv's power through natural language commands in **Claude Desktop** — no programming required. Just ask Claude to analyze, clean, transform, or visualize your data files, and it will translate your requests into qsv commands behind the scenes.
+With the qsv MCP Server and Claude Cowork plugin, you can use all of qsv's power through natural language commands in your AI agent — no programming required. Just ask it to analyze, clean, transform, or visualize your data files, and it will translate your requests into qsv commands behind the scenes.
 
 No uploads, no file size limits, no data leaving your machine.
 

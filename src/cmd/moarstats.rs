@@ -3395,7 +3395,10 @@ fn compute_all_kga_from_reader(
                     for &v in &values {
                         if v > 0.0 {
                             let ratio = v / pos_mean;
-                            theil_sum += ratio * ratio.ln();
+                            // use CPU's Fused Multiply-Add (FMA) for better precision and to reduce
+                            // intermediate rounding errors in the sum
+                            // theil_sum += ratio * ratio.ln();
+                            theil_sum = ratio.mul_add(ratio.ln(), theil_sum);
                         }
                     }
                     Some(theil_sum / n)

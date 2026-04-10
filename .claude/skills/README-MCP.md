@@ -22,8 +22,8 @@ The **qsvmcp** binary variant is purpose-built for MCP server use. It includes o
 
 | Binary | Commands | MCP Server Support | Notes |
 |--------|----------|-------------------|-------|
-| **qsvmcp** | 60 | Preferred | Optimized for MCP, smaller binary |
-| **qsv** | 66 | Supported | Full-featured, includes extra commands not used by MCP |
+| **qsvmcp** | 62 | Preferred | Optimized for MCP, smaller binary |
+| **qsv** | 71 | Supported | Full-featured, includes extra commands not used by MCP |
 | qsvlite | — | Not supported | Missing Polars and other required features |
 | qsvdp | — | Not supported | DataPusher+ variant, missing required features |
 

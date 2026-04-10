@@ -137,20 +137,23 @@ export function spawnWithTimeout(options: SpawnWithTimeoutOptions): Promise<Spaw
       stderr += data;
     });
 
+    // Shared finalizer: clears timers, calls onExit exactly once, resolves.
+    const finish = (result: SpawnResult) => {
+      clearTimers();
+      if (!processExited) { processExited = true; onExit?.(proc); }
+      resolve(result);
+    };
+
     // ── close ──────────────────────────────────────────────────────────
     proc.on("close", (exitCode, signal) => {
-      clearTimers();
-      onExit?.(proc);
-      resolve({ exitCode, signal, stdout, stderr, timedOut });
+      finish({ exitCode, signal, stdout, stderr, timedOut });
     });
 
     // ── spawn error (e.g. ENOENT) ──────────────────────────────────────
     proc.on("error", (err) => {
-      clearTimers();
-      onExit?.(proc);
       // Surface the error in stderr so callers can inspect it uniformly.
       const msg = err?.message ?? String(err);
-      resolve({ exitCode: null, signal: null, stdout, stderr: stderr + `\n[SPAWN ERROR] ${msg}`, timedOut: false });
+      finish({ exitCode: null, signal: null, stdout, stderr: stderr + `\n[SPAWN ERROR] ${msg}`, timedOut: false });
     });
   });
 }

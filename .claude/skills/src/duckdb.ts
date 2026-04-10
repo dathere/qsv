@@ -477,9 +477,13 @@ export async function executeDuckDbQuery(
     onExit: options?.onExit,
   });
 
-  // Surface spawn errors (e.g. ENOENT) as exceptions
+  // Surface spawn errors or signal kills as exceptions
   if (result.exitCode === null && !result.timedOut) {
-    throw new Error(result.stderr || "DuckDB process failed to start");
+    throw new Error(
+      result.signal
+        ? `DuckDB query failed (killed by signal ${result.signal}): ${result.stderr}`
+        : (result.stderr || "DuckDB process failed to start"),
+    );
   }
 
   if (result.timedOut) {

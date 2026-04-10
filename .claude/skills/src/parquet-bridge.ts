@@ -220,9 +220,13 @@ async function spawnDuckDbCommands(
     throw new Error(`DuckDB Parquet conversion timed out after ${timeoutMs}ms`);
   }
 
-  // Surface spawn errors (e.g. ENOENT)
+  // Surface spawn errors or signal kills
   if (result.exitCode === null) {
-    throw new Error(result.stderr || "DuckDB process failed to start");
+    throw new Error(
+      result.signal
+        ? `DuckDB Parquet conversion failed (killed by signal ${result.signal}): ${result.stderr}`
+        : (result.stderr || "DuckDB process failed to start"),
+    );
   }
 
   if (result.exitCode !== 0) {

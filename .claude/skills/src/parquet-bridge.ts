@@ -2,7 +2,6 @@
  * Parquet/DuckDB conversion, schema management, and stats cache utilities.
  */
 
-import { spawn } from "child_process";
 import { readFile, writeFile, open, stat, unlink, mkdir } from "fs/promises";
 import { basename, dirname, join, parse } from "path";
 import { isShuttingDown, activeProcesses } from "./concurrency.js";
@@ -16,6 +15,7 @@ import {
 } from "./duckdb.js";
 import { config } from "./config.js";
 import { getErrorMessage, errorResult, successResult } from "./utils.js";
+import { spawnWithTimeout } from "./spawn-utils.js";
 
 /**
  * Map a qsv stats `type` + min/max range to the tightest DuckDB SQL type.
@@ -204,65 +204,30 @@ async function spawnDuckDbCommands(
   // Ensure working directory exists before spawning
   await mkdir(workDir, { recursive: true });
 
-  return new Promise((resolve, reject) => {
-    const proc = spawn(binPath, [dbPath, "-c", sql], {
-      // stdout ignored: COPY ... TO produces no result set; prevents backpressure hangs.
-      // If future SQL returns rows, change to "pipe" and consume the stream.
-      stdio: ["ignore", "ignore", "pipe"],
-      cwd: workDir,
-    });
-
-    activeProcesses.add(proc);
-
-    let stderr = "";
-    let timedOut = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let killTimer: ReturnType<typeof setTimeout> | null = null;
-
-    timer = setTimeout(() => {
-      timedOut = true;
-      proc.kill("SIGTERM");
-      killTimer = setTimeout(() => {
-        if (proc.exitCode === null) {
-          try { proc.kill("SIGKILL"); } catch { /* ignore */ }
-          proc.unref();
-        }
-      }, 1000);
-    }, timeoutMs);
-
-    proc.stderr!.on("data", (chunk) => {
-      if (stderr.length < MAX_STDERR_SIZE) {
-        stderr += chunk.toString();
-        if (stderr.length > MAX_STDERR_SIZE) {
-          stderr = stderr.slice(0, MAX_STDERR_SIZE) + "\n[STDERR TRUNCATED]";
-        }
-      }
-    });
-
-    proc.on("close", (exitCode, signal) => {
-      if (timer) clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      activeProcesses.delete(proc);
-
-      if (timedOut) {
-        reject(new Error(`DuckDB Parquet conversion timed out after ${timeoutMs}ms`));
-        return;
-      }
-      if (exitCode !== 0) {
-        const exitInfo = exitCode !== null ? `exit ${exitCode}` : `killed by signal ${signal ?? "unknown"}`;
-        reject(new Error(`DuckDB Parquet conversion failed (${exitInfo}): ${stderr}`));
-        return;
-      }
-      resolve();
-    });
-
-    proc.on("error", (err) => {
-      if (timer) clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      activeProcesses.delete(proc);
-      reject(err);
-    });
+  const result = await spawnWithTimeout({
+    binary: binPath,
+    args: [dbPath, "-c", sql],
+    cwd: workDir,
+    timeoutMs,
+    // stdout ignored: COPY ... TO produces no result set; prevents backpressure hangs.
+    captureStdout: false,
+    maxStderrSize: MAX_STDERR_SIZE,
+    onSpawn: (proc) => activeProcesses.add(proc),
+    onExit: (proc) => activeProcesses.delete(proc),
   });
+
+  if (result.timedOut) {
+    throw new Error(`DuckDB Parquet conversion timed out after ${timeoutMs}ms`);
+  }
+
+  // Surface spawn errors (e.g. ENOENT)
+  if (result.exitCode === null) {
+    throw new Error(result.stderr || "DuckDB process failed to start");
+  }
+
+  if (result.exitCode !== 0) {
+    throw new Error(`DuckDB Parquet conversion failed (exit ${result.exitCode}): ${result.stderr}`);
+  }
 }
 
 /**

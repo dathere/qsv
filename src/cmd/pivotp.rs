@@ -61,7 +61,8 @@ pivotp options:
                                       it falls back to `first`
                             [default: smart]
     --sort-columns          Sort the transposed columns by name. (pivot mode only)
-    --maintain-order        Maintain the order of the input columns.
+    --maintain-order        Maintain output order: preserve input column order in pivot mode,
+                            and preserve group/row order in group-by mode.
     --col-separator <arg>   The separator in generated column names in case of multiple --values columns.
                             (pivot mode only) [default: _]
     --validate              Validate a pivot by checking the pivot column(s)' cardinality. (pivot mode only)
@@ -787,6 +788,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "--sort-columns is not supported in group-by mode."
             );
         }
+        if let Some(ref agg) = args.flag_agg
+            && agg.eq_ignore_ascii_case("item")
+        {
+            return fail_incorrectusage_clierror!("--agg item is not supported in group-by mode.");
+        }
     } else if index_cols.is_none() && value_cols.is_none() {
         return fail_incorrectusage_clierror!(
             "Either --index <cols> or --values <cols> must be specified."
@@ -969,15 +975,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .iter()
                 .map(|vc| {
                     let c = col(PlSmallStr::from_str(vc));
+                    // Use len() (counts all rows including nulls) instead of count()
+                    // (counts non-null only) for consistency with pivot mode's
+                    // Expr::Element.len(). "item" is rejected during validation.
                     match agg_name.as_str() {
-                        "first" | "item" => c.first().alias(PlSmallStr::from_str(vc)),
+                        "first" => c.first().alias(PlSmallStr::from_str(vc)),
                         "last" => c.last().alias(PlSmallStr::from_str(vc)),
                         "sum" => c.sum().alias(PlSmallStr::from_str(vc)),
                         "min" => c.min().alias(PlSmallStr::from_str(vc)),
                         "max" => c.max().alias(PlSmallStr::from_str(vc)),
                         "mean" => c.mean().alias(PlSmallStr::from_str(vc)),
                         "median" => c.median().alias(PlSmallStr::from_str(vc)),
-                        "len" | "smart" => c.count().alias(PlSmallStr::from_str(vc)),
+                        "len" | "smart" => len().alias(PlSmallStr::from_str(vc)),
                         _ => unreachable!(
                             "Invalid agg_name '{agg_name}' should have been caught during \
                              validation"
@@ -992,42 +1001,38 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         let group_by_exprs: Vec<Expr> = actual_index_cols.iter().map(col).collect();
 
-        // Compute discovery order for each group
-        let index_order = lf
-            .clone()
-            .select(
-                actual_index_cols
-                    .iter()
-                    .map(col)
-                    .chain(std::iter::once(col(row_order_col)))
-                    .collect::<Vec<_>>(),
-            )
-            .group_by(group_by_exprs.clone())
-            .agg([col(row_order_col).min().alias(row_order_col)])
-            .collect()?;
-
-        let mut result = if args.flag_maintain_order {
+        if args.flag_maintain_order {
+            // group_by_stable preserves input order — no extra join/sort needed
             lf.group_by_stable(group_by_exprs)
                 .agg(agg_exprs)
                 .collect()?
         } else {
-            lf.group_by(group_by_exprs).agg(agg_exprs).collect()?
-        };
+            // Compute discovery order and group-by in a single lazy pipeline
+            // to avoid materializing data multiple times
+            let index_order_lf = lf
+                .clone()
+                .select(
+                    actual_index_cols
+                        .iter()
+                        .map(col)
+                        .chain(std::iter::once(col(row_order_col)))
+                        .collect::<Vec<_>>(),
+                )
+                .group_by(group_by_exprs.clone())
+                .agg([col(row_order_col).min().alias(row_order_col)]);
 
-        // Restore discovery order
-        result = result
-            .lazy()
-            .join(
-                index_order.lazy(),
-                &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
-                &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
-                JoinArgs::new(JoinType::Left),
-            )
-            .sort([row_order_col], SortMultipleOptions::default())
-            .drop(cols([row_order_col]))
-            .collect()?;
-
-        result
+            lf.group_by(group_by_exprs)
+                .agg(agg_exprs)
+                .join(
+                    index_order_lf,
+                    actual_index_cols.iter().map(col).collect::<Vec<_>>(),
+                    actual_index_cols.iter().map(col).collect::<Vec<_>>(),
+                    JoinArgs::new(JoinType::Left),
+                )
+                .sort([row_order_col], SortMultipleOptions::default())
+                .drop(cols([row_order_col]))
+                .collect()?
+        }
     } else {
         // === PIVOT MODE ===
         // Safety: on_cols is always Some in pivot mode (is_groupby_mode is false iff on_cols is

@@ -64,7 +64,7 @@ pivotp options:
     --maintain-order        Maintain output order: preserve input column order in pivot mode,
                             and preserve group/row order in group-by mode.
     --col-separator <arg>   The separator in generated column names in case of multiple --values columns.
-                            (pivot mode only) [default: _]
+                            (pivot mode only; ignored in group-by mode) [default: _]
     --validate              Validate a pivot by checking the pivot column(s)' cardinality. (pivot mode only)
     --try-parsedates        When set, will attempt to parse columns as dates.
     --infer-len <arg>       Number of rows to scan when inferring schema.
@@ -72,7 +72,7 @@ pivotp options:
     --decimal-comma         Use comma as decimal separator when READING the input.
                             Note that you will need to specify an alternate --delimiter.
     --ignore-errors         Skip rows that can't be parsed.
-    --grand-total           Append a grand total row summing all numeric columns.
+    --grand-total           Append a grand total row summing all numeric non-index columns.
                             The first index column will contain "Grand <total-label>".
     --subtotal              Insert subtotal rows after each group in the first index column.
                             The second index column will contain the total label.
@@ -852,8 +852,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
             },
             _ => {
+                let agg_mode = if is_groupby_mode { "group-by" } else { "pivot" };
                 return fail_incorrectusage_clierror!(
-                    "Invalid pivot aggregation function: {agg_name}"
+                    "Invalid {agg_mode} aggregation function: {agg_name}"
                 );
             },
         })

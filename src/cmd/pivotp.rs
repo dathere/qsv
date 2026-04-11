@@ -11,7 +11,8 @@ PIVOT MODE (with <on-cols>):
 GROUP-BY MODE (without <on-cols>):
   When <on-cols> is omitted, performs a group-by aggregation instead of a pivot.
   This is useful for simple aggregations like counting rows per group.
-  In group-by mode, --index is required and --agg defaults to "len" (count).
+  In group-by mode, --index is required and --agg smart resolves to len (count).
+  The none aggregation is not supported in group-by mode.
   If --values is omitted, a single "count" column is produced.
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs.
@@ -786,23 +787,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "--sort-columns is not supported in group-by mode."
             );
         }
+        if args.flag_agg.as_deref() == Some("none") {
+            return fail_incorrectusage_clierror!(
+                "--agg \"none\" is not supported in group-by mode."
+            );
+        }
     } else if index_cols.is_none() && value_cols.is_none() {
         return fail_incorrectusage_clierror!(
             "Either --index <cols> or --values <cols> must be specified."
         );
     }
 
-    // Parse the aggregation function name
+    // Parse the aggregation function name (default: "smart", which resolves to "len" in group-by
+    // mode)
     let agg_name = if let Some(ref agg) = args.flag_agg {
         agg.to_lowercase()
-    } else if is_groupby_mode {
-        // Default to "len" (count) in group-by mode
-        "smart".to_string()
     } else {
         "smart".to_string()
     };
 
     // Get aggregation function - using generic expressions that pivot will apply to value columns
+    // NOTE: This match must stay in sync with the group-by agg_exprs match (~line 965).
     let agg_expr = if agg_name == "none" {
         None
     } else {
@@ -957,6 +962,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut pivot_result = if is_groupby_mode {
         // === GROUP-BY MODE ===
         // Build aggregation expressions for each value column
+        // NOTE: This match must stay in sync with the agg_expr match above (~line 810).
+        // "none" is rejected during validation; if it somehow reaches here, treat as error.
         let agg_exprs: Vec<Expr> = if let Some(ref val_cols) = actual_value_cols {
             val_cols
                 .iter()
@@ -970,8 +977,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         "max" => c.max().alias(PlSmallStr::from_str(vc)),
                         "mean" => c.mean().alias(PlSmallStr::from_str(vc)),
                         "median" => c.median().alias(PlSmallStr::from_str(vc)),
-                        // len, smart, and default all fall back to count in group-by mode
-                        _ => c.count().alias(PlSmallStr::from_str(vc)),
+                        "len" | "smart" => c.count().alias(PlSmallStr::from_str(vc)),
+                        _ => unreachable!(
+                            "Invalid agg_name '{agg_name}' should have been caught during \
+                             validation"
+                        ),
                     }
                 })
                 .collect()
@@ -1020,6 +1030,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         result
     } else {
         // === PIVOT MODE ===
+        // Safety: on_cols is always Some in pivot mode (is_groupby_mode is false iff on_cols is
+        // Some). actual_value_cols is always Some because the pivot-mode fallback
+        // (lines ~940-950) computes remaining columns when --values is omitted.
         let on_cols = on_cols.unwrap();
         let actual_value_cols = actual_value_cols.unwrap();
 

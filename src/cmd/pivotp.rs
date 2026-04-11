@@ -787,11 +787,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "--sort-columns is not supported in group-by mode."
             );
         }
-        if args.flag_agg.as_deref() == Some("none") {
-            return fail_incorrectusage_clierror!(
-                "--agg \"none\" is not supported in group-by mode."
-            );
-        }
     } else if index_cols.is_none() && value_cols.is_none() {
         return fail_incorrectusage_clierror!(
             "Either --index <cols> or --values <cols> must be specified."
@@ -806,8 +801,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         "smart".to_string()
     };
 
+    // Reject --agg none in group-by mode AFTER lowercasing so "None"/"NONE" are also caught
+    if is_groupby_mode && agg_name == "none" {
+        return fail_incorrectusage_clierror!("--agg \"none\" is not supported in group-by mode.");
+    }
+
     // Get aggregation function - using generic expressions that pivot will apply to value columns
-    // NOTE: This match must stay in sync with the group-by agg_exprs match (~line 965).
+    // NOTE: This match must stay in sync with the group-by agg_exprs match below.
     let agg_expr = if agg_name == "none" {
         None
     } else {
@@ -962,7 +962,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut pivot_result = if is_groupby_mode {
         // === GROUP-BY MODE ===
         // Build aggregation expressions for each value column
-        // NOTE: This match must stay in sync with the agg_expr match above (~line 810).
+        // NOTE: This match must stay in sync with the agg_expr match above.
         // "none" is rejected during validation; if it somehow reaches here, treat as error.
         let agg_exprs: Vec<Expr> = if let Some(ref val_cols) = actual_value_cols {
             val_cols

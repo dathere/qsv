@@ -221,14 +221,12 @@ Usage:
 
 To arguments:
     <destination>           The output target, which varies by subcommand:
-                              parquet:     output directory (created if needed)
-                              postgres:    connection string or env=VAR_NAME
-                                           (with --dump: dump file path or - for stdout)
-                              sqlite:      database file path
-                                           (with --dump: dump file path or - for stdout)
-                              xlsx:        output .xlsx file path
-                              ods:         output .ods file path
-                              datapackage: output .json file path
+                            * parquet: output directory (created if needed)
+                            * postgres: connection string or env=VAR_NAME (with --dump: dump file path or - for stdout)
+                            * sqlite: database file path (with --dump: dump file path or - for stdout)
+                            * xlsx: output .xlsx file path
+                            * ods: output .ods file path
+                            * datapackage: output .json file path
 
 To options:
   -k, --print-package     Print statistics as datapackage, by default will print field summary.
@@ -489,16 +487,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
         apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
 
-        output =
-            csvs_to_xlsx_with_options(args.arg_destination.expect("checked above"), arg_input, options)?;
+        output = csvs_to_xlsx_with_options(
+            args.arg_destination.expect("checked above"),
+            arg_input,
+            options,
+        )?;
         debug!("conversion to Excel XLSX complete");
     } else if args.cmd_ods {
         debug!("converting to ODS");
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
         apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
 
-        output =
-            csvs_to_ods_with_options(args.arg_destination.expect("checked above"), arg_input, options)?;
+        output = csvs_to_ods_with_options(
+            args.arg_destination.expect("checked above"),
+            arg_input,
+            options,
+        )?;
         debug!("conversion to ODS complete");
     } else if args.cmd_parquet {
         debug!("converting to Parquet");

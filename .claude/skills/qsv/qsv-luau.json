@@ -27,6 +27,12 @@
         "type": "file",
         "required": false,
         "description": ""
+      },
+      {
+        "name": "new-columns",
+        "type": "string",
+        "required": false,
+        "description": "is a comma-separated list of new computed columns to add to the CSV when using \"luau map\". The new columns are added to the CSV after the existing columns, unless the --remap option is used."
       }
     ],
     "options": [

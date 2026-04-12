@@ -25,7 +25,7 @@
       {
         "name": "column",
         "type": "string",
-        "required": true,
+        "required": false,
         "description": "The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in \"lat, long\" or \"(lat, long)\" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information."
       },
       {
@@ -33,6 +33,18 @@
         "type": "file",
         "required": false,
         "description": "The input file to read from. If not specified, reads from stdin."
+      },
+      {
+        "name": "location",
+        "type": "string",
+        "required": false,
+        "description": "The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL."
+      },
+      {
+        "name": "index-file",
+        "type": "file",
+        "required": false,
+        "description": "The alternate geonames index file to use. It must be a .rkyv file. For convenience, if this is set to 500, 1000, 5000 or 15000, it will download the corresponding English-only Geonames index rkyv file from the qsv GitHub repo for the current qsv version and use it. Only used by the index-load subcommand."
       }
     ],
     "options": [

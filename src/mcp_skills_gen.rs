@@ -144,7 +144,8 @@ impl UsageParser {
             .usage_text
             .lines()
             .skip_while(|l| !l.contains("Usage:"))
-            .skip(1) // Skip "Usage:" line
+            .skip(1)
+        // Skip "Usage:" line
         {
             let trimmed = line.trim();
             // Stop at blank line or non-usage content
@@ -169,31 +170,62 @@ impl UsageParser {
         arg_order
     }
 
-    /// Extract names of positional args wrapped in [<...>] (optional in docopt)
-    /// Scans ALL usage lines so optional status is detected even for multi-subcommand commands.
+    /// Detect which positional args are optional.
+    /// An arg is optional if:
+    ///   1. It's wrapped in brackets: `[<arg>]` or `[<arg>...]`
+    ///   2. It appears in some usage variants but not all (multi-variant optionality,
+    ///      e.g., pivotp has `<on-cols>` in one variant but not another)
     fn extract_optional_args_from_usage(&self) -> std::collections::HashSet<String> {
         let mut optional_args = std::collections::HashSet::new();
 
-        // Regex matches [<argname>] and [<argname>...] — requires outer brackets
-        let re = regex::Regex::new(r"\[<([^>]+)>(?:\.\.\.)?\.?\]").unwrap();
+        // Regex for bracket-wrapped args: [<argname>] and [<argname>...]
+        let bracket_re = regex::Regex::new(r"\[<([^>]+)>(?:\.\.\.)?\]").unwrap();
+        // Regex for ALL positional args (both bracketed and bare)
+        let all_args_re = regex::Regex::new(r"(?:\[)?<([^>]+)>(?:\])?").unwrap();
 
-        for line in self
+        // Collect usage lines (non-help, non-blank)
+        let usage_lines: Vec<&str> = self
             .usage_text
             .lines()
             .skip_while(|l| !l.contains("Usage:"))
             .skip(1)
-        {
-            // Stop at the next section (blank line or non-usage content)
-            let trimmed = line.trim();
-            if trimmed.is_empty() || (!trimmed.contains("qsv") && !trimmed.ends_with("--help")) {
-                break;
-            }
+            .take_while(|l| {
+                let t = l.trim();
+                !t.is_empty() && (t.contains("qsv") || t.ends_with("--help"))
+            })
+            .filter(|l| !l.trim().ends_with("--help"))
+            .collect();
 
-            for cap in re.captures_iter(line) {
+        // 1. Bracket-wrapped args are always optional
+        for line in &usage_lines {
+            for cap in bracket_re.captures_iter(line) {
                 if let Some(arg_name) = cap.get(1) {
-                    // Strip trailing "..." from variadic args like "input..."
                     let name = arg_name.as_str().trim_end_matches("...");
                     optional_args.insert(name.to_string());
+                }
+            }
+        }
+
+        // 2. Multi-variant optionality: args that appear in some lines but not all
+        if usage_lines.len() > 1 {
+            // Collect all unique arg names across all variants
+            let mut all_args = std::collections::HashSet::new();
+            for line in &usage_lines {
+                for cap in all_args_re.captures_iter(line) {
+                    if let Some(arg_name) = cap.get(1) {
+                        all_args.insert(arg_name.as_str().to_string());
+                    }
+                }
+            }
+
+            // An arg is optional if it doesn't appear in every usage line
+            for arg_name in &all_args {
+                let appears_in_all = usage_lines.iter().all(|line| {
+                    let pattern = format!("<{arg_name}>");
+                    line.contains(&pattern)
+                });
+                if !appears_in_all {
+                    optional_args.insert(arg_name.clone());
                 }
             }
         }
@@ -787,7 +819,7 @@ impl UsageParser {
 
         Some(BehavioralHints {
             indexed: if has_indexed { Some(true) } else { None },
-            memory: memory.to_string(),
+            memory:  memory.to_string(),
         })
     }
 
@@ -1288,7 +1320,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         // Write JSON file
         let output_file = output_dir.join(format!("{}.json", skill.name));
         let json = serde_json::to_string_pretty(&skill)?;
-        fs::write(&output_file, json)?;
+        fs::write(&output_file, json + "\n")?;
 
         eprintln!("  ✅ Generated: {}", output_file.display());
         eprintln!("     - {} argument/s", skill.command.args.len());

@@ -9,7 +9,7 @@
       {
         "name": "columns1",
         "type": "string",
-        "required": true,
+        "required": false,
         "description": ""
       },
       {
@@ -21,7 +21,7 @@
       {
         "name": "columns2",
         "type": "string",
-        "required": true,
+        "required": false,
         "description": ""
       },
       {

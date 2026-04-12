@@ -266,7 +266,7 @@ qsv to --help
 
 | &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
-| &nbsp;`<destination>`&nbsp; | The output target, which varies by subcommand: parquet:     output directory (created if needed) postgres:    connection string or env=VAR_NAME (with --dump: dump file path or - for stdout) sqlite:      database file path (with --dump: dump file path or - for stdout) xlsx:        output .xlsx file path ods:         output .ods file path datapackage: output .json file path |
+| &nbsp;`<destination>`&nbsp; | The output target, which varies by subcommand:<ul><li>parquet: output directory (created if needed)</li><li>postgres: connection string or env=VAR_NAME (with --dump: dump file path or - for stdout)</li><li>sqlite: database file path (with --dump: dump file path or - for stdout)</li><li>xlsx: output .xlsx file path</li><li>ods: output .ods file path</li><li>datapackage: output .json file path</li></ul> |
 
 <a name="to-options"></a>
 

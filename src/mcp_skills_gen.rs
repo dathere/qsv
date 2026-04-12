@@ -135,9 +135,10 @@ impl UsageParser {
     /// then appends any additional args from other variants.
     /// This ensures correct ordering (e.g., validate: <input> before <json-schema>).
     fn extract_arg_order_from_usage(&self) -> Vec<String> {
-        // Match positional <args> but NOT option args that follow --flag or -f
-        let positional_re = regex::Regex::new(r"(?:^|\s)(?:\[)?<([^>]+)>(?:\])?").unwrap();
-        let option_arg_re = regex::Regex::new(r"--?\w[\w-]*\s+(?:\[)?<([^>]+)>(?:\])?").unwrap();
+        // Match positional <args> including docopt's (< >) required syntax,
+        // but NOT option args that follow --flag or -f
+        let positional_re = regex_oncelock!(r"(?:^|\s)[(\[]?<([^>]+)>[)\]]?");
+        let option_arg_re = regex_oncelock!(r"--?\w[\w-]*\s+(?:\[)?<([^>]+)>(?:\])?");
 
         // Collect args per usage line (positional only, excluding option args)
         let mut per_line_args: Vec<Vec<String>> = Vec::new();

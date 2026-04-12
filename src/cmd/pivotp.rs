@@ -54,11 +54,12 @@ pivotp options:
                               len - Count of values
                               item - Get single value from group. Raises error if there are multiple values.
                               smart - use value column data type & statistics to pick an aggregation.
-                                      Always uses type, cardinality, sparsity, CV, and sign
-                                      distribution (n_negative/n_positive) from streaming stats.
+                                      Always uses type, cardinality, sparsity, CV, sign
+                                      distribution (n_negative/n_positive), and sort_order
+                                      from streaming stats.
                                       When the stats cache includes non-streaming stats (from a
                                       prior `stats --everything` or `stats --mode --quartiles`),
-                                      also uses skewness, mode_count, and sort_order.
+                                      also uses skewness and mode_count.
                                       When moarstats has been run, also leverages outlier profile,
                                       Pearson skewness, MAD/stddev ratio, median/mean ratio, and
                                       quartile coefficient of dispersion for smarter selection.
@@ -559,7 +560,7 @@ fn suggest_agg_function(
                         Expr::Element.first()
                     }
                 } else if let Some(sort_order) = &stats.sort_order
-                    && sort_order == "Ascending"
+                    && sort_order.starts_with("Ascending")
                 {
                     // Value column itself is sorted ascending — most recent entry
                     // is typically most useful for temporal data

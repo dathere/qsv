@@ -144,7 +144,8 @@ impl UsageParser {
             .usage_text
             .lines()
             .skip_while(|l| !l.contains("Usage:"))
-            .skip(1) // Skip "Usage:" line
+            // Skip "Usage:" line
+            .skip(1)
         {
             let trimmed = line.trim();
             // Stop at blank line or non-usage content
@@ -818,7 +819,7 @@ impl UsageParser {
 
         Some(BehavioralHints {
             indexed: if has_indexed { Some(true) } else { None },
-            memory: memory.to_string(),
+            memory:  memory.to_string(),
         })
     }
 

@@ -83,7 +83,9 @@ excel (to CSV) -> index -> stats -> select -> tojsonl / qsv_to_parquet
 
 ### Batch Convert to Multiple Formats
 ```
-excel (to CSV) -> index -> stats -> to xlsx/sqlite/parquet output_dir
+excel (to CSV) -> index -> stats -> to xlsx report.xlsx
+excel (to CSV) -> index -> stats -> to sqlite report.db
+excel (to CSV) -> index -> stats -> to parquet parquet_output_dir
 ```
 
 ### File Integrity Verification

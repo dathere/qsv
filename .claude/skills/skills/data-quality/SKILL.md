@@ -89,5 +89,5 @@ Run `moarstats --advanced` to enrich the cache with distribution shape metrics:
 | `midhinge` | Midpoint of middle 50%: (Q1+Q3)/2; robust center measure |
 | `robust_cv` | MAD/abs(median); outlier-resistant coefficient of variation |
 | `theil_index` | Inequality measure (0=equal); decomposable into within/between group; only for positive values |
-| `mean_abs_dev` | Average absolute distance from mean; less sensitive to outliers than stddev |
-| `simpsons_diversity` | Probability two random values differ (0-1); more intuitive than entropy |
+| `mean_ad` | Average absolute distance from mean; less sensitive to outliers than stddev |
+| `simpsons_diversity_index` | Probability two random values differ (0-1); more intuitive than entropy |

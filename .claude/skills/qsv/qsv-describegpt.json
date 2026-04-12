@@ -148,6 +148,7 @@
     ]
   },
   "hints": {
+    "indexed": true,
     "memory": "constant"
   }
 }

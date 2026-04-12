@@ -2,7 +2,7 @@
 
 > Inner, outer, right, cross, anti & semi joins. Automatically creates a simple, in-memory hash index to make it fast.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/join.rs](https://github.com/dathere/qsv/blob/master/src/cmd/join.rs)** | [😣](TableOfContents.md#legend "uses additional memory proportional to the cardinality of the columns in the CSV.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/join.rs](https://github.com/dathere/qsv/blob/master/src/cmd/join.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[😣](TableOfContents.md#legend "uses additional memory proportional to the cardinality of the columns in the CSV.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Join Options](#join-options) | [Join Key Transformation Options](#join-key-transformation-options) | [Common Options](#common-options)

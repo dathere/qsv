@@ -681,7 +681,9 @@ impl UsageParser {
                 let desc_part = trimmed[close_bracket + 1..].trim();
 
                 // Strip leading "..." (docopt repeating indicator) from description
-                let desc_part = desc_part.strip_prefix("...").map_or(desc_part, str::trim_start);
+                let desc_part = desc_part
+                    .strip_prefix("...")
+                    .map_or(desc_part, str::trim_start);
                 let mut description = desc_part.to_string();
 
                 // Collect multi-line description

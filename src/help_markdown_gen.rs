@@ -1228,7 +1228,9 @@ fn parse_arguments_section(lines: &[String]) -> Vec<ParsedArgument> {
             let arg_name = &trimmed[..=close_bracket];
             let desc_start = trimmed[close_bracket + 1..].trim();
             // Strip leading "..." (docopt repeating indicator) from description
-            let desc_start = desc_start.strip_prefix("...").map_or(desc_start, str::trim_start);
+            let desc_start = desc_start
+                .strip_prefix("...")
+                .map_or(desc_start, str::trim_start);
             let mut description = desc_start.to_string();
 
             // Collect multi-line description

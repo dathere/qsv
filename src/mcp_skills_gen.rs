@@ -135,9 +135,11 @@ impl UsageParser {
     /// then appends any additional args from other variants.
     /// This ensures correct ordering (e.g., validate: <input> before <json-schema>).
     fn extract_arg_order_from_usage(&self) -> Vec<String> {
-        let re = regex::Regex::new(r"(?:\[)?<([^>]+)>(?:\])?").unwrap();
+        // Match positional <args> but NOT option args that follow --flag or -f
+        let positional_re = regex::Regex::new(r"(?:^|\s)(?:\[)?<([^>]+)>(?:\])?").unwrap();
+        let option_arg_re = regex::Regex::new(r"--?\w[\w-]*\s+(?:\[)?<([^>]+)>(?:\])?").unwrap();
 
-        // Collect args per usage line
+        // Collect args per usage line (positional only, excluding option args)
         let mut per_line_args: Vec<Vec<String>> = Vec::new();
         for line in self
             .usage_text
@@ -154,9 +156,16 @@ impl UsageParser {
                 continue;
             }
 
-            let args: Vec<String> = re
+            // Collect option arg names to exclude
+            let option_args: std::collections::HashSet<String> = option_arg_re
                 .captures_iter(line)
                 .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+                .collect();
+
+            let args: Vec<String> = positional_re
+                .captures_iter(line)
+                .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+                .filter(|name| !option_args.contains(name))
                 .collect();
             if !args.is_empty() {
                 per_line_args.push(args);

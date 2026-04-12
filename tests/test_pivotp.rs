@@ -1150,3 +1150,364 @@ pivotp_test!(
         assert_eq!(last[0], "Grand Total");
     }
 );
+
+// ==================== GROUP-BY MODE TESTS ====================
+
+macro_rules! pivotp_groupby_test {
+    ($name:ident, $fun:expr_2021) => {
+        mod $name {
+            use std::process;
+
+            #[allow(unused_imports)]
+            use super::setup_groupby;
+            use crate::workdir::Workdir;
+
+            #[test]
+            fn main() {
+                let wrk = setup_groupby(stringify!($name));
+                let cmd = wrk.command("pivotp");
+                $fun(wrk, cmd);
+            }
+        }
+    };
+}
+
+fn setup_groupby(name: &str) -> Workdir {
+    // Data from issue #3697
+    let data = vec![
+        svec!["GROUP", "NAME"],
+        svec!["G1", "N1"],
+        svec!["G2", "N1"],
+        svec!["G3", "N2"],
+        svec!["G4", "N2"],
+        svec!["G5", "N1"],
+        svec!["G5", "N2"],
+        svec!["G5", "N3"],
+    ];
+
+    let wrk = Workdir::new(name);
+    wrk.create("test.csv", data);
+    wrk
+}
+
+// Test basic group-by count with --agg len (the exact use case from issue #3697)
+pivotp_groupby_test!(
+    pivotp_groupby_basic_count,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&["--index", "GROUP", "--agg", "len", "test.csv"]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["GROUP", "count"],
+            svec!["G1", "1"],
+            svec!["G2", "1"],
+            svec!["G3", "1"],
+            svec!["G4", "1"],
+            svec!["G5", "3"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// Test group-by with no --values and no explicit --agg (defaults to len/count)
+pivotp_groupby_test!(
+    pivotp_groupby_no_values_default_agg,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&["--index", "GROUP", "test.csv"]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        // smart agg defaults to len in group-by mode → "count" column
+        assert_eq!(got[0], svec!["GROUP", "count"]);
+        assert_eq!(got.len(), 6); // 5 groups + header
+    }
+);
+
+// Test group-by count with grand total
+pivotp_groupby_test!(
+    pivotp_groupby_grand_total,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "--index",
+            "GROUP",
+            "--agg",
+            "len",
+            "--grand-total",
+            "test.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["GROUP", "count"],
+            svec!["G1", "1"],
+            svec!["G2", "1"],
+            svec!["G3", "1"],
+            svec!["G4", "1"],
+            svec!["G5", "3"],
+            svec!["Grand Total", "7"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// Test group-by with --values on a specific column
+pivotp_groupby_test!(
+    pivotp_groupby_with_values,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "--index", "GROUP", "--values", "NAME", "--agg", "len", "test.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["GROUP", "NAME"],
+            svec!["G1", "1"],
+            svec!["G2", "1"],
+            svec!["G3", "1"],
+            svec!["G4", "1"],
+            svec!["G5", "3"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// Test group-by sum on numeric data using the sales setup
+pivotp_test!(
+    pivotp_groupby_sum,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            "sum",
+            "sales.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["region", "sales"],
+            svec!["North", "900"],
+            svec!["South", "450"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// Test group-by with multiple index columns
+pivotp_test!(
+    pivotp_groupby_multi_index,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "--index",
+            "date,region",
+            "--values",
+            "sales",
+            "--agg",
+            "sum",
+            "sales.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["date", "region", "sales"],
+            svec!["2023-01-01", "North", "250"],
+            svec!["2023-01-01", "South", "200"],
+            svec!["2023-01-02", "South", "250"],
+            svec!["2023-01-02", "North", "650"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// Test group-by with multiple value columns
+pivotp_test!(
+    pivotp_groupby_multi_values,
+    |wrk: Workdir, mut cmd: process::Command| {
+        // Create data with two numeric columns
+        let data = vec![
+            svec!["region", "sales", "qty"],
+            svec!["North", "100", "5"],
+            svec!["North", "200", "10"],
+            svec!["South", "300", "15"],
+        ];
+        wrk.create("multi.csv", data);
+
+        cmd.args(&[
+            "--index",
+            "region",
+            "--values",
+            "sales,qty",
+            "--agg",
+            "sum",
+            "multi.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["region", "sales", "qty"],
+            svec!["North", "300", "15"],
+            svec!["South", "300", "15"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// Test group-by with --maintain-order
+pivotp_groupby_test!(
+    pivotp_groupby_maintain_order,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "--index",
+            "GROUP",
+            "--agg",
+            "len",
+            "--maintain-order",
+            "test.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        // With maintain-order, groups appear in first-seen order
+        assert_eq!(got[0], svec!["GROUP", "count"]);
+        assert_eq!(got[1][0], "G1");
+        assert_eq!(got[5][0], "G5");
+        assert_eq!(got[5][1], "3");
+    }
+);
+
+// Test group-by with custom total label
+pivotp_groupby_test!(
+    pivotp_groupby_custom_total_label,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "--index",
+            "GROUP",
+            "--agg",
+            "len",
+            "--grand-total",
+            "--total-label",
+            "Sum",
+            "test.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let last = got.last().unwrap();
+        assert_eq!(last[0], "Grand Sum");
+        assert_eq!(last[1], "7");
+    }
+);
+
+// Test error: group-by mode without --index
+pivotp_groupby_test!(
+    pivotp_groupby_no_index_error,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&["--agg", "len", "test.csv"]);
+
+        wrk.assert_err(&mut cmd);
+        let stderr = wrk.output_stderr(&mut cmd);
+        assert!(
+            stderr.contains("--index <cols> is required in group-by mode"),
+            "Expected --index required error, got: {stderr}"
+        );
+    }
+);
+
+// Test error: --subtotal in group-by mode
+pivotp_groupby_test!(
+    pivotp_groupby_subtotal_error,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&["--index", "GROUP", "--agg", "len", "--subtotal", "test.csv"]);
+
+        wrk.assert_err(&mut cmd);
+        let stderr = wrk.output_stderr(&mut cmd);
+        assert!(
+            stderr.contains("--subtotal is not supported in group-by mode"),
+            "Expected --subtotal error, got: {stderr}"
+        );
+    }
+);
+
+// Test error: --validate in group-by mode
+pivotp_groupby_test!(
+    pivotp_groupby_validate_error,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&["--index", "GROUP", "--agg", "len", "--validate", "test.csv"]);
+
+        wrk.assert_err(&mut cmd);
+        let stderr = wrk.output_stderr(&mut cmd);
+        assert!(
+            stderr.contains("--validate is not supported in group-by mode"),
+            "Expected --validate error, got: {stderr}"
+        );
+    }
+);
+
+// Test error: --sort-columns in group-by mode
+pivotp_groupby_test!(
+    pivotp_groupby_sort_columns_error,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "--index",
+            "GROUP",
+            "--agg",
+            "len",
+            "--sort-columns",
+            "test.csv",
+        ]);
+
+        wrk.assert_err(&mut cmd);
+        let stderr = wrk.output_stderr(&mut cmd);
+        assert!(
+            stderr.contains("--sort-columns is not supported in group-by mode"),
+            "Expected --sort-columns error, got: {stderr}"
+        );
+    }
+);
+
+// Test error: --agg none in group-by mode
+pivotp_groupby_test!(
+    pivotp_groupby_agg_none_error,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&["--index", "GROUP", "--agg", "none", "test.csv"]);
+
+        wrk.assert_err(&mut cmd);
+        let stderr = wrk.output_stderr(&mut cmd);
+        assert!(
+            stderr.contains("not supported in group-by mode"),
+            "Expected --agg none error, got: {stderr}"
+        );
+    }
+);
+
+// Test error: --agg item in group-by mode
+pivotp_groupby_test!(
+    pivotp_groupby_agg_item_error,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&["--index", "GROUP", "--agg", "item", "test.csv"]);
+
+        wrk.assert_err(&mut cmd);
+        let stderr = wrk.output_stderr(&mut cmd);
+        assert!(
+            stderr.contains("--agg item is not supported in group-by mode"),
+            "Expected --agg item error, got: {stderr}"
+        );
+    }
+);

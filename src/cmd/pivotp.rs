@@ -1,21 +1,31 @@
 static USAGE: &str = r#"
-Pivots CSV data using the Polars engine.
+Pivots or groups CSV data using the Polars engine.
 
-The pivot operation consists of:
-- One or more index columns (these will be the new rows)
-- A column that will be pivoted (this will create the new columns)
-- A values column that will be aggregated
-- An aggregation function to apply. Features "smart" aggregation auto-selection.
+PIVOT MODE (with <on-cols>):
+  The pivot operation consists of:
+  - One or more index columns (these will be the new rows)
+  - A column that will be pivoted (this will create the new columns)
+  - A values column that will be aggregated
+  - An aggregation function to apply. Features "smart" aggregation auto-selection.
+
+GROUP-BY MODE (without <on-cols>):
+  When <on-cols> is omitted, performs a group-by aggregation instead of a pivot.
+  This is useful for simple aggregations like counting rows per group.
+  In group-by mode, --index is required and --agg smart resolves to len (count).
+  The none aggregation is not supported in group-by mode.
+  If --values is omitted, a single "count" column is produced.
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs.
 
 Usage:
     qsv pivotp [options] <on-cols> <input>
+    qsv pivotp [options] <input>
     qsv pivotp --help
 
 pivotp arguments:
     <on-cols>     The column(s) to pivot on (creates new columns).
-    <input>       is the input CSV file. The file must have headers.
+                  When omitted, pivotp runs in group-by mode.
+    <input>       The input CSV file. The file must have headers.
                   If the file has a pschema.json file, it will be used to
                   inform the pivot operation unless --infer-len is explicitly
                   set to a value other than the default of 10,000 rows.
@@ -27,10 +37,12 @@ pivotp options:
                             The output will have one row for each unique combination of the index's values.
                             If None, all remaining columns not specified on --on and --values will be used.
                             At least one of --index and --values must be specified.
+                            Required in group-by mode.
     -v, --values <cols>     The column(s) containing values to aggregate.
                             If an aggregation is specified, these are the values on which the aggregation
                             will be computed. If None, all remaining columns not specified on --on and --index
                             will be used. At least one of --index and --values must be specified.
+                            In group-by mode, if omitted, a single "count" column is produced.
     -a, --agg <func>        The aggregation function to use:
                               first - First value encountered
                               last - Last value encountered
@@ -48,22 +60,23 @@ pivotp options:
                                       Will only work if there is one value column, otherwise
                                       it falls back to `first`
                             [default: smart]
-    --sort-columns          Sort the transposed columns by name.
-    --maintain-order        Maintain the order of the input columns.
+    --sort-columns          Sort the transposed columns by name. (pivot mode only)
+    --maintain-order        Maintain output order: preserve input column order in pivot mode,
+                            and preserve group/row order in group-by mode.
     --col-separator <arg>   The separator in generated column names in case of multiple --values columns.
-                            [default: _]
-    --validate              Validate a pivot by checking the pivot column(s)' cardinality.
+                            (pivot mode only; ignored in group-by mode) [default: _]
+    --validate              Validate a pivot by checking the pivot column(s)' cardinality. (pivot mode only)
     --try-parsedates        When set, will attempt to parse columns as dates.
     --infer-len <arg>       Number of rows to scan when inferring schema.
                             Set to 0 to scan entire file. [default: 10000]
     --decimal-comma         Use comma as decimal separator when READING the input.
                             Note that you will need to specify an alternate --delimiter.
     --ignore-errors         Skip rows that can't be parsed.
-    --grand-total           Append a grand total row summing all numeric pivot columns.
+    --grand-total           Append a grand total row summing all numeric non-index columns.
                             The first index column will contain "Grand <total-label>".
     --subtotal              Insert subtotal rows after each group in the first index column.
                             The second index column will contain the total label.
-                            Requires 2+ index columns.
+                            Requires 2+ index columns. (pivot mode only)
     --total-label <arg>     Custom label for total rows. [default: Total]
 
 Common options:
@@ -105,8 +118,8 @@ fn cols_to_exprs(cols: &[String]) -> Vec<Expr> {
 
 #[derive(Deserialize)]
 struct Args {
-    arg_on_cols:         String,
-    arg_input:           String,
+    arg_on_cols:         Option<String>,
+    arg_input:           Option<String>,
     flag_index:          Option<String>,
     flag_values:         Option<String>,
     flag_agg:            Option<String>,
@@ -157,7 +170,7 @@ fn calculate_pivot_metadata(
         flag_polars:          false,
         flag_no_headers:      false,
         flag_delimiter:       args.flag_delimiter,
-        arg_input:            Some(args.arg_input.clone()),
+        arg_input:            args.arg_input.clone(),
         flag_memcheck:        false,
         flag_output:          None,
     };
@@ -369,7 +382,7 @@ fn suggest_agg_function(
         flag_polars:          false,
         flag_no_headers:      false,
         flag_delimiter:       args.flag_delimiter,
-        arg_input:            Some(args.arg_input.clone()),
+        arg_input:            args.arg_input.clone(),
         flag_memcheck:        false,
         flag_output:          None,
     };
@@ -706,13 +719,32 @@ fn suggest_numeric_after_bimodality(
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
-    // Parse on column(s)
-    let on_cols: Vec<String> = args
-        .arg_on_cols
-        .as_str()
-        .split(',')
-        .map(std::string::ToString::to_string)
-        .collect();
+    // Resolve positional args.
+    // With two usage patterns ("... <on-cols> <input>" and "... <input>"),
+    // docopt assigns one positional to <input> and two to <on-cols> + <input>.
+    let (on_cols, input_path_str) = match (&args.arg_on_cols, &args.arg_input) {
+        (Some(on_cols_val), Some(input_val)) => {
+            // Both provided: pivot mode
+            let oc: Vec<String> = on_cols_val
+                .split(',')
+                .map(std::string::ToString::to_string)
+                .collect();
+            (Some(oc), input_val.clone())
+        },
+        (None, Some(input_val)) => {
+            // Matched second pattern: group-by mode
+            (None, input_val.clone())
+        },
+        (Some(on_cols_val), None) => {
+            // Fallback: single positional assigned to on-cols, treat as input
+            (None, on_cols_val.clone())
+        },
+        (None, None) => {
+            return fail_incorrectusage_clierror!("An input CSV file is required.");
+        },
+    };
+
+    let is_groupby_mode = on_cols.is_none();
 
     // Parse index column(s)
     let index_cols = if let Some(ref flag_index) = args.flag_index {
@@ -738,57 +770,94 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         None
     };
 
-    if index_cols.is_none() && value_cols.is_none() {
+    // Validate mode-specific constraints
+    if is_groupby_mode {
+        if index_cols.is_none() {
+            return fail_incorrectusage_clierror!(
+                "--index <cols> is required in group-by mode (when <on-cols> is omitted)."
+            );
+        }
+        if args.flag_subtotal {
+            return fail_incorrectusage_clierror!("--subtotal is not supported in group-by mode.");
+        }
+        if args.flag_validate {
+            return fail_incorrectusage_clierror!("--validate is not supported in group-by mode.");
+        }
+        if args.flag_sort_columns {
+            return fail_incorrectusage_clierror!(
+                "--sort-columns is not supported in group-by mode."
+            );
+        }
+        if let Some(ref agg) = args.flag_agg
+            && agg.eq_ignore_ascii_case("item")
+        {
+            return fail_incorrectusage_clierror!("--agg item is not supported in group-by mode.");
+        }
+    } else if index_cols.is_none() && value_cols.is_none() {
         return fail_incorrectusage_clierror!(
             "Either --index <cols> or --values <cols> must be specified."
         );
     }
 
-    // Get aggregation function - using generic expressions that pivot will apply to value columns
-    let agg_expr = if let Some(ref agg) = args.flag_agg {
-        let lower_agg = agg.to_lowercase();
-        if lower_agg == "none" {
-            None
-        } else {
-            Some(match lower_agg.as_str() {
-                "first" => Expr::Element.first(),
-                "last" => Expr::Element.last(),
-                "sum" => Expr::Element.sum(),
-                "min" => Expr::Element.min(),
-                "max" => Expr::Element.max(),
-                "mean" => Expr::Element.mean(),
-                "median" => Expr::Element.median(),
-                "len" => Expr::Element.len(),
-                "item" => Expr::Element.item(true),
-                "smart" => {
-                    if let Some(value_cols) = &value_cols {
-                        // Try to suggest an appropriate aggregation function
-                        match suggest_agg_function(
-                            &args,
-                            &on_cols,
-                            index_cols.as_deref(),
-                            value_cols,
-                        )? {
-                            Some(suggested_agg) => suggested_agg,
-                            _ => {
-                                // fallback to first, which always works
-                                Expr::Element.first()
-                            },
-                        }
-                    } else {
-                        // Default to Len if no value columns specified
-                        Expr::Element.len()
-                    }
-                },
-                _ => {
-                    return fail_incorrectusage_clierror!(
-                        "Invalid pivot aggregation function: {agg}"
-                    );
-                },
-            })
-        }
+    // Parse the aggregation function name (default: "smart", which resolves to "len" in group-by
+    // mode)
+    let agg_name = if let Some(ref agg) = args.flag_agg {
+        agg.to_lowercase()
     } else {
+        "smart".to_string()
+    };
+
+    // Reject --agg none in group-by mode AFTER lowercasing so "None"/"NONE" are also caught
+    if is_groupby_mode && agg_name == "none" {
+        return fail_incorrectusage_clierror!("--agg \"none\" is not supported in group-by mode.");
+    }
+
+    // Get aggregation function - using generic expressions that pivot will apply to value columns
+    // NOTE: This match must stay in sync with the group-by agg_exprs match below.
+    let agg_expr = if agg_name == "none" {
         None
+    } else {
+        Some(match agg_name.as_str() {
+            "first" => Expr::Element.first(),
+            "last" => Expr::Element.last(),
+            "sum" => Expr::Element.sum(),
+            "min" => Expr::Element.min(),
+            "max" => Expr::Element.max(),
+            "mean" => Expr::Element.mean(),
+            "median" => Expr::Element.median(),
+            "len" => Expr::Element.len(),
+            "item" => Expr::Element.item(true),
+            "smart" => {
+                if is_groupby_mode {
+                    // In group-by mode, smart defaults to len (count)
+                    Expr::Element.len()
+                } else if let Some(value_cols) = &value_cols {
+                    // Try to suggest an appropriate aggregation function
+                    let on_cols_ref = on_cols.as_ref().unwrap();
+                    match suggest_agg_function(
+                        &args,
+                        on_cols_ref,
+                        index_cols.as_deref(),
+                        value_cols,
+                    )? {
+                        Some(suggested_agg) => suggested_agg,
+                        _ => {
+                            // fallback to first, which always works
+                            Expr::Element.first()
+                        },
+                    }
+                } else {
+                    // Default to Len if no value columns specified
+                    Expr::Element.len()
+                }
+            },
+            _ => {
+                let agg_mode = if is_groupby_mode { "group-by" } else { "pivot" };
+                return fail_incorrectusage_clierror!(
+                    "Invalid {agg_mode} aggregation function: {agg_name}"
+                );
+            },
+        })
     };
 
     // Set delimiter if specified
@@ -805,7 +874,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Create CSV reader config
-    let mut csv_reader = LazyCsvReader::new(PlRefPath::new(&args.arg_input))
+    let mut csv_reader = LazyCsvReader::new(PlRefPath::new(&input_path_str))
         .with_has_header(true)
         .with_try_parse_dates(args.flag_try_parsedates)
         .with_decimal_comma(args.flag_decimal_comma)
@@ -814,7 +883,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // check if the pschema.json file exists and is newer or created at the same time
     // as the table file
-    let input_path = Path::new(&args.arg_input);
+    let input_path = Path::new(&input_path_str);
     let schema_file = PathBuf::from(format!(
         "{}.pschema.json",
         input_path.canonicalize()?.display()
@@ -854,9 +923,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Compute actual index and value columns if not specified
     let actual_index_cols: Vec<String> = if let Some(idx_cols) = index_cols {
         idx_cols
-    } else {
+    } else if let Some(ref oc) = on_cols {
         // If no index specified, use all columns except on and values
-        let on_set: HashSet<&str> = on_cols.iter().map(std::string::String::as_str).collect();
+        let on_set: HashSet<&str> = oc.iter().map(std::string::String::as_str).collect();
         let value_set: HashSet<&str> = value_cols
             .as_ref()
             .map(|cols| cols.iter().map(std::string::String::as_str).collect())
@@ -867,147 +936,236 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .filter(|c| !on_set.contains(c.as_str()) && !value_set.contains(c.as_str()))
             .cloned()
             .collect()
+    } else {
+        // group-by mode with no index — already validated above
+        unreachable!()
     };
 
-    let actual_value_cols: Vec<String> = if let Some(cols) = value_cols {
-        cols
-    } else {
-        // If no values specified, use all columns except on and index
-        let on_set: HashSet<&str> = on_cols.iter().map(std::string::String::as_str).collect();
+    // Determine the actual value columns
+    // In group-by mode without --values, we don't need value columns (just count rows)
+    let actual_value_cols: Option<Vec<String>> = if let Some(cols) = value_cols {
+        Some(cols)
+    } else if let Some(ref oc) = on_cols {
+        // Pivot mode: default to all columns except on and index
+        let on_set: HashSet<&str> = oc.iter().map(std::string::String::as_str).collect();
         let index_set: HashSet<&str> = actual_index_cols
             .iter()
             .map(std::string::String::as_str)
             .collect();
 
-        all_cols
-            .iter()
-            .filter(|c| !on_set.contains(c.as_str()) && !index_set.contains(c.as_str()))
-            .cloned()
-            .collect()
-    };
-
-    if args.flag_validate {
-        // Validate the operation - need to collect to get metadata
-        let df_for_validation = lf.clone().collect()?;
-        if let Some(metadata) = calculate_pivot_metadata(&args, &on_cols, Some(&actual_value_cols))
-        {
-            validate_pivot_operation(&metadata)?;
-        }
-        drop(df_for_validation);
-    }
-
-    // Compute unique values for the pivot columns to create on_columns DataFrame
-    // This is required by the new LazyFrame pivot API
-    // We need to maintain discovery order, so we add row numbers and sort by them
-    let on_columns = {
-        let on_exprs_with_order: Vec<Expr> = cols_to_exprs(&on_cols)
-            .into_iter()
-            .chain(std::iter::once(col(row_order_col)))
-            .collect();
-
-        let unique_df = lf
-            .clone()
-            .select(on_exprs_with_order)
-            .unique(
-                Some(cols(on_cols.iter().map(std::string::String::as_str))),
-                UniqueKeepStrategy::First,
-            )
-            .sort([row_order_col], SortMultipleOptions::default())
-            .drop(cols([row_order_col]))
-            .collect()?;
-
-        Arc::new(unique_df)
-    };
-
-    // Create the aggregation expression
-    // If agg_expr is None, we need a default
-    let agg = agg_expr.unwrap_or_else(|| Expr::Element.first());
-
-    // Convert separator to PlSmallStr
-    let separator = PlSmallStr::from_str(&args.flag_col_separator);
-
-    // Compute the minimum row order for each unique index combination
-    // This will be used to restore discovery order after pivoting
-    // for deterministic output
-    let index_order = if actual_index_cols.is_empty() {
-        None
-    } else {
-        let order_df = lf
-            .clone()
-            .select(
-                actual_index_cols
-                    .iter()
-                    .map(col)
-                    .chain(std::iter::once(col(row_order_col)))
-                    .collect::<Vec<_>>(),
-            )
-            .group_by(actual_index_cols.iter().map(col).collect::<Vec<_>>())
-            .agg([col(row_order_col).min().alias(row_order_col)])
-            .collect()?;
-        Some(order_df)
-    };
-
-    // Perform pivot operation using the new LazyFrame.pivot API
-    // The API expects: on (Selector), on_columns (Arc<DataFrame>), index (Selector),
-    // values (Selector), agg (Expr), maintain_order (bool), separator (PlSmallStr)
-    let on_selector = cols(on_cols.iter().map(std::string::String::as_str));
-    let index_selector = cols(actual_index_cols.iter().map(std::string::String::as_str));
-    let values_selector = cols(actual_value_cols.iter().map(std::string::String::as_str));
-    let column_naming = PivotColumnNaming::default(); // Use default column naming convention
-
-    let mut pivot_result = lf
-        .pivot(
-            on_selector,
-            on_columns,
-            index_selector,
-            values_selector,
-            agg,
-            args.flag_maintain_order,
-            separator,
-            column_naming,
+        Some(
+            all_cols
+                .iter()
+                .filter(|c| !on_set.contains(c.as_str()) && !index_set.contains(c.as_str()))
+                .cloned()
+                .collect(),
         )
-        .collect()?;
+    } else {
+        // Group-by mode without --values: no value columns, just count rows
+        None
+    };
 
-    // Restore discovery order by joining with index_order and sorting
-    if let Some(index_order_df) = index_order {
-        pivot_result = pivot_result
-            .lazy()
-            .join(
-                index_order_df.lazy(),
-                &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
-                &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
-                JoinArgs::new(JoinType::Left),
+    // Branch into group-by or pivot path
+    let mut pivot_result = if is_groupby_mode {
+        // === GROUP-BY MODE ===
+        // Build aggregation expressions for each value column
+        // NOTE: This match must stay in sync with the agg_expr match above.
+        // "none" is rejected during validation; if it somehow reaches here, treat as error.
+        let agg_exprs: Vec<Expr> = if let Some(ref val_cols) = actual_value_cols {
+            val_cols
+                .iter()
+                .map(|vc| {
+                    let c = col(PlSmallStr::from_str(vc));
+                    // Use len() (counts all rows including nulls) instead of count()
+                    // (counts non-null only) for consistency with pivot mode's
+                    // Expr::Element.len(). "item" is rejected during validation.
+                    match agg_name.as_str() {
+                        "first" => c.first().alias(PlSmallStr::from_str(vc)),
+                        "last" => c.last().alias(PlSmallStr::from_str(vc)),
+                        "sum" => c.sum().alias(PlSmallStr::from_str(vc)),
+                        "min" => c.min().alias(PlSmallStr::from_str(vc)),
+                        "max" => c.max().alias(PlSmallStr::from_str(vc)),
+                        "mean" => c.mean().alias(PlSmallStr::from_str(vc)),
+                        "median" => c.median().alias(PlSmallStr::from_str(vc)),
+                        "len" | "smart" => len().alias(PlSmallStr::from_str(vc)),
+                        _ => unreachable!(
+                            "Invalid agg_name '{agg_name}' should have been caught during \
+                             validation"
+                        ),
+                    }
+                })
+                .collect()
+        } else {
+            // No value columns: just count rows per group
+            vec![len().alias(PlSmallStr::from_str("count"))]
+        };
+
+        let group_by_exprs: Vec<Expr> = actual_index_cols.iter().map(col).collect();
+
+        if args.flag_maintain_order {
+            // group_by_stable preserves input order — no extra join/sort needed
+            lf.group_by_stable(group_by_exprs)
+                .agg(agg_exprs)
+                .collect()?
+        } else {
+            // Compute discovery order and group-by in a single lazy pipeline
+            // to avoid materializing data multiple times
+            let index_order_lf = lf
+                .clone()
+                .select(
+                    actual_index_cols
+                        .iter()
+                        .map(col)
+                        .chain(std::iter::once(col(row_order_col)))
+                        .collect::<Vec<_>>(),
+                )
+                .group_by(group_by_exprs.clone())
+                .agg([col(row_order_col).min().alias(row_order_col)]);
+
+            lf.group_by(group_by_exprs)
+                .agg(agg_exprs)
+                .join(
+                    index_order_lf,
+                    actual_index_cols.iter().map(col).collect::<Vec<_>>(),
+                    actual_index_cols.iter().map(col).collect::<Vec<_>>(),
+                    JoinArgs::new(JoinType::Left),
+                )
+                .sort([row_order_col], SortMultipleOptions::default())
+                .drop(cols([row_order_col]))
+                .collect()?
+        }
+    } else {
+        // === PIVOT MODE ===
+        // Safety: on_cols is always Some in pivot mode (is_groupby_mode is false iff on_cols is
+        // Some). actual_value_cols is always Some because the pivot-mode fallback
+        // (lines ~940-950) computes remaining columns when --values is omitted.
+        let on_cols = on_cols.unwrap();
+        let actual_value_cols = actual_value_cols.unwrap();
+
+        if args.flag_validate {
+            // Validate the operation - need to collect to get metadata
+            let df_for_validation = lf.clone().collect()?;
+            if let Some(metadata) =
+                calculate_pivot_metadata(&args, &on_cols, Some(&actual_value_cols))
+            {
+                validate_pivot_operation(&metadata)?;
+            }
+            drop(df_for_validation);
+        }
+
+        // Compute unique values for the pivot columns to create on_columns DataFrame
+        // This is required by the new LazyFrame pivot API
+        // We need to maintain discovery order, so we add row numbers and sort by them
+        let on_columns = {
+            let on_exprs_with_order: Vec<Expr> = cols_to_exprs(&on_cols)
+                .into_iter()
+                .chain(std::iter::once(col(row_order_col)))
+                .collect();
+
+            let unique_df = lf
+                .clone()
+                .select(on_exprs_with_order)
+                .unique(
+                    Some(cols(on_cols.iter().map(std::string::String::as_str))),
+                    UniqueKeepStrategy::First,
+                )
+                .sort([row_order_col], SortMultipleOptions::default())
+                .drop(cols([row_order_col]))
+                .collect()?;
+
+            Arc::new(unique_df)
+        };
+
+        // Create the aggregation expression
+        // If agg_expr is None, we need a default
+        let agg = agg_expr.unwrap_or_else(|| Expr::Element.first());
+
+        // Convert separator to PlSmallStr
+        let separator = PlSmallStr::from_str(&args.flag_col_separator);
+
+        // Compute the minimum row order for each unique index combination
+        // This will be used to restore discovery order after pivoting
+        // for deterministic output
+        let index_order = if actual_index_cols.is_empty() {
+            None
+        } else {
+            let order_df = lf
+                .clone()
+                .select(
+                    actual_index_cols
+                        .iter()
+                        .map(col)
+                        .chain(std::iter::once(col(row_order_col)))
+                        .collect::<Vec<_>>(),
+                )
+                .group_by(actual_index_cols.iter().map(col).collect::<Vec<_>>())
+                .agg([col(row_order_col).min().alias(row_order_col)])
+                .collect()?;
+            Some(order_df)
+        };
+
+        // Perform pivot operation using the new LazyFrame.pivot API
+        let on_selector = cols(on_cols.iter().map(std::string::String::as_str));
+        let index_selector = cols(actual_index_cols.iter().map(std::string::String::as_str));
+        let values_selector = cols(actual_value_cols.iter().map(std::string::String::as_str));
+        let column_naming = PivotColumnNaming::default();
+
+        let mut pivot_result = lf
+            .pivot(
+                on_selector,
+                on_columns,
+                index_selector,
+                values_selector,
+                agg,
+                args.flag_maintain_order,
+                separator,
+                column_naming,
             )
-            .sort([row_order_col], SortMultipleOptions::default())
-            .drop(cols([row_order_col]))
             .collect()?;
-    }
 
-    // Sort columns if requested
-    if args.flag_sort_columns {
-        let columns = pivot_result
-            .get_column_names()
-            .into_iter()
-            .map(polars::prelude::PlSmallStr::to_string);
-        let index_cols_set: HashSet<_> = actual_index_cols
-            .iter()
-            .map(std::string::String::as_str)
-            .collect();
+        // Restore discovery order by joining with index_order and sorting
+        if let Some(index_order_df) = index_order {
+            pivot_result = pivot_result
+                .lazy()
+                .join(
+                    index_order_df.lazy(),
+                    &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
+                    &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
+                    JoinArgs::new(JoinType::Left),
+                )
+                .sort([row_order_col], SortMultipleOptions::default())
+                .drop(cols([row_order_col]))
+                .collect()?;
+        }
 
-        // Separate index and pivoted columns
-        let (index_names, mut pivot_names): (Vec<_>, Vec<_>) = columns
-            .into_iter()
-            .partition(|name| index_cols_set.contains(name.as_str()));
+        // Sort columns if requested
+        if args.flag_sort_columns {
+            let columns = pivot_result
+                .get_column_names()
+                .into_iter()
+                .map(polars::prelude::PlSmallStr::to_string);
+            let index_cols_set: HashSet<_> = actual_index_cols
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
 
-        // Sort only the pivoted columns alphabetically
-        pivot_names.sort_unstable();
+            // Separate index and pivoted columns
+            let (index_names, mut pivot_names): (Vec<_>, Vec<_>) = columns
+                .into_iter()
+                .partition(|name| index_cols_set.contains(name.as_str()));
 
-        // Reconstruct column order: index columns first, then sorted pivot columns
-        let mut sorted_columns = index_names;
-        sorted_columns.extend(pivot_names);
+            // Sort only the pivoted columns alphabetically
+            pivot_names.sort_unstable();
 
-        pivot_result = pivot_result.select(sorted_columns.as_slice())?;
-    }
+            // Reconstruct column order: index columns first, then sorted pivot columns
+            let mut sorted_columns = index_names;
+            sorted_columns.extend(pivot_names);
+
+            pivot_result = pivot_result.select(sorted_columns.as_slice())?;
+        }
+
+        pivot_result
+    };
 
     // Add subtotals and/or grand total rows
     if args.flag_subtotal || args.flag_grand_total {

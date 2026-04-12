@@ -378,9 +378,9 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=py-1.39.3:880651f
+# QSV_POLARS_REV=py-1.39.3:c6e189c
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.39.3", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "880651f", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "c6e189c", optional = true }
 
 [features]
 default = ["jemallocator"]

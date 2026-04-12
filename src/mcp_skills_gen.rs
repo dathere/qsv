@@ -130,16 +130,15 @@ impl UsageParser {
         })
     }
 
-    /// Extract positional argument names in order from ALL USAGE lines.
-    /// Scans every usage pattern to catch args that only appear in some patterns
-    /// (e.g., validate has <input> in patterns 2-3 but not pattern 1).
+    /// Extract positional argument names in order from USAGE lines.
+    /// Uses the variant with the most positional args as the base order,
+    /// then appends any additional args from other variants.
+    /// This ensures correct ordering (e.g., validate: <input> before <json-schema>).
     fn extract_arg_order_from_usage(&self) -> Vec<String> {
-        let mut arg_order = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-
-        // Extract all <arg> and [<arg>] patterns in order
         let re = regex::Regex::new(r"(?:\[)?<([^>]+)>(?:\])?").unwrap();
 
+        // Collect args per usage line
+        let mut per_line_args: Vec<Vec<String>> = Vec::new();
         for line in self
             .usage_text
             .lines()
@@ -148,21 +147,37 @@ impl UsageParser {
             .skip(1)
         {
             let trimmed = line.trim();
-            // Stop at blank line or non-usage content
             if trimmed.is_empty() || (!trimmed.contains("qsv") && !trimmed.ends_with("--help")) {
                 break;
             }
-            // Skip --help lines
             if trimmed.ends_with("--help") {
                 continue;
             }
 
-            for cap in re.captures_iter(line) {
-                if let Some(arg_name) = cap.get(1) {
-                    let name = arg_name.as_str().to_string();
-                    if seen.insert(name.clone()) {
-                        arg_order.push(name);
-                    }
+            let args: Vec<String> = re
+                .captures_iter(line)
+                .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+                .collect();
+            if !args.is_empty() {
+                per_line_args.push(args);
+            }
+        }
+
+        // Use the variant with the most positional args as the base order
+        let base = per_line_args
+            .iter()
+            .max_by_key(|args| args.len())
+            .cloned()
+            .unwrap_or_default();
+
+        let mut arg_order = base;
+        let mut seen: std::collections::HashSet<String> = arg_order.iter().cloned().collect();
+
+        // Append any additional args from other variants not in the base
+        for line_args in &per_line_args {
+            for arg in line_args {
+                if seen.insert(arg.clone()) {
+                    arg_order.push(arg.clone());
                 }
             }
         }

@@ -307,7 +307,7 @@ export const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     commonPattern:
       "Parquet: to parquet output_dir file.csv. Database: to postgres 'connection_string' file.csv. Spreadsheet: to xlsx output.xlsx file.csv. Batch: pass a directory or .infile-list as input to convert multiple files (e.g. to parquet output_dir my_csvs_dir).",
     errorPrevention:
-      "For single-file Parquet, prefer qsv_to_parquet core tool (auto-generates stats + schema for optimal type inference). Use 'to parquet' for batch conversion or when you need explicit control. For batch conversion with multiple explicit files, use qsv_command instead of qsv_to (the skill accepts a single input). For PostgreSQL, a connection string is required.",
+      "For single-file Parquet, prefer qsv_to_parquet core tool (auto-generates stats + schema for optimal type inference). Use 'to parquet' for batch conversion or when you need explicit control. For batch conversion with multiple explicit files, use qsv_command instead of qsv_to (the skill accepts a single input). For PostgreSQL, a connection string is required unless --dump is set (dump mode writes SQL to a file or stdout instead of loading into a database).",
     hasCommonMistakes: true,
   },
 };

@@ -150,9 +150,9 @@ export const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     needsIndexHint: true,
   },
   pivotp: {
-    whenToUse: "Polars-powered pivot tables and group-by aggregations. PIVOT MODE: use qsv-pivotp and provide <on-cols> with --agg (sum/mean/count/first/last/min/max/smart). GROUP-BY MODE: to aggregate without pivoting, run qsv_command with pivotp and omit <on-cols> there (requires --index). Use qsv_stats --cardinality to check pivot column cardinality.",
-    commonPattern: "Stats → Pivot: Use qsv_stats --cardinality to estimate pivot output width (pivot column cardinality × value columns) and keep estimated columns below ~1000. Group-by: use qsv_command for 'pivotp input.csv --index group-col --values val-col --agg sum' so <on-cols> can be omitted. Use stats type column to pick the right --agg: sum/mean for numeric, count for categorical.",
-    errorPrevention: "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns. In group-by mode, --index is required, --agg smart resolves to len (count), and none is not supported. The MCP qsv-pivotp tool currently requires on-cols, so omit <on-cols> only when invoking pivotp through qsv_command.",
+    whenToUse: "Polars-powered pivot tables and group-by aggregations. PIVOT MODE: provide <on-cols> with --agg (sum/mean/count/first/last/min/max/smart). GROUP-BY MODE: omit <on-cols> and use --index to aggregate without pivoting. Use qsv_stats --cardinality to check pivot column cardinality.",
+    commonPattern: "Stats → Pivot: Use qsv_stats --cardinality to estimate pivot output width (pivot column cardinality × value columns) and keep estimated columns below ~1000. Group-by: omit on-cols, e.g. qsv_pivotp(input_file='data.csv', index='group-col', values='val-col', agg='sum'). Use stats type column to pick the right --agg: sum/mean for numeric, count for categorical.",
+    errorPrevention: "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns. In group-by mode, --index is required, --agg smart resolves to len (count), and none is not supported.",
     hasCommonMistakes: true,
   },
   excel: {
@@ -305,9 +305,9 @@ export const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     whenToUse:
       "Convert CSV to Parquet, PostgreSQL, SQLite, XLSX, ODS, or Data Package. Supports batch conversion of multiple files. For single-file CSV-to-Parquet, prefer qsv_to_parquet (core tool) which auto-runs stats and generates Polars schema.",
     commonPattern:
-      "Parquet: to parquet output_dir file.csv. Database: to postgres 'connection_string' file.csv. Spreadsheet: to xlsx output.xlsx file.csv. Batch: to parquet output_dir file1.csv file2.csv.",
+      "Parquet: to parquet output_dir file.csv. Database: to postgres 'connection_string' file.csv. Spreadsheet: to xlsx output.xlsx file.csv. Batch: pass a directory or .infile-list as input to convert multiple files (e.g. to parquet output_dir my_csvs_dir).",
     errorPrevention:
-      "For single-file Parquet, prefer qsv_to_parquet core tool (auto-generates stats + schema for optimal type inference). Use 'to parquet' for batch conversion or when you need explicit control. For PostgreSQL, a connection string is required.",
+      "For single-file Parquet, prefer qsv_to_parquet core tool (auto-generates stats + schema for optimal type inference). Use 'to parquet' for batch conversion or when you need explicit control. For batch conversion with multiple explicit files, use qsv_command instead of qsv_to (the skill accepts a single input). For PostgreSQL, a connection string is required.",
     hasCommonMistakes: true,
   },
 };

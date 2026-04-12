@@ -227,6 +227,9 @@ To arguments:
                             * xlsx: output .xlsx file path
                             * ods: output .ods file path
                             * datapackage: output .json file path
+    <input>...              Input CSV file(s) to convert. Can be file path(s), a directory,
+                            an .infile-list file, or - for stdin. If not provided, reads
+                            from stdin (not supported by parquet subcommand).
 
 To options:
   -k, --print-package     Print statistics as datapackage, by default will print field summary.

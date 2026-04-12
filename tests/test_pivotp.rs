@@ -915,6 +915,322 @@ fn pivotp_smart_moarstats_outliers() {
     );
 }
 
+// Test smart aggregation with moarstats — MAD/stddev ratio < 0.5 should pick Median
+#[test]
+fn pivotp_smart_moarstats_mad_stddev_ratio() {
+    let wrk = Workdir::new("pivotp_smart_mad_stddev");
+    // Data where a few large outliers inflate stddev far beyond MAD.
+    // Most values cluster near 50, but a few extreme values push stddev up
+    // while MAD stays low because the median neighborhood is tight.
+    let csv_content = std::iter::once("category,group,value".to_string())
+        .chain((0..50).map(|i| {
+            let cat = if i % 2 == 0 { "A" } else { "B" };
+            let grp = if i % 2 == 0 { "X" } else { "Y" };
+            let val = match i {
+                0 => 5000,
+                1 => 4000,
+                2 => 3000,
+                _ => 50 + (i % 5),
+            };
+            format!("{cat},{grp},{val}")
+        }))
+        .collect::<Vec<_>>()
+        .join("\n");
+    wrk.create_from_string("mad_stddev.csv", &csv_content);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "mad_stddev.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut moar_cmd = wrk.command("moarstats");
+    moar_cmd.args(["mad_stddev.csv"]);
+    wrk.assert_success(&mut moar_cmd);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group", "--index", "category", "--values", "value", "--agg", "smart",
+        "mad_stddev.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    // Should use Median — outliers inflate stddev but MAD stays robust
+    assert!(
+        stderr.contains("Median"),
+        "Expected Median for data with low MAD/stddev ratio, got: {stderr}"
+    );
+}
+
+// Test smart aggregation with moarstats — median/mean ratio far from 1.0 should pick Median
+#[test]
+fn pivotp_smart_moarstats_median_mean_divergence() {
+    let wrk = Workdir::new("pivotp_smart_median_mean");
+    // Right-skewed data: many small values, a few large ones.
+    // Mean gets pulled up by the large values while median stays low,
+    // producing a median/mean ratio well below 0.7.
+    let csv_content = std::iter::once("category,group,value".to_string())
+        .chain((0..60).map(|i| {
+            let cat = if i % 3 == 0 {
+                "A"
+            } else if i % 3 == 1 {
+                "B"
+            } else {
+                "C"
+            };
+            let grp = if i % 2 == 0 { "X" } else { "Y" };
+            // 50 values at 10-15, 10 values at 500-600
+            let val = if i < 50 { 10 + (i % 6) } else { 500 + i * 10 };
+            format!("{cat},{grp},{val}")
+        }))
+        .collect::<Vec<_>>()
+        .join("\n");
+    wrk.create_from_string("median_mean.csv", &csv_content);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "median_mean.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut moar_cmd = wrk.command("moarstats");
+    moar_cmd.args(["median_mean.csv"]);
+    wrk.assert_success(&mut moar_cmd);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group", "--index", "category", "--values", "value", "--agg", "smart",
+        "median_mean.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    // Should use Median — mean and median diverge significantly
+    assert!(
+        stderr.contains("Median"),
+        "Expected Median for data with divergent mean/median, got: {stderr}"
+    );
+}
+
+// Test smart aggregation with moarstats — high quartile coefficient of dispersion
+#[test]
+fn pivotp_smart_moarstats_quartile_dispersion() {
+    let wrk = Workdir::new("pivotp_smart_qcd");
+    // Data with wide IQR relative to the quartile sum.
+    // Spread values broadly so Q3-Q1 is large relative to Q3+Q1 (QCD > 0.5).
+    let csv_content = std::iter::once("category,group,value".to_string())
+        .chain((0..50).map(|i| {
+            let cat = if i % 2 == 0 { "A" } else { "B" };
+            let grp = if i % 2 == 0 { "X" } else { "Y" };
+            // Uniform-ish distribution from 1 to 1000
+            let val = 1 + i * 20;
+            format!("{cat},{grp},{val}")
+        }))
+        .collect::<Vec<_>>()
+        .join("\n");
+    wrk.create_from_string("qcd.csv", &csv_content);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "qcd.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut moar_cmd = wrk.command("moarstats");
+    moar_cmd.args(["qcd.csv"]);
+    wrk.assert_success(&mut moar_cmd);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group", "--index", "category", "--values", "value", "--agg", "smart", "qcd.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    // Should use Median — high quartile-based dispersion
+    assert!(
+        stderr.contains("Median"),
+        "Expected Median for data with high quartile coefficient of dispersion, got: {stderr}"
+    );
+}
+
+// Test smart aggregation — mixed-sign data should pick Mean (avoid Sum cancellation)
+#[test]
+fn pivotp_smart_mixed_sign() {
+    let wrk = Workdir::new("pivotp_smart_mixed_sign");
+    // Data with substantial negative and positive values (both >20%).
+    // Sum would cancel out and be misleading.
+    let csv_content = std::iter::once("category,group,value".to_string())
+        .chain((0..40).map(|i| {
+            let cat = if i % 2 == 0 { "A" } else { "B" };
+            let grp = if i % 2 == 0 { "X" } else { "Y" };
+            // ~50% negative, ~50% positive, low variability so CV < 1
+            let val = if i < 20 {
+                -(10 + (i % 5))
+            } else {
+                10 + (i % 5)
+            };
+            format!("{cat},{grp},{val}")
+        }))
+        .collect::<Vec<_>>()
+        .join("\n");
+    wrk.create_from_string("mixed_sign.csv", &csv_content);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "mixed_sign.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group", "--index", "category", "--values", "value", "--agg", "smart",
+        "mixed_sign.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    // Should use Mean — mixed-sign data makes Sum cancel out
+    assert!(
+        stderr.contains("Mean") || stderr.contains("Mixed-sign"),
+        "Expected Mean for mixed-sign data, got: {stderr}"
+    );
+}
+
+// Test smart aggregation — complex multimodal (>10 modes) should pick Len
+// Requires moarstats to preserve the stats cache with mode_count
+#[test]
+fn pivotp_smart_multimodal() {
+    let wrk = Workdir::new("pivotp_smart_multimodal");
+    // Data where many values appear with equal frequency, creating >10 modes.
+    // Each value appears exactly twice so all are tied as modes (mode_count = 20).
+    let csv_content = std::iter::once("category,group,value".to_string())
+        .chain((0..40).map(|i| {
+            let cat = if i % 2 == 0 { "A" } else { "B" };
+            let grp = if i % 2 == 0 { "X" } else { "Y" };
+            // 20 distinct values, each appearing twice -> mode_count = 20
+            let val = (i % 20) * 100;
+            format!("{cat},{grp},{val}")
+        }))
+        .collect::<Vec<_>>()
+        .join("\n");
+    wrk.create_from_string("multimodal.csv", &csv_content);
+
+    // stats --everything + moarstats so pivotp reads the full cache with mode_count
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "multimodal.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut moar_cmd = wrk.command("moarstats");
+    moar_cmd.args(["multimodal.csv"]);
+    wrk.assert_success(&mut moar_cmd);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group", "--index", "category", "--values", "value", "--agg", "smart",
+        "multimodal.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    // Should use Len — too many modes means central tendency is misleading
+    assert!(
+        stderr.contains("Len") || stderr.contains("modes"),
+        "Expected Len for complex multimodal data, got: {stderr}"
+    );
+}
+
+// Test smart aggregation — Date/DateTime with >50% NULLs should pick Len
+// Requires stats --infer-dates + moarstats to preserve Date type in cache
+#[test]
+fn pivotp_smart_date_sparse() {
+    let wrk = Workdir::new("pivotp_smart_date_sparse");
+    // Date column with >50% NULL values
+    let csv_content = "category,group,date_val\n\
+                        A,X,2024-01-01\n\
+                        A,Y,\n\
+                        B,X,\n\
+                        B,Y,2024-02-15\n\
+                        C,X,\n\
+                        C,Y,\n\
+                        A,X,\n\
+                        B,X,\n\
+                        C,X,\n\
+                        A,Y,2024-03-10\n";
+    wrk.create_from_string("date_sparse.csv", csv_content);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "--infer-dates", "date_sparse.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut moar_cmd = wrk.command("moarstats");
+    moar_cmd.args(["date_sparse.csv"]);
+    wrk.assert_success(&mut moar_cmd);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "date_val",
+        "--agg",
+        "smart",
+        "--try-parsedates",
+        "date_sparse.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    // Should use Len — >50% NULLs in date column
+    assert!(
+        stderr.contains("Len") || stderr.contains("NULL"),
+        "Expected Len for sparse date column, got: {stderr}"
+    );
+}
+
+// Test smart aggregation — ascending Date values should pick Last
+// Requires stats --infer-dates + moarstats to preserve Date type in cache
+#[test]
+fn pivotp_smart_date_ascending() {
+    let wrk = Workdir::new("pivotp_smart_date_ascending");
+    // Ascending date values — Last gives the most recent entry
+    let csv_content = "category,group,date_val\n\
+                        A,X,2024-01-01\n\
+                        A,Y,2024-01-15\n\
+                        B,X,2024-02-01\n\
+                        B,Y,2024-02-15\n\
+                        C,X,2024-03-01\n\
+                        C,Y,2024-03-15\n\
+                        A,X,2024-04-01\n\
+                        B,X,2024-04-15\n\
+                        C,X,2024-05-01\n\
+                        A,Y,2024-05-15\n";
+    wrk.create_from_string("date_ascending.csv", csv_content);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "--infer-dates", "date_ascending.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut moar_cmd = wrk.command("moarstats");
+    moar_cmd.args(["date_ascending.csv"]);
+    wrk.assert_success(&mut moar_cmd);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "date_val",
+        "--agg",
+        "smart",
+        "--try-parsedates",
+        "date_ascending.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    // Should use Last — ascending date values, most recent is most useful
+    assert!(
+        stderr.contains("Last") || stderr.contains("Ascending"),
+        "Expected Last for ascending date column, got: {stderr}"
+    );
+}
+
 // Test pivot with custom infer length
 pivotp_test!(
     pivotp_infer_len,

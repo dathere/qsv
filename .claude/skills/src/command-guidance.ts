@@ -34,14 +34,14 @@ export const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   },
   stats: {
     whenToUse: "Quick numeric stats (mean, min/max, stddev). Creates cache for other commands. Run 2nd after index.",
-    commonPattern: `Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. Moarstats is auto-run after stats to enrich the cache with ~18 additional columns.`,
+    commonPattern: `Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. Moarstats is auto-run after stats to enrich the cache with ~25 additional columns.`,
     errorPrevention: "Works with CSV/TSV/SSV files only. For SQL queries, use sqlp. Run qsv_index first for files >10MB.",
     needsIndexHint: true,
   },
   moarstats: {
     whenToUse: "Basic moarstats is auto-run after stats. Only invoke manually for --advanced (kurtosis, entropy, gini, etc.) or --bivariate (pairwise correlations).",
-    commonPattern: "Basic moarstats runs automatically after stats to enrich the .stats.csv cache. Invoke manually only for --advanced or --bivariate. When running manually, set output_file to the stats cache path (<FILESTEM>.stats.csv, e.g. for data.csv use output_file=data.stats.csv). Enriches .stats.csv with ~18 additional columns for richer LLM analysis — moarstats enriches .stats.csv only, not .data.jsonl; smart commands still use .data.jsonl. With --bivariate: main stats to --output, bivariate stats to <FILESTEM>.stats.bivariate.csv (separate file next to input).",
-    errorPrevention: "Run stats first to create cache. IMPORTANT: Only run --bivariate when requested as it's expensive. It writes results to a SEPARATE file: <FILESTEM>.stats.bivariate.csv (located next to the input file, NOT in stdout/output). Always read this file to get bivariate results. With --join-inputs, the file is <FILESTEM>.stats.bivariate.joined.csv.",
+    commonPattern: "Basic moarstats runs automatically after stats to enrich the .stats.csv cache. Invoke manually only for --advanced or --bivariate. When running manually, use the CLI --output flag if you need to control where the main stats output is written; MCP output_file only saves stdout and does not set moarstats --output. Enriches .stats.csv with ~25 additional columns (including trimean, midhinge, robust_cv, jarque_bera, theil_index, mean_ad, simpsons_diversity_index) for richer LLM analysis — moarstats enriches .stats.csv only, not .data.jsonl; smart commands still use .data.jsonl. With --bivariate: main stats go to --output (or stdout if omitted), while bivariate stats are written to <FILESTEM>.stats.bivariate.csv (a separate file next to the input).",
+    errorPrevention: "Run stats first to create cache. IMPORTANT: Only run --bivariate when requested as it's expensive. Bivariate results are written to a SEPARATE file: <FILESTEM>.stats.bivariate.csv (located next to the input file, not controlled by MCP output_file/stdout capture). Always read this file to get bivariate results. With --join-inputs, the file is <FILESTEM>.stats.bivariate.joined.csv.",
     needsMemoryWarning: true,
     hasCommonMistakes: true,
   },
@@ -150,9 +150,9 @@ export const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     needsIndexHint: true,
   },
   pivotp: {
-    whenToUse: "Polars-powered pivot tables. Use --agg for aggregation (sum/mean/count/first/last/min/max/smart). Use qsv_stats --cardinality to check pivot column cardinality.",
-    commonPattern: "Stats → Pivot: Use qsv_stats --cardinality to estimate pivot output width (pivot column cardinality × value columns) and keep estimated columns below ~1000 to avoid overly wide pivots. Use stats type column to pick the right --agg: sum/mean for numeric, count for categorical.",
-    errorPrevention: "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns.",
+    whenToUse: "Polars-powered pivot tables and group-by aggregations. PIVOT MODE: provide <on-cols> with --agg (sum/mean/count/first/last/min/max/smart). GROUP-BY MODE: omit <on-cols> and use --index to aggregate without pivoting. Use qsv_stats --cardinality to check pivot column cardinality.",
+    commonPattern: "Stats → Pivot: Use qsv_stats --cardinality to estimate pivot output width (pivot column cardinality × value columns) and keep estimated columns below ~1000. Group-by: omit on-cols, e.g. qsv_pivotp(input_file='data.csv', index='group-col', values='val-col', agg='sum'). Use stats type column to pick the right --agg: sum/mean for numeric, count for categorical.",
+    errorPrevention: "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns. In group-by mode, --index is required, --agg smart resolves to len (count), and none is not supported.",
     hasCommonMistakes: true,
   },
   excel: {
@@ -292,6 +292,23 @@ export const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   flatten: {
     whenToUse:
       "Display each row vertically (one field per line). For inspecting wide CSVs with many columns in the terminal.",
+  },
+  blake3: {
+    whenToUse:
+      "Compute BLAKE3 cryptographic hashes of files for integrity verification. Fast, parallel hashing with optional keyed hashing and key derivation.",
+    commonPattern:
+      "Hash files: blake3 file.csv > checksums.b3. Verify: blake3 --check checksums.b3. Use --no-names for just the hash value.",
+    errorPrevention:
+      "This is a FILE hashing command — hashes entire files, not individual CSV rows or columns. For per-row hashing, use luau.",
+  },
+  to: {
+    whenToUse:
+      "Convert CSV to Parquet, PostgreSQL, SQLite, XLSX, ODS, or Data Package. Supports batch conversion of multiple files. For single-file CSV-to-Parquet, prefer qsv_to_parquet (core tool) which auto-runs stats and generates Polars schema.",
+    commonPattern:
+      "Parquet: to parquet output_dir file.csv. Database: to postgres 'connection_string' file.csv. Spreadsheet: to xlsx output.xlsx file.csv. Batch: pass a directory or .infile-list as input to convert multiple files (e.g. to parquet output_dir my_csvs_dir).",
+    errorPrevention:
+      "For single-file Parquet, prefer qsv_to_parquet core tool (auto-generates stats + schema for optimal type inference). Use 'to parquet' for batch conversion or when you need explicit control. For batch conversion with multiple explicit files, use qsv_command instead of qsv_to (the skill accepts a single input). For PostgreSQL, a connection string is required unless --dump is set (dump mode writes SQL to a file or stdout instead of loading into a database).",
+    hasCommonMistakes: true,
   },
 };
 

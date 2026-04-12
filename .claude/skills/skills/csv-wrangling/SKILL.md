@@ -16,7 +16,7 @@ Always follow this sequence when processing CSV data:
 4. **Inspect** - `slice --len 5` (preview rows), `frequency --frequency-jsonl` (value distributions with cache for reuse)
 5. **Transform** - select, sort, dedup, rename, replace, search, sqlp, etc.
 6. **Validate** - `validate` (against JSON Schema), `stats` (verify results)
-7. **Export** - `tojsonl`, `table`, `qsv_to_parquet`
+7. **Export** - `tojsonl`, `table`, `qsv_to_parquet`, `to` (xlsx/sqlite/postgres/ods/datapackage)
 8. **Document** - `describegpt --all` (AI-generated Data Dictionary, Description & Tags)
 
 ## Tool Selection Matrix
@@ -81,6 +81,18 @@ sniff -> index -> stats --cardinality --stats-jsonl -> describegpt --all
 excel (to CSV) -> index -> stats -> select -> tojsonl / qsv_to_parquet
 ```
 
+### Batch Convert to Multiple Formats
+```
+excel (to CSV) -> index -> stats -> to xlsx report.xlsx
+excel (to CSV) -> index -> stats -> to sqlite report.db
+excel (to CSV) -> index -> stats -> to parquet parquet_output_dir
+```
+
+### File Integrity Verification
+```
+blake3 file.csv > checksums.b3 (before transfer) -> blake3 --check checksums.b3 (after transfer)
+```
+
 ## Delimiter Handling
 
 - CSV (`,`): default, no flag needed
@@ -101,7 +113,7 @@ excel (to CSV) -> index -> stats -> select -> tojsonl / qsv_to_parquet
 
 ## Tool Discovery
 
-Use **`qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 51+ qsv skill-based commands covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more.
+Use **`qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 53+ qsv skill-based commands covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more.
 
 ## Operational Notes
 

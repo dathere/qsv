@@ -211,13 +211,25 @@ For all other conversions you can output the datapackage created by specifying `
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_to.rs.
 
 Usage:
-    qsv to parquet [options] <parquet> [<input>...]
-    qsv to postgres [options] <postgres> [<input>...]
-    qsv to sqlite [options] <sqlite> [<input>...]
-    qsv to xlsx [options] <xlsx> [<input>...]
-    qsv to ods [options] <ods> [<input>...]
-    qsv to datapackage [options] <datapackage> [<input>...]
+    qsv to parquet [options] <destination> [<input>...]
+    qsv to postgres [options] <destination> [<input>...]
+    qsv to sqlite [options] <destination> [<input>...]
+    qsv to xlsx [options] <destination> [<input>...]
+    qsv to ods [options] <destination> [<input>...]
+    qsv to datapackage [options] <destination> [<input>...]
     qsv to --help
+
+To arguments:
+    <destination>           The output target, which varies by subcommand:
+                            * parquet: output directory (created if needed)
+                            * postgres: connection string or env=VAR_NAME (with --dump: dump file path or - for stdout)
+                            * sqlite: database file path (with --dump: dump file path or - for stdout)
+                            * xlsx: output .xlsx file path
+                            * ods: output .ods file path
+                            * datapackage: output .json file path
+    <input>...              Input CSV file(s) to convert. Can be file path(s), a directory,
+                            an .infile-list file, or `-` for stdin (not supported by
+                            parquet subcommand).
 
 To options:
   -k, --print-package     Print statistics as datapackage, by default will print field summary.
@@ -291,17 +303,12 @@ use crate::{
 #[derive(Deserialize)]
 struct Args {
     cmd_postgres:         bool,
-    arg_postgres:         Option<String>,
     cmd_sqlite:           bool,
-    arg_sqlite:           Option<String>,
     cmd_xlsx:             bool,
-    arg_xlsx:             Option<String>,
     cmd_ods:              bool,
-    arg_ods:              Option<String>,
     cmd_parquet:          bool,
-    arg_parquet:          Option<String>,
     cmd_datapackage:      bool,
-    arg_datapackage:      Option<String>,
+    arg_destination:      Option<String>,
     arg_input:            Vec<PathBuf>,
     flag_delimiter:       Option<Delimiter>,
     flag_schema:          Option<String>,
@@ -453,11 +460,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
         apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
         if args.flag_dump {
-            options.dump_file = args.arg_postgres.expect("checked above");
+            options.dump_file = args.arg_destination.expect("checked above");
             output = csvs_to_postgres_with_options(String::new(), arg_input, options)?;
         } else {
             output = csvs_to_postgres_with_options(
-                args.arg_postgres.expect("checked above"),
+                args.arg_destination.expect("checked above"),
                 arg_input,
                 options,
             )?;
@@ -468,11 +475,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
         apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
         if args.flag_dump {
-            options.dump_file = args.arg_sqlite.expect("checked above");
+            options.dump_file = args.arg_destination.expect("checked above");
             output = csvs_to_sqlite_with_options(String::new(), arg_input, options)?;
         } else {
             output = csvs_to_sqlite_with_options(
-                args.arg_sqlite.expect("checked above"),
+                args.arg_destination.expect("checked above"),
                 arg_input,
                 options,
             )?;
@@ -483,23 +490,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
         apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
 
-        output =
-            csvs_to_xlsx_with_options(args.arg_xlsx.expect("checked above"), arg_input, options)?;
+        output = csvs_to_xlsx_with_options(
+            args.arg_destination.expect("checked above"),
+            arg_input,
+            options,
+        )?;
         debug!("conversion to Excel XLSX complete");
     } else if args.cmd_ods {
         debug!("converting to ODS");
         arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
         apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
 
-        output =
-            csvs_to_ods_with_options(args.arg_ods.expect("checked above"), arg_input, options)?;
+        output = csvs_to_ods_with_options(
+            args.arg_destination.expect("checked above"),
+            arg_input,
+            options,
+        )?;
         debug!("conversion to ODS complete");
     } else if args.cmd_parquet {
         debug!("converting to Parquet");
         arg_input = process_input(arg_input, &tmpdir, "")?;
         apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
         return to_parquet(
-            args.arg_parquet.as_ref().expect("checked above"),
+            args.arg_destination.as_ref().expect("checked above"),
             arg_input,
             args.flag_delimiter,
             args.flag_compression,
@@ -519,7 +532,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .threads(options.threads)
             .stats_csv(options.stats_csv);
         output = make_datapackage(arg_input, PathBuf::new(), &describe_options.build())?;
-        let file = std::fs::File::create(args.arg_datapackage.expect("checked above"))?;
+        let file = std::fs::File::create(args.arg_destination.expect("checked above"))?;
         serde_json::to_writer_pretty(file, &output)?;
         debug!("Data Package complete");
     } else {
@@ -622,7 +635,7 @@ fn apply_table_rename(
 
 #[cfg(feature = "polars")]
 fn to_parquet(
-    arg_parquet: &str,
+    destination: &str,
     arg_input: Vec<PathBuf>,
     flag_delimiter: Option<Delimiter>,
     flag_compression: Option<String>,
@@ -632,7 +645,7 @@ fn to_parquet(
     flag_try_parse_dates: bool,
     quiet: bool,
 ) -> CliResult<()> {
-    let output_dir = PathBuf::from(&arg_parquet);
+    let output_dir = PathBuf::from(&destination);
     std::fs::create_dir_all(&output_dir)?;
 
     // Parse compression codec
@@ -765,7 +778,7 @@ fn to_parquet(
 
 #[cfg(not(feature = "polars"))]
 fn to_parquet(
-    _arg_parquet: &str,
+    _destination: &str,
     _arg_input: Vec<PathBuf>,
     _flag_delimiter: Option<Delimiter>,
     _flag_compression: Option<String>,

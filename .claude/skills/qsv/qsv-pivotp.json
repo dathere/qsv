@@ -9,7 +9,7 @@
       {
         "name": "on-cols",
         "type": "string",
-        "required": true,
+        "required": false,
         "description": "The column(s) to pivot on (creates new columns). When omitted, pivotp runs in group-by mode."
       },
       {
@@ -107,7 +107,6 @@
     ]
   },
   "hints": {
-    "streamable": true,
     "memory": "constant"
   }
 }

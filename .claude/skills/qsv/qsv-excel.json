@@ -9,7 +9,7 @@
       {
         "name": "input",
         "type": "file",
-        "required": true,
+        "required": false,
         "description": "The spreadsheet file to read. Use \"-\" to read from stdin. Supported formats: xls, xlsx, xlsm, xlsb, ods."
       }
     ],
@@ -86,7 +86,6 @@
     ]
   },
   "hints": {
-    "streamable": true,
     "memory": "constant"
   },
   "examples": [

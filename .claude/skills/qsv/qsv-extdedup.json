@@ -9,13 +9,13 @@
       {
         "name": "input",
         "type": "file",
-        "required": true,
+        "required": false,
         "description": ""
       },
       {
         "name": "output",
         "type": "string",
-        "required": true,
+        "required": false,
         "description": ""
       }
     ],
@@ -64,7 +64,6 @@
     ]
   },
   "hints": {
-    "streamable": true,
     "memory": "constant"
   }
 }

@@ -45,8 +45,6 @@ struct Argument {
     arg_type:    String,
     required:    bool,
     description: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    examples:    Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     r#enum:      Option<Vec<String>>,
 }
@@ -65,10 +63,9 @@ struct Option_ {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct BehavioralHints {
-    streamable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    indexed:    Option<bool>,
-    memory:     String,
+    indexed: Option<bool>,
+    memory:  String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -133,28 +130,132 @@ impl UsageParser {
         })
     }
 
-    /// Extract positional argument names in order from USAGE line
+    /// Extract positional argument names in order from USAGE lines.
+    /// Uses the variant with the most positional args as the base order,
+    /// then appends any additional args from other variants.
+    /// This ensures correct ordering (e.g., validate: <input> before <json-schema>).
     fn extract_arg_order_from_usage(&self) -> Vec<String> {
-        let mut arg_order = Vec::new();
+        // Match positional <args> including docopt's (< >) required syntax,
+        // but NOT option args that follow --flag or -f
+        let positional_re = regex_oncelock!(r"(?:^|\s)[(\[]?<([^>]+)>[)\]]?");
+        let option_arg_re = regex_oncelock!(r"--?\w[\w-]*\s+(?:\[)?<([^>]+)>(?:\])?");
 
-        // Find the main usage line (not --help line)
-        if let Some(usage_line) = self
+        // Collect args per usage line (positional only, excluding option args)
+        let mut per_line_args: Vec<Vec<String>> = Vec::new();
+        for line in self
             .usage_text
             .lines()
             .skip_while(|l| !l.contains("Usage:"))
-            .skip(1) // Skip "Usage:" line
-            .find(|l| !l.trim().ends_with("--help") && l.contains("qsv"))
+            // Skip "Usage:" line
+            .skip(1)
         {
-            // Extract all <arg> and [<arg>] patterns in order
-            let re = regex::Regex::new(r"(?:\[)?<([^>]+)>(?:\])?").unwrap();
-            for cap in re.captures_iter(usage_line) {
-                if let Some(arg_name) = cap.get(1) {
-                    arg_order.push(arg_name.as_str().to_string());
+            let trimmed = line.trim();
+            if trimmed.is_empty() || (!trimmed.contains("qsv") && !trimmed.ends_with("--help")) {
+                break;
+            }
+            if trimmed.ends_with("--help") {
+                continue;
+            }
+
+            // Collect option arg names to exclude
+            let option_args: std::collections::HashSet<String> = option_arg_re
+                .captures_iter(line)
+                .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+                .collect();
+
+            let args: Vec<String> = positional_re
+                .captures_iter(line)
+                .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+                .filter(|name| !option_args.contains(name))
+                .collect();
+            if !args.is_empty() {
+                per_line_args.push(args);
+            }
+        }
+
+        // Use the variant with the most positional args as the base order
+        let base = per_line_args
+            .iter()
+            .max_by_key(|args| args.len())
+            .cloned()
+            .unwrap_or_default();
+
+        let mut arg_order = base;
+        let mut seen: std::collections::HashSet<String> = arg_order.iter().cloned().collect();
+
+        // Append any additional args from other variants not in the base
+        for line_args in &per_line_args {
+            for arg in line_args {
+                if seen.insert(arg.clone()) {
+                    arg_order.push(arg.clone());
                 }
             }
         }
 
         arg_order
+    }
+
+    /// Detect which positional args are optional.
+    /// An arg is optional if:
+    ///   1. It's wrapped in brackets: `[<arg>]` or `[<arg>...]`
+    ///   2. It appears in some usage variants but not all (multi-variant optionality, e.g., pivotp
+    ///      has `<on-cols>` in one variant but not another)
+    fn extract_optional_args_from_usage(&self) -> std::collections::HashSet<String> {
+        let mut optional_args = std::collections::HashSet::new();
+
+        // Regex for bracket-wrapped args: [<argname>] and [<argname>...]
+        let bracket_re = regex::Regex::new(r"\[<([^>]+)>(?:\.\.\.)?\]").unwrap();
+        // Regex for ALL positional args (both bracketed and bare)
+        let all_args_re = regex::Regex::new(r"(?:\[)?<([^>]+)>(?:\])?").unwrap();
+
+        // Collect usage lines (non-help, non-blank)
+        let usage_lines: Vec<&str> = self
+            .usage_text
+            .lines()
+            .skip_while(|l| !l.contains("Usage:"))
+            .skip(1)
+            .take_while(|l| {
+                let t = l.trim();
+                !t.is_empty() && (t.contains("qsv") || t.ends_with("--help"))
+            })
+            .filter(|l| !l.trim().ends_with("--help"))
+            .collect();
+
+        // 1. Bracket-wrapped args are always optional
+        for line in &usage_lines {
+            for cap in bracket_re.captures_iter(line) {
+                if let Some(arg_name) = cap.get(1) {
+                    let name = arg_name.as_str().trim_end_matches("...");
+                    optional_args.insert(name.to_string());
+                }
+            }
+        }
+
+        // 2. Multi-variant optionality: args that appear in some lines but not all
+        if usage_lines.len() > 1 {
+            // Collect all unique arg names across all variants
+            let mut all_args = std::collections::HashSet::new();
+            for line in &usage_lines {
+                for cap in all_args_re.captures_iter(line) {
+                    if let Some(arg_name) = cap.get(1) {
+                        all_args.insert(arg_name.as_str().to_string());
+                    }
+                }
+            }
+
+            // An arg is optional if it doesn't appear in every usage line
+            for arg_name in &all_args {
+                let appears_in_all = usage_lines.iter().all(|line| {
+                    let pattern = format!("<{arg_name}>");
+                    line.contains(&pattern)
+                });
+                if !appears_in_all {
+                    optional_args.insert(arg_name.clone());
+                }
+            }
+        }
+
+        optional_args
     }
 
     /// Parse USAGE text using qsv-docopt Parser for robust parsing
@@ -166,6 +267,9 @@ impl UsageParser {
         let mut args_map = HashMap::new();
         let mut options = Vec::new();
         let mut subcommands = Vec::new();
+
+        // Detect which positional args are optional (wrapped in [] in USAGE text)
+        let optional_args = self.extract_optional_args_from_usage();
 
         // Also parse manually to get descriptions
         let manual_descriptions = self.extract_descriptions_from_text();
@@ -416,9 +520,9 @@ impl UsageParser {
                         Argument {
                             name: arg_name.clone(),
                             arg_type,
-                            required: !opts.arg.has_default(), // If it has a default, it's optional
+                            required: !opts.arg.has_default()
+                                && !optional_args.contains(&arg_name), // Also check USAGE [] syntax
                             description,
-                            examples: Vec::new(),
                             r#enum: None,
                         },
                     );
@@ -457,7 +561,6 @@ impl UsageParser {
                 arg_type:    "string".to_string(),
                 required:    !subcommand_optional, // Usually required, but can be optional
                 description: subcommand_desc,
-                examples:    Vec::new(),
                 r#enum:      Some(subcommands),
             };
 
@@ -479,6 +582,14 @@ impl UsageParser {
             if let Some(arg) = args_map.remove(&arg_name) {
                 args.push(arg);
             }
+        }
+
+        // Append any remaining positional args that docopt parsed but weren't
+        // found in any USAGE line (safety net against silently dropping args)
+        if !args_map.is_empty() {
+            let mut remaining: Vec<_> = args_map.into_values().collect();
+            remaining.sort_by(|a, b| a.name.cmp(&b.name));
+            args.extend(remaining);
         }
 
         // Sort options for consistent output
@@ -594,6 +705,10 @@ impl UsageParser {
                 let arg_name = trimmed[..=close_bracket].trim().to_string();
                 let desc_part = trimmed[close_bracket + 1..].trim();
 
+                // Strip leading "..." (docopt repeating indicator) from description
+                let desc_part = desc_part
+                    .strip_prefix("...")
+                    .map_or(desc_part, str::trim_start);
                 let mut description = desc_part.to_string();
 
                 // Collect multi-line description
@@ -731,13 +846,9 @@ impl UsageParser {
             "constant"
         };
 
-        // Most commands are streamable unless they load everything into memory
-        let streamable = memory == "constant";
-
         Some(BehavioralHints {
-            streamable,
             indexed: if has_indexed { Some(true) } else { None },
-            memory: memory.to_string(),
+            memory:  memory.to_string(),
         })
     }
 
@@ -1078,10 +1189,10 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // - prompt: interactive prompt builder (requires terminal)
     // - scoresql: not available in qsvmcp
     // - snappy: compression utility not needed for AI agents
-    // - to: not available in qsvmcp
     //
     // This list targets commands available in the qsvmcp binary variant.
     let commands = vec![
+        "blake3",
         "cat",
         "count",
         "datefmt",
@@ -1130,6 +1241,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "stats",
         "table",
         "template",
+        "to",
         "tojsonl",
         "transpose",
         "validate",
@@ -1237,7 +1349,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         // Write JSON file
         let output_file = output_dir.join(format!("{}.json", skill.name));
         let json = serde_json::to_string_pretty(&skill)?;
-        fs::write(&output_file, json)?;
+        fs::write(&output_file, json + "\n")?;
 
         eprintln!("  ✅ Generated: {}", output_file.display());
         eprintln!("     - {} argument/s", skill.command.args.len());

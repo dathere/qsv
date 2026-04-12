@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/to.rs](https://github.com/dathere/qsv/blob/master/src/cmd/to.rs)** | [🚀](TableOfContents.md#legend "multithreaded even without an index.")[🐻‍❄️](TableOfContents.md#legend "command powered/accelerated by  vectorized query engine.")[🗄️](TableOfContents.md#legend "Extended input support.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [To Options](#to-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [To Options](#to-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -251,14 +251,23 @@ For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/
 ## Usage [↩](#nav)
 
 ```console
-qsv to parquet [options] <parquet> [<input>...]
-qsv to postgres [options] <postgres> [<input>...]
-qsv to sqlite [options] <sqlite> [<input>...]
-qsv to xlsx [options] <xlsx> [<input>...]
-qsv to ods [options] <ods> [<input>...]
-qsv to datapackage [options] <datapackage> [<input>...]
+qsv to parquet [options] <destination> [<input>...]
+qsv to postgres [options] <destination> [<input>...]
+qsv to sqlite [options] <destination> [<input>...]
+qsv to xlsx [options] <destination> [<input>...]
+qsv to ods [options] <destination> [<input>...]
+qsv to datapackage [options] <destination> [<input>...]
 qsv to --help
 ```
+
+<a name="arguments"></a>
+
+## Arguments [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+|----------|-------------|
+| &nbsp;`<destination>`&nbsp; | The output target, which varies by subcommand:<ul><li>parquet: output directory (created if needed)</li><li>postgres: connection string or env=VAR_NAME (with --dump: dump file path or - for stdout)</li><li>sqlite: database file path (with --dump: dump file path or - for stdout)</li><li>xlsx: output .xlsx file path</li><li>ods: output .ods file path</li><li>datapackage: output .json file path</li></ul> |
+| &nbsp;`<input>`&nbsp; | Input CSV file(s) to convert. Can be file path(s), a directory, an .infile-list file, or `-` for stdin (not supported by parquet subcommand). |
 
 <a name="to-options"></a>
 

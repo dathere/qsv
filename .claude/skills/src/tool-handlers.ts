@@ -661,7 +661,7 @@ export async function handleToolCall(
     const result = await executor.execute(skill, { args, options });
 
     // Auto-run cheap moarstats (without --advanced or --bivariate) after successful stats execution
-    // to enrich the .stats.csv cache with ~18 additional columns at minimal cost.
+    // to enrich the .stats.csv cache with ~25 additional columns at minimal cost.
     // Note: moarstats overwrites the stats CSV in-place by default (no --output needed).
     // This only triggers for commandName === "stats", so moarstats itself won't cause recursion.
     let moarstatsNote = "";
@@ -676,7 +676,7 @@ export async function handleToolCall(
           });
           if (moarstatsResult.success) {
             const duration = moarstatsResult.metadata?.duration ?? "?";
-            moarstatsNote = `\n\n📊 Auto-enriched stats cache with moarstats (~18 additional columns, ${duration}ms)`;
+            moarstatsNote = `\n\n📊 Auto-enriched stats cache with moarstats (~25 additional columns, ${duration}ms)`;
             console.error(`[MCP Tools] moarstats auto-enrichment succeeded (${duration}ms)`);
           } else {
             console.error(`[MCP Tools] moarstats auto-enrichment failed: ${moarstatsResult.stderr}`);

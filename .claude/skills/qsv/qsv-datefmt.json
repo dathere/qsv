@@ -15,7 +15,7 @@
       {
         "name": "input",
         "type": "file",
-        "required": true,
+        "required": false,
         "description": "The input file to read from. If not specified, reads from stdin."
       }
     ],
@@ -103,7 +103,6 @@
     ]
   },
   "hints": {
-    "streamable": true,
     "indexed": true,
     "memory": "constant"
   },

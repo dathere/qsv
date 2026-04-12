@@ -89,7 +89,7 @@ qsv cat --help
 
 | Argument&nbsp; | Description |
 |----------|-------------|
-| &nbsp;`<input>`&nbsp; | ...              The CSV file(s) to read. Use '-' for standard input. If input is a directory, all files in the directory will be read as input. If the input is a file with a '.infile-list' extension, the file will be read as a list of input files. If the input are snappy-compressed files(s), it will be decompressed automatically. |
+| &nbsp;`<input>`&nbsp; | The CSV file(s) to read. Use '-' for standard input. If input is a directory, all files in the directory will be read as input. If the input is a file with a '.infile-list' extension, the file will be read as a list of input files. If the input are snappy-compressed files(s), it will be decompressed automatically. |
 
 <a name="columns-option"></a>
 

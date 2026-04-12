@@ -9,7 +9,7 @@
       {
         "name": "input",
         "type": "file",
-        "required": true,
+        "required": false,
         "description": "The file to sniff. This can be a local file, stdin or a URL (http and https schemes supported)."
       }
     ],
@@ -84,7 +84,6 @@
     ]
   },
   "hints": {
-    "streamable": true,
     "indexed": true,
     "memory": "constant"
   },

@@ -228,7 +228,7 @@ qsv validate --help
 
 | &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
-| &nbsp;`<input>`&nbsp; | ...                 Input CSV file(s) to validate. If not provided, will read from stdin. If input is a directory, all files in the directory will be validated. If the input is a file with a '.infile-list' extension, the file will be read as a list of input files. If the input are snappy-compressed files(s), it will be decompressed automatically. Extended Input Support is only available for RFC 4180 validation mode. |
+| &nbsp;`<input>`&nbsp; | Input CSV file(s) to validate. If not provided, will read from stdin. If input is a directory, all files in the directory will be validated. If the input is a file with a '.infile-list' extension, the file will be read as a list of input files. If the input are snappy-compressed files(s), it will be decompressed automatically. Extended Input Support is only available for RFC 4180 validation mode. |
 | &nbsp;`<json-schema>`&nbsp; | JSON Schema file to validate against. If not provided, `validate` will run in RFC 4180 validation mode. The file can be a local file or a URL (http and https schemes supported). |
 
 <a name="validate-options"></a>

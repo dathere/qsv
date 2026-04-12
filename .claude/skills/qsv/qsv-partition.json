@@ -21,7 +21,7 @@
       {
         "name": "input",
         "type": "file",
-        "required": true,
+        "required": false,
         "description": "The CSV file to read from. If not specified, then the input will be read from stdin."
       }
     ],
@@ -60,7 +60,6 @@
     ]
   },
   "hints": {
-    "streamable": true,
     "memory": "constant"
   }
 }

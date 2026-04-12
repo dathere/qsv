@@ -130,23 +130,38 @@ impl UsageParser {
         })
     }
 
-    /// Extract positional argument names in order from USAGE line
+    /// Extract positional argument names in order from ALL USAGE lines.
+    /// Scans every usage pattern to catch args that only appear in some patterns
+    /// (e.g., validate has <input> in patterns 2-3 but not pattern 1).
     fn extract_arg_order_from_usage(&self) -> Vec<String> {
         let mut arg_order = Vec::new();
+        let mut seen = std::collections::HashSet::new();
 
-        // Find the main usage line (not --help line)
-        if let Some(usage_line) = self
+        // Extract all <arg> and [<arg>] patterns in order
+        let re = regex::Regex::new(r"(?:\[)?<([^>]+)>(?:\])?").unwrap();
+
+        for line in self
             .usage_text
             .lines()
             .skip_while(|l| !l.contains("Usage:"))
             .skip(1) // Skip "Usage:" line
-            .find(|l| !l.trim().ends_with("--help") && l.contains("qsv"))
         {
-            // Extract all <arg> and [<arg>] patterns in order
-            let re = regex::Regex::new(r"(?:\[)?<([^>]+)>(?:\])?").unwrap();
-            for cap in re.captures_iter(usage_line) {
+            let trimmed = line.trim();
+            // Stop at blank line or non-usage content
+            if trimmed.is_empty() || (!trimmed.contains("qsv") && !trimmed.ends_with("--help")) {
+                break;
+            }
+            // Skip --help lines
+            if trimmed.ends_with("--help") {
+                continue;
+            }
+
+            for cap in re.captures_iter(line) {
                 if let Some(arg_name) = cap.get(1) {
-                    arg_order.push(arg_name.as_str().to_string());
+                    let name = arg_name.as_str().to_string();
+                    if seen.insert(name.clone()) {
+                        arg_order.push(name);
+                    }
                 }
             }
         }
@@ -510,6 +525,14 @@ impl UsageParser {
             if let Some(arg) = args_map.remove(&arg_name) {
                 args.push(arg);
             }
+        }
+
+        // Append any remaining positional args that docopt parsed but weren't
+        // found in any USAGE line (safety net against silently dropping args)
+        if !args_map.is_empty() {
+            let mut remaining: Vec<_> = args_map.into_values().collect();
+            remaining.sort_by(|a, b| a.name.cmp(&b.name));
+            args.extend(remaining);
         }
 
         // Sort options for consistent output

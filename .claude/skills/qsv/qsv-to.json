@@ -30,7 +30,7 @@
         "name": "input",
         "type": "file",
         "required": false,
-        "description": "Input CSV file(s) to convert. Can be file path(s), a directory, an .infile-list file, or - for stdin. If not provided, reads from stdin (not supported by parquet subcommand)."
+        "description": "Input CSV file(s) to convert. Can be file path(s), a directory, an .infile-list file, or `-` for stdin (not supported by parquet subcommand)."
       }
     ],
     "options": [

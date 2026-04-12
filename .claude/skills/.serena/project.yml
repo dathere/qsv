@@ -1,5 +1,5 @@
 # the name by which the project can be referenced within Serena
-project_name: "qsv"
+project_name: "qsv-agent-skills"
 
 
 # list of languages for which language servers are started; choose from:
@@ -26,7 +26,7 @@ project_name: "qsv"
 # The first language is the default language and the respective language server will be used as a fallback.
 # Note that when using the JetBrains backend, language servers are not used and this list is correspondingly ignored.
 languages:
-- rust
+- typescript
 
 # the encoding used by text files in the project
 # For a list of possible encodings, see https://docs.python.org/3.11/library/codecs.html#standard-encodings
@@ -39,18 +39,15 @@ ignore_all_files_in_gitignore: true
 # Same syntax as gitignore, so you can use * and **.
 # Note: global ignored_paths from serena_config.yml are also applied additively.
 ignored_paths:
-  - "path/to/venv/**"
   - "docs/**"
-  - "resources/**"
 
 # whether the project is in read-only mode
 # If set to true, all editing tools will be disabled and attempts to use them will result in an error
-# Added on 2025-04-18
 read_only: false
 
 # list of tool names to exclude. We recommend not excluding any tools, see the readme for more details.
 # Below is the complete list of tools for convenience.
-# To make sure you have the latest list of tools, and to view their descriptions, 
+# To make sure you have the latest list of tools, and to view their descriptions,
 # execute `uv run scripts/print_tool_overview.py`.
 #
 #  * `activate_project`: Activates a project by name.
@@ -94,62 +91,14 @@ excluded_tools:
   - initial_instructions
   - get_current_config
 
-# list of tools to include that would otherwise be disabled (particularly optional tools that are disabled by default)
 included_optional_tools: []
-
-# fixed set of tools to use as the base tool set (if non-empty), replacing Serena's default set of tools.
-# This cannot be combined with non-empty excluded_tools or included_optional_tools.
 fixed_tools: []
-
-# list of mode names to that are always to be included in the set of active modes
-# The full set of modes to be activated is base_modes + default_modes.
-# If the setting is undefined, the base_modes from the global configuration (serena_config.yml) apply.
-# Otherwise, this setting overrides the global configuration.
-# Set this to [] to disable base modes for this project.
-# Set this to a list of mode names to always include the respective modes for this project.
 base_modes:
-
-# list of mode names that are to be activated by default.
-# The full set of modes to be activated is base_modes + default_modes.
-# If the setting is undefined, the default_modes from the global configuration (serena_config.yml) apply.
-# Otherwise, this overrides the setting from the global configuration (serena_config.yml).
-# This setting can, in turn, be overridden by CLI parameters (--mode).
 default_modes:
-
-# initial prompt for the project. It will always be given to the LLM upon activating the project
-# (contrary to the memories, which are loaded on demand).
 initial_prompt: ""
-
-# override of the corresponding setting in serena_config.yml, see the documentation there.
-# If null or missing, the value from the global config is used.
 symbol_info_budget:
-
-# The language backend to use for this project.
-# If not set, the global setting from serena_config.yml is used.
-# Valid values: LSP, JetBrains
-# Note: the backend is fixed at startup. If a project with a different backend
-# is activated post-init, an error will be returned.
 language_backend: LSP
-
-# line ending convention to use when writing source files.
-# Possible values: unset (use global setting), "lf", "crlf", or "native" (platform default)
-# This does not affect Serena's own files (e.g. memories and configuration files), which always use native line endings.
 line_ending:
-
-# list of regex patterns which, when matched, mark a memory entry as read‑only.
-# Extends the list from the global configuration, merging the two lists.
 read_only_memory_patterns: []
-
-# list of regex patterns for memories to completely ignore.
-# Matching memories will not appear in list_memories or activate_project output
-# and cannot be accessed via read_memory or write_memory.
-# To access ignored memory files, use the read_file tool on the raw file path.
-# Extends the list from the global configuration, merging the two lists.
-# Example: ["_archive/.*", "_episodes/.*"]
 ignored_memory_patterns: []
-
-# advanced configuration option allowing to configure language server-specific options.
-# Maps the language key to the options.
-# Have a look at the docstring of the constructors of the LS implementations within solidlsp (e.g., for C# or PHP) to see which options are available.
-# No documentation on options means no options are available.
 ls_specific_settings: {}

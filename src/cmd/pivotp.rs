@@ -824,10 +824,7 @@ fn suggest_numeric_after_bimodality(
 
 /// Log message for the mixed-sign cancellation guard.
 fn log_mixed_sign(stats: &StatsData) {
-    let (n_neg, n_pos) = (
-        stats.n_negative.unwrap_or(0),
-        stats.n_positive.unwrap_or(0),
-    );
+    let (n_neg, n_pos) = (stats.n_negative.unwrap_or(0), stats.n_positive.unwrap_or(0));
     let total = n_neg + stats.n_zero.unwrap_or(0) + n_pos;
     let neg_pct = (n_neg.saturating_mul(100) + (total / 2)) / total;
     let pos_pct = (n_pos.saturating_mul(100) + (total / 2)) / total;

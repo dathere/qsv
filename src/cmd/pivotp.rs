@@ -533,7 +533,8 @@ fn suggest_agg_function(
                 } else if stats.sparsity.unwrap_or(0.0) > 0.5 {
                     if !quiet {
                         eprintln!(
-                            "Info: \"{value_col}\" contains >50% NULL values, using Len"
+                            "Info: \"{value_col}\" is a sparse {} column (>50% NULL), using Len",
+                            stats.r#type
                         );
                     }
                     Expr::Element.len()
@@ -795,8 +796,8 @@ fn suggest_numeric_after_bimodality(
             if neg_frac > 0.2 && pos_frac > 0.2 {
                 if !quiet {
                     eprintln!(
-                        "Info: Mixed-sign data ({:.0}% negative, {:.0}% positive), using Mean \
-                         to avoid Sum cancellation",
+                        "Info: Mixed-sign data ({:.0}% negative, {:.0}% positive), using Mean to \
+                         avoid Sum cancellation",
                         neg_frac * 100.0,
                         pos_frac * 100.0
                     );

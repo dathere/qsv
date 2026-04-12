@@ -948,7 +948,13 @@ fn pivotp_smart_moarstats_mad_stddev_ratio() {
 
     let mut cmd = wrk.command("pivotp");
     cmd.args([
-        "group", "--index", "category", "--values", "value", "--agg", "smart",
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "value",
+        "--agg",
+        "smart",
         "mad_stddev.csv",
     ]);
     wrk.assert_success(&mut cmd);
@@ -996,7 +1002,13 @@ fn pivotp_smart_moarstats_median_mean_divergence() {
 
     let mut cmd = wrk.command("pivotp");
     cmd.args([
-        "group", "--index", "category", "--values", "value", "--agg", "smart",
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "value",
+        "--agg",
+        "smart",
         "median_mean.csv",
     ]);
     wrk.assert_success(&mut cmd);
@@ -1059,7 +1071,8 @@ fn pivotp_smart_mixed_sign() {
         .chain((0..40).map(|i| {
             let cat = if i % 2 == 0 { "A" } else { "B" };
             let grp = if i % 2 == 0 { "X" } else { "Y" };
-            // ~50% negative, ~50% positive, low variability so CV < 1
+            // ~50% negative, ~50% positive; mean ≈ 0 so CV is NaN,
+            // which won't preempt the mixed-sign check
             let val = if i < 20 {
                 -(10 + (i % 5))
             } else {
@@ -1077,7 +1090,13 @@ fn pivotp_smart_mixed_sign() {
 
     let mut cmd = wrk.command("pivotp");
     cmd.args([
-        "group", "--index", "category", "--values", "value", "--agg", "smart",
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "value",
+        "--agg",
+        "smart",
         "mixed_sign.csv",
     ]);
     wrk.assert_success(&mut cmd);
@@ -1120,7 +1139,13 @@ fn pivotp_smart_multimodal() {
 
     let mut cmd = wrk.command("pivotp");
     cmd.args([
-        "group", "--index", "category", "--values", "value", "--agg", "smart",
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "value",
+        "--agg",
+        "smart",
         "multimodal.csv",
     ]);
     wrk.assert_success(&mut cmd);
@@ -1139,18 +1164,21 @@ fn pivotp_smart_multimodal() {
 fn pivotp_smart_date_sparse() {
     let wrk = Workdir::new("pivotp_smart_date_sparse");
     // Date column with >50% NULL values
-    let csv_content = "category,group,date_val\n\
-                        A,X,2024-01-01\n\
-                        A,Y,\n\
-                        B,X,\n\
-                        B,Y,2024-02-15\n\
-                        C,X,\n\
-                        C,Y,\n\
-                        A,X,\n\
-                        B,X,\n\
-                        C,X,\n\
-                        A,Y,2024-03-10\n";
-    wrk.create_from_string("date_sparse.csv", csv_content);
+    let csv_content = vec![
+        "category,group,date_val",
+        "A,X,2024-01-01",
+        "A,Y,",
+        "B,X,",
+        "B,Y,2024-02-15",
+        "C,X,",
+        "C,Y,",
+        "A,X,",
+        "B,X,",
+        "C,X,",
+        "A,Y,2024-03-10",
+    ]
+    .join("\n");
+    wrk.create_from_string("date_sparse.csv", &csv_content);
 
     let mut stats_cmd = wrk.command("stats");
     stats_cmd.args(["--everything", "--infer-dates", "date_sparse.csv"]);
@@ -1188,18 +1216,21 @@ fn pivotp_smart_date_sparse() {
 fn pivotp_smart_date_ascending() {
     let wrk = Workdir::new("pivotp_smart_date_ascending");
     // Ascending date values — Last gives the most recent entry
-    let csv_content = "category,group,date_val\n\
-                        A,X,2024-01-01\n\
-                        A,Y,2024-01-15\n\
-                        B,X,2024-02-01\n\
-                        B,Y,2024-02-15\n\
-                        C,X,2024-03-01\n\
-                        C,Y,2024-03-15\n\
-                        A,X,2024-04-01\n\
-                        B,X,2024-04-15\n\
-                        C,X,2024-05-01\n\
-                        A,Y,2024-05-15\n";
-    wrk.create_from_string("date_ascending.csv", csv_content);
+    let csv_content = vec![
+        "category,group,date_val",
+        "A,X,2024-01-01",
+        "A,Y,2024-01-15",
+        "B,X,2024-02-01",
+        "B,Y,2024-02-15",
+        "C,X,2024-03-01",
+        "C,Y,2024-03-15",
+        "A,X,2024-04-01",
+        "B,X,2024-04-15",
+        "C,X,2024-05-01",
+        "A,Y,2024-05-15",
+    ]
+    .join("\n");
+    wrk.create_from_string("date_ascending.csv", &csv_content);
 
     let mut stats_cmd = wrk.command("stats");
     stats_cmd.args(["--everything", "--infer-dates", "date_ascending.csv"]);

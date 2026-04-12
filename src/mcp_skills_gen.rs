@@ -144,8 +144,7 @@ impl UsageParser {
             .usage_text
             .lines()
             .skip_while(|l| !l.contains("Usage:"))
-            .skip(1)
-        // Skip "Usage:" line
+            .skip(1) // Skip "Usage:" line
         {
             let trimmed = line.trim();
             // Stop at blank line or non-usage content
@@ -173,8 +172,8 @@ impl UsageParser {
     /// Detect which positional args are optional.
     /// An arg is optional if:
     ///   1. It's wrapped in brackets: `[<arg>]` or `[<arg>...]`
-    ///   2. It appears in some usage variants but not all (multi-variant optionality,
-    ///      e.g., pivotp has `<on-cols>` in one variant but not another)
+    ///   2. It appears in some usage variants but not all (multi-variant optionality, e.g., pivotp
+    ///      has `<on-cols>` in one variant but not another)
     fn extract_optional_args_from_usage(&self) -> std::collections::HashSet<String> {
         let mut optional_args = std::collections::HashSet::new();
 
@@ -819,7 +818,7 @@ impl UsageParser {
 
         Some(BehavioralHints {
             indexed: if has_indexed { Some(true) } else { None },
-            memory:  memory.to_string(),
+            memory: memory.to_string(),
         })
     }
 

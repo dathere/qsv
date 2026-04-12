@@ -347,10 +347,6 @@ export class SkillExecutor {
       if (value !== undefined) {
         args.push(String(value));
       } else if (arg.required && !forShellScript && !isHelpRequest) {
-        // Skip input validation if stdin is provided or if --help is requested
-        if (arg.name === "input" && params.stdin) {
-          continue;
-        }
         throw new Error(`Missing required argument: ${arg.name}`);
       }
     }
@@ -441,10 +437,6 @@ export class SkillExecutor {
       }
 
       if (arg.required && !params.args?.[arg.name]) {
-        // Skip input validation if stdin is provided
-        if (arg.name === "input" && params.stdin) {
-          continue;
-        }
         throw new Error(`Missing required argument: ${arg.name}`);
       }
 

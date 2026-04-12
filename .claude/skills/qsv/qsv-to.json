@@ -21,15 +21,15 @@
         ]
       },
       {
-        "name": "parquet",
+        "name": "destination",
         "type": "string",
         "required": true,
-        "description": ""
+        "description": "The output target, which varies by subcommand: parquet:     output directory (created if needed) postgres:    connection string or env=VAR_NAME (with --dump: dump file path or - for stdout) sqlite:      database file path (with --dump: dump file path or - for stdout) xlsx:        output .xlsx file path ods:         output .ods file path datapackage: output .json file path"
       },
       {
         "name": "input",
         "type": "file",
-        "required": true,
+        "required": false,
         "description": ""
       }
     ],
@@ -117,7 +117,6 @@
     ]
   },
   "hints": {
-    "streamable": true,
     "memory": "constant"
   }
 }

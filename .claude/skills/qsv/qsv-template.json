@@ -9,7 +9,7 @@
       {
         "name": "input",
         "type": "file",
-        "required": true,
+        "required": false,
         "description": "The CSV file to read. If not given, input is read from STDIN."
       },
       {
@@ -96,7 +96,6 @@
     ]
   },
   "hints": {
-    "streamable": true,
     "indexed": true,
     "memory": "constant"
   }

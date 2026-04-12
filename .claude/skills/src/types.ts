@@ -23,7 +23,6 @@ export interface Argument {
   type: "string" | "number" | "file" | "regex";
   required: boolean;
   description: string;
-  examples?: string[];
   enum?: string[];
 }
 
@@ -41,7 +40,6 @@ export interface Example {
 }
 
 export interface BehavioralHints {
-  streamable: boolean;
   indexed?: boolean;
   memory: "constant" | "proportional" | "full";
 }

@@ -16,7 +16,6 @@
     "options": []
   },
   "hints": {
-    "streamable": true,
     "memory": "constant"
   }
 }

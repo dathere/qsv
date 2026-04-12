@@ -134,7 +134,6 @@
     ]
   },
   "hints": {
-    "streamable": true,
     "indexed": true,
     "memory": "constant"
   }

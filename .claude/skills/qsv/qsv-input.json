@@ -9,7 +9,7 @@
       {
         "name": "input",
         "type": "file",
-        "required": true,
+        "required": false,
         "description": ""
       }
     ],
@@ -85,7 +85,6 @@
     ]
   },
   "hints": {
-    "streamable": true,
     "memory": "constant"
   }
 }

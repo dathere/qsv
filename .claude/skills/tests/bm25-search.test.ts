@@ -28,7 +28,6 @@ function createMockSkill(
     },
     examples: examples.map((desc) => ({ description: desc, command: `qsv ${name}` })),
     hints: {
-      streamable: true,
       memory: "constant" as const,
     },
   };

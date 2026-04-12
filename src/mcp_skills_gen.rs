@@ -45,8 +45,6 @@ struct Argument {
     arg_type:    String,
     required:    bool,
     description: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    examples:    Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     r#enum:      Option<Vec<String>>,
 }
@@ -65,10 +63,9 @@ struct Option_ {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct BehavioralHints {
-    streamable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    indexed:    Option<bool>,
-    memory:     String,
+    indexed: Option<bool>,
+    memory:  String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -157,6 +154,38 @@ impl UsageParser {
         arg_order
     }
 
+    /// Extract names of positional args wrapped in [<...>] (optional in docopt)
+    /// Scans ALL usage lines so optional status is detected even for multi-subcommand commands.
+    fn extract_optional_args_from_usage(&self) -> std::collections::HashSet<String> {
+        let mut optional_args = std::collections::HashSet::new();
+
+        // Regex matches [<argname>] and [<argname>...] — requires outer brackets
+        let re = regex::Regex::new(r"\[<([^>]+)>(?:\.\.\.)?\.?\]").unwrap();
+
+        for line in self
+            .usage_text
+            .lines()
+            .skip_while(|l| !l.contains("Usage:"))
+            .skip(1)
+        {
+            // Stop at the next section (blank line or non-usage content)
+            let trimmed = line.trim();
+            if trimmed.is_empty() || (!trimmed.contains("qsv") && !trimmed.ends_with("--help")) {
+                break;
+            }
+
+            for cap in re.captures_iter(line) {
+                if let Some(arg_name) = cap.get(1) {
+                    // Strip trailing "..." from variadic args like "input..."
+                    let name = arg_name.as_str().trim_end_matches("...");
+                    optional_args.insert(name.to_string());
+                }
+            }
+        }
+
+        optional_args
+    }
+
     /// Parse USAGE text using qsv-docopt Parser for robust parsing
     fn parse_with_docopt(&self) -> Result<(Vec<Argument>, Vec<Option_>), String> {
         // Parse USAGE text with docopt
@@ -166,6 +195,9 @@ impl UsageParser {
         let mut args_map = HashMap::new();
         let mut options = Vec::new();
         let mut subcommands = Vec::new();
+
+        // Detect which positional args are optional (wrapped in [] in USAGE text)
+        let optional_args = self.extract_optional_args_from_usage();
 
         // Also parse manually to get descriptions
         let manual_descriptions = self.extract_descriptions_from_text();
@@ -416,9 +448,9 @@ impl UsageParser {
                         Argument {
                             name: arg_name.clone(),
                             arg_type,
-                            required: !opts.arg.has_default(), // If it has a default, it's optional
+                            required: !opts.arg.has_default()
+                                && !optional_args.contains(&arg_name), // Also check USAGE [] syntax
                             description,
-                            examples: Vec::new(),
                             r#enum: None,
                         },
                     );
@@ -457,7 +489,6 @@ impl UsageParser {
                 arg_type:    "string".to_string(),
                 required:    !subcommand_optional, // Usually required, but can be optional
                 description: subcommand_desc,
-                examples:    Vec::new(),
                 r#enum:      Some(subcommands),
             };
 
@@ -731,11 +762,7 @@ impl UsageParser {
             "constant"
         };
 
-        // Most commands are streamable unless they load everything into memory
-        let streamable = memory == "constant";
-
         Some(BehavioralHints {
-            streamable,
             indexed: if has_indexed { Some(true) } else { None },
             memory: memory.to_string(),
         })

@@ -201,6 +201,7 @@ polars = { version = "0.53", features = [
     "avx512",
     # "aws",
     "binary_encoding",
+    "bitwise",
     "business",
     # "cloud",
     "coalesce",
@@ -226,6 +227,7 @@ polars = { version = "0.53", features = [
     "serde-lazy",
     "strings",
     "string_normalize",
+    "string_pad",
     "sql",
     "timezones",
 ], optional = true }

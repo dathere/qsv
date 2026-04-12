@@ -107,7 +107,7 @@ const DEFAULT_SERVER_INSTRUCTIONS = `qsv is a tabular data-wrangling toolkit. Us
 WORKFLOW ORDER for new files:
 1. qsv_list_files to discover files
 2. qsv_index for files >10MB
-3. qsv_stats --cardinality --stats-jsonl to create the initial stats cache (moarstats auto-runs to enrich with ~18 additional columns)
+3. qsv_stats --cardinality --stats-jsonl to create the initial stats cache (moarstats auto-runs to enrich with ~25 additional columns)
 4. (Optional) qsv_moarstats --advanced or --bivariate for deeper analysis
 5. Run analysis/transformation commands
 The stats cache (specifically .data.jsonl) is what accelerates smart commands: frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. SQL queries on CSV inputs auto-convert to Parquet before execution.

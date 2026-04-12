@@ -43,6 +43,11 @@ Convert tabular data files between formats.
 | JSONL | `tojsonl` | `.jsonl` |
 | JSON | `slice --json` | `.json` |
 | Parquet | `qsv_to_parquet` (core tool) | `.parquet` |
+| XLSX | `to xlsx` (via `qsv_command`) | `.xlsx` |
+| ODS | `to ods` (via `qsv_command`) | `.ods` |
+| SQLite | `to sqlite` (via `qsv_command`) | `.db` |
+| PostgreSQL | `to postgres` (via `qsv_command`) | N/A |
+| Data Package | `to datapackage` (via `qsv_command`) | `.json` |
 
 ## Steps
 
@@ -58,7 +63,19 @@ Convert tabular data files between formats.
 
    - **To JSONL**: Use `qsv_command` with `command: "tojsonl"`.
 
-   - **To Parquet**: Use `qsv_to_parquet` (dedicated core tool).
+   - **To Parquet (single file)**: Use `qsv_to_parquet` (core tool) — auto-generates stats cache and Polars schema for optimal type inference.
+
+   - **To Parquet (batch)**: Use `qsv_command` with `command: "to"`, `args: ["parquet", "output_dir"]` for batch conversion with explicit compression control.
+
+   - **To XLSX**: Use `qsv_command` with `command: "to"`, `args: ["xlsx", "output.xlsx"]`.
+
+   - **To ODS**: Use `qsv_command` with `command: "to"`, `args: ["ods", "output.ods"]`.
+
+   - **To SQLite**: Use `qsv_command` with `command: "to"`, `args: ["sqlite", "output.db"]`.
+
+   - **To PostgreSQL**: Use `qsv_command` with `command: "to"`, `args: ["postgres", "connection_string"]`.
+
+   - **To Data Package**: Use `qsv_command` with `command: "to"`, `args: ["datapackage", "output.json"]`.
 
 4. **Verify output**: Run `qsv_count` on the output (if CSV-based) to confirm row count matches input.
 

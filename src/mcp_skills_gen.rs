@@ -1078,10 +1078,10 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // - prompt: interactive prompt builder (requires terminal)
     // - scoresql: not available in qsvmcp
     // - snappy: compression utility not needed for AI agents
-    // - to: not available in qsvmcp
     //
     // This list targets commands available in the qsvmcp binary variant.
     let commands = vec![
+        "blake3",
         "cat",
         "count",
         "datefmt",
@@ -1130,6 +1130,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "stats",
         "table",
         "template",
+        "to",
         "tojsonl",
         "transpose",
         "validate",

@@ -85,3 +85,9 @@ Run `moarstats --advanced` to enrich the cache with distribution shape metrics:
 | `cv` | >100% = high relative variability; data is highly spread relative to mean |
 | `mad_stddev_ratio` | >0.8 = stddev is reliable; <<0.8 = outliers inflating stddev |
 | `mode_zscore` | Far from 0 = mode is atypical; possible mixed populations |
+| `trimean` | Robust central tendency: (Q1 + 2*median + Q3)/4; compare to mean for skew detection |
+| `midhinge` | Midpoint of middle 50%: (Q1+Q3)/2; robust center measure |
+| `robust_cv` | MAD/abs(median); outlier-resistant coefficient of variation |
+| `theil_index` | Inequality measure (0=equal); decomposable into within/between group; only for positive values |
+| `mean_abs_dev` | Average absolute distance from mean; less sensitive to outliers than stddev |
+| `simpsons_diversity` | Probability two random values differ (0-1); more intuitive than entropy |

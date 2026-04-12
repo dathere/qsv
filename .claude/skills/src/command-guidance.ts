@@ -34,13 +34,13 @@ export const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   },
   stats: {
     whenToUse: "Quick numeric stats (mean, min/max, stddev). Creates cache for other commands. Run 2nd after index.",
-    commonPattern: `Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. Moarstats is auto-run after stats to enrich the cache with ~18 additional columns.`,
+    commonPattern: `Run 2nd (after index). Creates cache used by frequency, schema, tojsonl, sqlp, joinp, pivotp, describegpt, moarstats, sample. Moarstats is auto-run after stats to enrich the cache with ~25 additional columns.`,
     errorPrevention: "Works with CSV/TSV/SSV files only. For SQL queries, use sqlp. Run qsv_index first for files >10MB.",
     needsIndexHint: true,
   },
   moarstats: {
     whenToUse: "Basic moarstats is auto-run after stats. Only invoke manually for --advanced (kurtosis, entropy, gini, etc.) or --bivariate (pairwise correlations).",
-    commonPattern: "Basic moarstats runs automatically after stats to enrich the .stats.csv cache. Invoke manually only for --advanced or --bivariate. When running manually, set output_file to the stats cache path (<FILESTEM>.stats.csv, e.g. for data.csv use output_file=data.stats.csv). Enriches .stats.csv with ~18 additional columns for richer LLM analysis — moarstats enriches .stats.csv only, not .data.jsonl; smart commands still use .data.jsonl. With --bivariate: main stats to --output, bivariate stats to <FILESTEM>.stats.bivariate.csv (separate file next to input).",
+    commonPattern: "Basic moarstats runs automatically after stats to enrich the .stats.csv cache. Invoke manually only for --advanced or --bivariate. When running manually, set output_file to the stats cache path (<FILESTEM>.stats.csv, e.g. for data.csv use output_file=data.stats.csv). Enriches .stats.csv with ~25 additional columns (including trimean, midhinge, robust_cv, jarque_bera, theil_index, mean_abs_dev, simpsons_diversity) for richer LLM analysis — moarstats enriches .stats.csv only, not .data.jsonl; smart commands still use .data.jsonl. With --bivariate: main stats to --output, bivariate stats to <FILESTEM>.stats.bivariate.csv (separate file next to input).",
     errorPrevention: "Run stats first to create cache. IMPORTANT: Only run --bivariate when requested as it's expensive. It writes results to a SEPARATE file: <FILESTEM>.stats.bivariate.csv (located next to the input file, NOT in stdout/output). Always read this file to get bivariate results. With --join-inputs, the file is <FILESTEM>.stats.bivariate.joined.csv.",
     needsMemoryWarning: true,
     hasCommonMistakes: true,
@@ -150,9 +150,9 @@ export const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
     needsIndexHint: true,
   },
   pivotp: {
-    whenToUse: "Polars-powered pivot tables. Use --agg for aggregation (sum/mean/count/first/last/min/max/smart). Use qsv_stats --cardinality to check pivot column cardinality.",
-    commonPattern: "Stats → Pivot: Use qsv_stats --cardinality to estimate pivot output width (pivot column cardinality × value columns) and keep estimated columns below ~1000 to avoid overly wide pivots. Use stats type column to pick the right --agg: sum/mean for numeric, count for categorical.",
-    errorPrevention: "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns.",
+    whenToUse: "Polars-powered pivot tables and group-by aggregations. PIVOT MODE: provide <on-cols> with --agg (sum/mean/count/first/last/min/max/smart). GROUP-BY MODE: omit <on-cols> to aggregate without pivoting (requires --index). Use qsv_stats --cardinality to check pivot column cardinality.",
+    commonPattern: "Stats → Pivot: Use qsv_stats --cardinality to estimate pivot output width (pivot column cardinality × value columns) and keep estimated columns below ~1000. Group-by: pivotp input.csv --index group-col --values val-col --agg sum (omit <on-cols>). Use stats type column to pick the right --agg: sum/mean for numeric, count for categorical.",
+    errorPrevention: "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns. In group-by mode, --index is required and --agg smart resolves to len (count). The none aggregation is not supported in group-by mode.",
     hasCommonMistakes: true,
   },
   excel: {
@@ -292,6 +292,23 @@ export const COMMAND_GUIDANCE: Record<string, CommandGuidance> = {
   flatten: {
     whenToUse:
       "Display each row vertically (one field per line). For inspecting wide CSVs with many columns in the terminal.",
+  },
+  blake3: {
+    whenToUse:
+      "Compute BLAKE3 cryptographic hashes of files for integrity verification. Fast, parallel hashing with optional keyed hashing and key derivation.",
+    commonPattern:
+      "Hash files: blake3 file.csv > checksums.b3. Verify: blake3 --check checksums.b3. Use --no-names for just the hash value.",
+    errorPrevention:
+      "This is a FILE hashing command — hashes entire files, not individual CSV rows or columns. For per-row hashing, use luau.",
+  },
+  to: {
+    whenToUse:
+      "Convert CSV to Parquet, PostgreSQL, SQLite, XLSX, ODS, or Data Package. Supports batch conversion of multiple files. For single-file CSV-to-Parquet, prefer qsv_to_parquet (core tool) which auto-runs stats and generates Polars schema.",
+    commonPattern:
+      "Parquet: to parquet output_dir file.csv. Database: to postgres 'connection_string' file.csv. Spreadsheet: to xlsx output.xlsx file.csv. Batch: to parquet output_dir file1.csv file2.csv.",
+    errorPrevention:
+      "For single-file Parquet, prefer qsv_to_parquet core tool (auto-generates stats + schema for optimal type inference). Use 'to parquet' for batch conversion or when you need explicit control. For PostgreSQL, a connection string is required.",
+    hasCommonMistakes: true,
   },
 };
 

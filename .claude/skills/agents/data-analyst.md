@@ -1,7 +1,7 @@
 ---
 name: data-analyst
 description: Read-only data exploration, statistical analysis, and reporting agent
-version: 18.0.0
+version: 19.0.0
 license: MIT
 allowed-tools:
   # Discovery

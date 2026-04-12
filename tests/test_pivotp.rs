@@ -1110,7 +1110,10 @@ fn pivotp_smart_mixed_sign() {
 }
 
 // Test smart aggregation — complex multimodal (>10 modes) should pick Len
-// Requires moarstats to preserve the stats cache with mode_count
+// mode_count comes from `stats --everything` (or `--mode`). We also run
+// moarstats so that pivotp reads the existing cache rather than re-running
+// stats with FrequencyForceStats (which only produces streaming stats and
+// would not include mode_count).
 #[test]
 fn pivotp_smart_multimodal() {
     let wrk = Workdir::new("pivotp_smart_multimodal");
@@ -1128,7 +1131,8 @@ fn pivotp_smart_multimodal() {
         .join("\n");
     wrk.create_from_string("multimodal.csv", &csv_content);
 
-    // stats --everything + moarstats so pivotp reads the full cache with mode_count
+    // stats --everything produces mode_count; moarstats prevents pivotp
+    // from overwriting the cache with a streaming-only re-run
     let mut stats_cmd = wrk.command("stats");
     stats_cmd.args(["--everything", "multimodal.csv"]);
     wrk.assert_success(&mut stats_cmd);

@@ -54,8 +54,11 @@ pivotp options:
                               len - Count of values
                               item - Get single value from group. Raises error if there are multiple values.
                               smart - use value column data type & statistics to pick an aggregation.
-                                      From base stats, uses type, cardinality, sparsity, CV, skewness,
-                                      sort_order, mode_count and sign distribution (n_negative/n_positive).
+                                      Always uses type, cardinality, sparsity, CV, and sign
+                                      distribution (n_negative/n_positive) from streaming stats.
+                                      When the stats cache includes non-streaming stats (from a
+                                      prior `stats --everything` or `stats --mode --quartiles`),
+                                      also uses skewness, mode_count, and sort_order.
                                       When moarstats has been run, also leverages outlier profile,
                                       Pearson skewness, MAD/stddev ratio, median/mean ratio, and
                                       quartile coefficient of dispersion for smarter selection.
@@ -637,7 +640,6 @@ fn suggest_agg_function(
 /// Contains the remaining moarstats-aware checks (outliers, kurtosis, Gini,
 /// MAD/stddev divergence, mean/median divergence, quartile dispersion)
 /// followed by the original CV, cardinality, and skewness logic.
-#[allow(clippy::cast_precision_loss)]
 #[allow(clippy::fn_params_excessive_bools)]
 fn suggest_numeric_after_bimodality(
     stats: &StatsData,
@@ -738,6 +740,17 @@ fn suggest_numeric_after_bimodality(
         return Expr::Element.median();
     }
 
+    // Mixed-sign cancellation guard — Sum cancels out with substantial
+    // negative and positive values, Mean is more informative.
+    // Uses integer arithmetic (n * 5 > total ≡ n/total > 20%) to avoid
+    // f64 casts.
+    let is_mixed_sign = if let (Some(n_neg), Some(n_pos)) = (stats.n_negative, stats.n_positive) {
+        let total = n_neg + stats.n_zero.unwrap_or(0) + n_pos;
+        total > 0 && n_neg.saturating_mul(5) > total && n_pos.saturating_mul(5) > total
+    } else {
+        false
+    };
+
     // Original: high cardinality pivot + index
     if high_cardinality_pivot && high_cardinality_index {
         // moarstats: near-uniform distribution makes aggregation uninformative
@@ -750,6 +763,14 @@ fn suggest_numeric_after_bimodality(
                 );
             }
             return Expr::Element.len();
+        }
+
+        // Mixed-sign guard applies here too — Sum would cancel out
+        if is_mixed_sign {
+            if !quiet {
+                log_mixed_sign(stats);
+            }
+            return Expr::Element.mean();
         }
 
         if ordered_pivot && ordered_index {
@@ -786,25 +807,12 @@ fn suggest_numeric_after_bimodality(
         return Expr::Element.median();
     }
 
-    // Mixed-sign cancellation guard — Sum cancels out with substantial
-    // negative and positive values, Mean is more informative
-    if let (Some(n_neg), Some(n_pos)) = (stats.n_negative, stats.n_positive) {
-        let total = n_neg + stats.n_zero.unwrap_or(0) + n_pos;
-        if total > 0 {
-            let neg_frac = n_neg as f64 / total as f64;
-            let pos_frac = n_pos as f64 / total as f64;
-            if neg_frac > 0.2 && pos_frac > 0.2 {
-                if !quiet {
-                    eprintln!(
-                        "Info: Mixed-sign data ({:.0}% negative, {:.0}% positive), using Mean to \
-                         avoid Sum cancellation",
-                        neg_frac * 100.0,
-                        pos_frac * 100.0
-                    );
-                }
-                return Expr::Element.mean();
-            }
+    // Mixed-sign guard for the default path
+    if is_mixed_sign {
+        if !quiet {
+            log_mixed_sign(stats);
         }
+        return Expr::Element.mean();
     }
 
     // Default for numeric
@@ -812,6 +820,21 @@ fn suggest_numeric_after_bimodality(
         eprintln!("Info: Using Sum for \"{value_col}\"");
     }
     Expr::Element.sum()
+}
+
+/// Log message for the mixed-sign cancellation guard.
+fn log_mixed_sign(stats: &StatsData) {
+    let (n_neg, n_pos) = (
+        stats.n_negative.unwrap_or(0),
+        stats.n_positive.unwrap_or(0),
+    );
+    let total = n_neg + stats.n_zero.unwrap_or(0) + n_pos;
+    let neg_pct = (n_neg.saturating_mul(100) + (total / 2)) / total;
+    let pos_pct = (n_pos.saturating_mul(100) + (total / 2)) / total;
+    eprintln!(
+        "Info: Mixed-sign data ({neg_pct}% negative, {pos_pct}% positive), using Mean to avoid \
+         Sum cancellation"
+    );
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {

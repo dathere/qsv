@@ -54,9 +54,18 @@ pivotp options:
                               len - Count of values
                               item - Get single value from group. Raises error if there are multiple values.
                               smart - use value column data type & statistics to pick an aggregation.
-                                      When moarstats has been run, leverages outlier profile and
-                                      Pearson skewness for smarter selection. With moarstats --advanced,
-                                      also uses kurtosis, bimodality, entropy and Gini coefficient.
+                                      Always uses type, cardinality, sparsity, CV, sign
+                                      distribution (n_negative/n_positive), and sort_order
+                                      from streaming stats.
+                                      When the stats cache includes non-streaming stats (from a
+                                      prior `stats --everything` or `stats --mode --quartiles`),
+                                      also uses skewness and mode_count.
+                                      When moarstats has been run, also leverages outlier profile,
+                                      Pearson skewness, MAD/stddev ratio, median/mean ratio, and
+                                      quartile coefficient of dispersion for smarter selection.
+                                      With moarstats --advanced, also uses kurtosis, bimodality,
+                                      entropy and Gini coefficient.
+                                      For Date/DateTime values, checks sparsity and sort order.
                                       Will only work if there is one value column, otherwise
                                       it falls back to `first`
                             [default: smart]
@@ -475,6 +484,17 @@ fn suggest_agg_function(
                         eprintln!("Info: \"{value_col}\" contains >50% NULL values, using Len");
                     }
                     Expr::Element.len()
+                } else if let Some(mc) = stats.mode_count
+                    && mc > 10
+                {
+                    // Complex multimodal — more than 10 tied modes means
+                    // central tendency is especially misleading
+                    if !quiet {
+                        eprintln!(
+                            "Info: Complex multimodal distribution ({mc} modes > 10), using Len"
+                        );
+                    }
+                    Expr::Element.len()
                 } else if let Some(bc) = stats.bimodality_coefficient {
                     if bc >= 0.555 {
                         // Bimodal distribution — central tendency is misleading
@@ -514,6 +534,14 @@ fn suggest_agg_function(
                         eprintln!("Info: \"{value_col}\" contains only one value, using Item");
                     }
                     Expr::Element.item(true)
+                } else if stats.sparsity.unwrap_or(0.0) > 0.5 {
+                    if !quiet {
+                        eprintln!(
+                            "Info: \"{value_col}\" is a sparse {} column (>50% NULL), using Len",
+                            stats.r#type
+                        );
+                    }
+                    Expr::Element.len()
                 } else if high_cardinality_pivot || high_cardinality_index {
                     if ordered_pivot && ordered_index {
                         if !quiet {
@@ -531,6 +559,18 @@ fn suggest_agg_function(
                         }
                         Expr::Element.first()
                     }
+                } else if let Some(sort_order) = &stats.sort_order
+                    && sort_order.starts_with("Ascending")
+                {
+                    // Value column itself is sorted ascending — most recent entry
+                    // is typically most useful for temporal data
+                    if !quiet {
+                        eprintln!(
+                            "Info: Ascending {} values detected, using Last for most recent",
+                            stats.r#type
+                        );
+                    }
+                    Expr::Element.last()
                 } else {
                     if !quiet {
                         eprintln!("Info: Using Len for {} column", stats.r#type);
@@ -598,7 +638,8 @@ fn suggest_agg_function(
 }
 
 /// Helper for numeric aggregation decisions after the bimodality check.
-/// Contains the remaining moarstats-aware checks (outliers, kurtosis, Gini)
+/// Contains the remaining moarstats-aware checks (outliers, kurtosis, Gini,
+/// MAD/stddev divergence, mean/median divergence, quartile dispersion)
 /// followed by the original CV, cardinality, and skewness logic.
 #[allow(clippy::fn_params_excessive_bools)]
 fn suggest_numeric_after_bimodality(
@@ -650,6 +691,45 @@ fn suggest_numeric_after_bimodality(
         return Expr::Element.median();
     }
 
+    // moarstats: robust vs non-robust spread divergence — outliers inflate stddev
+    if let Some(msr) = stats.mad_stddev_ratio
+        && msr < 0.5
+    {
+        if !quiet {
+            eprintln!(
+                "Info: Robust/non-robust spread divergence (MAD/stddev ratio {msr:.3} < 0.5), \
+                 using Median"
+            );
+        }
+        return Expr::Element.median();
+    }
+
+    // moarstats: direct mean/median divergence
+    if let Some(mmr) = stats.median_mean_ratio
+        && !(0.7..=1.3).contains(&mmr)
+    {
+        if !quiet {
+            eprintln!(
+                "Info: Mean/median divergence (ratio {mmr:.3}, outside 0.7\u{2013}1.3), using \
+                 Median"
+            );
+        }
+        return Expr::Element.median();
+    }
+
+    // moarstats: robust quartile-based variability
+    if let Some(qcd) = stats.quartile_coefficient_dispersion
+        && qcd > 0.5
+    {
+        if !quiet {
+            eprintln!(
+                "Info: High robust variability (quartile coefficient of dispersion {qcd:.3} > \
+                 0.5), using Median"
+            );
+        }
+        return Expr::Element.median();
+    }
+
     // Original: high CV
     if stats.cv > Some(1.0) {
         if !quiet {
@@ -660,6 +740,17 @@ fn suggest_numeric_after_bimodality(
         }
         return Expr::Element.median();
     }
+
+    // Mixed-sign cancellation guard — Sum cancels out with substantial
+    // negative and positive values, Mean is more informative.
+    // Uses integer arithmetic (n * 5 > total ≡ n/total > 20%) to avoid
+    // f64 casts.
+    let is_mixed_sign = if let (Some(n_neg), Some(n_pos)) = (stats.n_negative, stats.n_positive) {
+        let total = n_neg + stats.n_zero.unwrap_or(0) + n_pos;
+        total > 0 && n_neg.saturating_mul(5) > total && n_pos.saturating_mul(5) > total
+    } else {
+        false
+    };
 
     // Original: high cardinality pivot + index
     if high_cardinality_pivot && high_cardinality_index {
@@ -673,6 +764,14 @@ fn suggest_numeric_after_bimodality(
                 );
             }
             return Expr::Element.len();
+        }
+
+        // Mixed-sign guard applies here too — Sum would cancel out
+        if is_mixed_sign {
+            if !quiet {
+                log_mixed_sign(stats);
+            }
+            return Expr::Element.mean();
         }
 
         if ordered_pivot && ordered_index {
@@ -709,11 +808,31 @@ fn suggest_numeric_after_bimodality(
         return Expr::Element.median();
     }
 
+    // Mixed-sign guard for the default path
+    if is_mixed_sign {
+        if !quiet {
+            log_mixed_sign(stats);
+        }
+        return Expr::Element.mean();
+    }
+
     // Default for numeric
     if !quiet {
         eprintln!("Info: Using Sum for \"{value_col}\"");
     }
     Expr::Element.sum()
+}
+
+/// Log message for the mixed-sign cancellation guard.
+fn log_mixed_sign(stats: &StatsData) {
+    let (n_neg, n_pos) = (stats.n_negative.unwrap_or(0), stats.n_positive.unwrap_or(0));
+    let total = n_neg + stats.n_zero.unwrap_or(0) + n_pos;
+    let neg_pct = (n_neg.saturating_mul(100) + (total / 2)) / total;
+    let pos_pct = (n_pos.saturating_mul(100) + (total / 2)) / total;
+    eprintln!(
+        "Info: Mixed-sign data ({neg_pct}% negative, {pos_pct}% positive), using Mean to avoid \
+         Sum cancellation"
+    );
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {

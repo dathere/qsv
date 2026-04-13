@@ -26,8 +26,9 @@ export function sanitizeErrorForClient(message: string): string {
   return message.replace(
     /(?:[A-Za-z]:\\|\/)[^\s:,"']+/g,
     (match) => {
-      const parts = match.split(/[/\\]/);
-      return parts[parts.length - 1] || match;
+      const trimmedMatch = match.replace(/[/\\]+$/g, "");
+      const parts = trimmedMatch.split(/[/\\]/);
+      return parts[parts.length - 1] || trimmedMatch || match;
     },
   );
 }

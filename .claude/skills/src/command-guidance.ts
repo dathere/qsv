@@ -105,8 +105,8 @@ export async function loadCommandGuidance(): Promise<
     const content = await readFile(yamlPath, "utf-8");
     const parsed = parseYaml(content) as Record<string, unknown>;
 
-    if (typeof parsed !== "object" || parsed === null) {
-      throw new Error("YAML root must be a mapping");
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new Error("YAML root must be a mapping, not a sequence or scalar");
     }
 
     const result: Record<string, CommandGuidance> = {};
@@ -116,6 +116,10 @@ export async function loadCommandGuidance(): Promise<
       } else {
         console.error(`[Guidance] Skipping invalid entry for "${cmd}"`);
       }
+    }
+
+    if (Object.keys(result).length === 0) {
+      throw new Error("YAML parsed but produced 0 valid entries");
     }
 
     commandGuidance = result;

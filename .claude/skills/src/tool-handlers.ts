@@ -1066,7 +1066,7 @@ export async function handleSearchToolsCall(
   const isRegexPattern = query.startsWith("/") && query.endsWith("/");
   if (isRegexPattern) {
     const regexStr = query.slice(1, -1);
-    // Guard against ReDoS: reject overly long or suspiciously nested patterns
+    // Guard against ReDoS by rejecting overly long patterns before compilation.
     const MAX_REGEX_LENGTH = 200;
     if (regexStr.length > MAX_REGEX_LENGTH) {
       return errorResult(`Regex pattern too long (${regexStr.length} chars, max ${MAX_REGEX_LENGTH}). Use a simpler pattern or text search.`);

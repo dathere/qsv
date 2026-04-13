@@ -968,6 +968,9 @@ class QsvMcpServer {
       } catch (syncError: unknown) {
         const message = getErrorMessage(syncError);
         syncErrorMessage = message;
+        // Restore the manual flag so roots notifications don't change the
+        // directory behind the user's back after a failed "auto" attempt.
+        this.workingDirManager.markManuallySet();
         console.error(
           `[Roots] Auto-sync from "auto" keyword failed: ${message}`,
         );

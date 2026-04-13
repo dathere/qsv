@@ -1156,6 +1156,7 @@ export async function handleSearchToolsCall(
   }
   resultText += ":\n\n";
 
+  const guidance = getCommandGuidance();
   for (const skill of limitedResults) {
     const toolName = skill.name.replace("qsv-", "qsv_");
     // Truncate description to first sentence for conciseness
@@ -1165,7 +1166,7 @@ export async function handleSearchToolsCall(
     }
 
     // Get when-to-use guidance if available
-    const whenToUse = getCommandGuidance()[skill.command.subcommand]?.whenToUse;
+    const whenToUse = guidance[skill.command.subcommand]?.whenToUse;
 
     resultText += `**${toolName}** [${skill.category}]\n`;
     resultText += `  ${shortDesc}\n`;

@@ -97,7 +97,7 @@ describe("COMMAND_GUIDANCE map", () => {
 // ============================================================================
 
 describe("loadCommandGuidance", () => {
-  test("loads non-empty guidance from YAML", async () => {
+  test("validates loaded guidance is non-empty", () => {
     const guidance = getCommandGuidance();
     assert.ok(Object.keys(guidance).length >= 50, "Should have at least 50 entries");
   });

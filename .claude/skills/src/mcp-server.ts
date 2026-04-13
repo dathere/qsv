@@ -51,6 +51,7 @@ import {
   killAllProcesses,
   getActiveProcessCount,
   setToolsWorkingDir,
+  loadCommandGuidance,
 } from "./mcp-tools.js";
 // @ts-ignore — moduleResolution:"node" can't resolve exports-mapped subpath; runtime resolves fine
 import { getUiCapability, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
@@ -1199,6 +1200,9 @@ class QsvMcpServer {
         configurable: true,
       });
     }
+
+    // Load command guidance from YAML before tools are listed
+    await loadCommandGuidance();
 
     console.error("Starting QSV MCP Server...");
 

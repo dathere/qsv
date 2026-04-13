@@ -5,14 +5,21 @@
  * contextual hints, parameter descriptions, and emoji conventions.
  */
 
-import { test, describe } from "node:test";
+import { test, describe, before } from "node:test";
 import assert from "node:assert";
 import {
-  COMMAND_GUIDANCE,
+  loadCommandGuidance,
+  getCommandGuidance,
+  _resetGuidance,
   enhanceParameterDescription,
   enhanceDescription,
 } from "../src/command-guidance.js";
 import type { QsvSkill } from "../src/types.js";
+
+// Load guidance from YAML before all tests
+before(async () => {
+  await loadCommandGuidance();
+});
 
 // ============================================================================
 // COMMAND_GUIDANCE structure
@@ -20,6 +27,7 @@ import type { QsvSkill } from "../src/types.js";
 
 describe("COMMAND_GUIDANCE map", () => {
   test("contains entries for all critical commands", () => {
+    const guidance = getCommandGuidance();
     const criticalCommands = [
       "select", "stats", "moarstats", "frequency", "sqlp",
       "joinp", "join", "sort", "dedup", "count", "headers",
@@ -27,14 +35,14 @@ describe("COMMAND_GUIDANCE map", () => {
     ];
     for (const cmd of criticalCommands) {
       assert.ok(
-        COMMAND_GUIDANCE[cmd],
+        guidance[cmd],
         `Missing guidance for critical command: ${cmd}`,
       );
     }
   });
 
   test("all entries have at least whenToUse", () => {
-    for (const [cmd, guidance] of Object.entries(COMMAND_GUIDANCE)) {
+    for (const [cmd, guidance] of Object.entries(getCommandGuidance())) {
       assert.ok(
         guidance.whenToUse,
         `Command "${cmd}" is missing whenToUse guidance`,
@@ -43,12 +51,13 @@ describe("COMMAND_GUIDANCE map", () => {
   });
 
   test("memory-warning commands have needsMemoryWarning flag", () => {
+    const guidance = getCommandGuidance();
     const memoryCommands = ["dedup", "sort", "frequency", "transpose", "table", "reverse"];
     for (const cmd of memoryCommands) {
-      const guidance = COMMAND_GUIDANCE[cmd];
-      if (guidance) {
+      const entry = guidance[cmd];
+      if (entry) {
         assert.strictEqual(
-          guidance.needsMemoryWarning,
+          entry.needsMemoryWarning,
           true,
           `Memory-intensive command "${cmd}" should have needsMemoryWarning`,
         );
@@ -57,12 +66,13 @@ describe("COMMAND_GUIDANCE map", () => {
   });
 
   test("index-accelerated commands have needsIndexHint flag", () => {
+    const guidance = getCommandGuidance();
     const indexedCommands = ["search", "sample", "validate", "template", "luau"];
     for (const cmd of indexedCommands) {
-      const guidance = COMMAND_GUIDANCE[cmd];
-      if (guidance) {
+      const entry = guidance[cmd];
+      if (entry) {
         assert.strictEqual(
-          guidance.needsIndexHint,
+          entry.needsIndexHint,
           true,
           `Index-accelerated command "${cmd}" should have needsIndexHint`,
         );
@@ -71,7 +81,7 @@ describe("COMMAND_GUIDANCE map", () => {
   });
 
   test("commands with hasCommonMistakes also have errorPrevention", () => {
-    for (const [cmd, guidance] of Object.entries(COMMAND_GUIDANCE)) {
+    for (const [cmd, guidance] of Object.entries(getCommandGuidance())) {
       if (guidance.hasCommonMistakes) {
         assert.ok(
           guidance.errorPrevention,
@@ -79,6 +89,23 @@ describe("COMMAND_GUIDANCE map", () => {
         );
       }
     }
+  });
+});
+
+// ============================================================================
+// loadCommandGuidance
+// ============================================================================
+
+describe("loadCommandGuidance", () => {
+  test("loads non-empty guidance from YAML", async () => {
+    const guidance = getCommandGuidance();
+    assert.ok(Object.keys(guidance).length >= 50, "Should have at least 50 entries");
+  });
+
+  test("returns cached result on subsequent calls", async () => {
+    const first = await loadCommandGuidance();
+    const second = await loadCommandGuidance();
+    assert.strictEqual(first, second, "Should return same cached object");
   });
 });
 
@@ -208,7 +235,7 @@ describe("enhanceDescription", () => {
   test("skips error prevention when hasCommonMistakes is false", () => {
     const result = enhanceDescription(makeSkill("slice"));
     // slice has no hasCommonMistakes, so no errorPrevention text
-    const guidance = COMMAND_GUIDANCE["slice"];
+    const guidance = getCommandGuidance()["slice"];
     if (guidance?.errorPrevention) {
       assert.ok(!result.includes(guidance.errorPrevention));
     }

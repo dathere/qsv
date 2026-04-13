@@ -57,7 +57,7 @@ import {
   normalizeTableRefs,
   translateSql,
 } from "./duckdb.js";
-import { COMMAND_GUIDANCE } from "./command-guidance.js";
+import { getCommandGuidance } from "./command-guidance.js";
 
 /** Token usage from a describegpt cached response. */
 interface DescribegptTokenUsage {
@@ -1165,7 +1165,7 @@ export async function handleSearchToolsCall(
     }
 
     // Get when-to-use guidance if available
-    const whenToUse = COMMAND_GUIDANCE[skill.command.subcommand]?.whenToUse;
+    const whenToUse = getCommandGuidance()[skill.command.subcommand]?.whenToUse;
 
     resultText += `**${toolName}** [${skill.category}]\n`;
     resultText += `  ${shortDesc}\n`;

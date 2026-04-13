@@ -48,6 +48,11 @@ export class WorkingDirManager {
     this.workingDirConfirmed = true;
   }
 
+  /** Clear the manual flag so roots auto-sync works again. */
+  clearManuallySet(): void {
+    this.manuallySetWorkingDir = false;
+  }
+
   /**
    * Ensure the working directory is confirmed before a data tool runs.
    * If not yet confirmed, triggers elicitation (or awaits an in-progress one).

@@ -1067,6 +1067,8 @@ export async function handleSearchToolsCall(
   if (isRegexPattern) {
     const regexStr = query.slice(1, -1);
     // Guard against ReDoS by rejecting overly long patterns before compilation.
+    // Note: only length is checked, not structural complexity (e.g. nested quantifiers).
+    // This is acceptable because the regex runs against short, controlled skill metadata.
     const MAX_REGEX_LENGTH = 200;
     if (regexStr.length > MAX_REGEX_LENGTH) {
       return errorResult(`Regex pattern too long (${regexStr.length} chars, max ${MAX_REGEX_LENGTH}). Use a simpler pattern or text search.`);

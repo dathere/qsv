@@ -128,6 +128,14 @@ test('sanitizeErrorForClient preserves relative filenames', () => {
   assert.ok(msg.includes('data.csv'));
 });
 
+test('sanitizeErrorForClient partially matches paths with spaces (known limitation)', () => {
+  // The regex stops at whitespace, so space-paths are only partially stripped.
+  // This documents the known limitation rather than asserting ideal behavior.
+  const msg = sanitizeErrorForClient('ENOENT: /Users/joel/my documents/file.csv');
+  // The path up to the space is stripped (basename of that segment)
+  assert.ok(!msg.includes('/Users/joel'));
+});
+
 test('reservedCachePathError includes the output path and all suffixes', () => {
   const msg = reservedCachePathError('data.stats.csv');
   assert.ok(msg.includes('"data.stats.csv"'));

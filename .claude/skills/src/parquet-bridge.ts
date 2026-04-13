@@ -236,10 +236,6 @@ async function spawnDuckDbCommands(
 }
 
 /**
- * Maximum stderr buffer size for DuckDB spawns (1 MB)
- */
-
-/**
  * Convert CSV to Parquet, using DuckDB (with ZSTD) when available,
  * falling back to `qsv to parquet` (ZSTD, with --try-parse-dates).
  * Returns the engine description string for reporting.

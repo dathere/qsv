@@ -958,6 +958,8 @@ class QsvMcpServer {
       let syncErrorMessage: string | null = null;
 
       try {
+        // Clear the manual flag so syncWorkingDirFromRoots() doesn't skip
+        this.workingDirManager.clearManuallySet();
         await this.workingDirManager.syncWorkingDirFromRoots();
         // Only mark auto-sync as enabled if the sync completed successfully
         this.workingDirManager.confirmDirectory();

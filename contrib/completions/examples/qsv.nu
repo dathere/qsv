@@ -10,77 +10,77 @@ module completions {
   ]
 
   export extern "qsv apply" [
-    --progressbar(-p)
-    --rename(-r): string
-    --new-column(-c): string
-    --jobs(-j): string
-    --output(-o): string
-    --delimiter(-d): string
     --no-headers(-n)
-    --batch(-b): string
-    --comparand(-C): string
     --formatstr(-f): string
+    --delimiter(-d): string
+    --comparand(-C): string
+    --new-column(-c): string
+    --batch(-b): string
     --replacement(-R): string
+    --jobs(-j): string
+    --rename(-r): string
+    --output(-o): string
+    --progressbar(-p)
     --help(-h)                # Print help
   ]
 
   export extern "qsv apply calcconv" [
-    --progressbar(-p)
-    --rename(-r): string
-    --new-column(-c): string
-    --jobs(-j): string
-    --output(-o): string
-    --delimiter(-d): string
     --no-headers(-n)
-    --batch(-b): string
-    --comparand(-C): string
     --formatstr(-f): string
+    --delimiter(-d): string
+    --comparand(-C): string
+    --new-column(-c): string
+    --batch(-b): string
     --replacement(-R): string
+    --jobs(-j): string
+    --rename(-r): string
+    --output(-o): string
+    --progressbar(-p)
     --help(-h)                # Print help
   ]
 
   export extern "qsv apply dynfmt" [
-    --progressbar(-p)
-    --rename(-r): string
-    --new-column(-c): string
-    --jobs(-j): string
-    --output(-o): string
-    --delimiter(-d): string
     --no-headers(-n)
-    --batch(-b): string
-    --comparand(-C): string
     --formatstr(-f): string
+    --delimiter(-d): string
+    --comparand(-C): string
+    --new-column(-c): string
+    --batch(-b): string
     --replacement(-R): string
+    --jobs(-j): string
+    --rename(-r): string
+    --output(-o): string
+    --progressbar(-p)
     --help(-h)                # Print help
   ]
 
   export extern "qsv apply emptyreplace" [
-    --progressbar(-p)
-    --rename(-r): string
-    --new-column(-c): string
-    --jobs(-j): string
-    --output(-o): string
-    --delimiter(-d): string
     --no-headers(-n)
-    --batch(-b): string
-    --comparand(-C): string
     --formatstr(-f): string
+    --delimiter(-d): string
+    --comparand(-C): string
+    --new-column(-c): string
+    --batch(-b): string
     --replacement(-R): string
+    --jobs(-j): string
+    --rename(-r): string
+    --output(-o): string
+    --progressbar(-p)
     --help(-h)                # Print help
   ]
 
   export extern "qsv apply operations" [
-    --progressbar(-p)
-    --rename(-r): string
-    --new-column(-c): string
-    --jobs(-j): string
-    --output(-o): string
-    --delimiter(-d): string
     --no-headers(-n)
-    --batch(-b): string
-    --comparand(-C): string
     --formatstr(-f): string
+    --delimiter(-d): string
+    --comparand(-C): string
+    --new-column(-c): string
+    --batch(-b): string
     --replacement(-R): string
+    --jobs(-j): string
+    --rename(-r): string
+    --output(-o): string
+    --progressbar(-p)
     --help(-h)                # Print help
   ]
 
@@ -111,61 +111,61 @@ module completions {
   ]
 
   export extern "qsv blake3" [
-    --keyed
-    --check(-c)
     --derive-key: string
-    --no-mmap
-    --no-names
-    --tag
-    --jobs(-j): string
-    --output(-o): string
-    --raw
     --quiet(-q)
+    --keyed
+    --output(-o): string
+    --no-names
     --length(-l): string
+    --jobs(-j): string
+    --tag
+    --no-mmap
+    --raw
+    --check(-c)
     --help(-h)                # Print help
   ]
 
   export extern "qsv cat" [
-    --delimiter(-d): string
-    --no-headers(-n)
-    --group-name(-N): string
-    --group(-g): string
-    --flexible
     --output(-o): string
     --pad(-p)
+    --flexible
+    --delimiter(-d): string
+    --no-headers(-n)
+    --group(-g): string
+    --group-name(-N): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv cat columns" [
-    --delimiter(-d): string
-    --no-headers(-n)
-    --group-name(-N): string
-    --group(-g): string
-    --flexible
     --output(-o): string
     --pad(-p)
+    --flexible
+    --delimiter(-d): string
+    --no-headers(-n)
+    --group(-g): string
+    --group-name(-N): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv cat rows" [
-    --delimiter(-d): string
-    --no-headers(-n)
-    --group-name(-N): string
-    --group(-g): string
-    --flexible
     --output(-o): string
     --pad(-p)
+    --flexible
+    --delimiter(-d): string
+    --no-headers(-n)
+    --group(-g): string
+    --group-name(-N): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv cat rowskey" [
-    --delimiter(-d): string
-    --no-headers(-n)
-    --group-name(-N): string
-    --group(-g): string
-    --flexible
     --output(-o): string
     --pad(-p)
+    --flexible
+    --delimiter(-d): string
+    --no-headers(-n)
+    --group(-g): string
+    --group-name(-N): string
     --help(-h)                # Print help
   ]
 
@@ -192,664 +192,664 @@ module completions {
   ]
 
   export extern "qsv color" [
-    --memcheck
+    --color(-C)
     --title(-t): string
+    --memcheck
+    --delimiter(-d): string
     --row-numbers(-n)
     --output(-o): string
-    --color(-C)
-    --delimiter(-d): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv count" [
-    --no-headers(-n)
-    --width
-    --no-polars
-    --delimiter(-d): string
     --flexible(-f)
-    --width-no-delims
-    --low-memory
-    --json
     --human-readable(-H)
+    --delimiter(-d): string
+    --no-polars
+    --no-headers(-n)
+    --low-memory
+    --width-no-delims
+    --json
+    --width
     --help(-h)                # Print help
   ]
 
   export extern "qsv datefmt" [
-    --zulu
-    --default-tz: string
     --formatstr: string
-    --output-tz: string
     --batch(-b): string
-    --utc
-    --jobs(-j): string
-    --keep-zero-time
-    --output(-o): string
-    --prefer-dmy
-    --rename(-r): string
-    --ts-resolution(-R): string
-    --no-headers(-n)
-    --delimiter(-d): string
     --progressbar(-p)
+    --zulu
+    --utc
+    --rename(-r): string
+    --output-tz: string
+    --jobs(-j): string
+    --output(-o): string
+    --delimiter(-d): string
+    --prefer-dmy
+    --ts-resolution(-R): string
+    --default-tz: string
+    --no-headers(-n)
     --new-column(-c): string
+    --keep-zero-time
     --input-tz: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv dedup" [
-    --memcheck
+    --sorted
     --dupes-output(-D): string
+    --jobs(-j): string
     --numeric(-N)
-    --delimiter(-d): string
-    --select(-s): string
     --output(-o): string
     --ignore-case(-i)
-    --jobs(-j): string
-    --quiet(-q)
-    --human-readable(-H)
     --no-headers(-n)
-    --sorted
+    --delimiter(-d): string
+    --select(-s): string
+    --human-readable(-H)
+    --quiet(-q)
+    --memcheck
     --help(-h)                # Print help
   ]
 
   export extern "qsv describegpt" [
-    --truncate-str: string
-    --language: string
-    --addl-cols
-    --forget
-    --addl-props: string
-    --timeout: string
-    --addl-cols-list: string
-    --tag-vocab: string
-    --freq-options: string
-    --max-tokens(-t): string
-    --redis-cache
-    --no-score-sql
+    --cache-dir: string
     --ckan-api: string
-    --api-key(-k): string
-    --stats-options: string
-    --export-prompt: string
-    --description
-    --ckan-token: string
+    --num-tags: string
+    --tag-vocab: string
+    --fewshot-examples
+    --no-score-sql
+    --max-tokens(-t): string
+    --timeout: string
+    --user-agent: string
+    --forget
+    --freq-options: string
     --process-response
-    --num-examples: string
+    --ckan-token: string
     --output(-o): string
+    --dictionary
+    --api-key(-k): string
+    --no-cache
+    --quiet(-q)
+    --score-max-retries: string
+    --num-examples: string
+    --format: string
     --session: string
+    --description
+    --stats-options: string
+    --addl-cols-list: string
     --prompt(-p): string
     --disk-cache-dir: string
-    --score-threshold: string
-    --cache-dir: string
-    --prompt-file: string
+    --addl-cols
     --model(-m): string
-    --sample-size: string
-    --dictionary
-    --base-url(-u): string
-    --score-max-retries: string
-    --format: string
-    --sql-results: string
-    --num-tags: string
+    --all(-A)
+    --enum-threshold: string
     --tags
-    --user-agent: string
+    --sample-size: string
+    --base-url(-u): string
     --flush-cache
-    --fewshot-examples
-    --prepare-context
-    --quiet(-q)
-    --no-cache
+    --export-prompt: string
+    --redis-cache
+    --addl-props: string
     --fresh
     --session-len: string
-    --enum-threshold: string
-    --all(-A)
+    --language: string
+    --prepare-context
+    --prompt-file: string
+    --sql-results: string
+    --score-threshold: string
+    --truncate-str: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv diff" [
-    --no-headers-output
     --no-headers-left
-    --delimiter-right: string
-    --delimiter(-d): string
-    --delimiter-output: string
     --key(-k): string
+    --delimiter-right: string
     --sort-columns: string
     --drop-equal-fields
-    --no-headers-right
+    --delimiter-output: string
+    --delimiter(-d): string
+    --no-headers-output
     --output(-o): string
-    --jobs(-j): string
+    --no-headers-right
     --delimiter-left: string
+    --jobs(-j): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv edit" [
-    --no-headers(-n)
     --output(-o): string
+    --no-headers(-n)
     --in-place(-i)
     --help(-h)                # Print help
   ]
 
   export extern "qsv enum" [
-    --increment: string
-    --start: string
-    --uuid7
-    --copy: string
     --uuid4
+    --start: string
     --output(-o): string
+    --increment: string
+    --copy: string
     --no-headers(-n)
+    --uuid7
     --delimiter(-d): string
-    --hash: string
     --new-column(-c): string
+    --hash: string
     --constant: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv excel" [
-    --metadata: string
-    --sheet(-s): string
-    --error-format: string
-    --range: string
-    --date-format: string
-    --jobs(-j): string
-    --quiet(-q)
     --flexible
-    --table: string
-    --trim
-    --cell: string
-    --output(-o): string
-    --header-row: string
-    --delimiter(-d): string
+    --quiet(-q)
     --keep-zero-time
+    --sheet(-s): string
+    --trim
+    --error-format: string
+    --date-format: string
+    --cell: string
+    --delimiter(-d): string
+    --header-row: string
+    --range: string
+    --table: string
+    --jobs(-j): string
+    --metadata: string
+    --output(-o): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv exclude" [
     --no-headers(-n)
-    --invert(-v)
     --output(-o): string
-    --delimiter(-d): string
+    --invert(-v)
     --ignore-case(-i)
+    --delimiter(-d): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv explode" [
-    --rename(-r): string
-    --output(-o): string
-    --delimiter(-d): string
     --no-headers(-n)
+    --output(-o): string
+    --rename(-r): string
+    --delimiter(-d): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv extdedup" [
-    --temp-dir: string
-    --select(-s): string
-    --dupes-output(-D): string
-    --human-readable(-H)
-    --memory-limit: string
-    --no-headers(-n)
-    --delimiter(-d): string
-    --quiet(-q)
     --no-output
+    --temp-dir: string
+    --dupes-output(-D): string
+    --no-headers(-n)
+    --select(-s): string
+    --memory-limit: string
+    --delimiter(-d): string
+    --human-readable(-H)
+    --quiet(-q)
     --help(-h)                # Print help
   ]
 
   export extern "qsv extsort" [
-    --reverse(-R)
     --memory-limit: string
-    --select(-s): string
-    --delimiter(-d): string
-    --jobs(-j): string
     --tmp-dir: string
+    --delimiter(-d): string
     --no-headers(-n)
+    --reverse(-R)
+    --jobs(-j): string
+    --select(-s): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv fetch" [
-    --jaq: string
     --progressbar(-p)
-    --disk-cache
-    --max-retries: string
-    --pretty
-    --new-column(-c): string
-    --rate-limit: string
-    --user-agent: string
-    --report: string
-    --mem-cache-size: string
-    --http-header(-H): string
-    --disk-cache-dir: string
-    --timeout: string
-    --delimiter(-d): string
-    --redis-cache
-    --cookies
-    --jaqfile: string
-    --url-template: string
     --no-cache
-    --output(-o): string
+    --pretty
     --no-headers(-n)
+    --user-agent: string
+    --disk-cache
+    --output(-o): string
+    --http-header(-H): string
+    --new-column(-c): string
+    --cookies
+    --rate-limit: string
+    --max-retries: string
+    --jaqfile: string
+    --disk-cache-dir: string
+    --jaq: string
+    --delimiter(-d): string
     --flush-cache
+    --mem-cache-size: string
+    --redis-cache
     --cache-error
+    --url-template: string
+    --report: string
     --store-error
+    --timeout: string
     --max-errors: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv fetchpost" [
-    --cookies
-    --payload-tpl(-t): string
-    --user-agent: string
-    --mem-cache-size: string
-    --content-type: string
-    --http-header(-H): string
-    --max-errors: string
-    --jaqfile: string
-    --new-column(-c): string
-    --disk-cache
-    --no-headers(-n)
     --max-retries: string
-    --disk-cache-dir: string
-    --progressbar(-p)
-    --compress
-    --rate-limit: string
+    --flush-cache
     --redis-cache
+    --content-type: string
+    --jaqfile: string
+    --rate-limit: string
+    --disk-cache
+    --pretty
+    --delimiter(-d): string
+    --mem-cache-size: string
+    --cookies
     --globals-json(-j): string
     --timeout: string
-    --report: string
-    --delimiter(-d): string
-    --output(-o): string
-    --flush-cache
-    --pretty
-    --cache-error
     --store-error
+    --output(-o): string
+    --progressbar(-p)
     --jaq: string
+    --new-column(-c): string
+    --report: string
+    --user-agent: string
+    --http-header(-H): string
+    --cache-error
+    --no-headers(-n)
+    --max-errors: string
+    --payload-tpl(-t): string
+    --compress
+    --disk-cache-dir: string
     --no-cache
     --help(-h)                # Print help
   ]
 
   export extern "qsv fill" [
-    --backfill(-b)
-    --delimiter(-d): string
-    --no-headers(-n)
-    --first(-f)
-    --default(-v): string
     --output(-o): string
+    --no-headers(-n)
+    --default(-v): string
+    --backfill(-b)
+    --first(-f)
     --groupby(-g): string
+    --delimiter(-d): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv fixlengths" [
-    --escape: string
-    --delimiter(-d): string
-    --length(-l): string
-    --quote: string
-    --insert(-i): string
-    --output(-o): string
     --quiet(-q)
+    --escape: string
+    --insert(-i): string
+    --quote: string
+    --output(-o): string
+    --length(-l): string
     --remove-empty(-r)
+    --delimiter(-d): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv flatten" [
-    --no-headers(-n)
-    --field-separator(-f): string
-    --separator(-s): string
-    --condense(-c): string
     --delimiter(-d): string
+    --no-headers(-n)
+    --condense(-c): string
+    --separator(-s): string
+    --field-separator(-f): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv fmt" [
-    --escape: string
+    --crlf
     --quote-always
-    --delimiter(-d): string
-    --quote: string
     --out-delimiter(-t): string
     --ascii
-    --crlf
+    --quote: string
     --no-final-newline
     --quote-never
+    --escape: string
+    --delimiter(-d): string
     --output(-o): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv foreach" [
     --dry-run: string
+    --new-column(-c): string
     --delimiter(-d): string
+    --unify(-u)
     --progressbar(-p)
     --no-headers(-n)
-    --unify(-u)
-    --new-column(-c): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv frequency" [
-    --vis-whitespace
-    --no-nulls
-    --force
-    --other-text: string
-    --asc(-a)
-    --no-float: string
-    --json
-    --toon
-    --lmt-threshold: string
-    --no-other
-    --no-headers(-n)
-    --high-card-threshold: string
-    --stats-filter: string
-    --other-sorted
     --all-unique-text: string
-    --weight: string
-    --no-trim
-    --null-sorted
-    --unq-limit(-u): string
-    --limit(-l): string
-    --frequency-jsonl
-    --select(-s): string
-    --null-text: string
-    --high-card-pct: string
-    --rank-strategy(-r): string
-    --pretty-json
-    --delimiter(-d): string
-    --jobs(-j): string
-    --memcheck
-    --pct-dec-places: string
-    --pct-nulls
-    --no-stats
-    --ignore-case(-i)
     --output(-o): string
+    --json
+    --rank-strategy(-r): string
+    --high-card-threshold: string
+    --asc(-a)
+    --no-nulls
+    --weight: string
+    --no-headers(-n)
+    --no-other
+    --other-sorted
+    --ignore-case(-i)
+    --no-stats
+    --force
+    --delimiter(-d): string
+    --memcheck
+    --jobs(-j): string
+    --pretty-json
+    --high-card-pct: string
+    --pct-dec-places: string
+    --other-text: string
+    --frequency-jsonl
+    --lmt-threshold: string
+    --no-trim
+    --null-text: string
+    --vis-whitespace
+    --unq-limit(-u): string
+    --toon
+    --stats-filter: string
+    --pct-nulls
+    --limit(-l): string
+    --no-float: string
+    --null-sorted
+    --select(-s): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode" [
-    --rename(-r): string
     --languages: string
-    --cache-dir: string
-    --formatstr(-f): string
-    --force
-    --progressbar(-p)
-    --output(-o): string
-    --admin1: string
-    --invalid-result: string
-    --min-score: string
-    --timeout: string
-    --batch(-b): string
     --k_weight(-k): string
-    --delimiter(-d): string
-    --country: string
-    --cities-url: string
+    --invalid-result: string
+    --formatstr(-f): string
+    --output(-o): string
     --language(-l): string
     --jobs(-j): string
+    --cities-url: string
+    --progressbar(-p)
+    --rename(-r): string
+    --batch(-b): string
     --new-column(-c): string
+    --min-score: string
+    --cache-dir: string
+    --force
+    --admin1: string
+    --timeout: string
+    --delimiter(-d): string
+    --country: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode countryinfo" [
-    --rename(-r): string
     --languages: string
-    --cache-dir: string
-    --formatstr(-f): string
-    --force
-    --progressbar(-p)
-    --output(-o): string
-    --admin1: string
-    --invalid-result: string
-    --min-score: string
-    --timeout: string
-    --batch(-b): string
     --k_weight(-k): string
-    --delimiter(-d): string
-    --country: string
-    --cities-url: string
+    --invalid-result: string
+    --formatstr(-f): string
+    --output(-o): string
     --language(-l): string
     --jobs(-j): string
+    --cities-url: string
+    --progressbar(-p)
+    --rename(-r): string
+    --batch(-b): string
     --new-column(-c): string
+    --min-score: string
+    --cache-dir: string
+    --force
+    --admin1: string
+    --timeout: string
+    --delimiter(-d): string
+    --country: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode countryinfonow" [
-    --rename(-r): string
     --languages: string
-    --cache-dir: string
-    --formatstr(-f): string
-    --force
-    --progressbar(-p)
-    --output(-o): string
-    --admin1: string
-    --invalid-result: string
-    --min-score: string
-    --timeout: string
-    --batch(-b): string
     --k_weight(-k): string
-    --delimiter(-d): string
-    --country: string
-    --cities-url: string
+    --invalid-result: string
+    --formatstr(-f): string
+    --output(-o): string
     --language(-l): string
     --jobs(-j): string
+    --cities-url: string
+    --progressbar(-p)
+    --rename(-r): string
+    --batch(-b): string
     --new-column(-c): string
+    --min-score: string
+    --cache-dir: string
+    --force
+    --admin1: string
+    --timeout: string
+    --delimiter(-d): string
+    --country: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode index-check" [
-    --rename(-r): string
     --languages: string
-    --cache-dir: string
-    --formatstr(-f): string
-    --force
-    --progressbar(-p)
-    --output(-o): string
-    --admin1: string
-    --invalid-result: string
-    --min-score: string
-    --timeout: string
-    --batch(-b): string
     --k_weight(-k): string
-    --delimiter(-d): string
-    --country: string
-    --cities-url: string
+    --invalid-result: string
+    --formatstr(-f): string
+    --output(-o): string
     --language(-l): string
     --jobs(-j): string
+    --cities-url: string
+    --progressbar(-p)
+    --rename(-r): string
+    --batch(-b): string
     --new-column(-c): string
+    --min-score: string
+    --cache-dir: string
+    --force
+    --admin1: string
+    --timeout: string
+    --delimiter(-d): string
+    --country: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode index-load" [
-    --rename(-r): string
     --languages: string
-    --cache-dir: string
-    --formatstr(-f): string
-    --force
-    --progressbar(-p)
-    --output(-o): string
-    --admin1: string
-    --invalid-result: string
-    --min-score: string
-    --timeout: string
-    --batch(-b): string
     --k_weight(-k): string
-    --delimiter(-d): string
-    --country: string
-    --cities-url: string
+    --invalid-result: string
+    --formatstr(-f): string
+    --output(-o): string
     --language(-l): string
     --jobs(-j): string
+    --cities-url: string
+    --progressbar(-p)
+    --rename(-r): string
+    --batch(-b): string
     --new-column(-c): string
+    --min-score: string
+    --cache-dir: string
+    --force
+    --admin1: string
+    --timeout: string
+    --delimiter(-d): string
+    --country: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode index-reset" [
-    --rename(-r): string
     --languages: string
-    --cache-dir: string
-    --formatstr(-f): string
-    --force
-    --progressbar(-p)
-    --output(-o): string
-    --admin1: string
-    --invalid-result: string
-    --min-score: string
-    --timeout: string
-    --batch(-b): string
     --k_weight(-k): string
-    --delimiter(-d): string
-    --country: string
-    --cities-url: string
+    --invalid-result: string
+    --formatstr(-f): string
+    --output(-o): string
     --language(-l): string
     --jobs(-j): string
+    --cities-url: string
+    --progressbar(-p)
+    --rename(-r): string
+    --batch(-b): string
     --new-column(-c): string
+    --min-score: string
+    --cache-dir: string
+    --force
+    --admin1: string
+    --timeout: string
+    --delimiter(-d): string
+    --country: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode index-update" [
-    --rename(-r): string
     --languages: string
-    --cache-dir: string
-    --formatstr(-f): string
-    --force
-    --progressbar(-p)
-    --output(-o): string
-    --admin1: string
-    --invalid-result: string
-    --min-score: string
-    --timeout: string
-    --batch(-b): string
     --k_weight(-k): string
-    --delimiter(-d): string
-    --country: string
-    --cities-url: string
+    --invalid-result: string
+    --formatstr(-f): string
+    --output(-o): string
     --language(-l): string
     --jobs(-j): string
+    --cities-url: string
+    --progressbar(-p)
+    --rename(-r): string
+    --batch(-b): string
     --new-column(-c): string
+    --min-score: string
+    --cache-dir: string
+    --force
+    --admin1: string
+    --timeout: string
+    --delimiter(-d): string
+    --country: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode iplookup" [
-    --rename(-r): string
     --languages: string
-    --cache-dir: string
-    --formatstr(-f): string
-    --force
-    --progressbar(-p)
-    --output(-o): string
-    --admin1: string
-    --invalid-result: string
-    --min-score: string
-    --timeout: string
-    --batch(-b): string
     --k_weight(-k): string
-    --delimiter(-d): string
-    --country: string
-    --cities-url: string
+    --invalid-result: string
+    --formatstr(-f): string
+    --output(-o): string
     --language(-l): string
     --jobs(-j): string
+    --cities-url: string
+    --progressbar(-p)
+    --rename(-r): string
+    --batch(-b): string
     --new-column(-c): string
+    --min-score: string
+    --cache-dir: string
+    --force
+    --admin1: string
+    --timeout: string
+    --delimiter(-d): string
+    --country: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode iplookupnow" [
-    --rename(-r): string
     --languages: string
-    --cache-dir: string
-    --formatstr(-f): string
-    --force
-    --progressbar(-p)
-    --output(-o): string
-    --admin1: string
-    --invalid-result: string
-    --min-score: string
-    --timeout: string
-    --batch(-b): string
     --k_weight(-k): string
-    --delimiter(-d): string
-    --country: string
-    --cities-url: string
+    --invalid-result: string
+    --formatstr(-f): string
+    --output(-o): string
     --language(-l): string
     --jobs(-j): string
+    --cities-url: string
+    --progressbar(-p)
+    --rename(-r): string
+    --batch(-b): string
     --new-column(-c): string
+    --min-score: string
+    --cache-dir: string
+    --force
+    --admin1: string
+    --timeout: string
+    --delimiter(-d): string
+    --country: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode reverse" [
-    --rename(-r): string
     --languages: string
-    --cache-dir: string
-    --formatstr(-f): string
-    --force
-    --progressbar(-p)
-    --output(-o): string
-    --admin1: string
-    --invalid-result: string
-    --min-score: string
-    --timeout: string
-    --batch(-b): string
     --k_weight(-k): string
-    --delimiter(-d): string
-    --country: string
-    --cities-url: string
+    --invalid-result: string
+    --formatstr(-f): string
+    --output(-o): string
     --language(-l): string
     --jobs(-j): string
+    --cities-url: string
+    --progressbar(-p)
+    --rename(-r): string
+    --batch(-b): string
     --new-column(-c): string
+    --min-score: string
+    --cache-dir: string
+    --force
+    --admin1: string
+    --timeout: string
+    --delimiter(-d): string
+    --country: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode reversenow" [
-    --rename(-r): string
     --languages: string
-    --cache-dir: string
-    --formatstr(-f): string
-    --force
-    --progressbar(-p)
-    --output(-o): string
-    --admin1: string
-    --invalid-result: string
-    --min-score: string
-    --timeout: string
-    --batch(-b): string
     --k_weight(-k): string
-    --delimiter(-d): string
-    --country: string
-    --cities-url: string
+    --invalid-result: string
+    --formatstr(-f): string
+    --output(-o): string
     --language(-l): string
     --jobs(-j): string
+    --cities-url: string
+    --progressbar(-p)
+    --rename(-r): string
+    --batch(-b): string
     --new-column(-c): string
+    --min-score: string
+    --cache-dir: string
+    --force
+    --admin1: string
+    --timeout: string
+    --delimiter(-d): string
+    --country: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode suggest" [
-    --rename(-r): string
     --languages: string
-    --cache-dir: string
-    --formatstr(-f): string
-    --force
-    --progressbar(-p)
-    --output(-o): string
-    --admin1: string
-    --invalid-result: string
-    --min-score: string
-    --timeout: string
-    --batch(-b): string
     --k_weight(-k): string
-    --delimiter(-d): string
-    --country: string
-    --cities-url: string
+    --invalid-result: string
+    --formatstr(-f): string
+    --output(-o): string
     --language(-l): string
     --jobs(-j): string
+    --cities-url: string
+    --progressbar(-p)
+    --rename(-r): string
+    --batch(-b): string
     --new-column(-c): string
+    --min-score: string
+    --cache-dir: string
+    --force
+    --admin1: string
+    --timeout: string
+    --delimiter(-d): string
+    --country: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode suggestnow" [
-    --rename(-r): string
     --languages: string
-    --cache-dir: string
-    --formatstr(-f): string
-    --force
-    --progressbar(-p)
-    --output(-o): string
-    --admin1: string
-    --invalid-result: string
-    --min-score: string
-    --timeout: string
-    --batch(-b): string
     --k_weight(-k): string
-    --delimiter(-d): string
-    --country: string
-    --cities-url: string
+    --invalid-result: string
+    --formatstr(-f): string
+    --output(-o): string
     --language(-l): string
     --jobs(-j): string
+    --cities-url: string
+    --progressbar(-p)
+    --rename(-r): string
+    --batch(-b): string
     --new-column(-c): string
+    --min-score: string
+    --cache-dir: string
+    --force
+    --admin1: string
+    --timeout: string
+    --delimiter(-d): string
+    --country: string
     --help(-h)                # Print help
   ]
 
@@ -899,19 +899,19 @@ module completions {
 
   export extern "qsv geoconvert" [
     --latitude(-y): string
+    --output(-o): string
     --max-length(-l): string
     --longitude(-x): string
-    --output(-o): string
     --geometry(-g): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv headers" [
-    --delimiter(-d): string
     --just-names(-j)
     --just-count(-J)
     --trim
     --intersect
+    --delimiter(-d): string
     --help(-h)                # Print help
   ]
 
@@ -921,119 +921,119 @@ module completions {
   ]
 
   export extern "qsv input" [
-    --trim-headers
-    --skip-lines: string
-    --skip-lastlines: string
-    --quote-style: string
-    --encoding-errors: string
-    --delimiter(-d): string
-    --no-quoting
-    --auto-skip
-    --trim-fields
     --escape: string
-    --comment: string
-    --quote: string
+    --auto-skip
+    --skip-lines: string
     --output(-o): string
+    --skip-lastlines: string
+    --encoding-errors: string
+    --quote-style: string
+    --trim-fields
+    --trim-headers
+    --delimiter(-d): string
+    --quote: string
+    --no-quoting
+    --comment: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv join" [
-    --right
-    --right-anti
-    --delimiter(-d): string
-    --left
-    --keys-output: string
-    --cross
-    --full
-    --ignore-leading-zeros(-z)
-    --output(-o): string
-    --left-anti
     --right-semi
-    --ignore-case(-i)
-    --left-semi
+    --cross
+    --keys-output: string
+    --delimiter(-d): string
     --no-headers(-n)
+    --left-semi
+    --right
+    --ignore-case(-i)
+    --left-anti
+    --left
+    --full
+    --output(-o): string
     --nulls
+    --right-anti
+    --ignore-leading-zeros(-z)
     --help(-h)                # Print help
   ]
 
   export extern "qsv joinp" [
-    --no-optimizations
-    --cross
-    --filter-left: string
-    --right
-    --coalesce
-    --full
-    --filter-right: string
-    --right_by: string
-    --right-semi
-    --low-memory
-    --asof
-    --ignore-case(-i)
-    --decimal-comma
-    --sql-filter: string
-    --streaming
-    --norm-unicode(-N): string
-    --non-equi: string
-    --ignore-errors
-    --left-anti
-    --validate: string
-    --right-anti
-    --try-parsedates
-    --null-value: string
-    --strategy: string
-    --delimiter(-d): string
-    --quiet(-q)
-    --allow-exact-matches(-X)
-    --cache-schema: string
-    --maintain-order: string
-    --left_by: string
-    --left
-    --datetime-format: string
-    --ignore-leading-zeros(-z)
-    --float-precision: string
-    --time-format: string
-    --date-format: string
-    --infer-len: string
-    --no-sort
-    --left-semi
     --nulls
+    --sql-filter: string
+    --datetime-format: string
+    --cross
+    --asof
+    --try-parsedates
+    --validate: string
+    --left-semi
+    --no-optimizations
+    --filter-left: string
+    --left
+    --left-anti
+    --strategy: string
+    --allow-exact-matches(-X)
+    --left_by: string
+    --filter-right: string
+    --norm-unicode(-N): string
+    --null-value: string
+    --quiet(-q)
+    --time-format: string
+    --right-anti
+    --ignore-case(-i)
+    --cache-schema: string
+    --date-format: string
+    --non-equi: string
+    --float-precision: string
+    --delimiter(-d): string
+    --coalesce
+    --no-sort
+    --decimal-comma
+    --ignore-leading-zeros(-z)
+    --right
+    --infer-len: string
+    --right-semi
+    --full
+    --ignore-errors
+    --maintain-order: string
+    --streaming
+    --low-memory
+    --right_by: string
     --tolerance: string
     --output(-o): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv json" [
-    --jaq: string
-    --select(-s): string
     --output(-o): string
+    --select(-s): string
+    --jaq: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv jsonl" [
-    --batch(-b): string
-    --output(-o): string
-    --ignore-errors
-    --delimiter(-d): string
     --jobs(-j): string
+    --output(-o): string
+    --delimiter(-d): string
+    --batch(-b): string
+    --ignore-errors
     --help(-h)                # Print help
   ]
 
   export extern "qsv lens" [
-    --no-headers
-    --debug
-    --wrap-mode(-W): string
-    --prompt(-P): string
-    --filter: string
-    --streaming-stdin(-S)
-    --echo-column: string
-    --auto-reload(-A)
-    --ignore-case(-i)
-    --freeze-columns(-f): string
-    --tab-separated(-t)
     --find: string
+    --auto-reload(-A)
     --delimiter(-d): string
-    --monochrome(-m)
     --columns: string
+    --streaming-stdin(-S)
+    --debug
+    --filter: string
+    --ignore-case(-i)
+    --monochrome(-m)
+    --no-headers
+    --prompt(-P): string
+    --freeze-columns(-f): string
+    --echo-column: string
+    --wrap-mode(-W): string
+    --tab-separated(-t)
     --help(-h)                # Print help
   ]
 
@@ -1042,56 +1042,56 @@ module completions {
   ]
 
   export extern "qsv luau" [
-    --delimiter(-d): string
-    --ckan-token: string
-    --no-headers(-n)
-    --timeout: string
-    --no-globals(-g)
-    --end(-E): string
-    --max-errors: string
-    --progressbar(-p)
-    --cache-dir: string
-    --colindex
     --output(-o): string
     --remap(-r)
     --ckan-api: string
+    --cache-dir: string
     --begin(-B): string
+    --no-globals(-g)
+    --no-headers(-n)
+    --end(-E): string
+    --progressbar(-p)
+    --max-errors: string
+    --delimiter(-d): string
+    --timeout: string
+    --colindex
+    --ckan-token: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv luau filter" [
-    --delimiter(-d): string
-    --ckan-token: string
-    --no-headers(-n)
-    --timeout: string
-    --no-globals(-g)
-    --end(-E): string
-    --max-errors: string
-    --progressbar(-p)
-    --cache-dir: string
-    --colindex
     --output(-o): string
     --remap(-r)
     --ckan-api: string
+    --cache-dir: string
     --begin(-B): string
+    --no-globals(-g)
+    --no-headers(-n)
+    --end(-E): string
+    --progressbar(-p)
+    --max-errors: string
+    --delimiter(-d): string
+    --timeout: string
+    --colindex
+    --ckan-token: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv luau map" [
-    --delimiter(-d): string
-    --ckan-token: string
-    --no-headers(-n)
-    --timeout: string
-    --no-globals(-g)
-    --end(-E): string
-    --max-errors: string
-    --progressbar(-p)
-    --cache-dir: string
-    --colindex
     --output(-o): string
     --remap(-r)
     --ckan-api: string
+    --cache-dir: string
     --begin(-B): string
+    --no-globals(-g)
+    --no-headers(-n)
+    --end(-E): string
+    --progressbar(-p)
+    --max-errors: string
+    --delimiter(-d): string
+    --timeout: string
+    --colindex
+    --ckan-token: string
     --help(-h)                # Print help
   ]
 
@@ -1110,75 +1110,75 @@ module completions {
   ]
 
   export extern "qsv moarstats" [
+    --use-percentiles
     --bivariate(-B)
-    --join-inputs(-J): string
+    --advanced
+    --join-type(-T): string
+    --jobs(-j): string
+    --output(-o): string
     --join-keys(-K): string
-    --progressbar(-p)
     --xsd-gdate-scan: string
-    --pct-thresholds: string
+    --cardinality-threshold(-C): string
     --stats-options: string
     --round: string
-    --join-type(-T): string
-    --use-percentiles
-    --jobs(-j): string
-    --force
-    --advanced
-    --output(-o): string
-    --epsilon(-e): string
-    --cardinality-threshold(-C): string
     --bivariate-stats(-S): string
+    --epsilon(-e): string
+    --pct-thresholds: string
+    --progressbar(-p)
+    --join-inputs(-J): string
+    --force
     --help(-h)                # Print help
   ]
 
   export extern "qsv partition" [
-    --filename: string
-    --drop
     --no-headers(-n)
     --prefix-length(-p): string
-    --delimiter(-d): string
+    --drop
     --limit: string
+    --delimiter(-d): string
+    --filename: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv pivotp" [
-    --decimal-comma
-    --total-label: string
-    --index(-i): string
-    --agg(-a): string
-    --ignore-errors
     --sort-columns
-    --maintain-order
-    --values(-v): string
-    --infer-len: string
-    --grand-total
-    --delimiter(-d): string
-    --validate
-    --subtotal
     --col-separator: string
-    --try-parsedates
+    --total-label: string
     --quiet(-q)
     --output(-o): string
+    --validate
+    --maintain-order
+    --ignore-errors
+    --agg(-a): string
+    --decimal-comma
+    --index(-i): string
+    --values(-v): string
+    --grand-total
+    --subtotal
+    --try-parsedates
+    --delimiter(-d): string
+    --infer-len: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv pragmastat" [
-    --select(-s): string
-    --stats-options: string
-    --standalone
-    --twosample(-t)
-    --no-bounds
-    --jobs(-j): string
-    --delimiter(-d): string
-    --compare1: string
     --force
-    --no-headers(-n)
+    --round: string
     --subsample: string
-    --compare2: string
+    --stats-options: string
+    --select(-s): string
     --misrate(-m): string
+    --no-bounds
+    --twosample(-t)
+    --compare2: string
     --seed: string
     --memcheck
+    --standalone
+    --delimiter(-d): string
     --output(-o): string
-    --round: string
+    --jobs(-j): string
+    --compare1: string
+    --no-headers(-n)
     --help(-h)                # Print help
   ]
 
@@ -1209,54 +1209,54 @@ module completions {
   ]
 
   export extern "qsv prompt" [
-    --quiet(-q)
-    --save-fname: string
-    --msg(-m): string
     --workdir(-d): string
-    --fd-output(-f)
-    --base-delay-ms: string
-    --output(-o): string
+    --save-fname: string
     --filters(-F): string
+    --msg(-m): string
+    --fd-output(-f)
+    --output(-o): string
+    --base-delay-ms: string
+    --quiet(-q)
     --help(-h)                # Print help
   ]
 
   export extern "qsv pseudo" [
-    --no-headers(-n)
-    --start: string
-    --output(-o): string
-    --formatstr: string
-    --delimiter(-d): string
     --increment: string
+    --start: string
+    --formatstr: string
+    --output(-o): string
+    --no-headers(-n)
+    --delimiter(-d): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv py" [
-    --batch(-b): string
     --no-headers(-n)
-    --progressbar(-p)
-    --output(-o): string
-    --helper(-f): string
     --delimiter(-d): string
+    --output(-o): string
+    --batch(-b): string
+    --progressbar(-p)
+    --helper(-f): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv py filter" [
-    --batch(-b): string
     --no-headers(-n)
-    --progressbar(-p)
-    --output(-o): string
-    --helper(-f): string
     --delimiter(-d): string
+    --output(-o): string
+    --batch(-b): string
+    --progressbar(-p)
+    --helper(-f): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv py map" [
-    --batch(-b): string
     --no-headers(-n)
-    --progressbar(-p)
-    --output(-o): string
-    --helper(-f): string
     --delimiter(-d): string
+    --output(-o): string
+    --batch(-b): string
+    --progressbar(-p)
+    --helper(-f): string
     --help(-h)                # Print help
   ]
 
@@ -1275,224 +1275,224 @@ module completions {
   ]
 
   export extern "qsv rename" [
-    --no-headers(-n)
-    --delimiter(-d): string
-    --pairwise
     --output(-o): string
+    --delimiter(-d): string
+    --no-headers(-n)
+    --pairwise
     --help(-h)                # Print help
   ]
 
   export extern "qsv replace" [
-    --select(-s): string
-    --no-headers(-n)
-    --ignore-case(-i)
-    --dfa-size-limit: string
-    --jobs(-j): string
-    --delimiter(-d): string
-    --not-one
-    --quiet(-q)
-    --literal
-    --size-limit: string
-    --exact
     --unicode(-u)
+    --select(-s): string
+    --dfa-size-limit: string
+    --delimiter(-d): string
     --progressbar(-p)
+    --literal
+    --ignore-case(-i)
+    --size-limit: string
+    --not-one
+    --exact
     --output(-o): string
+    --jobs(-j): string
+    --no-headers(-n)
+    --quiet(-q)
     --help(-h)                # Print help
   ]
 
   export extern "qsv reverse" [
-    --output(-o): string
-    --delimiter(-d): string
     --no-headers(-n)
+    --delimiter(-d): string
+    --output(-o): string
     --memcheck
     --help(-h)                # Print help
   ]
 
   export extern "qsv safenames" [
+    --mode: string
     --reserved: string
     --output(-o): string
-    --mode: string
-    --prefix: string
     --delimiter(-d): string
+    --prefix: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv sample" [
-    --seed: string
     --cluster: string
-    --weighted: string
-    --rng: string
-    --stratified: string
-    --ts-input-tz: string
-    --ts-prefer-dmy
-    --bernoulli
-    --ts-interval: string
-    --no-headers(-n)
-    --output(-o): string
-    --ts-start: string
     --user-agent: string
+    --timeseries: string
+    --bernoulli
     --delimiter(-d): string
-    --systematic: string
+    --ts-prefer-dmy
+    --seed: string
+    --ts-input-tz: string
+    --ts-adaptive: string
+    --rng: string
+    --ts-aggregate: string
     --timeout: string
     --max-size: string
-    --ts-adaptive: string
-    --timeseries: string
-    --ts-aggregate: string
     --force
+    --output(-o): string
+    --ts-interval: string
+    --systematic: string
+    --stratified: string
+    --weighted: string
+    --ts-start: string
+    --no-headers(-n)
     --help(-h)                # Print help
   ]
 
   export extern "qsv schema" [
+    --force
+    --output(-o): string
+    --delimiter(-d): string
+    --strict-dates
+    --dates-whitelist: string
     --ignore-case(-i)
+    --polars
+    --memcheck
+    --pattern-columns: string
+    --jobs(-j): string
+    --stdout
+    --enum-threshold: string
+    --prefer-dmy
     --strict-formats
     --no-headers(-n)
-    --memcheck
-    --dates-whitelist: string
-    --prefer-dmy
-    --force
-    --pattern-columns: string
-    --strict-dates
-    --jobs(-j): string
-    --enum-threshold: string
-    --output(-o): string
-    --stdout
-    --polars
-    --delimiter(-d): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv scoresql" [
-    --duckdb
-    --infer-len: string
-    --output(-o): string
-    --quiet(-q)
-    --try-parsedates
-    --truncate-ragged-lines
-    --delimiter(-d): string
-    --json
     --ignore-errors
+    --infer-len: string
+    --json
+    --output(-o): string
+    --delimiter(-d): string
+    --try-parsedates
+    --quiet(-q)
+    --duckdb
+    --truncate-ragged-lines
     --help(-h)                # Print help
   ]
 
   export extern "qsv search" [
-    --literal
-    --output(-o): string
-    --quiet(-q)
-    --size-limit: string
-    --quick(-Q)
-    --preview-match: string
-    --ignore-case(-i)
     --exact
+    --no-headers(-n)
+    --select(-s): string
+    --flag(-f): string
+    --preview-match: string
     --jobs(-j): string
     --invert-match(-v)
-    --count(-c)
-    --not-one
-    --no-headers(-n)
-    --flag(-f): string
-    --select(-s): string
+    --size-limit: string
     --dfa-size-limit: string
+    --json
     --delimiter(-d): string
+    --output(-o): string
+    --quick(-Q)
     --progressbar(-p)
     --unicode(-u)
-    --json
+    --count(-c)
+    --ignore-case(-i)
+    --literal
+    --quiet(-q)
+    --not-one
     --help(-h)                # Print help
   ]
 
   export extern "qsv searchset" [
-    --progressbar(-p)
-    --size-limit: string
-    --quiet(-q)
-    --unmatched-output: string
-    --unicode(-u)
+    --delimiter(-d): string
     --ignore-case(-i)
     --not-one
+    --json(-j)
+    --progressbar(-p)
     --invert-match(-v)
-    --select(-s): string
-    --exact
-    --flag(-f): string
+    --flag-matches-only
     --literal
+    --exact
+    --size-limit: string
+    --unmatched-output: string
+    --quick(-Q)
+    --no-headers(-n)
+    --count(-c)
+    --flag(-f): string
+    --select(-s): string
+    --output(-o): string
+    --quiet(-q)
     --dfa-size-limit: string
     --jobs: string
-    --flag-matches-only
-    --json(-j)
-    --no-headers(-n)
-    --delimiter(-d): string
-    --quick(-Q)
-    --count(-c)
-    --output(-o): string
+    --unicode(-u)
     --help(-h)                # Print help
   ]
 
   export extern "qsv select" [
     --no-headers(-n)
-    --delimiter(-d): string
+    --random(-R)
     --output(-o): string
     --sort(-S)
     --seed: string
-    --random(-R)
+    --delimiter(-d): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv slice" [
-    --end(-e): string
-    --index(-i): string
-    --start(-s): string
-    --len(-l): string
-    --output(-o): string
-    --no-headers(-n)
-    --delimiter(-d): string
     --json
+    --no-headers(-n)
+    --start(-s): string
+    --output(-o): string
     --invert
+    --end(-e): string
+    --len(-l): string
+    --index(-i): string
+    --delimiter(-d): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv snappy" [
     --progressbar(-p)
     --quiet(-q)
-    --output(-o): string
-    --user-agent: string
-    --jobs(-j): string
     --timeout: string
+    --user-agent: string
+    --output(-o): string
+    --jobs(-j): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv snappy check" [
     --progressbar(-p)
     --quiet(-q)
-    --output(-o): string
-    --user-agent: string
-    --jobs(-j): string
     --timeout: string
+    --user-agent: string
+    --output(-o): string
+    --jobs(-j): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv snappy compress" [
     --progressbar(-p)
     --quiet(-q)
-    --output(-o): string
-    --user-agent: string
-    --jobs(-j): string
     --timeout: string
+    --user-agent: string
+    --output(-o): string
+    --jobs(-j): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv snappy decompress" [
     --progressbar(-p)
     --quiet(-q)
-    --output(-o): string
-    --user-agent: string
-    --jobs(-j): string
     --timeout: string
+    --user-agent: string
+    --output(-o): string
+    --jobs(-j): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv snappy validate" [
     --progressbar(-p)
     --quiet(-q)
-    --output(-o): string
-    --user-agent: string
-    --jobs(-j): string
     --timeout: string
+    --user-agent: string
+    --output(-o): string
+    --jobs(-j): string
     --help(-h)                # Print help
   ]
 
@@ -1517,309 +1517,309 @@ module completions {
   ]
 
   export extern "qsv sniff" [
-    --quick(-Q)
-    --timeout: string
-    --save-urlsample: string
-    --quote: string
-    --just-mime
-    --stats-types
-    --delimiter(-d): string
-    --progressbar(-p)
     --json
+    --harvest-mode
+    --just-mime
+    --progressbar(-p)
+    --stats-types
+    --user-agent: string
+    --quick(-Q)
+    --quote: string
+    --delimiter(-d): string
+    --save-urlsample: string
+    --no-infer
+    --timeout: string
     --pretty-json
     --prefer-dmy
     --sample: string
-    --no-infer
-    --user-agent: string
-    --harvest-mode
     --help(-h)                # Print help
   ]
 
   export extern "qsv sort" [
     --reverse(-R)
-    --ignore-case(-i)
-    --unique(-u)
-    --jobs(-j): string
-    --select(-s): string
-    --memcheck
     --natural
-    --no-headers(-n)
-    --faster
-    --output(-o): string
-    --seed: string
     --numeric(-N)
-    --rng: string
-    --delimiter(-d): string
+    --memcheck
     --random
+    --faster
+    --delimiter(-d): string
+    --no-headers(-n)
+    --output(-o): string
+    --rng: string
+    --jobs(-j): string
+    --seed: string
+    --unique(-u)
+    --select(-s): string
+    --ignore-case(-i)
     --help(-h)                # Print help
   ]
 
   export extern "qsv sortcheck" [
     --select(-s): string
-    --all
-    --delimiter(-d): string
     --json
-    --pretty-json
-    --ignore-case(-i)
     --progressbar(-p)
+    --ignore-case(-i)
+    --all
     --no-headers(-n)
+    --delimiter(-d): string
+    --pretty-json
     --help(-h)                # Print help
   ]
 
   export extern "qsv split" [
     --kb-size(-k): string
-    --filter-ignore-errors
-    --filter-cleanup
+    --jobs(-j): string
     --no-headers(-n)
-    --delimiter(-d): string
-    --filter: string
+    --filter-ignore-errors
     --quiet(-q)
-    --chunks(-c): string
     --size(-s): string
     --filename: string
-    --jobs(-j): string
+    --chunks(-c): string
+    --filter-cleanup
+    --delimiter(-d): string
+    --filter: string
     --pad: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv sqlp" [
-    --infer-len: string
-    --streaming
-    --format: string
-    --rnull-values: string
-    --statistics
-    --date-format: string
     --delimiter(-d): string
     --quiet(-q)
-    --decimal-comma
-    --cache-schema
-    --output(-o): string
+    --streaming
+    --wnull-value: string
     --no-optimizations
+    --compression: string
+    --ignore-errors
+    --time-format: string
+    --infer-len: string
+    --compress-level: string
+    --cache-schema
+    --datetime-format: string
+    --try-parsedates
+    --decimal-comma
+    --statistics
+    --output(-o): string
     --truncate-ragged-lines
     --float-precision: string
+    --date-format: string
+    --format: string
+    --rnull-values: string
     --low-memory
-    --compress-level: string
-    --compression: string
-    --time-format: string
-    --datetime-format: string
-    --ignore-errors
-    --try-parsedates
-    --wnull-value: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv stats" [
-    --everything(-E)
-    --mad
-    --quartiles
-    --weight: string
-    --jobs(-j): string
-    --cache-threshold(-c): string
-    --delimiter(-d): string
-    --infer-boolean
-    --cardinality
-    --force
-    --nulls
-    --mode
-    --median
-    --percentiles
-    --dates-whitelist: string
-    --boolean-patterns: string
+    --no-headers(-n)
     --memcheck
-    --round: string
+    --quartiles
+    --percentile-list: string
+    --mode
+    --infer-dates
+    --force
+    --delimiter(-d): string
+    --nulls
+    --output(-o): string
     --select(-s): string
     --prefer-dmy
-    --percentile-list: string
-    --output(-o): string
-    --vis-whitespace
-    --stats-jsonl
+    --boolean-patterns: string
     --typesonly
-    --no-headers(-n)
-    --infer-dates
+    --jobs(-j): string
+    --everything(-E)
+    --round: string
+    --infer-boolean
+    --cache-threshold(-c): string
+    --mad
+    --cardinality
+    --dates-whitelist: string
+    --percentiles
+    --vis-whitespace
+    --median
+    --weight: string
+    --stats-jsonl
     --help(-h)                # Print help
   ]
 
   export extern "qsv table" [
+    --output(-o): string
     --memcheck
     --align(-a): string
-    --condense(-c): string
     --pad(-p): string
-    --output(-o): string
-    --delimiter(-d): string
     --width(-w): string
+    --delimiter(-d): string
+    --condense(-c): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv template" [
     --template: string
-    --output(-o): string
-    --outfilename: string
-    --delimiter: string
-    --timeout: string
-    --jobs(-j): string
-    --outsubdir-size: string
-    --ckan-api: string
-    --template-file(-t): string
-    --customfilter-error: string
-    --globals-json: string
-    --no-headers(-n)
-    --batch(-b): string
-    --cache-dir: string
-    --ckan-token: string
     --progressbar(-p)
+    --customfilter-error: string
+    --batch(-b): string
+    --globals-json(-j): string
+    --jobs: string
+    --ckan-token: string
+    --ckan-api: string
+    --output(-o): string
+    --no-headers(-n)
+    --template-file(-t): string
+    --outsubdir-size: string
+    --delimiter: string
+    --cache-dir: string
+    --outfilename: string
+    --timeout: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv to" [
-    --dump(-u)
-    --compress-level: string
     --evolve(-e)
-    --delimiter(-d): string
-    --quiet(-q)
     --pipe(-i)
-    --compression: string
-    --try-parse-dates
-    --stats(-a)
-    --all-strings(-A)
-    --print-package(-k)
-    --jobs(-j): string
-    --infer-len: string
-    --schema(-s): string
-    --drop
     --stats-csv(-c): string
+    --delimiter(-d): string
+    --infer-len: string
     --separator(-p): string
+    --all-strings(-A)
+    --compression: string
+    --dump(-u)
+    --stats(-a)
+    --quiet(-q)
+    --jobs(-j): string
+    --drop
+    --print-package(-k)
+    --try-parse-dates
+    --compress-level: string
+    --schema(-s): string
     --table(-t): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv to datapackage" [
-    --dump(-u)
-    --compress-level: string
     --evolve(-e)
-    --delimiter(-d): string
-    --quiet(-q)
     --pipe(-i)
-    --compression: string
-    --try-parse-dates
-    --stats(-a)
-    --all-strings(-A)
-    --print-package(-k)
-    --jobs(-j): string
-    --infer-len: string
-    --schema(-s): string
-    --drop
     --stats-csv(-c): string
+    --delimiter(-d): string
+    --infer-len: string
     --separator(-p): string
+    --all-strings(-A)
+    --compression: string
+    --dump(-u)
+    --stats(-a)
+    --quiet(-q)
+    --jobs(-j): string
+    --drop
+    --print-package(-k)
+    --try-parse-dates
+    --compress-level: string
+    --schema(-s): string
     --table(-t): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv to ods" [
-    --dump(-u)
-    --compress-level: string
     --evolve(-e)
-    --delimiter(-d): string
-    --quiet(-q)
     --pipe(-i)
-    --compression: string
-    --try-parse-dates
-    --stats(-a)
-    --all-strings(-A)
-    --print-package(-k)
-    --jobs(-j): string
-    --infer-len: string
-    --schema(-s): string
-    --drop
     --stats-csv(-c): string
+    --delimiter(-d): string
+    --infer-len: string
     --separator(-p): string
+    --all-strings(-A)
+    --compression: string
+    --dump(-u)
+    --stats(-a)
+    --quiet(-q)
+    --jobs(-j): string
+    --drop
+    --print-package(-k)
+    --try-parse-dates
+    --compress-level: string
+    --schema(-s): string
     --table(-t): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv to parquet" [
-    --dump(-u)
-    --compress-level: string
     --evolve(-e)
-    --delimiter(-d): string
-    --quiet(-q)
     --pipe(-i)
-    --compression: string
-    --try-parse-dates
-    --stats(-a)
-    --all-strings(-A)
-    --print-package(-k)
-    --jobs(-j): string
-    --infer-len: string
-    --schema(-s): string
-    --drop
     --stats-csv(-c): string
+    --delimiter(-d): string
+    --infer-len: string
     --separator(-p): string
+    --all-strings(-A)
+    --compression: string
+    --dump(-u)
+    --stats(-a)
+    --quiet(-q)
+    --jobs(-j): string
+    --drop
+    --print-package(-k)
+    --try-parse-dates
+    --compress-level: string
+    --schema(-s): string
     --table(-t): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv to postgres" [
-    --dump(-u)
-    --compress-level: string
     --evolve(-e)
-    --delimiter(-d): string
-    --quiet(-q)
     --pipe(-i)
-    --compression: string
-    --try-parse-dates
-    --stats(-a)
-    --all-strings(-A)
-    --print-package(-k)
-    --jobs(-j): string
-    --infer-len: string
-    --schema(-s): string
-    --drop
     --stats-csv(-c): string
+    --delimiter(-d): string
+    --infer-len: string
     --separator(-p): string
+    --all-strings(-A)
+    --compression: string
+    --dump(-u)
+    --stats(-a)
+    --quiet(-q)
+    --jobs(-j): string
+    --drop
+    --print-package(-k)
+    --try-parse-dates
+    --compress-level: string
+    --schema(-s): string
     --table(-t): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv to sqlite" [
-    --dump(-u)
-    --compress-level: string
     --evolve(-e)
-    --delimiter(-d): string
-    --quiet(-q)
     --pipe(-i)
-    --compression: string
-    --try-parse-dates
-    --stats(-a)
-    --all-strings(-A)
-    --print-package(-k)
-    --jobs(-j): string
-    --infer-len: string
-    --schema(-s): string
-    --drop
     --stats-csv(-c): string
+    --delimiter(-d): string
+    --infer-len: string
     --separator(-p): string
+    --all-strings(-A)
+    --compression: string
+    --dump(-u)
+    --stats(-a)
+    --quiet(-q)
+    --jobs(-j): string
+    --drop
+    --print-package(-k)
+    --try-parse-dates
+    --compress-level: string
+    --schema(-s): string
     --table(-t): string
     --help(-h)                # Print help
   ]
 
   export extern "qsv to xlsx" [
-    --dump(-u)
-    --compress-level: string
     --evolve(-e)
-    --delimiter(-d): string
-    --quiet(-q)
     --pipe(-i)
-    --compression: string
-    --try-parse-dates
-    --stats(-a)
-    --all-strings(-A)
-    --print-package(-k)
-    --jobs(-j): string
-    --infer-len: string
-    --schema(-s): string
-    --drop
     --stats-csv(-c): string
+    --delimiter(-d): string
+    --infer-len: string
     --separator(-p): string
+    --all-strings(-A)
+    --compression: string
+    --dump(-u)
+    --stats(-a)
+    --quiet(-q)
+    --jobs(-j): string
+    --drop
+    --print-package(-k)
+    --try-parse-dates
+    --compress-level: string
+    --schema(-s): string
     --table(-t): string
     --help(-h)                # Print help
   ]
@@ -1851,84 +1851,84 @@ module completions {
   ]
 
   export extern "qsv tojsonl" [
+    --trim
     --quiet(-q)
     --output(-o): string
-    --trim
+    --batch(-b): string
+    --delimiter(-d): string
     --no-boolean
     --jobs(-j): string
-    --delimiter(-d): string
-    --batch(-b): string
     --memcheck
     --help(-h)                # Print help
   ]
 
   export extern "qsv transpose" [
-    --output(-o): string
-    --memcheck
-    --select(-s): string
-    --long: string
-    --multipass(-m)
     --delimiter(-d): string
+    --long: string
+    --select(-s): string
+    --memcheck
+    --output(-o): string
+    --multipass(-m)
     --help(-h)                # Print help
   ]
 
   export extern "qsv validate" [
-    --progressbar(-p)
-    --backtrack-limit: string
-    --email-display-text
-    --invalid: string
-    --batch(-b): string
-    --fail-fast
-    --no-headers(-n)
-    --valid: string
-    --email-min-subdomains: string
-    --ckan-token: string
     --cache-dir: string
-    --jobs(-j): string
-    --trim
-    --valid-output: string
-    --quiet(-q)
     --email-required-tld
-    --fancy-regex
-    --no-format-validation
-    --dfa-size-limit: string
-    --timeout: string
-    --email-domain-literal
-    --json
-    --ckan-api: string
-    --delimiter(-d): string
-    --pretty-json
     --size-limit: string
+    --valid: string
+    --json
+    --fail-fast
+    --delimiter(-d): string
+    --jobs(-j): string
+    --ckan-api: string
+    --trim
+    --email-min-subdomains: string
+    --pretty-json
+    --timeout: string
+    --invalid: string
+    --ckan-token: string
+    --batch(-b): string
+    --dfa-size-limit: string
+    --quiet(-q)
+    --valid-output: string
+    --no-format-validation
+    --email-display-text
+    --fancy-regex
+    --backtrack-limit: string
+    --email-domain-literal
+    --no-headers(-n)
+    --progressbar(-p)
     --help(-h)                # Print help
   ]
 
   export extern "qsv validate schema" [
-    --progressbar(-p)
-    --backtrack-limit: string
-    --email-display-text
-    --invalid: string
-    --batch(-b): string
-    --fail-fast
-    --no-headers(-n)
-    --valid: string
-    --email-min-subdomains: string
-    --ckan-token: string
     --cache-dir: string
-    --jobs(-j): string
-    --trim
-    --valid-output: string
-    --quiet(-q)
     --email-required-tld
-    --fancy-regex
-    --no-format-validation
-    --dfa-size-limit: string
-    --timeout: string
-    --email-domain-literal
-    --json
-    --ckan-api: string
-    --delimiter(-d): string
-    --pretty-json
     --size-limit: string
+    --valid: string
+    --json
+    --fail-fast
+    --delimiter(-d): string
+    --jobs(-j): string
+    --ckan-api: string
+    --trim
+    --email-min-subdomains: string
+    --pretty-json
+    --timeout: string
+    --invalid: string
+    --ckan-token: string
+    --batch(-b): string
+    --dfa-size-limit: string
+    --quiet(-q)
+    --valid-output: string
+    --no-format-validation
+    --email-display-text
+    --fancy-regex
+    --backtrack-limit: string
+    --email-domain-literal
+    --no-headers(-n)
+    --progressbar(-p)
     --help(-h)                # Print help
   ]
 

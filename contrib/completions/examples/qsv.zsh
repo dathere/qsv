@@ -34,31 +34,31 @@ _qsv() {
         case $line[1] in
             (apply)
 _arguments "${_arguments_options[@]}" : \
-'-R+[]: :_default' \
-'--replacement=[]: :_default' \
 '-C+[]: :_default' \
 '--comparand=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-R+[]: :_default' \
+'--replacement=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
-":: :_qsv__apply_commands" \
+":: :_qsv__subcmd__apply_commands" \
 "*::: :->apply" \
 && ret=0
 
@@ -70,119 +70,119 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (calcconv)
 _arguments "${_arguments_options[@]}" : \
-'-R+[]: :_default' \
-'--replacement=[]: :_default' \
 '-C+[]: :_default' \
 '--comparand=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-R+[]: :_default' \
+'--replacement=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (dynfmt)
 _arguments "${_arguments_options[@]}" : \
-'-R+[]: :_default' \
-'--replacement=[]: :_default' \
 '-C+[]: :_default' \
 '--comparand=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-R+[]: :_default' \
+'--replacement=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (emptyreplace)
 _arguments "${_arguments_options[@]}" : \
-'-R+[]: :_default' \
-'--replacement=[]: :_default' \
 '-C+[]: :_default' \
 '--comparand=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-R+[]: :_default' \
+'--replacement=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (operations)
 _arguments "${_arguments_options[@]}" : \
-'-R+[]: :_default' \
-'--replacement=[]: :_default' \
 '-C+[]: :_default' \
 '--comparand=[]: :_default' \
-'-f+[]: :_default' \
-'--formatstr=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-R+[]: :_default' \
+'--replacement=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__apply__help_commands" \
+":: :_qsv__subcmd__apply__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -232,22 +232,22 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (blake3)
 _arguments "${_arguments_options[@]}" : \
+'--derive-key=[]: :_default' \
 '-l+[]: :_default' \
 '--length=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--derive-key=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--no-names[]' \
 '--keyed[]' \
-'--raw[]' \
-'-c[]' \
-'--check[]' \
 '-q[]' \
 '--quiet[]' \
-'--no-names[]' \
-'--no-mmap[]' \
+'-c[]' \
+'--check[]' \
 '--tag[]' \
+'--raw[]' \
+'--no-mmap[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -256,20 +256,20 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-N+[]: :_default' \
 '--group-name=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-g+[]: :_default' \
 '--group=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-p[]' \
-'--pad[]' \
+'--flexible[]' \
 '-n[]' \
 '--no-headers[]' \
-'--flexible[]' \
+'-p[]' \
+'--pad[]' \
 '-h[Print help]' \
 '--help[Print help]' \
-":: :_qsv__cat_commands" \
+":: :_qsv__subcmd__cat_commands" \
 "*::: :->cat" \
 && ret=0
 
@@ -283,17 +283,17 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-N+[]: :_default' \
 '--group-name=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-g+[]: :_default' \
 '--group=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-p[]' \
-'--pad[]' \
+'--flexible[]' \
 '-n[]' \
 '--no-headers[]' \
-'--flexible[]' \
+'-p[]' \
+'--pad[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -302,17 +302,17 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-N+[]: :_default' \
 '--group-name=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-g+[]: :_default' \
 '--group=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-p[]' \
-'--pad[]' \
+'--flexible[]' \
 '-n[]' \
 '--no-headers[]' \
-'--flexible[]' \
+'-p[]' \
+'--pad[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -321,24 +321,24 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-N+[]: :_default' \
 '--group-name=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-g+[]: :_default' \
 '--group=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-p[]' \
-'--pad[]' \
+'--flexible[]' \
 '-n[]' \
 '--no-headers[]' \
-'--flexible[]' \
+'-p[]' \
+'--pad[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__cat__help_commands" \
+":: :_qsv__subcmd__cat__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -382,12 +382,12 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (color)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-t+[]: :_default' \
 '--title=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-n[]' \
 '--row-numbers[]' \
 '--memcheck[]' \
@@ -401,49 +401,49 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--width[]' \
-'--low-memory[]' \
-'--width-no-delims[]' \
-'--json[]' \
-'--no-polars[]' \
-'-H[]' \
-'--human-readable[]' \
 '-f[]' \
 '--flexible[]' \
+'--width[]' \
+'--json[]' \
+'--width-no-delims[]' \
+'--low-memory[]' \
+'--no-polars[]' \
 '-n[]' \
 '--no-headers[]' \
+'-H[]' \
+'--human-readable[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (datefmt)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--input-tz=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'-R+[]: :_default' \
-'--ts-resolution=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--output-tz=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--default-tz=[]: :_default' \
+'--input-tz=[]: :_default' \
 '--formatstr=[]: :_default' \
+'--default-tz=[]: :_default' \
+'-R+[]: :_default' \
+'--ts-resolution=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
 '--keep-zero-time[]' \
-'--prefer-dmy[]' \
-'--utc[]' \
-'--zulu[]' \
 '-p[]' \
 '--progressbar[]' \
 '-n[]' \
 '--no-headers[]' \
+'--prefer-dmy[]' \
+'--zulu[]' \
+'--utc[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -454,106 +454,106 @@ _arguments "${_arguments_options[@]}" : \
 '--jobs=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-D+[]: :_default' \
-'--dupes-output=[]: :_default' \
 '-s+[]: :_default' \
 '--select=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--memcheck[]' \
+'-D+[]: :_default' \
+'--dupes-output=[]: :_default' \
 '-i[]' \
 '--ignore-case[]' \
-'--sorted[]' \
 '-N[]' \
 '--numeric[]' \
-'-H[]' \
-'--human-readable[]' \
-'-q[]' \
-'--quiet[]' \
+'--sorted[]' \
 '-n[]' \
 '--no-headers[]' \
+'--memcheck[]' \
+'-q[]' \
+'--quiet[]' \
+'-H[]' \
+'--human-readable[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (describegpt)
 _arguments "${_arguments_options[@]}" : \
+'--sample-size=[]: :_default' \
+'--user-agent=[]: :_default' \
+'--freq-options=[]: :_default' \
 '-u+[]: :_default' \
 '--base-url=[]: :_default' \
-'--format=[]: :_default' \
-'--ckan-token=[]: :_default' \
-'--sql-results=[]: :_default' \
-'--addl-cols-list=[]: :_default' \
-'--ckan-api=[]: :_default' \
-'--score-threshold=[]: :_default' \
-'-p+[]: :_default' \
-'--prompt=[]: :_default' \
 '--session-len=[]: :_default' \
-'--score-max-retries=[]: :_default' \
-'--freq-options=[]: :_default' \
-'--user-agent=[]: :_default' \
-'-k+[]: :_default' \
-'--api-key=[]: :_default' \
-'--num-examples=[]: :_default' \
-'--session=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--score-threshold=[]: :_default' \
 '-m+[]: :_default' \
 '--model=[]: :_default' \
-'--prompt-file=[]: :_default' \
-'--language=[]: :_default' \
-'--export-prompt=[]: :_default' \
-'--timeout=[]: :_default' \
-'--num-tags=[]: :_default' \
-'--cache-dir=[]: :_default' \
+'--addl-props=[]: :_default' \
+'--tag-vocab=[]: :_default' \
+'--format=[]: :_default' \
 '--truncate-str=[]: :_default' \
+'--prompt-file=[]: :_default' \
 '--enum-threshold=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--language=[]: :_default' \
+'-k+[]: :_default' \
+'--api-key=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--num-examples=[]: :_default' \
+'--num-tags=[]: :_default' \
+'--disk-cache-dir=[]: :_default' \
+'-p+[]: :_default' \
+'--prompt=[]: :_default' \
 '-t+[]: :_default' \
 '--max-tokens=[]: :_default' \
-'--addl-props=[]: :_default' \
+'--export-prompt=[]: :_default' \
+'--sql-results=[]: :_default' \
+'--timeout=[]: :_default' \
+'--addl-cols-list=[]: :_default' \
+'--score-max-retries=[]: :_default' \
+'--ckan-api=[]: :_default' \
 '--stats-options=[]: :_default' \
-'--sample-size=[]: :_default' \
-'--tag-vocab=[]: :_default' \
-'--disk-cache-dir=[]: :_default' \
-'--fewshot-examples[]' \
-'--description[]' \
-'--dictionary[]' \
-'--redis-cache[]' \
-'--addl-cols[]' \
-'--tags[]' \
+'--session=[]: :_default' \
 '--no-score-sql[]' \
-'--forget[]' \
-'--flush-cache[]' \
-'--process-response[]' \
-'-q[]' \
-'--quiet[]' \
+'--dictionary[]' \
 '--no-cache[]' \
-'--fresh[]' \
 '-A[]' \
 '--all[]' \
+'--process-response[]' \
+'--flush-cache[]' \
+'--fewshot-examples[]' \
+'--tags[]' \
+'--forget[]' \
+'--description[]' \
 '--prepare-context[]' \
+'-q[]' \
+'--quiet[]' \
+'--redis-cache[]' \
+'--fresh[]' \
+'--addl-cols[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (diff)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--sort-columns=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--delimiter-left=[]: :_default' \
 '--delimiter-right=[]: :_default' \
-'--delimiter-output=[]: :_default' \
+'--delimiter-left=[]: :_default' \
 '-k+[]: :_default' \
 '--key=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--no-headers-output[]' \
-'--no-headers-right[]' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--delimiter-output=[]: :_default' \
+'--sort-columns=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '--no-headers-left[]' \
 '--drop-equal-fields[]' \
+'--no-headers-output[]' \
+'--no-headers-right[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -562,10 +562,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
 '-i[]' \
 '--in-place[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -573,62 +573,62 @@ _arguments "${_arguments_options[@]}" : \
 (enum)
 _arguments "${_arguments_options[@]}" : \
 '--increment=[]: :_default' \
-'--copy=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
 '--start=[]: :_default' \
-'--hash=[]: :_default' \
 '--constant=[]: :_default' \
+'--copy=[]: :_default' \
+'--hash=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
 '--uuid4[]' \
 '--uuid7[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (excel)
 _arguments "${_arguments_options[@]}" : \
-'--date-format=[]: :_default' \
-'--cell=[]: :_default' \
+'--metadata=[]: :_default' \
+'--range=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--table=[]: :_default' \
 '--header-row=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--metadata=[]: :_default' \
-'-s+[]: :_default' \
-'--sheet=[]: :_default' \
-'--error-format=[]: :_default' \
-'--table=[]: :_default' \
-'--range=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--trim[]' \
-'--flexible[]' \
-'--keep-zero-time[]' \
+'--error-format=[]: :_default' \
+'--cell=[]: :_default' \
+'--date-format=[]: :_default' \
+'-s+[]: :_default' \
+'--sheet=[]: :_default' \
 '-q[]' \
 '--quiet[]' \
+'--flexible[]' \
+'--trim[]' \
+'--keep-zero-time[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (exclude)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-i[]' \
 '--ignore-case[]' \
 '-v[]' \
 '--invert[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -637,10 +637,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
 '-h[Print help]' \
@@ -649,136 +649,136 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (extdedup)
 _arguments "${_arguments_options[@]}" : \
+'-D+[]: :_default' \
+'--dupes-output=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
+'--memory-limit=[]: :_default' \
 '--temp-dir=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-D+[]: :_default' \
-'--dupes-output=[]: :_default' \
-'--memory-limit=[]: :_default' \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
+'-H[]' \
+'--human-readable[]' \
 '-q[]' \
 '--quiet[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-output[]' \
-'-H[]' \
-'--human-readable[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (extsort)
 _arguments "${_arguments_options[@]}" : \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
-'--tmp-dir=[]: :_default' \
 '--memory-limit=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-R[]' \
-'--reverse[]' \
+'--tmp-dir=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
+'-R[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (fetch)
 _arguments "${_arguments_options[@]}" : \
+'--jaq=[]: :_default' \
+'--mem-cache-size=[]: :_default' \
+'--jaqfile=[]: :_default' \
 '-H+[]: :_default' \
 '--http-header=[]: :_default' \
-'--jaqfile=[]: :_default' \
+'--url-template=[]: :_default' \
+'--max-retries=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--mem-cache-size=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
-'--report=[]: :_default' \
-'--max-errors=[]: :_default' \
-'--user-agent=[]: :_default' \
-'--max-retries=[]: :_default' \
-'--jaq=[]: :_default' \
-'--disk-cache-dir=[]: :_default' \
-'--timeout=[]: :_default' \
-'--rate-limit=[]: :_default' \
-'--url-template=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--pretty[]' \
-'--redis-cache[]' \
-'-n[]' \
-'--no-headers[]' \
-'--no-cache[]' \
-'--disk-cache[]' \
-'--flush-cache[]' \
-'--cookies[]' \
+'--report=[]: :_default' \
+'--disk-cache-dir=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'--max-errors=[]: :_default' \
+'--user-agent=[]: :_default' \
+'--timeout=[]: :_default' \
 '--store-error[]' \
-'--cache-error[]' \
 '-p[]' \
 '--progressbar[]' \
+'--pretty[]' \
+'--disk-cache[]' \
+'--flush-cache[]' \
+'--cache-error[]' \
+'--no-cache[]' \
+'-n[]' \
+'--no-headers[]' \
+'--redis-cache[]' \
+'--cookies[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (fetchpost)
 _arguments "${_arguments_options[@]}" : \
-'--content-type=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--user-agent=[]: :_default' \
-'--max-retries=[]: :_default' \
-'--mem-cache-size=[]: :_default' \
-'--report=[]: :_default' \
-'--jaq=[]: :_default' \
-'-j+[]: :_default' \
-'--globals-json=[]: :_default' \
-'--jaqfile=[]: :_default' \
 '-H+[]: :_default' \
 '--http-header=[]: :_default' \
-'--timeout=[]: :_default' \
+'-j+[]: :_default' \
+'--globals-json=[]: :_default' \
+'--user-agent=[]: :_default' \
 '--max-errors=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'--rate-limit=[]: :_default' \
 '-t+[]: :_default' \
 '--payload-tpl=[]: :_default' \
+'--content-type=[]: :_default' \
+'--report=[]: :_default' \
+'--mem-cache-size=[]: :_default' \
+'--jaq=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '--disk-cache-dir=[]: :_default' \
+'--max-retries=[]: :_default' \
+'--timeout=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'--jaqfile=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--compress[]' \
-'--cookies[]' \
-'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--no-cache[]' \
+'--redis-cache[]' \
 '--cache-error[]' \
 '-n[]' \
 '--no-headers[]' \
-'--flush-cache[]' \
-'--disk-cache[]' \
 '--pretty[]' \
+'--cookies[]' \
+'--compress[]' \
 '--store-error[]' \
-'--redis-cache[]' \
+'--disk-cache[]' \
+'--flush-cache[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (fill)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-v+[]: :_default' \
-'--default=[]: :_default' \
-'-g+[]: :_default' \
-'--groupby=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-f[]' \
-'--first[]' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-g+[]: :_default' \
+'--groupby=[]: :_default' \
+'-v+[]: :_default' \
+'--default=[]: :_default' \
 '-b[]' \
 '--backfill[]' \
+'-f[]' \
+'--first[]' \
 '-n[]' \
 '--no-headers[]' \
 '-h[Print help]' \
@@ -787,16 +787,16 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (fixlengths)
 _arguments "${_arguments_options[@]}" : \
-'-l+[]: :_default' \
-'--length=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--quote=[]: :_default' \
-'--escape=[]: :_default' \
 '-i+[]: :_default' \
 '--insert=[]: :_default' \
+'--escape=[]: :_default' \
+'--quote=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--length=[]: :_default' \
 '-q[]' \
 '--quiet[]' \
 '-r[]' \
@@ -807,14 +807,14 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (flatten)
 _arguments "${_arguments_options[@]}" : \
-'-c+[]: :_default' \
-'--condense=[]: :_default' \
-'-s+[]: :_default' \
-'--separator=[]: :_default' \
-'-f+[]: :_default' \
-'--field-separator=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'-s+[]: :_default' \
+'--separator=[]: :_default' \
+'-c+[]: :_default' \
+'--condense=[]: :_default' \
+'-f+[]: :_default' \
+'--field-separator=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
 '-h[Print help]' \
@@ -824,84 +824,84 @@ _arguments "${_arguments_options[@]}" : \
 (fmt)
 _arguments "${_arguments_options[@]}" : \
 '--quote=[]: :_default' \
-'-t+[]: :_default' \
-'--out-delimiter=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--escape=[]: :_default' \
+'-t+[]: :_default' \
+'--out-delimiter=[]: :_default' \
 '--ascii[]' \
-'--no-final-newline[]' \
+'--crlf[]' \
 '--quote-always[]' \
 '--quote-never[]' \
-'--crlf[]' \
+'--no-final-newline[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (foreach)
 _arguments "${_arguments_options[@]}" : \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
-'--dry-run=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--dry-run=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
+'-p[]' \
+'--progressbar[]' \
 '-u[]' \
 '--unify[]' \
 '-n[]' \
 '--no-headers[]' \
-'-p[]' \
-'--progressbar[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (frequency)
 _arguments "${_arguments_options[@]}" : \
-'--other-text=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
+'--high-card-threshold=[]: :_default' \
+'--no-float=[]: :_default' \
 '-u+[]: :_default' \
 '--unq-limit=[]: :_default' \
-'--pct-dec-places=[]: :_default' \
-'-r+[]: :_default' \
-'--rank-strategy=[]: :_default' \
-'--lmt-threshold=[]: :_default' \
-'--no-float=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
 '-l+[]: :_default' \
 '--limit=[]: :_default' \
+'--null-text=[]: :_default' \
+'--pct-dec-places=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--weight=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--all-unique-text=[]: :_default' \
 '--high-card-pct=[]: :_default' \
-'--null-text=[]: :_default' \
-'--weight=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '--stats-filter=[]: :_default' \
-'--high-card-threshold=[]: :_default' \
-'--force[]' \
-'--pretty-json[]' \
-'--memcheck[]' \
-'--other-sorted[]' \
-'--frequency-jsonl[]' \
+'--lmt-threshold=[]: :_default' \
+'-r+[]: :_default' \
+'--rank-strategy=[]: :_default' \
+'--other-text=[]: :_default' \
+'--all-unique-text=[]: :_default' \
 '-a[]' \
 '--asc[]' \
 '--no-stats[]' \
-'--vis-whitespace[]' \
-'--toon[]' \
-'--json[]' \
-'--no-other[]' \
-'--no-nulls[]' \
-'--no-trim[]' \
 '--pct-nulls[]' \
-'-n[]' \
-'--no-headers[]' \
+'--json[]' \
 '-i[]' \
 '--ignore-case[]' \
+'--vis-whitespace[]' \
+'--frequency-jsonl[]' \
+'--force[]' \
+'--no-nulls[]' \
+'--pretty-json[]' \
+'-n[]' \
+'--no-headers[]' \
+'--memcheck[]' \
+'--no-other[]' \
+'--toon[]' \
+'--no-trim[]' \
+'--other-sorted[]' \
 '--null-sorted[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -909,38 +909,38 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (geocode)
 _arguments "${_arguments_options[@]}" : \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--timeout=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--min-score=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--timeout=[]: :_default' \
+'--admin1=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-k+[]: :_default' \
 '--k_weight=[]: :_default' \
-'--languages=[]: :_default' \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--country=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--min-score=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'--admin1=[]: :_default' \
-'--cities-url=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
 '-h[Print help]' \
 '--help[Print help]' \
-":: :_qsv__geocode_commands" \
+":: :_qsv__subcmd__geocode_commands" \
 "*::: :->geocode" \
 && ret=0
 
@@ -952,32 +952,32 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (countryinfo)
 _arguments "${_arguments_options[@]}" : \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--timeout=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--min-score=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--timeout=[]: :_default' \
+'--admin1=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-k+[]: :_default' \
 '--k_weight=[]: :_default' \
-'--languages=[]: :_default' \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--country=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--min-score=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'--admin1=[]: :_default' \
-'--cities-url=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -987,32 +987,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (countryinfonow)
 _arguments "${_arguments_options[@]}" : \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--timeout=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--min-score=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--timeout=[]: :_default' \
+'--admin1=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-k+[]: :_default' \
 '--k_weight=[]: :_default' \
-'--languages=[]: :_default' \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--country=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--min-score=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'--admin1=[]: :_default' \
-'--cities-url=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1022,32 +1022,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (index-check)
 _arguments "${_arguments_options[@]}" : \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--timeout=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--min-score=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--timeout=[]: :_default' \
+'--admin1=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-k+[]: :_default' \
 '--k_weight=[]: :_default' \
-'--languages=[]: :_default' \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--country=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--min-score=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'--admin1=[]: :_default' \
-'--cities-url=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1057,32 +1057,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (index-load)
 _arguments "${_arguments_options[@]}" : \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--timeout=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--min-score=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--timeout=[]: :_default' \
+'--admin1=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-k+[]: :_default' \
 '--k_weight=[]: :_default' \
-'--languages=[]: :_default' \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--country=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--min-score=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'--admin1=[]: :_default' \
-'--cities-url=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1092,32 +1092,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (index-reset)
 _arguments "${_arguments_options[@]}" : \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--timeout=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--min-score=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--timeout=[]: :_default' \
+'--admin1=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-k+[]: :_default' \
 '--k_weight=[]: :_default' \
-'--languages=[]: :_default' \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--country=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--min-score=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'--admin1=[]: :_default' \
-'--cities-url=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1127,32 +1127,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (index-update)
 _arguments "${_arguments_options[@]}" : \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--timeout=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--min-score=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--timeout=[]: :_default' \
+'--admin1=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-k+[]: :_default' \
 '--k_weight=[]: :_default' \
-'--languages=[]: :_default' \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--country=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--min-score=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'--admin1=[]: :_default' \
-'--cities-url=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1162,32 +1162,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (iplookup)
 _arguments "${_arguments_options[@]}" : \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--timeout=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--min-score=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--timeout=[]: :_default' \
+'--admin1=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-k+[]: :_default' \
 '--k_weight=[]: :_default' \
-'--languages=[]: :_default' \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--country=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--min-score=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'--admin1=[]: :_default' \
-'--cities-url=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1197,32 +1197,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (iplookupnow)
 _arguments "${_arguments_options[@]}" : \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--timeout=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--min-score=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--timeout=[]: :_default' \
+'--admin1=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-k+[]: :_default' \
 '--k_weight=[]: :_default' \
-'--languages=[]: :_default' \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--country=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--min-score=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'--admin1=[]: :_default' \
-'--cities-url=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1232,32 +1232,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (reverse)
 _arguments "${_arguments_options[@]}" : \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--timeout=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--min-score=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--timeout=[]: :_default' \
+'--admin1=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-k+[]: :_default' \
 '--k_weight=[]: :_default' \
-'--languages=[]: :_default' \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--country=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--min-score=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'--admin1=[]: :_default' \
-'--cities-url=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1267,32 +1267,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (reversenow)
 _arguments "${_arguments_options[@]}" : \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--timeout=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--min-score=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--timeout=[]: :_default' \
+'--admin1=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-k+[]: :_default' \
 '--k_weight=[]: :_default' \
-'--languages=[]: :_default' \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--country=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--min-score=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'--admin1=[]: :_default' \
-'--cities-url=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1302,32 +1302,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (suggest)
 _arguments "${_arguments_options[@]}" : \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--timeout=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--min-score=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--timeout=[]: :_default' \
+'--admin1=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-k+[]: :_default' \
 '--k_weight=[]: :_default' \
-'--languages=[]: :_default' \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--country=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--min-score=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'--admin1=[]: :_default' \
-'--cities-url=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1337,32 +1337,32 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (suggestnow)
 _arguments "${_arguments_options[@]}" : \
-'-r+[]: :_default' \
-'--rename=[]: :_default' \
-'--timeout=[]: :_default' \
-'-c+[]: :_default' \
-'--new-column=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--languages=[]: :_default' \
 '--invalid-result=[]: :_default' \
+'--min-score=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--timeout=[]: :_default' \
+'--admin1=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '-k+[]: :_default' \
 '--k_weight=[]: :_default' \
-'--languages=[]: :_default' \
-'-l+[]: :_default' \
-'--language=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--country=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--min-score=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'--admin1=[]: :_default' \
-'--cities-url=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
 '--force[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -1372,7 +1372,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__geocode__help_commands" \
+":: :_qsv__subcmd__geocode__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -1446,14 +1446,14 @@ esac
 _arguments "${_arguments_options[@]}" : \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-y+[]: :_default' \
-'--latitude=[]: :_default' \
 '-g+[]: :_default' \
 '--geometry=[]: :_default' \
-'-x+[]: :_default' \
-'--longitude=[]: :_default' \
+'-y+[]: :_default' \
+'--latitude=[]: :_default' \
 '-l+[]: :_default' \
 '--max-length=[]: :_default' \
+'-x+[]: :_default' \
+'--longitude=[]: :_default' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1462,12 +1462,12 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'-J[]' \
+'--just-count[]' \
+'--trim[]' \
 '-j[]' \
 '--just-names[]' \
 '--intersect[]' \
-'--trim[]' \
-'-J[]' \
-'--just-count[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1482,127 +1482,127 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (input)
 _arguments "${_arguments_options[@]}" : \
-'--skip-lines=[]: :_default' \
+'--escape=[]: :_default' \
 '--skip-lastlines=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--quote-style=[]: :_default' \
-'--escape=[]: :_default' \
 '--encoding-errors=[]: :_default' \
-'--quote=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '--comment=[]: :_default' \
-'--no-quoting[]' \
-'--trim-fields[]' \
+'--quote=[]: :_default' \
+'--skip-lines=[]: :_default' \
+'--quote-style=[]: :_default' \
 '--auto-skip[]' \
 '--trim-headers[]' \
+'--no-quoting[]' \
+'--trim-fields[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (join)
 _arguments "${_arguments_options[@]}" : \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
+'--keys-output=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--keys-output=[]: :_default' \
-'--right-semi[]' \
-'--left-semi[]' \
-'--cross[]' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '--left[]' \
-'-i[]' \
-'--ignore-case[]' \
-'--full[]' \
 '-z[]' \
 '--ignore-leading-zeros[]' \
 '--right-anti[]' \
+'--cross[]' \
 '--left-anti[]' \
+'--left-semi[]' \
 '--right[]' \
-'--nulls[]' \
+'--full[]' \
+'-i[]' \
+'--ignore-case[]' \
 '-n[]' \
 '--no-headers[]' \
+'--nulls[]' \
+'--right-semi[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (joinp)
 _arguments "${_arguments_options[@]}" : \
-'--tolerance=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '--non-equi=[]: :_default' \
-'--sql-filter=[]: :_default' \
-'--maintain-order=[]: :_default' \
-'--infer-len=[]: :_default' \
 '--date-format=[]: :_default' \
-'--float-precision=[]: :_default' \
-'--null-value=[]: :_default' \
-'-N+[]: :_default' \
-'--norm-unicode=[]: :_default' \
-'--strategy=[]: :_default' \
-'--validate=[]: :_default' \
+'--infer-len=[]: :_default' \
+'--left_by=[]: :_default' \
 '--right_by=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '--cache-schema=[]: :_default' \
 '--time-format=[]: :_default' \
-'--left_by=[]: :_default' \
+'--strategy=[]: :_default' \
 '--filter-right=[]: :_default' \
-'--filter-left=[]: :_default' \
+'--sql-filter=[]: :_default' \
+'--maintain-order=[]: :_default' \
+'--float-precision=[]: :_default' \
+'-N+[]: :_default' \
+'--norm-unicode=[]: :_default' \
+'--tolerance=[]: :_default' \
 '--datetime-format=[]: :_default' \
-'--left[]' \
-'--no-sort[]' \
-'-i[]' \
-'--ignore-case[]' \
-'--left-semi[]' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--validate=[]: :_default' \
+'--null-value=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--filter-left=[]: :_default' \
 '--coalesce[]' \
-'--full[]' \
-'--try-parsedates[]' \
-'--decimal-comma[]' \
-'--no-optimizations[]' \
-'--low-memory[]' \
-'--streaming[]' \
-'-q[]' \
-'--quiet[]' \
-'--asof[]' \
 '-z[]' \
 '--ignore-leading-zeros[]' \
-'--cross[]' \
-'--ignore-errors[]' \
-'--nulls[]' \
-'--right-anti[]' \
-'--right[]' \
-'--right-semi[]' \
+'--asof[]' \
 '--left-anti[]' \
+'--ignore-errors[]' \
+'--left[]' \
+'--decimal-comma[]' \
+'--full[]' \
+'--right[]' \
+'-q[]' \
+'--quiet[]' \
+'--left-semi[]' \
+'--cross[]' \
+'--try-parsedates[]' \
+'--no-sort[]' \
 '-X[]' \
 '--allow-exact-matches[]' \
+'--right-semi[]' \
+'-i[]' \
+'--ignore-case[]' \
+'--nulls[]' \
+'--low-memory[]' \
+'--no-optimizations[]' \
+'--streaming[]' \
+'--right-anti[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (json)
 _arguments "${_arguments_options[@]}" : \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '--jaq=[]: :_default' \
 '-s+[]: :_default' \
 '--select=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (jsonl)
 _arguments "${_arguments_options[@]}" : \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '--ignore-errors[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -1610,30 +1610,30 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (lens)
 _arguments "${_arguments_options[@]}" : \
+'--echo-column=[]: :_default' \
+'--columns=[]: :_default' \
 '-W+[]: :_default' \
 '--wrap-mode=[]: :_default' \
+'-P+[]: :_default' \
+'--prompt=[]: :_default' \
+'--find=[]: :_default' \
 '--filter=[]: :_default' \
 '-f+[]: :_default' \
 '--freeze-columns=[]: :_default' \
-'-P+[]: :_default' \
-'--prompt=[]: :_default' \
-'--echo-column=[]: :_default' \
-'--columns=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--find=[]: :_default' \
-'-t[]' \
-'--tab-separated[]' \
-'--no-headers[]' \
-'-S[]' \
-'--streaming-stdin[]' \
 '-A[]' \
 '--auto-reload[]' \
+'--no-headers[]' \
 '-i[]' \
 '--ignore-case[]' \
+'-S[]' \
+'--streaming-stdin[]' \
+'--debug[]' \
 '-m[]' \
 '--monochrome[]' \
-'--debug[]' \
+'-t[]' \
+'--tab-separated[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1646,31 +1646,31 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (luau)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--max-errors=[]: :_default' \
 '--ckan-api=[]: :_default' \
 '-B+[]: :_default' \
 '--begin=[]: :_default' \
-'--ckan-token=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'-E+[]: :_default' \
-'--end=[]: :_default' \
-'--timeout=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
+'--timeout=[]: :_default' \
+'-E+[]: :_default' \
+'--end=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--max-errors=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--colindex[]' \
 '-p[]' \
 '--progressbar[]' \
-'-g[]' \
-'--no-globals[]' \
-'--colindex[]' \
+'-n[]' \
+'--no-headers[]' \
 '-r[]' \
 '--remap[]' \
+'-g[]' \
+'--no-globals[]' \
 '-h[Print help]' \
 '--help[Print help]' \
-":: :_qsv__luau_commands" \
+":: :_qsv__subcmd__luau_commands" \
 "*::: :->luau" \
 && ret=0
 
@@ -1682,63 +1682,63 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (filter)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--max-errors=[]: :_default' \
 '--ckan-api=[]: :_default' \
 '-B+[]: :_default' \
 '--begin=[]: :_default' \
-'--ckan-token=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'-E+[]: :_default' \
-'--end=[]: :_default' \
-'--timeout=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
+'--timeout=[]: :_default' \
+'-E+[]: :_default' \
+'--end=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--max-errors=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--colindex[]' \
 '-p[]' \
 '--progressbar[]' \
-'-g[]' \
-'--no-globals[]' \
-'--colindex[]' \
+'-n[]' \
+'--no-headers[]' \
 '-r[]' \
 '--remap[]' \
+'-g[]' \
+'--no-globals[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (map)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--max-errors=[]: :_default' \
 '--ckan-api=[]: :_default' \
 '-B+[]: :_default' \
 '--begin=[]: :_default' \
-'--ckan-token=[]: :_default' \
-'--cache-dir=[]: :_default' \
-'-E+[]: :_default' \
-'--end=[]: :_default' \
-'--timeout=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
+'--timeout=[]: :_default' \
+'-E+[]: :_default' \
+'--end=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--max-errors=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--colindex[]' \
 '-p[]' \
 '--progressbar[]' \
-'-g[]' \
-'--no-globals[]' \
-'--colindex[]' \
+'-n[]' \
+'--no-headers[]' \
 '-r[]' \
 '--remap[]' \
+'-g[]' \
+'--no-globals[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__luau__help_commands" \
+":: :_qsv__subcmd__luau__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -1770,33 +1770,33 @@ esac
 ;;
 (moarstats)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-K+[]: :_default' \
-'--join-keys=[]: :_default' \
-'-J+[]: :_default' \
-'--join-inputs=[]: :_default' \
+'--stats-options=[]: :_default' \
 '-S+[]: :_default' \
 '--bivariate-stats=[]: :_default' \
-'--pct-thresholds=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
 '-T+[]: :_default' \
 '--join-type=[]: :_default' \
-'--round=[]: :_default' \
-'-e+[]: :_default' \
-'--epsilon=[]: :_default' \
-'--xsd-gdate-scan=[]: :_default' \
-'--stats-options=[]: :_default' \
 '-C+[]: :_default' \
 '--cardinality-threshold=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-e+[]: :_default' \
+'--epsilon=[]: :_default' \
+'--pct-thresholds=[]: :_default' \
+'--xsd-gdate-scan=[]: :_default' \
+'-J+[]: :_default' \
+'--join-inputs=[]: :_default' \
+'-K+[]: :_default' \
+'--join-keys=[]: :_default' \
+'--round=[]: :_default' \
+'--force[]' \
+'--advanced[]' \
+'--use-percentiles[]' \
 '-p[]' \
 '--progressbar[]' \
-'--use-percentiles[]' \
-'--force[]' \
 '-B[]' \
 '--bivariate[]' \
-'--advanced[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1805,10 +1805,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-p+[]: :_default' \
 '--prefix-length=[]: :_default' \
-'--limit=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '--filename=[]: :_default' \
+'--limit=[]: :_default' \
 '--drop[]' \
 '-n[]' \
 '--no-headers[]' \
@@ -1818,59 +1818,59 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (pivotp)
 _arguments "${_arguments_options[@]}" : \
-'-a+[]: :_default' \
-'--agg=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-v+[]: :_default' \
-'--values=[]: :_default' \
-'-i+[]: :_default' \
-'--index=[]: :_default' \
-'--col-separator=[]: :_default' \
-'--infer-len=[]: :_default' \
-'--total-label=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--ignore-errors[]' \
-'--subtotal[]' \
-'--grand-total[]' \
+'-a+[]: :_default' \
+'--agg=[]: :_default' \
+'--infer-len=[]: :_default' \
+'--total-label=[]: :_default' \
+'-v+[]: :_default' \
+'--values=[]: :_default' \
+'--col-separator=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-i+[]: :_default' \
+'--index=[]: :_default' \
 '--sort-columns[]' \
-'--maintain-order[]' \
 '--try-parsedates[]' \
 '--validate[]' \
+'--subtotal[]' \
+'--maintain-order[]' \
+'--decimal-comma[]' \
+'--grand-total[]' \
 '-q[]' \
 '--quiet[]' \
-'--decimal-comma[]' \
+'--ignore-errors[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (pragmastat)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--compare1=[]: :_default' \
+'--stats-options=[]: :_default' \
+'--seed=[]: :_default' \
 '-s+[]: :_default' \
 '--select=[]: :_default' \
 '--subsample=[]: :_default' \
-'--compare2=[]: :_default' \
-'--stats-options=[]: :_default' \
-'-m+[]: :_default' \
-'--misrate=[]: :_default' \
+'--round=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--round=[]: :_default' \
-'--seed=[]: :_default' \
-'--compare1=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
+'-m+[]: :_default' \
+'--misrate=[]: :_default' \
+'--compare2=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--memcheck[]' \
 '--force[]' \
+'--no-bounds[]' \
+'--standalone[]' \
 '-t[]' \
 '--twosample[]' \
-'--no-bounds[]' \
 '-n[]' \
 '--no-headers[]' \
-'--standalone[]' \
-'--memcheck[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1879,7 +1879,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-h[Print help]' \
 '--help[Print help]' \
-":: :_qsv__pro_commands" \
+":: :_qsv__subcmd__pro_commands" \
 "*::: :->pro" \
 && ret=0
 
@@ -1903,7 +1903,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__pro__help_commands" \
+":: :_qsv__subcmd__pro__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -1935,33 +1935,33 @@ esac
 ;;
 (prompt)
 _arguments "${_arguments_options[@]}" : \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-F+[]: :_default' \
 '--filters=[]: :_default' \
 '-m+[]: :_default' \
 '--msg=[]: :_default' \
 '--base-delay-ms=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '--save-fname=[]: :_default' \
 '-d+[]: :_default' \
 '--workdir=[]: :_default' \
-'-f[]' \
-'--fd-output[]' \
 '-q[]' \
 '--quiet[]' \
+'-f[]' \
+'--fd-output[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (pseudo)
 _arguments "${_arguments_options[@]}" : \
-'--formatstr=[]: :_default' \
+'--increment=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--start=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'--increment=[]: :_default' \
+'--formatstr=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
 '-h[Print help]' \
@@ -1970,21 +1970,21 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (py)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '-f+[]: :_default' \
 '--helper=[]: :_default' \
-'-p[]' \
-'--progressbar[]' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
+'-p[]' \
+'--progressbar[]' \
 '-h[Print help]' \
 '--help[Print help]' \
-":: :_qsv__py_commands" \
+":: :_qsv__subcmd__py_commands" \
 "*::: :->py" \
 && ret=0
 
@@ -1996,43 +1996,43 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (filter)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '-f+[]: :_default' \
 '--helper=[]: :_default' \
-'-p[]' \
-'--progressbar[]' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
+'-p[]' \
+'--progressbar[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (map)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '-f+[]: :_default' \
 '--helper=[]: :_default' \
-'-p[]' \
-'--progressbar[]' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
+'-p[]' \
+'--progressbar[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__py__help_commands" \
+":: :_qsv__subcmd__py__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -2068,38 +2068,38 @@ _arguments "${_arguments_options[@]}" : \
 '--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--pairwise[]' \
 '-n[]' \
 '--no-headers[]' \
+'--pairwise[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (replace)
 _arguments "${_arguments_options[@]}" : \
+'--dfa-size-limit=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '-s+[]: :_default' \
 '--select=[]: :_default' \
-'--dfa-size-limit=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '--size-limit=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
+'-u[]' \
+'--unicode[]' \
+'--literal[]' \
 '--not-one[]' \
-'-n[]' \
-'--no-headers[]' \
+'-q[]' \
+'--quiet[]' \
 '--exact[]' \
 '-i[]' \
 '--ignore-case[]' \
+'-n[]' \
+'--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
-'--literal[]' \
-'-q[]' \
-'--quiet[]' \
-'-u[]' \
-'--unicode[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -2110,52 +2110,52 @@ _arguments "${_arguments_options[@]}" : \
 '--delimiter=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--memcheck[]' \
 '-n[]' \
 '--no-headers[]' \
+'--memcheck[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (safenames)
 _arguments "${_arguments_options[@]}" : \
+'--prefix=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--mode=[]: :_default' \
+'--reserved=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--reserved=[]: :_default' \
-'--mode=[]: :_default' \
-'--prefix=[]: :_default' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (sample)
 _arguments "${_arguments_options[@]}" : \
-'--timeseries=[]: :_default' \
-'--weighted=[]: :_default' \
-'--stratified=[]: :_default' \
-'--user-agent=[]: :_default' \
-'--seed=[]: :_default' \
-'--max-size=[]: :_default' \
-'--rng=[]: :_default' \
 '--ts-interval=[]: :_default' \
-'--timeout=[]: :_default' \
 '--ts-start=[]: :_default' \
+'--systematic=[]: :_default' \
+'--ts-adaptive=[]: :_default' \
+'--seed=[]: :_default' \
+'--stratified=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--timeout=[]: :_default' \
+'--rng=[]: :_default' \
+'--ts-input-tz=[]: :_default' \
+'--user-agent=[]: :_default' \
+'--max-size=[]: :_default' \
+'--cluster=[]: :_default' \
+'--ts-aggregate=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--ts-adaptive=[]: :_default' \
-'--ts-input-tz=[]: :_default' \
-'--ts-aggregate=[]: :_default' \
-'--cluster=[]: :_default' \
-'--systematic=[]: :_default' \
+'--timeseries=[]: :_default' \
+'--weighted=[]: :_default' \
+'--force[]' \
 '-n[]' \
 '--no-headers[]' \
-'--bernoulli[]' \
-'--force[]' \
 '--ts-prefer-dmy[]' \
+'--bernoulli[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -2163,157 +2163,157 @@ _arguments "${_arguments_options[@]}" : \
 (schema)
 _arguments "${_arguments_options[@]}" : \
 '--pattern-columns=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '--enum-threshold=[]: :_default' \
 '--dates-whitelist=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
-'--strict-formats[]' \
-'--force[]' \
-'--polars[]' \
-'--prefer-dmy[]' \
+'--memcheck[]' \
+'--strict-dates[]' \
 '-n[]' \
 '--no-headers[]' \
+'--stdout[]' \
+'--force[]' \
+'--strict-formats[]' \
 '-i[]' \
 '--ignore-case[]' \
-'--strict-dates[]' \
-'--memcheck[]' \
-'--stdout[]' \
+'--prefer-dmy[]' \
+'--polars[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (scoresql)
 _arguments "${_arguments_options[@]}" : \
+'--infer-len=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--infer-len=[]: :_default' \
 '-q[]' \
 '--quiet[]' \
-'--json[]' \
-'--duckdb[]' \
-'--try-parsedates[]' \
-'--ignore-errors[]' \
 '--truncate-ragged-lines[]' \
+'--json[]' \
+'--try-parsedates[]' \
+'--duckdb[]' \
+'--ignore-errors[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (search)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
-'--size-limit=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--size-limit=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-match=[]: :_default' \
 '--dfa-size-limit=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
 '-f+[]: :_default' \
 '--flag=[]: :_default' \
-'--preview-match=[]: :_default' \
-'-v[]' \
-'--invert-match[]' \
-'--json[]' \
-'-c[]' \
-'--count[]' \
 '--exact[]' \
+'--json[]' \
+'--not-one[]' \
 '-n[]' \
 '--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
+'-c[]' \
+'--count[]' \
 '-q[]' \
 '--quiet[]' \
-'--not-one[]' \
-'-Q[]' \
-'--quick[]' \
-'--literal[]' \
 '-i[]' \
 '--ignore-case[]' \
+'--literal[]' \
+'-v[]' \
+'--invert-match[]' \
 '-u[]' \
 '--unicode[]' \
+'-Q[]' \
+'--quick[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (searchset)
 _arguments "${_arguments_options[@]}" : \
-'--jobs=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--size-limit=[]: :_default' \
-'--dfa-size-limit=[]: :_default' \
-'-f+[]: :_default' \
-'--flag=[]: :_default' \
-'--unmatched-output=[]: :_default' \
 '-s+[]: :_default' \
 '--select=[]: :_default' \
-'-v[]' \
-'--invert-match[]' \
-'--not-one[]' \
-'-p[]' \
-'--progressbar[]' \
-'-q[]' \
-'--quiet[]' \
+'--jobs=[]: :_default' \
+'--unmatched-output=[]: :_default' \
+'--size-limit=[]: :_default' \
+'-f+[]: :_default' \
+'--flag=[]: :_default' \
+'--dfa-size-limit=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-c[]' \
 '--count[]' \
-'--literal[]' \
-'-Q[]' \
-'--quick[]' \
-'-u[]' \
-'--unicode[]' \
-'-j[]' \
-'--json[]' \
+'-q[]' \
+'--quiet[]' \
 '-i[]' \
 '--ignore-case[]' \
+'-j[]' \
+'--json[]' \
+'-p[]' \
+'--progressbar[]' \
+'--flag-matches-only[]' \
+'--exact[]' \
 '-n[]' \
 '--no-headers[]' \
-'--exact[]' \
-'--flag-matches-only[]' \
+'-Q[]' \
+'--quick[]' \
+'--literal[]' \
+'--not-one[]' \
+'-v[]' \
+'--invert-match[]' \
+'-u[]' \
+'--unicode[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (select)
 _arguments "${_arguments_options[@]}" : \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
+'--seed=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--seed=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-R[]' \
+'--random[]' \
 '-S[]' \
 '--sort[]' \
 '-n[]' \
 '--no-headers[]' \
-'-R[]' \
-'--random[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (slice)
 _arguments "${_arguments_options[@]}" : \
-'-i+[]: :_default' \
-'--index=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-l+[]: :_default' \
-'--len=[]: :_default' \
-'-e+[]: :_default' \
-'--end=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '-s+[]: :_default' \
 '--start=[]: :_default' \
+'-i+[]: :_default' \
+'--index=[]: :_default' \
+'-l+[]: :_default' \
+'--len=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-e+[]: :_default' \
+'--end=[]: :_default' \
 '--invert[]' \
 '-n[]' \
 '--no-headers[]' \
@@ -2325,18 +2325,18 @@ _arguments "${_arguments_options[@]}" : \
 (snappy)
 _arguments "${_arguments_options[@]}" : \
 '--timeout=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
+'--user-agent=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--user-agent=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-p[]' \
 '--progressbar[]' \
 '-q[]' \
 '--quiet[]' \
 '-h[Print help]' \
 '--help[Print help]' \
-":: :_qsv__snappy_commands" \
+":: :_qsv__subcmd__snappy_commands" \
 "*::: :->snappy" \
 && ret=0
 
@@ -2349,11 +2349,11 @@ _arguments "${_arguments_options[@]}" : \
             (check)
 _arguments "${_arguments_options[@]}" : \
 '--timeout=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
+'--user-agent=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--user-agent=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-p[]' \
 '--progressbar[]' \
 '-q[]' \
@@ -2365,11 +2365,11 @@ _arguments "${_arguments_options[@]}" : \
 (compress)
 _arguments "${_arguments_options[@]}" : \
 '--timeout=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
+'--user-agent=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--user-agent=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-p[]' \
 '--progressbar[]' \
 '-q[]' \
@@ -2381,11 +2381,11 @@ _arguments "${_arguments_options[@]}" : \
 (decompress)
 _arguments "${_arguments_options[@]}" : \
 '--timeout=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
+'--user-agent=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--user-agent=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-p[]' \
 '--progressbar[]' \
 '-q[]' \
@@ -2397,11 +2397,11 @@ _arguments "${_arguments_options[@]}" : \
 (validate)
 _arguments "${_arguments_options[@]}" : \
 '--timeout=[]: :_default' \
-'-j+[]: :_default' \
-'--jobs=[]: :_default' \
+'--user-agent=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--user-agent=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
 '-p[]' \
 '--progressbar[]' \
 '-q[]' \
@@ -2412,7 +2412,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__snappy__help_commands" \
+":: :_qsv__subcmd__snappy__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -2452,54 +2452,54 @@ esac
 ;;
 (sniff)
 _arguments "${_arguments_options[@]}" : \
-'--quote=[]: :_default' \
 '--timeout=[]: :_default' \
+'--sample=[]: :_default' \
+'--save-urlsample=[]: :_default' \
 '--user-agent=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--save-urlsample=[]: :_default' \
-'--sample=[]: :_default' \
-'-p[]' \
-'--progressbar[]' \
-'--no-infer[]' \
-'--stats-types[]' \
+'--quote=[]: :_default' \
 '--json[]' \
+'--just-mime[]' \
+'--stats-types[]' \
+'--prefer-dmy[]' \
 '-Q[]' \
 '--quick[]' \
-'--prefer-dmy[]' \
-'--harvest-mode[]' \
-'--just-mime[]' \
 '--pretty-json[]' \
+'--no-infer[]' \
+'-p[]' \
+'--progressbar[]' \
+'--harvest-mode[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (sort)
 _arguments "${_arguments_options[@]}" : \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'--seed=[]: :_default' \
+'--rng=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--rng=[]: :_default' \
-'-i[]' \
-'--ignore-case[]' \
-'--faster[]' \
+'--seed=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
 '-n[]' \
 '--no-headers[]' \
-'-u[]' \
-'--unique[]' \
+'--natural[]' \
+'--faster[]' \
 '-N[]' \
 '--numeric[]' \
-'--natural[]' \
-'--random[]' \
 '-R[]' \
 '--reverse[]' \
+'--random[]' \
 '--memcheck[]' \
+'-u[]' \
+'--unique[]' \
+'-i[]' \
+'--ignore-case[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -2511,13 +2511,13 @@ _arguments "${_arguments_options[@]}" : \
 '-s+[]: :_default' \
 '--select=[]: :_default' \
 '--all[]' \
-'--json[]' \
+'-n[]' \
+'--no-headers[]' \
 '-i[]' \
 '--ignore-case[]' \
 '-p[]' \
 '--progressbar[]' \
-'-n[]' \
-'--no-headers[]' \
+'--json[]' \
 '--pretty-json[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -2525,22 +2525,22 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (split)
 _arguments "${_arguments_options[@]}" : \
+'--filter=[]: :_default' \
 '--pad=[]: :_default' \
-'-s+[]: :_default' \
-'--size=[]: :_default' \
-'--filename=[]: :_default' \
-'-c+[]: :_default' \
-'--chunks=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--filter=[]: :_default' \
-'-k+[]: :_default' \
-'--kb-size=[]: :_default' \
+'-c+[]: :_default' \
+'--chunks=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--filter-cleanup[]' \
+'-k+[]: :_default' \
+'--kb-size=[]: :_default' \
+'--filename=[]: :_default' \
+'-s+[]: :_default' \
+'--size=[]: :_default' \
 '-q[]' \
 '--quiet[]' \
+'--filter-cleanup[]' \
 '--filter-ignore-errors[]' \
 '-n[]' \
 '--no-headers[]' \
@@ -2550,89 +2550,89 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (sqlp)
 _arguments "${_arguments_options[@]}" : \
+'--date-format=[]: :_default' \
 '--wnull-value=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--infer-len=[]: :_default' \
-'--rnull-values=[]: :_default' \
-'--float-precision=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
 '--time-format=[]: :_default' \
-'--date-format=[]: :_default' \
-'--datetime-format=[]: :_default' \
+'--compression=[]: :_default' \
 '--compress-level=[]: :_default' \
 '--format=[]: :_default' \
-'--compression=[]: :_default' \
+'--datetime-format=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--infer-len=[]: :_default' \
+'--float-precision=[]: :_default' \
+'--rnull-values=[]: :_default' \
+'--no-optimizations[]' \
+'--decimal-comma[]' \
+'--streaming[]' \
+'--truncate-ragged-lines[]' \
+'--try-parsedates[]' \
+'--cache-schema[]' \
+'--statistics[]' \
+'--ignore-errors[]' \
 '-q[]' \
 '--quiet[]' \
-'--cache-schema[]' \
 '--low-memory[]' \
-'--ignore-errors[]' \
-'--try-parsedates[]' \
-'--streaming[]' \
-'--decimal-comma[]' \
-'--truncate-ragged-lines[]' \
-'--statistics[]' \
-'--no-optimizations[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (stats)
 _arguments "${_arguments_options[@]}" : \
-'--percentile-list=[]: :_default' \
-'-c+[]: :_default' \
-'--cache-threshold=[]: :_default' \
-'--round=[]: :_default' \
 '--boolean-patterns=[]: :_default' \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--dates-whitelist=[]: :_default' \
-'--weight=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--round=[]: :_default' \
+'--percentile-list=[]: :_default' \
+'--dates-whitelist=[]: :_default' \
+'--weight=[]: :_default' \
+'-c+[]: :_default' \
+'--cache-threshold=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
+'--mad[]' \
+'--infer-boolean[]' \
+'--typesonly[]' \
+'--percentiles[]' \
+'--vis-whitespace[]' \
 '-n[]' \
 '--no-headers[]' \
-'--cardinality[]' \
-'--percentiles[]' \
-'--infer-boolean[]' \
+'--stats-jsonl[]' \
 '-E[]' \
 '--everything[]' \
-'--nulls[]' \
-'--prefer-dmy[]' \
-'--vis-whitespace[]' \
-'--typesonly[]' \
 '--mode[]' \
 '--infer-dates[]' \
-'--force[]' \
-'--memcheck[]' \
-'--stats-jsonl[]' \
-'--quartiles[]' \
-'--mad[]' \
+'--nulls[]' \
 '--median[]' \
+'--cardinality[]' \
+'--quartiles[]' \
+'--prefer-dmy[]' \
+'--memcheck[]' \
+'--force[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (table)
 _arguments "${_arguments_options[@]}" : \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-a+[]: :_default' \
+'--align=[]: :_default' \
+'-c+[]: :_default' \
+'--condense=[]: :_default' \
+'-w+[]: :_default' \
+'--width=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '-p+[]: :_default' \
 '--pad=[]: :_default' \
-'-a+[]: :_default' \
-'--align=[]: :_default' \
-'-o+[]: :_default' \
-'--output=[]: :_default' \
-'-w+[]: :_default' \
-'--width=[]: :_default' \
-'-c+[]: :_default' \
-'--condense=[]: :_default' \
 '--memcheck[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -2640,68 +2640,68 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (template)
 _arguments "${_arguments_options[@]}" : \
-'--ckan-api=[]: :_default' \
-'--delimiter=[]: :_default' \
-'--customfilter-error=[]: :_default' \
+'--outsubdir-size=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--ckan-token=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--timeout=[]: :_default' \
+'--ckan-api=[]: :_default' \
 '-j+[]: :_default' \
 '--globals-json=[]: :_default' \
-'--outfilename=[]: :_default' \
-'--cache-dir=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--delimiter=[]: :_default' \
+'--timeout=[]: :_default' \
+'--outfilename=[]: :_default' \
+'--customfilter-error=[]: :_default' \
+'--template=[]: :_default' \
+'--jobs=[]: :_default' \
 '-t+[]: :_default' \
 '--template-file=[]: :_default' \
-'--jobs=[]: :_default' \
-'--outsubdir-size=[]: :_default' \
-'--template=[]: :_default' \
-'--ckan-token=[]: :_default' \
-'-n[]' \
-'--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
+'-n[]' \
+'--no-headers[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (to)
 _arguments "${_arguments_options[@]}" : \
-'--compression=[]: :_default' \
-'--delimiter=[]: :_default' \
-'-c+[]: :_default' \
-'--stats-csv=[]: :_default' \
-'--infer-len=[]: :_default' \
 '-p+[]: :_default' \
 '--separator=[]: :_default' \
-'-s+[]: :_default' \
-'--schema=[]: :_default' \
-'--compress-level=[]: :_default' \
-'-t+[]: :_default' \
-'--table=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--try-parse-dates[]' \
+'-c+[]: :_default' \
+'--stats-csv=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--infer-len=[]: :_default' \
+'-t+[]: :_default' \
+'--table=[]: :_default' \
+'--compression=[]: :_default' \
+'--compress-level=[]: :_default' \
+'-s+[]: :_default' \
+'--schema=[]: :_default' \
+'-i[]' \
+'--pipe[]' \
 '-A[]' \
 '--all-strings[]' \
-'-u[]' \
-'--dump[]' \
-'-d[]' \
 '--drop[]' \
 '-a[]' \
 '--stats[]' \
-'-k[]' \
-'--print-package[]' \
-'-e[]' \
-'--evolve[]' \
+'-u[]' \
+'--dump[]' \
 '-q[]' \
 '--quiet[]' \
-'-i[]' \
-'--pipe[]' \
+'-e[]' \
+'--evolve[]' \
+'--try-parse-dates[]' \
+'-k[]' \
+'--print-package[]' \
 '-h[Print help]' \
 '--help[Print help]' \
-":: :_qsv__to_commands" \
+":: :_qsv__subcmd__to_commands" \
 "*::: :->to" \
 && ret=0
 
@@ -2713,229 +2713,229 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (datapackage)
 _arguments "${_arguments_options[@]}" : \
-'--compression=[]: :_default' \
-'--delimiter=[]: :_default' \
-'-c+[]: :_default' \
-'--stats-csv=[]: :_default' \
-'--infer-len=[]: :_default' \
 '-p+[]: :_default' \
 '--separator=[]: :_default' \
-'-s+[]: :_default' \
-'--schema=[]: :_default' \
-'--compress-level=[]: :_default' \
-'-t+[]: :_default' \
-'--table=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--try-parse-dates[]' \
+'-c+[]: :_default' \
+'--stats-csv=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--infer-len=[]: :_default' \
+'-t+[]: :_default' \
+'--table=[]: :_default' \
+'--compression=[]: :_default' \
+'--compress-level=[]: :_default' \
+'-s+[]: :_default' \
+'--schema=[]: :_default' \
+'-i[]' \
+'--pipe[]' \
 '-A[]' \
 '--all-strings[]' \
-'-u[]' \
-'--dump[]' \
-'-d[]' \
 '--drop[]' \
 '-a[]' \
 '--stats[]' \
-'-k[]' \
-'--print-package[]' \
-'-e[]' \
-'--evolve[]' \
+'-u[]' \
+'--dump[]' \
 '-q[]' \
 '--quiet[]' \
-'-i[]' \
-'--pipe[]' \
+'-e[]' \
+'--evolve[]' \
+'--try-parse-dates[]' \
+'-k[]' \
+'--print-package[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (ods)
 _arguments "${_arguments_options[@]}" : \
-'--compression=[]: :_default' \
-'--delimiter=[]: :_default' \
-'-c+[]: :_default' \
-'--stats-csv=[]: :_default' \
-'--infer-len=[]: :_default' \
 '-p+[]: :_default' \
 '--separator=[]: :_default' \
-'-s+[]: :_default' \
-'--schema=[]: :_default' \
-'--compress-level=[]: :_default' \
-'-t+[]: :_default' \
-'--table=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--try-parse-dates[]' \
+'-c+[]: :_default' \
+'--stats-csv=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--infer-len=[]: :_default' \
+'-t+[]: :_default' \
+'--table=[]: :_default' \
+'--compression=[]: :_default' \
+'--compress-level=[]: :_default' \
+'-s+[]: :_default' \
+'--schema=[]: :_default' \
+'-i[]' \
+'--pipe[]' \
 '-A[]' \
 '--all-strings[]' \
-'-u[]' \
-'--dump[]' \
-'-d[]' \
 '--drop[]' \
 '-a[]' \
 '--stats[]' \
-'-k[]' \
-'--print-package[]' \
-'-e[]' \
-'--evolve[]' \
+'-u[]' \
+'--dump[]' \
 '-q[]' \
 '--quiet[]' \
-'-i[]' \
-'--pipe[]' \
+'-e[]' \
+'--evolve[]' \
+'--try-parse-dates[]' \
+'-k[]' \
+'--print-package[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (parquet)
 _arguments "${_arguments_options[@]}" : \
-'--compression=[]: :_default' \
-'--delimiter=[]: :_default' \
-'-c+[]: :_default' \
-'--stats-csv=[]: :_default' \
-'--infer-len=[]: :_default' \
 '-p+[]: :_default' \
 '--separator=[]: :_default' \
-'-s+[]: :_default' \
-'--schema=[]: :_default' \
-'--compress-level=[]: :_default' \
-'-t+[]: :_default' \
-'--table=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--try-parse-dates[]' \
+'-c+[]: :_default' \
+'--stats-csv=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--infer-len=[]: :_default' \
+'-t+[]: :_default' \
+'--table=[]: :_default' \
+'--compression=[]: :_default' \
+'--compress-level=[]: :_default' \
+'-s+[]: :_default' \
+'--schema=[]: :_default' \
+'-i[]' \
+'--pipe[]' \
 '-A[]' \
 '--all-strings[]' \
-'-u[]' \
-'--dump[]' \
-'-d[]' \
 '--drop[]' \
 '-a[]' \
 '--stats[]' \
-'-k[]' \
-'--print-package[]' \
-'-e[]' \
-'--evolve[]' \
+'-u[]' \
+'--dump[]' \
 '-q[]' \
 '--quiet[]' \
-'-i[]' \
-'--pipe[]' \
+'-e[]' \
+'--evolve[]' \
+'--try-parse-dates[]' \
+'-k[]' \
+'--print-package[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (postgres)
 _arguments "${_arguments_options[@]}" : \
-'--compression=[]: :_default' \
-'--delimiter=[]: :_default' \
-'-c+[]: :_default' \
-'--stats-csv=[]: :_default' \
-'--infer-len=[]: :_default' \
 '-p+[]: :_default' \
 '--separator=[]: :_default' \
-'-s+[]: :_default' \
-'--schema=[]: :_default' \
-'--compress-level=[]: :_default' \
-'-t+[]: :_default' \
-'--table=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--try-parse-dates[]' \
+'-c+[]: :_default' \
+'--stats-csv=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--infer-len=[]: :_default' \
+'-t+[]: :_default' \
+'--table=[]: :_default' \
+'--compression=[]: :_default' \
+'--compress-level=[]: :_default' \
+'-s+[]: :_default' \
+'--schema=[]: :_default' \
+'-i[]' \
+'--pipe[]' \
 '-A[]' \
 '--all-strings[]' \
-'-u[]' \
-'--dump[]' \
-'-d[]' \
 '--drop[]' \
 '-a[]' \
 '--stats[]' \
-'-k[]' \
-'--print-package[]' \
-'-e[]' \
-'--evolve[]' \
+'-u[]' \
+'--dump[]' \
 '-q[]' \
 '--quiet[]' \
-'-i[]' \
-'--pipe[]' \
+'-e[]' \
+'--evolve[]' \
+'--try-parse-dates[]' \
+'-k[]' \
+'--print-package[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (sqlite)
 _arguments "${_arguments_options[@]}" : \
-'--compression=[]: :_default' \
-'--delimiter=[]: :_default' \
-'-c+[]: :_default' \
-'--stats-csv=[]: :_default' \
-'--infer-len=[]: :_default' \
 '-p+[]: :_default' \
 '--separator=[]: :_default' \
-'-s+[]: :_default' \
-'--schema=[]: :_default' \
-'--compress-level=[]: :_default' \
-'-t+[]: :_default' \
-'--table=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--try-parse-dates[]' \
+'-c+[]: :_default' \
+'--stats-csv=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--infer-len=[]: :_default' \
+'-t+[]: :_default' \
+'--table=[]: :_default' \
+'--compression=[]: :_default' \
+'--compress-level=[]: :_default' \
+'-s+[]: :_default' \
+'--schema=[]: :_default' \
+'-i[]' \
+'--pipe[]' \
 '-A[]' \
 '--all-strings[]' \
-'-u[]' \
-'--dump[]' \
-'-d[]' \
 '--drop[]' \
 '-a[]' \
 '--stats[]' \
-'-k[]' \
-'--print-package[]' \
-'-e[]' \
-'--evolve[]' \
+'-u[]' \
+'--dump[]' \
 '-q[]' \
 '--quiet[]' \
-'-i[]' \
-'--pipe[]' \
+'-e[]' \
+'--evolve[]' \
+'--try-parse-dates[]' \
+'-k[]' \
+'--print-package[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (xlsx)
 _arguments "${_arguments_options[@]}" : \
-'--compression=[]: :_default' \
-'--delimiter=[]: :_default' \
-'-c+[]: :_default' \
-'--stats-csv=[]: :_default' \
-'--infer-len=[]: :_default' \
 '-p+[]: :_default' \
 '--separator=[]: :_default' \
-'-s+[]: :_default' \
-'--schema=[]: :_default' \
-'--compress-level=[]: :_default' \
-'-t+[]: :_default' \
-'--table=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--try-parse-dates[]' \
+'-c+[]: :_default' \
+'--stats-csv=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--infer-len=[]: :_default' \
+'-t+[]: :_default' \
+'--table=[]: :_default' \
+'--compression=[]: :_default' \
+'--compress-level=[]: :_default' \
+'-s+[]: :_default' \
+'--schema=[]: :_default' \
+'-i[]' \
+'--pipe[]' \
 '-A[]' \
 '--all-strings[]' \
-'-u[]' \
-'--dump[]' \
-'-d[]' \
 '--drop[]' \
 '-a[]' \
 '--stats[]' \
-'-k[]' \
-'--print-package[]' \
-'-e[]' \
-'--evolve[]' \
+'-u[]' \
+'--dump[]' \
 '-q[]' \
 '--quiet[]' \
-'-i[]' \
-'--pipe[]' \
+'-e[]' \
+'--evolve[]' \
+'--try-parse-dates[]' \
+'-k[]' \
+'--print-package[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__to__help_commands" \
+":: :_qsv__subcmd__to__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -2987,15 +2987,15 @@ _arguments "${_arguments_options[@]}" : \
 '--jobs=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
-'-d+[]: :_default' \
-'--delimiter=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
-'--memcheck[]' \
-'--no-boolean[]' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '--trim[]' \
+'--memcheck[]' \
 '-q[]' \
 '--quiet[]' \
+'--no-boolean[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -3004,11 +3004,11 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'-s+[]: :_default' \
+'--select=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--long=[]: :_default' \
-'-s+[]: :_default' \
-'--select=[]: :_default' \
 '--memcheck[]' \
 '-m[]' \
 '--multipass[]' \
@@ -3018,41 +3018,41 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (validate)
 _arguments "${_arguments_options[@]}" : \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--ckan-api=[]: :_default' \
-'--valid=[]: :_default' \
-'--ckan-token=[]: :_default' \
-'--size-limit=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--backtrack-limit=[]: :_default' \
-'--invalid=[]: :_default' \
-'--timeout=[]: :_default' \
-'--dfa-size-limit=[]: :_default' \
-'--email-min-subdomains=[]: :_default' \
-'--valid-output=[]: :_default' \
+'--ckan-api=[]: :_default' \
 '--cache-dir=[]: :_default' \
-'--email-domain-literal[]' \
-'-q[]' \
-'--quiet[]' \
-'--email-required-tld[]' \
+'--email-min-subdomains=[]: :_default' \
+'--dfa-size-limit=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--backtrack-limit=[]: :_default' \
+'--timeout=[]: :_default' \
+'--size-limit=[]: :_default' \
+'--valid-output=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--valid=[]: :_default' \
+'--invalid=[]: :_default' \
+'--no-format-validation[]' \
+'--trim[]' \
 '-n[]' \
 '--no-headers[]' \
-'--email-display-text[]' \
-'--fancy-regex[]' \
-'--trim[]' \
-'--json[]' \
 '-p[]' \
 '--progressbar[]' \
-'--no-format-validation[]' \
-'--pretty-json[]' \
+'-q[]' \
+'--quiet[]' \
+'--email-display-text[]' \
+'--email-domain-literal[]' \
 '--fail-fast[]' \
+'--pretty-json[]' \
+'--fancy-regex[]' \
+'--json[]' \
+'--email-required-tld[]' \
 '-h[Print help]' \
 '--help[Print help]' \
-":: :_qsv__validate_commands" \
+":: :_qsv__subcmd__validate_commands" \
 "*::: :->validate" \
 && ret=0
 
@@ -3064,45 +3064,45 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (schema)
 _arguments "${_arguments_options[@]}" : \
-'-b+[]: :_default' \
-'--batch=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
-'--ckan-api=[]: :_default' \
-'--valid=[]: :_default' \
-'--ckan-token=[]: :_default' \
-'--size-limit=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
-'--backtrack-limit=[]: :_default' \
-'--invalid=[]: :_default' \
-'--timeout=[]: :_default' \
-'--dfa-size-limit=[]: :_default' \
-'--email-min-subdomains=[]: :_default' \
-'--valid-output=[]: :_default' \
+'--ckan-api=[]: :_default' \
 '--cache-dir=[]: :_default' \
-'--email-domain-literal[]' \
-'-q[]' \
-'--quiet[]' \
-'--email-required-tld[]' \
+'--email-min-subdomains=[]: :_default' \
+'--dfa-size-limit=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--backtrack-limit=[]: :_default' \
+'--timeout=[]: :_default' \
+'--size-limit=[]: :_default' \
+'--valid-output=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--valid=[]: :_default' \
+'--invalid=[]: :_default' \
+'--no-format-validation[]' \
+'--trim[]' \
 '-n[]' \
 '--no-headers[]' \
-'--email-display-text[]' \
-'--fancy-regex[]' \
-'--trim[]' \
-'--json[]' \
 '-p[]' \
 '--progressbar[]' \
-'--no-format-validation[]' \
-'--pretty-json[]' \
+'-q[]' \
+'--quiet[]' \
+'--email-display-text[]' \
+'--email-domain-literal[]' \
 '--fail-fast[]' \
+'--pretty-json[]' \
+'--fancy-regex[]' \
+'--json[]' \
+'--email-required-tld[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__validate__help_commands" \
+":: :_qsv__subcmd__validate__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -3130,7 +3130,7 @@ esac
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__help_commands" \
+":: :_qsv__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -3142,7 +3142,7 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (apply)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__help__apply_commands" \
+":: :_qsv__subcmd__help__subcmd__apply_commands" \
 "*::: :->apply" \
 && ret=0
 
@@ -3182,7 +3182,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (cat)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__help__cat_commands" \
+":: :_qsv__subcmd__help__subcmd__cat_commands" \
 "*::: :->cat" \
 && ret=0
 
@@ -3298,7 +3298,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (geocode)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__help__geocode_commands" \
+":: :_qsv__subcmd__help__subcmd__geocode_commands" \
 "*::: :->geocode" \
 && ret=0
 
@@ -3402,7 +3402,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (luau)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__help__luau_commands" \
+":: :_qsv__subcmd__help__subcmd__luau_commands" \
 "*::: :->luau" \
 && ret=0
 
@@ -3442,7 +3442,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (pro)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__help__pro_commands" \
+":: :_qsv__subcmd__help__subcmd__pro_commands" \
 "*::: :->pro" \
 && ret=0
 
@@ -3474,7 +3474,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (py)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__help__py_commands" \
+":: :_qsv__subcmd__help__subcmd__py_commands" \
 "*::: :->py" \
 && ret=0
 
@@ -3542,7 +3542,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (snappy)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__help__snappy_commands" \
+":: :_qsv__subcmd__help__subcmd__snappy_commands" \
 "*::: :->snappy" \
 && ret=0
 
@@ -3606,7 +3606,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (to)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__help__to_commands" \
+":: :_qsv__subcmd__help__subcmd__to_commands" \
 "*::: :->to" \
 && ret=0
 
@@ -3654,7 +3654,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (validate)
 _arguments "${_arguments_options[@]}" : \
-":: :_qsv__help__validate_commands" \
+":: :_qsv__subcmd__help__subcmd__validate_commands" \
 "*::: :->validate" \
 && ret=0
 
@@ -3762,8 +3762,8 @@ _qsv_commands() {
     )
     _describe -t commands 'qsv commands' commands "$@"
 }
-(( $+functions[_qsv__apply_commands] )) ||
-_qsv__apply_commands() {
+(( $+functions[_qsv__subcmd__apply_commands] )) ||
+_qsv__subcmd__apply_commands() {
     local commands; commands=(
 'calcconv:' \
 'dynfmt:' \
@@ -3773,23 +3773,23 @@ _qsv__apply_commands() {
     )
     _describe -t commands 'qsv apply commands' commands "$@"
 }
-(( $+functions[_qsv__apply__calcconv_commands] )) ||
-_qsv__apply__calcconv_commands() {
+(( $+functions[_qsv__subcmd__apply__subcmd__calcconv_commands] )) ||
+_qsv__subcmd__apply__subcmd__calcconv_commands() {
     local commands; commands=()
     _describe -t commands 'qsv apply calcconv commands' commands "$@"
 }
-(( $+functions[_qsv__apply__dynfmt_commands] )) ||
-_qsv__apply__dynfmt_commands() {
+(( $+functions[_qsv__subcmd__apply__subcmd__dynfmt_commands] )) ||
+_qsv__subcmd__apply__subcmd__dynfmt_commands() {
     local commands; commands=()
     _describe -t commands 'qsv apply dynfmt commands' commands "$@"
 }
-(( $+functions[_qsv__apply__emptyreplace_commands] )) ||
-_qsv__apply__emptyreplace_commands() {
+(( $+functions[_qsv__subcmd__apply__subcmd__emptyreplace_commands] )) ||
+_qsv__subcmd__apply__subcmd__emptyreplace_commands() {
     local commands; commands=()
     _describe -t commands 'qsv apply emptyreplace commands' commands "$@"
 }
-(( $+functions[_qsv__apply__help_commands] )) ||
-_qsv__apply__help_commands() {
+(( $+functions[_qsv__subcmd__apply__subcmd__help_commands] )) ||
+_qsv__subcmd__apply__subcmd__help_commands() {
     local commands; commands=(
 'calcconv:' \
 'dynfmt:' \
@@ -3799,48 +3799,48 @@ _qsv__apply__help_commands() {
     )
     _describe -t commands 'qsv apply help commands' commands "$@"
 }
-(( $+functions[_qsv__apply__help__calcconv_commands] )) ||
-_qsv__apply__help__calcconv_commands() {
+(( $+functions[_qsv__subcmd__apply__subcmd__help__subcmd__calcconv_commands] )) ||
+_qsv__subcmd__apply__subcmd__help__subcmd__calcconv_commands() {
     local commands; commands=()
     _describe -t commands 'qsv apply help calcconv commands' commands "$@"
 }
-(( $+functions[_qsv__apply__help__dynfmt_commands] )) ||
-_qsv__apply__help__dynfmt_commands() {
+(( $+functions[_qsv__subcmd__apply__subcmd__help__subcmd__dynfmt_commands] )) ||
+_qsv__subcmd__apply__subcmd__help__subcmd__dynfmt_commands() {
     local commands; commands=()
     _describe -t commands 'qsv apply help dynfmt commands' commands "$@"
 }
-(( $+functions[_qsv__apply__help__emptyreplace_commands] )) ||
-_qsv__apply__help__emptyreplace_commands() {
+(( $+functions[_qsv__subcmd__apply__subcmd__help__subcmd__emptyreplace_commands] )) ||
+_qsv__subcmd__apply__subcmd__help__subcmd__emptyreplace_commands() {
     local commands; commands=()
     _describe -t commands 'qsv apply help emptyreplace commands' commands "$@"
 }
-(( $+functions[_qsv__apply__help__help_commands] )) ||
-_qsv__apply__help__help_commands() {
+(( $+functions[_qsv__subcmd__apply__subcmd__help__subcmd__help_commands] )) ||
+_qsv__subcmd__apply__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'qsv apply help help commands' commands "$@"
 }
-(( $+functions[_qsv__apply__help__operations_commands] )) ||
-_qsv__apply__help__operations_commands() {
+(( $+functions[_qsv__subcmd__apply__subcmd__help__subcmd__operations_commands] )) ||
+_qsv__subcmd__apply__subcmd__help__subcmd__operations_commands() {
     local commands; commands=()
     _describe -t commands 'qsv apply help operations commands' commands "$@"
 }
-(( $+functions[_qsv__apply__operations_commands] )) ||
-_qsv__apply__operations_commands() {
+(( $+functions[_qsv__subcmd__apply__subcmd__operations_commands] )) ||
+_qsv__subcmd__apply__subcmd__operations_commands() {
     local commands; commands=()
     _describe -t commands 'qsv apply operations commands' commands "$@"
 }
-(( $+functions[_qsv__behead_commands] )) ||
-_qsv__behead_commands() {
+(( $+functions[_qsv__subcmd__behead_commands] )) ||
+_qsv__subcmd__behead_commands() {
     local commands; commands=()
     _describe -t commands 'qsv behead commands' commands "$@"
 }
-(( $+functions[_qsv__blake3_commands] )) ||
-_qsv__blake3_commands() {
+(( $+functions[_qsv__subcmd__blake3_commands] )) ||
+_qsv__subcmd__blake3_commands() {
     local commands; commands=()
     _describe -t commands 'qsv blake3 commands' commands "$@"
 }
-(( $+functions[_qsv__cat_commands] )) ||
-_qsv__cat_commands() {
+(( $+functions[_qsv__subcmd__cat_commands] )) ||
+_qsv__subcmd__cat_commands() {
     local commands; commands=(
 'columns:' \
 'rows:' \
@@ -3849,13 +3849,13 @@ _qsv__cat_commands() {
     )
     _describe -t commands 'qsv cat commands' commands "$@"
 }
-(( $+functions[_qsv__cat__columns_commands] )) ||
-_qsv__cat__columns_commands() {
+(( $+functions[_qsv__subcmd__cat__subcmd__columns_commands] )) ||
+_qsv__subcmd__cat__subcmd__columns_commands() {
     local commands; commands=()
     _describe -t commands 'qsv cat columns commands' commands "$@"
 }
-(( $+functions[_qsv__cat__help_commands] )) ||
-_qsv__cat__help_commands() {
+(( $+functions[_qsv__subcmd__cat__subcmd__help_commands] )) ||
+_qsv__subcmd__cat__subcmd__help_commands() {
     local commands; commands=(
 'columns:' \
 'rows:' \
@@ -3864,148 +3864,148 @@ _qsv__cat__help_commands() {
     )
     _describe -t commands 'qsv cat help commands' commands "$@"
 }
-(( $+functions[_qsv__cat__help__columns_commands] )) ||
-_qsv__cat__help__columns_commands() {
+(( $+functions[_qsv__subcmd__cat__subcmd__help__subcmd__columns_commands] )) ||
+_qsv__subcmd__cat__subcmd__help__subcmd__columns_commands() {
     local commands; commands=()
     _describe -t commands 'qsv cat help columns commands' commands "$@"
 }
-(( $+functions[_qsv__cat__help__help_commands] )) ||
-_qsv__cat__help__help_commands() {
+(( $+functions[_qsv__subcmd__cat__subcmd__help__subcmd__help_commands] )) ||
+_qsv__subcmd__cat__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'qsv cat help help commands' commands "$@"
 }
-(( $+functions[_qsv__cat__help__rows_commands] )) ||
-_qsv__cat__help__rows_commands() {
+(( $+functions[_qsv__subcmd__cat__subcmd__help__subcmd__rows_commands] )) ||
+_qsv__subcmd__cat__subcmd__help__subcmd__rows_commands() {
     local commands; commands=()
     _describe -t commands 'qsv cat help rows commands' commands "$@"
 }
-(( $+functions[_qsv__cat__help__rowskey_commands] )) ||
-_qsv__cat__help__rowskey_commands() {
+(( $+functions[_qsv__subcmd__cat__subcmd__help__subcmd__rowskey_commands] )) ||
+_qsv__subcmd__cat__subcmd__help__subcmd__rowskey_commands() {
     local commands; commands=()
     _describe -t commands 'qsv cat help rowskey commands' commands "$@"
 }
-(( $+functions[_qsv__cat__rows_commands] )) ||
-_qsv__cat__rows_commands() {
+(( $+functions[_qsv__subcmd__cat__subcmd__rows_commands] )) ||
+_qsv__subcmd__cat__subcmd__rows_commands() {
     local commands; commands=()
     _describe -t commands 'qsv cat rows commands' commands "$@"
 }
-(( $+functions[_qsv__cat__rowskey_commands] )) ||
-_qsv__cat__rowskey_commands() {
+(( $+functions[_qsv__subcmd__cat__subcmd__rowskey_commands] )) ||
+_qsv__subcmd__cat__subcmd__rowskey_commands() {
     local commands; commands=()
     _describe -t commands 'qsv cat rowskey commands' commands "$@"
 }
-(( $+functions[_qsv__clipboard_commands] )) ||
-_qsv__clipboard_commands() {
+(( $+functions[_qsv__subcmd__clipboard_commands] )) ||
+_qsv__subcmd__clipboard_commands() {
     local commands; commands=()
     _describe -t commands 'qsv clipboard commands' commands "$@"
 }
-(( $+functions[_qsv__color_commands] )) ||
-_qsv__color_commands() {
+(( $+functions[_qsv__subcmd__color_commands] )) ||
+_qsv__subcmd__color_commands() {
     local commands; commands=()
     _describe -t commands 'qsv color commands' commands "$@"
 }
-(( $+functions[_qsv__count_commands] )) ||
-_qsv__count_commands() {
+(( $+functions[_qsv__subcmd__count_commands] )) ||
+_qsv__subcmd__count_commands() {
     local commands; commands=()
     _describe -t commands 'qsv count commands' commands "$@"
 }
-(( $+functions[_qsv__datefmt_commands] )) ||
-_qsv__datefmt_commands() {
+(( $+functions[_qsv__subcmd__datefmt_commands] )) ||
+_qsv__subcmd__datefmt_commands() {
     local commands; commands=()
     _describe -t commands 'qsv datefmt commands' commands "$@"
 }
-(( $+functions[_qsv__dedup_commands] )) ||
-_qsv__dedup_commands() {
+(( $+functions[_qsv__subcmd__dedup_commands] )) ||
+_qsv__subcmd__dedup_commands() {
     local commands; commands=()
     _describe -t commands 'qsv dedup commands' commands "$@"
 }
-(( $+functions[_qsv__describegpt_commands] )) ||
-_qsv__describegpt_commands() {
+(( $+functions[_qsv__subcmd__describegpt_commands] )) ||
+_qsv__subcmd__describegpt_commands() {
     local commands; commands=()
     _describe -t commands 'qsv describegpt commands' commands "$@"
 }
-(( $+functions[_qsv__diff_commands] )) ||
-_qsv__diff_commands() {
+(( $+functions[_qsv__subcmd__diff_commands] )) ||
+_qsv__subcmd__diff_commands() {
     local commands; commands=()
     _describe -t commands 'qsv diff commands' commands "$@"
 }
-(( $+functions[_qsv__edit_commands] )) ||
-_qsv__edit_commands() {
+(( $+functions[_qsv__subcmd__edit_commands] )) ||
+_qsv__subcmd__edit_commands() {
     local commands; commands=()
     _describe -t commands 'qsv edit commands' commands "$@"
 }
-(( $+functions[_qsv__enum_commands] )) ||
-_qsv__enum_commands() {
+(( $+functions[_qsv__subcmd__enum_commands] )) ||
+_qsv__subcmd__enum_commands() {
     local commands; commands=()
     _describe -t commands 'qsv enum commands' commands "$@"
 }
-(( $+functions[_qsv__excel_commands] )) ||
-_qsv__excel_commands() {
+(( $+functions[_qsv__subcmd__excel_commands] )) ||
+_qsv__subcmd__excel_commands() {
     local commands; commands=()
     _describe -t commands 'qsv excel commands' commands "$@"
 }
-(( $+functions[_qsv__exclude_commands] )) ||
-_qsv__exclude_commands() {
+(( $+functions[_qsv__subcmd__exclude_commands] )) ||
+_qsv__subcmd__exclude_commands() {
     local commands; commands=()
     _describe -t commands 'qsv exclude commands' commands "$@"
 }
-(( $+functions[_qsv__explode_commands] )) ||
-_qsv__explode_commands() {
+(( $+functions[_qsv__subcmd__explode_commands] )) ||
+_qsv__subcmd__explode_commands() {
     local commands; commands=()
     _describe -t commands 'qsv explode commands' commands "$@"
 }
-(( $+functions[_qsv__extdedup_commands] )) ||
-_qsv__extdedup_commands() {
+(( $+functions[_qsv__subcmd__extdedup_commands] )) ||
+_qsv__subcmd__extdedup_commands() {
     local commands; commands=()
     _describe -t commands 'qsv extdedup commands' commands "$@"
 }
-(( $+functions[_qsv__extsort_commands] )) ||
-_qsv__extsort_commands() {
+(( $+functions[_qsv__subcmd__extsort_commands] )) ||
+_qsv__subcmd__extsort_commands() {
     local commands; commands=()
     _describe -t commands 'qsv extsort commands' commands "$@"
 }
-(( $+functions[_qsv__fetch_commands] )) ||
-_qsv__fetch_commands() {
+(( $+functions[_qsv__subcmd__fetch_commands] )) ||
+_qsv__subcmd__fetch_commands() {
     local commands; commands=()
     _describe -t commands 'qsv fetch commands' commands "$@"
 }
-(( $+functions[_qsv__fetchpost_commands] )) ||
-_qsv__fetchpost_commands() {
+(( $+functions[_qsv__subcmd__fetchpost_commands] )) ||
+_qsv__subcmd__fetchpost_commands() {
     local commands; commands=()
     _describe -t commands 'qsv fetchpost commands' commands "$@"
 }
-(( $+functions[_qsv__fill_commands] )) ||
-_qsv__fill_commands() {
+(( $+functions[_qsv__subcmd__fill_commands] )) ||
+_qsv__subcmd__fill_commands() {
     local commands; commands=()
     _describe -t commands 'qsv fill commands' commands "$@"
 }
-(( $+functions[_qsv__fixlengths_commands] )) ||
-_qsv__fixlengths_commands() {
+(( $+functions[_qsv__subcmd__fixlengths_commands] )) ||
+_qsv__subcmd__fixlengths_commands() {
     local commands; commands=()
     _describe -t commands 'qsv fixlengths commands' commands "$@"
 }
-(( $+functions[_qsv__flatten_commands] )) ||
-_qsv__flatten_commands() {
+(( $+functions[_qsv__subcmd__flatten_commands] )) ||
+_qsv__subcmd__flatten_commands() {
     local commands; commands=()
     _describe -t commands 'qsv flatten commands' commands "$@"
 }
-(( $+functions[_qsv__fmt_commands] )) ||
-_qsv__fmt_commands() {
+(( $+functions[_qsv__subcmd__fmt_commands] )) ||
+_qsv__subcmd__fmt_commands() {
     local commands; commands=()
     _describe -t commands 'qsv fmt commands' commands "$@"
 }
-(( $+functions[_qsv__foreach_commands] )) ||
-_qsv__foreach_commands() {
+(( $+functions[_qsv__subcmd__foreach_commands] )) ||
+_qsv__subcmd__foreach_commands() {
     local commands; commands=()
     _describe -t commands 'qsv foreach commands' commands "$@"
 }
-(( $+functions[_qsv__frequency_commands] )) ||
-_qsv__frequency_commands() {
+(( $+functions[_qsv__subcmd__frequency_commands] )) ||
+_qsv__subcmd__frequency_commands() {
     local commands; commands=()
     _describe -t commands 'qsv frequency commands' commands "$@"
 }
-(( $+functions[_qsv__geocode_commands] )) ||
-_qsv__geocode_commands() {
+(( $+functions[_qsv__subcmd__geocode_commands] )) ||
+_qsv__subcmd__geocode_commands() {
     local commands; commands=(
 'countryinfo:' \
 'countryinfonow:' \
@@ -4023,18 +4023,18 @@ _qsv__geocode_commands() {
     )
     _describe -t commands 'qsv geocode commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__countryinfo_commands] )) ||
-_qsv__geocode__countryinfo_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__countryinfo_commands] )) ||
+_qsv__subcmd__geocode__subcmd__countryinfo_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode countryinfo commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__countryinfonow_commands] )) ||
-_qsv__geocode__countryinfonow_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__countryinfonow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__countryinfonow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode countryinfonow commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help_commands] )) ||
-_qsv__geocode__help_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help_commands() {
     local commands; commands=(
 'countryinfo:' \
 'countryinfonow:' \
@@ -4052,133 +4052,133 @@ _qsv__geocode__help_commands() {
     )
     _describe -t commands 'qsv geocode help commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help__countryinfo_commands] )) ||
-_qsv__geocode__help__countryinfo_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__countryinfo_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__countryinfo_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help countryinfo commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help__countryinfonow_commands] )) ||
-_qsv__geocode__help__countryinfonow_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__countryinfonow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__countryinfonow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help countryinfonow commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help__help_commands] )) ||
-_qsv__geocode__help__help_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__help_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help help commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help__index-check_commands] )) ||
-_qsv__geocode__help__index-check_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__index-check_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__index-check_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help index-check commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help__index-load_commands] )) ||
-_qsv__geocode__help__index-load_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__index-load_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__index-load_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help index-load commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help__index-reset_commands] )) ||
-_qsv__geocode__help__index-reset_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__index-reset_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__index-reset_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help index-reset commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help__index-update_commands] )) ||
-_qsv__geocode__help__index-update_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__index-update_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__index-update_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help index-update commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help__iplookup_commands] )) ||
-_qsv__geocode__help__iplookup_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__iplookup_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__iplookup_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help iplookup commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help__iplookupnow_commands] )) ||
-_qsv__geocode__help__iplookupnow_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__iplookupnow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__iplookupnow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help iplookupnow commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help__reverse_commands] )) ||
-_qsv__geocode__help__reverse_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__reverse_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__reverse_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help reverse commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help__reversenow_commands] )) ||
-_qsv__geocode__help__reversenow_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__reversenow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__reversenow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help reversenow commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help__suggest_commands] )) ||
-_qsv__geocode__help__suggest_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__suggest_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__suggest_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help suggest commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__help__suggestnow_commands] )) ||
-_qsv__geocode__help__suggestnow_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__suggestnow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__suggestnow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help suggestnow commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__index-check_commands] )) ||
-_qsv__geocode__index-check_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__index-check_commands] )) ||
+_qsv__subcmd__geocode__subcmd__index-check_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode index-check commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__index-load_commands] )) ||
-_qsv__geocode__index-load_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__index-load_commands] )) ||
+_qsv__subcmd__geocode__subcmd__index-load_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode index-load commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__index-reset_commands] )) ||
-_qsv__geocode__index-reset_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__index-reset_commands] )) ||
+_qsv__subcmd__geocode__subcmd__index-reset_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode index-reset commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__index-update_commands] )) ||
-_qsv__geocode__index-update_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__index-update_commands] )) ||
+_qsv__subcmd__geocode__subcmd__index-update_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode index-update commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__iplookup_commands] )) ||
-_qsv__geocode__iplookup_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__iplookup_commands] )) ||
+_qsv__subcmd__geocode__subcmd__iplookup_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode iplookup commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__iplookupnow_commands] )) ||
-_qsv__geocode__iplookupnow_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__iplookupnow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__iplookupnow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode iplookupnow commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__reverse_commands] )) ||
-_qsv__geocode__reverse_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__reverse_commands] )) ||
+_qsv__subcmd__geocode__subcmd__reverse_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode reverse commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__reversenow_commands] )) ||
-_qsv__geocode__reversenow_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__reversenow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__reversenow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode reversenow commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__suggest_commands] )) ||
-_qsv__geocode__suggest_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__suggest_commands] )) ||
+_qsv__subcmd__geocode__subcmd__suggest_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode suggest commands' commands "$@"
 }
-(( $+functions[_qsv__geocode__suggestnow_commands] )) ||
-_qsv__geocode__suggestnow_commands() {
+(( $+functions[_qsv__subcmd__geocode__subcmd__suggestnow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__suggestnow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode suggestnow commands' commands "$@"
 }
-(( $+functions[_qsv__geoconvert_commands] )) ||
-_qsv__geoconvert_commands() {
+(( $+functions[_qsv__subcmd__geoconvert_commands] )) ||
+_qsv__subcmd__geoconvert_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geoconvert commands' commands "$@"
 }
-(( $+functions[_qsv__headers_commands] )) ||
-_qsv__headers_commands() {
+(( $+functions[_qsv__subcmd__headers_commands] )) ||
+_qsv__subcmd__headers_commands() {
     local commands; commands=()
     _describe -t commands 'qsv headers commands' commands "$@"
 }
-(( $+functions[_qsv__help_commands] )) ||
-_qsv__help_commands() {
+(( $+functions[_qsv__subcmd__help_commands] )) ||
+_qsv__subcmd__help_commands() {
     local commands; commands=(
 'apply:' \
 'behead:' \
@@ -4254,8 +4254,8 @@ _qsv__help_commands() {
     )
     _describe -t commands 'qsv help commands' commands "$@"
 }
-(( $+functions[_qsv__help__apply_commands] )) ||
-_qsv__help__apply_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__apply_commands] )) ||
+_qsv__subcmd__help__subcmd__apply_commands() {
     local commands; commands=(
 'calcconv:' \
 'dynfmt:' \
@@ -4264,38 +4264,38 @@ _qsv__help__apply_commands() {
     )
     _describe -t commands 'qsv help apply commands' commands "$@"
 }
-(( $+functions[_qsv__help__apply__calcconv_commands] )) ||
-_qsv__help__apply__calcconv_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__apply__subcmd__calcconv_commands] )) ||
+_qsv__subcmd__help__subcmd__apply__subcmd__calcconv_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help apply calcconv commands' commands "$@"
 }
-(( $+functions[_qsv__help__apply__dynfmt_commands] )) ||
-_qsv__help__apply__dynfmt_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__apply__subcmd__dynfmt_commands] )) ||
+_qsv__subcmd__help__subcmd__apply__subcmd__dynfmt_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help apply dynfmt commands' commands "$@"
 }
-(( $+functions[_qsv__help__apply__emptyreplace_commands] )) ||
-_qsv__help__apply__emptyreplace_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__apply__subcmd__emptyreplace_commands] )) ||
+_qsv__subcmd__help__subcmd__apply__subcmd__emptyreplace_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help apply emptyreplace commands' commands "$@"
 }
-(( $+functions[_qsv__help__apply__operations_commands] )) ||
-_qsv__help__apply__operations_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__apply__subcmd__operations_commands] )) ||
+_qsv__subcmd__help__subcmd__apply__subcmd__operations_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help apply operations commands' commands "$@"
 }
-(( $+functions[_qsv__help__behead_commands] )) ||
-_qsv__help__behead_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__behead_commands] )) ||
+_qsv__subcmd__help__subcmd__behead_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help behead commands' commands "$@"
 }
-(( $+functions[_qsv__help__blake3_commands] )) ||
-_qsv__help__blake3_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__blake3_commands] )) ||
+_qsv__subcmd__help__subcmd__blake3_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help blake3 commands' commands "$@"
 }
-(( $+functions[_qsv__help__cat_commands] )) ||
-_qsv__help__cat_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__cat_commands] )) ||
+_qsv__subcmd__help__subcmd__cat_commands() {
     local commands; commands=(
 'columns:' \
 'rows:' \
@@ -4303,133 +4303,133 @@ _qsv__help__cat_commands() {
     )
     _describe -t commands 'qsv help cat commands' commands "$@"
 }
-(( $+functions[_qsv__help__cat__columns_commands] )) ||
-_qsv__help__cat__columns_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__cat__subcmd__columns_commands] )) ||
+_qsv__subcmd__help__subcmd__cat__subcmd__columns_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help cat columns commands' commands "$@"
 }
-(( $+functions[_qsv__help__cat__rows_commands] )) ||
-_qsv__help__cat__rows_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__cat__subcmd__rows_commands] )) ||
+_qsv__subcmd__help__subcmd__cat__subcmd__rows_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help cat rows commands' commands "$@"
 }
-(( $+functions[_qsv__help__cat__rowskey_commands] )) ||
-_qsv__help__cat__rowskey_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__cat__subcmd__rowskey_commands] )) ||
+_qsv__subcmd__help__subcmd__cat__subcmd__rowskey_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help cat rowskey commands' commands "$@"
 }
-(( $+functions[_qsv__help__clipboard_commands] )) ||
-_qsv__help__clipboard_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__clipboard_commands] )) ||
+_qsv__subcmd__help__subcmd__clipboard_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help clipboard commands' commands "$@"
 }
-(( $+functions[_qsv__help__color_commands] )) ||
-_qsv__help__color_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__color_commands] )) ||
+_qsv__subcmd__help__subcmd__color_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help color commands' commands "$@"
 }
-(( $+functions[_qsv__help__count_commands] )) ||
-_qsv__help__count_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__count_commands] )) ||
+_qsv__subcmd__help__subcmd__count_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help count commands' commands "$@"
 }
-(( $+functions[_qsv__help__datefmt_commands] )) ||
-_qsv__help__datefmt_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__datefmt_commands] )) ||
+_qsv__subcmd__help__subcmd__datefmt_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help datefmt commands' commands "$@"
 }
-(( $+functions[_qsv__help__dedup_commands] )) ||
-_qsv__help__dedup_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__dedup_commands] )) ||
+_qsv__subcmd__help__subcmd__dedup_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help dedup commands' commands "$@"
 }
-(( $+functions[_qsv__help__describegpt_commands] )) ||
-_qsv__help__describegpt_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__describegpt_commands] )) ||
+_qsv__subcmd__help__subcmd__describegpt_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help describegpt commands' commands "$@"
 }
-(( $+functions[_qsv__help__diff_commands] )) ||
-_qsv__help__diff_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__diff_commands] )) ||
+_qsv__subcmd__help__subcmd__diff_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help diff commands' commands "$@"
 }
-(( $+functions[_qsv__help__edit_commands] )) ||
-_qsv__help__edit_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__edit_commands] )) ||
+_qsv__subcmd__help__subcmd__edit_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help edit commands' commands "$@"
 }
-(( $+functions[_qsv__help__enum_commands] )) ||
-_qsv__help__enum_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__enum_commands] )) ||
+_qsv__subcmd__help__subcmd__enum_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help enum commands' commands "$@"
 }
-(( $+functions[_qsv__help__excel_commands] )) ||
-_qsv__help__excel_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__excel_commands] )) ||
+_qsv__subcmd__help__subcmd__excel_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help excel commands' commands "$@"
 }
-(( $+functions[_qsv__help__exclude_commands] )) ||
-_qsv__help__exclude_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__exclude_commands] )) ||
+_qsv__subcmd__help__subcmd__exclude_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help exclude commands' commands "$@"
 }
-(( $+functions[_qsv__help__explode_commands] )) ||
-_qsv__help__explode_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__explode_commands] )) ||
+_qsv__subcmd__help__subcmd__explode_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help explode commands' commands "$@"
 }
-(( $+functions[_qsv__help__extdedup_commands] )) ||
-_qsv__help__extdedup_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__extdedup_commands] )) ||
+_qsv__subcmd__help__subcmd__extdedup_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help extdedup commands' commands "$@"
 }
-(( $+functions[_qsv__help__extsort_commands] )) ||
-_qsv__help__extsort_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__extsort_commands] )) ||
+_qsv__subcmd__help__subcmd__extsort_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help extsort commands' commands "$@"
 }
-(( $+functions[_qsv__help__fetch_commands] )) ||
-_qsv__help__fetch_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__fetch_commands] )) ||
+_qsv__subcmd__help__subcmd__fetch_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help fetch commands' commands "$@"
 }
-(( $+functions[_qsv__help__fetchpost_commands] )) ||
-_qsv__help__fetchpost_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__fetchpost_commands] )) ||
+_qsv__subcmd__help__subcmd__fetchpost_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help fetchpost commands' commands "$@"
 }
-(( $+functions[_qsv__help__fill_commands] )) ||
-_qsv__help__fill_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__fill_commands] )) ||
+_qsv__subcmd__help__subcmd__fill_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help fill commands' commands "$@"
 }
-(( $+functions[_qsv__help__fixlengths_commands] )) ||
-_qsv__help__fixlengths_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__fixlengths_commands] )) ||
+_qsv__subcmd__help__subcmd__fixlengths_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help fixlengths commands' commands "$@"
 }
-(( $+functions[_qsv__help__flatten_commands] )) ||
-_qsv__help__flatten_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__flatten_commands] )) ||
+_qsv__subcmd__help__subcmd__flatten_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help flatten commands' commands "$@"
 }
-(( $+functions[_qsv__help__fmt_commands] )) ||
-_qsv__help__fmt_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__fmt_commands] )) ||
+_qsv__subcmd__help__subcmd__fmt_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help fmt commands' commands "$@"
 }
-(( $+functions[_qsv__help__foreach_commands] )) ||
-_qsv__help__foreach_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__foreach_commands] )) ||
+_qsv__subcmd__help__subcmd__foreach_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help foreach commands' commands "$@"
 }
-(( $+functions[_qsv__help__frequency_commands] )) ||
-_qsv__help__frequency_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__frequency_commands] )) ||
+_qsv__subcmd__help__subcmd__frequency_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help frequency commands' commands "$@"
 }
-(( $+functions[_qsv__help__geocode_commands] )) ||
-_qsv__help__geocode_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geocode_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode_commands() {
     local commands; commands=(
 'countryinfo:' \
 'countryinfonow:' \
@@ -4446,262 +4446,262 @@ _qsv__help__geocode_commands() {
     )
     _describe -t commands 'qsv help geocode commands' commands "$@"
 }
-(( $+functions[_qsv__help__geocode__countryinfo_commands] )) ||
-_qsv__help__geocode__countryinfo_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__countryinfo_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__countryinfo_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode countryinfo commands' commands "$@"
 }
-(( $+functions[_qsv__help__geocode__countryinfonow_commands] )) ||
-_qsv__help__geocode__countryinfonow_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__countryinfonow_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__countryinfonow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode countryinfonow commands' commands "$@"
 }
-(( $+functions[_qsv__help__geocode__index-check_commands] )) ||
-_qsv__help__geocode__index-check_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__index-check_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__index-check_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode index-check commands' commands "$@"
 }
-(( $+functions[_qsv__help__geocode__index-load_commands] )) ||
-_qsv__help__geocode__index-load_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__index-load_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__index-load_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode index-load commands' commands "$@"
 }
-(( $+functions[_qsv__help__geocode__index-reset_commands] )) ||
-_qsv__help__geocode__index-reset_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__index-reset_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__index-reset_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode index-reset commands' commands "$@"
 }
-(( $+functions[_qsv__help__geocode__index-update_commands] )) ||
-_qsv__help__geocode__index-update_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__index-update_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__index-update_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode index-update commands' commands "$@"
 }
-(( $+functions[_qsv__help__geocode__iplookup_commands] )) ||
-_qsv__help__geocode__iplookup_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__iplookup_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__iplookup_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode iplookup commands' commands "$@"
 }
-(( $+functions[_qsv__help__geocode__iplookupnow_commands] )) ||
-_qsv__help__geocode__iplookupnow_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__iplookupnow_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__iplookupnow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode iplookupnow commands' commands "$@"
 }
-(( $+functions[_qsv__help__geocode__reverse_commands] )) ||
-_qsv__help__geocode__reverse_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__reverse_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__reverse_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode reverse commands' commands "$@"
 }
-(( $+functions[_qsv__help__geocode__reversenow_commands] )) ||
-_qsv__help__geocode__reversenow_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__reversenow_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__reversenow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode reversenow commands' commands "$@"
 }
-(( $+functions[_qsv__help__geocode__suggest_commands] )) ||
-_qsv__help__geocode__suggest_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__suggest_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__suggest_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode suggest commands' commands "$@"
 }
-(( $+functions[_qsv__help__geocode__suggestnow_commands] )) ||
-_qsv__help__geocode__suggestnow_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__suggestnow_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__suggestnow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode suggestnow commands' commands "$@"
 }
-(( $+functions[_qsv__help__geoconvert_commands] )) ||
-_qsv__help__geoconvert_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__geoconvert_commands] )) ||
+_qsv__subcmd__help__subcmd__geoconvert_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geoconvert commands' commands "$@"
 }
-(( $+functions[_qsv__help__headers_commands] )) ||
-_qsv__help__headers_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__headers_commands] )) ||
+_qsv__subcmd__help__subcmd__headers_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help headers commands' commands "$@"
 }
-(( $+functions[_qsv__help__help_commands] )) ||
-_qsv__help__help_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__help_commands] )) ||
+_qsv__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help help commands' commands "$@"
 }
-(( $+functions[_qsv__help__index_commands] )) ||
-_qsv__help__index_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__index_commands] )) ||
+_qsv__subcmd__help__subcmd__index_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help index commands' commands "$@"
 }
-(( $+functions[_qsv__help__input_commands] )) ||
-_qsv__help__input_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__input_commands] )) ||
+_qsv__subcmd__help__subcmd__input_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help input commands' commands "$@"
 }
-(( $+functions[_qsv__help__join_commands] )) ||
-_qsv__help__join_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__join_commands] )) ||
+_qsv__subcmd__help__subcmd__join_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help join commands' commands "$@"
 }
-(( $+functions[_qsv__help__joinp_commands] )) ||
-_qsv__help__joinp_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__joinp_commands] )) ||
+_qsv__subcmd__help__subcmd__joinp_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help joinp commands' commands "$@"
 }
-(( $+functions[_qsv__help__json_commands] )) ||
-_qsv__help__json_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__json_commands] )) ||
+_qsv__subcmd__help__subcmd__json_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help json commands' commands "$@"
 }
-(( $+functions[_qsv__help__jsonl_commands] )) ||
-_qsv__help__jsonl_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__jsonl_commands] )) ||
+_qsv__subcmd__help__subcmd__jsonl_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help jsonl commands' commands "$@"
 }
-(( $+functions[_qsv__help__lens_commands] )) ||
-_qsv__help__lens_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__lens_commands] )) ||
+_qsv__subcmd__help__subcmd__lens_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help lens commands' commands "$@"
 }
-(( $+functions[_qsv__help__log_commands] )) ||
-_qsv__help__log_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__log_commands] )) ||
+_qsv__subcmd__help__subcmd__log_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help log commands' commands "$@"
 }
-(( $+functions[_qsv__help__luau_commands] )) ||
-_qsv__help__luau_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__luau_commands] )) ||
+_qsv__subcmd__help__subcmd__luau_commands() {
     local commands; commands=(
 'filter:' \
 'map:' \
     )
     _describe -t commands 'qsv help luau commands' commands "$@"
 }
-(( $+functions[_qsv__help__luau__filter_commands] )) ||
-_qsv__help__luau__filter_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__luau__subcmd__filter_commands] )) ||
+_qsv__subcmd__help__subcmd__luau__subcmd__filter_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help luau filter commands' commands "$@"
 }
-(( $+functions[_qsv__help__luau__map_commands] )) ||
-_qsv__help__luau__map_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__luau__subcmd__map_commands] )) ||
+_qsv__subcmd__help__subcmd__luau__subcmd__map_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help luau map commands' commands "$@"
 }
-(( $+functions[_qsv__help__moarstats_commands] )) ||
-_qsv__help__moarstats_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__moarstats_commands] )) ||
+_qsv__subcmd__help__subcmd__moarstats_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help moarstats commands' commands "$@"
 }
-(( $+functions[_qsv__help__partition_commands] )) ||
-_qsv__help__partition_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__partition_commands] )) ||
+_qsv__subcmd__help__subcmd__partition_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help partition commands' commands "$@"
 }
-(( $+functions[_qsv__help__pivotp_commands] )) ||
-_qsv__help__pivotp_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__pivotp_commands] )) ||
+_qsv__subcmd__help__subcmd__pivotp_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help pivotp commands' commands "$@"
 }
-(( $+functions[_qsv__help__pragmastat_commands] )) ||
-_qsv__help__pragmastat_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__pragmastat_commands] )) ||
+_qsv__subcmd__help__subcmd__pragmastat_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help pragmastat commands' commands "$@"
 }
-(( $+functions[_qsv__help__pro_commands] )) ||
-_qsv__help__pro_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__pro_commands] )) ||
+_qsv__subcmd__help__subcmd__pro_commands() {
     local commands; commands=(
 'lens:' \
 'workflow:' \
     )
     _describe -t commands 'qsv help pro commands' commands "$@"
 }
-(( $+functions[_qsv__help__pro__lens_commands] )) ||
-_qsv__help__pro__lens_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__pro__subcmd__lens_commands] )) ||
+_qsv__subcmd__help__subcmd__pro__subcmd__lens_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help pro lens commands' commands "$@"
 }
-(( $+functions[_qsv__help__pro__workflow_commands] )) ||
-_qsv__help__pro__workflow_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__pro__subcmd__workflow_commands] )) ||
+_qsv__subcmd__help__subcmd__pro__subcmd__workflow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help pro workflow commands' commands "$@"
 }
-(( $+functions[_qsv__help__prompt_commands] )) ||
-_qsv__help__prompt_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__prompt_commands] )) ||
+_qsv__subcmd__help__subcmd__prompt_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help prompt commands' commands "$@"
 }
-(( $+functions[_qsv__help__pseudo_commands] )) ||
-_qsv__help__pseudo_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__pseudo_commands] )) ||
+_qsv__subcmd__help__subcmd__pseudo_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help pseudo commands' commands "$@"
 }
-(( $+functions[_qsv__help__py_commands] )) ||
-_qsv__help__py_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__py_commands] )) ||
+_qsv__subcmd__help__subcmd__py_commands() {
     local commands; commands=(
 'filter:' \
 'map:' \
     )
     _describe -t commands 'qsv help py commands' commands "$@"
 }
-(( $+functions[_qsv__help__py__filter_commands] )) ||
-_qsv__help__py__filter_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__py__subcmd__filter_commands] )) ||
+_qsv__subcmd__help__subcmd__py__subcmd__filter_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help py filter commands' commands "$@"
 }
-(( $+functions[_qsv__help__py__map_commands] )) ||
-_qsv__help__py__map_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__py__subcmd__map_commands] )) ||
+_qsv__subcmd__help__subcmd__py__subcmd__map_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help py map commands' commands "$@"
 }
-(( $+functions[_qsv__help__rename_commands] )) ||
-_qsv__help__rename_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__rename_commands] )) ||
+_qsv__subcmd__help__subcmd__rename_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help rename commands' commands "$@"
 }
-(( $+functions[_qsv__help__replace_commands] )) ||
-_qsv__help__replace_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__replace_commands] )) ||
+_qsv__subcmd__help__subcmd__replace_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help replace commands' commands "$@"
 }
-(( $+functions[_qsv__help__reverse_commands] )) ||
-_qsv__help__reverse_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__reverse_commands] )) ||
+_qsv__subcmd__help__subcmd__reverse_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help reverse commands' commands "$@"
 }
-(( $+functions[_qsv__help__safenames_commands] )) ||
-_qsv__help__safenames_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__safenames_commands] )) ||
+_qsv__subcmd__help__subcmd__safenames_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help safenames commands' commands "$@"
 }
-(( $+functions[_qsv__help__sample_commands] )) ||
-_qsv__help__sample_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__sample_commands] )) ||
+_qsv__subcmd__help__subcmd__sample_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help sample commands' commands "$@"
 }
-(( $+functions[_qsv__help__schema_commands] )) ||
-_qsv__help__schema_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__schema_commands] )) ||
+_qsv__subcmd__help__subcmd__schema_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help schema commands' commands "$@"
 }
-(( $+functions[_qsv__help__scoresql_commands] )) ||
-_qsv__help__scoresql_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__scoresql_commands] )) ||
+_qsv__subcmd__help__subcmd__scoresql_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help scoresql commands' commands "$@"
 }
-(( $+functions[_qsv__help__search_commands] )) ||
-_qsv__help__search_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__search_commands] )) ||
+_qsv__subcmd__help__subcmd__search_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help search commands' commands "$@"
 }
-(( $+functions[_qsv__help__searchset_commands] )) ||
-_qsv__help__searchset_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__searchset_commands] )) ||
+_qsv__subcmd__help__subcmd__searchset_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help searchset commands' commands "$@"
 }
-(( $+functions[_qsv__help__select_commands] )) ||
-_qsv__help__select_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__select_commands] )) ||
+_qsv__subcmd__help__subcmd__select_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help select commands' commands "$@"
 }
-(( $+functions[_qsv__help__slice_commands] )) ||
-_qsv__help__slice_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__slice_commands] )) ||
+_qsv__subcmd__help__subcmd__slice_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help slice commands' commands "$@"
 }
-(( $+functions[_qsv__help__snappy_commands] )) ||
-_qsv__help__snappy_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__snappy_commands] )) ||
+_qsv__subcmd__help__subcmd__snappy_commands() {
     local commands; commands=(
 'check:' \
 'compress:' \
@@ -4710,68 +4710,68 @@ _qsv__help__snappy_commands() {
     )
     _describe -t commands 'qsv help snappy commands' commands "$@"
 }
-(( $+functions[_qsv__help__snappy__check_commands] )) ||
-_qsv__help__snappy__check_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__snappy__subcmd__check_commands] )) ||
+_qsv__subcmd__help__subcmd__snappy__subcmd__check_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help snappy check commands' commands "$@"
 }
-(( $+functions[_qsv__help__snappy__compress_commands] )) ||
-_qsv__help__snappy__compress_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__snappy__subcmd__compress_commands] )) ||
+_qsv__subcmd__help__subcmd__snappy__subcmd__compress_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help snappy compress commands' commands "$@"
 }
-(( $+functions[_qsv__help__snappy__decompress_commands] )) ||
-_qsv__help__snappy__decompress_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__snappy__subcmd__decompress_commands] )) ||
+_qsv__subcmd__help__subcmd__snappy__subcmd__decompress_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help snappy decompress commands' commands "$@"
 }
-(( $+functions[_qsv__help__snappy__validate_commands] )) ||
-_qsv__help__snappy__validate_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__snappy__subcmd__validate_commands] )) ||
+_qsv__subcmd__help__subcmd__snappy__subcmd__validate_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help snappy validate commands' commands "$@"
 }
-(( $+functions[_qsv__help__sniff_commands] )) ||
-_qsv__help__sniff_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__sniff_commands] )) ||
+_qsv__subcmd__help__subcmd__sniff_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help sniff commands' commands "$@"
 }
-(( $+functions[_qsv__help__sort_commands] )) ||
-_qsv__help__sort_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__sort_commands] )) ||
+_qsv__subcmd__help__subcmd__sort_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help sort commands' commands "$@"
 }
-(( $+functions[_qsv__help__sortcheck_commands] )) ||
-_qsv__help__sortcheck_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__sortcheck_commands] )) ||
+_qsv__subcmd__help__subcmd__sortcheck_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help sortcheck commands' commands "$@"
 }
-(( $+functions[_qsv__help__split_commands] )) ||
-_qsv__help__split_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__split_commands] )) ||
+_qsv__subcmd__help__subcmd__split_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help split commands' commands "$@"
 }
-(( $+functions[_qsv__help__sqlp_commands] )) ||
-_qsv__help__sqlp_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__sqlp_commands] )) ||
+_qsv__subcmd__help__subcmd__sqlp_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help sqlp commands' commands "$@"
 }
-(( $+functions[_qsv__help__stats_commands] )) ||
-_qsv__help__stats_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__stats_commands] )) ||
+_qsv__subcmd__help__subcmd__stats_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help stats commands' commands "$@"
 }
-(( $+functions[_qsv__help__table_commands] )) ||
-_qsv__help__table_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__table_commands] )) ||
+_qsv__subcmd__help__subcmd__table_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help table commands' commands "$@"
 }
-(( $+functions[_qsv__help__template_commands] )) ||
-_qsv__help__template_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__template_commands] )) ||
+_qsv__subcmd__help__subcmd__template_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help template commands' commands "$@"
 }
-(( $+functions[_qsv__help__to_commands] )) ||
-_qsv__help__to_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__to_commands] )) ||
+_qsv__subcmd__help__subcmd__to_commands() {
     local commands; commands=(
 'datapackage:' \
 'ods:' \
@@ -4782,100 +4782,100 @@ _qsv__help__to_commands() {
     )
     _describe -t commands 'qsv help to commands' commands "$@"
 }
-(( $+functions[_qsv__help__to__datapackage_commands] )) ||
-_qsv__help__to__datapackage_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__to__subcmd__datapackage_commands] )) ||
+_qsv__subcmd__help__subcmd__to__subcmd__datapackage_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help to datapackage commands' commands "$@"
 }
-(( $+functions[_qsv__help__to__ods_commands] )) ||
-_qsv__help__to__ods_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__to__subcmd__ods_commands] )) ||
+_qsv__subcmd__help__subcmd__to__subcmd__ods_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help to ods commands' commands "$@"
 }
-(( $+functions[_qsv__help__to__parquet_commands] )) ||
-_qsv__help__to__parquet_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__to__subcmd__parquet_commands] )) ||
+_qsv__subcmd__help__subcmd__to__subcmd__parquet_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help to parquet commands' commands "$@"
 }
-(( $+functions[_qsv__help__to__postgres_commands] )) ||
-_qsv__help__to__postgres_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__to__subcmd__postgres_commands] )) ||
+_qsv__subcmd__help__subcmd__to__subcmd__postgres_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help to postgres commands' commands "$@"
 }
-(( $+functions[_qsv__help__to__sqlite_commands] )) ||
-_qsv__help__to__sqlite_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__to__subcmd__sqlite_commands] )) ||
+_qsv__subcmd__help__subcmd__to__subcmd__sqlite_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help to sqlite commands' commands "$@"
 }
-(( $+functions[_qsv__help__to__xlsx_commands] )) ||
-_qsv__help__to__xlsx_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__to__subcmd__xlsx_commands] )) ||
+_qsv__subcmd__help__subcmd__to__subcmd__xlsx_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help to xlsx commands' commands "$@"
 }
-(( $+functions[_qsv__help__tojsonl_commands] )) ||
-_qsv__help__tojsonl_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__tojsonl_commands] )) ||
+_qsv__subcmd__help__subcmd__tojsonl_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help tojsonl commands' commands "$@"
 }
-(( $+functions[_qsv__help__transpose_commands] )) ||
-_qsv__help__transpose_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__transpose_commands] )) ||
+_qsv__subcmd__help__subcmd__transpose_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help transpose commands' commands "$@"
 }
-(( $+functions[_qsv__help__validate_commands] )) ||
-_qsv__help__validate_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__validate_commands] )) ||
+_qsv__subcmd__help__subcmd__validate_commands() {
     local commands; commands=(
 'schema:' \
     )
     _describe -t commands 'qsv help validate commands' commands "$@"
 }
-(( $+functions[_qsv__help__validate__schema_commands] )) ||
-_qsv__help__validate__schema_commands() {
+(( $+functions[_qsv__subcmd__help__subcmd__validate__subcmd__schema_commands] )) ||
+_qsv__subcmd__help__subcmd__validate__subcmd__schema_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help validate schema commands' commands "$@"
 }
-(( $+functions[_qsv__index_commands] )) ||
-_qsv__index_commands() {
+(( $+functions[_qsv__subcmd__index_commands] )) ||
+_qsv__subcmd__index_commands() {
     local commands; commands=()
     _describe -t commands 'qsv index commands' commands "$@"
 }
-(( $+functions[_qsv__input_commands] )) ||
-_qsv__input_commands() {
+(( $+functions[_qsv__subcmd__input_commands] )) ||
+_qsv__subcmd__input_commands() {
     local commands; commands=()
     _describe -t commands 'qsv input commands' commands "$@"
 }
-(( $+functions[_qsv__join_commands] )) ||
-_qsv__join_commands() {
+(( $+functions[_qsv__subcmd__join_commands] )) ||
+_qsv__subcmd__join_commands() {
     local commands; commands=()
     _describe -t commands 'qsv join commands' commands "$@"
 }
-(( $+functions[_qsv__joinp_commands] )) ||
-_qsv__joinp_commands() {
+(( $+functions[_qsv__subcmd__joinp_commands] )) ||
+_qsv__subcmd__joinp_commands() {
     local commands; commands=()
     _describe -t commands 'qsv joinp commands' commands "$@"
 }
-(( $+functions[_qsv__json_commands] )) ||
-_qsv__json_commands() {
+(( $+functions[_qsv__subcmd__json_commands] )) ||
+_qsv__subcmd__json_commands() {
     local commands; commands=()
     _describe -t commands 'qsv json commands' commands "$@"
 }
-(( $+functions[_qsv__jsonl_commands] )) ||
-_qsv__jsonl_commands() {
+(( $+functions[_qsv__subcmd__jsonl_commands] )) ||
+_qsv__subcmd__jsonl_commands() {
     local commands; commands=()
     _describe -t commands 'qsv jsonl commands' commands "$@"
 }
-(( $+functions[_qsv__lens_commands] )) ||
-_qsv__lens_commands() {
+(( $+functions[_qsv__subcmd__lens_commands] )) ||
+_qsv__subcmd__lens_commands() {
     local commands; commands=()
     _describe -t commands 'qsv lens commands' commands "$@"
 }
-(( $+functions[_qsv__log_commands] )) ||
-_qsv__log_commands() {
+(( $+functions[_qsv__subcmd__log_commands] )) ||
+_qsv__subcmd__log_commands() {
     local commands; commands=()
     _describe -t commands 'qsv log commands' commands "$@"
 }
-(( $+functions[_qsv__luau_commands] )) ||
-_qsv__luau_commands() {
+(( $+functions[_qsv__subcmd__luau_commands] )) ||
+_qsv__subcmd__luau_commands() {
     local commands; commands=(
 'filter:' \
 'map:' \
@@ -4883,13 +4883,13 @@ _qsv__luau_commands() {
     )
     _describe -t commands 'qsv luau commands' commands "$@"
 }
-(( $+functions[_qsv__luau__filter_commands] )) ||
-_qsv__luau__filter_commands() {
+(( $+functions[_qsv__subcmd__luau__subcmd__filter_commands] )) ||
+_qsv__subcmd__luau__subcmd__filter_commands() {
     local commands; commands=()
     _describe -t commands 'qsv luau filter commands' commands "$@"
 }
-(( $+functions[_qsv__luau__help_commands] )) ||
-_qsv__luau__help_commands() {
+(( $+functions[_qsv__subcmd__luau__subcmd__help_commands] )) ||
+_qsv__subcmd__luau__subcmd__help_commands() {
     local commands; commands=(
 'filter:' \
 'map:' \
@@ -4897,48 +4897,48 @@ _qsv__luau__help_commands() {
     )
     _describe -t commands 'qsv luau help commands' commands "$@"
 }
-(( $+functions[_qsv__luau__help__filter_commands] )) ||
-_qsv__luau__help__filter_commands() {
+(( $+functions[_qsv__subcmd__luau__subcmd__help__subcmd__filter_commands] )) ||
+_qsv__subcmd__luau__subcmd__help__subcmd__filter_commands() {
     local commands; commands=()
     _describe -t commands 'qsv luau help filter commands' commands "$@"
 }
-(( $+functions[_qsv__luau__help__help_commands] )) ||
-_qsv__luau__help__help_commands() {
+(( $+functions[_qsv__subcmd__luau__subcmd__help__subcmd__help_commands] )) ||
+_qsv__subcmd__luau__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'qsv luau help help commands' commands "$@"
 }
-(( $+functions[_qsv__luau__help__map_commands] )) ||
-_qsv__luau__help__map_commands() {
+(( $+functions[_qsv__subcmd__luau__subcmd__help__subcmd__map_commands] )) ||
+_qsv__subcmd__luau__subcmd__help__subcmd__map_commands() {
     local commands; commands=()
     _describe -t commands 'qsv luau help map commands' commands "$@"
 }
-(( $+functions[_qsv__luau__map_commands] )) ||
-_qsv__luau__map_commands() {
+(( $+functions[_qsv__subcmd__luau__subcmd__map_commands] )) ||
+_qsv__subcmd__luau__subcmd__map_commands() {
     local commands; commands=()
     _describe -t commands 'qsv luau map commands' commands "$@"
 }
-(( $+functions[_qsv__moarstats_commands] )) ||
-_qsv__moarstats_commands() {
+(( $+functions[_qsv__subcmd__moarstats_commands] )) ||
+_qsv__subcmd__moarstats_commands() {
     local commands; commands=()
     _describe -t commands 'qsv moarstats commands' commands "$@"
 }
-(( $+functions[_qsv__partition_commands] )) ||
-_qsv__partition_commands() {
+(( $+functions[_qsv__subcmd__partition_commands] )) ||
+_qsv__subcmd__partition_commands() {
     local commands; commands=()
     _describe -t commands 'qsv partition commands' commands "$@"
 }
-(( $+functions[_qsv__pivotp_commands] )) ||
-_qsv__pivotp_commands() {
+(( $+functions[_qsv__subcmd__pivotp_commands] )) ||
+_qsv__subcmd__pivotp_commands() {
     local commands; commands=()
     _describe -t commands 'qsv pivotp commands' commands "$@"
 }
-(( $+functions[_qsv__pragmastat_commands] )) ||
-_qsv__pragmastat_commands() {
+(( $+functions[_qsv__subcmd__pragmastat_commands] )) ||
+_qsv__subcmd__pragmastat_commands() {
     local commands; commands=()
     _describe -t commands 'qsv pragmastat commands' commands "$@"
 }
-(( $+functions[_qsv__pro_commands] )) ||
-_qsv__pro_commands() {
+(( $+functions[_qsv__subcmd__pro_commands] )) ||
+_qsv__subcmd__pro_commands() {
     local commands; commands=(
 'lens:' \
 'workflow:' \
@@ -4946,8 +4946,8 @@ _qsv__pro_commands() {
     )
     _describe -t commands 'qsv pro commands' commands "$@"
 }
-(( $+functions[_qsv__pro__help_commands] )) ||
-_qsv__pro__help_commands() {
+(( $+functions[_qsv__subcmd__pro__subcmd__help_commands] )) ||
+_qsv__subcmd__pro__subcmd__help_commands() {
     local commands; commands=(
 'lens:' \
 'workflow:' \
@@ -4955,43 +4955,43 @@ _qsv__pro__help_commands() {
     )
     _describe -t commands 'qsv pro help commands' commands "$@"
 }
-(( $+functions[_qsv__pro__help__help_commands] )) ||
-_qsv__pro__help__help_commands() {
+(( $+functions[_qsv__subcmd__pro__subcmd__help__subcmd__help_commands] )) ||
+_qsv__subcmd__pro__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'qsv pro help help commands' commands "$@"
 }
-(( $+functions[_qsv__pro__help__lens_commands] )) ||
-_qsv__pro__help__lens_commands() {
+(( $+functions[_qsv__subcmd__pro__subcmd__help__subcmd__lens_commands] )) ||
+_qsv__subcmd__pro__subcmd__help__subcmd__lens_commands() {
     local commands; commands=()
     _describe -t commands 'qsv pro help lens commands' commands "$@"
 }
-(( $+functions[_qsv__pro__help__workflow_commands] )) ||
-_qsv__pro__help__workflow_commands() {
+(( $+functions[_qsv__subcmd__pro__subcmd__help__subcmd__workflow_commands] )) ||
+_qsv__subcmd__pro__subcmd__help__subcmd__workflow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv pro help workflow commands' commands "$@"
 }
-(( $+functions[_qsv__pro__lens_commands] )) ||
-_qsv__pro__lens_commands() {
+(( $+functions[_qsv__subcmd__pro__subcmd__lens_commands] )) ||
+_qsv__subcmd__pro__subcmd__lens_commands() {
     local commands; commands=()
     _describe -t commands 'qsv pro lens commands' commands "$@"
 }
-(( $+functions[_qsv__pro__workflow_commands] )) ||
-_qsv__pro__workflow_commands() {
+(( $+functions[_qsv__subcmd__pro__subcmd__workflow_commands] )) ||
+_qsv__subcmd__pro__subcmd__workflow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv pro workflow commands' commands "$@"
 }
-(( $+functions[_qsv__prompt_commands] )) ||
-_qsv__prompt_commands() {
+(( $+functions[_qsv__subcmd__prompt_commands] )) ||
+_qsv__subcmd__prompt_commands() {
     local commands; commands=()
     _describe -t commands 'qsv prompt commands' commands "$@"
 }
-(( $+functions[_qsv__pseudo_commands] )) ||
-_qsv__pseudo_commands() {
+(( $+functions[_qsv__subcmd__pseudo_commands] )) ||
+_qsv__subcmd__pseudo_commands() {
     local commands; commands=()
     _describe -t commands 'qsv pseudo commands' commands "$@"
 }
-(( $+functions[_qsv__py_commands] )) ||
-_qsv__py_commands() {
+(( $+functions[_qsv__subcmd__py_commands] )) ||
+_qsv__subcmd__py_commands() {
     local commands; commands=(
 'filter:' \
 'map:' \
@@ -4999,13 +4999,13 @@ _qsv__py_commands() {
     )
     _describe -t commands 'qsv py commands' commands "$@"
 }
-(( $+functions[_qsv__py__filter_commands] )) ||
-_qsv__py__filter_commands() {
+(( $+functions[_qsv__subcmd__py__subcmd__filter_commands] )) ||
+_qsv__subcmd__py__subcmd__filter_commands() {
     local commands; commands=()
     _describe -t commands 'qsv py filter commands' commands "$@"
 }
-(( $+functions[_qsv__py__help_commands] )) ||
-_qsv__py__help_commands() {
+(( $+functions[_qsv__subcmd__py__subcmd__help_commands] )) ||
+_qsv__subcmd__py__subcmd__help_commands() {
     local commands; commands=(
 'filter:' \
 'map:' \
@@ -5013,83 +5013,83 @@ _qsv__py__help_commands() {
     )
     _describe -t commands 'qsv py help commands' commands "$@"
 }
-(( $+functions[_qsv__py__help__filter_commands] )) ||
-_qsv__py__help__filter_commands() {
+(( $+functions[_qsv__subcmd__py__subcmd__help__subcmd__filter_commands] )) ||
+_qsv__subcmd__py__subcmd__help__subcmd__filter_commands() {
     local commands; commands=()
     _describe -t commands 'qsv py help filter commands' commands "$@"
 }
-(( $+functions[_qsv__py__help__help_commands] )) ||
-_qsv__py__help__help_commands() {
+(( $+functions[_qsv__subcmd__py__subcmd__help__subcmd__help_commands] )) ||
+_qsv__subcmd__py__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'qsv py help help commands' commands "$@"
 }
-(( $+functions[_qsv__py__help__map_commands] )) ||
-_qsv__py__help__map_commands() {
+(( $+functions[_qsv__subcmd__py__subcmd__help__subcmd__map_commands] )) ||
+_qsv__subcmd__py__subcmd__help__subcmd__map_commands() {
     local commands; commands=()
     _describe -t commands 'qsv py help map commands' commands "$@"
 }
-(( $+functions[_qsv__py__map_commands] )) ||
-_qsv__py__map_commands() {
+(( $+functions[_qsv__subcmd__py__subcmd__map_commands] )) ||
+_qsv__subcmd__py__subcmd__map_commands() {
     local commands; commands=()
     _describe -t commands 'qsv py map commands' commands "$@"
 }
-(( $+functions[_qsv__rename_commands] )) ||
-_qsv__rename_commands() {
+(( $+functions[_qsv__subcmd__rename_commands] )) ||
+_qsv__subcmd__rename_commands() {
     local commands; commands=()
     _describe -t commands 'qsv rename commands' commands "$@"
 }
-(( $+functions[_qsv__replace_commands] )) ||
-_qsv__replace_commands() {
+(( $+functions[_qsv__subcmd__replace_commands] )) ||
+_qsv__subcmd__replace_commands() {
     local commands; commands=()
     _describe -t commands 'qsv replace commands' commands "$@"
 }
-(( $+functions[_qsv__reverse_commands] )) ||
-_qsv__reverse_commands() {
+(( $+functions[_qsv__subcmd__reverse_commands] )) ||
+_qsv__subcmd__reverse_commands() {
     local commands; commands=()
     _describe -t commands 'qsv reverse commands' commands "$@"
 }
-(( $+functions[_qsv__safenames_commands] )) ||
-_qsv__safenames_commands() {
+(( $+functions[_qsv__subcmd__safenames_commands] )) ||
+_qsv__subcmd__safenames_commands() {
     local commands; commands=()
     _describe -t commands 'qsv safenames commands' commands "$@"
 }
-(( $+functions[_qsv__sample_commands] )) ||
-_qsv__sample_commands() {
+(( $+functions[_qsv__subcmd__sample_commands] )) ||
+_qsv__subcmd__sample_commands() {
     local commands; commands=()
     _describe -t commands 'qsv sample commands' commands "$@"
 }
-(( $+functions[_qsv__schema_commands] )) ||
-_qsv__schema_commands() {
+(( $+functions[_qsv__subcmd__schema_commands] )) ||
+_qsv__subcmd__schema_commands() {
     local commands; commands=()
     _describe -t commands 'qsv schema commands' commands "$@"
 }
-(( $+functions[_qsv__scoresql_commands] )) ||
-_qsv__scoresql_commands() {
+(( $+functions[_qsv__subcmd__scoresql_commands] )) ||
+_qsv__subcmd__scoresql_commands() {
     local commands; commands=()
     _describe -t commands 'qsv scoresql commands' commands "$@"
 }
-(( $+functions[_qsv__search_commands] )) ||
-_qsv__search_commands() {
+(( $+functions[_qsv__subcmd__search_commands] )) ||
+_qsv__subcmd__search_commands() {
     local commands; commands=()
     _describe -t commands 'qsv search commands' commands "$@"
 }
-(( $+functions[_qsv__searchset_commands] )) ||
-_qsv__searchset_commands() {
+(( $+functions[_qsv__subcmd__searchset_commands] )) ||
+_qsv__subcmd__searchset_commands() {
     local commands; commands=()
     _describe -t commands 'qsv searchset commands' commands "$@"
 }
-(( $+functions[_qsv__select_commands] )) ||
-_qsv__select_commands() {
+(( $+functions[_qsv__subcmd__select_commands] )) ||
+_qsv__subcmd__select_commands() {
     local commands; commands=()
     _describe -t commands 'qsv select commands' commands "$@"
 }
-(( $+functions[_qsv__slice_commands] )) ||
-_qsv__slice_commands() {
+(( $+functions[_qsv__subcmd__slice_commands] )) ||
+_qsv__subcmd__slice_commands() {
     local commands; commands=()
     _describe -t commands 'qsv slice commands' commands "$@"
 }
-(( $+functions[_qsv__snappy_commands] )) ||
-_qsv__snappy_commands() {
+(( $+functions[_qsv__subcmd__snappy_commands] )) ||
+_qsv__subcmd__snappy_commands() {
     local commands; commands=(
 'check:' \
 'compress:' \
@@ -5099,23 +5099,23 @@ _qsv__snappy_commands() {
     )
     _describe -t commands 'qsv snappy commands' commands "$@"
 }
-(( $+functions[_qsv__snappy__check_commands] )) ||
-_qsv__snappy__check_commands() {
+(( $+functions[_qsv__subcmd__snappy__subcmd__check_commands] )) ||
+_qsv__subcmd__snappy__subcmd__check_commands() {
     local commands; commands=()
     _describe -t commands 'qsv snappy check commands' commands "$@"
 }
-(( $+functions[_qsv__snappy__compress_commands] )) ||
-_qsv__snappy__compress_commands() {
+(( $+functions[_qsv__subcmd__snappy__subcmd__compress_commands] )) ||
+_qsv__subcmd__snappy__subcmd__compress_commands() {
     local commands; commands=()
     _describe -t commands 'qsv snappy compress commands' commands "$@"
 }
-(( $+functions[_qsv__snappy__decompress_commands] )) ||
-_qsv__snappy__decompress_commands() {
+(( $+functions[_qsv__subcmd__snappy__subcmd__decompress_commands] )) ||
+_qsv__subcmd__snappy__subcmd__decompress_commands() {
     local commands; commands=()
     _describe -t commands 'qsv snappy decompress commands' commands "$@"
 }
-(( $+functions[_qsv__snappy__help_commands] )) ||
-_qsv__snappy__help_commands() {
+(( $+functions[_qsv__subcmd__snappy__subcmd__help_commands] )) ||
+_qsv__subcmd__snappy__subcmd__help_commands() {
     local commands; commands=(
 'check:' \
 'compress:' \
@@ -5125,78 +5125,78 @@ _qsv__snappy__help_commands() {
     )
     _describe -t commands 'qsv snappy help commands' commands "$@"
 }
-(( $+functions[_qsv__snappy__help__check_commands] )) ||
-_qsv__snappy__help__check_commands() {
+(( $+functions[_qsv__subcmd__snappy__subcmd__help__subcmd__check_commands] )) ||
+_qsv__subcmd__snappy__subcmd__help__subcmd__check_commands() {
     local commands; commands=()
     _describe -t commands 'qsv snappy help check commands' commands "$@"
 }
-(( $+functions[_qsv__snappy__help__compress_commands] )) ||
-_qsv__snappy__help__compress_commands() {
+(( $+functions[_qsv__subcmd__snappy__subcmd__help__subcmd__compress_commands] )) ||
+_qsv__subcmd__snappy__subcmd__help__subcmd__compress_commands() {
     local commands; commands=()
     _describe -t commands 'qsv snappy help compress commands' commands "$@"
 }
-(( $+functions[_qsv__snappy__help__decompress_commands] )) ||
-_qsv__snappy__help__decompress_commands() {
+(( $+functions[_qsv__subcmd__snappy__subcmd__help__subcmd__decompress_commands] )) ||
+_qsv__subcmd__snappy__subcmd__help__subcmd__decompress_commands() {
     local commands; commands=()
     _describe -t commands 'qsv snappy help decompress commands' commands "$@"
 }
-(( $+functions[_qsv__snappy__help__help_commands] )) ||
-_qsv__snappy__help__help_commands() {
+(( $+functions[_qsv__subcmd__snappy__subcmd__help__subcmd__help_commands] )) ||
+_qsv__subcmd__snappy__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'qsv snappy help help commands' commands "$@"
 }
-(( $+functions[_qsv__snappy__help__validate_commands] )) ||
-_qsv__snappy__help__validate_commands() {
+(( $+functions[_qsv__subcmd__snappy__subcmd__help__subcmd__validate_commands] )) ||
+_qsv__subcmd__snappy__subcmd__help__subcmd__validate_commands() {
     local commands; commands=()
     _describe -t commands 'qsv snappy help validate commands' commands "$@"
 }
-(( $+functions[_qsv__snappy__validate_commands] )) ||
-_qsv__snappy__validate_commands() {
+(( $+functions[_qsv__subcmd__snappy__subcmd__validate_commands] )) ||
+_qsv__subcmd__snappy__subcmd__validate_commands() {
     local commands; commands=()
     _describe -t commands 'qsv snappy validate commands' commands "$@"
 }
-(( $+functions[_qsv__sniff_commands] )) ||
-_qsv__sniff_commands() {
+(( $+functions[_qsv__subcmd__sniff_commands] )) ||
+_qsv__subcmd__sniff_commands() {
     local commands; commands=()
     _describe -t commands 'qsv sniff commands' commands "$@"
 }
-(( $+functions[_qsv__sort_commands] )) ||
-_qsv__sort_commands() {
+(( $+functions[_qsv__subcmd__sort_commands] )) ||
+_qsv__subcmd__sort_commands() {
     local commands; commands=()
     _describe -t commands 'qsv sort commands' commands "$@"
 }
-(( $+functions[_qsv__sortcheck_commands] )) ||
-_qsv__sortcheck_commands() {
+(( $+functions[_qsv__subcmd__sortcheck_commands] )) ||
+_qsv__subcmd__sortcheck_commands() {
     local commands; commands=()
     _describe -t commands 'qsv sortcheck commands' commands "$@"
 }
-(( $+functions[_qsv__split_commands] )) ||
-_qsv__split_commands() {
+(( $+functions[_qsv__subcmd__split_commands] )) ||
+_qsv__subcmd__split_commands() {
     local commands; commands=()
     _describe -t commands 'qsv split commands' commands "$@"
 }
-(( $+functions[_qsv__sqlp_commands] )) ||
-_qsv__sqlp_commands() {
+(( $+functions[_qsv__subcmd__sqlp_commands] )) ||
+_qsv__subcmd__sqlp_commands() {
     local commands; commands=()
     _describe -t commands 'qsv sqlp commands' commands "$@"
 }
-(( $+functions[_qsv__stats_commands] )) ||
-_qsv__stats_commands() {
+(( $+functions[_qsv__subcmd__stats_commands] )) ||
+_qsv__subcmd__stats_commands() {
     local commands; commands=()
     _describe -t commands 'qsv stats commands' commands "$@"
 }
-(( $+functions[_qsv__table_commands] )) ||
-_qsv__table_commands() {
+(( $+functions[_qsv__subcmd__table_commands] )) ||
+_qsv__subcmd__table_commands() {
     local commands; commands=()
     _describe -t commands 'qsv table commands' commands "$@"
 }
-(( $+functions[_qsv__template_commands] )) ||
-_qsv__template_commands() {
+(( $+functions[_qsv__subcmd__template_commands] )) ||
+_qsv__subcmd__template_commands() {
     local commands; commands=()
     _describe -t commands 'qsv template commands' commands "$@"
 }
-(( $+functions[_qsv__to_commands] )) ||
-_qsv__to_commands() {
+(( $+functions[_qsv__subcmd__to_commands] )) ||
+_qsv__subcmd__to_commands() {
     local commands; commands=(
 'datapackage:' \
 'ods:' \
@@ -5208,13 +5208,13 @@ _qsv__to_commands() {
     )
     _describe -t commands 'qsv to commands' commands "$@"
 }
-(( $+functions[_qsv__to__datapackage_commands] )) ||
-_qsv__to__datapackage_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__datapackage_commands] )) ||
+_qsv__subcmd__to__subcmd__datapackage_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to datapackage commands' commands "$@"
 }
-(( $+functions[_qsv__to__help_commands] )) ||
-_qsv__to__help_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__help_commands] )) ||
+_qsv__subcmd__to__subcmd__help_commands() {
     local commands; commands=(
 'datapackage:' \
 'ods:' \
@@ -5226,104 +5226,104 @@ _qsv__to__help_commands() {
     )
     _describe -t commands 'qsv to help commands' commands "$@"
 }
-(( $+functions[_qsv__to__help__datapackage_commands] )) ||
-_qsv__to__help__datapackage_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__help__subcmd__datapackage_commands] )) ||
+_qsv__subcmd__to__subcmd__help__subcmd__datapackage_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to help datapackage commands' commands "$@"
 }
-(( $+functions[_qsv__to__help__help_commands] )) ||
-_qsv__to__help__help_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__help__subcmd__help_commands] )) ||
+_qsv__subcmd__to__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to help help commands' commands "$@"
 }
-(( $+functions[_qsv__to__help__ods_commands] )) ||
-_qsv__to__help__ods_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__help__subcmd__ods_commands] )) ||
+_qsv__subcmd__to__subcmd__help__subcmd__ods_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to help ods commands' commands "$@"
 }
-(( $+functions[_qsv__to__help__parquet_commands] )) ||
-_qsv__to__help__parquet_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__help__subcmd__parquet_commands] )) ||
+_qsv__subcmd__to__subcmd__help__subcmd__parquet_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to help parquet commands' commands "$@"
 }
-(( $+functions[_qsv__to__help__postgres_commands] )) ||
-_qsv__to__help__postgres_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__help__subcmd__postgres_commands] )) ||
+_qsv__subcmd__to__subcmd__help__subcmd__postgres_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to help postgres commands' commands "$@"
 }
-(( $+functions[_qsv__to__help__sqlite_commands] )) ||
-_qsv__to__help__sqlite_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__help__subcmd__sqlite_commands] )) ||
+_qsv__subcmd__to__subcmd__help__subcmd__sqlite_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to help sqlite commands' commands "$@"
 }
-(( $+functions[_qsv__to__help__xlsx_commands] )) ||
-_qsv__to__help__xlsx_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__help__subcmd__xlsx_commands] )) ||
+_qsv__subcmd__to__subcmd__help__subcmd__xlsx_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to help xlsx commands' commands "$@"
 }
-(( $+functions[_qsv__to__ods_commands] )) ||
-_qsv__to__ods_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__ods_commands] )) ||
+_qsv__subcmd__to__subcmd__ods_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to ods commands' commands "$@"
 }
-(( $+functions[_qsv__to__parquet_commands] )) ||
-_qsv__to__parquet_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__parquet_commands] )) ||
+_qsv__subcmd__to__subcmd__parquet_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to parquet commands' commands "$@"
 }
-(( $+functions[_qsv__to__postgres_commands] )) ||
-_qsv__to__postgres_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__postgres_commands] )) ||
+_qsv__subcmd__to__subcmd__postgres_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to postgres commands' commands "$@"
 }
-(( $+functions[_qsv__to__sqlite_commands] )) ||
-_qsv__to__sqlite_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__sqlite_commands] )) ||
+_qsv__subcmd__to__subcmd__sqlite_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to sqlite commands' commands "$@"
 }
-(( $+functions[_qsv__to__xlsx_commands] )) ||
-_qsv__to__xlsx_commands() {
+(( $+functions[_qsv__subcmd__to__subcmd__xlsx_commands] )) ||
+_qsv__subcmd__to__subcmd__xlsx_commands() {
     local commands; commands=()
     _describe -t commands 'qsv to xlsx commands' commands "$@"
 }
-(( $+functions[_qsv__tojsonl_commands] )) ||
-_qsv__tojsonl_commands() {
+(( $+functions[_qsv__subcmd__tojsonl_commands] )) ||
+_qsv__subcmd__tojsonl_commands() {
     local commands; commands=()
     _describe -t commands 'qsv tojsonl commands' commands "$@"
 }
-(( $+functions[_qsv__transpose_commands] )) ||
-_qsv__transpose_commands() {
+(( $+functions[_qsv__subcmd__transpose_commands] )) ||
+_qsv__subcmd__transpose_commands() {
     local commands; commands=()
     _describe -t commands 'qsv transpose commands' commands "$@"
 }
-(( $+functions[_qsv__validate_commands] )) ||
-_qsv__validate_commands() {
+(( $+functions[_qsv__subcmd__validate_commands] )) ||
+_qsv__subcmd__validate_commands() {
     local commands; commands=(
 'schema:' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'qsv validate commands' commands "$@"
 }
-(( $+functions[_qsv__validate__help_commands] )) ||
-_qsv__validate__help_commands() {
+(( $+functions[_qsv__subcmd__validate__subcmd__help_commands] )) ||
+_qsv__subcmd__validate__subcmd__help_commands() {
     local commands; commands=(
 'schema:' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'qsv validate help commands' commands "$@"
 }
-(( $+functions[_qsv__validate__help__help_commands] )) ||
-_qsv__validate__help__help_commands() {
+(( $+functions[_qsv__subcmd__validate__subcmd__help__subcmd__help_commands] )) ||
+_qsv__subcmd__validate__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'qsv validate help help commands' commands "$@"
 }
-(( $+functions[_qsv__validate__help__schema_commands] )) ||
-_qsv__validate__help__schema_commands() {
+(( $+functions[_qsv__subcmd__validate__subcmd__help__subcmd__schema_commands] )) ||
+_qsv__subcmd__validate__subcmd__help__subcmd__schema_commands() {
     local commands; commands=()
     _describe -t commands 'qsv validate help schema commands' commands "$@"
 }
-(( $+functions[_qsv__validate__schema_commands] )) ||
-_qsv__validate__schema_commands() {
+(( $+functions[_qsv__subcmd__validate__subcmd__schema_commands] )) ||
+_qsv__subcmd__validate__subcmd__schema_commands() {
     local commands; commands=()
     _describe -t commands 'qsv validate schema commands' commands "$@"
 }

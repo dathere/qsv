@@ -107,6 +107,22 @@ describe("loadCommandGuidance", () => {
     const second = await loadCommandGuidance();
     assert.strictEqual(first, second, "Should return same cached object");
   });
+
+  test("getCommandGuidance returns empty object before load", async () => {
+    _resetGuidance();
+    const guidance = getCommandGuidance();
+    assert.deepStrictEqual(guidance, {}, "Should be empty before load");
+    // Reload for remaining tests
+    await loadCommandGuidance();
+  });
+
+  test("fresh load after reset caches correctly", async () => {
+    _resetGuidance();
+    const first = await loadCommandGuidance();
+    assert.ok(Object.keys(first).length >= 50, "Fresh load should have entries");
+    const second = await loadCommandGuidance();
+    assert.strictEqual(first, second, "Second call should return cached object");
+  });
 });
 
 // ============================================================================

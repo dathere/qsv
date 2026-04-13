@@ -57,7 +57,13 @@ const VALID_BOOLEAN_FIELDS = [
 ];
 
 /** Type guard for a single guidance entry. */
-function isValidGuidanceEntry(entry: unknown): entry is CommandGuidance {
+const ALL_VALID_FIELDS = [...VALID_STRING_FIELDS, ...VALID_BOOLEAN_FIELDS];
+
+/** Type guard for a single guidance entry. Warns on unrecognized keys (likely typos). */
+function isValidGuidanceEntry(
+  entry: unknown,
+  cmd?: string,
+): entry is CommandGuidance {
   if (typeof entry !== "object" || entry === null) return false;
   const obj = entry as Record<string, unknown>;
 
@@ -66,6 +72,15 @@ function isValidGuidanceEntry(entry: unknown): entry is CommandGuidance {
   }
   for (const key of VALID_BOOLEAN_FIELDS) {
     if (key in obj && typeof obj[key] !== "boolean") return false;
+  }
+
+  // Warn on unrecognized keys — catches typos like "wehnToUse"
+  for (const key of Object.keys(obj)) {
+    if (!ALL_VALID_FIELDS.includes(key)) {
+      console.error(
+        `[Guidance] Unknown key "${key}" in entry "${cmd ?? "?"}" — possible typo`,
+      );
+    }
   }
   return true;
 }
@@ -90,7 +105,7 @@ export async function loadCommandGuidance(): Promise<
 
     const result: Record<string, CommandGuidance> = {};
     for (const [cmd, entry] of Object.entries(parsed)) {
-      if (isValidGuidanceEntry(entry)) {
+      if (isValidGuidanceEntry(entry, cmd)) {
         result[cmd] = entry;
       } else {
         console.error(`[Guidance] Skipping invalid entry for "${cmd}"`);
@@ -105,8 +120,8 @@ export async function loadCommandGuidance(): Promise<
     return commandGuidance;
   } catch (error) {
     console.error(`[Guidance] Failed to load ${yamlPath}:`, error);
-    // Graceful degradation — the server still works, just without guidance hints
-    guidanceLoaded = true;
+    // Leave guidanceLoaded = false so a subsequent call can retry
+    // (e.g., transient I/O failure at startup)
     return commandGuidance;
   }
 }

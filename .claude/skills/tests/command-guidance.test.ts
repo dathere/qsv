@@ -133,6 +133,44 @@ describe("loadCommandGuidance reset behavior", () => {
 });
 
 // ============================================================================
+// Prototype pollution safety
+// ============================================================================
+
+describe("prototype pollution safety", () => {
+  test("loaded guidance uses null-prototype object", () => {
+    const guidance = getCommandGuidance();
+    // Object.create(null) objects have no prototype
+    assert.strictEqual(
+      Object.getPrototypeOf(guidance),
+      null,
+      "Guidance map should have null prototype",
+    );
+  });
+
+  test("loaded guidance does not contain dangerous keys", () => {
+    const guidance = getCommandGuidance();
+    const dangerousKeys = ["__proto__", "constructor", "prototype"];
+    for (const key of dangerousKeys) {
+      assert.ok(
+        !(key in guidance),
+        `Guidance should not contain dangerous key "${key}"`,
+      );
+    }
+  });
+
+  test("dangerous keys cannot pollute Object prototype via guidance", () => {
+    const guidance = getCommandGuidance();
+    // Verify that accessing __proto__ on a null-prototype object
+    // returns undefined, not Object.prototype
+    assert.strictEqual(
+      (guidance as Record<string, unknown>)["__proto__"],
+      undefined,
+      "__proto__ should be undefined on null-prototype object",
+    );
+  });
+});
+
+// ============================================================================
 // enhanceParameterDescription
 // ============================================================================
 

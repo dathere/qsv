@@ -39,7 +39,6 @@ ignore_all_files_in_gitignore: true
 # Same syntax as gitignore, so you can use * and **.
 # Note: global ignored_paths from serena_config.yml are also applied additively.
 ignored_paths:
-  - "path/to/venv/**"
   - "docs/**"
   - "resources/**"
 

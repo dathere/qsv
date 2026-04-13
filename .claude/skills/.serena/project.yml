@@ -40,6 +40,7 @@ ignore_all_files_in_gitignore: true
 # Note: global ignored_paths from serena_config.yml are also applied additively.
 ignored_paths:
   - "docs/**"
+  - "resources/**"
 
 # whether the project is in read-only mode
 # If set to true, all editing tools will be disabled and attempts to use them will result in an error

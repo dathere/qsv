@@ -5,6 +5,21 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [19.1.0] - 2026-04-13
+
+### Added
+- **`blake3` and `to` skills** added; `pivotp` & `moarstats` skills updated (#3703)
+
+### Changed
+- **Command guidance migrated to YAML** — extracted inline guidance objects to `qsv/command-guidance.yaml` for easier maintenance (#3708)
+- **Server decomposition** — centralized constants, added error sanitization, extracted modules from `mcp-server.ts` (#3705)
+- **Executor refactor** — extracted `spawnWithTimeout`, gated debug logging behind `QSV_MCP_DEBUG` (#3694)
+- **Dedicated Serena config** for MCP Cowork project (#3704)
+- **Documentation** — added AI tools rationale, StatsSighting link, qsv MCP tools README, streamlined quick-start, updated pivotp/sortcheck skill docs, Rationale in FAQ
+
+### Dependencies
+- Bumped `hono` 4.12.7 → 4.12.12 and `@hono/node-server`
+
 ## [19.0.0] - 2026-04-06
 
 ### Added

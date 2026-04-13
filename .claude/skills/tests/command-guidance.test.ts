@@ -120,7 +120,7 @@ describe("loadCommandGuidance reset behavior", () => {
   test("getCommandGuidance returns empty object before load", () => {
     _resetGuidance();
     const guidance = getCommandGuidance();
-    assert.deepStrictEqual(guidance, {}, "Should be empty before load");
+    assert.strictEqual(Object.keys(guidance).length, 0, "Should be empty before load");
   });
 
   test("fresh load after reset caches correctly", async () => {

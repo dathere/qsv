@@ -30,7 +30,10 @@ export interface CommandGuidance {
 }
 
 // Module-level cache — populated by loadCommandGuidance(), read by getCommandGuidance()
-let commandGuidance: Record<string, CommandGuidance> = {};
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+let commandGuidance: Record<string, CommandGuidance> =
+  Object.create(null) as Record<string, CommandGuidance>;
 let guidanceLoaded = false;
 
 /**
@@ -109,8 +112,13 @@ export async function loadCommandGuidance(): Promise<
       throw new Error("YAML root must be a mapping, not a sequence or scalar");
     }
 
-    const result: Record<string, CommandGuidance> = {};
+    const result: Record<string, CommandGuidance> =
+      Object.create(null) as Record<string, CommandGuidance>;
     for (const [cmd, entry] of Object.entries(parsed)) {
+      if (DANGEROUS_KEYS.has(cmd)) {
+        console.error(`[Guidance] Rejecting dangerous key "${cmd}"`);
+        continue;
+      }
       if (isValidGuidanceEntry(entry, cmd)) {
         result[cmd] = entry;
       } else {
@@ -148,7 +156,7 @@ export function getCommandGuidance(): Record<string, CommandGuidance> {
  * Reset guidance state (for testing only).
  */
 export function _resetGuidance(): void {
-  commandGuidance = {};
+  commandGuidance = Object.create(null) as Record<string, CommandGuidance>;
   guidanceLoaded = false;
 }
 

@@ -10,11 +10,7 @@ import { join } from "path";
 import { execFileSync } from "child_process";
 import { statSync } from "fs";
 import { compareVersions, getErrorMessage } from "./utils.js";
-
-/**
- * Timeout for qsv binary validation commands in milliseconds (5 seconds)
- */
-const QSV_VALIDATION_TIMEOUT_MS = 5000;
+import { DEFAULT_MAX_OUTPUT_SIZE, BINARY_VALIDATION_TIMEOUT_MS } from "./tool-constants.js";
 
 /**
  * Expand template variables in strings
@@ -302,7 +298,7 @@ function detectQsvBinaryPath(): string | null {
           const versionOutput = execFileSync(location, ["--version"], {
             encoding: "utf8",
             stdio: ["ignore", "pipe", "ignore"],
-            timeout: QSV_VALIDATION_TIMEOUT_MS,
+            timeout: BINARY_VALIDATION_TIMEOUT_MS,
           });
           diagnostic.executable = true;
           diagnostic.version = versionOutput.split(/\r?\n/)[0]?.trim();
@@ -470,7 +466,7 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
     const result = execFileSync(binPath, ["--version"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
-      timeout: QSV_VALIDATION_TIMEOUT_MS,
+      timeout: BINARY_VALIDATION_TIMEOUT_MS,
     });
 
     const version = parseQsvVersion(result);
@@ -522,7 +518,7 @@ export function validateQsvBinary(binPath: string): QsvValidationResult {
       const listResult = execFileSync(binPath, ["--list"], {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
-        timeout: QSV_VALIDATION_TIMEOUT_MS,
+        timeout: BINARY_VALIDATION_TIMEOUT_MS,
       });
       commandInfo = parseQsvCommandList(listResult);
     } catch (listError: unknown) {
@@ -793,7 +789,7 @@ export const config = {
    */
   maxOutputSize: parseIntEnv(
     "QSV_MCP_MAX_OUTPUT_SIZE",
-    50 * 1024 * 1024, // 50 MB
+    DEFAULT_MAX_OUTPUT_SIZE,
     1 * 1024 * 1024, // Minimum: 1 MB
     100 * 1024 * 1024, // Maximum: 100 MB
   ),

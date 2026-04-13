@@ -16,6 +16,7 @@ import {
 import { config } from "./config.js";
 import { getErrorMessage, errorResult, successResult } from "./utils.js";
 import { spawnWithTimeout } from "./spawn-utils.js";
+import { MAX_HELPER_STDERR_SIZE } from "./tool-constants.js";
 
 /**
  * Map a qsv stats `type` + min/max range to the tightest DuckDB SQL type.
@@ -211,7 +212,7 @@ async function spawnDuckDbCommands(
     timeoutMs,
     // stdout ignored: COPY ... TO produces no result set; prevents backpressure hangs.
     captureStdout: false,
-    maxStderrSize: MAX_STDERR_SIZE,
+    maxStderrSize: MAX_HELPER_STDERR_SIZE,
     onSpawn: (proc) => activeProcesses.add(proc),
     onExit: (proc) => activeProcesses.delete(proc),
   });
@@ -237,7 +238,6 @@ async function spawnDuckDbCommands(
 /**
  * Maximum stderr buffer size for DuckDB spawns (1 MB)
  */
-const MAX_STDERR_SIZE = 1024 * 1024;
 
 /**
  * Convert CSV to Parquet, using DuckDB (with ZSTD) when available,

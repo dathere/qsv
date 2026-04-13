@@ -173,6 +173,13 @@ async function createArchive() {
     console.log('   Adding skill definitions (qsv/)...');
     archive.directory(join(rootDir, 'qsv'), 'qsv');
 
+    // Add runtime data files (YAML guidance loaded by command-guidance.ts)
+    const dataDir = join(rootDir, 'data');
+    if (existsSync(dataDir)) {
+      console.log('   Adding runtime data (data/)...');
+      archive.directory(dataDir, 'data');
+    }
+
     // Add Claude Plugin files
     const pluginDir = join(rootDir, '.claude-plugin');
     if (existsSync(pluginDir)) {

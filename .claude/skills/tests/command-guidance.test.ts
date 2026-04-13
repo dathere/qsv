@@ -5,14 +5,22 @@
  * contextual hints, parameter descriptions, and emoji conventions.
  */
 
-import { test, describe } from "node:test";
+import { test, describe, before, afterEach } from "node:test";
 import assert from "node:assert";
 import {
-  COMMAND_GUIDANCE,
+  loadCommandGuidance,
+  getCommandGuidance,
+  _resetGuidance,
+  _filterGuidanceEntries,
   enhanceParameterDescription,
   enhanceDescription,
 } from "../src/command-guidance.js";
 import type { QsvSkill } from "../src/types.js";
+
+// Load guidance from YAML before all tests
+before(async () => {
+  await loadCommandGuidance();
+});
 
 // ============================================================================
 // COMMAND_GUIDANCE structure
@@ -20,6 +28,7 @@ import type { QsvSkill } from "../src/types.js";
 
 describe("COMMAND_GUIDANCE map", () => {
   test("contains entries for all critical commands", () => {
+    const guidance = getCommandGuidance();
     const criticalCommands = [
       "select", "stats", "moarstats", "frequency", "sqlp",
       "joinp", "join", "sort", "dedup", "count", "headers",
@@ -27,14 +36,14 @@ describe("COMMAND_GUIDANCE map", () => {
     ];
     for (const cmd of criticalCommands) {
       assert.ok(
-        COMMAND_GUIDANCE[cmd],
+        guidance[cmd],
         `Missing guidance for critical command: ${cmd}`,
       );
     }
   });
 
   test("all entries have at least whenToUse", () => {
-    for (const [cmd, guidance] of Object.entries(COMMAND_GUIDANCE)) {
+    for (const [cmd, guidance] of Object.entries(getCommandGuidance())) {
       assert.ok(
         guidance.whenToUse,
         `Command "${cmd}" is missing whenToUse guidance`,
@@ -43,12 +52,13 @@ describe("COMMAND_GUIDANCE map", () => {
   });
 
   test("memory-warning commands have needsMemoryWarning flag", () => {
+    const guidance = getCommandGuidance();
     const memoryCommands = ["dedup", "sort", "frequency", "transpose", "table", "reverse"];
     for (const cmd of memoryCommands) {
-      const guidance = COMMAND_GUIDANCE[cmd];
-      if (guidance) {
+      const entry = guidance[cmd];
+      if (entry) {
         assert.strictEqual(
-          guidance.needsMemoryWarning,
+          entry.needsMemoryWarning,
           true,
           `Memory-intensive command "${cmd}" should have needsMemoryWarning`,
         );
@@ -57,12 +67,13 @@ describe("COMMAND_GUIDANCE map", () => {
   });
 
   test("index-accelerated commands have needsIndexHint flag", () => {
+    const guidance = getCommandGuidance();
     const indexedCommands = ["search", "sample", "validate", "template", "luau"];
     for (const cmd of indexedCommands) {
-      const guidance = COMMAND_GUIDANCE[cmd];
-      if (guidance) {
+      const entry = guidance[cmd];
+      if (entry) {
         assert.strictEqual(
-          guidance.needsIndexHint,
+          entry.needsIndexHint,
           true,
           `Index-accelerated command "${cmd}" should have needsIndexHint`,
         );
@@ -71,7 +82,7 @@ describe("COMMAND_GUIDANCE map", () => {
   });
 
   test("commands with hasCommonMistakes also have errorPrevention", () => {
-    for (const [cmd, guidance] of Object.entries(COMMAND_GUIDANCE)) {
+    for (const [cmd, guidance] of Object.entries(getCommandGuidance())) {
       if (guidance.hasCommonMistakes) {
         assert.ok(
           guidance.errorPrevention,
@@ -79,6 +90,105 @@ describe("COMMAND_GUIDANCE map", () => {
         );
       }
     }
+  });
+});
+
+// ============================================================================
+// loadCommandGuidance
+// ============================================================================
+
+describe("loadCommandGuidance", () => {
+  test("validates loaded guidance is non-empty", () => {
+    const guidance = getCommandGuidance();
+    assert.ok(Object.keys(guidance).length >= 50, "Should have at least 50 entries");
+  });
+
+  test("returns cached result on subsequent calls", async () => {
+    const first = await loadCommandGuidance();
+    const second = await loadCommandGuidance();
+    assert.strictEqual(first, second, "Should return same cached object");
+  });
+});
+
+// Reset-dependent tests in their own describe with independent teardown
+describe("loadCommandGuidance reset behavior", () => {
+  afterEach(async () => {
+    // Always restore guidance so other test suites aren't affected
+    _resetGuidance();
+    await loadCommandGuidance();
+  });
+
+  test("getCommandGuidance returns empty object before load", () => {
+    _resetGuidance();
+    const guidance = getCommandGuidance();
+    assert.strictEqual(Object.keys(guidance).length, 0, "Should be empty before load");
+  });
+
+  test("fresh load after reset caches correctly", async () => {
+    _resetGuidance();
+    const first = await loadCommandGuidance();
+    assert.ok(Object.keys(first).length >= 50, "Fresh load should have entries");
+    const second = await loadCommandGuidance();
+    assert.strictEqual(first, second, "Second call should return cached object");
+  });
+});
+
+// ============================================================================
+// Prototype pollution safety
+// ============================================================================
+
+describe("prototype pollution safety", () => {
+  test("loaded guidance uses null-prototype object", () => {
+    const guidance = getCommandGuidance();
+    assert.strictEqual(
+      Object.getPrototypeOf(guidance),
+      null,
+      "Guidance map should have null prototype",
+    );
+  });
+
+  test("_filterGuidanceEntries rejects dangerous keys while preserving valid entries", () => {
+    // Use Object.create(null) so __proto__ is stored as a regular own property,
+    // mirroring what the YAML parser produces. In a normal object literal,
+    // __proto__ sets the prototype instead of creating an own property.
+    const input = Object.create(null) as Record<string, unknown>;
+    input["select"] = { whenToUse: "Choose columns" };
+    input["__proto__"] = { whenToUse: "Should be rejected" };
+    input["constructor"] = { whenToUse: "Should be rejected" };
+    input["prototype"] = { whenToUse: "Should be rejected" };
+    input["stats"] = { whenToUse: "Quick numeric stats" };
+
+    // Verify __proto__ is actually an own property in our test input
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(input, "__proto__"),
+      "Test setup: __proto__ must be an own property of input",
+    );
+
+    const result = _filterGuidanceEntries(input);
+
+    // Valid entries preserved
+    assert.ok("select" in result, "Valid key 'select' should be present");
+    assert.ok("stats" in result, "Valid key 'stats' should be present");
+    assert.strictEqual(result["select"]?.whenToUse, "Choose columns");
+    assert.strictEqual(result["stats"]?.whenToUse, "Quick numeric stats");
+
+    // Dangerous keys rejected
+    assert.ok(!("__proto__" in result), "__proto__ should be rejected");
+    assert.ok(!("constructor" in result), "constructor should be rejected");
+    assert.ok(!("prototype" in result), "prototype should be rejected");
+
+    // Result uses null prototype
+    assert.strictEqual(Object.getPrototypeOf(result), null);
+  });
+
+  test("_filterGuidanceEntries skips entries with only unrecognized keys", () => {
+    const input = {
+      valid: { whenToUse: "Valid entry" },
+      bogus: { typoField: "All keys unrecognized" },
+    };
+    const result = _filterGuidanceEntries(input);
+    assert.ok("valid" in result, "Valid entry should be present");
+    assert.ok(!("bogus" in result), "Entry with only unrecognized keys should be rejected");
   });
 });
 
@@ -208,7 +318,7 @@ describe("enhanceDescription", () => {
   test("skips error prevention when hasCommonMistakes is false", () => {
     const result = enhanceDescription(makeSkill("slice"));
     // slice has no hasCommonMistakes, so no errorPrevention text
-    const guidance = COMMAND_GUIDANCE["slice"];
+    const guidance = getCommandGuidance()["slice"];
     if (guidance?.errorPrevention) {
       assert.ok(!result.includes(guidance.errorPrevention));
     }

@@ -23,6 +23,13 @@ export {
 } from "./tool-constants.js";
 export type { PipelineMetadata } from "./tool-constants.js";
 
+// ── command-guidance ────────────────────────────────────────────────────────
+export {
+  loadCommandGuidance,
+  getCommandGuidance,
+} from "./command-guidance.js";
+export type { CommandGuidance } from "./command-guidance.js";
+
 // ── concurrency ─────────────────────────────────────────────────────────────
 export {
   initiateShutdown,

@@ -21,7 +21,7 @@ Update the version string in ALL of these files:
 2. **`CLAUDE.md`**: `**Current Version**: X.Y.Z` in Project Overview
 3. **`.claude/skills/manifest.json`**: `"version"` field (MCP server version -- may differ from binary version)
 4. **`.claude/skills/package.json`**: `"version"` field (must match manifest.json)
-5. **`docs/CHANGELOG.md`**: Add new version section at top
+5. **`CHANGELOG.md`**: Add new version section at top
 
 If MSRV is changing, also update:
 6. **`Cargo.toml`** (line 15): `rust-version = "X.Y"`
@@ -29,7 +29,7 @@ If MSRV is changing, also update:
 
 ## Changelog Entry
 
-Add a new section at the top of `docs/CHANGELOG.md` following this format:
+Add a new section at the top of `CHANGELOG.md` following this format:
 
 ```markdown
 ## [X.Y.Z] - YYYY-MM-DD
@@ -49,7 +49,7 @@ Add a new section at the top of `docs/CHANGELOG.md` following this format:
 
 Use `git log` from the last release tag to populate the changelog sections.
 **Exclude** commits with `(mcp)` or `(plugin)` in the title — those belong in the MCP/Plugin changelog (`.claude/skills/CHANGELOG.md`) and are handled by `/mcp-release-prep`.
-Add links to relevant PRs and issues for each change when possible.
+Add links to relevant PRs and issues for each changelog entry when possible.
 
 ## Post-Version-Bump Steps
 

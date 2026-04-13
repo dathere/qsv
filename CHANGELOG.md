@@ -4,25 +4,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [19.1.0] - 2026-04-12
 
-## What's Changed
-* build(deps): bump hono from 4.12.7 to 4.12.12 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3687
-* build(deps): bump @hono/node-server from 1.19.10 to 1.19.13 in /.claude/skills by @dependabot[bot] in https://github.com/dathere/qsv/pull/3686
-* docs: fix 10 documentation-codebase drifts found by audit by @jqnatividad in https://github.com/dathere/qsv/pull/3689
-* build(deps): bump tokio from 1.51.0 to 1.51.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3691
-* docs: fix 10 documentation-codebase drifts found by audit by @jqnatividad in https://github.com/dathere/qsv/pull/3692
-* build(deps): bump pragmastat from 12.0.1 to 12.1.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3693
-* refactor(mcp): extract spawnWithTimeout, gate debug logging by @jqnatividad in https://github.com/dathere/qsv/pull/3694
-* build(deps): bump jsonschema from 0.45.1 to 0.46.0 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3695
-* feat(pivotp): add group-by mode (closes #3697) by @jqnatividad in https://github.com/dathere/qsv/pull/3698
-* feat(pivotp): expand smart aggregation with 7 more statistics by @jqnatividad in https://github.com/dathere/qsv/pull/3699
-* build(deps): bump rand from 0.10.0 to 0.10.1 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3700
-* build(deps): bump qsv-stats from 0.48.1 to 0.48.2 by @dependabot[bot] in https://github.com/dathere/qsv/pull/3702
-* feat(mcp): add blake3 and to skills; update pivotp & moarstats by @jqnatividad in https://github.com/dathere/qsv/pull/3703
-* Dedicated serena config for mcp cowork by @jqnatividad in https://github.com/dathere/qsv/pull/3704
-* refactor(mcp): centralize constants, add error sanitization, decompose mcp-server by @jqnatividad in https://github.com/dathere/qsv/pull/3705
+### Added
+- `pivotp`: add group-by mode [#3698](https://github.com/dathere/qsv/pull/3698) (closes [#3697](https://github.com/dathere/qsv/issues/3697))
+- `pivotp`: expand smart aggregation with 7 more statistics [#3699](https://github.com/dathere/qsv/pull/3699)
 
+### Changed
+- `self_update`: show actual error message when available if self_update errors out
+- `moarstats`: use fused multiply add for theil_sum (perf)
+- Switch to crates.io mimalloc, removing git override
+- Add HTML anchors to some stats definitions
+
+### Fixed
+- Fix 10 documentation-codebase drifts found by audit [#3689](https://github.com/dathere/qsv/pull/3689)
+- Fix 10 documentation-codebase drifts found by audit [#3692](https://github.com/dathere/qsv/pull/3692)
+- Document index support for `describegpt` and `join`
+- Use latest upstream self_update (our PR merged)
+- Homebrew qsv distribution enables more features now
+
+### Dependencies
+- Bump polars to latest upstream
+- Ensure all polars_sql features are enabled
+- Bump jsonschema from 0.45.1 to 0.46.0 [#3695](https://github.com/dathere/qsv/pull/3695)
+- Bump pragmastat from 12.0.1 to 12.1.0 [#3693](https://github.com/dathere/qsv/pull/3693)
+- Bump qsv-stats from 0.48.1 to 0.48.2 [#3702](https://github.com/dathere/qsv/pull/3702)
+- Bump rand from 0.10.0 to 0.10.1 [#3700](https://github.com/dathere/qsv/pull/3700)
+- Bump tokio from 1.51.0 to 1.51.1 [#3691](https://github.com/dathere/qsv/pull/3691)
+- Use nightly-2026-04-01 (same as polars)
+- bump indirect dependencies
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/19.0.0...19.1.0
 

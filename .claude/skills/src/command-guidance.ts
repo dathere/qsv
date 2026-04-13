@@ -75,12 +75,18 @@ function isValidGuidanceEntry(
   }
 
   // Warn on unrecognized keys — catches typos like "wehnToUse"
-  for (const key of Object.keys(obj)) {
-    if (!ALL_VALID_FIELDS.includes(key)) {
-      console.error(
-        `[Guidance] Unknown key "${key}" in entry "${cmd ?? "?"}" — possible typo`,
-      );
-    }
+  const unknownKeys = Object.keys(obj).filter(
+    (k) => !ALL_VALID_FIELDS.includes(k),
+  );
+  for (const key of unknownKeys) {
+    console.error(
+      `[Guidance] Unknown key "${key}" in entry "${cmd ?? "?"}" — possible typo`,
+    );
+  }
+
+  // Reject entries where ALL keys are unrecognized (entirely bogus entry)
+  if (unknownKeys.length > 0 && unknownKeys.length === Object.keys(obj).length) {
+    return false;
   }
   return true;
 }

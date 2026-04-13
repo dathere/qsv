@@ -5,7 +5,7 @@
  * contextual hints, parameter descriptions, and emoji conventions.
  */
 
-import { test, describe, before } from "node:test";
+import { test, describe, before, afterEach } from "node:test";
 import assert from "node:assert";
 import {
   loadCommandGuidance,
@@ -107,13 +107,20 @@ describe("loadCommandGuidance", () => {
     const second = await loadCommandGuidance();
     assert.strictEqual(first, second, "Should return same cached object");
   });
+});
 
-  test("getCommandGuidance returns empty object before load", async () => {
+// Reset-dependent tests in their own describe with independent teardown
+describe("loadCommandGuidance reset behavior", () => {
+  afterEach(async () => {
+    // Always restore guidance so other test suites aren't affected
+    _resetGuidance();
+    await loadCommandGuidance();
+  });
+
+  test("getCommandGuidance returns empty object before load", () => {
     _resetGuidance();
     const guidance = getCommandGuidance();
     assert.deepStrictEqual(guidance, {}, "Should be empty before load");
-    // Reload for remaining tests
-    await loadCommandGuidance();
   });
 
   test("fresh load after reset caches correctly", async () => {

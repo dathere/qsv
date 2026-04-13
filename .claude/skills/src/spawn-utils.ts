@@ -6,10 +6,7 @@
  */
 
 import { spawn, type ChildProcess, type StdioOptions } from "child_process";
-import { KILL_GRACE_PERIOD_MS } from "./tool-constants.js";
-
-/** Default max output size per stream (50 MB). */
-const DEFAULT_MAX_OUTPUT_SIZE = 50 * 1024 * 1024;
+import { KILL_GRACE_PERIOD_MS, DEFAULT_MAX_OUTPUT_SIZE } from "./tool-constants.js";
 
 /** Options for {@link spawnWithTimeout}. */
 export interface SpawnWithTimeoutOptions {

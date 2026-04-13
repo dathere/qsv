@@ -17,7 +17,7 @@ import { runQsvSimple } from "./executor.js";
 import type { SkillLoader } from "./loader.js";
 import { executeDescribegptWithSampling, runQsvCapture } from "./mcp-sampling.js";
 import { config, getDetectionDiagnostics, MINIMUM_QSV_VERSION } from "./config.js";
-import { formatBytes, errorResult, successResult, getErrorMessage, isReservedCachePath, reservedCachePathError, describegptFallbackResult } from "./utils.js";
+import { formatBytes, errorResult, successResult, getErrorMessage, sanitizeErrorForClient, isReservedCachePath, reservedCachePathError, describegptFallbackResult } from "./utils.js";
 import {
   getDuckDbStatus,
 } from "./duckdb.js";
@@ -763,7 +763,7 @@ export async function handleToolCall(
       return errResult;
     }
   } catch (error: unknown) {
-    return errorResult(`Unexpected error: ${getErrorMessage(error)}`);
+    return errorResult(`Unexpected error: ${sanitizeErrorForClient(getErrorMessage(error))}`);
   } finally {
     releaseSlot();
   }
@@ -844,7 +844,7 @@ export async function handleGenericCommand(
       server,
     );
   } catch (error: unknown) {
-    return errorResult(`Unexpected error: ${getErrorMessage(error)}`);
+    return errorResult(`Unexpected error: ${sanitizeErrorForClient(getErrorMessage(error))}`);
   }
 }
 
@@ -1065,8 +1065,15 @@ export async function handleSearchToolsCall(
   // Try regex matching if query looks like a regex pattern
   const isRegexPattern = query.startsWith("/") && query.endsWith("/");
   if (isRegexPattern) {
+    const regexStr = query.slice(1, -1);
+    // Guard against ReDoS by rejecting overly long patterns before compilation.
+    // Note: only length is checked, not structural complexity (e.g. nested quantifiers).
+    // This is acceptable because the regex runs against short, controlled skill metadata.
+    const MAX_REGEX_LENGTH = 200;
+    if (regexStr.length > MAX_REGEX_LENGTH) {
+      return errorResult(`Regex pattern too long (${regexStr.length} chars, max ${MAX_REGEX_LENGTH}). Use a simpler pattern or text search.`);
+    }
     try {
-      const regexStr = query.slice(1, -1);
       const regex = new RegExp(regexStr, "i");
       const allSkills = loader.getAll();
 
@@ -1212,7 +1219,7 @@ export async function handleToParquetCall(
         `[MCP Tools] Resolved input file: ${originalInputFile} -> ${inputFile}`,
       );
     } catch (error: unknown) {
-      return errorResult(`Error resolving input file path: ${getErrorMessage(error)}`);
+      return errorResult(`Error resolving input file path: ${sanitizeErrorForClient(getErrorMessage(error))}`);
     }
   }
 
@@ -1259,7 +1266,7 @@ export async function handleToParquetCall(
         `[MCP Tools] Resolved output file: ${originalOutputFile} -> ${resolvedOutputFile}`,
       );
     } catch (error: unknown) {
-      return errorResult(`Error resolving output file path: ${getErrorMessage(error)}`);
+      return errorResult(`Error resolving output file path: ${sanitizeErrorForClient(getErrorMessage(error))}`);
     }
   }
 
@@ -1328,7 +1335,7 @@ export async function handleToParquetCall(
     (result as Record<string | symbol, unknown>)[FINAL_OUTPUT_FILE] = outputPath;
     return result;
   } catch (error: unknown) {
-    const errResult = errorResult(`Error converting CSV to Parquet: ${getErrorMessage(error)}`);
+    const errResult = errorResult(`Error converting CSV to Parquet: ${sanitizeErrorForClient(getErrorMessage(error))}`);
     (errResult as Record<string | symbol, unknown>)[PIPELINE_METADATA] = {
       inputFile,
       outputFile: resolvedOutputFile,

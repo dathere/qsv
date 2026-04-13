@@ -8,6 +8,7 @@ import type { QsvSkill, Option, SkillParams, SkillResult } from "./types.js";
 import { config } from "./config.js";
 import { compareVersions } from "./utils.js";
 import { spawnWithTimeout } from "./spawn-utils.js";
+import { DEFAULT_MAX_OUTPUT_SIZE } from "./tool-constants.js";
 
 /** Minimum qsv binary version that supports --frequency-jsonl */
 const FREQUENCY_JSONL_MIN_VERSION = "16.1.0";
@@ -147,10 +148,9 @@ export async function runQsvSimple(
     if (captureStdout) {
       proc.stdout!.on("data", (chunk) => { stdout += chunk.toString(); });
     }
-    const MAX_STDERR_SIZE = 50 * 1024 * 1024; // 50MB limit
     proc.stderr!.on("data", (chunk) => {
       const data = chunk.toString();
-      if (stderr.length + data.length <= MAX_STDERR_SIZE) {
+      if (stderr.length + data.length <= DEFAULT_MAX_OUTPUT_SIZE) {
         stderr += data;
       }
     });

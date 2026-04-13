@@ -177,3 +177,21 @@ export const AUTO_INDEX_SIZE_MB = 10;
  * Grace period (ms) between SIGTERM and SIGKILL when killing timed-out processes.
  */
 export const KILL_GRACE_PERIOD_MS = 1000;
+
+/**
+ * Default max output size per stdout/stderr stream (50 MB).
+ * Used by spawn-utils, executor, and config as the baseline cap.
+ */
+export const DEFAULT_MAX_OUTPUT_SIZE = 50 * 1024 * 1024;
+
+/**
+ * Max stderr buffer for lightweight helper processes (DuckDB, Parquet bridge).
+ * Smaller than DEFAULT_MAX_OUTPUT_SIZE since these are short-lived validation
+ * or conversion processes, not full data pipelines.
+ */
+export const MAX_HELPER_STDERR_SIZE = 1024 * 1024; // 1 MB
+
+/**
+ * Timeout for binary validation (qsv --version, duckdb --version).
+ */
+export const BINARY_VALIDATION_TIMEOUT_MS = 5000;

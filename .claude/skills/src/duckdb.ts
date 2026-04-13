@@ -13,15 +13,7 @@ import { join } from "path";
 import { config } from "./config.js";
 import { spawnWithTimeout } from "./spawn-utils.js";
 
-/**
- * Timeout for DuckDB binary validation in milliseconds (5 seconds)
- */
-const DUCKDB_VALIDATION_TIMEOUT_MS = 5000;
-
-/**
- * Maximum stderr buffer size in bytes (1 MB) — prevents unbounded memory growth
- */
-const MAX_STDERR_SIZE = 1024 * 1024;
+import { MAX_HELPER_STDERR_SIZE, BINARY_VALIDATION_TIMEOUT_MS } from "./tool-constants.js";
 
 /**
  * Valid Parquet compression codecs for DuckDB COPY TO
@@ -229,7 +221,7 @@ function validateDuckDbBinary(binPath: string): string | null {
     const result = execFileSync(binPath, ["--version"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
-      timeout: DUCKDB_VALIDATION_TIMEOUT_MS,
+      timeout: BINARY_VALIDATION_TIMEOUT_MS,
     });
     // DuckDB version output: "v1.2.0 ..." or "DuckDB v1.2.0 ..."
     const match = result.match(/v?(\d+\.\d+\.\d+)/);
@@ -472,7 +464,7 @@ export async function executeDuckDbQuery(
     maxStdoutSize: maxOutputSize,
     stdoutTruncationMsg:
       "\n\n[OUTPUT TRUNCATED - Result too large. Use --format parquet with --output to write to file.]\n",
-    maxStderrSize: MAX_STDERR_SIZE,
+    maxStderrSize: MAX_HELPER_STDERR_SIZE,
     onSpawn: options?.onSpawn,
     onExit: options?.onExit,
   });

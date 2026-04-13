@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { formatBytes, compareVersions, isReservedCachePath, reservedCachePathError } from '../src/utils.js';
+import { formatBytes, compareVersions, isReservedCachePath, reservedCachePathError, sanitizeErrorForClient } from '../src/utils.js';
 
 test('formatBytes formats bytes correctly', () => {
   assert.strictEqual(formatBytes(0), '0 Bytes');
@@ -93,6 +93,48 @@ test('isReservedCachePath handles edge inputs', () => {
 // ============================================================================
 // reservedCachePathError Tests
 // ============================================================================
+
+// ============================================================================
+// sanitizeErrorForClient Tests
+// ============================================================================
+
+test('sanitizeErrorForClient strips Unix absolute paths', () => {
+  const msg = sanitizeErrorForClient('ENOENT: no such file /Users/joel/data/test.csv');
+  assert.ok(!msg.includes('/Users/joel/data'));
+  assert.ok(msg.includes('test.csv'));
+});
+
+test('sanitizeErrorForClient strips Windows absolute paths', () => {
+  const msg = sanitizeErrorForClient('ENOENT: no such file C:\\Users\\joel\\data\\test.csv');
+  assert.ok(!msg.includes('C:\\Users'));
+  assert.ok(msg.includes('test.csv'));
+});
+
+test('sanitizeErrorForClient handles multiple paths in one message', () => {
+  const msg = sanitizeErrorForClient('Cannot copy /tmp/source.csv to /home/user/dest.csv');
+  assert.ok(!msg.includes('/tmp'));
+  assert.ok(!msg.includes('/home/user'));
+  assert.ok(msg.includes('source.csv'));
+  assert.ok(msg.includes('dest.csv'));
+});
+
+test('sanitizeErrorForClient preserves messages without paths', () => {
+  const original = 'Connection refused: timeout after 5000ms';
+  assert.strictEqual(sanitizeErrorForClient(original), original);
+});
+
+test('sanitizeErrorForClient preserves relative filenames', () => {
+  const msg = sanitizeErrorForClient('File not found: data.csv');
+  assert.ok(msg.includes('data.csv'));
+});
+
+test('sanitizeErrorForClient partially matches paths with spaces (known limitation)', () => {
+  // The regex stops at whitespace, so space-paths are only partially stripped.
+  // This documents the known limitation rather than asserting ideal behavior.
+  const msg = sanitizeErrorForClient('ENOENT: /Users/joel/my documents/file.csv');
+  // The path up to the space is stripped (basename of that segment)
+  assert.ok(!msg.includes('/Users/joel'));
+});
 
 test('reservedCachePathError includes the output path and all suffixes', () => {
   const msg = reservedCachePathError('data.stats.csv');

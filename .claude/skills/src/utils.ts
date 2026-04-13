@@ -11,6 +11,29 @@ export function getErrorMessage(error: unknown): string {
 }
 
 /**
+ * Strip absolute filesystem paths from an error message before returning
+ * it to the MCP client. Replaces `/Users/foo/bar/file.csv` or
+ * `C:\Users\foo\file.csv` with just the basename to avoid leaking
+ * system paths in protocol responses.
+ *
+ * Note: paths containing spaces (e.g. `/Users/foo/my docs/file.csv`)
+ * are only partially matched — the regex stops at whitespace. This is
+ * acceptable because qsv itself doesn't handle space-paths reliably.
+ */
+export function sanitizeErrorForClient(message: string): string {
+  // Unix absolute paths: /foo/bar/baz.ext → baz.ext
+  // Windows absolute paths: C:\foo\bar\baz.ext → baz.ext
+  return message.replace(
+    /(?:[A-Za-z]:\\|\/)[^\s:,"']+/g,
+    (match) => {
+      const trimmedMatch = match.replace(/[/\\]+$/g, "");
+      const parts = trimmedMatch.split(/[/\\]/);
+      return parts[parts.length - 1] || trimmedMatch || match;
+    },
+  );
+}
+
+/**
  * Type guard to check if an error is a NodeJS.ErrnoException (has a `code` property).
  * Use in catch blocks: `if (isNodeError(err) && err.code === 'ENOENT') { ... }`
  */

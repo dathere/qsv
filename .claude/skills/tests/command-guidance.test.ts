@@ -148,13 +148,22 @@ describe("prototype pollution safety", () => {
   });
 
   test("_filterGuidanceEntries rejects dangerous keys while preserving valid entries", () => {
-    const input = {
-      select: { whenToUse: "Choose columns" },
-      __proto__: { whenToUse: "Should be rejected" },
-      constructor: { whenToUse: "Should be rejected" },
-      prototype: { whenToUse: "Should be rejected" },
-      stats: { whenToUse: "Quick numeric stats" },
-    };
+    // Use Object.create(null) so __proto__ is stored as a regular own property,
+    // mirroring what the YAML parser produces. In a normal object literal,
+    // __proto__ sets the prototype instead of creating an own property.
+    const input = Object.create(null) as Record<string, unknown>;
+    input["select"] = { whenToUse: "Choose columns" };
+    input["__proto__"] = { whenToUse: "Should be rejected" };
+    input["constructor"] = { whenToUse: "Should be rejected" };
+    input["prototype"] = { whenToUse: "Should be rejected" };
+    input["stats"] = { whenToUse: "Quick numeric stats" };
+
+    // Verify __proto__ is actually an own property in our test input
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(input, "__proto__"),
+      "Test setup: __proto__ must be an own property of input",
+    );
+
     const result = _filterGuidanceEntries(input);
 
     // Valid entries preserved

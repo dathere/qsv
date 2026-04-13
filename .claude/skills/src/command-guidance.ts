@@ -115,19 +115,7 @@ export async function loadCommandGuidance(): Promise<
       throw new Error("YAML root must be a mapping, not a sequence or scalar");
     }
 
-    const result: Record<string, CommandGuidance> =
-      Object.create(null) as Record<string, CommandGuidance>;
-    for (const [cmd, entry] of Object.entries(parsed)) {
-      if (DANGEROUS_KEYS.has(cmd)) {
-        console.error(`[Guidance] Rejecting dangerous key "${cmd}"`);
-        continue;
-      }
-      if (isValidGuidanceEntry(entry, cmd)) {
-        result[cmd] = entry;
-      } else {
-        console.error(`[Guidance] Skipping invalid entry for "${cmd}"`);
-      }
-    }
+    const result = _filterGuidanceEntries(parsed);
 
     if (Object.keys(result).length === 0) {
       throw new Error("YAML parsed but produced 0 valid entries");
@@ -153,6 +141,29 @@ export async function loadCommandGuidance(): Promise<
  */
 export function getCommandGuidance(): Record<string, CommandGuidance> {
   return commandGuidance;
+}
+
+/**
+ * Filter and validate parsed YAML entries into a guidance map.
+ * Rejects dangerous keys and invalid entries. Exported for testing.
+ */
+export function _filterGuidanceEntries(
+  parsed: Record<string, unknown>,
+): Record<string, CommandGuidance> {
+  const result: Record<string, CommandGuidance> =
+    Object.create(null) as Record<string, CommandGuidance>;
+  for (const [cmd, entry] of Object.entries(parsed)) {
+    if (DANGEROUS_KEYS.has(cmd)) {
+      console.error(`[Guidance] Rejecting dangerous key "${cmd}"`);
+      continue;
+    }
+    if (isValidGuidanceEntry(entry, cmd)) {
+      result[cmd] = entry;
+    } else {
+      console.error(`[Guidance] Skipping invalid entry for "${cmd}"`);
+    }
+  }
+  return result;
 }
 
 /**

@@ -3,21 +3,7 @@ name: data-convert
 description: Convert between CSV, TSV, Excel, JSONL, Parquet, and other tabular formats
 user-invocable: true
 argument-hint: "<file> [format]"
-allowed-tools:
-  # Discovery
-  - mcp__qsv__qsv_sniff
-  - mcp__qsv__qsv_count
-  - mcp__qsv__qsv_headers
-  - mcp__qsv__qsv_index
-  # Transform & Query
-  - mcp__qsv__qsv_command
-  # Export
-  - mcp__qsv__qsv_to_parquet
-  # Workspace
-  - mcp__qsv__qsv_list_files
-  - mcp__qsv__qsv_search_tools
-  - mcp__qsv__qsv_get_working_dir
-  - mcp__qsv__qsv_set_working_dir
+allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers, mcp__qsv__qsv_index, mcp__qsv__qsv_command, mcp__qsv__qsv_to_parquet, mcp__qsv__qsv_list_files, mcp__qsv__qsv_search_tools, mcp__qsv__qsv_get_working_dir, mcp__qsv__qsv_set_working_dir]
 ---
 
 # Data Convert

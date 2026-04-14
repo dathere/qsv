@@ -2,26 +2,7 @@
 name: infer-ontology
 description: Infer a semantic ontology from all files in the working directory - entities, attributes, relationships, domain taxonomy, and cross-file join paths. Outputs ONTOLOGY.md.
 user-invocable: true
-allowed-tools:
-  # Discovery
-  - mcp__qsv__qsv_sniff
-  - mcp__qsv__qsv_count
-  - mcp__qsv__qsv_headers
-  - mcp__qsv__qsv_index
-  # Analysis
-  - mcp__qsv__qsv_stats
-  - mcp__qsv__qsv_moarstats
-  - mcp__qsv__qsv_frequency
-  # Exploration
-  - mcp__qsv__qsv_slice
-  # Transform & Query
-  - mcp__qsv__qsv_sqlp
-  - mcp__qsv__qsv_joinp
-  - mcp__qsv__qsv_command
-  # Workspace
-  - mcp__qsv__qsv_list_files
-  - mcp__qsv__qsv_get_working_dir
-  - mcp__qsv__qsv_set_working_dir
+allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers, mcp__qsv__qsv_index, mcp__qsv__qsv_stats, mcp__qsv__qsv_moarstats, mcp__qsv__qsv_frequency, mcp__qsv__qsv_slice, mcp__qsv__qsv_sqlp, mcp__qsv__qsv_joinp, mcp__qsv__qsv_command, mcp__qsv__qsv_list_files, mcp__qsv__qsv_get_working_dir, mcp__qsv__qsv_set_working_dir]
 ---
 
 # Infer Ontology

@@ -3,28 +3,7 @@ name: csv-query
 description: Run SQL queries against CSV/TSV/Excel files using Polars SQL engine
 user-invocable: true
 argument-hint: "<file> [query]"
-allowed-tools:
-  # Discovery
-  - mcp__qsv__qsv_sniff
-  - mcp__qsv__qsv_count
-  - mcp__qsv__qsv_headers
-  - mcp__qsv__qsv_index
-  # Analysis
-  - mcp__qsv__qsv_stats
-  - mcp__qsv__qsv_frequency
-  # Exploration
-  - mcp__qsv__qsv_search
-  - mcp__qsv__qsv_select
-  # Transform & Query
-  - mcp__qsv__qsv_sqlp
-  - mcp__qsv__qsv_command
-  # Export
-  - mcp__qsv__qsv_to_parquet
-  # Workspace
-  - mcp__qsv__qsv_list_files
-  - mcp__qsv__qsv_search_tools
-  - mcp__qsv__qsv_get_working_dir
-  - mcp__qsv__qsv_set_working_dir
+allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers, mcp__qsv__qsv_index, mcp__qsv__qsv_stats, mcp__qsv__qsv_frequency, mcp__qsv__qsv_search, mcp__qsv__qsv_select, mcp__qsv__qsv_sqlp, mcp__qsv__qsv_command, mcp__qsv__qsv_to_parquet, mcp__qsv__qsv_list_files, mcp__qsv__qsv_search_tools, mcp__qsv__qsv_get_working_dir, mcp__qsv__qsv_set_working_dir]
 ---
 
 # CSV Query

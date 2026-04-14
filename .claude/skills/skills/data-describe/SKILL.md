@@ -3,20 +3,7 @@ name: data-describe
 description: Generate AI-powered Data Dictionary, Description, and Tags for a CSV/TSV/Excel file
 user-invocable: true
 argument-hint: "<file> [--dictionary|--description|--tags|--all]"
-allowed-tools:
-  # Discovery
-  - mcp__qsv__qsv_sniff
-  - mcp__qsv__qsv_count
-  - mcp__qsv__qsv_headers
-  - mcp__qsv__qsv_index
-  # Analysis
-  - mcp__qsv__qsv_stats
-  # AI
-  - mcp__qsv__qsv_describegpt
-  # Workspace
-  - mcp__qsv__qsv_list_files
-  - mcp__qsv__qsv_get_working_dir
-  - mcp__qsv__qsv_set_working_dir
+allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers, mcp__qsv__qsv_index, mcp__qsv__qsv_stats, mcp__qsv__qsv_describegpt, mcp__qsv__qsv_list_files, mcp__qsv__qsv_get_working_dir, mcp__qsv__qsv_set_working_dir]
 ---
 
 # Data Describe

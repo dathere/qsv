@@ -3,22 +3,7 @@ name: data-clean
 description: Clean a CSV/TSV/Excel file - fix headers, trim whitespace, remove duplicates, validate
 user-invocable: true
 argument-hint: "<file>"
-allowed-tools:
-  # Discovery
-  - mcp__qsv__qsv_sniff
-  - mcp__qsv__qsv_count
-  - mcp__qsv__qsv_headers
-  - mcp__qsv__qsv_index
-  # Analysis
-  - mcp__qsv__qsv_stats
-  # Transform & Query
-  - mcp__qsv__qsv_sqlp
-  - mcp__qsv__qsv_command
-  # Workspace
-  - mcp__qsv__qsv_list_files
-  - mcp__qsv__qsv_search_tools
-  - mcp__qsv__qsv_get_working_dir
-  - mcp__qsv__qsv_set_working_dir
+allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers, mcp__qsv__qsv_index, mcp__qsv__qsv_stats, mcp__qsv__qsv_sqlp, mcp__qsv__qsv_command, mcp__qsv__qsv_list_files, mcp__qsv__qsv_search_tools, mcp__qsv__qsv_get_working_dir, mcp__qsv__qsv_set_working_dir]
 ---
 
 # Data Clean

@@ -3,28 +3,7 @@ name: data-profile
 description: Profile a CSV/TSV/Excel file - detect format, compute statistics, show value distributions
 user-invocable: true
 argument-hint: "<file>"
-allowed-tools:
-  # Discovery
-  - mcp__qsv__qsv_sniff
-  - mcp__qsv__qsv_count
-  - mcp__qsv__qsv_headers
-  - mcp__qsv__qsv_index
-  # Analysis
-  - mcp__qsv__qsv_stats
-  - mcp__qsv__qsv_moarstats
-  - mcp__qsv__qsv_frequency
-  # Exploration
-  - mcp__qsv__qsv_slice
-  # Transform & Query
-  - mcp__qsv__qsv_sqlp
-  - mcp__qsv__qsv_joinp
-  - mcp__qsv__qsv_command
-  # Documentation
-  - mcp__qsv__qsv_describegpt
-  # Workspace
-  - mcp__qsv__qsv_list_files
-  - mcp__qsv__qsv_get_working_dir
-  - mcp__qsv__qsv_set_working_dir
+allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers, mcp__qsv__qsv_index, mcp__qsv__qsv_stats, mcp__qsv__qsv_moarstats, mcp__qsv__qsv_frequency, mcp__qsv__qsv_slice, mcp__qsv__qsv_sqlp, mcp__qsv__qsv_joinp, mcp__qsv__qsv_command, mcp__qsv__qsv_describegpt, mcp__qsv__qsv_list_files, mcp__qsv__qsv_get_working_dir, mcp__qsv__qsv_set_working_dir]
 ---
 
 # Data Profile

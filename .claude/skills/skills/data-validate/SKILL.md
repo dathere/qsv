@@ -47,7 +47,7 @@ g. **Distribution sanity**: Read moarstats columns for deeper validation:
 
 h. **Join integrity** (if multiple files): Run `mcp__qsv__qsv_joinp` with `left_anti: true` to find orphaned foreign keys.
 
-i. **Injection screening**: Run `mcp__qsv__qsv_command` with `command: "searchset"`, `regexset_file: "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"`, and `flag: "injection_match"` to scan for malicious payloads.
+i. **Injection screening**: Run `mcp__qsv__qsv_command` with `command: "searchset"`, `regexset-file: "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"`, and `flag: "injection_match"` to scan for malicious payloads.
 
 ### 2. Review Methodology and Assumptions
 

@@ -38,9 +38,9 @@ Profile the given tabular data file to understand its structure, types, and dist
 
 9. **Optional: Robust statistics** (if data is messy/heavy-tailed and < 100K rows): Run `mcp__qsv__qsv_command` with `command: "pragmastat"` for Hodges-Lehmann center and Shamos spread — robust estimators that tolerate up to 29% corrupted data. Especially useful when mean/stddev are misleading due to outliers. **Warning:** pragmastat computes median-of-pairwise statistics (O(n²) complexity) and becomes very slow on large datasets. For files > 100K rows, use `--subsample 10000` for ~100x speedup, or combine `--subsample 10000 --no-bounds` for ~200x speedup.
 
-10. **Screen for PII/PHI**: Run `mcp__qsv__qsv_command` with `command: "searchset"`, `regexset_file: "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"`, and `flag: "pii_match"` to scan for sensitive data patterns (SSN, credit cards, email, phone, IBAN). Report any columns with matches.
+10. **Screen for PII/PHI**: Run `mcp__qsv__qsv_command` with `command: "searchset"`, `regexset-file: "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"`, and `flag: "pii_match"` to scan for sensitive data patterns (SSN, credit cards, email, phone, IBAN). Report any columns with matches.
 
-11. **Screen for injection**: Run `mcp__qsv__qsv_command` with `command: "searchset"`, `regexset_file: "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"`, and `flag: "injection_match"` to scan for CSV/formula injection and SQL injection payloads. Report any columns with matches.
+11. **Screen for injection**: Run `mcp__qsv__qsv_command` with `command: "searchset"`, `regexset-file: "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"`, and `flag: "injection_match"` to scan for CSV/formula injection and SQL injection payloads. Report any columns with matches.
 
 12. **Preview data**: Run `mcp__qsv__qsv_slice` with `len: 5` to show the first 5 rows as a sample.
 

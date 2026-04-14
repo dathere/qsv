@@ -10,15 +10,15 @@ allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers,
 
 Generate AI-powered documentation for a tabular data file using `describegpt`. Produces a Data Dictionary (column labels, descriptions, types), a natural-language Description of the dataset, and semantic Tags — all via the connected LLM (no API key needed in MCP mode).
 
-> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
+> **Cowork note:** If relative paths don't resolve, call `mcp__qsv__qsv_get_working_dir` and `mcp__qsv__qsv_set_working_dir` to sync the working directory.
 
 ## Steps
 
-1. **Index**: Run `qsv_index` on the file for fast random access.
+1. **Index**: Run `mcp__qsv__qsv_index` on the file for fast random access.
 
-2. **Profile**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` to generate the stats cache. describegpt reads this cache for column metadata, so it must exist first.
+2. **Profile**: Run `mcp__qsv__qsv_stats` with `cardinality: true, stats_jsonl: true` to generate the stats cache. describegpt reads this cache for column metadata, so it must exist first.
 
-3. **Describe**: Run `qsv_describegpt` with the requested options (recommend `all: true` for comprehensive output). At least one inference option (`dictionary`, `description`, `tags`, or `all`) is required. Output defaults to `<filestem>.describegpt.md`.
+3. **Describe**: Run `mcp__qsv__qsv_describegpt` with the requested options (recommend `all: true` for comprehensive output). At least one inference option (`dictionary`, `description`, `tags`, or `all`) is required. Output defaults to `<filestem>.describegpt.md`.
 
 4. **Present**: Display the generated Data Dictionary table, Description, and Tags to the user.
 

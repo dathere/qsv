@@ -10,21 +10,21 @@ allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers,
 
 Profile the given tabular data file to understand its structure, types, and distributions.
 
-> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
+> **Cowork note:** If relative paths don't resolve, call `mcp__qsv__qsv_get_working_dir` and `mcp__qsv__qsv_set_working_dir` to sync the working directory.
 
 ## Steps
 
-1. **Index**: Run `qsv_index` on the file for fast random access in subsequent steps.
+1. **Index**: Run `mcp__qsv__qsv_index` on the file for fast random access in subsequent steps.
 
-2. **Detect format**: Run `qsv_sniff` on the file to detect delimiter, encoding, preamble, and row count estimate.
+2. **Detect format**: Run `mcp__qsv__qsv_sniff` on the file to detect delimiter, encoding, preamble, and row count estimate.
 
-3. **Count rows**: Run `qsv_count` to get the exact row count.
+3. **Count rows**: Run `mcp__qsv__qsv_count` to get the exact row count.
 
-4. **Get headers**: Run `qsv_headers` to list all column names and positions.
+4. **Get headers**: Run `mcp__qsv__qsv_headers` to list all column names and positions.
 
-5. **Compute statistics**: Run `qsv_stats` with `cardinality: true` and `stats_jsonl: true` to generate full column statistics and cache them. Include `--everything` for comprehensive stats (mean, median, mode, stddev, quartiles, etc.). Basic moarstats auto-runs to enrich the cache with ~18 additional columns.
+5. **Compute statistics**: Run `mcp__qsv__qsv_stats` with `cardinality: true` and `stats_jsonl: true` to generate full column statistics and cache them. Include `--everything` for comprehensive stats (mean, median, mode, stddev, quartiles, etc.). Basic moarstats auto-runs to enrich the cache with ~18 additional columns.
 
-6. **Advanced statistics**: Run `qsv_moarstats` with `advanced: true` (omit `output_file` — it updates the stats cache in-place by default). This enriches the stats cache with:
+6. **Advanced statistics**: Run `mcp__qsv__qsv_moarstats` with `advanced: true` (omit `output_file` — it updates the stats cache in-place by default). This enriches the stats cache with:
    - **Distribution shape**: kurtosis, bimodality coefficient, Jarque-Bera test (normality), skewness measures (pearson_skewness)
    - **Inequality/diversity**: Gini coefficient, Atkinson index, Theil index, Shannon entropy, normalized entropy, Simpson's diversity index
    - **Robust central tendency**: winsorized/trimmed means (with stddev, variance, CV, range, stddev ratio)
@@ -32,21 +32,21 @@ Profile the given tabular data file to understand its structure, types, and dist
    - **Outlier statistics**: counts by severity (extreme/mild, lower/upper), outlier mean/stddev/range, impact ratio, fence z-scores
    - **Other**: trimean, midhinge, mode_zscore, min/max z-scores, relative standard error, mean absolute deviation, xsd_type
 
-7. **Show distributions**: Run `qsv_frequency` with `limit: 10` to show top value distributions for each column. For high-cardinality columns (cardinality close to row count), note them as likely unique identifiers.
+7. **Show distributions**: Run `mcp__qsv__qsv_frequency` with `limit: 10` to show top value distributions for each column. For high-cardinality columns (cardinality close to row count), note them as likely unique identifiers.
 
-8. **Optional: Bivariate correlations** (if multiple numeric columns): Run `qsv_moarstats` with `bivariate: true` to compute pairwise Pearson/Spearman/Kendall correlations, covariance, and mutual information. Output goes to `<FILESTEM>.stats.bivariate.csv`. Reveals hidden relationships between columns.
+8. **Optional: Bivariate correlations** (if multiple numeric columns): Run `mcp__qsv__qsv_moarstats` with `bivariate: true` to compute pairwise Pearson/Spearman/Kendall correlations, covariance, and mutual information. Output goes to `<FILESTEM>.stats.bivariate.csv`. Reveals hidden relationships between columns.
 
-9. **Optional: Robust statistics** (if data is messy/heavy-tailed and < 100K rows): Run `qsv_command` with `command: "pragmastat"` for Hodges-Lehmann center and Shamos spread — robust estimators that tolerate up to 29% corrupted data. Especially useful when mean/stddev are misleading due to outliers. **Warning:** pragmastat computes median-of-pairwise statistics (O(n²) complexity) and becomes very slow on large datasets. For files > 100K rows, use `--subsample 10000` for ~100x speedup, or combine `--subsample 10000 --no-bounds` for ~200x speedup.
+9. **Optional: Robust statistics** (if data is messy/heavy-tailed and < 100K rows): Run `mcp__qsv__qsv_command` with `command: "pragmastat"` for Hodges-Lehmann center and Shamos spread — robust estimators that tolerate up to 29% corrupted data. Especially useful when mean/stddev are misleading due to outliers. **Warning:** pragmastat computes median-of-pairwise statistics (O(n²) complexity) and becomes very slow on large datasets. For files > 100K rows, use `--subsample 10000` for ~100x speedup, or combine `--subsample 10000 --no-bounds` for ~200x speedup.
 
-10. **Screen for PII/PHI**: Run `qsv_command` with `command: "searchset"` and `args: ["--flag", "pii_match", "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"]` to scan for sensitive data patterns (SSN, credit cards, email, phone, IBAN). Report any columns with matches.
+10. **Screen for PII/PHI**: Run `mcp__qsv__qsv_command` with `command: "searchset"`, `regexset-file: "${CLAUDE_PLUGIN_ROOT}/resources/pii-regexes.txt"`, and `flag: "pii_match"` to scan for sensitive data patterns (SSN, credit cards, email, phone, IBAN). Report any columns with matches.
 
-11. **Screen for injection**: Run `qsv_command` with `command: "searchset"` and `args: ["--flag", "injection_match", "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"]` to scan for CSV/formula injection and SQL injection payloads. Report any columns with matches.
+11. **Screen for injection**: Run `mcp__qsv__qsv_command` with `command: "searchset"`, `regexset-file: "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"`, and `flag: "injection_match"` to scan for CSV/formula injection and SQL injection payloads. Report any columns with matches.
 
-12. **Preview data**: Run `qsv_slice` with `len: 5` to show the first 5 rows as a sample.
+12. **Preview data**: Run `mcp__qsv__qsv_slice` with `len: 5` to show the first 5 rows as a sample.
 
 13. **Document**: Generate a Data Dictionary, Dataset Description, and Tags as JSON.
 
-    **13a) Primary — use `describegpt`**: Run `qsv_describegpt` with `all: true, format: "JSON"` and `output: "<filestem>.describegpt.json"`. If the user provided a Tag Vocabulary file, also pass `tag_vocab: "<vocab_file>"`. This produces a structured JSON file with three top-level objects: `Dictionary`, `Description`, and `Tags`. Each of these contains a `response` (the main content), optional `reasoning`, and `token_usage` metadata. The data dictionary itself is under `Dictionary.response.fields`, as an array of field descriptors with keys like `name`, `null_count`, `cardinality`, `min`, `max`, `mean`, and `stddev`. Present the results to the user. When MCP sampling is unavailable but the tool still returns prompts, follow those prompts by issuing a follow-up call with `_llm_responses` instead of using the agent fallback.
+    **13a) Primary — use `describegpt`**: Run `mcp__qsv__qsv_describegpt` with `all: true, format: "JSON"` and `output: "<filestem>.describegpt.json"`. If the user provided a Tag Vocabulary file, also pass `tag_vocab: "<vocab_file>"`. This produces a structured JSON file with three top-level objects: `Dictionary`, `Description`, and `Tags`. Each of these contains a `response` (the main content), optional `reasoning`, and `token_usage` metadata. The data dictionary itself is under `Dictionary.response.fields`, as an array of field descriptors with keys like `name`, `null_count`, `cardinality`, `min`, `max`, `mean`, and `stddev`. Present the results to the user. When MCP sampling is unavailable but the tool still returns prompts, follow those prompts by issuing a follow-up call with `_llm_responses` instead of using the agent fallback.
 
     **13b) Fallback — agent generation**: If `describegpt` encounters a tool error or times out, or if following its prompts via `_llm_responses` is not possible, fall back to generating the same artifacts from the statistics (steps 5-6) and frequency distributions (step 7). Save the result as `<filestem>.profile.json` using the same canonical structure as `describegpt`, for example:
 

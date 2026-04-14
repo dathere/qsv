@@ -10,15 +10,15 @@ allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers,
 
 Clean the given tabular data file by fixing common data quality issues.
 
-> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
+> **Cowork note:** If relative paths don't resolve, call `mcp__qsv__qsv_get_working_dir` and `mcp__qsv__qsv_set_working_dir` to sync the working directory.
 
 ## Steps
 
-1. **Index**: Run `qsv_index` on the file for fast random access in subsequent steps.
+1. **Index**: Run `mcp__qsv__qsv_index` on the file for fast random access in subsequent steps.
 
-2. **Assess current state**: Run `qsv_sniff` and `qsv_count` to understand the file format and size.
+2. **Assess current state**: Run `mcp__qsv__qsv_sniff` and `mcp__qsv__qsv_count` to understand the file format and size.
 
-3. **Profile for cleaning decisions**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true`. Read `.stats.csv` to decide which cleaning steps are needed:
+3. **Profile for cleaning decisions**: Run `mcp__qsv__qsv_stats` with `cardinality: true, stats_jsonl: true`. Read `.stats.csv` to decide which cleaning steps are needed:
 
    | Stats Column | What It Reveals | Cleaning Action |
    |-------------|-----------------|-----------------|
@@ -29,7 +29,7 @@ Clean the given tabular data file by fixing common data quality issues.
    | `mode`, `mode_count` | Dominant values | If mode_count > 80% of rows, investigate data entry defaults |
    | `type` | Inferred types | String columns that should be numeric indicate format issues |
 
-4. **Check headers**: Run `qsv_headers` to inspect column names. If names contain spaces, special characters, or are duplicated, plan to use `safenames`.
+4. **Check headers**: Run `mcp__qsv__qsv_headers` to inspect column names. If names contain spaces, special characters, or are duplicated, plan to use `safenames`.
 
 5. **Build cleaning steps**: Apply these operations in order (skip any that aren't needed based on assessment):
 
@@ -43,7 +43,7 @@ Clean the given tabular data file by fixing common data quality issues.
 
    e. **`validate`** - If a JSON Schema is available, validate against it and report violations.
 
-6. **Verify results**: Run `qsv_count` on the output to confirm row count. Run `qsv_stats` with `cardinality: true` to verify improvements.
+6. **Verify results**: Run `mcp__qsv__qsv_count` on the output to confirm row count. Run `mcp__qsv__qsv_stats` with `cardinality: true` to verify improvements.
 
 7. **Report changes**: Summarize what was cleaned:
    - Headers renamed (before -> after)
@@ -55,10 +55,10 @@ Clean the given tabular data file by fixing common data quality issues.
 
 Call each tool sequentially, passing the output of one step as input to the next:
 
-1. `qsv_command` with `command: "safenames"`, `input_file: "<file>"`, `output_file: "step1.csv"`
-2. `qsv_command` with `command: "fixlengths"`, `input_file: "step1.csv"`, `output_file: "step2.csv"`
-3. `qsv_sqlp` with `input_file: "step2.csv"`, `sql: "SELECT TRIM(col1) AS col1, TRIM(col2) AS col2, ... FROM _t_1"`, `output_file: "step3.csv"` (list all columns with TRIM)
-4. `qsv_command` with `command: "dedup"`, `input_file: "step3.csv"`, `output_file: "<output>"`
+1. `mcp__qsv__qsv_command` with `command: "safenames"`, `input_file: "<file>"`, `output_file: "step1.csv"`
+2. `mcp__qsv__qsv_command` with `command: "fixlengths"`, `input_file: "step1.csv"`, `output_file: "step2.csv"`
+3. `mcp__qsv__qsv_sqlp` with `input_file: "step2.csv"`, `sql: "SELECT TRIM(col1) AS col1, TRIM(col2) AS col2, ... FROM _t_1"`, `output_file: "step3.csv"` (list all columns with TRIM)
+4. `mcp__qsv__qsv_command` with `command: "dedup"`, `input_file: "step3.csv"`, `output_file: "<output>"`
 
 ## Notes
 
@@ -67,4 +67,4 @@ Call each tool sequentially, passing the output of one step as input to the next
 - `safenames` uses `--mode conditional` by default (only renames if needed)
 - If the user specifies particular columns to clean, use column selection syntax instead of cleaning all columns
 - `dedup` loads all data into memory and sorts internally; if input is already sorted, use `--sorted` for streaming mode
-- Use `qsv_search_tools` to find additional cleaning tools if needed (e.g., `replace` for regex substitution)
+- Use `mcp__qsv__qsv_search_tools` to find additional cleaning tools if needed (e.g., `replace` for regex substitution)

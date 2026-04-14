@@ -9,14 +9,14 @@ description: Standard workflow order, tool selection matrix, and composition pat
 
 Always follow this sequence when processing CSV data:
 
-0. **Setup (Cowork)** - If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync
+0. **Setup (Cowork)** - If relative paths don't resolve, call `mcp__qsv__qsv_get_working_dir` and `mcp__qsv__qsv_set_working_dir` to sync
 1. **Index** - `index` (enables fast random access for subsequent commands)
 2. **Discover** - `sniff` (detect format, encoding, delimiter) -> `headers` -> `count`
 3. **Profile** - `stats --cardinality --stats-jsonl` (creates cache used by smart commands)
 4. **Inspect** - `slice --len 5` (preview rows), `frequency --frequency-jsonl` (value distributions with cache for reuse)
 5. **Transform** - select, sort, dedup, rename, replace, search, sqlp, etc.
 6. **Validate** - `validate` (against JSON Schema), `stats` (verify results)
-7. **Export** - `tojsonl`, `table`, `qsv_to_parquet`, `to` (xlsx/sqlite/postgres/ods/datapackage)
+7. **Export** - `tojsonl`, `table`, `mcp__qsv__qsv_to_parquet`, `to` (xlsx/sqlite/postgres/ods/datapackage)
 8. **Document** - `describegpt --all` (AI-generated Data Dictionary, Description & Tags)
 
 ## Tool Selection Matrix
@@ -109,17 +109,17 @@ blake3 file.csv > checksums.b3 (before transfer) -> blake3 --check checksums.b3 
 - `cat rows` requires same column order; use `cat rowskey` for different schemas
 - `dedup` loads all data into memory and sorts internally; use `--sorted` flag if input is already sorted to enable streaming mode with constant memory
 - `sort` loads entire file into memory; for huge files use `sqlp` with ORDER BY
-- For repeated SQL queries on large CSV (> 10MB), consider converting to Parquet with `qsv_to_parquet` for faster performance. Parquet works ONLY with `sqlp` and DuckDB — all other qsv commands need CSV/TSV/SSV input
+- For repeated SQL queries on large CSV (> 10MB), consider converting to Parquet with `mcp__qsv__qsv_to_parquet` for faster performance. Parquet works ONLY with `sqlp` and DuckDB — all other qsv commands need CSV/TSV/SSV input
 
 ## Tool Discovery
 
-Use **`qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 53+ qsv skill-based commands covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more.
+Use **`mcp__qsv__qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 53+ qsv skill-based commands covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more.
 
 ## Operational Notes
 
 - **Timeout**: Default operation timeout is 10 minutes (configurable via `QSV_MCP_OPERATION_TIMEOUT_MS`, max 30 min). Allow operations to run to completion.
-- **Memory**: `dedup`, `sort`, `reverse`, `table`, `transpose`, `pragmastat`, and `stats` (with extended stats) load entire files into memory. For files >1GB, prefer `extdedup`/`extsort` via `qsv_command`.
-- **Cowork path architecture**: qsv runs on the HOST machine. File paths must be valid on the host. Always verify with `qsv_get_working_dir`.
+- **Memory**: `dedup`, `sort`, `reverse`, `table`, `transpose`, `pragmastat`, and `stats` (with extended stats) load entire files into memory. For files >1GB, prefer `extdedup`/`extsort` via `mcp__qsv__qsv_command`.
+- **Cowork path architecture**: qsv runs on the HOST machine. File paths must be valid on the host. Always verify with `mcp__qsv__qsv_get_working_dir`.
 - **Sequential operations**: Prefer sequential over parallel qsv calls to avoid queuing delays: index → stats → analysis.
-- **Large files (>5GB)**: Let `qsv_frequency` run to completion. Only fall back to `qsv_sqlp` with GROUP BY if the server timeout is exceeded.
-- **Context window**: Save outputs to files rather than returning to chat. Use `qsv_slice` or `qsv_sqlp` with LIMIT to inspect subsets.
+- **Large files (>5GB)**: Let `mcp__qsv__qsv_frequency` run to completion. Only fall back to `mcp__qsv__qsv_sqlp` with GROUP BY if the server timeout is exceeded.
+- **Context window**: Save outputs to files rather than returning to chat. Use `mcp__qsv__qsv_slice` or `mcp__qsv__qsv_sqlp` with LIMIT to inspect subsets.

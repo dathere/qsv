@@ -10,7 +10,7 @@ allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers,
 
 Create publication-quality data visualizations from tabular data files. Uses qsv to profile and prepare data, then generates Python charts with best practices for clarity, accuracy, and design.
 
-> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
+> **Cowork note:** If relative paths don't resolve, call `mcp__qsv__qsv_get_working_dir` and `mcp__qsv__qsv_set_working_dir` to sync the working directory.
 
 ## Steps
 
@@ -24,19 +24,19 @@ Determine:
 
 ### 2. Profile the Data with qsv
 
-a. **Index and detect**: Run `qsv_index`, then `qsv_sniff` to detect format and encoding.
+a. **Index and detect**: Run `mcp__qsv__qsv_index`, then `mcp__qsv__qsv_sniff` to detect format and encoding.
 
-b. **Understand structure**: Run `qsv_headers` and `qsv_count` to get column names and row count.
+b. **Understand structure**: Run `mcp__qsv__qsv_headers` and `mcp__qsv__qsv_count` to get column names and row count.
 
-c. **Profile columns**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` to understand types, ranges, and distributions. Read `.stats.csv` to inform chart design:
+c. **Profile columns**: Run `mcp__qsv__qsv_stats` with `cardinality: true, stats_jsonl: true` to understand types, ranges, and distributions. Read `.stats.csv` to inform chart design:
    - `type` → choose appropriate axis type (numeric, categorical, date)
    - `min`/`max` → set axis ranges
    - `cardinality` → determine if column is categorical (low) or continuous (high)
    - `nullcount` → note missing data that could affect the chart
 
-d. **Check distributions**: Run `qsv_frequency` with `limit: 20` on columns you plan to plot — this reveals the actual values and whether grouping or filtering is needed.
+d. **Check distributions**: Run `mcp__qsv__qsv_frequency` with `limit: 20` on columns you plan to plot — this reveals the actual values and whether grouping or filtering is needed.
 
-e. **Run moarstats for visualization hints**: Run `qsv_moarstats` with `advanced: true`. Read the enriched `.stats.csv` for chart design decisions:
+e. **Run moarstats for visualization hints**: Run `mcp__qsv__qsv_moarstats` with `advanced: true`. Read the enriched `.stats.csv` for chart design decisions:
 
    | Stats Column | Visualization Hint |
    |-------------|-------------------|
@@ -49,16 +49,16 @@ e. **Run moarstats for visualization hints**: Run `qsv_moarstats` with `advanced
    | `sparsity` | If > 0.5, too many nulls to visualize meaningfully — warn user or show completeness bar |
    | `mode`, `mode_count` | If mode dominates (> 50% of rows), bar chart of top-N values is more informative than histogram |
 
-f. **Preview data**: Run `qsv_slice` with `len: 5` to see actual values and formats.
+f. **Preview data**: Run `mcp__qsv__qsv_slice` with `len: 5` to see actual values and formats.
 
 ### 3. Prepare the Data
 
 Use qsv to prepare visualization-ready data:
 
-- **Filter**: `qsv_search` or `qsv_sqlp` to subset rows
-- **Aggregate**: `qsv_sqlp` for GROUP BY, window functions, computed columns
-- **Select columns**: `qsv_select` to keep only what's needed
-- **Sort**: `qsv_sqlp` with ORDER BY for ordered categories or time series
+- **Filter**: `mcp__qsv__qsv_search` or `mcp__qsv__qsv_sqlp` to subset rows
+- **Aggregate**: `mcp__qsv__qsv_sqlp` for GROUP BY, window functions, computed columns
+- **Select columns**: `mcp__qsv__qsv_select` to keep only what's needed
+- **Sort**: `mcp__qsv__qsv_sqlp` with ORDER BY for ordered categories or time series
 
 Export the prepared data to a CSV file for Python to read.
 
@@ -188,7 +188,7 @@ qsv_sqlp: SELECT group_col, AVG(metric) as avg_metric, COUNT(*) as n
 ## Notes
 
 - Always profile with qsv first — `stats` and `frequency` reveal the right chart type and catch data issues before plotting
-- For large files, use `qsv_sqlp` to aggregate before passing to Python — don't load millions of rows into pandas
+- For large files, use `mcp__qsv__qsv_sqlp` to aggregate before passing to Python — don't load millions of rows into pandas
 - If interactive charts are requested (hover, zoom), use plotly instead of matplotlib
 - Specify "presentation" for larger fonts and higher contrast
 - Multiple charts can be created at once (e.g., "create a 2x2 grid")

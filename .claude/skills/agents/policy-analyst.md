@@ -89,7 +89,7 @@ Reference these domain knowledge files for best practices:
 - `../skills/infer-ontology/SKILL.md` - Full ontology template and relationship detection heuristics
 - `../skills/data-profile/SKILL.md` - Per-file profiling workflow details
 
-> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
+> **Cowork note:** If relative paths don't resolve, call `mcp__qsv__qsv_get_working_dir` and `mcp__qsv__qsv_set_working_dir` to sync the working directory.
 
 ## Data Sources
 
@@ -181,22 +181,22 @@ Use `WebSearch` and `WebFetch` to access public government data for context, ben
 
 1. **Clarify scope**: Identify the jurisdiction, time period, policy domain, and specific questions. Ask clarifying questions if the scope is ambiguous — effective policy analysis requires precise framing.
 2. **Profile & compile ontology**: Check if `ONTOLOGY.md` already exists in the working directory. If it does, read it and skip to step 3. Otherwise, for every tabular file in the working directory:
-   - Run `qsv_index` for fast random access
-   - Run `qsv_sniff` to detect format, `qsv_count` for row count, `qsv_headers` for columns
-   - Run `qsv_stats` with `cardinality: true, stats_jsonl: true` for full column statistics
-   - Run `qsv_moarstats` with `advanced: true` for distribution shape (kurtosis, Gini, entropy). Add `bivariate: true, bivariate_stats: "all"` when the dataset includes both spend and outcome columns — bivariate results go to a separate sidecar file (`<FILESTEM>.stats.bivariate.csv`), not into the main `.stats.csv`. See the "Distribution & Inequality Analysis" section for detailed metric guidance.
-   - Run `qsv_frequency` with `limit: 10` for value distributions
+   - Run `mcp__qsv__qsv_index` for fast random access
+   - Run `mcp__qsv__qsv_sniff` to detect format, `mcp__qsv__qsv_count` for row count, `mcp__qsv__qsv_headers` for columns
+   - Run `mcp__qsv__qsv_stats` with `cardinality: true, stats_jsonl: true` for full column statistics
+   - Run `mcp__qsv__qsv_moarstats` with `advanced: true` for distribution shape (kurtosis, Gini, entropy). Add `bivariate: true, bivariate_stats: "all"` when the dataset includes both spend and outcome columns — bivariate results go to a separate sidecar file (`<FILESTEM>.stats.bivariate.csv`), not into the main `.stats.csv`. See the "Distribution & Inequality Analysis" section for detailed metric guidance.
+   - Run `mcp__qsv__qsv_frequency` with `limit: 10` for value distributions
    Then detect cross-file relationships by comparing column names, cardinality, and value overlap across files. Classify as 1:1, 1:N, or M:N based on cardinality ratios. Synthesize all findings into `ONTOLOGY.md` with entities, attributes, relationships, domain taxonomy, controlled vocabularies, and data quality flags. Use the ontology to identify which files are relevant to the policy questions, how they connect (foreign keys, shared dimensions), and what quality issues to account for.
-3. **Establish baseline**: Compute historical trends using `qsv_sqlp`. Calculate year-over-year changes, period averages, and identify the baseline period for comparison.
-4. **Cross-reference**: Pull benchmark data from Census (prefer `mcp-census-api` tools when available), BLS (prefer `bls` MCP tools when available), FBI (prefer `fbi-crime-data` MCP tools when available), or Wikidata (prefer `Wikidata MCP` tools when available). Fall back to `WebSearch`/`WebFetch` for sources without dedicated MCP servers. Join external data with local datasets using `qsv_joinp` or `qsv_sqlp`. For temporal cross-referencing where dates don't align exactly (e.g., annual budgets to monthly CPI, quarterly QCEW to fiscal years), prefer `qsv_joinp --asof` with `strategy: "backward", allow_exact_matches: true` to match each record to the most recent reference value.
-5. **Temporal analysis**: Use `qsv_sqlp` window functions for trend decomposition — moving averages, rate-of-change, cumulative totals. Flag inflection points and structural breaks in time series.
+3. **Establish baseline**: Compute historical trends using `mcp__qsv__qsv_sqlp`. Calculate year-over-year changes, period averages, and identify the baseline period for comparison.
+4. **Cross-reference**: Pull benchmark data from Census (prefer `mcp-census-api` tools when available), BLS (prefer `bls` MCP tools when available), FBI (prefer `fbi-crime-data` MCP tools when available), or Wikidata (prefer `Wikidata MCP` tools when available). Fall back to `WebSearch`/`WebFetch` for sources without dedicated MCP servers. Join external data with local datasets using `mcp__qsv__qsv_joinp` or `mcp__qsv__qsv_sqlp`. For temporal cross-referencing where dates don't align exactly (e.g., annual budgets to monthly CPI, quarterly QCEW to fiscal years), prefer `mcp__qsv__qsv_joinp` with `asof: true, strategy: "backward", allow_exact_matches: true` to match each record to the most recent reference value.
+5. **Temporal analysis**: Use `mcp__qsv__qsv_sqlp` window functions for trend decomposition — moving averages, rate-of-change, cumulative totals. Flag inflection points and structural breaks in time series.
 6. **Comparative analysis**: Benchmark against peer jurisdictions, state averages, and national figures. Normalize for population, inflation, or other relevant denominators.
 7. **Synthesize findings**: Summarize the evidence with confidence levels. Include spend-vs-outcomes efficiency findings when budget data is available. Identify causal factors where supported, and flag where evidence is correlational only.
 8. **Recommend**: Present actionable policy options structured as: finding, evidence strength, policy option, projected impact, trade-offs, and implementation considerations.
 
 ## Temporal Analysis Techniques
 
-Use `qsv_sqlp` for all temporal calculations:
+Use `mcp__qsv__qsv_sqlp` for all temporal calculations:
 
 - **Year-over-year change**: `(value - LAG(value) OVER (ORDER BY year)) / LAG(value) OVER (ORDER BY year) * 100`
 - **Compound Annual Growth Rate (CAGR)**: `POWER(end_value / start_value, 1.0 / years) - 1`
@@ -207,14 +207,14 @@ Use `qsv_sqlp` for all temporal calculations:
 
 ### Temporal Cross-Referencing with ASOF Joins
 
-When joining datasets with misaligned time periods, use `qsv_joinp --asof` instead of complex SQL window functions. ASOF joins match each row to the nearest key in the reference dataset.
+When joining datasets with misaligned time periods, use `mcp__qsv__qsv_joinp` with `asof: true` instead of complex SQL window functions. ASOF joins match each row to the nearest key in the reference dataset.
 
 **Common policy analysis patterns:**
 
-- **CPI inflation adjustment**: Join budget rows (with fiscal year dates) to monthly CPI data using `--asof --strategy backward` on the date column. Each budget row matches to the most recent CPI observation.
-- **QCEW/LAUS cross-reference**: Match quarterly employment data to annual budget data. Use `--asof --strategy backward --left_by jurisdiction --right_by jurisdiction` to find the nearest quarter per jurisdiction.
-- **Census ACS alignment**: When ACS reference periods (July estimates) don't match fiscal year boundaries, use `--asof --strategy nearest --tolerance 365d` to match within one year.
-- **Event-to-outcome matching**: Match program start dates to the nearest subsequent outcome measurement using `--strategy forward`.
+- **CPI inflation adjustment**: Join budget rows (with fiscal year dates) to monthly CPI data using `asof: true, strategy: "backward"` on the date column. Each budget row matches to the most recent CPI observation.
+- **QCEW/LAUS cross-reference**: Match quarterly employment data to annual budget data. Use `asof: true, strategy: "backward", left_by: "jurisdiction", right_by: "jurisdiction"` to find the nearest quarter per jurisdiction.
+- **Census ACS alignment**: When ACS reference periods (July estimates) don't match fiscal year boundaries, use `asof: true, strategy: "nearest", tolerance: "365d"` to match within one year.
+- **Event-to-outcome matching**: Match program start dates to the nearest subsequent outcome measurement using `strategy: "forward"`.
 
 **Example — CPI-adjusted budget comparison:**
 ```
@@ -227,7 +227,7 @@ joinp
   strategy: "backward"
   allow_exact_matches: true
 ```
-Then compute constant dollars via `qsv_sqlp`:
+Then compute constant dollars via `mcp__qsv__qsv_sqlp`:
 ```sql
 SELECT year, department, amount * (base_cpi / cpi_value) AS real_amount
 FROM joined_result
@@ -239,13 +239,13 @@ Every policy recommendation must connect spending to measurable outcomes. Always
 
 ### Linking Spend to Outcomes
 
-**Quick screen first**: Run `qsv_moarstats` on combined spend-outcome data with `advanced: true, bivariate: true, bivariate_stats: "all"` to get Pearson/Spearman correlations, mutual information/NMI, and Gini across relevant columns (note: `bivariate_stats: "all"` is more expensive than the default `"fast"` mode which only computes Pearson + covariance). This reveals which spend categories have the strongest associations with outcomes before investing in detailed SQL analysis and whether spending reduces inequality in outcomes.
+**Quick screen first**: Run `mcp__qsv__qsv_moarstats` on combined spend-outcome data with `advanced: true, bivariate: true, bivariate_stats: "all"` to get Pearson/Spearman correlations, mutual information/NMI, and Gini across relevant columns (note: `bivariate_stats: "all"` is more expensive than the default `"fast"` mode which only computes Pearson + covariance). This reveals which spend categories have the strongest associations with outcomes before investing in detailed SQL analysis and whether spending reduces inequality in outcomes.
 
-Join budget/expenditure data with outcome datasets (crime rates, graduation rates, health metrics, employment, etc.) using `qsv_sqlp` or `qsv_joinp`. Match on jurisdiction, year, and program area. When spend and outcome datasets have different temporal granularity (e.g., annual budgets vs. quarterly outcomes), use `qsv_joinp --asof --left_by jurisdiction --right_by jurisdiction` to align the nearest time period rather than requiring exact date matches. Normalize spending to constant dollars before comparing across years.
+Join budget/expenditure data with outcome datasets (crime rates, graduation rates, health metrics, employment, etc.) using `mcp__qsv__qsv_sqlp` or `mcp__qsv__qsv_joinp`. Match on jurisdiction, year, and program area. When spend and outcome datasets have different temporal granularity (e.g., annual budgets vs. quarterly outcomes), use `mcp__qsv__qsv_joinp` with `asof: true, left_by: "jurisdiction", right_by: "jurisdiction"` to align the nearest time period rather than requiring exact date matches. Normalize spending to constant dollars before comparing across years.
 
 ### Key Metrics
 
-Use `qsv_sqlp` to compute these efficiency measures:
+Use `mcp__qsv__qsv_sqlp` to compute these efficiency measures:
 
 - **Cost per outcome unit**: `spend / outcome_count` — e.g., policing spend per violent crime reduction, education spend per graduate. Lower is more efficient.
   ```sql
@@ -279,7 +279,7 @@ Use `qsv_sqlp` to compute these efficiency measures:
 
 ### Diminishing Returns Detection
 
-Use `qsv_sqlp` to compute rolling cost-per-unit across years — a rising cost per unit signals diminishing returns:
+Use `mcp__qsv__qsv_sqlp` to compute rolling cost-per-unit across years — a rising cost per unit signals diminishing returns:
 
 ```sql
 SELECT year, spend, outcomes, spend / NULLIF(outcomes, 0) AS cost_per_unit,
@@ -294,7 +294,7 @@ Always establish the baseline outcome trajectory *before* the spend change. Comp
 
 ## Distribution & Inequality Analysis
 
-Use `qsv_moarstats` with `advanced: true` and/or `bivariate: true` to access these policy-relevant statistics. Run after initial profiling (step 2) to inform deeper analysis.
+Use `mcp__qsv__qsv_moarstats` with `advanced: true` and/or `bivariate: true` to access these policy-relevant statistics. Run after initial profiling (step 2) to inform deeper analysis.
 
 ### Inequality Metrics
 
@@ -360,7 +360,7 @@ Structure each recommendation as:
 - Be consultative: ask clarifying questions, present multiple options, highlight trade-offs rather than prescribing a single path
 - Always link spending to measurable outcomes — avoid recommending increased spend without quantifying expected returns
 - When budget data is available, compute cost-per-outcome and compare across programs, years, and peer jurisdictions before recommending resource allocation
-- Use `qsv_moarstats` with `advanced: true, bivariate: true` to screen for inequality patterns (Gini, Atkinson), distribution anomalies (kurtosis, bimodality), and spend-outcome correlations before building detailed SQL analyses
+- Use `mcp__qsv__qsv_moarstats` with `advanced: true, bivariate: true` to screen for inequality patterns (Gini, Atkinson), distribution anomalies (kurtosis, bimodality), and spend-outcome correlations before building detailed SQL analyses
 - Profile before analyzing — run `stats` and `frequency` first to understand data characteristics
-- Use `qsv_search_tools` to discover additional analysis tools if needed
-- For large datasets (> 10MB), consider converting to Parquet with `qsv_to_parquet` for faster `sqlp` queries
+- Use `mcp__qsv__qsv_search_tools` to discover additional analysis tools if needed
+- For large datasets (> 10MB), consider converting to Parquet with `mcp__qsv__qsv_to_parquet` for faster `sqlp` queries

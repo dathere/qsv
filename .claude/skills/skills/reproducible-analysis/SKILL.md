@@ -18,8 +18,8 @@ Create a journal file named `<analysis-name>.journal.jsonl` alongside the analys
 ### Entry Schema
 
 ```jsonl
-{"seq": 1, "ts": "2026-03-19T14:30:00Z", "op": "index", "tool": "qsv_index", "input": "sales.csv", "input_sha256": "a1b2c3...", "input_rows": 50000, "input_cols": 12, "params": {}, "output": "sales.csv.idx", "output_sha256": "d4e5f6...", "duration_ms": 45, "note": "Create index for fast access"}
-{"seq": 2, "ts": "2026-03-19T14:30:01Z", "op": "stats", "tool": "qsv_stats", "input": "sales.csv", "input_sha256": "a1b2c3...", "params": {"cardinality": true, "stats_jsonl": true}, "output": "sales.stats.csv", "output_sha256": "f7a8b9...", "duration_ms": 320, "note": "Generate stats cache with cardinality"}
+{"seq": 1, "ts": "2026-03-19T14:30:00Z", "op": "index", "tool": "mcp__qsv__qsv_index", "input": "sales.csv", "input_sha256": "a1b2c3...", "input_rows": 50000, "input_cols": 12, "params": {}, "output": "sales.csv.idx", "output_sha256": "d4e5f6...", "duration_ms": 45, "note": "Create index for fast access"}
+{"seq": 2, "ts": "2026-03-19T14:30:01Z", "op": "stats", "tool": "mcp__qsv__qsv_stats", "input": "sales.csv", "input_sha256": "a1b2c3...", "params": {"cardinality": true, "stats_jsonl": true}, "output": "sales.stats.csv", "output_sha256": "f7a8b9...", "duration_ms": 320, "note": "Generate stats cache with cardinality"}
 ```
 
 ### Required Fields
@@ -29,7 +29,7 @@ Create a journal file named `<analysis-name>.journal.jsonl` alongside the analys
 | `seq` | integer | 1-based sequence number within the journal |
 | `ts` | string | ISO 8601 UTC timestamp of when the operation ran |
 | `op` | string | Human-readable operation name (e.g., "stats", "filter", "join") |
-| `tool` | string or null | Exact MCP tool name used (e.g., `qsv_stats`, `qsv_sqlp`); null for journal-level entries (`init`, `complete`) |
+| `tool` | string or null | Exact MCP tool name used (e.g., `mcp__qsv__qsv_stats`, `mcp__qsv__qsv_sqlp`); null for journal-level entries (`init`, `complete`) |
 | `input` | string, array, or null | Input file path(s), relative to working directory; null for journal-level entries |
 | `input_sha256` | string, array, or null | SHA-256 hash(es) of input file(s); null for journal-level entries |
 | `params` | object | All parameters passed to the tool (excluding input/output paths) |
@@ -42,8 +42,8 @@ Create a journal file named `<analysis-name>.journal.jsonl` alongside the analys
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `input_rows` | integer | Row count of input (from `qsv_count`) |
-| `input_cols` | integer | Column count of input (from `qsv_headers`) |
+| `input_rows` | integer | Row count of input (from `mcp__qsv__qsv_count`) |
+| `input_cols` | integer | Column count of input (from `mcp__qsv__qsv_headers`) |
 | `output_rows` | integer | Row count of output |
 | `output_cols` | integer | Column count of output |
 | `delta_rows` | integer | Rows added/removed (output_rows - input_rows) |
@@ -55,7 +55,7 @@ Create a journal file named `<analysis-name>.journal.jsonl` alongside the analys
 
 ## How to Compute Hashes
 
-Use `qsv_sqlp` or shell commands to compute SHA-256 hashes:
+Use `mcp__qsv__qsv_sqlp` or shell commands to compute SHA-256 hashes:
 
 ```bash
 # Via shell (when available)

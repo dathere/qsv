@@ -11,7 +11,7 @@ To disable auto-deployment, set `QSV_NO_COWORK_SETUP=1` in your shell environmen
 For new files:
 1. **`mcp__qsv__qsv_list_files`** to discover files in the working directory
 2. **`mcp__qsv__qsv_index`** for files >10MB (enables faster processing)
-3. **`mcp__qsv__qsv_stats --cardinality --stats-jsonl`** to create a stats cache
+3. **`mcp__qsv__qsv_stats`** with `cardinality: true, stats_jsonl: true` to create a stats cache
 4. Then run analysis/transformation commands
 
 The stats cache accelerates: `frequency`, `schema`, `tojsonl`, `sqlp`, `joinp`, `pivotp`, `describegpt`, `moarstats`, `sample`.

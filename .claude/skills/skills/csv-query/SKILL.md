@@ -56,7 +56,7 @@ After reading the `.stats.csv` cache, use these columns to inform your SQL:
 
 ### Using Frequency for Filter Values
 
-Run `mcp__qsv__qsv_frequency --select col --limit 20` before writing WHERE clauses on categorical columns:
+Run `mcp__qsv__qsv_frequency` with `select: "col", limit: 20` before writing WHERE clauses on categorical columns:
 
 - **Pick selective filters**: If `frequency` shows "active" has 90% of rows, filtering on `WHERE status = 'active'` is wasteful — filter on the rare values instead
 - **Validate expected values**: If you plan `WHERE category IN ('A','B','C')`, check frequency first to confirm those values exist and see if you're missing any

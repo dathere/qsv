@@ -33,16 +33,18 @@ Join two tabular data files on common columns.
 4. **Choose strategy**:
    - If cardinality of join column in file1 > file2, put file1 on the left
    - For `joinp`: smaller cardinality table should be on the right for best performance
-   - If join condition is complex (non-equi), use `sqlp`
-   - If join involves date/time matching where exact dates won't align (e.g., quarterly to monthly, event dates to nearest reporting period), use `joinp --asof`
+   - If join condition is complex (non-equi), use `mcp__qsv__qsv_sqlp`
+   - If join involves date/time matching where exact dates won't align (e.g., quarterly to monthly, event dates to nearest reporting period), use `mcp__qsv__qsv_joinp` with `asof: true`
 
 5. **Execute join**: Use `mcp__qsv__qsv_joinp` for standard joins:
    ```
-   joinp --left/--inner/--full/--cross
+   joinp
      columns1: "id"
      input1: "file1.csv"
      columns2: "id"
      input2: "file2.csv"
+     # Join type: omit for inner (default), or set one of:
+     # left: true, full: true, cross: true
    ```
 
    Or use `mcp__qsv__qsv_sqlp` for complex joins:
@@ -98,8 +100,8 @@ Before executing a join, read `.stats.csv` for both files and validate:
 | Left | `--left` | `LEFT JOIN` | All left + matching right |
 | Full outer | `--full` | `FULL OUTER JOIN` | All rows from both |
 | Cross | `--cross` | `CROSS JOIN` | Cartesian product |
-| Anti | `--anti` | `NOT IN` / `NOT EXISTS` | Left rows without match |
-| Semi | `--semi` | `EXISTS` | Left rows with match (no right cols) |
+| Left Anti | `--left-anti` | `NOT IN` / `NOT EXISTS` | Left rows without match |
+| Left Semi | `--left-semi` | `EXISTS` | Left rows with match (no right cols) |
 | ASOF | `--asof` | _(use joinp)_ | Nearest-key match (temporal/numeric) |
 
 ## Notes

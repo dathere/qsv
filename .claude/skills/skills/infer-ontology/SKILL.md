@@ -9,15 +9,15 @@ allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers,
 
 Scan all files in the current working directory, profile each one, then synthesize a semantic ontology describing the entities, their attributes, the relationships between files, and the domain taxonomy.
 
-> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
+> **Cowork note:** If relative paths don't resolve, call `mcp__qsv__qsv_get_working_dir` and `mcp__qsv__qsv_set_working_dir` to sync the working directory.
 
 ## Steps
 
 ### Phase 1: Discovery
 
-1. **Sync working directory**: Call `qsv_get_working_dir` to confirm the current path. If needed, call `qsv_set_working_dir`.
+1. **Sync working directory**: Call `mcp__qsv__qsv_get_working_dir` to confirm the current path. If needed, call `mcp__qsv__qsv_set_working_dir`.
 
-2. **List files**: Call `qsv_list_files` to get all files in the working directory. Classify each file:
+2. **List files**: Call `mcp__qsv__qsv_list_files` to get all files in the working directory. Classify each file:
 
    **Tabular** (handled natively by qsv MCP Server — auto-converted to CSV if needed):
    - CSV/TSV/SSV/TAB (`.csv`, `.tsv`, `.ssv`, `.tab` and `.sz` compressed variants)
@@ -62,7 +62,7 @@ Scan all files in the current working directory, profile each one, then synthesi
    - Compare value ranges (`min`/`max`) — overlapping ranges suggest a real relationship
    - Compare frequency distributions — if top values in one appear in the other, the relationship is likely valid
    - Check `skewness` — highly skewed join columns (|skewness| > 2) may indicate data quality issues masking relationships
-   - Use `qsv_sqlp` to test overlap when needed:
+   - Use `mcp__qsv__qsv_sqlp` to test overlap when needed:
      ```
      SELECT COUNT(DISTINCT a.col) as overlap
      FROM read_csv('file1.csv') a

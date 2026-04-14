@@ -10,7 +10,7 @@ allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers,
 
 Validate data files and analyses for accuracy, methodology, and potential biases before sharing with stakeholders. Generates a confidence assessment and improvement suggestions.
 
-> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
+> **Cowork note:** If relative paths don't resolve, call `mcp__qsv__qsv_get_working_dir` and `mcp__qsv__qsv_set_working_dir` to sync the working directory.
 
 ## Usage
 
@@ -26,17 +26,17 @@ The input can be:
 
 If a data file is provided, run these checks using qsv:
 
-a. **Index and profile**: Run `qsv_index`, then `qsv_stats` with `cardinality: true, stats_jsonl: true` and `qsv_sniff` to understand the data.
+a. **Index and profile**: Run `mcp__qsv__qsv_index`, then `mcp__qsv__qsv_stats` with `cardinality: true, stats_jsonl: true` and `mcp__qsv__qsv_sniff` to understand the data.
 
 b. **Completeness**: Read `.stats.csv` — check `nullcount` and `sparsity` for each column. Flag columns with sparsity > 0.5.
 
-c. **Uniqueness**: Compare `cardinality` to row count from `qsv_count`. Flag key columns (ID, email) where cardinality < row count. Run `qsv_command` with `command: "dedup"` and `args: ["--dupes-output", "dupes.csv"]` to find exact duplicates.
+c. **Uniqueness**: Compare `cardinality` to row count from `mcp__qsv__qsv_count`. Flag key columns (ID, email) where cardinality < row count. Run `mcp__qsv__qsv_command` with `command: "dedup"` and `args: ["--dupes-output", "dupes.csv"]` to find exact duplicates.
 
-d. **Validity**: Check `type` column in stats — flag String columns that should be numeric. Run `qsv_command` with `command: "validate"` against a JSON Schema if available.
+d. **Validity**: Check `type` column in stats — flag String columns that should be numeric. Run `mcp__qsv__qsv_command` with `command: "validate"` against a JSON Schema if available.
 
-e. **Consistency**: Run `qsv_frequency` with `limit: 20` on categorical columns — look for case variants ("NYC" vs "nyc"), inconsistent formats, unexpected values.
+e. **Consistency**: Run `mcp__qsv__qsv_frequency` with `limit: 20` on categorical columns — look for case variants ("NYC" vs "nyc"), inconsistent formats, unexpected values.
 
-f. **Accuracy**: Read `.stats.csv` for `min`, `max`, `mean`, `stddev` — flag implausible ranges (negative ages, latitude > 90, future dates). Run `qsv_moarstats` with `advanced: true` — check `outliers_percentage` > 5%, `kurtosis` > 10 (extreme outliers).
+f. **Accuracy**: Read `.stats.csv` for `min`, `max`, `mean`, `stddev` — flag implausible ranges (negative ages, latitude > 90, future dates). Run `mcp__qsv__qsv_moarstats` with `advanced: true` — check `outliers_percentage` > 5%, `kurtosis` > 10 (extreme outliers).
 
 g. **Distribution sanity**: Read moarstats columns for deeper validation:
    - `median_mean_ratio` — if < 0.8 or > 1.2, distribution is significantly skewed; verify the mean isn't misleading
@@ -45,9 +45,9 @@ g. **Distribution sanity**: Read moarstats columns for deeper validation:
    - `jarque_bera_pvalue` — if < 0.05, data is NOT normally distributed; flag any analysis that assumes normality
    - `mode_count` — if mode accounts for > 50% of values, investigate whether this reflects a data entry default or missing value masking
 
-h. **Join integrity** (if multiple files): Run `qsv_joinp` with `--left-anti` to find orphaned foreign keys.
+h. **Join integrity** (if multiple files): Run `mcp__qsv__qsv_joinp` with `--left-anti` to find orphaned foreign keys.
 
-i. **Injection screening**: Run `qsv_command` with `command: "searchset"` and `args: ["--flag", "injection_match", "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"]` to scan for malicious payloads.
+i. **Injection screening**: Run `mcp__qsv__qsv_command` with `command: "searchset"` and `args: ["--flag", "injection_match", "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"]` to scan for malicious payloads.
 
 ### 2. Review Methodology and Assumptions
 
@@ -65,16 +65,16 @@ Systematically review against these pitfalls:
 
 | Pitfall | How to Detect with qsv | Red Flag |
 |---------|----------------------|----------|
-| **Join explosion** | `qsv_count` before and after join | Row count increased after join |
-| **Survivorship bias** | `qsv_frequency` on status/lifecycle columns | Missing churned/deleted/failed entities |
-| **Incomplete period** | `qsv_sqlp` to check date ranges | Partial periods compared to full periods |
-| **Denominator shifting** | `qsv_sqlp` to verify denominator consistency | Definition changed between periods |
-| **Average of averages** | `qsv_sqlp` to recalculate from raw data | Pre-aggregated averages with unequal group sizes |
-| **Selection bias** | `qsv_frequency` on segment definitions | Segments defined by the outcome being measured |
+| **Join explosion** | `mcp__qsv__qsv_count` before and after join | Row count increased after join |
+| **Survivorship bias** | `mcp__qsv__qsv_frequency` on status/lifecycle columns | Missing churned/deleted/failed entities |
+| **Incomplete period** | `mcp__qsv__qsv_sqlp` to check date ranges | Partial periods compared to full periods |
+| **Denominator shifting** | `mcp__qsv__qsv_sqlp` to verify denominator consistency | Definition changed between periods |
+| **Average of averages** | `mcp__qsv__qsv_sqlp` to recalculate from raw data | Pre-aggregated averages with unequal group sizes |
+| **Selection bias** | `mcp__qsv__qsv_frequency` on segment definitions | Segments defined by the outcome being measured |
 
 ### 4. Verify Calculations and Aggregations
 
-Spot-check using `qsv_sqlp`:
+Spot-check using `mcp__qsv__qsv_sqlp`:
 
 - Recalculate key numbers independently
 - Verify subtotals sum to totals: `SELECT SUM(subtotal) as check_total FROM data`
@@ -86,12 +86,12 @@ Spot-check using `qsv_sqlp`:
 
 | Metric Type | Sanity Check via qsv |
 |-------------|---------------------|
-| Counts | `qsv_count` — does it match known figures? |
-| Sums/averages | `qsv_stats` — are min/max/mean in plausible range? |
-| Rates | `qsv_sqlp` — are values between 0% and 100%? |
-| Distributions | `qsv_frequency` — do segment percentages sum to ~100%? |
-| Growth rates | `qsv_sqlp` — is 50%+ MoM growth realistic? |
-| Outliers | `qsv_moarstats` — `outliers_percentage`, `kurtosis` |
+| Counts | `mcp__qsv__qsv_count` — does it match known figures? |
+| Sums/averages | `mcp__qsv__qsv_stats` — are min/max/mean in plausible range? |
+| Rates | `mcp__qsv__qsv_sqlp` — are values between 0% and 100%? |
+| Distributions | `mcp__qsv__qsv_frequency` — do segment percentages sum to ~100%? |
+| Growth rates | `mcp__qsv__qsv_sqlp` — is 50%+ MoM growth realistic? |
+| Outliers | `mcp__qsv__qsv_moarstats` — `outliers_percentage`, `kurtosis` |
 
 #### Red Flags That Warrant Investigation
 
@@ -143,24 +143,24 @@ Rate the analysis on a 3-level scale:
 ## Pre-Delivery QA Checklist
 
 ### Data Quality Checks
-- [ ] **Source verification**: Confirmed data sources. Run `qsv_sniff` to verify format and encoding.
+- [ ] **Source verification**: Confirmed data sources. Run `mcp__qsv__qsv_sniff` to verify format and encoding.
 - [ ] **Freshness**: Data is current enough. Noted the "as of" date.
 - [ ] **Completeness**: No gaps in time series. Check `nullcount`/`sparsity` in `.stats.csv`.
 - [ ] **Null handling**: Nulls handled appropriately (excluded, imputed, or flagged).
-- [ ] **Deduplication**: No double-counting. Verify with `qsv_count` before/after joins, `dedup --dupes-output`.
+- [ ] **Deduplication**: No double-counting. Verify with `mcp__qsv__qsv_count` before/after joins, `dedup --dupes-output`.
 - [ ] **Filter verification**: All filters correct. No unintended exclusions.
 
 ### Calculation Checks
 - [ ] **Aggregation logic**: GROUP BY includes all non-aggregated columns.
 - [ ] **Denominator correctness**: Rate calculations use the right denominator (non-zero).
 - [ ] **Date alignment**: Comparisons use same time period length. Partial periods excluded or noted.
-- [ ] **Join correctness**: JOIN types appropriate. Verify row counts with `qsv_count` after joins.
+- [ ] **Join correctness**: JOIN types appropriate. Verify row counts with `mcp__qsv__qsv_count` after joins.
 - [ ] **Metric definitions**: Metrics match stakeholder definitions. Deviations noted.
-- [ ] **Subtotals sum**: Parts add up to the whole. Verify with `qsv_sqlp`.
+- [ ] **Subtotals sum**: Parts add up to the whole. Verify with `mcp__qsv__qsv_sqlp`.
 
 ### Reasonableness Checks
 - [ ] **Magnitude**: Numbers in plausible range. Check `min`/`max` in `.stats.csv`.
-- [ ] **Trend continuity**: No unexplained jumps. Use `qsv_sqlp` to check period-over-period.
+- [ ] **Trend continuity**: No unexplained jumps. Use `mcp__qsv__qsv_sqlp` to check period-over-period.
 - [ ] **Cross-reference**: Key numbers match other known sources.
 - [ ] **Edge cases**: Checked boundaries — empty segments, zero-activity periods, new entities.
 
@@ -174,22 +174,22 @@ Rate the analysis on a 3-level scale:
 ## Common Analytical Pitfalls (Reference)
 
 ### Join Explosion
-A many-to-many join silently multiplies rows, inflating counts and sums. **Detect**: `qsv_count` before and after join — if count increased, investigate the join relationship. **Prevent**: Use `COUNT(DISTINCT id)` instead of `COUNT(*)` when counting entities through joins.
+A many-to-many join silently multiplies rows, inflating counts and sums. **Detect**: `mcp__qsv__qsv_count` before and after join — if count increased, investigate the join relationship. **Prevent**: Use `COUNT(DISTINCT id)` instead of `COUNT(*)` when counting entities through joins.
 
 ### Survivorship Bias
-Analyzing only entities that exist today, ignoring churned/deleted/failed ones. **Detect**: `qsv_frequency` on status columns — are all lifecycle states represented? **Prevent**: Ask "who is NOT in this dataset?" before drawing conclusions.
+Analyzing only entities that exist today, ignoring churned/deleted/failed ones. **Detect**: `mcp__qsv__qsv_frequency` on status columns — are all lifecycle states represented? **Prevent**: Ask "who is NOT in this dataset?" before drawing conclusions.
 
 ### Incomplete Period Comparison
-Comparing a partial period to a full period. **Detect**: `qsv_sqlp` to check min/max dates per period. **Prevent**: Filter to complete periods or compare same number of days.
+Comparing a partial period to a full period. **Detect**: `mcp__qsv__qsv_sqlp` to check min/max dates per period. **Prevent**: Filter to complete periods or compare same number of days.
 
 ### Denominator Shifting
-The denominator changes between periods, making rates incomparable. **Detect**: `qsv_sqlp` to verify denominator definition consistency. **Prevent**: Use consistent definitions across all compared periods.
+The denominator changes between periods, making rates incomparable. **Detect**: `mcp__qsv__qsv_sqlp` to verify denominator definition consistency. **Prevent**: Use consistent definitions across all compared periods.
 
 ### Average of Averages
-Averaging pre-computed averages gives wrong results when group sizes differ. **Detect**: Compare `qsv_stats` mean against `qsv_sqlp` weighted average. **Prevent**: Always aggregate from raw data.
+Averaging pre-computed averages gives wrong results when group sizes differ. **Detect**: Compare `mcp__qsv__qsv_stats` mean against `mcp__qsv__qsv_sqlp` weighted average. **Prevent**: Always aggregate from raw data.
 
 ### Simpson's Paradox
-Trend reverses when data is aggregated vs. segmented. **Detect**: `qsv_sqlp` GROUP BY at different granularity levels — does the conclusion change? **Prevent**: Always check results at segment level before aggregating.
+Trend reverses when data is aggregated vs. segmented. **Detect**: `mcp__qsv__qsv_sqlp` GROUP BY at different granularity levels — does the conclusion change? **Prevent**: Always check results at segment level before aggregating.
 
 ## Report Format
 

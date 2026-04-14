@@ -10,7 +10,7 @@ allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers,
 
 Convert tabular data files between formats.
 
-> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
+> **Cowork note:** If relative paths don't resolve, call `mcp__qsv__qsv_get_working_dir` and `mcp__qsv__qsv_set_working_dir` to sync the working directory.
 
 ## Supported Conversions
 
@@ -28,42 +28,42 @@ Convert tabular data files between formats.
 | TSV | `fmt --out-delimiter '\t'` | `.tsv` |
 | JSONL | `tojsonl` | `.jsonl` |
 | JSON | `slice --json` | `.json` |
-| Parquet | `qsv_to_parquet` (core tool) | `.parquet` |
-| XLSX | `to xlsx` (via `qsv_command`) | `.xlsx` |
-| ODS | `to ods` (via `qsv_command`) | `.ods` |
-| SQLite | `to sqlite` (via `qsv_command`) | `.db` |
-| PostgreSQL | `to postgres` (via `qsv_command`) | N/A |
-| Data Package | `to datapackage` (via `qsv_command`) | `.json` |
+| Parquet | `mcp__qsv__qsv_to_parquet` (core tool) | `.parquet` |
+| XLSX | `to xlsx` (via `mcp__qsv__qsv_command`) | `.xlsx` |
+| ODS | `to ods` (via `mcp__qsv__qsv_command`) | `.ods` |
+| SQLite | `to sqlite` (via `mcp__qsv__qsv_command`) | `.db` |
+| PostgreSQL | `to postgres` (via `mcp__qsv__qsv_command`) | N/A |
+| Data Package | `to datapackage` (via `mcp__qsv__qsv_command`) | `.json` |
 
 ## Steps
 
-1. **Index**: Run `qsv_index` on the file for fast random access in subsequent steps.
+1. **Index**: Run `mcp__qsv__qsv_index` on the file for fast random access in subsequent steps.
 
-2. **Detect source format**: Run `qsv_sniff` to identify the input format, delimiter, and encoding.
+2. **Detect source format**: Run `mcp__qsv__qsv_sniff` to identify the input format, delimiter, and encoding.
 
 3. **Convert**: Use the appropriate command based on the target format:
 
-   - **To CSV** (from Excel/JSONL): The MCP server handles this automatically when you pass non-CSV files to any qsv tool. Use `qsv_command` with `excel` for explicit control over sheet selection.
+   - **To CSV** (from Excel/JSONL): The MCP server handles this automatically when you pass non-CSV files to any qsv tool. Use `mcp__qsv__qsv_command` with `excel` for explicit control over sheet selection.
 
-   - **To TSV**: Use `qsv_command` with `command: "fmt"`, `options: {"out-delimiter": "\t"}`.
+   - **To TSV**: Use `mcp__qsv__qsv_command` with `command: "fmt"`, `options: {"out-delimiter": "\t"}`.
 
-   - **To JSONL**: Use `qsv_command` with `command: "tojsonl"`.
+   - **To JSONL**: Use `mcp__qsv__qsv_command` with `command: "tojsonl"`.
 
-   - **To Parquet (single file)**: Use `qsv_to_parquet` (core tool) — auto-generates stats cache and Polars schema for optimal type inference.
+   - **To Parquet (single file)**: Use `mcp__qsv__qsv_to_parquet` (core tool) — auto-generates stats cache and Polars schema for optimal type inference.
 
-   - **To Parquet (batch)**: Use `qsv_command` with `command: "to"`, `args: ["parquet", "output_dir"]` for batch conversion with explicit compression control.
+   - **To Parquet (batch)**: Use `mcp__qsv__qsv_command` with `command: "to"`, `args: ["parquet", "output_dir"]` for batch conversion with explicit compression control.
 
-   - **To XLSX**: Use `qsv_command` with `command: "to"`, `args: ["xlsx", "output.xlsx"]`.
+   - **To XLSX**: Use `mcp__qsv__qsv_command` with `command: "to"`, `args: ["xlsx", "output.xlsx"]`.
 
-   - **To ODS**: Use `qsv_command` with `command: "to"`, `args: ["ods", "output.ods"]`.
+   - **To ODS**: Use `mcp__qsv__qsv_command` with `command: "to"`, `args: ["ods", "output.ods"]`.
 
-   - **To SQLite**: Use `qsv_command` with `command: "to"`, `args: ["sqlite", "output.db"]`.
+   - **To SQLite**: Use `mcp__qsv__qsv_command` with `command: "to"`, `args: ["sqlite", "output.db"]`.
 
-   - **To PostgreSQL**: Use `qsv_command` with `command: "to"`, `args: ["postgres", "connection_string"]`.
+   - **To PostgreSQL**: Use `mcp__qsv__qsv_command` with `command: "to"`, `args: ["postgres", "connection_string"]`.
 
-   - **To Data Package**: Use `qsv_command` with `command: "to"`, `args: ["datapackage", "output.json"]`.
+   - **To Data Package**: Use `mcp__qsv__qsv_command` with `command: "to"`, `args: ["datapackage", "output.json"]`.
 
-4. **Verify output**: Run `qsv_count` on the output (if CSV-based) to confirm row count matches input.
+4. **Verify output**: Run `mcp__qsv__qsv_count` on the output (if CSV-based) to confirm row count matches input.
 
 ## Notes
 

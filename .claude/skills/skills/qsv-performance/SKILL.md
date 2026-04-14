@@ -53,7 +53,7 @@ description: Performance guide covering index files, stats cache, and frequency 
 **Rule**: Use Polars commands (sqlp, joinp, pivotp) for files > 100MB or complex queries.
 
 ### Parquet Acceleration
-For repeated SQL queries on large CSV (> 10MB), consider converting to Parquet with `qsv_to_parquet`. Parquet is a columnar format that speeds up repeated SQL queries in `sqlp`. Use `read_parquet('file.parquet')` as the table source. DuckDB is the preferred engine for Parquet queries; `sqlp` with `SKIP_INPUT` mode also works. Note: `sqlp` can query CSV of any size directly — Parquet is an optimization for repeated queries, not a requirement. Parquet works ONLY with `sqlp` and DuckDB — all other qsv commands require CSV/TSV/SSV input.
+For repeated SQL queries on large CSV (> 10MB), consider converting to Parquet with `mcp__qsv__qsv_to_parquet`. Parquet is a columnar format that speeds up repeated SQL queries in `sqlp`. Use `read_parquet('file.parquet')` as the table source. DuckDB is the preferred engine for Parquet queries; `sqlp` with `SKIP_INPUT` mode also works. Note: `sqlp` can query CSV of any size directly — Parquet is an optimization for repeated queries, not a requirement. Parquet works ONLY with `sqlp` and DuckDB — all other qsv commands require CSV/TSV/SSV input.
 
 ## Memory-Aware Command Selection
 

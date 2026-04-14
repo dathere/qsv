@@ -10,7 +10,7 @@ allowed-tools: [mcp__qsv__qsv_sniff, mcp__qsv__qsv_count, mcp__qsv__qsv_headers,
 
 Join two tabular data files on common columns.
 
-> **Cowork note:** If relative paths don't resolve, call `qsv_get_working_dir` and `qsv_set_working_dir` to sync the working directory.
+> **Cowork note:** If relative paths don't resolve, call `mcp__qsv__qsv_get_working_dir` and `mcp__qsv__qsv_set_working_dir` to sync the working directory.
 
 ## Strategy Selection
 
@@ -24,11 +24,11 @@ Join two tabular data files on common columns.
 
 ## Steps
 
-1. **Index both files**: Run `qsv_index` on both files for fast random access.
+1. **Index both files**: Run `mcp__qsv__qsv_index` on both files for fast random access.
 
-2. **Inspect both files**: Run `qsv_headers` on both files to identify column names. Determine which columns to join on.
+2. **Inspect both files**: Run `mcp__qsv__qsv_headers` on both files to identify column names. Determine which columns to join on.
 
-3. **Profile join columns**: Run `qsv_stats` with `cardinality: true, stats_jsonl: true` on both files. Check the cardinality of join columns to determine optimal table order.
+3. **Profile join columns**: Run `mcp__qsv__qsv_stats` with `cardinality: true, stats_jsonl: true` on both files. Check the cardinality of join columns to determine optimal table order.
 
 4. **Choose strategy**:
    - If cardinality of join column in file1 > file2, put file1 on the left
@@ -36,7 +36,7 @@ Join two tabular data files on common columns.
    - If join condition is complex (non-equi), use `sqlp`
    - If join involves date/time matching where exact dates won't align (e.g., quarterly to monthly, event dates to nearest reporting period), use `joinp --asof`
 
-5. **Execute join**: Use `qsv_joinp` for standard joins:
+5. **Execute join**: Use `mcp__qsv__qsv_joinp` for standard joins:
    ```
    joinp --left/--inner/--full/--cross
      columns1: "id"
@@ -45,14 +45,14 @@ Join two tabular data files on common columns.
      input2: "file2.csv"
    ```
 
-   Or use `qsv_sqlp` for complex joins:
+   Or use `mcp__qsv__qsv_sqlp` for complex joins:
    ```sql
    SELECT a.*, b.col1, b.col2
    FROM file1 a
    JOIN file2 b ON a.id = b.id AND a.date BETWEEN b.start_date AND b.end_date
    ```
 
-   For ASOF (nearest-match) joins, use `qsv_joinp` with `--asof`:
+   For ASOF (nearest-match) joins, use `mcp__qsv__qsv_joinp` with `--asof`:
    ```
    joinp
      columns1: "date"
@@ -69,9 +69,9 @@ Join two tabular data files on common columns.
    - Add `--left_by`/`--right_by` to restrict matching within subgroups (e.g., per jurisdiction)
    - Add `allow_exact_matches: true` to include equal keys (<=, >=); default is strict inequality (<, >)
 
-6. **Clean up result**: Use `qsv_select` to remove duplicate join columns or unnecessary columns from the result.
+6. **Clean up result**: Use `mcp__qsv__qsv_select` to remove duplicate join columns or unnecessary columns from the result.
 
-7. **Verify**: Run `qsv_count` on the result. Compare with input counts to validate join behavior:
+7. **Verify**: Run `mcp__qsv__qsv_count` on the result. Compare with input counts to validate join behavior:
    - Inner join: result <= min(left, right)
    - Left join: result >= left count
    - Full outer: result >= max(left, right)
@@ -87,7 +87,7 @@ Before executing a join, read `.stats.csv` for both files and validate:
 | Null density | `nullcount`, `sparsity` | sparsity > 0.3 on join column | Nulls don't match — expect unmatched rows; consider filtering nulls first |
 | Value overlap | `min`, `max` | Non-overlapping ranges across files | No rows will match — verify correct join column |
 | Skew detection | `mode`, `mode_count` | One value dominates (mode_count > 50% of rows) | Join will be heavily skewed many-to-one; verify this is expected |
-| Uniqueness | `uniqueness_ratio` | Both files have uniqueness_ratio < 1.0 on join column | Many-to-many join risk — expect row explosion; verify with `qsv_count` after |
+| Uniqueness | `uniqueness_ratio` | Both files have uniqueness_ratio < 1.0 on join column | Many-to-many join risk — expect row explosion; verify with `mcp__qsv__qsv_count` after |
 | Outlier keys | `outliers_percentage` | outliers_percentage > 5% on numeric join column | Outlier keys may not match across files; consider trimming first |
 
 ## Join Types

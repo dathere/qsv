@@ -52,7 +52,7 @@ Join two tabular data files on common columns.
    JOIN file2 b ON a.id = b.id AND a.date BETWEEN b.start_date AND b.end_date
    ```
 
-   For ASOF (nearest-match) joins, use `mcp__qsv__qsv_joinp` with `--asof`:
+   For ASOF (nearest-match) joins, use `mcp__qsv__qsv_joinp` with `asof: true`:
    ```
    joinp
      columns1: "date"
@@ -65,8 +65,8 @@ Join two tabular data files on common columns.
    ```
    - `strategy: "backward"` (default) — match to the last right row with key < left key
    - `strategy: "forward"` — match to the first right row with key > left key
-   - `strategy: "nearest"` — match to the numerically closest row (supports `--tolerance`)
-   - Add `--left_by`/`--right_by` to restrict matching within subgroups (e.g., per jurisdiction)
+   - `strategy: "nearest"` — match to the numerically closest row (supports `tolerance` parameter)
+   - Add `left_by`/`right_by` parameters to restrict matching within subgroups (e.g., per jurisdiction)
    - Add `allow_exact_matches: true` to include equal keys (<=, >=); default is strict inequality (<, >)
 
 6. **Clean up result**: Use `mcp__qsv__qsv_select` to remove duplicate join columns or unnecessary columns from the result.

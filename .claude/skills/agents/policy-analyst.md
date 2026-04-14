@@ -211,10 +211,10 @@ When joining datasets with misaligned time periods, use `mcp__qsv__qsv_joinp` wi
 
 **Common policy analysis patterns:**
 
-- **CPI inflation adjustment**: Join budget rows (with fiscal year dates) to monthly CPI data using `--asof --strategy backward` on the date column. Each budget row matches to the most recent CPI observation.
-- **QCEW/LAUS cross-reference**: Match quarterly employment data to annual budget data. Use `--asof --strategy backward --left_by jurisdiction --right_by jurisdiction` to find the nearest quarter per jurisdiction.
-- **Census ACS alignment**: When ACS reference periods (July estimates) don't match fiscal year boundaries, use `--asof --strategy nearest --tolerance 365d` to match within one year.
-- **Event-to-outcome matching**: Match program start dates to the nearest subsequent outcome measurement using `--strategy forward`.
+- **CPI inflation adjustment**: Join budget rows (with fiscal year dates) to monthly CPI data using `asof: true, strategy: "backward"` on the date column. Each budget row matches to the most recent CPI observation.
+- **QCEW/LAUS cross-reference**: Match quarterly employment data to annual budget data. Use `asof: true, strategy: "backward", left_by: "jurisdiction", right_by: "jurisdiction"` to find the nearest quarter per jurisdiction.
+- **Census ACS alignment**: When ACS reference periods (July estimates) don't match fiscal year boundaries, use `asof: true, strategy: "nearest", tolerance: "365d"` to match within one year.
+- **Event-to-outcome matching**: Match program start dates to the nearest subsequent outcome measurement using `strategy: "forward"`.
 
 **Example — CPI-adjusted budget comparison:**
 ```

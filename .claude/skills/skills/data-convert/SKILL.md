@@ -51,17 +51,17 @@ Convert tabular data files between formats.
 
    - **To Parquet (single file)**: Use `mcp__qsv__qsv_to_parquet` (core tool) — auto-generates stats cache and Polars schema for optimal type inference.
 
-   - **To Parquet (batch)**: Use `mcp__qsv__qsv_command` with `command: "to"`, `args: ["parquet", "output_dir"]` for batch conversion with explicit compression control.
+   - **To Parquet (batch)**: Use `mcp__qsv__qsv_command` with `command: "to"`, `subcommand: "parquet"`, `destination: "output_dir"` for batch conversion with explicit compression control.
 
-   - **To XLSX**: Use `mcp__qsv__qsv_command` with `command: "to"`, `args: ["xlsx", "output.xlsx"]`.
+   - **To XLSX**: Use `mcp__qsv__qsv_command` with `command: "to"`, `subcommand: "xlsx"`, `destination: "output.xlsx"`.
 
-   - **To ODS**: Use `mcp__qsv__qsv_command` with `command: "to"`, `args: ["ods", "output.ods"]`.
+   - **To ODS**: Use `mcp__qsv__qsv_command` with `command: "to"`, `subcommand: "ods"`, `destination: "output.ods"`.
 
-   - **To SQLite**: Use `mcp__qsv__qsv_command` with `command: "to"`, `args: ["sqlite", "output.db"]`.
+   - **To SQLite**: Use `mcp__qsv__qsv_command` with `command: "to"`, `subcommand: "sqlite"`, `destination: "output.db"`.
 
-   - **To PostgreSQL**: Use `mcp__qsv__qsv_command` with `command: "to"`, `args: ["postgres", "connection_string"]`.
+   - **To PostgreSQL**: Use `mcp__qsv__qsv_command` with `command: "to"`, `subcommand: "postgres"`, `destination: "connection_string"`.
 
-   - **To Data Package**: Use `mcp__qsv__qsv_command` with `command: "to"`, `args: ["datapackage", "output.json"]`.
+   - **To Data Package**: Use `mcp__qsv__qsv_command` with `command: "to"`, `subcommand: "datapackage"`, `destination: "output.json"`.
 
 4. **Verify output**: Run `mcp__qsv__qsv_count` on the output (if CSV-based) to confirm row count matches input.
 

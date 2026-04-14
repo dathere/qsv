@@ -30,7 +30,7 @@ a. **Index and profile**: Run `mcp__qsv__qsv_index`, then `mcp__qsv__qsv_stats` 
 
 b. **Completeness**: Read `.stats.csv` — check `nullcount` and `sparsity` for each column. Flag columns with sparsity > 0.5.
 
-c. **Uniqueness**: Compare `cardinality` to row count from `mcp__qsv__qsv_count`. Flag key columns (ID, email) where cardinality < row count. Run `mcp__qsv__qsv_command` with `command: "dedup"` and `args: ["--dupes-output", "dupes.csv"]` to find exact duplicates.
+c. **Uniqueness**: Compare `cardinality` to row count from `mcp__qsv__qsv_count`. Flag key columns (ID, email) where cardinality < row count. Run `mcp__qsv__qsv_command` with `command: "dedup"` and `options: {"dupes-output": "dupes.csv"}` to find exact duplicates.
 
 d. **Validity**: Check `type` column in stats — flag String columns that should be numeric. Run `mcp__qsv__qsv_command` with `command: "validate"` against a JSON Schema if available.
 
@@ -45,9 +45,9 @@ g. **Distribution sanity**: Read moarstats columns for deeper validation:
    - `jarque_bera_pvalue` — if < 0.05, data is NOT normally distributed; flag any analysis that assumes normality
    - `mode_count` — if mode accounts for > 50% of values, investigate whether this reflects a data entry default or missing value masking
 
-h. **Join integrity** (if multiple files): Run `mcp__qsv__qsv_joinp` with `--left-anti` to find orphaned foreign keys.
+h. **Join integrity** (if multiple files): Run `mcp__qsv__qsv_joinp` with `left_anti: true` to find orphaned foreign keys.
 
-i. **Injection screening**: Run `mcp__qsv__qsv_command` with `command: "searchset"` and `args: ["--flag", "injection_match", "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"]` to scan for malicious payloads.
+i. **Injection screening**: Run `mcp__qsv__qsv_command` with `command: "searchset"`, `regexset_file: "${CLAUDE_PLUGIN_ROOT}/resources/injection-regexes.txt"`, and `flag: "injection_match"` to scan for malicious payloads.
 
 ### 2. Review Methodology and Assumptions
 

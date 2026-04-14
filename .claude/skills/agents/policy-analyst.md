@@ -1,7 +1,7 @@
 ---
 name: policy-analyst
 description: Evidence-based policy analysis combining local data with government sources
-version: 19.0.0
+version: 19.1.1
 license: MIT
 allowed-tools:
   # Discovery

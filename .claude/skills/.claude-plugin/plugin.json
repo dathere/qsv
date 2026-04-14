@@ -1,10 +1,11 @@
 {
   "name": "qsv-data-wrangling",
-  "version": "19.1.0",
-  "description": "Blazingly fast tabular data wrangling with 51 qsv skill-based commands for CSV, TSV, Excel, JSONL, and Parquet files",
+  "version": "19.1.1",
+  "description": "Blazingly fast tabular data wrangling with 53 qsv skill-based commands for CSV, TSV, Excel, JSONL, and Parquet files",
   "author": {
     "name": "datHere, Inc.",
-    "url": "https://dathere.com"
+    "url": "https://dathere.com",
+    "email": "qsv@dathere.com"
   },
   "homepage": "https://github.com/dathere/qsv/tree/master/.claude/skills",
   "repository": "https://github.com/dathere/qsv",

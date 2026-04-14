@@ -113,7 +113,7 @@ blake3 file.csv > checksums.b3 (before transfer) -> blake3 --check checksums.b3 
 
 ## Tool Discovery
 
-Use **`mcp__qsv__qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 53+ qsv skill-based commands covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more.
+Use **`mcp__qsv__qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 53 qsv skill-based commands covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more.
 
 ## Operational Notes
 

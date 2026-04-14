@@ -16,11 +16,11 @@ Join two tabular data files on common columns.
 
 | Scenario | Best Tool | Why |
 |----------|-----------|-----|
-| Standard equi-join | `joinp` | Polars engine, fastest |
-| Non-equi join (>, <, BETWEEN) | `sqlp` | SQL supports complex conditions |
-| Cross join / cartesian | `sqlp` | `CROSS JOIN` syntax |
-| Memory-constrained | `join` | Streaming, lower memory |
-| Fuzzy/approximate match | `joinp --asof` | Nearest-match join |
+| Standard equi-join | `mcp__qsv__qsv_joinp` | Polars engine, fastest |
+| Non-equi join (>, <, BETWEEN) | `mcp__qsv__qsv_sqlp` | SQL supports complex conditions |
+| Cross join / cartesian | `mcp__qsv__qsv_sqlp` | `CROSS JOIN` syntax |
+| Memory-constrained | `mcp__qsv__qsv_command` with `command: "join"` | Streaming, lower memory |
+| Fuzzy/approximate match | `mcp__qsv__qsv_joinp` with `asof: true` | Nearest-match join |
 
 ## Steps
 

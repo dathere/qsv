@@ -174,7 +174,7 @@ This script will:
 | `QSV_MCP_MAX_OUTPUT_SIZE` | `52428800` | Maximum output size in bytes (50MB) |
 | `QSV_MCP_MAX_EXAMPLES` | `5` | Maximum examples in tool descriptions (0-20) |
 | `QSV_MCP_PLUGIN_MODE` | unset | Force plugin mode (for Gemini CLI etc.) |
-| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 51+ tools immediately (no deferred loading). `false`: use only 10 core tools (+1 app-only tool when Apps enabled; no deferred additions). Unset (default): use deferred loading (10 core tools + tools discovered via search) |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 53 tools immediately (no deferred loading). `false`: use only 10 core tools (+1 app-only tool when Apps enabled; no deferred additions). Unset (default): use deferred loading (10 core tools + tools discovered via search) |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 
@@ -261,7 +261,7 @@ The `qsv_search_tools` tool uses probabilistic BM25 relevance ranking:
 
 ### Manual Override
 Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override deferred loading:
-- `true`: Always expose all 51+ tools immediately (no deferred loading)
+- `true`: Always expose all 53 tools immediately (no deferred loading)
 - `false`: Always use 10 core tools only (+1 app-only tool when MCP Apps available; disables deferred loading)
 - Unset: Default behavior - 10 core tools (+1 app-only tool when MCP Apps available) with deferred loading (recommended)
 
@@ -392,7 +392,7 @@ Result: Parquet file created with optimized data types (data.parquet)
 ┌──────────────────▼──────────────────────────┐
 │          QSV MCP Server                     │
 │  • 10 Core Tools (always loaded)            │
-│  • 51+ tools via deferred loading          │
+│  • 53 tools via deferred loading            │
 │  • BM25-powered tool search                │
 │  • Enhanced descriptions & guidance        │
 │  • Local file access & validation          │

@@ -1,7 +1,7 @@
 ---
 name: data-wrangler
 description: Data transformation, cleaning, and format conversion agent
-version: 19.0.0
+version: 19.1.1
 license: MIT
 allowed-tools:
   # Discovery

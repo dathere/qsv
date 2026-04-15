@@ -1,12 +1,13 @@
 {
   "manifest_version": "0.3",
   "name": "qsv",
-  "version": "19.1.0",
+  "version": "19.1.1",
   "description": "Blazingly fast Data Wrangling Toolkit for Tabular Data",
   "long_description": "Comprehensive data-wrangling toolkit for transforming, analyzing, querying & validating tabular data. Process local CSV, TSV, SSV, Excel/ODS, Parquet and JSONL files w/o uploading. Despite the warning, only accesses APPROVED DIRECTORIES on your computer.",
   "author": {
     "name": "datHere, Inc.",
-    "url": "https://dathere.com"
+    "url": "https://dathere.com",
+    "email": "qsv@dathere.com"
   },
   "repository": {
     "type": "git",
@@ -254,12 +255,12 @@
   "_meta": {
     "com.dathere.qsv": {
       "features": [
-        "66 CSV data-wrangling commands",
+        "66 CLI commands (53 available as skills)",
         "Process local files (CSV, Parquet, Excel, JSONL) without uploading",
         "Smart caching with stats/frequency files",
         "Automatic Excel, Parquet and JSONL conversion"
       ],
-      "minimum_qsv_version": "19.0.0"
+      "minimum_qsv_version": "19.1.0"
     }
   }
 }

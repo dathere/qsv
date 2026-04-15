@@ -5,6 +5,21 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [19.1.1] - 2026-04-14
+
+### Changed
+- **Minimum qsv version raised to 19.1.0** across all enforcement points (config.ts, cowork-setup.cjs, manifest.json)
+- **Full MCP-qualified tool names** in skill/agent content for correct Cowork/plugin resolution (#3711)
+- **Compact allowed-tools lists** in SKILL.md files
+- **Command guidance migrated to YAML** file for easier maintenance (#3708)
+
+### Fixed
+- **Command count discrepancies** — reconciled stale counts (51, 70, "53+") to actual 53 skill-based commands across plugin.json, marketplace.json, cowork-CLAUDE.md, csv-wrangling, and manifest.json
+- **Agent version drift** — bumped agent frontmatter from 19.0.0 to 19.1.1
+- **Author field inconsistency** — harmonized plugin.json and marketplace.json to include both `url` and `email`
+- **Stale MINIMUM_QSV_VERSION comment** removed from config.ts
+- **Release prep skill** updated with missing checklist items (agent versions, config.ts minimum version, package-lock sync, command count verification)
+
 ## [19.1.0] - 2026-04-13
 
 ### Added

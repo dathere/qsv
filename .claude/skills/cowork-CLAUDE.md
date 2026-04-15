@@ -44,7 +44,7 @@ Check column cardinality with **`mcp__qsv__qsv_stats`** before running `frequenc
 
 ## Tool Discovery
 
-Use **`mcp__qsv__qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 51 qsv skill-based commands available covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more. Tool names may change across versions; check `mcp__qsv__qsv_search_tools` if any are unrecognized.
+Use **`mcp__qsv__qsv_search_tools`** to discover commands beyond the initially loaded core tools. There are 53 qsv skill-based commands available covering selection, filtering, transformation, aggregation, joining, validation, formatting, conversion, and more. Tool names may change across versions; check `mcp__qsv__qsv_search_tools` if any are unrecognized.
 
 ## Operation Timeout
 

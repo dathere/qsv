@@ -1,6 +1,6 @@
 # QSV MCP Server
 
-Model Context Protocol (MCP) server that exposes qsv's tabular data-wrangling commands to Claude Desktop. The server works with **qsvmcp** (preferred) or the full **qsv** binary, exposing 51 skill-based commands optimized for AI agent workflows.
+Model Context Protocol (MCP) server that exposes qsv's tabular data-wrangling commands to Claude Desktop. The server works with **qsvmcp** (preferred) or the full **qsv** binary, exposing 53 skill-based commands optimized for AI agent workflows.
 
 ## Overview
 
@@ -174,7 +174,7 @@ This script will:
 | `QSV_MCP_MAX_OUTPUT_SIZE` | `52428800` | Maximum output size in bytes (50MB) |
 | `QSV_MCP_MAX_EXAMPLES` | `5` | Maximum examples in tool descriptions (0-20) |
 | `QSV_MCP_PLUGIN_MODE` | unset | Force plugin mode (for Gemini CLI etc.) |
-| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 51+ tools immediately (no deferred loading). `false`: use only 10 core tools (+1 app-only tool when Apps enabled; no deferred additions). Unset (default): use deferred loading (10 core tools + tools discovered via search) |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 53 tools immediately (no deferred loading). `false`: use only 10 core tools (+1 app-only tool when Apps enabled; no deferred additions). Unset (default): use deferred loading (10 core tools + tools discovered via search) |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 
@@ -223,7 +223,7 @@ Tools for frequently used commands, loaded when discovered via search:
 
 ### Generic Command Tool
 
-`qsv_command` - Execute any qsv command with a skill definition (51 commands):
+`qsv_command` - Execute any qsv command with a skill definition (53 commands):
 - `to`, `tojsonl`, `partition`, `pseudo`, `reverse`, `sniff`, `sort`, `dedup`, `join`, `rename`, `validate`, `sample`, `template`, `diff`, `schema`, etc.
 - Full list: https://github.com/dathere/qsv#commands
 
@@ -261,7 +261,7 @@ The `qsv_search_tools` tool uses probabilistic BM25 relevance ranking:
 
 ### Manual Override
 Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override deferred loading:
-- `true`: Always expose all 51+ tools immediately (no deferred loading)
+- `true`: Always expose all 53 tools immediately (no deferred loading)
 - `false`: Always use 10 core tools only (+1 app-only tool when MCP Apps available; disables deferred loading)
 - Unset: Default behavior - 10 core tools (+1 app-only tool when MCP Apps available) with deferred loading (recommended)
 
@@ -392,7 +392,7 @@ Result: Parquet file created with optimized data types (data.parquet)
 ┌──────────────────▼──────────────────────────┐
 │          QSV MCP Server                     │
 │  • 10 Core Tools (always loaded)            │
-│  • 51+ tools via deferred loading          │
+│  • 53 tools via deferred loading            │
 │  • BM25-powered tool search                │
 │  • Enhanced descriptions & guidance        │
 │  • Local file access & validation          │
@@ -489,7 +489,7 @@ npm run mcp:start
 The server should start and log:
 ```
 Loading QSV skills...
-Loaded 51 skills
+Loaded 53 skills
 QSV MCP Server initialized successfully
 QSV MCP Server running on stdio
 ```
@@ -563,7 +563,7 @@ npm test
 
 ## Performance
 
-- **Server Startup**: < 100ms (51 skills loaded)
+- **Server Startup**: < 100ms (53 skills loaded)
 - **Tool Execution**: < 10ms overhead + qsv processing time
 - **File Processing**: Depends on qsv performance (generally very fast)
 - **Streaming**: Large files processed efficiently by qsv
@@ -606,8 +606,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-04-13
-**Version**: 19.1.0
-**Tools**: 10 core tools initially (+1 app-only), 51+ when discovered via search
-**Skills**: 51 qsv commands
+**Updated**: 2026-04-14
+**Version**: 19.1.1
+**Tools**: 10 core tools initially (+1 app-only), 53 when discovered via search
+**Skills**: 53 qsv commands
 **Status**: Production Ready

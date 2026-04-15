@@ -170,7 +170,6 @@ function getOptionalBooleanEnv(envVar: string): boolean | undefined {
 
 /**
  * Minimum required qsv version
- * Set to 17.0.0 to minimize support issues and encourage users to update
  */
 export const MINIMUM_QSV_VERSION = "19.1.0";
 

@@ -4,69 +4,215 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version override — leave empty to derive from tag (e.g. 19.1.0)"
+        required: false
+        default: ""
 
 env:
   QSV_KIND: prebuilt
+  RELEASES_REPO: dathere/qsv-deb-releases
 
-jobs:                
+concurrency:
+  group: publish-debian
+  cancel-in-progress: false
+
+jobs:
   build-and-publish:
+    name: Build .deb packages and publish to apt repo
     runs-on: ubuntu-22.04
+
     steps:
-      - name: Checkout repository
+      - name: Checkout qsv repository
         uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
+      - name: Resolve version string
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ -n "${INPUT_VERSION}" ]]; then
+            VERSION="${INPUT_VERSION}"
+          elif [[ -n "${TAG_NAME}" ]]; then
+            VERSION="${TAG_NAME}"
+          else
+            VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '0.0.0')"
+          fi
+
+          # Strip leading 'v' so both "v19.1.0" and "19.1.0" work
+          VERSION="${VERSION#v}"
+
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: ${VERSION}"
+
+      - name: Install Rust toolchain (stable, x86_64-unknown-linux-gnu)
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           target: x86_64-unknown-linux-gnu
 
-      - name: Install dependencies
+      - name: Cache Cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwayland-dev
-          cargo install cargo-deb
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwayland-dev \
+            dpkg-dev \
+            gpg \
+            gpg-agent
+          cargo install cargo-deb --locked
 
       - name: Build all Debian packages
         id: build
         run: |
           chmod +x scripts/build-deb.sh
-          echo "Running build-deb.sh..."
-          build_output=$(./scripts/build-deb.sh)
-          echo "Build script output:"
-          echo "$build_output"
-          
-          # Extract paths from the output
-          deb_paths=$(echo "$build_output" | grep -oP '/[^ ]*\.deb' | tr '\n' ' ')
-          
-          echo "Extracted .deb paths:"
-          echo "$deb_paths"
-          
-          echo "DEB_PATHS=$deb_paths" >> $GITHUB_OUTPUT
+          echo "▶ Running build-deb.sh …"
+          build_output=$(./scripts/build-deb.sh 2>&1)
+          echo "${build_output}"
 
-      - name: List built packages
-        run: |
-          echo "Built packages:"
-          ls -l ${{ steps.build.outputs.DEB_PATHS }}
+          # Extract absolute paths to produced .deb files
+          deb_paths=$(echo "${build_output}" | grep -oP '/[^ ]+\.deb' | tr '\n' ' ')
 
-      - name: Rename and move Debian packages
+          if [[ -z "${deb_paths}" ]]; then
+            echo "::error::No .deb paths found in build output — build may have failed."
+            exit 1
+          fi
+
+          echo "DEB_PATHS=${deb_paths}" >> "$GITHUB_OUTPUT"
+          echo "Found packages: ${deb_paths}"
+
+      - name: Rename packages to canonical names
+        env:
+          DEB_PATHS: ${{ steps.build.outputs.DEB_PATHS }}
         run: |
           mkdir -p renamed_debs
-          mv $(echo "${{ steps.build.outputs.DEB_PATHS }}" | awk '{print $1}') renamed_debs/qsv.deb
-          mv $(echo "${{ steps.build.outputs.DEB_PATHS }}" | awk '{print $2}') renamed_debs/qsvlite.deb
-          mv $(echo "${{ steps.build.outputs.DEB_PATHS }}" | awk '{print $3}') renamed_debs/qsvdp.deb
+          read -ra PATHS <<< "${DEB_PATHS}"
+
+          # Guard: we expect exactly 3 packages
+          if [[ ${#PATHS[@]} -lt 3 ]]; then
+            echo "::error::Expected 3 .deb paths, got ${#PATHS[@]}: ${PATHS[*]}"
+            exit 1
+          fi
+
+          cp "${PATHS[0]}" renamed_debs/qsv.deb
+          cp "${PATHS[1]}" renamed_debs/qsvlite.deb
+          cp "${PATHS[2]}" renamed_debs/qsvdp.deb
+
           echo "Renamed packages:"
-          ls -l renamed_debs
+          ls -lh renamed_debs/
 
-      - name: Upload Debian Packages as Artifacts
+      - name: Upload .deb packages as workflow artifact
         uses: actions/upload-artifact@v7
         with:
-          name: debian-packages
+          name: debian-packages-${{ steps.version.outputs.VERSION }}
           path: renamed_debs/*.deb
+          retention-days: 30
 
-      - name: Upload Debian Packages as Artifacts
-        uses: actions/upload-artifact@v7
+      - name: Import GPG signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_SIGNING_EMAIL: ${{ secrets.GPG_SIGNING_EMAIL }}
+        run: |
+          # Import the key non-interactively
+          echo "${GPG_PRIVATE_KEY}" | \
+            gpg --batch --yes --import
+
+          # Pre-cache the passphrase in the agent so update_release.sh
+          # doesn't get an interactive prompt
+          echo "${GPG_PASSPHRASE}" | \
+            gpg --batch --yes \
+                --pinentry-mode loopback \
+                --passphrase-fd 0 \
+                --clearsign /dev/null > /dev/null 2>&1 || true
+
+          # Confirm key is available
+          gpg --list-secret-keys "${GPG_SIGNING_EMAIL}"
+
+      - name: Checkout qsv-deb-releases
+        uses: actions/checkout@v6
         with:
-          name: debian-packages
-          path: |
-            /home/runner/work/qsv/qsv/target/debian/*.deb
+          repository: ${{ env.RELEASES_REPO }}
+          token: ${{ secrets.RELEASES_REPO_TOKEN }}
+          path: qsv-deb-releases
+
+      - name: Create release branch, update PPA, commit and push
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          SIGNING_EMAIL: ${{ secrets.GPG_SIGNING_EMAIL }}
+          GIT_AUTHOR_NAME: qsv-release-bot
+          GIT_AUTHOR_EMAIL: ${{ secrets.GPG_SIGNING_EMAIL }}
+          GIT_COMMITTER_NAME: qsv-release-bot
+          GIT_COMMITTER_EMAIL: ${{ secrets.GPG_SIGNING_EMAIL }}
+        run: |
+          set -euo pipefail
+          cd qsv-deb-releases
+
+          # Create and switch to a new version branch
+          git checkout -b "${VERSION}"
+
+          # Copy the freshly built packages in
+          cp ../renamed_debs/*.deb .
+
+          # Run the PPA update script.
+          # We pipe the passphrase via stdin in case the script passes it
+          # through to gpg with --passphrase-fd 0; if it uses the agent
+          # (already primed above) the pipe is harmlessly ignored.
+          echo "${GPG_PASSPHRASE}" | \
+            GPG_TTY=/dev/null \
+            bash scripts/update_release.sh "${SIGNING_EMAIL}"
+
+          # Stage all changes (new .debs + regenerated metadata)
+          git add -A
+
+          # Verify something actually changed before committing
+          if git diff --cached --quiet; then
+            echo "::warning::No changes detected after update_release.sh — skipping commit."
+            exit 0
+          fi
+
+          git commit -m "QSV Release ${VERSION}"
+          git push origin "${VERSION}"
+
+          echo "Branch '${VERSION}' pushed to ${RELEASES_REPO}"
+
+      - name: Open Pull Request into main
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          # gh CLI needs to know the target repo
+          gh pr create \
+            --repo "${RELEASES_REPO}" \
+            --base main \
+            --head "${VERSION}" \
+            --title "QSV Release ${VERSION}" \
+            --body "## Automated Debian package release
+
+          **Version:** \`${VERSION}\`
+          **Triggered by:** ${ACTOR}
+          **Source release:** ${RELEASE_URL:-_workflow_dispatch_}
+
+          Packages updated:
+          - \`qsv.deb\`
+          - \`qsvlite.deb\`
+          - \`qsvdp.deb\`
+
+          Apt metadata (\`Packages\`, \`Packages.gz\`, \`Release\`, \`Release.gpg\`, \`InRelease\`) regenerated and GPG-signed by CI.
+
+          Merge when ready to make the packages available to apt users." \
+          || echo "::warning::PR creation failed (may already exist). Check ${RELEASES_REPO} manually."

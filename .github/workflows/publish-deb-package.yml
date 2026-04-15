@@ -29,11 +29,14 @@ jobs:
 
       - name: Resolve version string
         id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          if [[ -n "${{ github.event.inputs.version }}" ]]; then
-            VERSION="${{ github.event.inputs.version }}"
-          elif [[ -n "${{ github.event.release.tag_name }}" ]]; then
-            VERSION="${{ github.event.release.tag_name }}"
+          if [[ -n "${INPUT_VERSION}" ]]; then
+            VERSION="${INPUT_VERSION}"
+          elif [[ -n "${TAG_NAME}" ]]; then
+            VERSION="${TAG_NAME}"
           else
             VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '0.0.0')"
           fi
@@ -90,9 +93,11 @@ jobs:
           echo "Found packages: ${deb_paths}"
 
       - name: Rename packages to canonical names
+        env:
+          DEB_PATHS: ${{ steps.build.outputs.DEB_PATHS }}
         run: |
           mkdir -p renamed_debs
-          read -ra PATHS <<< "${{ steps.build.outputs.DEB_PATHS }}"
+          read -ra PATHS <<< "${DEB_PATHS}"
 
           # Guard: we expect exactly 3 packages
           if [[ ${#PATHS[@]} -lt 3 ]]; then
@@ -118,6 +123,7 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_SIGNING_EMAIL: ${{ secrets.GPG_SIGNING_EMAIL }}
         run: |
           # Import the key non-interactively
           echo "${GPG_PRIVATE_KEY}" | \
@@ -132,7 +138,7 @@ jobs:
                 --clearsign /dev/null > /dev/null 2>&1 || true
 
           # Confirm key is available
-          gpg --list-secret-keys "${{ secrets.GPG_SIGNING_EMAIL }}"
+          gpg --list-secret-keys "${GPG_SIGNING_EMAIL}"
 
       - name: Checkout qsv-deb-releases
         uses: actions/checkout@v4
@@ -187,6 +193,7 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
           VERSION: ${{ steps.version.outputs.VERSION }}
           RELEASE_URL: ${{ github.event.release.html_url }}
+          ACTOR: ${{ github.actor }}
         run: |
           # gh CLI needs to know the target repo
           gh pr create \
@@ -197,7 +204,7 @@ jobs:
             --body "## Automated Debian package release
 
           **Version:** \`${VERSION}\`
-          **Triggered by:** ${{ github.actor }}
+          **Triggered by:** ${ACTOR}
           **Source release:** ${RELEASE_URL:-_workflow_dispatch_}
 
           Packages updated:
@@ -208,4 +215,4 @@ jobs:
           Apt metadata (\`Packages\`, \`Packages.gz\`, \`Release\`, \`Release.gpg\`, \`InRelease\`) regenerated and GPG-signed by CI.
 
           Merge when ready to make the packages available to apt users." \
-          || echo "::warning::PR creation failed. Check ${RELEASES_REPO} manually."
+          || echo "::warning::PR creation failed (may already exist). Check ${RELEASES_REPO} manually."

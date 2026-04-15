@@ -256,9 +256,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let input: Val = serde_json::from_value(value.clone())
             .map_err(|e| CliError::Other(format!("Failed to convert JSON to jaq value: {e}")))?;
 
-        // Run the filter
+        // Run the filter and convert jaq output back to serde_json::Value
         let ctx = Ctx::<data::JustLut<Val>>::new(&jaq_filter.lut, Vars::new([]));
-        let out: Vec<Val> = jaq_filter
+        let jaq_values: Vec<serde_json::Value> = jaq_filter
             .id
             .run((ctx, input))
             .map(unwrap_valr)
@@ -269,11 +269,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     None
                 },
             })
-            .collect();
-
-        // Convert jaq output back to serde_json::Value
-        let jaq_values: Vec<serde_json::Value> = out
-            .into_iter()
             .filter_map(|v| match val_to_json_value(v) {
                 Ok(val) => Some(val),
                 Err(e) => {

@@ -260,7 +260,7 @@
         "Smart caching with stats/frequency files",
         "Automatic Excel, Parquet and JSONL conversion"
       ],
-      "minimum_qsv_version": "19.0.0"
+      "minimum_qsv_version": "19.1.0"
     }
   }
 }

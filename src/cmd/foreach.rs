@@ -1,5 +1,5 @@
 static USAGE: &str = r#"
-Execute a shell command once per line in given CSV file.
+Execute a shell command once per record in a given CSV file.
 
 NOTE: Windows users are recommended to use Git Bash as their terminal when
 running this command. Download it from https://git-scm.com/downloads. When installing,
@@ -9,7 +9,7 @@ necessary Unix tools are available in the terminal.
 WARNING: This command can be dangerous. Be careful when using it with
 untrusted input.
 
-Or per @thadguidry:
+Or per @thadguidry: 😉
 Please ensure when using foreach to use trusted arguments, variables, scripts, etc.
 If you don't do due diligence and blindly use untrusted parts... foreach can indeed
 become a footgun and possibly fry your computer, eat your lunch, and expose an entire
@@ -107,7 +107,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.arg_column);
 
     let mut rdr = rconfig.reader()?;

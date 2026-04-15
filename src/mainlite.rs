@@ -2,7 +2,7 @@ use std::{env, io, time::Instant};
 
 extern crate qsv_docopt as docopt;
 use docopt::Docopt;
-use rand::Rng;
+use rand::RngExt;
 use serde::Deserialize;
 
 use crate::{
@@ -10,13 +10,16 @@ use crate::{
     config::SPONSOR_MESSAGE,
 };
 
-#[cfg(feature = "mimalloc")]
+#[cfg(all(feature = "mimalloc", feature = "jemallocator"))]
+compile_error!("Features `mimalloc` and `jemallocator` are mutually exclusive. Enable only one.");
+
+#[cfg(all(feature = "mimalloc", not(feature = "jemallocator")))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-#[cfg(feature = "jemallocator")]
+#[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
 #[global_allocator]
-static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 static COMMAND_LIST: &str = r#"
     behead      Drop header from CSV file
@@ -24,7 +27,7 @@ static COMMAND_LIST: &str = r#"
     count       Count records
     datefmt     Format date/datetime columns
     dedup       Remove redundant rows
-    describegpt Infer extended metadata using a LLM
+    describegpt Infer extended metadata or chat with your data using a LLM
     diff        Find the difference between two CSVs
     edit        Replace a cell's value specified by row and column
     enum        Add a new column enumerating CSV lines
@@ -45,7 +48,9 @@ static COMMAND_LIST: &str = r#"
     join        Join CSV files
     json        Convert JSON to CSV
     jsonl       Convert newline-delimited JSON files to CSV
+    moarstats   Add "moar" statistics to existing stats CSV
     partition   Partition CSV data based on a column value
+    pragmastat  Pragmatic statistical toolkit
     pro         Interact with the qsv pro API
     pseudo      Pseudonymise the values of a column
     rename      Rename the columns of CSV data efficiently
@@ -149,7 +154,7 @@ fn main() -> QsvExitCode {
         None => {
             werr!(
                 "qsvlite is a suite of CSV command line utilities.\n\nPlease choose one of the \
-                 following 49 commands:\n{COMMAND_LIST}\n\n{SPONSOR_MESSAGE}",
+                 following 51 commands:\n{COMMAND_LIST}\n\n{SPONSOR_MESSAGE}",
             );
 
             // if no command is specified, auto-check for updates 50% of the time
@@ -253,6 +258,7 @@ enum Command {
     Json,
     Jsonl,
     Partition,
+    Pragmastat,
     Pro,
     Pseudo,
     Rename,
@@ -271,6 +277,7 @@ enum Command {
     SortCheck,
     Split,
     Stats,
+    Moarstats,
     Table,
     Tojsonl,
     Transpose,
@@ -323,6 +330,7 @@ impl Command {
             Command::Json => cmd::json::run(argv),
             Command::Jsonl => cmd::jsonl::run(argv),
             Command::Partition => cmd::partition::run(argv),
+            Command::Pragmastat => cmd::pragmastat::run(argv),
             Command::Pro => cmd::pro::run(argv),
             Command::Pseudo => cmd::pseudo::run(argv),
             Command::Rename => cmd::rename::run(argv),
@@ -341,6 +349,7 @@ impl Command {
             Command::SortCheck => cmd::sortcheck::run(argv),
             Command::Split => cmd::split::run(argv),
             Command::Stats => cmd::stats::run(argv),
+            Command::Moarstats => cmd::moarstats::run(argv),
             Command::Table => cmd::table::run(argv),
             Command::Tojsonl => cmd::tojsonl::run(argv),
             Command::Transpose => cmd::transpose::run(argv),

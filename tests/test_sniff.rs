@@ -25,22 +25,44 @@ fn sniff() {
 
     let got: String = wrk.stdout(&mut cmd);
 
+    // magika detects CSV with label: csv, file-format also returns label: csv
+    // Both correctly detect MIME type as application/csv
+    // magika also provides inference score (varies slightly), file-format does not
+    #[cfg(feature = "magika")]
+    {
+        assert!(got.contains("Detected Mime Type: application/csv"));
+        assert!(got.contains("Detected Label: csv"));
+        assert!(got.contains("Inference Score: 0.99"));
+    }
+
+    #[cfg(not(feature = "magika"))]
+    {
+        assert!(got.contains("Detected Mime Type: application/csv"));
+        assert!(got.contains("Detected Label: csv"));
+    }
+
     let expected_end = dos2unix(
         r#"Retrieved Size (bytes): 27
 File Size (bytes): 27
 Sampled Records: 2
 Estimated: false
 Num Records: 2
-Avg Record Len (bytes): 6
+Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: false
 Fields:
-    0:  Text      h1
-    1:  Unsigned  h2
-    2:  Text      h3"#,
+    1:  Text      h1
+    2:  Unsigned  h2
+    3:  Text      h3"#,
     );
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
+
+    // Explicit field assertions
+    assert!(got.contains("Num Fields: 3"));
+    assert!(got.contains("Text      h1"));
+    assert!(got.contains("Unsigned  h2"));
+    assert!(got.contains("Text      h3"));
 }
 
 #[test]
@@ -53,22 +75,41 @@ fn sniff_stats_types() {
 
     let got: String = wrk.stdout(&mut cmd);
 
+    #[cfg(feature = "magika")]
+    {
+        assert!(got.contains("Detected Mime Type: application/csv"));
+        assert!(got.contains("Detected Label: csv"));
+        assert!(got.contains("Inference Score: 0.99"));
+    }
+
+    #[cfg(not(feature = "magika"))]
+    {
+        assert!(got.contains("Detected Mime Type: application/csv"));
+        assert!(got.contains("Detected Label: csv"));
+    }
+
     let expected_end = dos2unix(
         r#"Retrieved Size (bytes): 27
 File Size (bytes): 27
 Sampled Records: 2
 Estimated: false
 Num Records: 2
-Avg Record Len (bytes): 6
+Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: true
 Fields:
-    0:  String   h1
-    1:  Integer  h2
-    2:  String   h3"#,
+    1:  String   h1
+    2:  Integer  h2
+    3:  String   h3"#,
     );
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
+
+    // Explicit field assertions (with stats types: String/Integer instead of Text/Unsigned)
+    assert!(got.contains("Num Fields: 3"));
+    assert!(got.contains("String   h1"));
+    assert!(got.contains("Integer  h2"));
+    assert!(got.contains("String   h3"));
 }
 
 #[test]
@@ -143,41 +184,49 @@ fn sniff_url_snappy() {
     let expected_end = r#"Sampled Records: 100
 Estimated: false
 Num Records: 100
-Avg Record Len (bytes): 444
+Avg Record Len (bytes): 472
 Num Fields: 29
 Stats Types: false
 Fields:
-    0:   Unsigned  case_enquiry_id
-    1:   DateTime  open_dt
-    2:   DateTime  target_dt
-    3:   DateTime  closed_dt
-    4:   Text      ontime
-    5:   Text      case_status
-    6:   Text      closure_reason
-    7:   Text      case_title
-    8:   Text      subject
-    9:   Text      reason
-    10:  Text      type
-    11:  Text      queue
-    12:  Text      department
-    13:  Text      submittedphoto
-    14:  NULL      closedphoto
-    15:  Text      location
-    16:  Unsigned  fire_district
-    17:  Text      pwd_district
-    18:  Unsigned  city_council_district
-    19:  Text      police_district
-    20:  Text      neighborhood
-    21:  Unsigned  neighborhood_services_district
-    22:  Text      ward
-    23:  Unsigned  precinct
-    24:  Text      location_street_name
-    25:  Unsigned  location_zipcode
-    26:  Float     latitude
-    27:  Float     longitude
-    28:  Text      source"#;
+    1:   Unsigned  case_enquiry_id
+    2:   DateTime  open_dt
+    3:   DateTime  target_dt
+    4:   DateTime  closed_dt
+    5:   Text      ontime
+    6:   Text      case_status
+    7:   Text      closure_reason
+    8:   Text      case_title
+    9:   Text      subject
+    10:  Text      reason
+    11:  Text      type
+    12:  Text      queue
+    13:  Text      department
+    14:  Text      submittedphoto
+    15:  NULL      closedphoto
+    16:  Text      location
+    17:  Unsigned  fire_district
+    18:  Text      pwd_district
+    19:  Unsigned  city_council_district
+    20:  Text      police_district
+    21:  Text      neighborhood
+    22:  Unsigned  neighborhood_services_district
+    23:  Text      ward
+    24:  Unsigned  precinct
+    25:  Text      location_street_name
+    26:  Unsigned  location_zipcode
+    27:  Float     latitude
+    28:  Float     longitude
+    29:  Text      source"#;
 
     assert!(got.ends_with(expected_end));
+
+    // Explicit field assertions for boston311 dataset
+    assert!(got.contains("Num Fields: 29"));
+    assert!(got.contains("Unsigned  case_enquiry_id"));
+    assert!(got.contains("DateTime  open_dt"));
+    assert!(got.contains("NULL      closedphoto"));
+    assert!(got.contains("Float     latitude"));
+    assert!(got.contains("Text      source"));
 }
 
 #[test]
@@ -190,6 +239,13 @@ fn sniff_url_snappy_noinfer() {
 
     let got: String = wrk.stdout(&mut cmd);
 
+    // magika detects the decompressed content type as text/csv
+    // file-format falls back to text/plain for CSV files
+    #[cfg(feature = "magika")]
+    let expected = "Detected mime type: text/csv";
+
+    // file-format detects the snappy container for URL downloads
+    #[cfg(not(feature = "magika"))]
     let expected = "Detected mime type: application/x-snappy-framed";
 
     assert!(got.starts_with(expected));
@@ -209,41 +265,49 @@ fn sniff_file_snappy() {
     let expected_end = r#"Sampled Records: 100
 Estimated: false
 Num Records: 100
-Avg Record Len (bytes): 444
+Avg Record Len (bytes): 472
 Num Fields: 29
 Stats Types: false
 Fields:
-    0:   Unsigned  case_enquiry_id
-    1:   DateTime  open_dt
-    2:   DateTime  target_dt
-    3:   DateTime  closed_dt
-    4:   Text      ontime
-    5:   Text      case_status
-    6:   Text      closure_reason
-    7:   Text      case_title
-    8:   Text      subject
-    9:   Text      reason
-    10:  Text      type
-    11:  Text      queue
-    12:  Text      department
-    13:  Text      submittedphoto
-    14:  NULL      closedphoto
-    15:  Text      location
-    16:  Unsigned  fire_district
-    17:  Text      pwd_district
-    18:  Unsigned  city_council_district
-    19:  Text      police_district
-    20:  Text      neighborhood
-    21:  Unsigned  neighborhood_services_district
-    22:  Text      ward
-    23:  Unsigned  precinct
-    24:  Text      location_street_name
-    25:  Unsigned  location_zipcode
-    26:  Float     latitude
-    27:  Float     longitude
-    28:  Text      source"#;
+    1:   Unsigned  case_enquiry_id
+    2:   DateTime  open_dt
+    3:   DateTime  target_dt
+    4:   DateTime  closed_dt
+    5:   Text      ontime
+    6:   Text      case_status
+    7:   Text      closure_reason
+    8:   Text      case_title
+    9:   Text      subject
+    10:  Text      reason
+    11:  Text      type
+    12:  Text      queue
+    13:  Text      department
+    14:  Text      submittedphoto
+    15:  NULL      closedphoto
+    16:  Text      location
+    17:  Unsigned  fire_district
+    18:  Text      pwd_district
+    19:  Unsigned  city_council_district
+    20:  Text      police_district
+    21:  Text      neighborhood
+    22:  Unsigned  neighborhood_services_district
+    23:  Text      ward
+    24:  Unsigned  precinct
+    25:  Text      location_street_name
+    26:  Unsigned  location_zipcode
+    27:  Float     latitude
+    28:  Float     longitude
+    29:  Text      source"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
+
+    // Explicit field assertions for boston311 dataset
+    assert!(got.contains("Num Fields: 29"));
+    assert!(got.contains("Unsigned  case_enquiry_id"));
+    assert!(got.contains("DateTime  open_dt"));
+    assert!(got.contains("NULL      closedphoto"));
+    assert!(got.contains("Float     latitude"));
+    assert!(got.contains("Text      source"));
 }
 
 #[test]
@@ -256,28 +320,42 @@ fn sniff_tab() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = r#"Delimiter: tab
-Header Row: true
-Preamble Rows: 0
-Quote Char: none
-Flexible: false
-Is UTF8: true
-Detected Mime Type: text/plain
-Detected Kind: Other
-Retrieved Size (bytes): 27
+    // magika correctly detects tab-separated files as text/tsv
+    // file-format falls back to text/plain
+    // magika also provides inference score (varies slightly)
+    #[cfg(feature = "magika")]
+    {
+        assert!(got.contains("Detected Mime Type: text/tsv"));
+        assert!(got.contains("Detected Label: tsv"));
+        assert!(got.contains("Inference Score: 0.99"));
+    }
+
+    #[cfg(not(feature = "magika"))]
+    {
+        assert!(got.contains("Detected Mime Type: text/plain"));
+        assert!(got.contains("Detected Label: tsv"));
+    }
+
+    let expected_end = r#"Retrieved Size (bytes): 27
 File Size (bytes): 27
 Sampled Records: 2
 Estimated: false
 Num Records: 2
-Avg Record Len (bytes): 6
+Avg Record Len (bytes): 9
 Num Fields: 3
 Stats Types: false
 Fields:
-    0:  Text      h1
-    1:  Unsigned  h2
-    2:  Text      h3"#;
+    1:  Text      h1
+    2:  Unsigned  h2
+    3:  Text      h3"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end));
+
+    // Explicit field assertions
+    assert!(got.contains("Num Fields: 3"));
+    assert!(got.contains("Text      h1"));
+    assert!(got.contains("Unsigned  h2"));
+    assert!(got.contains("Text      h3"));
 }
 
 #[test]
@@ -328,9 +406,16 @@ fn sniff_json() {
     cmd.arg("--json").arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected_end: &str = r#"ampled_records":3,"estimated":false,"num_records":3,"avg_record_len":10,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
+
+    // The JSON test doesn't check mime/kind so it should work for both
+    let expected_end: &str = r#"sampled_records":3,"estimated":false,"num_records":3,"avg_record_len":16,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
 
     assert!(got.ends_with(expected_end));
+
+    // Explicit field assertions for JSON output
+    assert!(got.contains(r#""num_fields":4"#));
+    assert!(got.contains(r#""fields":["h1","h2","h3","h4"]"#));
+    assert!(got.contains(r#""types":["Text","Unsigned","Text","Float"]"#));
 }
 
 #[test]
@@ -343,9 +428,17 @@ fn sniff_flexible_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = r#"sampled_records":5,"estimated":false,"num_records":5,"avg_record_len":8,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
+    assert!(got.contains(r#""detected_label":"csv""#));
+    assert!(got.contains(r#""inference_score":1.0"#));
+
+    let expected_end = r#","sampled_records":5,"estimated":false,"num_records":5,"avg_record_len":15,"num_fields":4,"stats_types":false,"fields":["h1","h2","h3","h4"],"types":["Text","Unsigned","Text","Float"]}"#;
 
     assert!(got.ends_with(expected_end));
+
+    // Explicit field assertions for JSON output
+    assert!(got.contains(r#""num_fields":4"#));
+    assert!(got.contains(r#""fields":["h1","h2","h3","h4"]"#));
+    assert!(got.contains(r#""types":["Text","Unsigned","Text","Float"]"#));
 }
 
 #[test]
@@ -358,29 +451,44 @@ fn sniff_pretty_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = dos2unix(
-        r#"sampled_records": 3,
-  "estimated": false,
-  "num_records": 3,
-  "avg_record_len": 10,
-  "num_fields": 4,
-  "stats_types": false,
-  "fields": [
+    // Check for inference_score field in pretty JSON
+    // magika provides ML confidence scores (~0.99), file-format uses 1.0 for rule-based matches
+    #[cfg(feature = "magika")]
+    {
+        assert!(got.contains(r#""detected_label": "csv""#));
+        assert!(got.contains(r#""inference_score": 0.99"#));
+    }
+
+    #[cfg(not(feature = "magika"))]
+    {
+        assert!(got.contains(r#""detected_label": "csv""#));
+        assert!(got.contains(r#""inference_score": 1.0"#));
+    }
+
+    let expected_end = r#""fields": [
     "h1",
     "h2",
     "h3",
     "h4"
-  ],
-  "types": [
+  ],"types": [
     "Text",
     "Unsigned",
     "Text",
     "Float"
   ]
-}"#,
-    );
+}"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
+
+    // Explicit field assertions for pretty JSON output
+    assert!(got.contains(r#""num_fields": 4"#));
+    assert!(got.contains(r#""h1""#));
+    assert!(got.contains(r#""h2""#));
+    assert!(got.contains(r#""h3""#));
+    assert!(got.contains(r#""h4""#));
+    assert!(got.contains(r#""Text""#));
+    assert!(got.contains(r#""Unsigned""#));
+    assert!(got.contains(r#""Float""#));
 }
 
 #[test]
@@ -396,48 +504,22 @@ fn sniff_sample() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected_end = r#""sampled_records": 7,
-  "estimated": false,
-  "num_records": 15,
-  "avg_record_len": 555,
-  "num_fields": 32,
-  "stats_types": false,
-  "fields": [
-    "ExtractDate",
-    "OrganisationURI",
-    "OrganisationLabel",
-    "ServiceTypeURI",
-    "ServiceTypeLabel",
-    "LocationText",
-    "CoordinateReferenceSystem",
-    "GeoX",
-    "GeoY",
-    "GeoPointLicensingURL",
-    "Category",
-    "AccessibleCategory",
-    "RADARKeyNeeded",
-    "BabyChange",
-    "FamilyToilet",
-    "ChangingPlace",
-    "AutomaticPublicConvenience",
-    "FullTimeStaffing",
-    "PartOfCommunityScheme",
-    "CommunitySchemeName",
-    "ChargeAmount",
-    "InfoURL",
-    "OpeningHours",
-    "ManagedBy",
-    "ReportEmail",
-    "ReportTel",
-    "Notes",
-    "UPRN",
-    "Postcode",
-    "StreetAddress",
-    "GeoAreaURI",
-    "GeoAreaLabel"
-  ],
-  "types": [
-    "Date",
+    // Check for inference_score field in pretty JSON
+    // magika provides ML confidence scores (~0.99), file-format uses 1.0 for rule-based matches
+    #[cfg(feature = "magika")]
+    {
+        assert!(got.contains(r#""detected_label": "csv""#));
+        assert!(got.contains(r#""inference_score": 0.99"#));
+    }
+
+    #[cfg(not(feature = "magika"))]
+    {
+        assert!(got.contains(r#""detected_label": "csv""#));
+        assert!(got.contains(r#""inference_score": 1.0"#));
+    }
+
+    let expected_end = r#""types": [
+    "DateTime",
     "Text",
     "Text",
     "Text",
@@ -473,6 +555,15 @@ fn sniff_sample() {
 }"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
+
+    // Explicit field assertions for adur-public-toilets dataset (pretty JSON)
+    assert!(got.contains(r#""num_fields": 32"#));
+    assert!(got.contains(r#""ExtractDate""#));
+    assert!(got.contains(r#""OrganisationURI""#));
+    assert!(got.contains(r#""GeoAreaLabel""#));
+    assert!(got.contains(r#""DateTime""#));
+    assert!(got.contains(r#""Boolean""#));
+    assert!(got.contains(r#""NULL""#));
 }
 
 #[test]
@@ -488,41 +579,49 @@ fn sniff_prefer_dmy() {
     let expected_end = r#"Sampled Records: 100
 Estimated: false
 Num Records: 100
-Avg Record Len (bytes): 444
+Avg Record Len (bytes): 472
 Num Fields: 29
 Stats Types: false
 Fields:
-    0:   Unsigned  case_enquiry_id
-    1:   DateTime  open_dt
-    2:   DateTime  target_dt
-    3:   DateTime  closed_dt
-    4:   Text      ontime
-    5:   Text      case_status
-    6:   Text      closure_reason
-    7:   Text      case_title
-    8:   Text      subject
-    9:   Text      reason
-    10:  Text      type
-    11:  Text      queue
-    12:  Text      department
-    13:  Text      submittedphoto
-    14:  NULL      closedphoto
-    15:  Text      location
-    16:  Unsigned  fire_district
-    17:  Text      pwd_district
-    18:  Unsigned  city_council_district
-    19:  Text      police_district
-    20:  Text      neighborhood
-    21:  Unsigned  neighborhood_services_district
-    22:  Text      ward
-    23:  Unsigned  precinct
-    24:  Text      location_street_name
-    25:  Unsigned  location_zipcode
-    26:  Float     latitude
-    27:  Float     longitude
-    28:  Text      source"#;
+    1:   Unsigned  case_enquiry_id
+    2:   DateTime  open_dt
+    3:   DateTime  target_dt
+    4:   DateTime  closed_dt
+    5:   Text      ontime
+    6:   Text      case_status
+    7:   Text      closure_reason
+    8:   Text      case_title
+    9:   Text      subject
+    10:  Text      reason
+    11:  Text      type
+    12:  Text      queue
+    13:  Text      department
+    14:  Text      submittedphoto
+    15:  NULL      closedphoto
+    16:  Text      location
+    17:  Unsigned  fire_district
+    18:  Text      pwd_district
+    19:  Unsigned  city_council_district
+    20:  Text      police_district
+    21:  Text      neighborhood
+    22:  Unsigned  neighborhood_services_district
+    23:  Text      ward
+    24:  Unsigned  precinct
+    25:  Text      location_street_name
+    26:  Unsigned  location_zipcode
+    27:  Float     latitude
+    28:  Float     longitude
+    29:  Text      source"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
+
+    // Explicit field assertions for boston311-dmy dataset
+    assert!(got.contains("Num Fields: 29"));
+    assert!(got.contains("Unsigned  case_enquiry_id"));
+    assert!(got.contains("DateTime  open_dt"));
+    assert!(got.contains("NULL      closedphoto"));
+    assert!(got.contains("Float     latitude"));
+    assert!(got.contains("Text      source"));
 }
 
 #[test]
@@ -543,28 +642,98 @@ fn sniff_flaky_delimiter_guess() {
 fn sniff_consistent_results_issue_956() {
     let wrk = Workdir::new("sniff_consistent_results_issue_956");
 
+    // csv-nose can now handle these files that qsv-sniffer previously failed on
     let test_file = wrk.load_test_file("spendover25kdownloadSep.csv");
     let mut cmd = wrk.command("sniff");
     cmd.arg(test_file);
-    wrk.assert_err(&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     let test_file = wrk.load_test_file("311011.csv");
     let mut cmd = wrk.command("sniff");
     cmd.arg(test_file);
-    wrk.assert_err(&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     let test_file = wrk.load_test_file("FCOServices_TransparencySpend_May2011.csv");
     let mut cmd = wrk.command("sniff");
     cmd.arg(test_file);
-    wrk.assert_err(&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     let test_file = wrk.load_test_file("iwfg09_Phos_river_200911.csv");
     let mut cmd = wrk.command("sniff");
     cmd.arg(test_file);
-    wrk.assert_err(&mut cmd);
+    wrk.assert_success(&mut cmd);
 
-    let test_file = wrk.load_test_file("Inpatients_MHA_Machine_readable_dataset_1011.csv");
+    // With magika, this file is correctly detected as CSV.
+    // With file-format fallback, this file is detected as octet-stream which fails.
+    // Only run this part of the test when magika is enabled.
+    #[cfg(feature = "magika")]
+    {
+        let test_file = wrk.load_test_file("Inpatients_MHA_Machine_readable_dataset_1011.csv");
+        let mut cmd = wrk.command("sniff");
+        cmd.arg(test_file);
+        wrk.assert_success(&mut cmd);
+    }
+}
+
+// Test for GitHub blob URL auto-transformation to raw URL
+// This tests the fix for issue where GitHub blob URLs return HTML instead of CSV
+#[test]
+fn sniff_github_blob_url() {
+    let wrk = Workdir::new("sniff_github_blob_url");
+
+    // Use a GitHub blob URL (viewer page) instead of raw URL
+    // The sniff command should auto-transform this to raw.githubusercontent.com
     let mut cmd = wrk.command("sniff");
-    cmd.arg(test_file);
-    wrk.assert_err(&mut cmd);
+    cmd.arg("https://github.com/dathere/qsv/blob/master/resources/test/boston311-100.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // Should correctly sniff as CSV after auto-transforming to raw URL
+    assert!(got.contains("Num Fields: 29"));
+    assert!(got.contains("Unsigned  case_enquiry_id"));
+}
+
+// Test that raw GitHub URLs still work normally
+#[test]
+fn sniff_github_raw_url() {
+    let wrk = Workdir::new("sniff_github_raw_url");
+
+    // Use the raw URL directly - should not be modified
+    let mut cmd = wrk.command("sniff");
+    cmd.arg(
+        "https://raw.githubusercontent.com/dathere/qsv/master/resources/test/boston311-100.csv",
+    );
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // Should correctly sniff as CSV
+    assert!(got.contains("Num Fields: 29"));
+    assert!(got.contains("Unsigned  case_enquiry_id"));
+}
+
+// Test that symlinked CSV files are sniffed correctly (issue #3529)
+#[cfg(unix)]
+#[test]
+fn sniff_symlink() {
+    let wrk = Workdir::new("sniff_symlink");
+    wrk.create_with_delim("real.csv", data(), b',');
+
+    // create a symlink pointing to the real file
+    std::os::unix::fs::symlink(wrk.path("real.csv"), wrk.path("link.csv")).unwrap();
+
+    let mut cmd = wrk.command("sniff");
+    cmd.arg(wrk.path("link.csv"));
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // Both magika and file-format backends detect CSV identically here
+    assert!(got.contains("Detected Mime Type: application/csv"));
+    assert!(got.contains("Detected Label: csv"));
+
+    assert!(got.contains("Num Fields: 3"));
+    assert!(got.contains("Num Records: 2"));
 }

@@ -17,16 +17,15 @@ applied in order:
 
   trim => Trim the cell
   trim,upper => Trim the cell, then transform to uppercase
-  lower,simdln => Lowercase the cell, then compute the normalized 
+  lower,simdln => Lowercase the cell, then compute the normalized
       Damerau-Levenshtein similarity to --comparand
 
 Operations support multi-column transformations. Just make sure the
-number of transformed columns with the --rename option is the same. e.g.:
+number of transformed columns with the --rename option is the same.
+For example, to trim and fold to uppercase the col1,col2 and col3 columns &
+rename them to newcol1,newcol2 and newcol3:
 
-# trim and fold to uppercase the col1,col2 and col3 columns and rename them
-# to newcol1,newcol2 and newcol3
-
- $ qsv apply operations trim,upper col1,col2,col3 -r newcol1,newcol2,newcol3 file.csv
+  qsv apply operations trim,upper col1,col2,col3 -r newcol1,newcol2,newcol3 file.csv
 
 It has 40 supported operations:
 
@@ -69,7 +68,7 @@ It has 40 supported operations:
       indiancomma (place a comma every two digits, except the last three digits).
       The decimal separator can be specified with --replacement (default: '.')
   * currencytonum: Gets the numeric value of a currency. Supports currency symbols
-      (e.g. $,¥,£,€,֏,₱,₽,₪,₩,ƒ,฿,₫) and strings (e.g. USD, EUR, RMB, JPY, etc.). 
+      (e.g. $,¥,£,€,֏,₱,₽,₪,₩,ƒ,฿,₫) and strings (e.g. USD, EUR, RMB, JPY, etc.).
       Recognizes point, comma and space separators. Is "permissive" by default, meaning it
       will allow no or non-ISO currency symbols. To enforce strict parsing, which will require
       a valid ISO currency symbol, set the --formatstr to "strict".
@@ -98,79 +97,11 @@ It has 40 supported operations:
        question mark (e.g. 0.9?)
        https://github.com/greyblake/whatlang-rs/blob/master/SUPPORTED_LANGUAGES.md
 
-Examples:
-Trim, then transform to uppercase the surname field.
-
-  $ qsv apply operations trim,upper surname file.csv
-
-Trim, then transform to uppercase the surname field and rename the column uppercase_clean_surname.
-
-  $ qsv apply operations trim,upper surname -r uppercase_clean_surname file.csv
-
-Trim, then transform to uppercase the surname field and
-save it to a new column named uppercase_clean_surname.
-
-  $ qsv apply operations trim,upper surname -c uppercase_clean_surname file.csv
-
-Trim, then transform to uppercase the firstname and surname fields and
-rename the columns ufirstname and usurname.
-
-  $ qsv apply operations trim,upper firstname,surname -r ufirstname,usurname file.csv
-
-Trim parentheses & brackets from the description field.
-
-  $ qsv apply operations mtrim description --comparand '()<>' file.csv
-
-Replace ' and ' with ' & ' in the description field.
-
-  $ qsv apply operations replace description --comparand ' and ' --replacement ' & ' file.csv
-
-Extract the numeric value of the Salary column in a new column named Salary_num.
-
-  $ qsv apply operations currencytonum Salary -c Salary_num file.csv
-
-Convert the USD_Price to PHP_Price using the currency symbol "PHP" with a conversion rate of 60.
-
-  $ qsv apply operations numtocurrency USD_Price -C PHP -R 60 -c PHP_Price file.csv
-
-Base64 encode the text_col column & save the encoded value into new column named encoded & decode it.
-
-  $ qsv apply operations encode64 text_col -c encoded file.csv | qsv apply operations decode64 encoded
-
-Compute the Normalized Damerau-Levenshtein similarity of the neighborhood column to the string 'Roxbury'
-and save it to a new column named dln_roxbury_score.
-
-  $ qsv apply operations lower,simdln neighborhood --comparand roxbury -c dln_roxbury_score boston311.csv
-
-You can also use this subcommand command to make a copy of a column:
-
-  $ qsv apply operations copy col_to_copy -c col_copy file.csv
 
 EMPTYREPLACE (multi-column capable)
 Replace empty cells with <--replacement> string.
 Non-empty cells are not modified. See the `fill` command for more complex empty field operations.
 
-Examples:
-Replace empty cells in file.csv Measurement column with 'None'.
-
-$ qsv apply emptyreplace Measurement --replacement None file.csv
-
-Replace empty cells in file.csv Measurement column with 'Unknown Measurement'.
-
-$ qsv apply emptyreplace Measurement --replacement 'Unknown Measurement' file.csv
-
-Replace empty cells in file.csv M1,M2 and M3 columns with 'None'.
-
-$ qsv apply emptyreplace M1,M2,M3 --replacement None file.csv
-
-Replace all empty cells in file.csv for columns that start with 'Measurement' with 'None'.
-
-$ qsv apply emptyreplace '/^Measurement/' --replacement None file.csv
-
-Replace all empty cells in file.csv for columns that start with 'observation'
-case insensitive with 'None'.
-
-$ qsv apply emptyreplace --replacement None '/(?i)^observation/' file.csv
 
 DYNFMT
 Dynamically constructs a new column from other columns using the <--formatstr> template.
@@ -180,14 +111,6 @@ column name in curly braces, replacing all non-alphanumeric characters with unde
 If you need to dynamically construct a column with more complex formatting requirements and
 computed values, check out the py command to take advantage of Python's f-string formatting.
 
-Examples:
-Create a new column 'mailing address' from 'house number', 'street', 'city' and 'zip-code' columns:
-
-  $ qsv apply dynfmt --formatstr '{house_number} {street}, {city} {zip_code} USA' -c 'mailing address' file.csv
-
-Create a new column 'FullName' from 'FirstName', 'MI', and 'LastName' columns:
-
-  $ qsv apply dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullName file.csv
 
 CALCCONV
 Parse and evaluate math expressions into a new column, with support for units and conversions.
@@ -198,33 +121,100 @@ inferred unit will be appended to the result.
 For a complete list of supported units, constants, operators and functions, see https://docs.rs/cpc
 
 Examples:
-Do simple arithmetic:
-$ qsv apply calcconv --formatstr '{col1} + {col2} * {col3}' --new-column result file.csv
 
-With support for operators like % and ^:
-$ qsv apply calcconv --formatstr '{col1} % 3' --new-column remainder file.csv
+== OPERATIONS ==
 
-Convert from one unit to another:
-$ qsv apply calcconv --formatstr '{col1}mb in gigabytes' -c gb file.csv
-$ qsv apply calcconv --formatstr '{col1} Fahrenheit in Celsius" -c metric_temperature file.csv
+  # Trim, then transform to uppercase the surname field.
+  qsv apply operations trim,upper surname file.csv
 
-Mix units and conversions are automatically done for you:
-$ qsv apply calcconv --formatstr '{col1}km + {col2}mi in meters' -c meters file.csv
+  # Trim, then transform to uppercase the surname field and rename the column uppercase_clean_surname.
+  qsv apply operations trim,upper surname -r uppercase_clean_surname file.csv
 
-You can append the inferred unit at the end of the result by ending the expression with '<UNIT>':
-$ qsv apply calcconv --formatstr '({col1} + {col2})km to light years <UNIT>' -c light_years file.csv
+  # Trim, then transform to uppercase the surname field and
+  # save it to a new column named uppercase_clean_surname.
+  qsv apply operations trim,upper surname -c uppercase_clean_surname file.csv
 
-You can even do complex temporal unit conversions:
-$ qsv apply calcconv --formatstr '{col1}m/s + {col2}mi/h in kilometers per h' -c kms_per_h file.csv
+  # Trim, then transform to uppercase the firstname and surname fields and
+  # rename the columns ufirstname and usurname.
+  qsv apply operations trim,upper firstname,surname -r ufirstname,usurname file.csv
 
-Use math functions - see https://docs.rs/cpc/latest/cpc/enum.FunctionIdentifier.html for list of functions:
-$ qsv apply calcconv --formatstr 'round(sqrt{col1}^4)! liters' -c liters file.csv
+  # Trim parentheses & brackets from the description field.
+  qsv apply operations mtrim description --comparand '()<>' file.csv
 
-Use percentages:
-$ qsv apply calcconv --formatstr '10% of abs(sin(pi)) horsepower to watts' -c watts file.csv
+  # Replace ' and ' with ' & ' in the description field.
+  qsv apply operations replace description --comparand ' and ' --replacement ' & ' file.csv
 
-And use very large numbers:
-$ qsv apply calcconv --formatstr '{col1} Billion Trillion * {col2} quadrillion vigintillion' -c num_atoms file.csv 
+  # Extract the numeric value of the Salary column in a new column named Salary_num.
+  qsv apply operations currencytonum Salary -c Salary_num file.csv
+
+  # Convert the USD_Price to PHP_Price using the currency symbol "PHP" with a conversion rate of 60.
+  qsv apply operations numtocurrency USD_Price -C PHP -R 60 -c PHP_Price file.csv
+
+  # Base64 encode the text_col column & save the encoded value into new column named encoded & decode it.
+  qsv apply operations encode64 text_col -c encoded file.csv | qsv apply operations decode64 encoded
+
+  # Compute the Normalized Damerau-Levenshtein similarity of the neighborhood column to
+  # the string 'Roxbury' and save it to a new column named dln_roxbury_score.
+  qsv apply operations lower,simdln neighborhood --comparand roxbury -c dln_roxbury_score boston311.csv
+
+  # You can also use this subcommand command to make a copy of a column:
+  qsv apply operations copy col_to_copy -c col_copy file.csv
+
+== EMPTYREPLACE ==
+
+  # Replace empty cells in file.csv Measurement column with 'None'.
+  qsv apply emptyreplace Measurement --replacement None file.csv
+
+  # Replace empty cells in file.csv Measurement column with 'Unknown Measurement'.
+  qsv apply emptyreplace Measurement --replacement 'Unknown Measurement' file.csv
+
+  # Replace empty cells in file.csv M1,M2 and M3 columns with 'None'.
+  qsv apply emptyreplace M1,M2,M3 --replacement None file.csv
+
+  # Replace all empty cells in file.csv for columns that start with 'Measurement' with 'None'.
+  qsv apply emptyreplace '/^Measurement/' --replacement None file.csv
+
+  # Replace all empty cells in file.csv for columns that start with 'observation'
+  # case insensitive with 'None'.
+  qsv apply emptyreplace --replacement None '/(?i)^observation/' file.csv
+
+== DYNFMT ==
+
+  # Create a new column 'mailing address' from 'house number', 'street', 'city'
+  # and 'zip-code' columns:
+  qsv apply dynfmt --formatstr '{house_number} {street}, {city} {zip_code} USA' -c 'mailing address' file.csv
+
+  # Create a new column 'FullName' from 'FirstName', 'MI', and 'LastName' columns:
+  qsv apply dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullName file.csv
+
+== CALCCONV ==
+
+  # Do simple arithmetic:
+  qsv apply calcconv --formatstr '{col1} + {col2} * {col3}' --new-column result file.csv
+
+  # Arithmetic with support for operators like % and ^:
+  qsv apply calcconv --formatstr '{col1} % 3' --new-column remainder file.csv
+
+  # Convert from one unit to another:
+  qsv apply calcconv --formatstr '{col1} Fahrenheit in Celsius" -c metric_temperature file.csv
+
+  # Mix units and conversions are automatically done for you:
+  qsv apply calcconv --formatstr '{col1}km + {col2}mi in meters' -c meters file.csv
+
+  # You can append the inferred unit at the end of the result by ending the expression with '<UNIT>':
+  qsv apply calcconv --formatstr '({col1} + {col2})km to light years <UNIT>' -c light_years file.csv
+
+  # You can even do complex temporal unit conversions:
+  qsv apply calcconv --formatstr '{col1}m/s + {col2}mi/h in kilometers per h' -c kms_per_h file.csv
+
+  # Use math functions - see https://docs.rs/cpc/latest/cpc/enum.FunctionIdentifier.html for list of functions:
+  qsv apply calcconv --formatstr 'round(sqrt{col1}^4)! liters' -c liters file.csv
+
+  # Use percentages:
+  qsv apply calcconv --formatstr '10% of abs(sin(pi)) horsepower to watts' -c watts file.csv
+
+  # Use very large numbers:
+  qsv apply calcconv --formatstr '{col1} Billion Trillion * {col2} quadrillion vigintillion' -c num_atoms file.csv
 
 For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_apply.rs.
 
@@ -257,7 +247,7 @@ apply arguments:
     CALCONV subcommand:
         --formatstr=<string>        The calculation/conversion expression to use.
         --new-column=<name>         Put the calculated/converted values in a new column.
-        
+
     <input>                     The input file to read from. If not specified, reads from stdin.
 
 apply options:
@@ -283,7 +273,7 @@ apply options:
 
                                   thousands
                                     The thousands separator policy to use. The available policies are:
-                                    comma, dot, space, underscore, hexfour (place a space every four 
+                                    comma, dot, space, underscore, hexfour (place a space every four
                                     hex digits) and indiancomma (place a comma every two digits,
                                     except the last three digits). (default: comma)
 
@@ -313,10 +303,10 @@ Common options:
 use std::{str::FromStr, sync::OnceLock};
 
 use base62;
+use base64_simd::STANDARD as BASE64;
 use censor::{Censor, Sex, Zealous};
 use cpc::eval;
 use crc32fast;
-use data_encoding::BASE64;
 use dynfmt2::Format;
 use eudex::Hash;
 use gender_guesser::Gender;
@@ -457,7 +447,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.arg_column)
         // since apply does batch processing,
         // use a bigger read buffer unless the user set their own buffer
@@ -472,7 +462,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let headers = rdr.byte_headers()?.clone();
     let sel = rconfig.selection(&headers)?;
-    // safety: we just checked that sel is not empty in the previous line
+    if sel.is_empty() {
+        return fail_incorrectusage_clierror!("No columns selected. Column selection is empty.");
+    }
+    // safety: we just checked that sel is not empty above
     let column_index = *sel.iter().next().unwrap();
 
     let mut headers = rdr.headers()?.clone();
@@ -806,12 +799,12 @@ fn validate_operations(
                 }
                 eudex_invokes = eudex_invokes.saturating_add(1);
             },
-            Operations::Mtrim | Operations::Mltrim | Operations::Mrtrim => {
-                if flag_comparand.is_empty() {
-                    return fail_incorrectusage_clierror!(
-                        "--comparand (-C) is required for match trim operations."
-                    );
-                }
+            Operations::Mtrim | Operations::Mltrim | Operations::Mrtrim
+                if flag_comparand.is_empty() =>
+            {
+                return fail_incorrectusage_clierror!(
+                    "--comparand (-C) is required for match trim operations."
+                );
             },
             Operations::Regex_Replace => {
                 if flag_comparand.is_empty() || flag_replacement.is_empty() {
@@ -890,22 +883,19 @@ fn validate_operations(
                     return fail!("Cannot initialize Thousands policy.");
                 }
             },
-            Operations::Round => {
+            Operations::Round
                 if ROUND_PLACES
                     .set(
                         flag_formatstr
                             .parse::<u32>()
                             .unwrap_or(DEFAULT_ROUND_PLACES),
                     )
-                    .is_err()
-                {
-                    return fail!("Cannot initialize Round precision.");
-                }
+                    .is_err() =>
+            {
+                return fail!("Cannot initialize Round precision.");
             },
-            Operations::Crc32 => {
-                if CRC32.set(crc32fast::Hasher::new()).is_err() {
-                    return fail!("Cannot initialize CRC32 Hasher.");
-                }
+            Operations::Crc32 if CRC32.set(crc32fast::Hasher::new()).is_err() => {
+                return fail!("Cannot initialize CRC32 Hasher.");
             },
             Operations::Whatlang => {
                 if flag_new_column.is_none() {
@@ -1033,12 +1023,11 @@ fn apply_operations(
                 *cell = String::from(cell.trim_end_matches(comparand));
             },
             Operations::Encode64 => {
-                *cell = BASE64.encode(cell.as_bytes());
+                *cell = BASE64.encode_to_string(cell.as_bytes());
             },
             Operations::Decode64 => {
-                let mut output = vec![0; BASE64.decode_len(cell.len()).unwrap_or_default()];
-                *cell = match BASE64.decode_mut(cell.as_bytes(), &mut output) {
-                    Ok(len) => simdutf8::basic::from_utf8(&output[0..len])
+                *cell = match BASE64.decode_to_vec(cell.as_bytes()) {
+                    Ok(decoded) => simdutf8::basic::from_utf8(&decoded)
                         .unwrap_or_default()
                         .to_owned(),
                     Err(e) => format!("decoding64 error: {e:?}"),
@@ -1248,17 +1237,17 @@ fn apply_operations(
                     .clone_into(cell);
             },
             Operations::Simdln => {
-                ryu::Buffer::new()
+                zmij::Buffer::new()
                     .format_finite(normalized_damerau_levenshtein(cell, comparand))
                     .clone_into(cell);
             },
             Operations::Simjw => {
-                ryu::Buffer::new()
+                zmij::Buffer::new()
                     .format_finite(jaro_winkler(cell, comparand))
                     .clone_into(cell);
             },
             Operations::Simsd => {
-                ryu::Buffer::new()
+                zmij::Buffer::new()
                     .format_finite(sorensen_dice(cell, comparand))
                     .clone_into(cell);
             },
@@ -1284,7 +1273,7 @@ fn apply_operations(
                 // safety: we set SENTIMENT_ANALYZER in validate_operations()
                 let sentiment_analyzer = SENTIMENT_ANALYZER.get().unwrap();
                 let sentiment_scores = sentiment_analyzer.polarity_scores(cell);
-                ryu::Buffer::new()
+                zmij::Buffer::new()
                     .format_finite(*sentiment_scores.get("compound").unwrap_or(&0.0))
                     .clone_into(cell);
             },

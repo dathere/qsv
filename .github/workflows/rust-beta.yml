@@ -1,8 +1,8 @@
 name: Rust Beta
 
 on:
-  schedule:
-    - cron: "0 */24 * * *"
+  # schedule:
+  #   - cron: "0 */24 * * *"
   workflow_dispatch:
 
 env:
@@ -11,22 +11,28 @@ env:
 jobs:
   build:
 
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5.6.0
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6.2.0
       with:
-        python-version: '3.12'
+        python-version: '3.13'
     - name: apt-get update Ubuntu, libwayland-dev
       run: |
         sudo apt-get update
         sudo apt-get install libwayland-dev
-    - name: Update Rust Beta
-      run: |
-        rustup update beta
-        rustup default beta
+    - name: Installing Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: beta
+        targets: x86_64-unknown-linux-gnu
+    - name: Setup Rust-cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: qsv-betacache
     - name: Run tests
-      env:
-        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+      # env:
+        # RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+        # RUSTFLAGS: -C target-cpu=native
       run: cargo test --verbose --features feature_capable,apply,fetch,geocode,foreach,python,luau,polars,lens

@@ -903,10 +903,10 @@ fn sqlp_compress() {
 
     wrk.assert_success(&mut cmd);
 
-    let mut cmd2 = wrk.command("snappy"); // DevSkim: ignore DS126858
-    cmd2.arg("decompress").arg(out_file); // DevSkim: ignore DS126858
+    let mut cmd_2 = wrk.command("snappy"); // DevSkim: ignore DS126858
+    cmd_2.arg("decompress").arg(out_file); // DevSkim: ignore DS126858
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2); // DevSkim: ignore DS126858
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2); // DevSkim: ignore DS126858
     let expected = vec![
         svec!["column1", "column2"],
         svec!["e", "5"],
@@ -933,15 +933,15 @@ fn sqlp_boston311_explain() {
 
     let got: String = wrk.stdout(&mut cmd);
     let expected_begin = r#"Logical Plan
-"SORT BY [col(""avg_tat""), col(""ward"")]"
+"SORT BY [descending: [true, false], nulls_last: [false, true]] [col(""avg_tat""), col(""ward"")]"
   AGGREGATE[maintain_order: false]
 "    [[(col(""closed_dt"")) - (col(""open_dt""))].mean().strict_cast(Float64).alias(""avg_tat"")] BY [col(""ward"")]"
-    FROM
-    Csv SCAN ["#;
+    FROM"#;
     assert!(got.starts_with(expected_begin));
 
     let expected_end = r#"PROJECT 4/29 COLUMNS
-"    SELECTION: [(col(""case_status"")) == (""Closed"")]""#;
+"      SELECTION: [(col(""case_status"")) == (""Closed"")]"
+      ESTIMATED ROWS: 181"#;
     assert!(got.ends_with(expected_end));
 }
 
@@ -1067,16 +1067,32 @@ select ward,count(*) as cnt from temp_table2 group by ward order by cnt desc, wa
 {"ward":"Ward 6","cnt":1}"#;
 
     assert_eq!(got, expected);
-    assert!(wrk.path("boston311-100.pschema.json").exists());
-    let boston311_schema = std::fs::read_to_string(wrk.path("boston311-100.pschema.json")).unwrap();
+    assert!(wrk.path("boston311-100.csv.pschema.json").exists());
+    let boston311_schema =
+        std::fs::read_to_string(wrk.path("boston311-100.csv.pschema.json")).unwrap();
     assert_eq!(
         boston311_schema,
         r#"{
   "fields": {
     "case_enquiry_id": "UInt64",
-    "open_dt": "String",
-    "target_dt": "String",
-    "closed_dt": "String",
+    "open_dt": {
+      "Datetime": [
+        "Milliseconds",
+        null
+      ]
+    },
+    "target_dt": {
+      "Datetime": [
+        "Milliseconds",
+        null
+      ]
+    },
+    "closed_dt": {
+      "Datetime": [
+        "Milliseconds",
+        null
+      ]
+    },
     "ontime": "String",
     "case_status": "String",
     "closure_reason": "String",
@@ -1102,7 +1118,8 @@ select ward,count(*) as cnt from temp_table2 group by ward order by cnt desc, wa
     "latitude": "Float32",
     "longitude": "Float32",
     "source": "String"
-  }
+  },
+  "metadata": null
 }"#
     );
 }
@@ -1118,7 +1135,7 @@ fn sqlp_boston311_sql_cache_schema_decimal_override() {
     );
 
     wrk.create_from_string(
-        "boston311-100.pschema.json",
+        "boston311-100.csv.pschema.json",
         r#"{
         "fields": {
           "case_enquiry_id": "Int64",
@@ -1150,12 +1167,12 @@ fn sqlp_boston311_sql_cache_schema_decimal_override() {
           "latitude": {"Decimal" : [10, 3]},
           "longitude": {"Decimal" : [10, 6]},
           "source": "String"
-        }
+        },"metadata": null
       }"#,
     );
 
     assert!(wrk.path("boston311-100.csv").exists());
-    assert!(wrk.path("boston311-100.pschema.json").exists());
+    assert!(wrk.path("boston311-100.csv.pschema.json").exists());
 
     let mut cmd = wrk.command("sqlp");
     cmd.arg(&test_file)
@@ -1169,11 +1186,11 @@ fn sqlp_boston311_sql_cache_schema_decimal_override() {
 {"latitude":"42.363","longitude":"-71.056600"}
 {"latitude":"42.288","longitude":"-71.133000"}
 {"latitude":"42.340","longitude":"-71.080300"}
-{"latitude":"42.373","longitude":"-71.059900"}
+{"latitude":"42.374","longitude":"-71.059900"}
 {"latitude":"42.359","longitude":"-71.070000"}
-{"latitude":"42.311","longitude":"-71.115200"}
-{"latitude":"42.360","longitude":"-71.063800"}
-{"latitude":"42.359","longitude":"-71.063400"}
+{"latitude":"42.312","longitude":"-71.115200"}
+{"latitude":"42.361","longitude":"-71.063800"}
+{"latitude":"42.360","longitude":"-71.063400"}
 {"latitude":"42.349","longitude":"-71.081100"}"#;
 
     assert_eq!(got, expected);
@@ -1553,6 +1570,89 @@ fn sqlp_sql_join_on_subquery() {
         svec!["idx", "val", "idx:t2", "val:t2"],
         svec!["3", "A0C", "3", "A0C"],
         svec!["4", "a0c", "4", "a0c"],
+    ];
+
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_sql_join_on_literal_string_comparison() {
+    let wrk = Workdir::new("sqlp_sql_join_on_literal_string_comparison");
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["name", "role"],
+            svec!["alice", "admin"],
+            svec!["bob", "user"],
+            svec!["adam", "admin"],
+            svec!["charlie", "user"],
+        ],
+    );
+
+    wrk.create(
+        "test2.csv",
+        vec![
+            svec!["name", "dept"],
+            svec!["alice", "IT"],
+            svec!["bob", "HR"],
+            svec!["charlie", "IT"],
+            svec!["adam", "SEC"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("test.csv").arg("test2.csv").arg(
+        "SELECT t1.name, t1.role, t2.dept FROM test t1 INNER JOIN test2 t2 ON t1.name = t2.name \
+         AND t1.role = 'admin' ORDER BY t1.name",
+    );
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["name", "role", "dept"],
+        svec!["adam", "admin", "SEC"],
+        svec!["alice", "admin", "IT"],
+    ];
+
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_sql_join_on_expression_comparison() {
+    let wrk = Workdir::new("sqlp_sql_join_on_expression_comparison");
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["code", "value"],
+            svec!["HELLO", "100"],
+            svec!["WORLD", "200"],
+            svec!["FOO", "300"],
+        ],
+    );
+
+    wrk.create(
+        "test2.csv",
+        vec![
+            svec!["code", "value"],
+            svec!["hello", "-1.2345"],
+            svec!["world", "4.5678"],
+            svec!["bar", "2.2222"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("test.csv")
+        .arg("test2.csv")
+        .arg(
+            "SELECT t1.code AS code1, t2.code AS code2, (t1.value * t2.value) AS VAL FROM test t1 \
+             INNER JOIN test2 t2 ON LOWER(t1.code) = t2.code",
+        )
+        .args(["--float-precision", "2"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["code1", "code2", "VAL"],
+        svec!["HELLO", "hello", "-123.45"],
+        svec!["WORLD", "world", "913.56"],
     ];
 
     assert_eq!(got, expected);
@@ -3667,5 +3767,865 @@ fn sqlp_decimal_comma_validation_with_skip_input() {
     wrk.assert_success(&mut cmd);
     let got: String = wrk.read_to_string("output.csv").unwrap();
     let expected = "id,value\n1,\"100,50\"\n2,\"200,75\"\n";
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_union_positional() {
+    let wrk = Workdir::new("sqlp_union_positional");
+
+    // Create first table with columns "Value" and "Tag"
+    wrk.create(
+        "df1.csv",
+        vec![
+            svec!["Value", "Tag"],
+            svec!["100", "hello"],
+            svec!["200", "foo"],
+        ],
+    );
+
+    // Create second table with different column names "Number" and "String"
+    wrk.create(
+        "df2.csv",
+        vec![
+            svec!["Number", "String"],
+            svec!["300", "world"],
+            svec!["400", "bar"],
+        ],
+    );
+
+    // Test: UNION should combine tables positionally, using column names from first table
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["df1.csv", "df2.csv"]).arg(
+        r#"SELECT u.* FROM (
+            SELECT * FROM df1
+            UNION
+            SELECT * FROM df2
+        ) u ORDER BY Value"#,
+    );
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["Value", "Tag"],
+        svec!["100", "hello"],
+        svec!["200", "foo"],
+        svec!["300", "world"],
+        svec!["400", "bar"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_unnest_issue_3108_first() {
+    let wrk = Workdir::new("sqlp_unnest_issue_3108_first");
+
+    wrk.create("data.csv", vec![svec!["id", "data"], svec!["1", "a,b,c"]]);
+
+    // Test: UNNEST should unnest the array column
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .arg("select first(id) as idf, unnest(string_to_array(data, ',')) as value from data");
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["idf", "value"],
+        svec!["1", "a"],
+        svec!["1", "b"],
+        svec!["1", "c"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_rank_funcs() {
+    let wrk = Workdir::new("sqlp_rank_funcs");
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "category", "value"],
+            svec!["1", "A", "20"],
+            svec!["2", "A", "10"],
+            svec!["3", "A", "25"],
+            svec!["4", "B", "10"],
+            svec!["5", "B", "40"],
+            svec!["6", "B", "25"],
+            svec!["7", "C", "35"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv").arg(
+        r#"SELECT
+            value,
+            ROW_NUMBER() OVER (ORDER BY value DESC, category DESC) AS row_num,
+            RANK() OVER (ORDER BY value DESC, category DESC) AS rank,
+            DENSE_RANK() OVER (ORDER BY value DESC, category DESC) AS dense_rank
+        FROM data
+        ORDER BY value, id DESC"#,
+    );
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["value", "row_num", "rank", "dense_rank"],
+        svec!["10", "6", "6", "6"],
+        svec!["10", "7", "7", "7"],
+        svec!["20", "5", "5", "5"],
+        svec!["25", "3", "3", "3"],
+        svec!["25", "4", "4", "4"],
+        svec!["35", "2", "2", "2"],
+        svec!["40", "1", "1", "1"],
+    ];
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv").arg(
+        r#"SELECT
+            value,
+            ROW_NUMBER() OVER (ORDER BY value) AS row_num,
+            RANK() OVER (ORDER BY value) AS rank,
+            DENSE_RANK() OVER (ORDER BY value) AS dense_rank
+        FROM data
+        ORDER BY value, id"#,
+    );
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["value", "row_num", "rank", "dense_rank"],
+        svec!["10", "1", "1", "1"],
+        svec!["10", "2", "1", "1"],
+        svec!["20", "3", "3", "2"],
+        svec!["25", "4", "4", "3"],
+        svec!["25", "5", "4", "3"],
+        svec!["35", "6", "6", "4"],
+        svec!["40", "7", "7", "5"],
+    ];
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv").arg(
+        r#"SELECT
+            category,
+            value,
+            ROW_NUMBER() OVER (PARTITION BY category ORDER BY value) AS row_num,
+            RANK() OVER (PARTITION BY category ORDER BY value) AS rank,
+            DENSE_RANK() OVER (PARTITION BY category ORDER BY value) AS dense
+        FROM data
+        ORDER BY category, value"#,
+    );
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category", "value", "row_num", "rank", "dense"],
+        svec!["A", "10", "1", "1", "1"],
+        svec!["A", "20", "2", "2", "2"],
+        svec!["A", "25", "3", "3", "3"],
+        svec!["B", "10", "1", "1", "1"],
+        svec!["B", "25", "2", "2", "2"],
+        svec!["B", "40", "3", "3", "3"],
+        svec!["C", "35", "1", "1", "1"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_named_window_references() {
+    let wrk = Workdir::new("sqlp_named_window_references");
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "category", "value"],
+            svec!["1", "A", "20"],
+            svec!["2", "A", "10"],
+            svec!["3", "A", "30"],
+            svec!["4", "B", "15"],
+            svec!["5", "B", "50"],
+            svec!["6", "B", "30"],
+            svec!["7", "C", "35"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv").arg(
+        r#"SELECT
+        category,
+        value,
+        SUM(value) OVER w AS "w:sum",
+        MIN(value) OVER w AS "w:min",
+        AVG(value) OVER w AS "w:avg",
+      FROM data
+      WINDOW w AS (PARTITION BY category ORDER BY value)
+      ORDER BY category, value"#,
+    );
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category", "value", "w:sum", "w:min", "w:avg"],
+        svec!["A", "10", "10", "10", "20.0"],
+        svec!["A", "20", "30", "10", "20.0"],
+        svec!["A", "30", "60", "10", "20.0"],
+        svec!["B", "15", "15", "15", "31.666666666666668"],
+        svec!["B", "30", "45", "15", "31.666666666666668"],
+        svec!["B", "50", "95", "15", "31.666666666666668"],
+        svec!["C", "35", "35", "35", "35.0"],
+    ];
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv").arg(
+        r#"SELECT
+        category,
+        value,
+        AVG(value) OVER w1 AS category_avg,
+        SUM(value) OVER w2 AS running_value,
+        COUNT(*) OVER w3 AS total_count
+      FROM data
+      WINDOW
+        w1 AS (PARTITION BY category),
+        w2 AS (ORDER BY value),
+        w3 AS ()
+      ORDER BY category, value"#,
+    );
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec![
+            "category",
+            "value",
+            "category_avg",
+            "running_value",
+            "total_count"
+        ],
+        svec!["A", "10", "20.0", "10", "7"],
+        svec!["A", "20", "20.0", "45", "7"],
+        svec!["A", "30", "20.0", "75", "7"],
+        svec!["B", "15", "31.666666666666668", "25", "7"],
+        svec!["B", "30", "31.666666666666668", "105", "7"],
+        svec!["B", "50", "31.666666666666668", "190", "7"],
+        svec!["C", "35", "35.0", "140", "7"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_array_to_string() {
+    let wrk = Workdir::new("sqlp_array_to_string");
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["a", "b"],
+            svec!["first", "1"],
+            svec!["first", "1"],
+            svec!["third", "42"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv").arg(
+        r#"
+        SELECT b, ARRAY_TO_STRING("a",', ') AS a2s,
+        FROM (
+            SELECT b, ARRAY_AGG(a) AS "a"
+            FROM data
+            GROUP BY b
+        ) tbl
+        ORDER BY a2s"#,
+    );
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["b", "a2s"],
+        svec!["1", "first, first"],
+        svec!["42", "third"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_unnest_issue_3108() {
+    let wrk = Workdir::new("sqlp_unnest_issue_3108");
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "data"],
+            svec!["1", "a,b,c"],
+            svec!["2", ""],
+            svec!["3", "b,c,d"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .arg("select id, unnest(string_to_array(data, ',')) as value from data");
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "value"],
+        svec!["1", "a"],
+        svec!["1", "b"],
+        svec!["1", "c"],
+        svec!["2", ""],
+        svec!["3", "b"],
+        svec!["3", "c"],
+        svec!["3", "d"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_distinct_basic() {
+    let wrk = Workdir::new("sqlp_distinct_basic");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["category", "subcategory", "value", "status", "score"],
+            svec!["A", "x", "100", "active", "10"],
+            svec!["A", "x", "100", "active", "20"],
+            svec!["B", "y", "200", "active", "30"],
+            svec!["B", "y", "200", "inactive", "30"],
+            svec!["B", "z", "300", "active", "40"],
+            svec!["C", "x", "400", "inactive", "50"],
+            svec!["C", "y", "500", "active", "60"],
+            svec!["", "x", "600", "active", "70"],
+            svec!["", "y", "700", "inactive", "80"],
+            svec!["A", "x", "100", "active", "10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .args(["--rnull-values", "<empty string>"])
+        .args(["--wnull-value", "NULL"])
+        .arg("SELECT DISTINCT category FROM data ORDER BY category NULLS LAST");
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category"],
+        svec!["A"],
+        svec!["B"],
+        svec!["C"],
+        svec!["NULL"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_distinct_multiple_columns() {
+    let wrk = Workdir::new("sqlp_distinct_multiple_columns");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["category", "subcategory", "value", "status", "score"],
+            svec!["A", "x", "100", "active", "10"],
+            svec!["A", "x", "100", "active", "20"],
+            svec!["B", "y", "200", "active", "30"],
+            svec!["B", "y", "200", "inactive", "30"],
+            svec!["B", "z", "300", "active", "40"],
+            svec!["C", "x", "400", "inactive", "50"],
+            svec!["C", "y", "500", "active", "60"],
+            svec!["", "x", "600", "active", "70"],
+            svec!["", "y", "700", "inactive", "80"],
+            svec!["A", "x", "100", "active", "10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .args(["--rnull-values", "<empty string>"])
+        .args(["--wnull-value", "NULL"])
+        .arg(
+            "SELECT DISTINCT category, subcategory FROM data ORDER BY category NULLS LAST, \
+             subcategory",
+        );
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category", "subcategory"],
+        svec!["A", "x"],
+        svec!["B", "y"],
+        svec!["B", "z"],
+        svec!["C", "x"],
+        svec!["C", "y"],
+        svec!["NULL", "x"],
+        svec!["NULL", "y"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_distinct_with_nulls() {
+    let wrk = Workdir::new("sqlp_distinct_with_nulls");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["category", "subcategory", "value", "status", "score"],
+            svec!["A", "x", "100", "active", "10"],
+            svec!["A", "x", "100", "active", "20"],
+            svec!["B", "y", "200", "active", "30"],
+            svec!["B", "y", "200", "inactive", "30"],
+            svec!["B", "z", "300", "active", "40"],
+            svec!["C", "x", "400", "inactive", "50"],
+            svec!["C", "y", "500", "active", "60"],
+            svec!["", "x", "600", "active", "70"],
+            svec!["", "y", "700", "inactive", "80"],
+            svec!["A", "x", "100", "active", "10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .args(["--rnull-values", "<empty string>"])
+        .args(["--wnull-value", "NULL"])
+        .arg("SELECT DISTINCT category FROM data ORDER BY category NULLS FIRST");
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category"],
+        svec!["NULL"],
+        svec!["A"],
+        svec!["B"],
+        svec!["C"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_distinct_all_columns() {
+    let wrk = Workdir::new("sqlp_distinct_all_columns");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["category", "subcategory", "value", "status", "score"],
+            svec!["A", "x", "100", "active", "10"],
+            svec!["A", "x", "100", "active", "20"],
+            svec!["B", "y", "200", "active", "30"],
+            svec!["B", "y", "200", "inactive", "30"],
+            svec!["B", "z", "300", "active", "40"],
+            svec!["C", "x", "400", "inactive", "50"],
+            svec!["C", "y", "500", "active", "60"],
+            svec!["", "x", "600", "active", "70"],
+            svec!["", "y", "700", "inactive", "80"],
+            svec!["A", "x", "100", "active", "10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .args(["--rnull-values", "<empty string>"])
+        .args(["--wnull-value", "NULL"])
+        .arg(
+            "SELECT DISTINCT * FROM data ORDER BY category NULLS LAST, subcategory, value, \
+             status, score",
+        );
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category", "subcategory", "value", "status", "score"],
+        svec!["A", "x", "100", "active", "10"],
+        svec!["A", "x", "100", "active", "20"],
+        svec!["B", "y", "200", "active", "30"],
+        svec!["B", "y", "200", "inactive", "30"],
+        svec!["B", "z", "300", "active", "40"],
+        svec!["C", "x", "400", "inactive", "50"],
+        svec!["C", "y", "500", "active", "60"],
+        svec!["NULL", "x", "600", "active", "70"],
+        svec!["NULL", "y", "700", "inactive", "80"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_distinct_on_basic() {
+    let wrk = Workdir::new("sqlp_distinct_on_basic");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["category", "subcategory", "value", "status", "score"],
+            svec!["A", "x", "100", "active", "10"],
+            svec!["A", "x", "100", "active", "20"],
+            svec!["B", "y", "200", "active", "30"],
+            svec!["B", "y", "200", "inactive", "30"],
+            svec!["B", "z", "300", "active", "40"],
+            svec!["C", "x", "400", "inactive", "50"],
+            svec!["C", "y", "500", "active", "60"],
+            svec!["", "x", "600", "active", "70"],
+            svec!["", "y", "700", "inactive", "80"],
+            svec!["A", "x", "100", "active", "10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .args(["--rnull-values", "<empty string>"])
+        .args(["--wnull-value", "NULL"])
+        .arg(
+            "SELECT DISTINCT ON (category) category, value, status FROM data ORDER BY category \
+             NULLS LAST, value DESC",
+        );
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category", "value", "status"],
+        svec!["A", "100", "active"],
+        svec!["B", "300", "active"],
+        svec!["C", "500", "active"],
+        svec!["NULL", "700", "inactive"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_distinct_on_multiple_keys() {
+    let wrk = Workdir::new("sqlp_distinct_on_multiple_keys");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["category", "subcategory", "value", "status", "score"],
+            svec!["A", "x", "100", "active", "10"],
+            svec!["A", "x", "100", "active", "20"],
+            svec!["B", "y", "200", "active", "30"],
+            svec!["B", "y", "200", "inactive", "30"],
+            svec!["B", "z", "300", "active", "40"],
+            svec!["C", "x", "400", "inactive", "50"],
+            svec!["C", "y", "500", "active", "60"],
+            svec!["", "x", "600", "active", "70"],
+            svec!["", "y", "700", "inactive", "80"],
+            svec!["A", "x", "100", "active", "10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .args(["--rnull-values", "<empty string>"])
+        .args(["--wnull-value", "NULL"])
+        .arg(
+            "SELECT DISTINCT ON (category, subcategory) * FROM data ORDER BY category NULLS LAST, \
+             subcategory, score DESC",
+        );
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category", "subcategory", "value", "status", "score"],
+        svec!["A", "x", "100", "active", "20"],
+        svec!["B", "y", "200", "active", "30"],
+        svec!["B", "z", "300", "active", "40"],
+        svec!["C", "x", "400", "inactive", "50"],
+        svec!["C", "y", "500", "active", "60"],
+        svec!["NULL", "x", "600", "active", "70"],
+        svec!["NULL", "y", "700", "inactive", "80"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_distinct_on_with_nulls() {
+    let wrk = Workdir::new("sqlp_distinct_on_with_nulls");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["category", "subcategory", "value", "status", "score"],
+            svec!["A", "x", "100", "active", "10"],
+            svec!["A", "x", "100", "active", "20"],
+            svec!["B", "y", "200", "active", "30"],
+            svec!["B", "y", "200", "inactive", "30"],
+            svec!["B", "z", "300", "active", "40"],
+            svec!["C", "x", "400", "inactive", "50"],
+            svec!["C", "y", "500", "active", "60"],
+            svec!["", "x", "600", "active", "70"],
+            svec!["", "y", "700", "inactive", "80"],
+            svec!["A", "x", "100", "active", "10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .args(["--rnull-values", "<empty string>"])
+        .args(["--wnull-value", "NULL"])
+        .arg("SELECT DISTINCT ON (category) * FROM data ORDER BY category NULLS LAST, value DESC");
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category", "subcategory", "value", "status", "score"],
+        svec!["A", "x", "100", "active", "10"],
+        svec!["B", "z", "300", "active", "40"],
+        svec!["C", "y", "500", "active", "60"],
+        svec!["NULL", "y", "700", "inactive", "80"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_distinct_on_expression() {
+    // Note: DISTINCT ON only supports column names, not expressions.
+    // This test verifies that DISTINCT ON works with a computed column in ORDER BY
+    // by using a column alias approach instead.
+    let wrk = Workdir::new("sqlp_distinct_on_expression");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["category", "subcategory", "value", "status", "score"],
+            svec!["A", "x", "100", "active", "10"],
+            svec!["A", "x", "100", "active", "20"],
+            svec!["B", "y", "200", "active", "30"],
+            svec!["B", "y", "200", "inactive", "30"],
+            svec!["B", "z", "300", "active", "40"],
+            svec!["C", "x", "400", "inactive", "50"],
+            svec!["C", "y", "500", "active", "60"],
+            svec!["", "x", "600", "active", "70"],
+            svec!["", "y", "700", "inactive", "80"],
+            svec!["A", "x", "100", "active", "10"],
+        ],
+    );
+
+    // Since DISTINCT ON doesn't support expressions, we test with a column name
+    // but use an expression in ORDER BY to verify ordering works correctly
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .args(["--rnull-values", "<empty string>"])
+        .args(["--wnull-value", "NULL"])
+        .arg(
+            "SELECT DISTINCT ON (category) category, value FROM data ORDER BY category NULLS \
+             LAST, value DESC",
+        );
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category", "value"],
+        svec!["A", "100"],
+        svec!["B", "300"],
+        svec!["C", "500"],
+        svec!["NULL", "700"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_distinct_with_aggregation() {
+    let wrk = Workdir::new("sqlp_distinct_with_aggregation");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["category", "subcategory", "value", "status", "score"],
+            svec!["A", "x", "100", "active", "10"],
+            svec!["A", "x", "100", "active", "20"],
+            svec!["B", "y", "200", "active", "30"],
+            svec!["B", "y", "200", "inactive", "30"],
+            svec!["B", "z", "300", "active", "40"],
+            svec!["C", "x", "400", "inactive", "50"],
+            svec!["C", "y", "500", "active", "60"],
+            svec!["", "x", "600", "active", "70"],
+            svec!["", "y", "700", "inactive", "80"],
+            svec!["A", "x", "100", "active", "10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .args(["--rnull-values", "<empty string>"])
+        .args(["--wnull-value", "NULL"])
+        .arg(
+            "SELECT DISTINCT category, COUNT(*) as cnt FROM data GROUP BY category ORDER BY \
+             category NULLS LAST",
+        );
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category", "cnt"],
+        svec!["A", "3"],
+        svec!["B", "3"],
+        svec!["C", "2"],
+        svec!["NULL", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_distinct_on_complex_ordering() {
+    let wrk = Workdir::new("sqlp_distinct_on_complex_ordering");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["category", "subcategory", "value", "status", "score"],
+            svec!["A", "x", "100", "active", "10"],
+            svec!["A", "x", "100", "active", "20"],
+            svec!["B", "y", "200", "active", "30"],
+            svec!["B", "y", "200", "inactive", "30"],
+            svec!["B", "z", "300", "active", "40"],
+            svec!["C", "x", "400", "inactive", "50"],
+            svec!["C", "y", "500", "active", "60"],
+            svec!["", "x", "600", "active", "70"],
+            svec!["", "y", "700", "inactive", "80"],
+            svec!["A", "x", "100", "active", "10"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .args(["--rnull-values", "<empty string>"])
+        .args(["--wnull-value", "NULL"])
+        .arg(
+            "SELECT DISTINCT ON (category) category, value, status FROM data ORDER BY category \
+             NULLS LAST, value DESC, status ASC",
+        );
+
+    wrk.assert_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["category", "value", "status"],
+        svec!["A", "100", "active"],
+        svec!["B", "300", "active"],
+        svec!["C", "500", "active"],
+        svec!["NULL", "700", "inactive"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_datetime_schema_inference() {
+    let wrk = Workdir::new("sqlp_datetime_schema_inference");
+
+    // Create a CSV with datetime columns
+    wrk.create(
+        "datetimes.csv",
+        vec![
+            svec!["id", "name", "created_at", "updated_at", "amount"],
+            svec![
+                "1",
+                "Alice",
+                "2024-01-15 10:30:00",
+                "2024-02-01 14:00:00",
+                "100.50"
+            ],
+            svec![
+                "2",
+                "Bob",
+                "2024-03-20 09:15:00",
+                "2024-04-10 16:45:00",
+                "200.75"
+            ],
+            svec![
+                "3",
+                "Charlie",
+                "2024-05-05 08:00:00",
+                "2024-06-15 12:30:00",
+                "300.25"
+            ],
+        ],
+    );
+
+    // Step 1: Generate stats cache with --infer-dates so DateTime type is detected
+    let mut cmd = wrk.command("stats");
+    cmd.arg("datetimes.csv")
+        .arg("--infer-dates")
+        .args(["--dates-whitelist", "all"])
+        .arg("--cardinality")
+        .arg("--stats-jsonl")
+        .args(["--cache-threshold", "1"]);
+    wrk.assert_success(&mut cmd);
+
+    // Verify stats detected DateTime columns
+    let stats_output: String = wrk.stdout(&mut cmd);
+    assert!(stats_output.contains("created_at,DateTime"));
+    assert!(stats_output.contains("updated_at,DateTime"));
+
+    // Step 2: Generate Polars schema from stats cache
+    let mut cmd = wrk.command("schema");
+    cmd.arg("--polars").arg("datetimes.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Verify the pschema.json file was created and contains Datetime type
+    assert!(wrk.path("datetimes.csv.pschema.json").exists());
+    let schema_json = std::fs::read_to_string(wrk.path("datetimes.csv.pschema.json")).unwrap();
+    assert!(
+        schema_json.contains(r#""Datetime""#),
+        "Schema should contain Datetime type, got: {schema_json}"
+    );
+    assert!(
+        schema_json.contains(r#""Milliseconds""#),
+        "Schema should contain Milliseconds time unit, got: {schema_json}"
+    );
+
+    // Step 3: Use sqlp with the cached schema to verify it parses datetimes correctly
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("datetimes.csv")
+        .arg("SELECT id, name, created_at, updated_at FROM datetimes LIMIT 1")
+        .arg("--cache-schema");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "name", "created_at", "updated_at"],
+        svec![
+            "1",
+            "Alice",
+            "2024-01-15T10:30:00.000",
+            "2024-02-01T14:00:00.000"
+        ],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_datetime_pschema_override() {
+    let wrk = Workdir::new("sqlp_datetime_pschema_override");
+
+    // Create a CSV with datetime columns
+    wrk.create(
+        "events.csv",
+        vec![
+            svec!["id", "event_name", "event_time", "score"],
+            svec!["1", "login", "2024-06-15 08:30:00", "95.5"],
+            svec!["2", "logout", "2024-06-15 17:00:00", "88.0"],
+        ],
+    );
+
+    // Manually create a pschema.json with Datetime type
+    wrk.create_from_string(
+        "events.csv.pschema.json",
+        r#"{
+  "fields": {
+    "id": "UInt8",
+    "event_name": "String",
+    "event_time": {
+      "Datetime": [
+        "Milliseconds",
+        null
+      ]
+    },
+    "score": "Float32"
+  },
+  "metadata": null
+}"#,
+    );
+
+    // sqlp should use the manually provided schema and parse datetimes
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("events.csv")
+        .arg("SELECT id, event_name, event_time, score FROM events")
+        .arg("--cache-schema");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "event_name", "event_time", "score"],
+        svec!["1", "login", "2024-06-15T08:30:00.000", "95.5"],
+        svec!["2", "logout", "2024-06-15T17:00:00.000", "88.0"],
+    ];
     assert_eq!(got, expected);
 }

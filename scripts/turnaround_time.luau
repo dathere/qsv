@@ -1,5 +1,5 @@
 -- compute Turnaround Time for NYC 311 Benchmark data
-local date = require "date"
+local date = require "./date"
 
 if (string.len(col["Created Date"]) == 0 or string.len(col["Closed Date"]) == 0) then
     return

@@ -170,8 +170,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         rconfig = rconfig.flexible(true);
     }
 
-    let mut total_lines = 0_u64;
-    if let Some(skip_llines) = args.flag_skip_lastlines {
+    let mut total_lines = if let Some(skip_llines) = args.flag_skip_lastlines {
         // use the regular count_rows to get the row_count
         // as Polars doesn't support skipping last lines
         let row_count = util::count_rows_regular(&rconfig)?;
@@ -181,8 +180,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             );
         }
         info!("Set to skip last {skip_llines} lines...");
-        total_lines = row_count.saturating_sub(skip_llines);
-    }
+        row_count.saturating_sub(skip_llines)
+    } else {
+        0_u64
+    };
 
     let mut rdr = rconfig.reader()?;
     let mut wtr = wconfig.writer()?;

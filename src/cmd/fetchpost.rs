@@ -34,7 +34,7 @@ set the --mem-cache-size option.
 
 Disk Cache:
 For persistent, inter-session caching, a DiskCache can be enabled with the --disk-cache flag.
-By default, it will store the cache in the directory ~/.qsv/cache/fetchpost, with a cache expiry
+By default, it will store the cache in the directory ~/.qsv-cache/fetchpost, with a cache expiry
 Time-to-Live (TTL) of 2,419,200 seconds (28 days), and cache hits NOT refreshing the TTL
 of cached values.
 
@@ -42,12 +42,12 @@ Set the --disk-cache-dir option and the environment variables QSV_DISKCACHE_TTL_
 QSV_DISKCACHE_TTL_REFRESH to change default DiskCache settings.
 
 Redis Cache:
-Another persistent, inter-session cache option is a Redis cache enabled with the --redis flag. 
+Another persistent, inter-session cache option is a Redis cache enabled with the --redis flag.
 By default, it will connect to a local Redis instance at redis://127.0.0.1:6379/2,
 with a cache expiry Time-to-Live (TTL) of 2,419,200 seconds (28 days),
 and cache hits NOT refreshing the TTL of cached values.
 
-Set the environment variables QSV_FP_REDIS_CONNSTR, QSV_REDIS_TTL_SECONDS and 
+Set the environment variables QSV_FP_REDIS_CONNSTR, QSV_REDIS_TTL_SECS and
 QSV_REDIS_TTL_REFRESH to change default Redis settings.
 
 Note that the default values are the same as the fetch command, except fetchpost creates the
@@ -91,14 +91,14 @@ data.csv
 
 Given the data.csv above, fetch the JSON response.
 
-  $ qsv fetchpost URL zipcode,country data.csv 
+  $ qsv fetchpost URL zipcode,country data.csv
 
 Note the output will be a JSONL file - with a minified JSON response per line, not a CSV file.
 
 Now, if we want to generate a CSV file with a parsed response - getting only the "form" property,
 we use the new-column and jaq options.
 
-$ qsv fetchpost URL zipcode,country --new-column form --jaq '."form"' data.csv > data_with_response.csv
+  $ qsv fetchpost URL zipcode,country --new-column form --jaq '."form"' data.csv > data_with_response.csv
 
 data_with_response.csv
   URL,zipcode,country,form
@@ -124,7 +124,7 @@ The --http-header option allows you to append arbitrary key value pairs (a valid
 separated by a colon) to the HTTP header (to authenticate against an API, pass custom header fields, etc.).
 Note that you can pass as many key-value pairs by using --http-header option repeatedly. For example:
 
-$ qsv fetchpost https://httpbin.org/post col1-col3 data.csv -H "X-Api-Key:TEST_KEY" -H "X-Api-Secret:ABC123XYZ"
+  $ qsv fetchpost https://httpbin.org/post col1-col3 data.csv -H "X-Api-Key:TEST_KEY" -H "X-Api-Secret:ABC123XYZ"
 
 For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs.
 
@@ -136,7 +136,7 @@ Fetchpost arguments:
     <url-column>               Name of the column with the URL.
                                Otherwise, if the argument starts with `http`, the URL to use.
     <column-list>              Comma-delimited list of columns to insert into the HTTP Post body.
-                               Uses `qsv select` syntax - i.e. Columns can be referenced by index or 
+                               Uses `qsv select` syntax - i.e. Columns can be referenced by index or
                                by name if there is a header row (duplicate column names can be disambiguated
                                with more indexing). Column ranges can also be specified. Finally, columns
                                can be selected using regular expressions.
@@ -147,7 +147,7 @@ Fetchpost options:
                                payload in the HTTP Post body. You can also use --payload-tpl to render
                                a non-JSON payload, but --content-type will have to be set manually.
                                If a rendered JSON is invalid, `fetchpost` will abort and return an error.
-    --content-type <arg>       Overrides automatic content types for `<column-list>` 
+    --content-type <arg>       Overrides automatic content types for `<column-list>`
                                (`application/x-www-form-urlencoded`) and `--payload-tpl` (`application/json`).
                                Typical alternative values are `multipart/form-data` and `text/plain`.
                                It is the responsibility of the user to format the payload accordingly
@@ -178,7 +178,7 @@ Fetchpost options:
     --timeout <seconds>        Timeout for each URL request.
                                [default: 30 ]
     -H, --http-header <k:v>    Append custom header(s) to the HTTP header. Pass multiple key-value pairs
-                               by adding this option multiple times, once for each pair. The key and value 
+                               by adding this option multiple times, once for each pair. The key and value
                                should be separated by a colon.
     --compress                 Compress the HTTP request body using gzip. Note that most servers do not support
                                compressed request bodies unless they are specifically configured to do so. This
@@ -197,9 +197,9 @@ Fetchpost options:
                                Try to follow the syntax here -
                                https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
     --report <d|s>             Creates a report of the fetchpost job. The report has the same name as the
-                               input file with the ".fetchpost-report" suffix. 
+                               input file with the ".fetchpost-report" suffix.
                                There are two kinds of report - d for "detailed" & s for "short". The detailed
-                               report has the same columns as the input CSV with seven additional columns - 
+                               report has the same columns as the input CSV with seven additional columns -
                                qsv_fetchp_url, qsv_fetchp_form, qsv_fetchp_status, qsv_fetchp_cache_hit,
                                qsv_fetchp_retries, qsv_fetchp_elapsed_ms & qsv_fetchp_response.
                                The short report only has the seven columns without the "qsv_fetchp_" prefix.
@@ -222,12 +222,12 @@ Fetchpost options:
                                does not exist, it will be created. If the directory exists, it will be used as is,
                                and will not be flushed. This option allows you to maintain several disk caches
                                for different fetchpost jobs (e.g. one for geocoding, another for weather, etc.)
-                               [default: ~/.qsv/cache/fetchpost]
+                               [default: ~/.qsv-cache/fetchpost]
 
     --redis-cache              Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/2"
-                               with a connection pool size of 20, with a TTL of 28 days, and a cache hit 
+                               with a connection pool size of 20, with a TTL of 28 days, and a cache hit
                                NOT renewing an entry's TTL.
-                               Adjust the QSV_FP_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS & 
+                               Adjust the QSV_FP_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECS &
                                QSV_REDIS_TTL_REFRESH respectively to change Redis settings.
 
     --cache-error              Cache error responses even if a request fails. If an identical URL is requested,
@@ -270,7 +270,7 @@ use log::{
 };
 use minijinja::Environment;
 use minijinja_contrib::pycompat::unknown_method_callback;
-use rand::Rng;
+use rand::RngExt;
 use regex::Regex;
 use reqwest::{
     blocking::Client,
@@ -474,7 +474,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .trim(csv::Trim::All)
-        .no_headers(args.flag_no_headers);
+        .no_headers_flag(args.flag_no_headers);
 
     let mut rdr = rconfig.reader()?;
     let mut wtr = if args.flag_new_column.is_some() {
@@ -512,13 +512,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Config::new(args.arg_input.as_ref())
             .delimiter(args.flag_delimiter)
             .trim(csv::Trim::All)
-            .no_headers(args.flag_no_headers)
+            .no_headers_flag(args.flag_no_headers)
             .select(args.arg_column_list.clone())
     } else {
         Config::new(args.arg_input.as_ref())
             .delimiter(args.flag_delimiter)
             .trim(csv::Trim::All)
-            .no_headers(args.flag_no_headers)
+            .no_headers_flag(args.flag_no_headers)
             // we're constructing a payload, ensure all the columns are selected
             .select(SelectColumns::parse("1-")?)
     };
@@ -907,7 +907,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     final_response = intermediate_value.value;
                     was_cached = intermediate_value.was_cached;
                     if !args.flag_cache_error && final_response.status_code != 200 {
-                        let mut cache = GET_CACHED_RESPONSE.lock().unwrap();
+                        let mut cache = GET_CACHED_RESPONSE.lock();
                         cache.cache_remove(&url);
                     }
                 },
@@ -1255,7 +1255,7 @@ fn get_redis_response(
     flag_max_retries: u8,
 ) -> Result<cached::Return<String>, CliError> {
     Ok(Return::new({
-        serde_json::to_string(&get_response(
+        simd_json::to_string(&get_response(
             url,
             form_body_jsonmap,
             payload_content_type,
@@ -1354,7 +1354,7 @@ fn get_response(
 
         // send the actual request
         let form_body_raw = match payload_content_type {
-            ContentType::Json => serde_json::to_string(&form_body_jsonmap)
+            ContentType::Json => simd_json::to_string(&form_body_jsonmap)
                 .unwrap() // safety: we know form_body_jsonmap is a valid JSON at this point
                 .as_bytes()
                 .to_owned(),
@@ -1515,20 +1515,17 @@ fn get_response(
 
             // if there's a ratelimit_reset field in the response header, get it
             // otherwise, set reset to sentinel value 0
-            let mut reset_secs =
-                parse_ratelimit_header_value(ratelimit_reset.or(ratelimit_reset_sec), 0);
-
-            // if there's a retry_after field in the response header, get it
-            // and set reset to it
-            if let Some(retry_after) = retry_after {
-                let retry_str = retry_after.to_str().unwrap();
+            let reset_secs = if let Some(retry_after) = retry_after {
                 // if we cannot parse its value as u64, the retry after value
                 // is most likely an rfc2822 date and not number of seconds to
                 // wait before retrying, which is a valid value
                 // however, we don't want to do date-parsing here, so we just
                 // wait timeout_secs seconds before retrying
-                reset_secs = retry_str.parse::<u64>().unwrap_or(timeout_secs);
-            }
+                atoi_simd::parse_pos::<u64, false>(retry_after.to_str().unwrap().as_bytes())
+                    .unwrap_or(timeout_secs)
+            } else {
+                parse_ratelimit_header_value(ratelimit_reset.or(ratelimit_reset_sec), 0)
+            };
 
             // if reset_secs > timeout, then just time out and skip the retries
             if reset_secs > timeout_secs {

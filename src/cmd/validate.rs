@@ -22,13 +22,13 @@ It uses the JSON Schema Validation Specification (draft 2020-12) to validate the
 It validates the structure of the file, as well as the data types and domain/range of the fields.
 See https://json-schema.org/draft/2020-12/json-schema-validation.html
 
-qsv supports a custom format - `currency`. This format will only accept a valid currency, defined as: 
+qsv supports a custom format - `currency`. This format will only accept a valid currency, defined as:
 
  1. ISO Currency Symbol (optional): This is the ISO 4217 three-character code or currency symbol
     (e.g. USD, EUR, JPY, $, €, ¥, etc.)
  2. Amount: This is the numerical value of the currency. More than 2 decimal places are allowed.
  3. Formats: Valid currency formats include:
-      Standard: $1,000.00 or USD1000.00  
+      Standard: $1,000.00 or USD1000.00
       Negative amounts: ($100.00) or -$100.00
       Different styles: 1.000,00 (used in some countries for euros)
 
@@ -58,7 +58,7 @@ The "dynamicEnum" value has the form:
   // on other qsv binary variants, dynamicEnum has expanded caching functionality
   dynamicEnum = "[cache_name;cache_age]|URI|colname" where cache_name and cache_age are optional
 
-    // use data.csv from current working directory; cache it as data with a default 
+    // use data.csv from current working directory; cache it as data with a default
     // cache age of 3600 seconds i.e. the cached data.csv expires after 1 hour
     dynamicEnum = "data.csv"
 
@@ -105,7 +105,7 @@ which columns had duplicate combinations (named columns first, then indexed colu
 records will be written to the .invalid file, while valid records will be written to the .valid file.
 
 `uniqueCombinedWith` complements the standard `uniqueItems` keyword, which can only validate
-uniqueness across a single column. 
+uniqueness across a single column.
 
 -------------------------------------------------------
 
@@ -115,14 +115,14 @@ files that have the same structure.
 
 Be sure to select a "training" CSV file that is representative of the data you want to validate
 when creating a schema. The data types, domain/range and regular expressions inferred from the
-reference CSV file should be appropriate for the data you want to validate. 
+reference CSV file should be appropriate for the data you want to validate.
 
 Typically, after creating a schema, you should edit it to fine-tune each field's inferred
 validation rules.
 
 For example, if we created a JSON schema file called "reference.schema.json" using the `schema` command.
 And want to validate "mydata.csv" which we know has validation errors, the output files from running
-`qsv validate mydata.csv reference.schema.json` are: 
+`qsv validate mydata.csv reference.schema.json` are:
 
   * mydata.csv.valid
   * mydata.csv.invalid
@@ -140,8 +140,13 @@ If piped from stdin, the filenames will use `stdin.csv` as the base filename. Fo
    * stdin.csv.invalid
    * stdin.csv.validation-errors.tsv
 
-`validate` also has a `schema` subcommand to validate JSON Schema files. For example:
-  `qsv validate schema myjsonschema.json`
+
+JSON SCHEMA SCHEMA VALIDATION SUBMODE:
+---------------------------------------
+`validate` also has a `schema` subcommand to validate JSON Schema files themselves. E.g.
+     `qsv validate schema myjsonschema.json`
+     // ignore format validation
+     `qsv validate schema --no-format-validation myjsonschema.json`
 
 RFC 4180 VALIDATION MODE:
 ========================
@@ -154,16 +159,39 @@ It also confirms if the CSV is UTF-8 encoded.
 For both modes, returns exit code 0 when the CSV file is valid, exitcode > 0 otherwise.
 If all records are valid, no output files are produced.
 
-For examples, see the tests included in this file (denoted by '#[test]') or see
+Examples:
+
+  # Validate a CSV file. Use this to check if a CSV file is readable by qsv. 
+  qsv validate data.csv
+
+  # Validate a TSV file against a JSON Schema
+  qsv validate data.tsv schema.json
+
+  # Validate multiple CSV files using various dialects against a JSON Schema
+  qsv validate data1.csv data2.tab data3.ssv schema.json
+
+  # Validate all CSV files in a directory against a JSON Schema
+  qsv validate /path/to/csv_directory schema.json
+
+  # Validate CSV files listed in a '.infile-list' file against a JSON Schema
+  qsv validate files.infile-list schema.json
+
+For more examples, see the tests included in this file (denoted by '#[test]') or see
 https://github.com/dathere/qsv/blob/master/tests/test_validate.rs.
 
 Usage:
-    qsv validate schema [<json-schema>]
-    qsv validate [options] [<input>] [<json-schema>]
+    qsv validate schema [--no-format-validation] [<json-schema>]
+    qsv validate [options] [<input>...]
+    qsv validate [options] [<input>] <json-schema>
     qsv validate --help
 
 Validate arguments:
-    <input>                    Input CSV file to validate. If not provided, will read from stdin.
+    <input>...                 Input CSV file(s) to validate. If not provided, will read from stdin.
+                               If input is a directory, all files in the directory will be validated.
+                               If the input is a file with a '.infile-list' extension, the file will
+                               be read as a list of input files. If the input are snappy-compressed
+                               files(s), it will be decompressed automatically.
+                               Extended Input Support is only available for RFC 4180 validation mode.
     <json-schema>              JSON Schema file to validate against. If not provided, `validate`
                                will run in RFC 4180 validation mode. The file can be a local file
                                or a URL (http and https schemes supported).
@@ -212,9 +240,10 @@ Validate options:
     --dfa-size-limit <mb>      Set the approximate capacity, in megabytes, of the cache of transitions
                                used by the engine's lazy Discrete Finite Automata.
                                [default: 10]
-    
+
     --timeout <seconds>        Timeout for downloading json-schemas on URLs and for
-                               'dynamicEnum' lookups on URLs. [default: 30]
+                               'dynamicEnum' lookups on URLs. If 0, no timeout is used.
+                               [default: 30]
     --cache-dir <dir>          The directory to use for caching downloaded dynamicEnum resources.
                                If the directory does not exist, qsv will attempt to create it.
                                If the QSV_CACHE_DIR envvar is set, it will be used instead.
@@ -229,6 +258,19 @@ Validate options:
                                private resources.
                                If the QSV_CKAN_TOKEN envvar is set, it will be used instead.
                                Not available on qsvlite.
+
+                                EMAIL VALIDATION OPTIONS:
+    --email-required-tld        Require the email to have a valid Top-Level Domain (TLD)
+                                (e.g. .com, .org, .net, etc.).
+                                e.g. "john.doe@example" is VALID if this option is NOT set.
+    --email-display-text        Allow display text in emails.
+                                e.g. "John Doe <john.doe@example.com>" is INVALID if this option is NOT set.
+    --email-min-subdomains <n>  Minimum number of subdomains required in the email.
+                                e.g. "jdoe@example.com" is INVALID if this option is set to 3,
+                                but "jdoe@sub.example.com" is VALID.
+                                [default: 2]
+    --email-domain-literal      Allow domain literals in emails.
+                                e.g. "john.doe@[127.0.0.1]" is VALID if this option is set.
 
 Common options:
     -h, --help                 Display this message
@@ -249,6 +291,7 @@ use std::{
     env,
     fs::File,
     io::{BufReader, BufWriter, Read, Write},
+    path::PathBuf,
     str,
     sync::{
         OnceLock,
@@ -263,11 +306,9 @@ use indicatif::HumanCount;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use jsonschema::{
-    Keyword, PatternOptions, ValidationError, Validator,
-    output::BasicOutput,
-    paths::{LazyLocation, Location},
+    EmailOptions, Keyword, PatternOptions, ValidationError, Validator, paths::Location,
 };
-use log::{debug, info, log_enabled};
+use log::debug;
 use qsv_currency::Currency;
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
@@ -309,12 +350,7 @@ macro_rules! fail_validation_error {
         use log::error;
         let err = format!($($t)*);
         error!("{err}");
-        Err(ValidationError::custom(
-            Location::default(),
-            Location::default(),
-            &Value::Null,
-            err,
-        ))
+        Err(ValidationError::custom(err))
     }};
 }
 
@@ -336,7 +372,7 @@ struct Args {
     flag_delimiter:            Option<Delimiter>,
     flag_progressbar:          bool,
     flag_quiet:                bool,
-    arg_input:                 Option<String>,
+    arg_input:                 Vec<std::path::PathBuf>,
     arg_json_schema:           Option<String>,
     flag_fancy_regex:          bool,
     flag_backtrack_limit:      usize,
@@ -346,6 +382,10 @@ struct Args {
     flag_cache_dir:            String,
     flag_ckan_api:             String,
     flag_ckan_token:           Option<String>,
+    flag_email_required_tld:   bool,
+    flag_email_display_text:   bool,
+    flag_email_min_subdomains: usize,
+    flag_email_domain_literal: bool,
 }
 
 enum JSONtypes {
@@ -400,17 +440,12 @@ impl Keyword for DynEnumValidator {
     fn validate<'instance>(
         &self,
         instance: &'instance Value,
-        instance_path: &LazyLocation,
     ) -> Result<(), ValidationError<'instance>> {
         if self.dynenum_set.contains(instance.as_str().unwrap()) {
             Ok(())
         } else {
-            let error = ValidationError::custom(
-                Location::default(),
-                instance_path.into(),
-                instance,
-                format!("{instance} is not a valid dynamicEnum value"),
-            );
+            let error =
+                ValidationError::custom(format!("{instance} is not a valid dynamicEnum value"));
             Err(error)
         }
     }
@@ -445,16 +480,10 @@ impl Keyword for UniqueCombinedWithValidator {
     fn validate<'instance>(
         &self,
         instance: &'instance Value,
-        instance_path: &LazyLocation,
     ) -> Result<(), ValidationError<'instance>> {
-        let obj = instance.as_object().ok_or_else(|| {
-            ValidationError::custom(
-                Location::default(),
-                instance_path.into(),
-                instance,
-                "Instance must be an object",
-            )
-        })?;
+        let obj = instance
+            .as_object()
+            .ok_or_else(|| ValidationError::custom("Instance must be an object"))?;
 
         let mut values = Vec::with_capacity(self.column_names.len() + self.column_indices.len());
 
@@ -497,12 +526,9 @@ impl Keyword for UniqueCombinedWithValidator {
             }
 
             let column_desc = column_desc_parts.join(", ");
-            return Err(ValidationError::custom(
-                Location::default(),
-                instance_path.into(),
-                instance,
-                format!("Combination of values for columns {column_desc} is not unique"),
-            ));
+            return Err(ValidationError::custom(format!(
+                "Combination of values for columns {column_desc} is not unique"
+            )));
         }
 
         seen.insert(combination);
@@ -544,16 +570,11 @@ impl Keyword for UniqueCombinedWithValidator {
 fn unique_combined_with_validator_factory<'a>(
     _parent: &'a Map<String, Value>,
     value: &'a Value,
-    location: Location,
+    _location: Location,
 ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
     // Get the array of column names/indices
     let columns = value.as_array().ok_or_else(|| {
-        ValidationError::custom(
-            Location::default(),
-            location.clone(),
-            value,
-            "'uniqueCombinedWith' must be an array of column names or indices",
-        )
+        ValidationError::custom("'uniqueCombinedWith' must be an array of column names or indices")
     })?;
 
     let col_len = columns.len();
@@ -568,12 +589,7 @@ fn unique_combined_with_validator_factory<'a>(
         } else {
             // Try as string
             let name = col.as_str().ok_or_else(|| {
-                ValidationError::custom(
-                    Location::default(),
-                    location.clone(),
-                    col,
-                    "Column names must be strings or numbers",
-                )
+                ValidationError::custom("Column names must be strings or numbers")
             })?;
             column_names.push(name.to_string());
         }
@@ -582,9 +598,6 @@ fn unique_combined_with_validator_factory<'a>(
     // Validate that we have at least one column
     if column_names.is_empty() && column_indices.is_empty() {
         return Err(ValidationError::custom(
-            Location::default(),
-            location,
-            value,
             "'uniqueCombinedWith' must specify at least one column",
         ));
     }
@@ -859,13 +872,10 @@ fn test_parse_dynenum_uri() {
 fn dyn_enum_validator_factory<'a>(
     _parent: &'a Map<String, Value>,
     value: &'a Value,
-    location: Location,
+    _location: Location,
 ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
     let uri = value.as_str().ok_or_else(|| {
         ValidationError::custom(
-            Location::default(),
-            location,
-            value,
             "'dynamicEnum' must be set to a CSV file on the local filesystem or on a URL.",
         )
     })?;
@@ -949,7 +959,7 @@ fn dyn_enum_validator_factory<'a>(
 fn dyn_enum_validator_factory<'a>(
     _parent: &'a Map<String, Value>,
     value: &'a Value,
-    location: Location,
+    _location: Location,
 ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
     if let Value::String(uri) = value {
         let temp_download = match NamedTempFile::new() {
@@ -964,12 +974,7 @@ fn dyn_enum_validator_factory<'a>(
 
         let dynenum_path = if base_uri.starts_with("http") {
             let valid_url = reqwest::Url::parse(base_uri).map_err(|e| {
-                ValidationError::custom(
-                    Location::default(),
-                    location,
-                    value,
-                    format!("Error parsing dynamicEnum URL: {e}"),
-                )
+                ValidationError::custom(format!("Error parsing dynamicEnum URL: {e}"))
             })?;
 
             // download the CSV file from the URL
@@ -1047,9 +1052,6 @@ fn dyn_enum_validator_factory<'a>(
         Ok(Box::new(DynEnumValidator::new(enum_set)))
     } else {
         Err(ValidationError::custom(
-            Location::default(),
-            location,
-            value,
             "'dynamicEnum' must be set to a CSV file on the local filesystem or on a URL.",
         ))
     }
@@ -1063,33 +1065,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if let Some(ref schema) = args.arg_json_schema {
             let schema_json_string = load_json(schema)?;
             let schema_json = serde_json::from_str(&schema_json_string)?;
-            // First, try_is_valid the JSON Schema
-            match jsonschema::meta::try_is_valid(&schema_json) {
-                Ok(is_valid) => {
-                    if is_valid {
-                        // Now, try_validate the JSON Schema
-                        let validated = jsonschema::meta::try_validate(&schema_json);
-                        match validated {
-                            Ok(Ok(())) => {
-                                if !args.flag_quiet {
-                                    winfo!("Valid JSON Schema.");
-                                }
-                                return Ok(());
-                            },
-                            Ok(Err(e)) => {
-                                return fail_clierror!("JSON Schema Meta-Validation Error: {e}");
-                            },
-                            Err(e) => {
-                                return fail_clierror!("JSON Schema Meta-Reference Error: {e}");
-                            },
-                        }
-                    }
-                    return fail_clierror!("Invalid JSON Schema.");
-                },
-                Err(e) => {
-                    return fail_clierror!("JSON Schema Meta-Reference Error: {e}");
-                },
+            // First, validate the JSON Schema
+            if let Err(e) = jsonschema::meta::validate(&schema_json) {
+                return fail_clierror!("JSON Schema Meta-Reference Error: {e}");
             }
+            // Now, validate the JSON Schema formats
+            let test_validator = if args.flag_no_format_validation {
+                Validator::options()
+                    .should_validate_formats(false)
+                    .should_ignore_unknown_formats(true)
+                    .build(&schema_json)
+            } else {
+                Validator::options()
+                    .should_validate_formats(true)
+                    .should_ignore_unknown_formats(false)
+                    .build(&schema_json)
+            };
+            if let Err(e) = test_validator {
+                return fail_clierror!("JSON Schema Format Validation Error: {e}");
+            }
+            if !args.flag_quiet {
+                winfo!("Valid JSON Schema.");
+            }
+            return Ok(());
         }
         return fail_clierror!("No JSON Schema file supplied.");
     }
@@ -1099,8 +1097,61 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Ordering::Relaxed,
     );
 
-    let mut rconfig = Config::new(args.arg_input.as_ref())
-        .no_headers(args.flag_no_headers)
+    // Check if the last argument is a JSON schema file
+    let has_json_schema = if let Some(last_input) = args.arg_input.last() {
+        last_input
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .is_some_and(|ext| ext.to_lowercase() == "json")
+    } else {
+        false
+    };
+
+    // if no JSON Schema supplied, only let csv reader RFC4180-validate csv file
+    if !has_json_schema && args.arg_json_schema.is_none() {
+        // For RFC 4180 validation mode, we support Extended Input Support
+        return validate_rfc4180_mode(&args);
+    }
+
+    // Extract JSON schema from input list if it's the last argument
+    let (input_files, json_schema_path) = if has_json_schema {
+        // safety: we know the schema is_some() because we checked above
+        let schema_path = args.arg_input.last().unwrap().clone();
+        let input_files = args.arg_input[..args.arg_input.len() - 1].to_vec();
+        (input_files, Some(schema_path))
+    } else {
+        (args.arg_input.clone(), None)
+    };
+
+    // Update args.arg_json_schema if we extracted it from the input list
+    let json_schema_arg = if let Some(schema_path) = &json_schema_path {
+        Some(schema_path.to_string_lossy().to_string())
+    } else {
+        args.arg_json_schema.clone()
+    };
+
+    // JSON Schema validation only supports a single input file
+    if input_files.len() > 1 {
+        return fail_clierror!(
+            "JSON Schema validation only supports a single input file. Use RFC 4180 validation \
+             mode for multiple files."
+        );
+    }
+
+    let input_path = input_files.first().ok_or_else(|| {
+        if has_json_schema && args.arg_input.len() == 1 {
+            CliError::Other(
+                "Only a JSON Schema file was provided, but no data file to validate. Please \
+                 provide a data file to validate against the schema."
+                    .to_string(),
+            )
+        } else {
+            CliError::Other("No input file provided for JSON Schema validation".to_string())
+        }
+    })?;
+
+    let mut rconfig = Config::new(Some(&input_path.to_string_lossy().to_string()))
+        .no_headers_flag(args.flag_no_headers)
         .set_read_buffer(if std::env::var("QSV_RDR_BUFFER_CAPACITY").is_err() {
             DEFAULT_RDR_BUFFER_CAPACITY * 10
         } else {
@@ -1113,215 +1164,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     DELIMITER.set(args.flag_delimiter).unwrap();
 
     let mut rdr = rconfig.reader()?;
-
-    // if no JSON Schema supplied, only let csv reader RFC4180-validate csv file
-    if args.arg_json_schema.is_none() {
-        // just read csv file and let csv reader report problems
-        // since we're using csv::StringRecord, this will also detect non-utf8 sequences
-
-        let flag_json = args.flag_json || args.flag_pretty_json;
-        let flag_pretty_json = args.flag_pretty_json;
-
-        // first, let's validate the header row
-        let mut header_msg = String::new();
-        let mut header_len = 0_usize;
-        let mut field_vec: Vec<String> = Vec::new();
-        if !args.flag_no_headers {
-            let fields_result = rdr.headers();
-            match fields_result {
-                Ok(fields) => {
-                    header_len = fields.len();
-                    field_vec.reserve(header_len);
-                    for field in fields {
-                        field_vec.push(field.to_string());
-                    }
-                    let field_list = field_vec.join(r#"", ""#);
-                    header_msg = format!(
-                        "{} Columns: (\"{field_list}\");",
-                        HumanCount(header_len as u64)
-                    );
-                },
-                Err(e) => {
-                    // we're returning a JSON error for the header,
-                    // so we have more machine-friendly details
-                    if flag_json {
-                        // there's a UTF-8 error, so we report utf8 error metadata
-                        if let csv::ErrorKind::Utf8 { pos, err } = e.kind() {
-                            let header_error = json!({
-                                "errors": [{
-                                    "title" : "Header UTF-8 validation error",
-                                    "detail" : format!("{e}"),
-                                    "meta": {
-                                        "record_position": format!("{pos:?}"),
-                                        "record_error": format!("{err}"),
-                                    }
-                                }]
-                            });
-                            let json_error = if flag_pretty_json {
-                                serde_json::to_string_pretty(&header_error).unwrap()
-                            } else {
-                                header_error.to_string()
-                            };
-
-                            return fail_encoding_clierror!("{json_error}");
-                        }
-                        // it's not a UTF-8 error, so we report a generic
-                        // header validation error
-                        let header_error = json!({
-                            "errors": [{
-                                "title" : "Header Validation error",
-                                "detail" : format!("{e}"),
-                            }]
-                        });
-                        let json_error = if flag_pretty_json {
-                            serde_json::to_string_pretty(&header_error).unwrap()
-                        } else {
-                            header_error.to_string()
-                        };
-                        return fail_encoding_clierror!("{json_error}");
-                    }
-                    // we're not returning a JSON error, so we can use
-                    // a user-friendly error message with suggestions
-                    if let csv::ErrorKind::Utf8 { pos, err } = e.kind() {
-                        return fail_encoding_clierror!(
-                            "non-utf8 sequence detected in header, position {pos:?}.\n{err}\nUse \
-                             `qsv input` to fix formatting and to handle non-utf8 sequences.\n
-                             Alternatively, transcode your data to UTF-8 first using `iconv` or \
-                             `recode`."
-                        );
-                    }
-                    // its not a UTF-8 error, report a generic header validation error
-                    return fail_clierror!("Header Validation error: {e}.");
-                },
-            }
-        }
-
-        // Now, let's validate the rest of the records the fastest way possible.
-        // We do this by using csv::ByteRecord, which does not validate utf8
-        // making for higher throughput and lower memory usage compared to csv::StringRecord
-        // which validates each field SEPARATELY as a utf8 string.
-        // Combined with simdutf8::basic::from_utf8(), we utf8-validate the entire record in one go
-        // as a slice of bytes, this approach is much faster than csv::StringRecord's
-        // per-field validation.
-        let mut record = csv::ByteRecord::with_capacity(500, header_len);
-        let mut result;
-        let mut record_idx: u64 = 0;
-
-        'rfc4180_check: loop {
-            result = rdr.read_byte_record(&mut record);
-            if let Err(e) = result {
-                // read_byte_record() does not validate utf8, so we know this is not a utf8 error
-                if flag_json {
-                    // we're returning a JSON error, so we have more machine-friendly details
-                    // using the JSON API error format
-
-                    let validation_error = json!({
-                        "errors": [{
-                            "title" : "Validation error",
-                            "detail" : format!("{e}"),
-                            "meta": {
-                                "last_valid_record": format!("{record_idx}"),
-                            }
-                        }]
-                    });
-
-                    let json_error = if flag_pretty_json {
-                        serde_json::to_string_pretty(&validation_error).unwrap()
-                    } else {
-                        validation_error.to_string()
-                    };
-
-                    return fail!(json_error);
-                }
-
-                // we're not returning a JSON error, so we can use a
-                // user-friendly error message with a fixlengths suggestion
-                if let csv::ErrorKind::UnequalLengths {
-                    expected_len: _,
-                    len: _,
-                    pos: _,
-                } = e.kind()
-                {
-                    return fail_clierror!(
-                        "Validation error: {e}.\nUse `qsv fixlengths` to fix record length issues."
-                    );
-                }
-                return fail_clierror!("Validation error: {e}.\nLast valid record: {record_idx}");
-            }
-
-            // use SIMD accelerated UTF-8 validation, validate the entire record in one go
-            if simdutf8::basic::from_utf8(record.as_slice()).is_err() {
-                // there's a UTF-8 error, so we report utf8 error metadata
-                if flag_json {
-                    let validation_error = json!({
-                        "errors": [{
-                            "title" : "UTF-8 validation error",
-                            "detail" : "Cannot parse CSV record as UTF-8",
-                            "meta": {
-                                "last_valid_record": format!("{record_idx}"),
-                                "invalid_record": format!("{record:?}"),
-                            }
-                        }]
-                    });
-
-                    let json_error = if flag_pretty_json {
-                        serde_json::to_string_pretty(&validation_error).unwrap()
-                    } else {
-                        validation_error.to_string()
-                    };
-                    return fail_encoding_clierror!("{json_error}");
-                }
-                // we're not returning a JSON error, so we can use a
-                // user-friendly error message with utf8 transcoding suggestions
-                return fail_encoding_clierror!(
-                    r#"non-utf8 sequence at record {record_idx}.
-Invalid record: {record:?}
-Use `qsv input` to fix formatting and to handle non-utf8 sequences.
-Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."#
-                );
-            }
-
-            if result.is_ok_and(|more_data| !more_data) {
-                // we've read the CSV to the end, so break out of loop
-                break 'rfc4180_check;
-            }
-            record_idx += 1;
-        } // end rfc4180_check loop
-
-        // if we're here, we know the CSV is valid
-        let msg = if flag_json {
-            let rfc4180 = RFC4180Struct {
-                delimiter_char: rconfig.get_delimiter() as char,
-                header_row:     !rconfig.no_headers,
-                quote_char:     rconfig.quote as char,
-                num_records:    record_idx,
-                num_fields:     header_len as u64,
-                fields:         field_vec,
-            };
-
-            if flag_pretty_json {
-                serde_json::to_string_pretty(&rfc4180).unwrap()
-            } else {
-                serde_json::to_string(&rfc4180).unwrap()
-            }
-        } else {
-            let delim_display = if rconfig.get_delimiter() == b'\t' {
-                "TAB".to_string()
-            } else {
-                (rconfig.get_delimiter() as char).to_string()
-            };
-            format!(
-                "Valid: {header_msg} Records: {}; Delimiter: {delim_display}",
-                HumanCount(record_idx)
-            )
-        };
-        if !args.flag_quiet {
-            woutinfo!("{msg}");
-        }
-
-        // we're done when validating without a schema
-        return Ok(());
-    }
 
     // if we're here, we're validating with a JSON Schema
     // JSONSchema validation requires headers
@@ -1376,24 +1218,53 @@ Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."#
         .unwrap();
 
     // parse and compile supplied JSON Schema
-    let (schema_json, schema_compiled): (Value, Validator) =
-        // safety: we know the schema is_some() because we checked above
-        match load_json(&args.arg_json_schema.clone().unwrap()) {
+    let json_schema_path =
+        json_schema_path.unwrap_or_else(|| PathBuf::from(json_schema_arg.as_ref().unwrap()));
+    let (schema_json, schema_compiled, has_unique_combined): (Value, Validator, bool) =
+            // safety: we know the schema is_some() because we checked above
+            match load_json(&json_schema_path.to_string_lossy()) {
             Ok(s) => {
                 // Check for custom formats and keywords before parsing
                 let has_currency_format = s.contains(r#""format": "currency""#);
                 let has_dynamic_enum = s.contains("dynamicEnum");
                 let has_unique_combined = s.contains("uniqueCombinedWith");
+                let has_email_format = s.contains(r#""format": "email""#);
+                debug!("Custom formats/keywords: currency: {has_currency_format}, dynamicEnum: {has_dynamic_enum}");
+                debug!("uniqueCombinedWith: {has_unique_combined}, email: {has_email_format}");
 
-                // parse JSON string
-                let mut s_slice = s.as_bytes().to_vec();
-                match simd_json::serde::from_slice::<Value>(&mut s_slice) {
+                // parse JSON string - use platform-appropriate JSON deserialization
+                #[cfg(target_endian = "big")]
+                let json_result = serde_json::from_str::<Value>(&s);
+                #[cfg(target_endian = "little")]
+                let json_result = {
+                    let mut s_slice = s.as_bytes().to_vec();
+                    simd_json::serde::from_slice::<Value>(&mut s_slice)
+                };
+
+                match json_result {
                     Ok(json) => {
                         // compile JSON Schema
                         let mut validator_options = Validator::options()
                             .should_validate_formats(!args.flag_no_format_validation);
 
                         // Add custom validators based on pre-checked flags
+                        if has_email_format {
+                            let mut email_options = EmailOptions::default();
+                            if args.flag_email_required_tld {
+                                email_options = email_options.with_required_tld();
+                            }
+                            if !args.flag_email_display_text {
+                                email_options = email_options.without_display_text();
+                            }
+                            if args.flag_email_min_subdomains > 2 {
+                                email_options = email_options.with_minimum_sub_domains(args.flag_email_min_subdomains);
+                            }
+                            if !args.flag_email_domain_literal {
+                                email_options = email_options.without_domain_literal();
+                            }
+                            validator_options = validator_options.with_email_options(email_options);
+                        }
+
                         if has_currency_format {
                             validator_options = validator_options.with_format("currency", currency_format_checker);
                         }
@@ -1420,16 +1291,16 @@ Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."#
                         }
 
                         match validator_options.build(&json) {
-                            Ok(schema) => (json, schema),
+                            Ok(schema) => (json, schema, has_unique_combined),
                             Err(e) => {
                                 return fail_clierror!(r#"Cannot compile JSONschema. error: {e}
-Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_json_schema.unwrap());
+Try running `qsv validate schema {}` to check the JSON Schema file."#, json_schema_path.to_string_lossy());
                             },
                         }
                     },
                     Err(e) => {
                         return fail_clierror!(r#"Unable to parse JSONschema. error: {e}
-Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_json_schema.unwrap());
+Try running `qsv validate schema {}` to check the JSON Schema file."#, json_schema_arg.as_ref().unwrap());
                     },
                 }
             },
@@ -1519,29 +1390,41 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_
                 };
 
                 // validate JSON instance against JSON Schema
-                match schema_compiled.apply(&json_instance).basic() {
-                    BasicOutput::Valid(_) => None,
-                    BasicOutput::Invalid(errors) => {
-                        // Only convert to string when we have validation errors
-                        // safety: see safety comment above
-                        let row_number_string = unsafe {
-                            simdutf8::basic::from_utf8(&record[header_len]).unwrap_unchecked()
-                        };
+                // if the schema has no stateful validators (like uniqueCombinedWith),
+                // and the record is valid, then short-circuit and return None
+                let evaluation = if !has_unique_combined && schema_compiled.is_valid(&json_instance)
+                {
+                    return None;
+                } else {
+                    // otherwise, fully evaluate the record
+                    schema_compiled.evaluate(&json_instance)
+                };
 
-                        // Preallocate the vector with the known size
-                        let mut error_messages = Vec::with_capacity(errors.len());
+                if evaluation.flag().valid {
+                    None
+                } else {
+                    // Only convert to string when we have validation errors
+                    // safety: see safety comment above
+                    let row_number_string = unsafe {
+                        simdutf8::basic::from_utf8(&record[header_len]).unwrap_unchecked()
+                    };
 
-                        // there can be multiple validation errors for a single record,
-                        // squash multiple errors into one long String with linebreaks
-                        for e in errors {
-                            error_messages.push(format!(
-                                "{row_number_string}\t{field}\t{error}",
-                                field = e.instance_location().as_str().trim_start_matches('/'),
-                                error = e.error_description()
-                            ));
-                        }
-                        Some(error_messages.join("\n"))
-                    },
+                    // Collect errors into a vector
+                    let errors: Vec<_> = evaluation.iter_errors().collect();
+
+                    // Preallocate the vector with the known size
+                    let mut error_messages = Vec::with_capacity(errors.len());
+
+                    // there can be multiple validation errors for a single record,
+                    // squash multiple errors into one long String with linebreaks
+                    for e in errors {
+                        error_messages.push(format!(
+                            "{row_number_string}\t{field}\t{error}",
+                            field = e.instance_location.as_str().trim_start_matches('/'),
+                            error = e.error
+                        ));
+                    }
+                    Some(error_messages.join("\n"))
                 }
             })
             .collect_into_vec(&mut batch_validation_results);
@@ -1554,6 +1437,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_
         for (i, result) in batch_validation_results.iter().enumerate() {
             if let Some(validation_error_msg) = result {
                 invalid_count += 1;
+                // safety: we know the index is in bounds because we just extended the vector
                 unsafe { valid_flags.set_unchecked(start_idx + i, false) };
                 validation_error_messages.push(validation_error_msg.to_owned());
             }
@@ -1609,10 +1493,10 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_
         // if 100% invalid, valid file isn't needed, but this is rare so OK creating empty file.
         woutinfo!("Writing invalid/valid/error files...");
 
-        let input_path = args
-            .arg_input
-            .clone()
-            .unwrap_or_else(|| "stdin.csv".to_string());
+        let input_path = args.arg_input.first().map_or_else(
+            || "stdin.csv".to_string(),
+            |p| p.to_string_lossy().to_string(),
+        );
 
         write_error_report(&input_path, validation_error_messages)?;
 
@@ -1648,6 +1532,332 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, args.arg_
     if !args.flag_quiet {
         winfo!("All {} records valid.", HumanCount(row_number));
     }
+    Ok(())
+}
+
+/// Validate multiple files in RFC 4180 mode with Extended Input Support
+fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
+    use tempfile::tempdir;
+
+    let tmpdir = tempdir()?;
+    let processed_inputs = util::process_input(args.arg_input.clone(), &tmpdir, "")?;
+    let input_count = processed_inputs.len();
+
+    let flag_json = args.flag_json || args.flag_pretty_json;
+    let flag_pretty_json = args.flag_pretty_json;
+
+    let mut all_valid = true;
+    let mut total_files = 0;
+    let mut valid_files = 0;
+
+    for input_path in processed_inputs {
+        total_files += 1;
+
+        if !args.flag_quiet && input_count > 1 {
+            woutinfo!("Validating: {}", input_path.display());
+        }
+
+        let mut rconfig = Config::new(Some(&input_path.to_string_lossy().to_string()))
+            .no_headers_flag(args.flag_no_headers)
+            .set_read_buffer(if std::env::var("QSV_RDR_BUFFER_CAPACITY").is_err() {
+                DEFAULT_RDR_BUFFER_CAPACITY * 10
+            } else {
+                DEFAULT_RDR_BUFFER_CAPACITY
+            });
+
+        if args.flag_delimiter.is_some() {
+            rconfig = rconfig.delimiter(args.flag_delimiter);
+        }
+
+        let mut rdr = match rconfig.reader() {
+            Ok(reader) => reader,
+            Err(e) => {
+                if flag_json {
+                    let file_error = json!({
+                        "errors": [{
+                            "title": "File validation error",
+                            "detail": format!("Cannot read file {}: {}", input_path.display(), e),
+                            "meta": {
+                                "file": input_path.to_string_lossy()
+                            }
+                        }]
+                    });
+                    let json_error = if flag_pretty_json {
+                        // safety: we know file_error is valid JSON
+                        simd_json::to_string_pretty(&file_error).unwrap()
+                    } else {
+                        file_error.to_string()
+                    };
+                    return fail_clierror!("{json_error}");
+                }
+                return fail_clierror!("Cannot read file {}: {}", input_path.display(), e);
+            },
+        };
+
+        // Validate the file
+        let validation_result = validate_single_file_rfc4180(
+            &mut rdr,
+            &rconfig,
+            flag_json,
+            flag_pretty_json,
+            args.flag_quiet,
+        );
+
+        match validation_result {
+            Ok(()) => {
+                valid_files += 1;
+            },
+            Err(e) => {
+                all_valid = false;
+                if !args.flag_quiet && input_count > 1 {
+                    woutinfo!("❌ {}: {}", input_path.display(), e);
+                }
+                // For single files, return the error directly to maintain backward compatibility
+                if input_count == 1 {
+                    return Err(e);
+                }
+            },
+        }
+    }
+
+    // Summary
+    if !args.flag_quiet && input_count > 1 {
+        if all_valid {
+            winfo!("✅ All {} files are valid.", total_files);
+        } else {
+            winfo!(
+                "❌ {} out of {} files are invalid.",
+                total_files - valid_files,
+                total_files
+            );
+        }
+    }
+
+    if all_valid {
+        Ok(())
+    } else if input_count > 1 {
+        fail_clierror!(
+            "{} out of {} files failed validation",
+            total_files - valid_files,
+            total_files
+        )
+    } else {
+        // For single files, just return the error without the summary message
+        Err(CliError::Other("Validation failed".to_string()))
+    }
+}
+
+/// Validate a single file in RFC 4180 mode
+fn validate_single_file_rfc4180(
+    rdr: &mut csv::Reader<Box<dyn std::io::Read + Send + 'static>>,
+    rconfig: &Config,
+    flag_json: bool,
+    flag_pretty_json: bool,
+    quiet: bool,
+) -> CliResult<()> {
+    // first, let's validate the header row
+    let mut header_msg = String::new();
+    let mut header_len = 0_usize;
+    let mut field_vec: Vec<String> = Vec::new();
+    if !rconfig.no_headers {
+        let fields_result = rdr.headers();
+        match fields_result {
+            Ok(fields) => {
+                header_len = fields.len();
+                field_vec.reserve(header_len);
+                for field in fields {
+                    field_vec.push(field.to_string());
+                }
+                let field_list = field_vec.join(r#"", ""#);
+                header_msg = format!(
+                    "{} Columns: (\"{field_list}\");",
+                    HumanCount(header_len as u64)
+                );
+            },
+            Err(e) => {
+                // we're returning a JSON error for the header,
+                // so we have more machine-friendly details
+                if flag_json {
+                    // there's a UTF-8 error, so we report utf8 error metadata
+                    if let csv::ErrorKind::Utf8 { pos, err } = e.kind() {
+                        let header_error = json!({
+                            "errors": [{
+                                "title" : "Header UTF-8 validation error",
+                                "detail" : format!("{e}"),
+                                "meta": {
+                                    "record_position": format!("{pos:?}"),
+                                    "record_error": format!("{err}"),
+                                }
+                            }]
+                        });
+                        let json_error = if flag_pretty_json {
+                            // safety: we know header_error is valid JSON
+                            simd_json::to_string_pretty(&header_error).unwrap()
+                        } else {
+                            header_error.to_string()
+                        };
+
+                        return fail_encoding_clierror!("{json_error}");
+                    }
+                    // it's not a UTF-8 error, so we report a generic
+                    // header validation error
+                    let header_error = json!({
+                        "errors": [{
+                            "title" : "Header Validation error",
+                            "detail" : format!("{e}"),
+                        }]
+                    });
+                    let json_error = if flag_pretty_json {
+                        // safety: we know header_error is valid JSON
+                        simd_json::to_string_pretty(&header_error).unwrap()
+                    } else {
+                        header_error.to_string()
+                    };
+                    return fail_encoding_clierror!("{json_error}");
+                }
+                // we're not returning a JSON error, so we can use
+                // a user-friendly error message with suggestions
+                if let csv::ErrorKind::Utf8 { pos, err } = e.kind() {
+                    return fail_encoding_clierror!(
+                        "non-utf8 sequence detected in header, position {pos:?}.\n{err}\nUse `qsv \
+                         input` to fix formatting and to handle non-utf8 sequences.\n
+                         Alternatively, transcode your data to UTF-8 first using `iconv` or \
+                         `recode`."
+                    );
+                }
+                // its not a UTF-8 error, report a generic header validation error
+                return fail_clierror!("Header Validation error: {e}.");
+            },
+        }
+    }
+
+    // Now, let's validate the rest of the records the fastest way possible.
+    // We do this by using csv::ByteRecord, which does not validate utf8
+    // making for higher throughput and lower memory usage compared to csv::StringRecord
+    // which validates each field SEPARATELY as a utf8 string.
+    // Combined with simdutf8::basic::from_utf8(), we utf8-validate the entire record in one go
+    // as a slice of bytes, this approach is much faster than csv::StringRecord's
+    // per-field validation.
+    let mut record = csv::ByteRecord::with_capacity(500, header_len);
+    let mut result;
+    let mut record_idx: u64 = 0;
+
+    'rfc4180_check: loop {
+        result = rdr.read_byte_record(&mut record);
+        if let Err(e) = result {
+            // read_byte_record() does not validate utf8, so we know this is not a utf8 error
+            if flag_json {
+                // we're returning a JSON error, so we have more machine-friendly details
+                // using the JSON API error format
+
+                let validation_error = json!({
+                    "errors": [{
+                        "title" : "Validation error",
+                        "detail" : format!("{e}"),
+                        "meta": {
+                            "last_valid_record": format!("{record_idx}"),
+                        }
+                    }]
+                });
+
+                let json_error = if flag_pretty_json {
+                    // safety: we know validation_error is valid JSON
+                    simd_json::to_string_pretty(&validation_error).unwrap()
+                } else {
+                    validation_error.to_string()
+                };
+
+                return fail!(json_error);
+            }
+
+            // we're not returning a JSON error, so we can use a
+            // user-friendly error message with a fixlengths suggestion
+            if let csv::ErrorKind::UnequalLengths {
+                expected_len: _,
+                len: _,
+                pos: _,
+            } = e.kind()
+            {
+                return fail_clierror!(
+                    "Validation error: {e}.\nUse `qsv fixlengths` to fix record length issues."
+                );
+            }
+            return fail_clierror!("Validation error: {e}.\nLast valid record: {record_idx}");
+        }
+
+        // use SIMD accelerated UTF-8 validation, validate the entire record in one go
+        if simdutf8::basic::from_utf8(record.as_slice()).is_err() {
+            // there's a UTF-8 error, so we report utf8 error metadata
+            if flag_json {
+                let validation_error = json!({
+                    "errors": [{
+                        "title" : "UTF-8 validation error",
+                        "detail" : "Cannot parse CSV record as UTF-8",
+                        "meta": {
+                            "last_valid_record": format!("{record_idx}"),
+                            "invalid_record": format!("{record:?}"),
+                        }
+                    }]
+                });
+
+                let json_error = if flag_pretty_json {
+                    // safety: we know validation_error is valid JSON
+                    simd_json::to_string_pretty(&validation_error).unwrap()
+                } else {
+                    validation_error.to_string()
+                };
+                return fail_encoding_clierror!("{json_error}");
+            }
+            // we're not returning a JSON error, so we can use a
+            // user-friendly error message with utf8 transcoding suggestions
+            return fail_encoding_clierror!(
+                r#"non-utf8 sequence at record {record_idx}.
+Invalid record: {record:?}
+Use `qsv input` to fix formatting and to handle non-utf8 sequences.
+Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."#
+            );
+        }
+
+        if result.is_ok_and(|more_data| !more_data) {
+            // we've read the CSV to the end, so break out of loop
+            break 'rfc4180_check;
+        }
+        record_idx += 1;
+    } // end rfc4180_check loop
+
+    // if we're here, we know the CSV is valid
+    let msg = if flag_json {
+        let rfc4180 = RFC4180Struct {
+            delimiter_char: rconfig.get_delimiter() as char,
+            header_row:     !rconfig.no_headers,
+            quote_char:     rconfig.quote as char,
+            num_records:    record_idx,
+            num_fields:     header_len as u64,
+            fields:         field_vec,
+        };
+
+        if flag_pretty_json {
+            // safety: we know rfc4180 is populated and serializable as JSON
+            simd_json::to_string_pretty(&rfc4180).unwrap()
+        } else {
+            // safety: we know rfc4180 is populated and serializable as JSON
+            simd_json::to_string(&rfc4180).unwrap()
+        }
+    } else {
+        let delim_display = if rconfig.get_delimiter() == b'\t' {
+            "TAB".to_string()
+        } else {
+            (rconfig.get_delimiter() as char).to_string()
+        };
+        format!(
+            "Valid: {header_msg} Records: {}; Delimiter: {delim_display}",
+            HumanCount(record_idx)
+        )
+    };
+    if !quiet {
+        woutinfo!("{msg}");
+    }
+
     Ok(())
 }
 
@@ -1760,7 +1970,7 @@ fn to_json_instance(
                 }
             },
             JSONtypes::Integer => {
-                if let Ok(int) = atoi_simd::parse::<i64>(value) {
+                if let Ok(int) = atoi_simd::parse::<i64, false, false>(value) {
                     Value::Number(Number::from(int))
                 } else {
                     return fail_clierror!(
@@ -1854,30 +2064,13 @@ fn get_json_types(headers: &ByteRecord, schema: &Value) -> CliResult<Vec<(String
 fn load_json(uri: &str) -> Result<String, String> {
     let json_string = match uri {
         url if url.to_lowercase().starts_with("http") => {
-            use reqwest::blocking::Client;
-
-            let client_timeout =
-                std::time::Duration::from_secs(TIMEOUT_SECS.load(Ordering::Relaxed) as u64);
-
-            let client = match Client::builder()
-                // safety: we're using a validated QSV_USER_AGENT or the default user agent
-                .user_agent(util::set_user_agent(None).unwrap())
-                .brotli(true)
-                .gzip(true)
-                .deflate(true)
-                .zstd(true)
-                .use_rustls_tls()
-                .http2_adaptive_window(true)
-                .connection_verbose(
-                    log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace),
-                )
-                .timeout(client_timeout)
-                .build()
-            {
+            let client = match util::create_reqwest_blocking_client(
+                None,
+                TIMEOUT_SECS.load(Ordering::Relaxed),
+                Some(uri.to_string()),
+            ) {
                 Ok(c) => c,
-                Err(e) => {
-                    return fail_format!("Cannot build reqwest client: {e}.");
-                },
+                Err(e) => return fail_format!("Cannot build reqwest client: {e}."),
             };
 
             match client.get(url).send() {
@@ -1911,19 +2104,18 @@ fn validate_json_instance(
     instance: &Value,
     schema_compiled: &Validator,
 ) -> Option<Vec<(String, String)>> {
-    match schema_compiled.apply(instance).basic() {
-        BasicOutput::Valid(_) => None,
-        BasicOutput::Invalid(errors) => Some(
-            errors
-                .iter()
-                .map(|e| {
-                    (
-                        e.instance_location().to_string(),
-                        e.error_description().to_string(),
-                    )
-                })
+    // Use is_valid() for fast boolean check on valid records (doesn't walk full tree)
+    // Only call evaluate() when invalid to get detailed errors
+    if schema_compiled.is_valid(instance) {
+        None
+    } else {
+        Some(
+            schema_compiled
+                .evaluate(instance)
+                .iter_errors()
+                .map(|e| (e.instance_location.to_string(), e.error.to_string()))
                 .collect(),
-        ),
+        )
     }
 }
 
@@ -2357,7 +2549,10 @@ fn test_dyn_enum_validator() {
         Err(e) => {
             assert_eq!(
                 format!("{e:?}"),
-                r#"ValidationError { instance: String("lanzones"), kind: Custom { message: "\"lanzones\" is not a valid dynamicEnum value" }, instance_path: Location(""), schema_path: Location("") }"#
+                "ValidationError { repr: ValidationErrorRepr { instance: String(\"lanzones\"), \
+                 kind: Custom { keyword: \"dynamicEnum\", message: \"\\\"lanzones\\\" is not a \
+                 valid dynamicEnum value\" }, instance_path: Location(\"\"), schema_path: \
+                 Location(\"/dynamicEnum\"), absolute_keyword_location: None, .. } }"
             );
         },
         _ => {

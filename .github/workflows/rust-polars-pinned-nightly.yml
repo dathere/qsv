@@ -16,10 +16,10 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5.6.0
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6.2.0
       with:
-        python-version: '3.12'
+        python-version: '3.13'
     - name: apt-get update Ubuntu, libwayland-dev
       run: |
         sudo apt-get update
@@ -29,17 +29,11 @@ jobs:
         sudo apt-get install redis-server
         sudo service redis-server start
     - name: Installing Rust toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@master
       with:
         # set to the pinned nightly version known to work with polars
-        toolchain: nightly-2025-06-27
-        profile: minimal
+        toolchain: nightly-2026-04-01
         components: rust-src
         target: x86_64-unknown-linux-gnu
-        override: true
-        default: true
     - name: Run tests
-      env:
-        RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
-        # RUSTFLAGS: -C target-cpu=native
-      run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,feature_capable,nightly,to,polars,lens
+      run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,feature_capable,nightly,to,polars,nightly-polars,lens

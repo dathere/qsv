@@ -5,6 +5,8 @@ use std::{
     sync::OnceLock,
 };
 
+use cached::{DiskCacheError, RedisCacheError};
+
 /// write to stdout
 macro_rules! wout {
     ($($arg:tt)*) => ({
@@ -158,17 +160,17 @@ pub enum CliError {
 
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            CliError::Flag(ref e) => e.fmt(f),
-            CliError::Help(ref e) => e.fmt(f),
-            CliError::Csv(ref e) => e.fmt(f),
-            CliError::Io(ref e) => e.fmt(f),
+        match self {
+            CliError::Flag(e) => e.fmt(f),
+            CliError::Help(e) => e.fmt(f),
+            CliError::Csv(e) => e.fmt(f),
+            CliError::Io(e) => e.fmt(f),
             CliError::NoMatch() => f.write_str("no_match"),
-            CliError::Other(ref s)
-            | CliError::IncorrectUsage(ref s)
-            | CliError::Encoding(ref s)
-            | CliError::OutOfMemory(ref s)
-            | CliError::Network(ref s) => f.write_str(s),
+            CliError::Other(s)
+            | CliError::IncorrectUsage(s)
+            | CliError::Encoding(s)
+            | CliError::OutOfMemory(s)
+            | CliError::Network(s) => f.write_str(s),
         }
     }
 }
@@ -256,6 +258,12 @@ impl From<chrono_tz::ParseError> for CliError {
     }
 }
 
+impl From<simd_json::Error> for CliError {
+    fn from(err: simd_json::Error) -> CliError {
+        CliError::Other(format!("SimdJSON error: {err:?}"))
+    }
+}
+
 impl From<zip::result::ZipError> for CliError {
     fn from(err: zip::result::ZipError) -> CliError {
         match err {
@@ -271,5 +279,17 @@ impl From<zip::result::ZipError> for CliError {
             },
             _ => CliError::Other(format!("Zip error: {err:?}")),
         }
+    }
+}
+
+impl From<DiskCacheError> for CliError {
+    fn from(err: DiskCacheError) -> CliError {
+        CliError::Other(format!("DiskCache error: {err:?}"))
+    }
+}
+
+impl From<RedisCacheError> for CliError {
+    fn from(err: RedisCacheError) -> CliError {
+        CliError::Other(format!("RedisCache error: {err:?}"))
     }
 }

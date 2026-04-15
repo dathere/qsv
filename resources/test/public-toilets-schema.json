@@ -1,5 +1,5 @@
 {
-    "$schema": "http://json-schema.org/draft-07/schema",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://example.com/public_toilets_schema.json",
     "title": "Public Toilets",
     "description": "Manually converted from JSON Table Schema at https://github.com/esd-org-uk/schemas/blob/master/PublicToilets/PublicToilets.json",

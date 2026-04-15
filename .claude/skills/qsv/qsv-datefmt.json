@@ -1,0 +1,139 @@
+{
+  "name": "qsv-datefmt",
+  "version": "19.0.0",
+  "description": "Formats recognized date fields (19 formats recognized) to a specified date format using strftime date format specifiers.",
+  "category": "transformation",
+  "command": {
+    "subcommand": "datefmt",
+    "args": [
+      {
+        "name": "column",
+        "type": "string",
+        "required": true,
+        "description": "The column/s to apply the date formats to. Note that the <column> argument supports multiple columns. See 'qsv select --help' for the format details."
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": "The input file to read from. If not specified, reads from stdin."
+      }
+    ],
+    "options": [
+      {
+        "flag": "--batch",
+        "type": "string",
+        "description": "The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows.",
+        "default": "50000"
+      },
+      {
+        "flag": "--default-tz",
+        "type": "string",
+        "description": ""
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--formatstr",
+        "type": "string",
+        "description": "",
+        "default": "%+"
+      },
+      {
+        "flag": "--input-tz",
+        "type": "string",
+        "description": "",
+        "default": "UTC"
+      },
+      {
+        "flag": "--keep-zero-time",
+        "type": "flag",
+        "description": "If a formatted date ends with \"T00:00:00+00:00\", keep the time instead of removing it."
+      },
+      {
+        "flag": "--new-column",
+        "type": "string",
+        "description": "Put the transformed values in a new column instead."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--output-tz",
+        "type": "string",
+        "description": "",
+        "default": "UTC"
+      },
+      {
+        "flag": "--prefer-dmy",
+        "type": "flag",
+        "description": "Prefer to parse dates in dmy format. Otherwise, use mdy format."
+      },
+      {
+        "flag": "--rename",
+        "type": "string",
+        "description": "New name for the transformed column."
+      },
+      {
+        "flag": "--ts-resolution",
+        "type": "string",
+        "description": "The resolution to use when parsing Unix timestamps. Valid values are \"sec\", \"milli\", \"micro\", \"nano\".",
+        "default": "sec"
+      },
+      {
+        "flag": "--utc",
+        "type": "flag",
+        "description": "Shortcut for --input-tz and --output-tz set to UTC."
+      },
+      {
+        "flag": "--zulu",
+        "type": "flag",
+        "description": "Shortcut for --output-tz set to UTC and --formatstr set to \"%Y-%m-%dT%H:%M:%SZ\"."
+      }
+    ]
+  },
+  "hints": {
+    "indexed": true,
+    "memory": "constant"
+  },
+  "examples": [
+    {
+      "description": "Format dates in Open Date column to ISO 8601/RFC 3339 format:",
+      "command": "qsv datefmt 'Open Date' file.csv"
+    },
+    {
+      "description": "Format multiple date columns in file.csv to ISO 8601/RFC 3339 format:",
+      "command": "qsv datefmt 'Open Date,Modified Date,Closed Date' file.csv"
+    },
+    {
+      "description": "Format all columns that end with \"_date\" case-insensitive in file.csv to ISO 8601/RFC 3339 format:",
+      "command": "qsv datefmt '/(?i)_date$/' file.csv"
+    },
+    {
+      "description": "Format dates in OpenDate column using '%Y-%m-%d' format:",
+      "command": "qsv datefmt OpenDate --formatstr '%Y-%m-%d' file.csv"
+    },
+    {
+      "description": "Format multiple date columns using '%Y-%m-%d' format:",
+      "command": "qsv datefmt OpenDate,CloseDate,ReopenDate --formatstr '%Y-%m-%d' file.csv"
+    },
+    {
+      "description": "Get the week number for OpenDate and store it in the week_number column:",
+      "command": "qsv datefmt OpenDate --formatstr '%V' --new-column week_number file.csv"
+    },
+    {
+      "description": "Get the day of the week for several date columns and store it in the corresponding weekday columns:",
+      "command": "qsv datefmt OpenDate,CloseDate --formatstr '%u' --rename Open_weekday,Close_weekday file.csv"
+    }
+  ]
+}

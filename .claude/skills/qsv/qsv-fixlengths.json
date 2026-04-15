@@ -1,0 +1,59 @@
+{
+  "name": "qsv-fixlengths",
+  "version": "19.0.0",
+  "description": "Force a CSV to have same-length records by either padding or truncating them.",
+  "category": "formatting",
+  "command": {
+    "subcommand": "fixlengths",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--escape",
+        "type": "string",
+        "description": "The escape character to use. When not specified, quotes are escaped by doubling them."
+      },
+      {
+        "flag": "--insert",
+        "type": "string",
+        "description": "If empty fields need to be inserted, insert them at <pos>. If <pos> is zero, then it is inserted at the end of each record. If <pos> is negative, it is inserted from the END of each record going backwards. If <pos> is positive, it is inserted from the BEGINNING of each record going forward.",
+        "default": "0"
+      },
+      {
+        "flag": "--length",
+        "type": "string",
+        "description": "Forcefully set the length of each record. If a record is not the size given, then it is truncated or expanded as appropriate."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--quote",
+        "type": "string",
+        "description": "The quote character to use.",
+        "default": "\""
+      },
+      {
+        "flag": "--remove-empty",
+        "type": "flag",
+        "description": "Remove empty columns."
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  }
+}

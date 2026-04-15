@@ -1,0 +1,63 @@
+{
+  "name": "qsv-fill",
+  "version": "19.0.0",
+  "description": "Fill empty values.",
+  "category": "utility",
+  "command": {
+    "subcommand": "fill",
+    "args": [
+      {
+        "name": "selection",
+        "type": "string",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--backfill",
+        "type": "flag",
+        "description": "Fill initial empty values with the first valid value."
+      },
+      {
+        "flag": "--default",
+        "type": "string",
+        "description": "Fill using this default value."
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--first",
+        "type": "flag",
+        "description": "Fill using the first valid value of a column, instead of the latest."
+      },
+      {
+        "flag": "--groupby",
+        "type": "string",
+        "description": "Group by specified columns."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.)"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  }
+}

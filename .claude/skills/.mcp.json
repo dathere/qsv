@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "qsv": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/mcp-server.js"],
+      "env": {
+        "QSV_MCP_EXPOSE_ALL_TOOLS": "true"
+      }
+    }
+  }
+}

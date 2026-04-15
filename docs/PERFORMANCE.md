@@ -41,10 +41,10 @@ Over time, we realized that the cached stats can be used to make other commands 
 - `frequency` uses the stats cache to short-circuit compiling frequency tables for ID columns (all unique values) by looking at the cardinality of a column and fetching rowcounts from the cache.
 - `schema` uses the cache to create a JSON Schema Validation file. It uses the cache to set the data type, enum values, const values, minLength, maxLength, minimum and maximum properties in the JSON Schema file.
 - `tojsonl` uses the cache to set the JSON data type, and to infer boolean JSON properties.
-- `sqlp` and `joinp` uses the cache to create a Polars Schema, short-circuting Polars' schema inferencing - which is not as reliable as it depends on sampling the first N rows of a CSV, which may lead to wrong type inferences if the sample size is not large enough (which if set too large, slows down the Polars engine). As the data type inferences of `stats` are guaranteed, its not only faster, it works all the time!
+- `sqlp` and `joinp` uses the cache to create a Polars Schema, short-circuiting Polars' schema inferencing - which is not as reliable as it depends on sampling the first N rows of a CSV, which may lead to wrong type inferences if the sample size is not large enough (which if set too large, slows down the Polars engine). As the data type inferences of `stats` are guaranteed, its not only faster, it works all the time!
 - `pivotp` uses the cache extensively to automatically infer the best aggregation function to use based on the attributes of the pivot and value columns.
-- `diff` uses the cache to short-circuit comparison if the files fingerprint hashes are identical. It also uses the rowcount and cardinality of the primary key column to check for uniqueness.
 - `sample` uses the cache to skip unnecessary scanning and to inform its sampling strategies.
+- `pragmastat` uses the cache to automatically filter out non-numeric columns and to support Date/DateTime columns by converting them to epoch milliseconds for analysis.
 
 For the most part, the default caching behavior works transparently, though you will notice several files with the same file stem will start appearing in the same location as your CSV files. As metadata is tiny by nature and very useful on its own, a conscious decision was made not to hide them.
 
@@ -97,24 +97,24 @@ rustc --print target-features
 ## Memory Management
 ### Memory Allocator
 
-qsv supports three memory allocators: mimalloc, jemalloc and the standard allocator.
+qsv supports three memory allocators: jemalloc, mimalloc and the standard allocator.
 
-By default, qsv uses [mimalloc](https://github.com/microsoft/mimalloc), a performance-oriented allocator from Microsoft.
+By default, qsv uses [jemalloc](https://jemalloc.net), a general purpose allocator that is also the default Linux allocator used by the [Pola.rs](https://www.pola.rs) project for its python bindings, as benchmarks have shown that it [performs better than mimalloc on some platforms](https://docs.rs/polars/latest/polars/#custom-allocator).
 
-You can also use another alternative - the [jemalloc](https://jemalloc.net) allocator, which is the default Linux allocator used by the [Pola.rs](https://www.pola.rs) project for its python bindings, as benchmarks have shown that it [performs better than mimalloc on some platforms](https://docs.rs/polars/latest/polars/#custom-allocator).
+You can also use [mimalloc](https://github.com/microsoft/mimalloc), a performance-oriented allocator from Microsoft.
 
-If you don't want to use mimalloc, use the `--no-default-features` flag when installing/compiling qsv, e.g.:
+If you want to use an alternate allocator, use the `--no-default-features` flag when installing/compiling qsv, e.g.:
 
-#### To use jemalloc
+#### To use mimalloc
 
 ```bash
-cargo install qsv --path . --no-default-features --features all_features,jemallocator
+cargo install qsv --path . --no-default-features --features all_features,mimalloc
 ```
 
 or
 
 ```bash
-cargo build --release --no-default-features --features all_features,jemallocator
+cargo build --release --no-default-features --features all_features,mimalloc
 ```
 
 #### To use the standard allocator
@@ -129,12 +129,12 @@ or
 cargo build --release --no-default-features --features all_features
 ```
 
-To find out what memory allocator qsv is using, run `qsv --version`. After the qsv version number, the allocator used is displayed ("`standard`", "`mimalloc`" or "`jemalloc`"). Note that mimalloc is not supported on the `x86_64-pc-windows-gnu` and `arm` targets, and you'll need to use the "standard" allocator on those platforms.
+To find out what memory allocator qsv is using, run `qsv --version`. After the qsv version number, the allocator used is displayed ("`standard`", "`mimalloc`" or "`jemalloc`"). Note that jemalloc is not supported on Windows targets, and you'll need to use the "mimalloc" or "standard" allocator on those platforms.
 
 ### Out-of-Memory (OOM) Prevention
 Most qsv commands use a "streaming" approach to processing CSVs - "streaming" in the input record-by-record while processing it. This allows it to process arbitrarily large CSVs with constant memory.
 
-There are a number of commands/modes however (denoted by the "exploding head" emoji - 🤯), that require qsv to load the entire CSV into memory - `dedup` (when not using the --sorted option), `reverse`, `sort`, `stats` (when calculating the "non-streaming" extended stats), `table` and `transpose` (when not running in --multipass mode).
+There are a number of commands/modes however (denoted by the "exploding head" emoji - 🤯), that require qsv to load the entire CSV into memory - `dedup` (when not using the --sorted option), `pragmastat`, `reverse`, `sort`, `stats` (when calculating the "non-streaming" extended stats), `table` and `transpose` (when not running in --multipass mode).
 
 > NOTE: Though not as flexible, `dedup` and `sort` have corresponding "external" versions - `extdedup` and `extsort` respectively, that use external memory (i.e. disk) to process arbitrarily large CSVs.
 
@@ -148,11 +148,12 @@ To prevent this, qsv has two memory check heuristics when running "non-streaming
 2. if the size of the CSV file is greater than TOTAL memory - HEADROOM (default: 20%), qsv will abort with an error
 
 #### CONSERVATIVE mode
-1. at startup, compute total available memory by adding the current available memory and free swap space 
-2. subtract a percentage headroom from the total available memory (default: 20%)
-3. if this adjusted total available memory is less than the size of the CSV file, qsv will abort with an error
+1. at startup, compute total available memory by adding the current available memory and free swap space
+2. apply a platform-specific multiplier (1.3x on macOS, 1.15x on Linux, 1.0x on Windows) to account for OS-level memory management differences
+3. subtract a percentage headroom from the adjusted total available memory (default: 20%)
+4. if this adjusted total available memory is less than the size of the CSV file, qsv will abort with an error
 
-The percentage headroom can be changed by setting the `QSV_MEMORY_HEADROOM_PCT` environment variable to a value between 10 and 90 (default: 20).
+The percentage headroom can be changed by setting the `QSV_FREEMEMORY_HEADROOM_PCT` environment variable to a value between 10 and 90 (default: 20).
 
 This CONSERVATIVE heuristic can have false positives however, as modern operating systems can do a fair bit of juggling to handle file sizes larger than what this heuristic will allow, as it dynamically swaps apps to the swapfile, expand the swapfile, compress memory, etc.
 
@@ -160,7 +161,7 @@ For example, on a 16gb Mac mini running several common apps, it only allowed ~3g
 
 To apply this CONSERVATIVE heuristic, you can use the command's `--memcheck` option or set the `QSV_MEMORY_CHECK` environment variable.
 
-Otherwise, the default memory check heuristic (NORMAL mode) will only check if the input file's size is larger than the TOTAL memory of the computer minus `QSV_MEMORY_HEADROOM_PCT`.  We still do this to prevent OOM panics, but it's not as restrictive as the CONSERVATIVE heuristic. (e.g. if you have a 16gb computer, the maximum input file size is 12.8gb file - 16gb minus 20% headroom).
+Otherwise, the default memory check heuristic (NORMAL mode) will only check if the input file's size is larger than the TOTAL memory of the computer minus `QSV_FREEMEMORY_HEADROOM_PCT`.  We still do this to prevent OOM panics, but it's not as restrictive as the CONSERVATIVE heuristic. (e.g. if you have a 16gb computer, the maximum input file size is 12.8gb file - 16gb minus 20% headroom).
 
 > NOTE: These memory checks are not invoked when using stdin as input, as the size of the input file is not known. Though `schema` and `tojsonl` will still abort if stdin is too large per this memory check as it creates a temporary file from stdin before inferring the schema.
 
@@ -169,14 +170,14 @@ Otherwise, the default memory check heuristic (NORMAL mode) will only check if t
 Depending on your filesystem's configuration (e.g. block size, file system type, writing to remote file systems (e.g. sshfs, efs, nfs),
 SSD or rotating magnetic disks, etc.), you can also fine-tune qsv's read/write buffers.
 
-By default, the read buffer size is set to [128k](https://github.com/dathere/qsv/blob/master/src/config.rs#L16), you can change it by setting the environment
+By default, the read buffer size is set to [128k](https://github.com/dathere/qsv/blob/master/src/config.rs), you can change it by setting the environment
 variable `QSV_RDR_BUFFER_CAPACITY` in bytes.
 
-The same is true with the write buffer (default: 256k) with the `QSV_WTR_BUFFER_CAPACITY` environment variable.
+The same is true with the write buffer (default: 512k) with the `QSV_WTR_BUFFER_CAPACITY` environment variable.
 
 ## Multithreading
 
-Several commands support multithreading - `count`, `stats`, `frequency`, `sample`, `schema`, `split` and `tojsonl` (when an index is available); `apply`, `applydp`, `dedup`, `diff`, `excel`, `extsort`, `joinp`, `snappy`, `sort`, `sqlp`, `to` and `validate` (no index required).
+Several commands support multithreading - `count`, `frequency`, `sample`, `schema`, `split`, `stats` and `tojsonl` (when an index is available); `apply`, `applydp`, `datefmt`, `dedup`, `diff`, `excel`, `extsort`, `geocode`, `joinp`, `jsonl`, `moarstats`, `pivotp`, `pragmastat`, `replace`, `search`, `searchset`, `snappy`, `sort`, `sqlp`, `template`, `to` and `validate` (no index required).
 
 qsv will automatically spawn parallel jobs equal to the detected number of logical processors. Should you want to manually override this, use the `--jobs` command-line option or the `QSV_MAX_JOBS` environment variable.
 
@@ -186,7 +187,7 @@ To find out your jobs setting, call `qsv --version`.
 The `--version` option shows a lot of information about qsv. It displays:
 * qsv version
 * the memory allocator (`standard`, `mimalloc` or `jemalloc`)
-* all enabled features (`apply`, `fetch`, `foreach`, `luau`, `polars`, `python`, `self_update` & `to`)
+* all enabled features (`apply`, `fetch`, `foreach`, `geocode`, `luau`, `magika`, `polars`, `prompt`, `python`, `self_update` & `to`)
 * Python version linked if the `python` feature was enabled
 * Luau version embedded if the `luau` feature was enabled
 * the number of processors to use for multi-threading commands
@@ -200,17 +201,16 @@ The `--version` option shows a lot of information about qsv. It displays:
 
 ```bash
 $ qsv --version
-qsv 2.0.0-mimalloc-apply;fetch;foreach;geocode;Luau 0.653;prompt;python-3.10.14 (main, Aug  7 2024, 12:09:26) [Clang 16.0.0 (clang-1600.0.23.1)];to;polars-0.45.1:py-1.19.0:72cd66a;self_update-8-8;19.20 GiB-1.59 GiB-510.91 MiB-24.00 GiB (aarch64-apple-darwin compiled with Rust 1.83) compiled
+qsv 18.0.0-mimalloc 315-apply;fetch;foreach;geocode;Luau 0.709;magika;to;polars-0.53.0:802550b;self_update-16-16;51.20 GiB-1.26 GiB-0 B-64.00 GiB (aarch64-apple-darwin compiled with Rust 1.93;macOS 26.4-Darwin 25.4.0;Apple M4 Max-16) prebuilt
 ```
 
-Shows that I'm running qsv version 2.0.0, with the `mimalloc` allocator (instead of `standard` or `jemalloc`), and I have:
-- the `apply`, `fetch`, `foreach`, `geocode`, `luau`, `prompt`, `python`, `to`, `polars` and `self_update` features enabled,
-- the exact version of the embedded Luau interpreter (Luau 0.653),
-- Polars with its version metadata (polars-0.45.1:py-1.19.0:72cd66a),
-- the Python version qsv is dynamically linked against (Python 3.10.14 (main, Aug  7 2024, 12:09:26) [Clang 16.0.0 (clang-1600.0.23.1)]). 
-- qsv will use 8 logical processors out of 8 detected when running multithreaded commands.
-- a maximum input file size of 19.20 GiB for "non-streaming" commands (see [Memory Management](https://github.com/dathere/qsv#memory-management) for more info), 1.59 GiB of free swap memory, 510.91 MiB of available memory and 24.00 GiB of total memory.
-- the qsv binary was built to target the aarch64-apple-darwin platform (Apple Silicon), compiled using Rust 1.83.0. The binary was `compiled` using `cargo build`.
+Shows that I'm running qsv version 18.0.0, with the `mimalloc` allocator (instead of `standard` or `jemalloc`), build number 315, and I have:
+- the `apply`, `fetch`, `foreach`, `geocode`, `luau`, `magika`, `to`, `polars` and `self_update` features enabled,
+- the exact version of the embedded Luau interpreter (Luau 0.709),
+- Polars with its version metadata (polars-0.53.0:802550b),
+- qsv will use 16 logical processors out of 16 detected when running multithreaded commands.
+- a maximum input file size of 51.20 GiB for "non-streaming" commands (see [Memory Management](https://github.com/dathere/qsv#memory-management) for more info), 1.26 GiB of free swap memory, 0 B of available memory (this value fluctuates based on system load at the time) and 64.00 GiB of total memory.
+- the qsv binary was built to target the aarch64-apple-darwin platform (Apple Silicon), compiled using Rust 1.93. It also shows the OS version (macOS 26.4-Darwin 25.4.0) and CPU (Apple M4 Max). The binary is a `prebuilt` release.
 
 ## Caching
 qsv employs several caching strategies to improve performance:
@@ -219,8 +219,8 @@ qsv employs several caching strategies to improve performance:
 * The `stats` command caches its results in both CSV and JSONL formats. It does this to avoid re-computing the same statistics when the same input file/parameters are used, but also, as statistics are used in several other commands (see [Stats Cache](#stats-cache)).   
 The stats cache are automatically refreshed when the input file is modified the next time the `stats` command is run or when cache-aware commands attempt to use them. The stats cache is stored in the same directory as the input file. The stats cache files are named with the same file stem as the input file with the `stats.csv`, `stats.csv.json` and `stats.csv.data.jsonl` extensions. The CSV contains the cached stats, the JSON file contains metadata about how the stats were compiled, and the JSONL file is the JSONL version of the stats that can be directly loaded into memory by other commands. The JSONL is used by the `frequency`, `schema` and `tojsonl` commands and will only be generated when the `--stats-jsonl` option is set.
 * The `geocode` command [memoizes](https://en.wikipedia.org/wiki/Memoization) otherwise expensive geocoding operations and will report its cache hit rate. `geocode` memoization, however, is not persistent across sessions.
-* The `fetch` and `fetchpost` commands also memoizes expensive REST API calls. When the `--redis` option is enabled, it effectively has a persistent cache as the default time-to-live (TTL) before a Redis cache entry is expired is 28 days and Redis entries are persisted across restarts. Redis cache settings can be fine-tuned with the `QSV_REDIS_CONNSTR`, `QSV_REDIS_TTL_SECONDS`, `QSV_REDIS_TTL_REFRESH` and `QSV_FP_REDIS_CONNSTR` environment variables.
-* Alternatively, the `fetch` and `fetchpost` commands can use a local disk cache with the `--disk-cache` option. The default cache directory is `~/.qsv-cache/fetch`. The cache directory can be changed with the `QSV_CACHE_DIR` environment variable or the `--disk-cache-dir` command-line option. A disk cache entry is expired after 28 days by default, but this can be changed with the `QSV_DISK_CACHE_TTL_SECONDS` and `QSV_DISKCACHE_TTL_REFRESH` environment variables.
+* The `fetch` and `fetchpost` commands also memoizes expensive REST API calls. When the `--redis` option is enabled, it effectively has a persistent cache as the default time-to-live (TTL) before a Redis cache entry is expired is 28 days and Redis entries are persisted across restarts. Redis cache settings can be fine-tuned with the `QSV_REDIS_CONNSTR`, `QSV_REDIS_TTL_SECS`, `QSV_REDIS_TTL_REFRESH` and `QSV_FP_REDIS_CONNSTR` environment variables.
+* Alternatively, the `fetch` and `fetchpost` commands can use a local disk cache with the `--disk-cache` option. The default cache directory is `~/.qsv-cache/fetch`. The cache directory can be changed with the `QSV_CACHE_DIR` environment variable or the `--disk-cache-dir` command-line option. A disk cache entry is expired after 28 days by default, but this can be changed with the `QSV_DISKCACHE_TTL_SECS` and `QSV_DISKCACHE_TTL_REFRESH` environment variables.
 * The `luau` command caches lookup tables on disk using the QSV_CACHE_DIR environment variable and the `--cache-dir` command-line option. The default cache directory is `~/.qsv-cache`. The QSV_CACHE_DIR environment variable overrides the `--cache-dir` command-line option.
 
 ## SIMD-accelerated UTF-8 Validation for Performance
@@ -235,15 +235,15 @@ As UTF-8 is the de facto encoding standard, this shouldn't be a problem most of 
 ## Nightly Release Builds
 Pre-built binaries compiled using Rust Nightly/Unstable are also [available for download](https://github.com/dathere/qsv/releases/latest). These binaries are optimized for size and speed:
 
-* compiled with the last known Rust nightly/unstable that passes all ~1,980 tests.
+* compiled with the last known Rust nightly/unstable that passes the full automated test suite.
 * stdlib is compiled from source, instead of using the pre-built stdlib. This ensures stdlib is compiled with all of qsv's release settings
   (link time optimization, opt-level, codegen-units, panic=abort, etc.), presenting more opportunities for Rust/LLVM to optimize the generated code.
   This is why we only have nightly release builds for select platforms (the platform of GitHub's action runners), as we need access to the "native hardware"
   and cannot cross-compile stdlib to other platforms.
 * set `panic=abort` - removing panic-handling/formatting and backtrace code, making for smaller binaries.
-* enables unstable/nightly features in the `rand`, `regex`, `hashbrown`, `pyo3` and `polars` crates, that unlock performance/SIMD features on those crates.
+* enables unstable/nightly features in the `crc32fast`, `pyo3`, `rand`, `simd-json` and `foldhash` crates (and optionally `polars` via the `nightly-polars` feature), that unlock performance/SIMD features on those crates.
 
-Despite the 'unstable' label, these binaries are actually quite stable, given how [Rust is made](https://doc.rust-lang.org/book/appendix-07-nightly-rust.html) and are really more about performance (that's why we can still compile with Rust stable). You only really loose the backtrace messages when qsv panics.
+Despite the 'unstable' label, these binaries are actually quite stable, given how [Rust is made](https://doc.rust-lang.org/book/appendix-07-nightly-rust.html) and are really more about performance (that's why we can still compile with Rust stable). You only really lose the backtrace messages when qsv panics.
 
 If you need to maximize performance - use the nightly builds. If you prefer a "safer", rock-solid experience, use the stable builds.
 
@@ -268,18 +268,23 @@ cargo build --profile release-nightly --bin qsvlite -Z build-std=std,panic_abort
   -Z build-std-features=panic_immediate_abort \
   --features lite,nightly --target x86_64-unknown-linux-gnu
 
+# to build qsvmcp
+cargo build --profile release-nightly --bin qsvmcp -Z build-std=std,panic_abort \
+  -Z build-std-features=panic_immediate_abort \
+  --features qsvmcp,nightly --target x86_64-unknown-linux-gnu
+
 # to build qsvdp
 cargo build --profile release-nightly --bin qsvdp -Z build-std=std,panic_abort \
   -Z build-std-features=panic_immediate_abort \
   --features datapusher_plus,nightly --target x86_64-unknown-linux-gnu
 ```
 
-With that said, there are times that Rust Nightly/Unstable does "break" qsv. That's why we include `qsv_rust_version_info.txt` in the 
+With that said, there are times that Rust Nightly/Unstable does "break" qsv. That's why we include `qsv_nightly_rust_version_info.txt` in the
 nightly release build zip files, should you need to pin Rust to a specific nightly version when building locally.
 
 ## Benchmarking for Performance
 
-Use and fine-tune the [benchmark script](scripts/benchmark-basic.sh) when tweaking qsv's performance to your environment.
+Use and fine-tune the [benchmark script](scripts/benchmarks.sh) when tweaking qsv's performance to your environment.
 Don't be afraid to change the benchmark data and the qsv commands to something that is more representative of your
 workloads.
 

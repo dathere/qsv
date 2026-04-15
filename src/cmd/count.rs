@@ -18,6 +18,26 @@ It has three modes of operation:
 Note that the count will not include the header row (unless --no-headers is
 given).
 
+Examples:
+
+  # Basic count of records in data.csv:
+  qsv count data.csv
+
+  # Count records in data.csv without headers:
+  qsv count --no-headers data.csv
+
+  # Count records in data.csv with human-readable output:
+  qsv count --human-readable data.csv
+
+  # Count records in data.csv with width statistics:
+  qsv count --width data.csv
+
+  # Count records in data.csv with width statistics (excluding delimiters):
+  qsv count --width-no-delims data.csv
+
+  # Count records in data.csv with width statistics in JSON format:
+  qsv count --width --json data.csv
+
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_count.rs.
 
 Usage:
@@ -112,7 +132,7 @@ struct WidthStats {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     let conf = Config::new(args.arg_input.as_ref())
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         // we also want to count the quotes when computing width
         .quoting(!args.flag_width || !args.flag_width_no_delims)
         // and ignore differing column counts as well
@@ -435,7 +455,6 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
         prelude::*,
         sql::SQLContext,
     };
-    use polars_utils::plpath::PlPath;
 
     // info!("using polars");
 
@@ -473,10 +492,13 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
     {
         // First, try to read the first row to check if the file is empty
         // do it in a block so schema_df is dropped early
-        let schema_df = match LazyCsvReader::new(PlPath::new(&filepath.to_string_lossy()))
+        // Use ignore_errors to handle schema inference issues (e.g., columns that start
+        // with boolean values but contain integers later)
+        let schema_df = match LazyCsvReader::new(PlRefPath::new(&*filepath.to_string_lossy()))
             .with_separator(delimiter)
             .with_comment_prefix(comment_prefix.clone())
             .with_n_rows(Some(1))
+            .with_ignore_errors(true)
             .finish()
         {
             Ok(df) => df.collect(),
@@ -503,10 +525,13 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
     } else {
         // otherwise, read the file into a Polars LazyFrame
         // using the LazyCsvReader builder to set CSV read options
-        lazy_df = match LazyCsvReader::new(PlPath::new(&filepath.to_string_lossy()))
+        // Use ignore_errors to handle schema inference issues (e.g., columns that start
+        // with boolean values but contain integers later)
+        lazy_df = match LazyCsvReader::new(PlRefPath::new(&*filepath.to_string_lossy()))
             .with_separator(delimiter)
             .with_comment_prefix(comment_prefix)
             .with_low_memory(low_memory)
+            .with_ignore_errors(true)
             .finish()
         {
             Ok(lazy_df) => lazy_df,

@@ -1,0 +1,198 @@
+{
+  "name": "qsv-frequency",
+  "version": "19.0.0",
+  "description": "Build frequency distribution tables of each column. Uses multithreading to go faster if an index is present (Examples: CSV JSON TOON).",
+  "category": "aggregation",
+  "command": {
+    "subcommand": "frequency",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--all-unique-text",
+        "type": "string",
+        "description": "The text to use for the \"<ALL_UNIQUE>\" category.",
+        "default": "<ALL_UNIQUE>"
+      },
+      {
+        "flag": "--asc",
+        "type": "flag",
+        "description": "Sort the frequency tables in ascending order by count. The default is descending order. Note that this option will also reverse ranking - i.e. the LEAST frequent values will have a rank of 1."
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--force",
+        "type": "flag",
+        "description": "Force recomputation and cache regeneration even when a valid frequency cache exists. Use with --frequency-jsonl to regenerate the cache."
+      },
+      {
+        "flag": "--frequency-jsonl",
+        "type": "flag",
+        "description": "Write the complete frequency distribution as a JSONL cache file (FILESTEM.freq.csv.data.jsonl). Requires a non-stdin input file. The cache contains metadata and per-column frequency data. ALL_UNIQUE columns (rowcount == cardinality) get a single ALL_UNIQUE sentinel. HIGH_CARDINALITY columns (cardinality exceeds the smaller of --high-card-threshold/--high-card-pct of rowcount) get a single HIGH_CARDINALITY sentinel. When a valid (fresh) cache already exists, frequency will automatically reuse it instead of recomputing from the CSV. Use --force to regenerate the cache even when it is valid. Cache is NOT used when --ignore-case, --no-trim, or --weight are active, as these change how values are computed."
+      },
+      {
+        "flag": "--high-card-pct",
+        "type": "string",
+        "description": "Percentage of rowcount threshold for HIGH_CARDINALITY classification in the frequency cache. Must be between 1 and 100. Can also be set with QSV_FREQ_HIGH_CARD_PCT env var (env var takes precedence when CLI value equals the default). Only used with --frequency-jsonl.",
+        "default": "90"
+      },
+      {
+        "flag": "--high-card-threshold",
+        "type": "string",
+        "description": "Absolute cardinality threshold for HIGH_CARDINALITY classification in the frequency cache. Can also be set with QSV_FREQ_HIGH_CARD_THRESHOLD env var (env var takes precedence when CLI value equals the default). Only used with --frequency-jsonl.",
+        "default": "100"
+      },
+      {
+        "flag": "--ignore-case",
+        "type": "flag",
+        "description": "Ignore case when computing frequencies."
+      },
+      {
+        "flag": "--json",
+        "type": "flag",
+        "description": "Output frequency table as nested JSON instead of CSV. The JSON output includes additional metadata: row count, field count, data type, cardinality, null count, sparsity, uniqueness_ratio and 17 additional stats (e.g. sum, min, max, range, sort_order, mean, sem, etc.)."
+      },
+      {
+        "flag": "--limit",
+        "type": "string",
+        "description": "Limit the frequency table to the N most common items. Set to '0' to disable a limit. If negative, only return values with an occurrence count >= absolute value of the negative limit. e.g. --limit -2 will only return values with an occurrence count >= 2.",
+        "default": "10"
+      },
+      {
+        "flag": "--lmt-threshold",
+        "type": "string",
+        "description": "The threshold for which --limit and --unq-limit will be applied. If the number of unique items in a column >= threshold, the limits will be applied. Set to '0' to disable the threshold and always apply limits.",
+        "default": "0"
+      },
+      {
+        "flag": "--memcheck",
+        "type": "flag",
+        "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics."
+      },
+      {
+        "flag": "--no-float",
+        "type": "string",
+        "description": "Exclude Float columns from frequency analysis. Floats typically contain continuous values where frequency tables are not meaningful. To exclude ALL Float columns, use --no-float \"*\" To exclude Floats except specific columns, specify a comma-separated list of Float columns to INCLUDE. e.g. \"--no-float *\" excludes all Floats \"--no-float price,rate\" excludes Floats except 'price' and 'rate' Requires stats cache for type detection."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will NOT be included in the frequency table. Additionally, the 'field' column will be 1-based indices instead of header names."
+      },
+      {
+        "flag": "--no-nulls",
+        "type": "flag",
+        "description": "Don't include NULLs in the frequency table. This is equivalent to --null-text \"<NONE>\"."
+      },
+      {
+        "flag": "--no-other",
+        "type": "flag",
+        "description": "Don't include the \"Other\" category in the frequency table. This is equivalent to --other-text \"<NONE>\"."
+      },
+      {
+        "flag": "--no-stats",
+        "type": "flag",
+        "description": "When using the JSON or TOON output mode, do not include the additional stats."
+      },
+      {
+        "flag": "--no-trim",
+        "type": "flag",
+        "description": "Don't trim whitespace from values when computing frequencies. The default is to trim leading and trailing whitespaces."
+      },
+      {
+        "flag": "--null-sorted",
+        "type": "flag",
+        "description": "By default, the NULL category (controlled by --null-text) is placed at the end of the frequency table for a field, after \"Other\" if present. If this is enabled, the NULL category will be sorted with the rest of the values by count."
+      },
+      {
+        "flag": "--null-text",
+        "type": "string",
+        "description": "The text to use for NULL values. If set to \"<NONE>\", NULLs will not be included in the frequency table (equivalent to --no-nulls).",
+        "default": "(NULL)"
+      },
+      {
+        "flag": "--other-sorted",
+        "type": "flag",
+        "description": "By default, the \"Other\" category is placed at the end of the frequency table for a field. If this is enabled, the \"Other\" category will be sorted with the rest of the values by count."
+      },
+      {
+        "flag": "--other-text",
+        "type": "string",
+        "description": "The text to use for the \"Other\" category. If set to \"<NONE>\", the \"Other\" category will not be included in the frequency table.",
+        "default": "Other"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--pct-dec-places",
+        "type": "string",
+        "description": "The number of decimal places to round the percentage to. If negative, the number of decimal places will be set automatically to the minimum number of decimal places needed to represent the percentage accurately, up to the absolute value of the negative number.",
+        "default": "-5"
+      },
+      {
+        "flag": "--pct-nulls",
+        "type": "flag",
+        "description": "Include NULL values in percentage and rank calculations. When disabled (default), percentages are \"valid percentages\" calculated with NULLs excluded from the denominator, and NULL entries display empty percentage and rank values. When enabled, NULLs are included in the denominator (original behavior). Has no effect when --no-nulls is set."
+      },
+      {
+        "flag": "--pretty-json",
+        "type": "flag",
+        "description": "Same as --json but pretty prints the JSON output."
+      },
+      {
+        "flag": "--rank-strategy",
+        "type": "string",
+        "description": "The strategy to use when there are count-tied values in the frequency table. See https://en.wikipedia.org/wiki/Ranking for more info. Valid values are: * dense: Assigns consecutive integers regardless of ties, incrementing by 1 for each new count value (AKA \"1223\" ranking). * min: Tied items receive the minimum rank position (AKA \"1224\" ranking). * max: Tied items receive the maximum rank position (AKA \"1334\" ranking). * ordinal: The next rank is the current rank plus 1 (AKA \"1234\" ranking). * average: Tied items receive the average of their ordinal positions (AKA \"1 2.5 2.5 4\" ranking). Note that tied values with the same rank are sorted alphabetically.",
+        "default": "dense"
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select a subset of columns to compute frequencies for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv frequency' will disable the use of indexing."
+      },
+      {
+        "flag": "--stats-filter",
+        "type": "string",
+        "description": "Filter columns based on their statistics using a Luau expression. Columns where the expression evaluates to `true` are EXCLUDED. Available fields: field, type, is_ascii, cardinality, nullcount, sum, min, max, range, sort_order, min_length, max_length, mean, stddev, variance, cv, sparsity, q1, q2_median, q3, iqr, mad, skewness, mode, antimode, n_negative, n_zero, n_positive, etc. e.g. \"nullcount > 1000\" - exclude columns with many nulls \"type == 'Float'\" - exclude Float columns \"cardinality > 500 and nullcount > 0\" - compound expression Requires stats cache and the \"luau\" feature."
+      },
+      {
+        "flag": "--toon",
+        "type": "flag",
+        "description": "Output frequency table and select stats in TOON format instead of CSV. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See https://toonformat.dev/ for more info."
+      },
+      {
+        "flag": "--unq-limit",
+        "type": "string",
+        "description": "If a column has all unique values, limit the frequency table to a sample of N unique items. Set to '0' to disable a unique_limit.",
+        "default": "10"
+      },
+      {
+        "flag": "--vis-whitespace",
+        "type": "flag",
+        "description": "Visualize whitespace characters in the output. See https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers for the list of whitespace markers."
+      },
+      {
+        "flag": "--weight",
+        "type": "string",
+        "description": "Compute weighted frequencies using the specified column as weights. The weight column must be numeric. When specified, frequency counts are multiplied by the weight value for each row. The weight column is automatically excluded from frequency computation. Missing or unparsable weights default to 1.0. Zero, negative, NaN and infinite weights are ignored and do not contribute to frequencies."
+      }
+    ]
+  },
+  "hints": {
+    "indexed": true,
+    "memory": "proportional"
+  }
+}

@@ -2582,7 +2582,7 @@ fn apply_ops_whatlang_high_confidence_threshold() {
              meva més gran preocupació.",
             "Cat(1.000)"
         ],
-        svec!["amikor a Fafnir ", "Por(0.011)?"],
+        svec!["amikor a Fafnir ", "Cym(0.210)?"],
         svec![
             "Showing that even in the modern warfare of the 1930s and 1940s, the dilapidated \
              fortifications still had defensive usefulness.",
@@ -2611,7 +2611,7 @@ fn apply_ops_whatlang_high_confidence_threshold() {
 }
 
 #[test]
-fn apply_ops_whatlang_low_confidence_threshold() {
+fn apply_ops_whatlang_show_confidence_threshold() {
     let wrk = Workdir::new("apply");
     wrk.create(
         "data.csv",
@@ -2651,7 +2651,7 @@ fn apply_ops_whatlang_low_confidence_threshold() {
         .arg("whatlang")
         .arg("description")
         .arg("--comparand")
-        .arg("0.03")
+        .arg("0.03?")
         .arg("--new-column")
         .arg("language")
         .arg("data.csv");
@@ -2662,37 +2662,37 @@ fn apply_ops_whatlang_low_confidence_threshold() {
         svec![
             "Y así mismo, aunque no son tan ágiles en el suelo como el vampiro común, son muy \
              competentes al escalar por las ramas.",
-            "Spa"
+            "Spa(1.000)"
         ],
-        svec!["See notes.", "Cat"],
+        svec!["See notes.", "Cat(0.031)"],
         svec![
             "Aquest és l’honor més gran que he rebut a la meva vida. La pau ha estat sempre la \
              meva més gran preocupació.",
-            "Cat"
+            "Cat(1.000)"
         ],
-        svec!["amikor a Fafnir ", "Por(0.011)?"],
+        svec!["amikor a Fafnir ", "Cym(0.210)"],
         svec![
             "Showing that even in the modern warfare of the 1930s and 1940s, the dilapidated \
              fortifications still had defensive usefulness.",
-            "Eng"
+            "Eng(1.000)"
         ],
         svec![
             "民國卅八年（ 1949年 ）， 從南京經 廣州 、 香港返回 香日德。 1950年6月 \
              ，受十世班禪派遣， 前往西安代表班禪向彭德懷投誠 。",
-            "Cmn"
+            "Cmn(1.000)"
         ],
         svec![
             "Rust（ラスト）は並列かつマルチパラダイムのプログラミング言語である",
-            "Jpn"
+            "Jpn(1.000)"
         ],
         svec![
             "Мой дядя самых честных правил, Когда не в шутку занемог, Он уважать себя заставил И \
              лучше выдумать не мог.",
-            "Rus"
+            "Rus(1.000)"
         ],
         svec![
             "Kamusta na, pare!?! Matagal na tayong di nagkita! Ilang taon na since high school?!",
-            "Tgl"
+            "Tgl(1.000)"
         ],
     ];
     assert_eq!(got, expected);
@@ -2824,5 +2824,71 @@ fn apply_crc32() {
         ],
     ];
 
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn apply_empty_selection_with_new_column_3164() {
+    use std::{io::Write, process};
+
+    let wrk = Workdir::new("apply_empty_selection");
+    wrk.create("data.csv", vec![svec!["id"], svec!["1"]]);
+
+    // Simulate the exact scenario from issue #3164:
+    // echo id | qsv select missing | \
+    // qsv apply calcconv --formatstr '{added}+{removed}' --new-column ttl
+    // First, run qsv select missing (which fails because "missing" doesn't exist)
+    let mut select_cmd = process::Command::new(wrk.qsv_bin());
+    select_cmd.args(vec!["select", "missing", "data.csv"]);
+    let select_output = wrk.output(&mut select_cmd);
+    // select will fail, but may still output something to stdout (empty CSV or headers)
+    let select_stdout = String::from_utf8(select_output.stdout).unwrap();
+
+    // Now pipe that output to qsv apply calcconv
+    let mut apply_cmd = process::Command::new(wrk.qsv_bin());
+    apply_cmd
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::piped())
+        .args(vec![
+            "apply",
+            "calcconv",
+            "--formatstr",
+            "{added}+{removed}",
+            "--new-column",
+            "ttl",
+        ]);
+
+    let mut apply_child = apply_cmd.spawn().unwrap();
+    let mut apply_stdin = apply_child.stdin.take().unwrap();
+    let select_stdout_clone = select_stdout.clone();
+    std::thread::spawn(move || {
+        apply_stdin
+            .write_all(select_stdout_clone.as_bytes())
+            .unwrap();
+    });
+
+    let apply_output = apply_child.wait_with_output().unwrap();
+    let got_stderr = String::from_utf8_lossy(&apply_output.stderr);
+    let expected = "usage error: No columns selected. Column selection is empty.\n";
+    assert_eq!(got_stderr, expected);
+    assert!(!apply_output.status.success());
+}
+
+#[test]
+fn apply_empty_selection_without_new_column() {
+    let wrk = Workdir::new("apply_empty_selection_no_new_col");
+    wrk.create("data.csv", vec![svec!["id"], svec!["1"]]);
+    // Test the same scenario without --new-column flag
+    let mut cmd = wrk.command("apply");
+    cmd.arg("operations")
+        .arg("upper")
+        .arg("!id")
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+
+    let got: String = wrk.output_stderr(&mut cmd);
+    let expected = "usage error: No columns selected. Column selection is empty.\n";
     assert_eq!(got, expected);
 }

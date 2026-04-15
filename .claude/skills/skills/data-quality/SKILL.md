@@ -1,0 +1,93 @@
+---
+name: data-quality
+description: Quality dimensions quick reference and remediation decision tree for tabular data assessment
+---
+
+# Data Quality Assessment with qsv
+
+For the full step-by-step profiling workflow, use the `/data-profile` command. This skill provides quick-reference guidance for quality assessment and remediation decisions.
+
+## Quality Dimensions (Quick Reference)
+
+| Dimension | Key Question | Primary Check | Red Flag |
+|-----------|-------------|---------------|----------|
+| **Completeness** | Missing values? | `stats` — `nullcount`, `sparsity` | Sparsity > 0.5 |
+| **Uniqueness** | Unwanted duplicates? | `stats --cardinality` vs row count | Key column cardinality < row count |
+| **Validity** | Correct formats/types? | `stats` — `type`; `validate schema.json` | String type on numeric column |
+| **Consistency** | Uniform formats? | `frequency` — case variants; `sniff` — encoding | Same value in different cases |
+| **Accuracy** | Plausible values? | `stats` — min/max/stddev | Values > 3 stddev from mean |
+| **Column Name Quality** | Headers safe & descriptive? | `safenames --verify` | Spaces, special chars, or duplicates in headers |
+| **Conformity** | Values follow standards? | `searchset` with domain regex | Non-standard codes (country, state, zip, phone) |
+| **Referential Integrity** | Foreign keys valid? | `joinp --left-anti` | Orphaned references across related files |
+| **Injection Safety** | Malicious payloads? | `searchset` with injection regex | Formula/SQL injection patterns in cells |
+| **Documentation** | Dataset described? | `describegpt --all` | No Data Dictionary or Description |
+
+## Remediation Decision Tree
+
+When a quality issue is found, choose the right fix:
+
+| Problem | Severity | Fix Command | When to Skip |
+|---------|----------|-------------|-------------|
+| Ragged rows | High | `fixlengths` | Never — breaks downstream tools |
+| Wrong encoding | High | `input` | File is already UTF-8 (check with `sniff`) |
+| Unsafe column names | Medium | `safenames` | Headers already safe (no spaces/special chars) |
+| Leading/trailing whitespace | Medium | `sqlp` with `TRIM(col)` | Stats show no difference between `min`/`max` lengths and trimmed values |
+| Duplicate rows | Medium | `dedup` (or `extdedup` for >1GB) | `stats --cardinality` on key columns shows all unique |
+| Inconsistent case | Low | `sqlp` with `UPPER(col)` or `LOWER(col)` | `frequency` shows no case variants |
+| Empty values | Low | `sqlp` with `COALESCE(NULLIF(col, ''), 'N/A')` | Nulls are semantically meaningful |
+| Non-conforming values | Medium | `searchset` + `search --flag` | No domain standard applies |
+| Orphaned foreign keys | Medium | `joinp --left-anti` | Single-file dataset with no references |
+| Injection payloads | High | `searchset` with injection regex + sanitize | Data is internal-only and never opened in spreadsheets or loaded into databases |
+| Invalid rows | Low | `validate schema.json` + filter | No schema available |
+
+## Fix Ordering
+
+Always apply fixes in this order to avoid cascading issues:
+
+```
+1. input          (encoding — must be UTF-8 before anything else)
+2. safenames      (headers — fixes names before column references)
+3. fixlengths     (structure — ensures consistent field counts)
+4. sqlp with TRIM()    (whitespace — clean values before dedup)
+5. dedup          (duplicates — remove after trimming so "foo " and "foo" match)
+6. validate       (validation — check against schema last)
+```
+
+## Stats Cache as Quality Dashboard
+
+After running `stats --cardinality --stats-jsonl` (basic moarstats auto-runs), read the `.stats.csv` cache to assess quality in one pass:
+
+| Cache Column | Quality Signal |
+|-------------|----------------|
+| `nullcount` | Completeness — 0 is ideal |
+| `sparsity` | Completeness — ratio of nulls (0.0–1.0) |
+| `cardinality` | Uniqueness — compare to row count |
+| `type` | Validity — check expected types |
+| `min` / `max` | Accuracy — plausible range? |
+| `mean` / `stddev` | Accuracy — outlier detection (>3σ) |
+| `outliers_total_cnt` | Accuracy — from moarstats; outlier count per column |
+| `mode` | Consistency — dominant value expected? |
+
+### Advanced Stats (via `moarstats --advanced`)
+
+Run `moarstats --advanced` to enrich the cache with distribution shape metrics:
+
+| Cache Column | Quality Signal |
+|-------------|----------------|
+| `kurtosis` | >3 heavy tails (outlier-prone), <3 light tails; >10 = extreme outliers |
+| `bimodality_coefficient` | >=0.555 suggests bimodal distribution (possible mixed populations) |
+| `jarque_bera_pvalue` | <0.05 = NOT normally distributed; flag analyses assuming normality |
+| `gini_coefficient` | Near 1 = extreme concentration; near 0 = uniform |
+| `shannon_entropy` | Low = concentrated values; high = diverse |
+| `winsorized_mean` | Compare to `mean` — large difference signals outlier influence |
+| `median_mean_ratio` | <0.8 or >1.2 = significantly skewed; mean may be misleading |
+| `range_stddev_ratio` | Very high = extreme outliers relative to variability |
+| `cv` | >100% = high relative variability; data is highly spread relative to mean |
+| `mad_stddev_ratio` | >0.8 = stddev is reliable; <<0.8 = outliers inflating stddev |
+| `mode_zscore` | Far from 0 = mode is atypical; possible mixed populations |
+| `trimean` | Robust central tendency: (Q1 + 2*median + Q3)/4; compare to mean for skew detection |
+| `midhinge` | Midpoint of middle 50%: (Q1+Q3)/2; robust center measure |
+| `robust_cv` | MAD/abs(median); outlier-resistant coefficient of variation |
+| `theil_index` | Inequality measure (0=equal); decomposable into within/between group; only for positive values |
+| `mean_ad` | Average absolute distance from mean; less sensitive to outliers than stddev |
+| `simpsons_diversity_index` | Probability two random values differ (0-1); more intuitive than entropy |

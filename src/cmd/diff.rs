@@ -3,56 +3,48 @@ Find the difference between two CSVs with ludicrous speed.
 
 NOTE: diff does not support stdin. A file path is required for both arguments.
       Further, PRIMARY KEY VALUES MUST BE UNIQUE WITHIN EACH CSV.
-      When diffing CSVs with just a single --key column and a stats cache is
-      available, diff will automatically validate for primary key uniqueness.
-      If more than one --key column is specified, however, this auto-validation
-      is not done.
 
       To check if a CSV has unique primary key values, use `qsv extdedup`
       with the same key columns using the `--select` option:
 
-         qsv extdedup --select keycol data.csv --no-output
+         $ qsv extdedup --select keycol data.csv --no-output
 
       The duplicate count will be printed to stderr.
 
 Examples:
 
-Find the difference between two CSVs:
-    qsv diff left.csv right.csv
+# Find the difference between two CSVs
+qsv diff left.csv right.csv
 
-Find the difference between two CSVs. The right CSV has no headers:
-    qsv diff left.csv --no-headers-right right-noheaders.csv
+# Find the difference between two CSVs when the right CSV has no headers
+qsv diff left.csv --no-headers-right right-noheaders.csv
 
-Find the difference between two CSVs. The left CSV uses a tab as the delimiter:
-    qsv diff --delimiter-left '\t' left.csv right-tab.tsv
-    # or ';' as the delimiter
-    qsv diff --delimiter-left ';' left.csv right-semicolon.csv
+# Find the difference between two CSVs when the left CSV uses a tab delimiter
+qsv diff --delimiter-left '\t' left.csv right-tab.tsv
 
-Find the difference between two CSVs. The output CSV uses a tab as the delimiter
-and is written to a file:
-    qsv diff -o diff-tab.tsv --delimiter-output '\t' left.csv right.csv
-    # or ';' as the delimiter
-    qsv diff -o diff-semicolon.csv --delimiter-output ';' left.csv right.csv
+# Find the difference between two CSVs when the left CSV uses a semicolon delimiter
+qsv diff --delimiter-left ';' left.csv right-semicolon.csv
 
-Find the difference between two CSVs, comparing records that have the same values
-in the first two columns:
-    qsv diff --key 0,1 left.csv right.csv
+# Find the difference between two CSVs and write output with tab delimiter to a file
+qsv diff -o diff-tab.tsv --delimiter-output '\t' left.csv right.csv
 
-Find the difference between two CSVs, comparing records that have the same values
-in the first two columns and sort the result by the first two columns:
-    qsv diff -k 0,1 --sort-columns 0,1 left.csv right.csv
+# Find the difference between two CSVs and write output with semicolon delimiter to a file
+qsv diff -o diff-semicolon.csv --delimiter-output ';' left.csv right.csv
 
-Find the difference between two CSVs, but do not output equal field values
-in the result (equal field values are replaced with the empty string). Key
-field values _will_ appear in the output:
-    qsv diff --drop-equal-fields left.csv right.csv
+# Find the difference comparing records with the same values in the first two columns
+qsv diff --key 0,1 left.csv right.csv
 
-Find the difference between two CSVs, but do not output headers in the result:
-    qsv diff --no-headers-output left.csv right.csv
+# Find the difference using first two columns as key and sort result by those columns
+qsv diff -k 0,1 --sort-columns 0,1 left.csv right.csv
 
-Find the difference between two CSVs. Both CSVs have no headers, but the result should have
-headers, so generic headers will be used in the form of: _col_1, _col_2, etc.:
-    qsv diff --no-headers-left --no-headers-right left.csv right.csv
+# Find the difference but replace equal field values with empty string (key fields still appear)
+qsv diff --drop-equal-fields left.csv right.csv
+
+# Find the difference but do not output headers in the result
+qsv diff --no-headers-output left.csv right.csv
+
+# Find the difference when both CSVs have no headers (generic headers _col_1, _col_2, etc. are used)
+qsv diff --no-headers-left --no-headers-right left.csv right.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_diff.rs
 
@@ -81,7 +73,7 @@ diff options:
     -k, --key <arg...>          The column indices that uniquely identify a record
                                 as a comma separated list of 0-based indices, e.g. 0,1,2
                                 or column names, e.g. name,age.
-                                Note that when selecting columns by name, only the 
+                                Note that when selecting columns by name, only the
                                 left CSV's headers are used to match the column names
                                 and it is assumed that the right CSV has the same
                                 selected column names in the same order as the left CSV.
@@ -94,7 +86,7 @@ diff options:
                                 but have different content) will always be kept together
                                 in the sorted diff result and so won't be sorted
                                 independently from each other.
-                                Note that when selecting columns by name, only the 
+                                Note that when selecting columns by name, only the
                                 left CSV's headers are used to match the column names
                                 and it is assumed that the right CSV has the same
                                 selected column names in the same order as the left CSV.
@@ -104,12 +96,6 @@ diff options:
     -j, --jobs <arg>            The number of jobs to run in parallel.
                                 When not set, the number of jobs is set to the number
                                 of CPUs detected.
-    --force                     Force diff and ignore stats caches for the left & right CSVs.
-                                Otherwise, if available, the stats cache will be used to:
-                                 * short-circuit the diff if their fingerprint hashes are
-                                   identical.
-                                 * check for primary key uniqueness when only one --key
-                                   column is specified.
 
 Common options:
     -h, --help                  Display this message
@@ -133,9 +119,7 @@ use crate::{
     CliResult,
     clitypes::CliError,
     config::{Config, Delimiter},
-    select::SelectColumns,
     util,
-    util::{SchemaArgs, StatsMode, get_stats_records},
 };
 
 #[derive(Deserialize)]
@@ -144,7 +128,6 @@ struct Args {
     arg_input_right:        Option<String>,
     flag_output:            Option<String>,
     flag_jobs:              Option<usize>,
-    flag_force:             bool,
     flag_no_headers_left:   bool,
     flag_no_headers_right:  bool,
     flag_no_headers_output: bool,
@@ -159,13 +142,6 @@ struct Args {
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
-
-    // if stats cache is available, perform "smart" validation checks
-    if check_stats_cache(&args)? {
-        // the stats cache is available and files are identical, short-circuit diff
-        // and return immediately
-        return Ok(());
-    }
 
     if let Some(delim) = args.flag_delimiter {
         [
@@ -292,151 +268,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         primary_key_cols,
     );
     Ok(csv_diff_writer.write_diff_byte_records(diff_byte_records)?)
-}
-
-/// This function checks if the stats cache is available and if it is, performs "smart"
-/// validation checks on the input files.
-///
-/// First, it check if the current options allow us to leverage the stats cache.
-/// If so, it checks if the stats cache is available.
-/// If it is, the function returns true if the files are identical per their fingerprint hashes,
-/// allowing us to short-circuit the diff.
-/// If the files are not identical, it performs additional "smart" validation checks.
-fn check_stats_cache(args: &Args) -> Result<bool, CliError> {
-    if args.flag_force
-        || (args.flag_no_headers_left || args.flag_no_headers_right)
-        || args
-            .flag_key
-            .as_ref()
-            .is_some_and(|k| k.split(',').count() > 0)
-    {
-        // if force is set, or if no headers are set, or more than 1 key is set,
-        // do not use stats cache
-        return Ok(false);
-    }
-
-    // Set stats config for left file
-    let left_schema_args = SchemaArgs {
-        arg_input:            args.arg_input_left.clone(),
-        flag_no_headers:      false,
-        flag_delimiter:       args.flag_delimiter,
-        flag_jobs:            None,
-        flag_polars:          false,
-        flag_memcheck:        false,
-        flag_force:           args.flag_force,
-        flag_prefer_dmy:      false,
-        flag_dates_whitelist: String::new(),
-        flag_enum_threshold:  0,
-        flag_ignore_case:     false,
-        flag_strict_dates:    false,
-        flag_pattern_columns: SelectColumns::parse("")?,
-        flag_stdout:          false,
-    };
-
-    // Set stats config for right file using same args
-    let right_schema_args = SchemaArgs {
-        arg_input: args.arg_input_right.clone(),
-        ..left_schema_args.clone()
-    };
-
-    // Get stats records for both files
-    if let (
-        Ok((left_csv_fields, left_stats, left_dataset_stats)),
-        Ok((_, right_stats, right_dataset_stats)),
-    ) = (
-        get_stats_records(&left_schema_args, StatsMode::Frequency),
-        get_stats_records(&right_schema_args, StatsMode::Frequency),
-    ) {
-        // check if dataset stats are empty
-        // if so, return false and proceed to "regular" diff processing
-        if left_dataset_stats.is_empty() || right_dataset_stats.is_empty() {
-            return Ok(false);
-        }
-
-        // If both files' fingerprint hashes match, files are identical. Short-circuit diff
-        if left_dataset_stats.get("qsv__fingerprint_hash")
-            == right_dataset_stats.get("qsv__fingerprint_hash")
-        {
-            return Ok(true);
-        }
-
-        // Check if row counts match, if we don't have a row count
-        // stop validation and return false
-        let left_dataset_rowcount = if let Some(rc) = left_dataset_stats.get("qsv__rowcount") {
-            rc.parse::<f64>().unwrap_or_default() as u64
-        } else {
-            return Ok(false);
-        };
-
-        let right_dataset_rowcount = if let Some(rc) = right_dataset_stats.get("qsv__rowcount") {
-            rc.parse::<f64>().unwrap_or_default() as u64
-        } else {
-            return Ok(false);
-        };
-
-        if left_dataset_rowcount != right_dataset_rowcount {
-            return fail_incorrectusage_clierror!(
-                "The number of rows in the left ({left_dataset_rowcount}) and right \
-                 ({right_dataset_rowcount}) CSVs do not match."
-            );
-        }
-
-        // If key column specified, check if it has all unique values in both files
-        let mut colname_used_for_key = false;
-        if let Some(key_col) = &args.flag_key {
-            let idx = if key_col.chars().all(char::is_numeric) {
-                key_col
-                    .parse::<usize>()
-                    .map_err(|err| CliError::Other(err.to_string()))?
-            } else {
-                // Handle column name case...
-                colname_used_for_key = true;
-                left_csv_fields
-                    .iter()
-                    .position(|field| field == key_col.as_bytes())
-                    .unwrap_or_default()
-            };
-
-            // Check cardinality equals row count for key column in left file
-            if let Some(left_col) = left_stats.get(idx)
-                && left_col.cardinality != left_dataset_rowcount
-            {
-                return fail_incorrectusage_clierror!(
-                    "Primary key values in left CSV are not unique in column {colname} \
-                     (cardinality: {left_cardinality} != rowcount: {left_rowcount}). Use `qsv \
-                     extdedup --select {colname} {left_input} --no-output` to check duplicates.",
-                    colname = if colname_used_for_key {
-                        key_col.to_string()
-                    } else {
-                        idx.to_string()
-                    },
-                    left_cardinality = left_col.cardinality,
-                    left_rowcount = left_dataset_rowcount,
-                    left_input = args.arg_input_left.as_ref().unwrap()
-                );
-            }
-
-            // Check cardinality equals row count for key column in right file
-            if let Some(right_col) = right_stats.get(idx)
-                && right_col.cardinality != right_dataset_rowcount
-            {
-                return fail_incorrectusage_clierror!(
-                    "Primary key values in right CSV are not unique in column {colname} \
-                     (cardinality: {right_cardinality} != rowcount: {right_rowcount}). Use `qsv \
-                     extdedup --select {colname} {right_input} --no-output` to check duplicates.",
-                    colname = if colname_used_for_key {
-                        key_col.to_string()
-                    } else {
-                        idx.to_string()
-                    },
-                    right_cardinality = right_col.cardinality,
-                    right_rowcount = right_dataset_rowcount,
-                    right_input = args.arg_input_right.as_ref().unwrap()
-                );
-            }
-        }
-    }
-    Ok(false)
 }
 
 trait StringExt {

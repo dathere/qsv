@@ -1,0 +1,266 @@
+{
+  "manifest_version": "0.3",
+  "name": "qsv",
+  "version": "19.1.1",
+  "description": "Blazingly fast Data Wrangling Toolkit for Tabular Data",
+  "long_description": "Comprehensive data-wrangling toolkit for transforming, analyzing, querying & validating tabular data. Process local CSV, TSV, SSV, Excel/ODS, Parquet and JSONL files w/o uploading. Despite the warning, only accesses APPROVED DIRECTORIES on your computer.",
+  "author": {
+    "name": "datHere, Inc.",
+    "url": "https://dathere.com",
+    "email": "qsv@dathere.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dathere/qsv"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/dathere/qsv/tree/master/.claude/skills",
+  "documentation": "https://github.com/dathere/qsv/blob/master/.claude/skills/README.md",
+  "icons": [
+    {
+      "src": "qsv-75x91.png",
+      "size": "75x91"
+    }
+  ],
+  "keywords": [
+    "csv",
+    "data-wrangling",
+    "data-analysis",
+    "tabular-data",
+    "excel",
+    "jsonl",
+    "etl",
+    "data-transformation"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "server/mcp-server.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/mcp-server.js"],
+      "env": {
+        "QSV_MCP_BIN_PATH": "${user_config.qsv_path}",
+        "QSV_MCP_ALLOWED_DIRS": "${user_config.allowed_dirs}",
+        "QSV_MCP_OPERATION_TIMEOUT_MS": "${user_config.timeout_ms}",
+        "QSV_MCP_MAX_OUTPUT_SIZE": "${user_config.max_output_size}",
+        "QSV_MCP_AUTO_REGENERATE_SKILLS": "${user_config.auto_regenerate_skills}",
+        "QSV_MCP_CHECK_UPDATES_ON_STARTUP": "${user_config.check_updates}",
+        "QSV_MCP_NOTIFY_UPDATES": "${user_config.notify_updates}",
+        "QSV_MCP_MAX_EXAMPLES": "${user_config.max_examples}",
+        "QSV_MCP_SERVER_INSTRUCTIONS": "${user_config.server_instructions}",
+        "QSV_MCP_DUCKDB_BIN_PATH": "${user_config.duckdb_path}",
+        "QSV_MCP_USE_DUCKDB": "${user_config.use_duckdb}",
+        "QSV_MCP_ENABLE_APPS": "${user_config.enable_mcp_apps}",
+        "MCPB_EXTENSION_MODE": "true"
+      },
+      "platform_overrides": {
+        "win32": {
+          "env": {
+            "QSV_MCP_BIN_PATH": "${user_config.qsv_path}",
+            "QSV_MCP_ALLOWED_DIRS": "${user_config.allowed_dirs}"
+          }
+        }
+      }
+    }
+  },
+  "user_config": {
+    "qsv_path": {
+      "type": "file",
+      "title": "qsv Binary Path",
+      "description": "Full path to qsv executable. Leave empty to auto-detect from PATH, or click 'Browse' to specify (usually /usr/local/bin/qsv or /opt/homebrew/bin/qsv on macOS). Install from: https://github.com/dathere/qsv#installation",
+      "required": false,
+      "default": ""
+    },
+    "working_dir": {
+      "type": "directory",
+      "title": "Default Working Directory",
+      "description": "Directory where qsv commands run by default. Defaults to Downloads folder. Click 'Browse' to change. Extension only accesses files within this directory and allowed directories below.",
+      "required": false,
+      "default": "${HOME}/Downloads"
+    },
+    "allowed_dirs": {
+      "type": "directory",
+      "title": "Allowed Directories",
+      "description": "Additional directories where qsv can access files. Extension access is restricted to working directory and these directories only.",
+      "required": false,
+      "multiple": true
+    },
+    "timeout_ms": {
+      "type": "number",
+      "title": "Command Timeout (milliseconds)",
+      "description": "Maximum time to wait for qsv commands to complete",
+      "required": false,
+      "default": 600000,
+      "min": 10000,
+      "max": 3600000
+    },
+    "max_output_size": {
+      "type": "number",
+      "title": "Max Output Size (bytes)",
+      "description": "Maximum size of command output. Large results are automatically saved to disk.",
+      "required": false,
+      "default": 52428800,
+      "min": 1048576,
+      "max": 104857600
+    },
+    "auto_regenerate_skills": {
+      "type": "boolean",
+      "title": "Auto-Regenerate Skills",
+      "description": "Automatically regenerate skills when qsv version changes (requires qsv repository)",
+      "required": false,
+      "default": false
+    },
+    "check_updates": {
+      "type": "boolean",
+      "title": "Check for qsv Updates",
+      "description": "Check for new qsv releases on startup",
+      "required": false,
+      "default": true
+    },
+    "notify_updates": {
+      "type": "boolean",
+      "title": "Show Update Notifications",
+      "description": "Display update notifications in logs",
+      "required": false,
+      "default": true
+    },
+    "max_examples": {
+      "type": "number",
+      "title": "Max Examples in Tool Descriptions",
+      "description": "Number of usage examples shown in tool descriptions. More examples = better understanding but higher token usage. Set to 0 to disable.",
+      "required": false,
+      "default": 5,
+      "min": 0,
+      "max": 20
+    },
+    "server_instructions": {
+      "type": "string",
+      "title": "Server Instructions",
+      "description": "Custom instructions sent to the AI during initialization. Guides cross-tool workflow, file handling, and operational constraints. Leave empty to use the built-in default server instructions.",
+      "required": false,
+      "default": ""
+    },
+    "duckdb_path": {
+      "type": "file",
+      "title": "DuckDB Binary Path",
+      "description": "Full path to DuckDB executable. Leave empty to auto-detect from PATH (empty values are treated as 'not set'). When available and 'Use DuckDB' is enabled, SQL queries route through DuckDB for better PostgreSQL compatibility and performance. Install from: https://duckdb.org/docs/installation",
+      "required": false,
+      "default": ""
+    },
+    "use_duckdb": {
+      "type": "boolean",
+      "title": "Use DuckDB for SQL Queries",
+      "description": "When enabled, SQL queries are automatically routed through DuckDB when available (faster, PostgreSQL-compatible). If DuckDB is not installed, queries automatically fall back to Polars SQL (sqlp). Disable to always use sqlp.",
+      "required": false,
+      "default": true
+    },
+    "enable_mcp_apps": {
+      "type": "boolean",
+      "title": "Enable MCP Apps",
+      "description": "Enable interactive MCP App UI for the directory picker. Disable to fall back to elicitation form or text suggestions.",
+      "required": false,
+      "default": true
+    }
+  },
+  "tools": [
+    {
+      "name": "qsv_select",
+      "description": "Select, reorder, or exclude columns from CSV data"
+    },
+    {
+      "name": "qsv_stats",
+      "description": "Calculate statistics for CSV columns (creates cache)"
+    },
+    {
+      "name": "qsv_moarstats",
+      "description": "Comprehensive stats + bivariate stats + data type inference"
+    },
+    {
+      "name": "qsv_index",
+      "description": "Create index for fast random access"
+    },
+    {
+      "name": "qsv_search",
+      "description": "Filter CSV rows using regex patterns"
+    },
+    {
+      "name": "qsv_frequency",
+      "description": "Show frequency distribution of values"
+    },
+    {
+      "name": "qsv_headers",
+      "description": "Display or manipulate CSV headers"
+    },
+    {
+      "name": "qsv_count",
+      "description": "Count rows in CSV file"
+    },
+    {
+      "name": "qsv_slice",
+      "description": "Select rows by position range"
+    },
+    {
+      "name": "qsv_sqlp",
+      "description": "SQL queries using Polars engine"
+    },
+    {
+      "name": "qsv_joinp",
+      "description": "High-performance joins using Polars"
+    },
+    {
+      "name": "qsv_cat",
+      "description": "Concatenate CSV files (rows or columns)"
+    },
+    {
+      "name": "qsv_geocode",
+      "description": "Geocoding and reverse geocoding"
+    },
+    {
+      "name": "qsv_command",
+      "description": "Execute any qsv command generically"
+    },
+    {
+      "name": "qsv_config",
+      "description": "Display qsv configuration"
+    },
+    {
+      "name": "qsv_search_tools",
+      "description": "Search for qsv tools by keyword or category"
+    },
+    {
+      "name": "qsv_list_files",
+      "description": "List tabular data files in directory"
+    },
+    {
+      "name": "qsv_set_working_dir",
+      "description": "Change working directory"
+    },
+    {
+      "name": "qsv_get_working_dir",
+      "description": "Get current working directory"
+    },
+    {
+      "name": "qsv_to_parquet",
+      "description": "Convert CSV to Parquet format"
+    },
+    {
+      "name": "qsv_setup",
+      "description": "Install qsv via package manager (Homebrew/Scoop) when binary not found"
+    }
+  ],
+  "tools_generated": true,
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"]
+  },
+  "_meta": {
+    "com.dathere.qsv": {
+      "features": [
+        "66 CLI commands (53 available as skills)",
+        "Process local files (CSV, Parquet, Excel, JSONL) without uploading",
+        "Smart caching with stats/frequency files",
+        "Automatic Excel, Parquet and JSONL conversion"
+      ],
+      "minimum_qsv_version": "19.1.0"
+    }
+  }
+}

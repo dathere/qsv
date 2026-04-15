@@ -1,6 +1,6 @@
 static USAGE: &str = r#"
-Create multiple new computed columns, filter rows or compute aggregations by 
-executing a Luau 0.682 script for every row (SEQUENTIAL MODE) or for
+Create multiple new computed columns, filter rows or compute aggregations by
+executing a Luau 0.709 script for every row (SEQUENTIAL MODE) or for
 specified rows (RANDOM ACCESS MODE) of a CSV file.
 
 Luau is not just another qsv command. It is qsv's Domain-Specific Language (DSL)
@@ -60,17 +60,39 @@ Some examples:
   $ qsv luau filter "tonumber(a) > 45"
   $ qsv luau filter "tonumber(a) >= tonumber(b)"
 
+PATTERN MATCHING WITH string.find AND OTHER STRING FUNCTIONS:
+  Lua/Luau string functions like string.find, string.match, string.gsub use 
+  PATTERN MATCHING by default, where certain characters have special meanings:
+    ( ) . % + - * ? [ ] ^ $
+
+  If you need to search for these characters literally, you have two options:
+
+  1. Escape special characters with % (percent sign):
+     $ qsv luau filter "string.find(Name, 'John %(Jr%)')"
+     $ qsv luau map dots "string.gsub(col.text, '%%.', '')"
+
+  2. Use plain text mode (4th parameter = true):
+     $ qsv luau filter "string.find(Name, 'John (Jr)', 1, true)"
+     $ qsv luau map match "string.find(col.text, 'Mr.', 1, true)"
+
+  Common gotchas:
+  - Parentheses in names like "Jane (Smith)" need escaping or plain mode
+  - Dots in email addresses, URLs, or decimal numbers
+  - Hyphens in phone numbers or dates
+
+  For more on Lua patterns: https://www.lua.org/manual/5.4/manual.html#6.4.1
+
   Typing long scripts on the command line gets tiresome rather quickly. Use the
-  "file:" prefix or the ".lua/.luau" file extension to read non-trivial scripts 
+  "file:" prefix or the ".lua/.luau" file extension to read non-trivial scripts
   from the filesystem.
 
   In the following example, both the BEGIN and END scripts have the lua/luau file
   extension so they are read from the filesystem.  With the debitcredit.script file,
   we use the "file:" prefix to read it from the filesystem.
 
-    $ qsv luau map Type -B init.lua file:debitcredit.script -E end.luau
+  $ qsv luau map Type -B init.lua file:debitcredit.script -E end.luau
 
-With "luau map", if the MAIN script is invalid for a row, "<ERROR>" followed by a 
+With "luau map", if the MAIN script is invalid for a row, "<ERROR>" followed by a
 detailed error message is returned for that row.
 With "luau filter", if the MAIN script is invalid for a row, that row is not filtered.
 
@@ -83,9 +105,9 @@ SPECIAL VARIABLES:
 
        It is primarily used in SEQUENTIAL MODE when the CSV has no index or you
        wish to process the CSV sequentially.
- 
+
   "_INDEX" - a READ/WRITE variable that enables RANDOM ACCESS MODE when used in
-       a script. Using "_INDEX" in a script switches qsv to RANDOM ACCESS MODE 
+       a script. Using "_INDEX" in a script switches qsv to RANDOM ACCESS MODE
        where setting it to a row number will change the current row to the
        specified row number. It will only work, however, if the CSV has an index.
 
@@ -95,8 +117,8 @@ SPECIAL VARIABLES:
 
        If the CSV has no index, qsv will abort with an error unless "qsv_autoindex()"
        is called in the BEGIN script to create an index.
-       
-  "_ROWCOUNT" - a READ-only variable which is zero during the BEGIN & MAIN scripts, 
+
+  "_ROWCOUNT" - a READ-only variable which is zero during the BEGIN & MAIN scripts,
        and set to the rowcount during the END script when the CSV has no index
        (SEQUENTIAL MODE).
 
@@ -239,14 +261,14 @@ Common options:
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
-    env, fs, io,
+    fs, io,
     io::Write,
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, AtomicI8, AtomicU16, Ordering},
 };
 
 use csv_index::RandomAccessSimple;
+use foldhash::{HashMap, HashMapExt};
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use log::{debug, info, log_enabled};
@@ -303,7 +325,6 @@ static QSV_V_ROWCOUNT: &str = "_ROWCOUNT";
 static QSV_V_LASTROW: &str = "_LASTROW";
 static QSV_V_INDEX: &str = "_INDEX";
 
-static SCRIPT_FILE_PREFIX: &str = "file:";
 static LUA_EXTENSION: &str = "lua";
 static LUAU_EXTENSION: &str = "luau";
 
@@ -363,10 +384,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers);
+        .no_headers_flag(args.flag_no_headers);
 
     let mut luau_script =
-        if let Some(script_filepath) = args.arg_main_script.strip_prefix(SCRIPT_FILE_PREFIX) {
+        if let Some(script_filepath) = args.arg_main_script.strip_prefix(util::FILE_PATH_PREFIX) {
             match fs::read_to_string(script_filepath) {
                 Ok(file_contents) => file_contents,
                 Err(e) => return fail_clierror!("Cannot load Luau file: {e}"),
@@ -436,25 +457,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // check if a BEGIN script was specified
     let begin_script = if let Some(ref begin) = args.flag_begin {
-        let discrete_begin = if let Some(begin_filepath) = begin.strip_prefix(SCRIPT_FILE_PREFIX) {
-            match fs::read_to_string(begin_filepath) {
-                Ok(begin) => begin,
-                Err(e) => return fail_clierror!("Cannot load Luau BEGIN script file: {e}"),
-            }
-        } else if std::path::Path::new(begin)
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case(LUAU_EXTENSION))
-            || std::path::Path::new(begin)
+        let discrete_begin =
+            if let Some(begin_filepath) = begin.strip_prefix(util::FILE_PATH_PREFIX) {
+                match fs::read_to_string(begin_filepath) {
+                    Ok(begin) => begin,
+                    Err(e) => return fail_clierror!("Cannot load Luau BEGIN script file: {e}"),
+                }
+            } else if std::path::Path::new(begin)
                 .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case(LUA_EXTENSION))
-        {
-            match fs::read_to_string(begin.clone()) {
-                Ok(file_contents) => file_contents,
-                Err(e) => return fail_clierror!("Cannot load BEGIN .lua/luau file: {e}"),
-            }
-        } else {
-            begin.to_string()
-        };
+                .is_some_and(|ext| ext.eq_ignore_ascii_case(LUAU_EXTENSION))
+                || std::path::Path::new(begin)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case(LUA_EXTENSION))
+            {
+                match fs::read_to_string(begin.clone()) {
+                    Ok(file_contents) => file_contents,
+                    Err(e) => return fail_clierror!("Cannot load BEGIN .lua/luau file: {e}"),
+                }
+            } else {
+                begin.to_string()
+            };
         comment_remover_re
             .replace_all(&discrete_begin, "")
             .to_string()
@@ -472,7 +494,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // check if an END script was specified
     let end_script = if let Some(ref end) = args.flag_end {
-        let discrete_end = if let Some(end_filepath) = end.strip_prefix(SCRIPT_FILE_PREFIX) {
+        let discrete_end = if let Some(end_filepath) = end.strip_prefix(util::FILE_PATH_PREFIX) {
             match fs::read_to_string(end_filepath) {
                 Ok(end) => end,
                 Err(e) => return fail_clierror!("Cannot load Luau END script file: {e}"),
@@ -903,7 +925,7 @@ fn sequential_mode(
 
         let end_string = match end_value {
             Value::String(string) => string.to_string_lossy(),
-            Value::Number(number) => ryu::Buffer::new().format_finite(number).to_owned(),
+            Value::Number(number) => zmij::Buffer::new().format_finite(number).to_owned(),
             Value::Integer(number) => itoa::Buffer::new().format(number).to_owned(),
             Value::Boolean(boolean) => (if boolean { "true" } else { "false" }).to_owned(),
             Value::Nil => String::new(),
@@ -1253,7 +1275,7 @@ fn random_access_mode(
 
         let end_string = match end_value {
             Value::String(string) => string.to_string_lossy(),
-            Value::Number(number) => ryu::Buffer::new().format_finite(number).to_owned(),
+            Value::Number(number) => zmij::Buffer::new().format_finite(number).to_owned(),
             Value::Integer(number) => itoa::Buffer::new().format(number).to_owned(),
             Value::Boolean(boolean) => (if boolean { "true" } else { "false" }).to_owned(),
             Value::Nil => String::new(),
@@ -1303,7 +1325,7 @@ fn map_computedvalue(
             },
         },
         Value::Number(number) => {
-            record.push_field(ryu::Buffer::new().format_finite(*number));
+            record.push_field(zmij::Buffer::new().format_finite(*number));
         },
         Value::Integer(number) => {
             record.push_field(itoa::Buffer::new().format(*number));
@@ -1331,7 +1353,7 @@ fn map_computedvalue(
                     Value::Integer(intval) => record.push_field(itoa::Buffer::new().format(intval)),
                     Value::String(strval) => record.push_field(&strval.to_string_lossy()),
                     Value::Number(number) => {
-                        record.push_field(ryu::Buffer::new().format_finite(number));
+                        record.push_field(zmij::Buffer::new().format_finite(number));
                     },
                     Value::Boolean(boolean) => {
                         record.push_field(if boolean { "true" } else { "false" });
@@ -2046,7 +2068,7 @@ fn setup_helpers(
     //               A Luau runtime error if the command cannot be executed.
     //
     let qsv_cmd = luau.create_function(|luau, args: mlua::String| {
-        let qsv_binary = env::current_exe().unwrap();
+        let qsv_binary = util::current_exe().unwrap();
 
         let mut cmd = std::process::Command::new(qsv_binary);
         let qsv_args = args.to_string_lossy();

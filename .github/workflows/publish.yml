@@ -15,13 +15,13 @@ jobs:
     outputs:
       previous-tag: ${{ steps.previoustag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       #▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#
       - name: Get previous tag
         id: previoustag
-        uses: "WyriHaximus/github-action-get-previous-tag@v1"
+        uses: "WyriHaximus/github-action-get-previous-tag@v2"
       #▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲#
       # - name: delete git repo
       #   run: rm -rf qsv
@@ -39,22 +39,22 @@ jobs:
             target: x86_64-unknown-linux-gnu
             architecture: x86_64
             use-cross: false
-            addl-build-args: --features=apply,luau,fetch,foreach,self_update,geocode,polars,to,lens,prompt
+            addl-build-args: --features=apply,luau,fetch,foreach,self_update,geocode,polars,to,lens,prompt,magika,color
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
+            addl-rustflags:
           - os: ubuntu-24.04
             os-name: linux
             target: x86_64-unknown-linux-musl
             architecture: x86_64
             musl-prep: true
             use-cross: false
-            addl-build-args: --features=apply,fetch,foreach,self_update,lens
+            addl-build-args: --features=apply,fetch,foreach,self_update,lens,color
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
+            addl-rustflags:
           # - os: ubuntu-24.04
           #   os-name: linux
           #   target: i686-unknown-linux-gnu
@@ -70,11 +70,11 @@ jobs:
             target: x86_64-pc-windows-msvc
             architecture: x86_64
             use-cross: false
-            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt
-            default-features:
-            addl-qsvlite-features:
-            addl-qsvdp-features:
-            addl-rustflags: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
+            addl-build-args: --features=mimalloc,apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt,magika,color
+            default-features: --no-default-features
+            addl-qsvlite-features: mimalloc
+            addl-qsvdp-features: mimalloc
+            addl-rustflags:
           # - os: windows-latest
           #   os-name: windows
           #   target: i686-pc-windows-msvc
@@ -90,11 +90,11 @@ jobs:
             target: x86_64-pc-windows-gnu
             architecture: x86_64
             use-cross: false
-            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt
+            addl-build-args: --features=mimalloc,apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt,color
             default-features: --no-default-features
-            addl-qsvlite-features:
-            addl-qsvdp-features:
-            addl-rustflags: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
+            addl-qsvlite-features: mimalloc
+            addl-qsvdp-features: mimalloc
+            addl-rustflags:
           # - os: macos-12
           #   os-name: macos
           #   target: x86_64-apple-darwin
@@ -118,7 +118,7 @@ jobs:
             target: aarch64-unknown-linux-gnu
             architecture: aarch64
             use-cross: true
-            addl-build-args: --features=apply,fetch,foreach,self_update,lens
+            addl-build-args: --features=apply,fetch,foreach,self_update,lens,color
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
@@ -137,17 +137,27 @@ jobs:
           #   use-cross: true
           #   addl-build-args: --features=apply,luau,fetch,foreach,self_update
           #   default-features: --no-default-features
+          # - os: ubuntu-24.04
+          #   os-name: linux
+          #   target: powerpc64le-unknown-linux-gnu
+          #   architecture: powerpc64le
+          #   use-cross: true
+          #   addl-build-args: --features=apply,fetch,foreach,self_update,lens
+          #   default-features:
+          #   addl-qsvlite-features:
+          #   addl-qsvdp-features:
+          #   addl-rustflags:
 
     steps:
     - name: Installing Rust toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ matrix.rust }}
         profile: minimal
         target: ${{ matrix.job.target }}
         override: true
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         ref: ${{ needs.analyze-tags.outputs.previous-tag }}
     - name: apt-get update Ubuntu, libwayland-dev
@@ -189,6 +199,16 @@ jobs:
         use-cross: ${{ matrix.job.use-cross }}
         toolchain: ${{ matrix.rust }}
         args: --release --locked --bin qsvdp --features=datapusher_plus,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+    - name: Build qsvmcp
+      if: ${{ matrix.job.target != 'x86_64-unknown-linux-musl' && matrix.job.target != 'aarch64-unknown-linux-gnu' }}
+      env:
+        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        use-cross: ${{ matrix.job.use-cross }}
+        toolchain: ${{ matrix.rust }}
+        args: --release --locked --bin qsvmcp ${{ matrix.job.addl-qsvlite-features != '' && format('--features=qsvmcp,{0}', matrix.job.addl-qsvlite-features) || '--features=qsvmcp' }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |

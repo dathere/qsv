@@ -22,7 +22,7 @@ set the --mem-cache-size option.
 
 Disk Cache:
 For persistent, inter-session caching, a DiskCache can be enabled with the --disk-cache flag.
-By default, it will store the cache in the directory ~/.qsv/cache/fetch, with a cache expiry
+By default, it will store the cache in the directory ~/.qsv-cache/fetch, with a cache expiry
 Time-to-Live (TTL) of 2,419,200 seconds (28 days), and cache hits NOT refreshing the TTL
 of cached values.
 
@@ -30,12 +30,12 @@ Set the --disk-cache-dir option and the environment variables QSV_DISKCACHE_TTL_
 QSV_DISKCACHE_TTL_REFRESH to change default DiskCache settings.
 
 Redis Cache:
-Another persistent, inter-session cache option is a Redis cache enabled with the --redis flag. 
+Another persistent, inter-session cache option is a Redis cache enabled with the --redis flag.
 By default, it will connect to a local Redis instance at redis://127.0.0.1:6379/1,
 with a cache expiry Time-to-Live (TTL) of 2,419,200 seconds (28 days),
 and cache hits NOT refreshing the TTL of cached values.
 
-Set the environment variables QSV_REDIS_CONNSTR, QSV_REDIS_TTL_SECONDS and 
+Set the environment variables QSV_REDIS_CONNSTR, QSV_REDIS_TTL_SECS and
 QSV_REDIS_TTL_REFRESH to change default Redis settings.
 
 If you don't want responses to be cached at all, use the --no-cache flag.
@@ -71,15 +71,15 @@ data.csv
 
 Given the data.csv above, fetch the JSON response.
 
-  $ qsv fetch URL data.csv 
+  $ qsv fetch URL data.csv
 
 Note the output will be a JSONL file - with a minified JSON response per line, not a CSV file.
 
-Now, if we want to generate a CSV file with the parsed City and State, we use the 
+Now, if we want to generate a CSV file with the parsed City and State, we use the
 new-column and jaq options.
 
-$ qsv fetch URL --new-column CityState --jaq '[ ."places"[0]."place name",."places"[0]."state abbreviation" ]' 
-  data.csv > data_with_CityState.csv
+  $ qsv fetch URL --new-column CityState --jaq '[ ."places"[0]."place name",."places"[0]."state abbreviation" ]' \
+      data.csv > data_with_CityState.csv
 
 data_with_CityState.csv
   URL, CityState,
@@ -98,7 +98,7 @@ Instead of using hardcoded URLs, you can also dynamically construct the URL for 
 values in that row.
 
 Exanple 1:
-For example, we have a CSV with four columns and we want to geocode against the geocode.earth API that expects 
+For example, we have a CSV with four columns and we want to geocode against the geocode.earth API that expects
 latitude and longitude passed as URL parameters.
 
 addr_data.csv
@@ -112,17 +112,17 @@ addr_data.csv
 Geocode addresses in addr_data.csv, pass the latitude and longitude fields and store
 the response in a new column called response into enriched_addr_data.csv.
 
-$ qsv fetch --url-template "https://api.geocode.earth/v1/reverse?point.lat={latitude}&point.lon={longitude}" 
-  addr_data.csv -c response > enriched_addr_data.csv
+  $ qsv fetch --url-template "https://api.geocode.earth/v1/reverse?point.lat={latitude}&point.lon={longitude}" \
+      addr_data.csv -c response > enriched_addr_data.csv
 
 Example 2:
 Geocode addresses in addresses.csv, pass the "street address" and "zip-code" fields
 and use jaq to parse placename from the JSON response into a new column in addresses_with_placename.csv.
 Note how field name non-alphanumeric characters (space and hyphen) in the url-template were replaced with _.
 
-$ qsv fetch --jaq '."features"[0]."properties", ."name"' addresses.csv -c placename --url-template 
-  "https://api.geocode.earth/v1/search/structured?address={street_address}&postalcode={zip_code}"
-  > addresses_with_placename.csv
+  $ qsv fetch --jaq '."features"[0]."properties", ."name"' addresses.csv -c placename --url-template \
+      "https://api.geocode.earth/v1/search/structured?address={street_address}&postalcode={zip_code}" \
+      > addresses_with_placename.csv
 
 USING THE HTTP-HEADER OPTION:
 
@@ -130,7 +130,7 @@ The --http-header option allows you to append arbitrary key value pairs (a valid
 separated by a colon) to the HTTP header (to authenticate against an API, pass custom header fields, etc.).
 Note that you can pass as many key-value pairs by using --http-header option repeatedly. For example:
 
-$ qsv fetch URL data.csv --http-header "X-Api-Key:TEST_KEY" -H "X-Api-Secret:ABC123XYZ" -H "Accept-Language: fr-FR"
+  $ qsv fetch URL data.csv --http-header "X-Api-Key:TEST_KEY" -H "X-Api-Secret:ABC123XYZ" -H "Accept-Language: fr-FR"
 
 For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs.
 
@@ -165,7 +165,7 @@ Fetch options:
     --timeout <seconds>        Timeout for each URL request.
                                [default: 30 ]
     -H, --http-header <k:v>    Append custom header(s) to the HTTP header. Pass multiple key-value pairs
-                               by adding this option multiple times, once for each pair. The key and value 
+                               by adding this option multiple times, once for each pair. The key and value
                                should be separated by a colon.
     --max-retries <count>      Maximum number of retries per record before an error is raised.
                                [default: 5]
@@ -179,20 +179,20 @@ Fetch options:
                                Try to follow the syntax here -
                                https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
     --report <d|s>             Creates a report of the fetch job. The report has the same name as the input file
-                               with the ".fetch-report" suffix. 
+                               with the ".fetch-report" suffix.
                                There are two kinds of report - d for "detailed" & s for "short". The detailed
-                               report has the same columns as the input CSV with six additional columns - 
-                               qsv_fetch_url, qsv_fetch_status, qsv_fetch_cache_hit, qsv_fetch_retries, 
+                               report has the same columns as the input CSV with six additional columns -
+                               qsv_fetch_url, qsv_fetch_status, qsv_fetch_cache_hit, qsv_fetch_retries,
                                qsv_fetch_elapsed_ms & qsv_fetch_response.
                                The short report only has the six columns without the "qsv_fetch_" prefix.
                                [default: none]
 
                                CACHING OPTIONS:
     --no-cache                 Do not cache responses.
-    
+
     --mem-cache-size <count>   Maximum number of entries in the in-memory LRU cache.
                                [default: 2000000]
-    
+
     --disk-cache               Use a persistent disk cache for responses. The cache is stored in the directory
                                specified by --disk-cache-dir. If the directory does not exist, it will be
                                created. If the directory exists, it will be used as is.
@@ -204,17 +204,17 @@ Fetch options:
                                does not exist, it will be created. If the directory exists, it will be used as is,
                                and will not be flushed. This option allows you to maintain several disk caches
                                for different fetch jobs (e.g. one for geocoding, another for weather, etc.)
-                               [default: ~/.qsv/cache/fetch]
+                               [default: ~/.qsv-cache/fetch]
 
     --redis-cache              Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/1"
-                               with a connection pool size of 20, with a TTL of 28 days, and a cache hit 
+                               with a connection pool size of 20, with a TTL of 28 days, and a cache hit
                                NOT renewing an entry's TTL.
-                               Adjust the QSV_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECONDS & 
+                               Adjust the QSV_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECS &
                                QSV_REDIS_TTL_REFRESH env vars respectively to change Redis settings.
                                This option is ignored if the --disk-cache option is enabled.
 
     --cache-error              Cache error responses even if a request fails. If an identical URL is requested,
-                               the cached error is returned. Otherwise, the fetch is attempted again 
+                               the cached error is returned. Otherwise, the fetch is attempted again
                                for --max-retries.
     --flush-cache              Flush all the keys in the current cache on startup. This only applies to
                                Disk and Redis caches.
@@ -253,20 +253,20 @@ use governor::{
     state::{InMemoryState, direct::NotKeyed},
 };
 use indicatif::{HumanCount, MultiProgress, ProgressBar, ProgressDrawTarget};
-use jaq_core::{Compiler, Ctx, RcIter, load};
+use jaq_core::{Compiler, Ctx, Vars, data, load, unwrap_valr};
 use jaq_json::Val;
 use log::{
     Level::{Debug, Trace, Warn},
     debug, error, info, log_enabled, warn,
 };
-use rand::Rng;
+use rand::RngExt;
 use regex::Regex;
 use reqwest::{
     blocking::Client,
     header::{HeaderMap, HeaderName, HeaderValue},
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 use url::Url;
 use util::expand_tilde;
 
@@ -326,8 +326,7 @@ static DEFAULT_DISKCACHE_TTL_SECS: u64 = 60 * 60 * 24 * 28;
 
 static TIMEOUT_SECS: OnceLock<u64> = OnceLock::new();
 
-pub static JAQ_FILTER: OnceLock<jaq_core::Filter<jaq_core::Native<jaq_json::Val>>> =
-    OnceLock::new();
+pub static JAQ_FILTER: OnceLock<jaq_core::Filter<data::JustLut<jaq_json::Val>>> = OnceLock::new();
 
 const FETCH_REPORT_PREFIX: &str = "qsv_fetch_";
 const FETCH_REPORT_SUFFIX: &str = ".fetch-report.tsv";
@@ -506,7 +505,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .trim(csv::Trim::All)
-        .no_headers(args.flag_no_headers);
+        .no_headers_flag(args.flag_no_headers);
 
     let mut rdr = rconfig.reader()?;
     let mut wtr = if args.flag_new_column.is_some() {
@@ -837,7 +836,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     final_response = intermediate_value.value;
                     was_cached = intermediate_value.was_cached;
                     if !args.flag_cache_error && final_response.status_code != 200 {
-                        let mut cache = GET_CACHED_RESPONSE.lock().unwrap();
+                        let mut cache = GET_CACHED_RESPONSE.lock();
                         cache.cache_remove(&url);
                     }
                 },
@@ -1160,7 +1159,7 @@ fn get_redis_response(
     flag_max_retries: u8,
 ) -> Result<cached::Return<String>, CliError> {
     Ok(Return::new({
-        serde_json::to_string(&get_response(
+        simd_json::to_string(&get_response(
             url,
             client,
             limiter,
@@ -1191,7 +1190,7 @@ pub fn get_ratelimit_header_value<'a>(
 /// return 1 if the value is 0
 pub fn parse_ratelimit_header_value(value: Option<&HeaderValue>, sentinel_value: u64) -> u64 {
     value.map_or(sentinel_value, |v| {
-        atoi_simd::parse_pos::<u64>(v.to_str().unwrap().as_bytes()).unwrap_or(1)
+        atoi_simd::parse_pos::<u64, false>(v.to_str().unwrap().as_bytes()).unwrap_or(1)
     })
 }
 
@@ -1397,23 +1396,19 @@ fn get_response(
             let remaining =
                 parse_ratelimit_header_value(ratelimit_remaining.or(ratelimit_remaining_sec), 9999);
 
-            // if there's a ratelimit_reset field in the response header, get it
-            // otherwise, set reset to sentinel value 0
-            let mut reset_secs =
-                parse_ratelimit_header_value(ratelimit_reset.or(ratelimit_reset_sec), 0);
-
             // if there's a retry_after field in the response header, get it
             // and set reset to it
-            if let Some(retry_after) = retry_after {
-                let retry_str = retry_after.to_str().unwrap();
+            let reset_secs = if let Some(retry_after) = retry_after {
                 // if we cannot parse its value as u64, the retry after value
                 // is most likely an rfc2822 date and not number of seconds to
                 // wait before retrying, which is a valid value
                 // however, we don't want to do date-parsing here, so we just
                 // wait timeout_secs seconds before retrying
-                reset_secs =
-                    atoi_simd::parse_pos::<u64>(retry_str.as_bytes()).unwrap_or(timeout_secs);
-            }
+                atoi_simd::parse_pos::<u64, false>(retry_after.to_str().unwrap().as_bytes())
+                    .unwrap_or(timeout_secs)
+            } else {
+                parse_ratelimit_header_value(ratelimit_reset.or(ratelimit_reset_sec), 0)
+            };
 
             // if reset_secs > timeout, then just time out and skip the retries
             if reset_secs > timeout_secs {
@@ -1482,7 +1477,7 @@ fn get_response(
 
 pub fn compile_jaq_filter(
     query: &str,
-) -> CliResult<jaq_core::Filter<jaq_core::Native<jaq_json::Val>>> {
+) -> CliResult<jaq_core::Filter<data::JustLut<jaq_json::Val>>> {
     // Create the program from query string
     let program = load::File {
         code: query,
@@ -1490,7 +1485,11 @@ pub fn compile_jaq_filter(
     };
 
     // Setup loader and arena
-    let loader = load::Loader::new(jaq_std::defs().chain(jaq_json::defs()));
+    let loader = load::Loader::new(
+        jaq_core::defs()
+            .chain(jaq_std::defs())
+            .chain(jaq_json::defs()),
+    );
     let arena = load::Arena::default();
 
     // Parse the filter
@@ -1500,7 +1499,11 @@ pub fn compile_jaq_filter(
 
     // Compile the filter
     let filter = Compiler::default()
-        .with_funs(jaq_std::funs().chain(jaq_json::funs()))
+        .with_funs(
+            jaq_core::funs()
+                .chain(jaq_std::funs())
+                .chain(jaq_json::funs()),
+        )
         .compile(modules)
         .map_err(|e| CliError::Other(format!("Failed to compile jaq query: {e:?}")))?;
 
@@ -1520,60 +1523,69 @@ pub fn process_jaq(json: &str, query: &str) -> CliResult<String> {
         compile_jaq_filter(query).unwrap()
     });
 
-    // Parse input JSON
-    let input: serde_json::Value = serde_json::from_str(json)?;
-
-    let inputs = RcIter::new(core::iter::empty());
+    // Parse input JSON into jaq Val
+    let input: Val = serde_json::from_str(json)?;
 
     // Run the filter
-    let output = jaq_filter
-        .run((Ctx::new([], &inputs), Val::from(input)))
-        .filter_map(std::result::Result::ok);
+    let ctx = Ctx::<data::JustLut<Val>>::new(&jaq_filter.lut, Vars::new([]));
+    let output: Vec<Val> = jaq_filter
+        .id
+        .run((ctx, input))
+        .map(unwrap_valr)
+        .filter_map(|r| match r {
+            Ok(v) => Some(v),
+            Err(e) => {
+                warn!("jaq filter runtime error (value dropped): {e}");
+                None
+            },
+        })
+        .collect();
 
-    #[allow(clippy::from_iter_instead_of_collect)]
-    let jaq_value = serde_json::Value::from_iter(output);
+    if output.is_empty() {
+        return fail_clierror!("Jaq query returned an empty result");
+    }
 
-    let final_val = match jaq_value {
-        Value::Array(arr) => {
-            if arr.is_empty() {
-                return fail_clierror!("Jaq query returned an empty result");
-            }
-            arr.into_iter()
-                .map(format_value)
-                .collect::<Vec<String>>()
-                .join(", ")
-        },
-        value => format_value(value),
+    let final_val = if output.len() == 1 {
+        format_val(&output[0])
+    } else {
+        output
+            .iter()
+            .map(format_val)
+            .collect::<Vec<String>>()
+            .join(", ")
     };
 
     Ok(final_val)
 }
 
 #[inline]
-fn format_value(value: Value) -> String {
+fn format_val(value: &Val) -> String {
+    use jaq_json::Num;
     match value {
-        Value::Number(num) => {
-            if let Some(f) = num.as_f64() {
-                ryu::Buffer::new().format_finite(f).to_string()
-            } else if let Some(i) = num.as_i64() {
-                itoa::Buffer::new().format(i).to_string()
-            } else {
-                itoa::Buffer::new()
-                    .format(num.as_u64().unwrap())
-                    .to_string()
-            }
+        Val::Num(n) => match n {
+            Num::Float(f) => zmij::Buffer::new().format_finite(*f).to_string(),
+            Num::Int(i) => itoa::Buffer::new().format(*i).to_string(),
+            _ => format!("{value}"),
         },
-        Value::Bool(b) => {
-            if b {
+        Val::Bool(b) => {
+            if *b {
                 "true".to_string()
             } else {
                 "false".to_string()
             }
         },
-        Value::String(s) => format!("\"{s}\""),
-        Value::Null => "null".to_string(),
-        Value::Array(arr) => serde_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string()),
-        Value::Object(obj) => serde_json::to_string(&obj).unwrap_or_else(|_| "{}".to_string()),
+        // Map null to empty string for CSV cells — a non-matching selector
+        // should produce an empty cell rather than the literal text "null"
+        Val::Null => String::new(),
+        // TStr: extract the inner string without JSON quotes, since format_val
+        // is used for CSV cell values, not JSON serialization
+        Val::TStr(s) => {
+            if std::str::from_utf8(s).is_err() {
+                log::warn!("TStr contains invalid UTF-8, using lossy conversion");
+            }
+            String::from_utf8_lossy(s).into_owned()
+        },
+        _ => format!("{value}"),
     }
 }
 

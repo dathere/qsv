@@ -1,0 +1,169 @@
+{
+  "name": "qsv-excel",
+  "version": "19.0.0",
+  "description": "Exports a specified Excel/ODS sheet to a CSV file.",
+  "category": "conversion",
+  "command": {
+    "subcommand": "excel",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": "The spreadsheet file to read. Use \"-\" to read from stdin. Supported formats: xls, xlsx, xlsm, xlsb, ods."
+      }
+    ],
+    "options": [
+      {
+        "flag": "--cell",
+        "type": "string",
+        "description": "A single cell reference - like C3 or 'Sheet1!C3' to extract. This is a convenience option equivalent to --range C3:C3. If both --cell and --range are specified, --cell takes precedence."
+      },
+      {
+        "flag": "--date-format",
+        "type": "string",
+        "description": "Optional date format to use when formatting dates. See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for the full list of supported format specifiers. Note that if a date format is invalid, qsv will fall back and return the date as if no date-format was specified."
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The delimiter to use when writing CSV data. Must be a single character.",
+        "default": ","
+      },
+      {
+        "flag": "--error-format",
+        "type": "string",
+        "description": "The format to use when formatting error cells. There are 3 formats: * \"code\": return the error code. (#DIV/0!; #N/A; #NAME?; #NULL!; #NUM!; #REF!; #VALUE!; #DATA!) * \"formula\": return the formula, prefixed with '#'. (e.g. #=A1/B1 where B1 is 0; #=100/0) * \"both\": return both error code and the formula. (e.g. #DIV/0!: =A1/B1)",
+        "default": "code"
+      },
+      {
+        "flag": "--flexible",
+        "type": "flag",
+        "description": "Continue even if the number of columns is different from row to row."
+      },
+      {
+        "flag": "--header-row",
+        "type": "string",
+        "description": "The header row. Set if other than the first non-empty row of the sheet."
+      },
+      {
+        "flag": "--keep-zero-time",
+        "type": "flag",
+        "description": "Keep the time part of a date-time field if it is 00:00:00. By default, qsv will remove the time part if it is 00:00:00."
+      },
+      {
+        "flag": "--metadata",
+        "type": "string",
+        "description": "Outputs workbook metadata in CSV or JSON format: index, sheet_name, headers, type, visible, column_count, row_count, safe_headers, safe_headers_count, unsafe_headers, unsafe_headers_count and duplicate_headers_count, names, name_count, tables, table_count. headers is a list of the first row which is presumed to be the header row. type is the sheet type (WorkSheet, DialogSheet, MacroSheet, ChartSheet, Vba). visible is the sheet visibility (Visible, Hidden, VeryHidden). row_count includes all rows, including the first row. safe_headers is a list of headers with \"safe\"(PostgreSQL-ready) names. unsafe_headers is a list of headers with \"unsafe\" names. duplicate_headers_count is a count of duplicate header names. names is a list of defined names in the workbook, with the associated formula. name_count is the number of defined names in the workbook. tables is a list of tables in the workbook, along with the sheet where the table is found, the columns and the column_count.  (XLSX only) table_count is the number of tables in the workbook.  (XLSX only)",
+        "default": "none"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--range",
+        "type": "string",
+        "description": "An Excel format range - like RangeName, C:T, C3:T25 or 'Sheet1!C3:T25' to extract to the CSV. If the specified range contains the required sheet, the --sheet option is ignored. If the range is not found, qsv will exit with an error."
+      },
+      {
+        "flag": "--sheet",
+        "type": "string",
+        "description": "Name (case-insensitive) or zero-based index of sheet to export. Negative indices start from the end (-1 = last sheet). If the sheet cannot be found, qsv will read the first sheet.",
+        "default": "0"
+      },
+      {
+        "flag": "--table",
+        "type": "string",
+        "description": "An Excel table (case-insensitive) to extract to a CSV. Only valid for XLSX files. The --sheet option is ignored as a table could be in any sheet. Overrides --range option."
+      },
+      {
+        "flag": "--trim",
+        "type": "flag",
+        "description": "Trim all fields so that leading & trailing whitespaces are removed. Also removes embedded linebreaks."
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  },
+  "examples": [
+    {
+      "description": "Export the first sheet of an Excel file to a CSV file:",
+      "command": "qsv excel input.xlsx --output output.csv"
+    },
+    {
+      "description": "Export the first sheet of an ODS file to a CSV file:",
+      "command": "qsv excel input.ods -o output.csv"
+    },
+    {
+      "description": "Export the first sheet of an Excel file to a CSV file with a custom delimiter:",
+      "command": "qsv excel input.xlsx -d \";\" > output.csv"
+    },
+    {
+      "description": "Export a sheet by name (case-insensitive):",
+      "command": "qsv excel --sheet \"Sheet 3\" input.xlsx"
+    },
+    {
+      "description": "Export a sheet by index: this exports the 3nd sheet (0-based index)",
+      "command": "qsv excel -s 2 input.xlsx"
+    },
+    {
+      "description": "Export the last sheet (negative index)):",
+      "command": "qsv excel -s -1 input.xlsx"
+    },
+    {
+      "description": "Export the second to last sheet:",
+      "command": "qsv excel -s -2 input.xls"
+    },
+    {
+      "description": "Export a table named \"Table1\" in an XLSX file. Note that --sheet is not required as the table definition includes the sheet.",
+      "command": "qsv excel --table \"Table1\" input.xlsx"
+    },
+    {
+      "description": "Export a range of cells in the first sheet:",
+      "command": "qsv excel --range C3:T25 input.xlsx"
+    },
+    {
+      "description": "Export a named range in the workbook. Note that --sheet is not required as named ranges include the sheet.",
+      "command": "qsv excel --range MyRange input.xlsx"
+    },
+    {
+      "description": "Export a range of cells in the second sheet:",
+      "command": "qsv excel --range C3:T25 -s 1 input.xlsx"
+    },
+    {
+      "description": "Export a range of cells in a sheet by name. Note the range name must be enclosed in single quotes in certain shells as it may contain special characters like ! and $:",
+      "command": "qsv excel --range 'Sheet2!C3:T25' input.xlsx"
+    },
+    {
+      "description": "Export the cell C3 in the first sheet:",
+      "command": "qsv excel --cell C3 input.xlsx"
+    },
+    {
+      "description": "Export a single cell from a specific sheet:",
+      "command": "qsv excel --cell 'Sheet2!C3' input.xlsx"
+    },
+    {
+      "description": "Export metadata for all sheets in CSV format:",
+      "command": "qsv excel --metadata csv input.xlsx"
+    },
+    {
+      "description": "Export metadata in short CSV mode which is much faster but doesn't contain as much metadata",
+      "command": "qsv excel --metadata short input.xlsx"
+    },
+    {
+      "description": "Export metadata for all sheets in JSON format:",
+      "command": "qsv excel --metadata json input.xlsx"
+    },
+    {
+      "description": "Export metadata to pretty-printed JSON - first letter is capital J",
+      "command": "qsv excel --metadata JSON input.xlsx"
+    },
+    {
+      "description": "Export metadata in short, minified JSON mode - first letter is capital S",
+      "command": "qsv excel --metadata Short input.xlsx"
+    }
+  ]
+}

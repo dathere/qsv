@@ -1,0 +1,208 @@
+{
+  "name": "qsv-stats",
+  "version": "19.0.0",
+  "description": "Compute summary statistics (sum, min/max/range, sort order/sortiness, min/max/sum/avg length, mean, standard error of the mean (SEM), geometric/harmonic means, stddev, variance, Coefficient of Variation (CV), nullcount, max precision, sparsity, quartiles, Interquartile Range (IQR), lower/upper fences, skewness, median, mode/s, antimode/s, cardinality & uniqueness ratio) & make GUARANTEED data type inferences (Null, String, Float, Integer, Date, DateTime, Boolean) for each column in a CSV (Example - more info). Uses multithreading to go faster if an index is present (with an index, can compile \"streaming\" stats on NYC's 311 data (15gb, 28m rows) in less than 7.3 seconds!).",
+  "category": "aggregation",
+  "command": {
+    "subcommand": "stats",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--boolean-patterns",
+        "type": "string",
+        "description": "Comma-separated list of boolean pattern pairs in the format \"true_pattern:false_pattern\". Each pattern can be a string of any length. The patterns are case-insensitive. If a pattern ends with a \"*\", it is treated as a prefix. For example, \"t*:f*,y*:n*\" will match \"true\", \"truthy\", \"Truth\" as boolean true values so long as the corresponding false pattern (e.g. False, f, etc.) is also matched & cardinality is 2. Ignored if --infer-boolean is false.",
+        "default": "1:0,t*:f*,y*:n*"
+      },
+      {
+        "flag": "--cache-threshold",
+        "type": "string",
+        "description": "Controls the creation of stats cache files. * when greater than 1, the threshold in milliseconds before caching stats results. If a stats run takes longer than this threshold, the stats results will be cached. * 0 to suppress caching. * 1 to force caching. * a negative number to automatically create an index when the input file size is greater than abs(arg) in bytes. If the negative number ends with 5, it will delete the index file and the stats cache file after the stats run. Otherwise, the index file and the cache files are kept.",
+        "default": "5000"
+      },
+      {
+        "flag": "--cardinality",
+        "type": "flag",
+        "description": "Compute the cardinality and the uniqueness ratio. This is automatically enabled if --infer-boolean is enabled. https://en.wikipedia.org/wiki/Cardinality_(SQL_statements) Uses memory proportional to the number of unique values in each column."
+      },
+      {
+        "flag": "--dates-whitelist",
+        "type": "string",
+        "description": "The comma-separated, case-insensitive patterns to look for when shortlisting fields for date inferencing. i.e. if the field's name has any of these patterns, it is shortlisted for date inferencing.",
+        "default": "sniff"
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for READING CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--everything",
+        "type": "flag",
+        "description": "Compute all statistics available."
+      },
+      {
+        "flag": "--force",
+        "type": "flag",
+        "description": "Force recomputing stats even if valid precomputed stats cache exists."
+      },
+      {
+        "flag": "--infer-boolean",
+        "type": "flag",
+        "description": "Infer boolean data type. This automatically enables the --cardinality option. When a column's cardinality is 2, and the 2 values' are in the true/false patterns specified by --boolean-patterns, the data type is inferred as boolean."
+      },
+      {
+        "flag": "--infer-dates",
+        "type": "flag",
+        "description": "Infer date/datetime data types. This is an expensive option and should only be used when you know there are date/datetime fields. Also, if timezone is not specified in the data, it'll be set to UTC."
+      },
+      {
+        "flag": "--mad",
+        "type": "flag",
+        "description": "Compute the median absolute deviation (MAD). https://en.wikipedia.org/wiki/Median_absolute_deviation"
+      },
+      {
+        "flag": "--median",
+        "type": "flag",
+        "description": "Compute the median. Loads & sorts all the selected columns' data in memory. https://en.wikipedia.org/wiki/Median"
+      },
+      {
+        "flag": "--memcheck",
+        "type": "flag",
+        "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. This option is ignored when computing default, streaming statistics, as it is not needed."
+      },
+      {
+        "flag": "--mode",
+        "type": "flag",
+        "description": "Compute the mode/s & antimode/s. Multimodal-aware. If there are multiple modes/antimodes, they are separated by the QSV_STATS_SEPARATOR environment variable. If not set, the default separator is \"|\". Uses memory proportional to the cardinality of each column."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will NOT be interpreted as column names. i.e., They will be included in statistics."
+      },
+      {
+        "flag": "--nulls",
+        "type": "flag",
+        "description": "Include NULLs in the population size for computing mean and standard deviation."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--percentile-list",
+        "type": "string",
+        "description": "Comma-separated list of percentiles to compute. For example, \"5,10,40,60,90,95\" will compute percentiles 5th, 10th, 40th, 60th, 90th, and 95th. Multiple percentiles are separated by the QSV_STATS_SEPARATOR environment variable. If not set, the default separator is \"|\". It is ignored if --percentiles is not set. Special values \"deciles\" and \"quintiles\" are automatically expanded to \"10,20,30,40,50,60,70,80,90\" and \"20,40,60,80\" respectively.",
+        "default": "5,10,40,60,90,95"
+      },
+      {
+        "flag": "--percentiles",
+        "type": "flag",
+        "description": "Compute custom percentiles using the nearest rank method. https://en.wikipedia.org/wiki/Percentile#The_nearest-rank_method"
+      },
+      {
+        "flag": "--prefer-dmy",
+        "type": "flag",
+        "description": "Parse dates in dmy format. Otherwise, use mdy format. Ignored if --infer-dates is false."
+      },
+      {
+        "flag": "--quartiles",
+        "type": "flag",
+        "description": "Compute the quartiles (using method 3), the IQR, the lower/upper, inner/outer fences and skewness. https://en.wikipedia.org/wiki/Quartile#Method_3"
+      },
+      {
+        "flag": "--round",
+        "type": "string",
+        "description": "Round statistics to <decimal_places>. Rounding is done following Midpoint Nearest Even (aka \"Bankers Rounding\") rule. https://docs.rs/rust_decimal/latest/rust_decimal/enum.RoundingStrategy.html If set to the sentinel value 9999, no rounding is done. For dates - range, stddev & IQR are rounded to 1e-5 day precision (sub-second), with trailing zeros trimmed in the displayed output.",
+        "default": "4"
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select a subset of columns to compute stats for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv stats' will prevent the use of indexing."
+      },
+      {
+        "flag": "--stats-jsonl",
+        "type": "flag",
+        "description": "Also write the stats in JSONL format. If set, the stats will be written to <FILESTEM>.stats.csv.data.jsonl. Note that this option used internally by other qsv \"smart\" commands (see https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#stats-cache) to load cached stats to make them work smarter & faster. You can preemptively create the stats-jsonl file by using this option BEFORE running \"smart\" commands and they will automatically use it."
+      },
+      {
+        "flag": "--typesonly",
+        "type": "flag",
+        "description": "Infer data types only and do not compute statistics. Note that if you want to infer dates and boolean types, you'll still need to use the --infer-dates & --infer-boolean options."
+      },
+      {
+        "flag": "--vis-whitespace",
+        "type": "flag",
+        "description": "Visualize whitespace characters in the output. See https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers for the list of whitespace markers."
+      },
+      {
+        "flag": "--weight",
+        "type": "string",
+        "description": "Compute weighted statistics using the specified column as weights. The weight column must be numeric. When specified, all statistics (mean, stddev, variance, median, quartiles, mode, etc.) will be computed using weighted algorithms. The weight column is automatically excluded from statistics computation. Missing or non-numeric weights default to 1.0. Zero and negative weights are ignored and do not contribute to the statistics. The output filename will be <FILESTEM>.stats.weighted.csv to distinguish from unweighted statistics."
+      }
+    ]
+  },
+  "hints": {
+    "indexed": true,
+    "memory": "full"
+  },
+  "examples": [
+    {
+      "description": "Compute \"streaming\" statistics for \"nyc311.csv\"",
+      "command": "qsv stats nyc311.csv"
+    },
+    {
+      "description": "Compute all statistics for \"nyc311.csv\"",
+      "command": "qsv stats --everything nyc311.csv"
+    },
+    {
+      "description": "Compute all statistics for \"nyc311.tsv\" (Tab-separated)",
+      "command": "qsv stats -E nyc311.tsv"
+    },
+    {
+      "description": "Compute all stats for \"nyc311.tsv\", inferring dates using sniff to auto-detect date columns",
+      "command": "qsv stats -E --infer-dates nyc311.tsv"
+    },
+    {
+      "description": "Compute all stats for \"nyc311.tab\", inferring dates only for columns with \"_date\" & \"_dte\" in the column names",
+      "command": "qsv stats -E --infer-dates --dates-whitelist _date,_dte nyc311.tab"
+    },
+    {
+      "description": "Compute all stats, infer dates and boolean data types for \"nyc311.ssv\" file",
+      "command": "qsv stats -E --infer-dates --infer-boolean nyc311.ssv"
+    },
+    {
+      "description": "In addition to basic \"streaming\" stats, also compute cardinality for \"nyc311.csv\"",
+      "command": "qsv stats --cardinality nyc311.csv"
+    },
+    {
+      "description": "Prefer DMY format when inferring dates for the \"nyc311.csv\"",
+      "command": "qsv stats -E --infer-dates --prefer-dmy nyc311.csv"
+    },
+    {
+      "description": "Infer data types only for the \"nyc311.csv\" file:",
+      "command": "qsv stats --typesonly nyc311.csv"
+    },
+    {
+      "description": "Infer data types only, including boolean and date types for \"nyc311.csv\"",
+      "command": "qsv stats --typesonly --infer-boolean --infer-dates nyc311.csv"
+    },
+    {
+      "description": "Automatically create an index for the \"nyc311.csv\" file to enable multithreading if it's larger than 5MB and there is no existing index file:",
+      "command": "qsv stats -E --cache-threshold -5000000 nyc311.csv"
+    },
+    {
+      "description": "Auto-create a TEMPORARY index for the \"nyc311.csv\" file to enable multithreading if it's larger than 5MB and delete the index and the stats cache file after the stats run:",
+      "command": "qsv stats -E --cache-threshold -5000005 nyc311.csv"
+    }
+  ]
+}

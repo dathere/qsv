@@ -1,9 +1,12 @@
 static USAGE: &str = r#"
-Explore a CSV file interactively using the csvlens (https://github.com/YS-L/csvlens) engine.
+Explore tabular data files interactively using the csvlens (https://github.com/YS-L/csvlens) engine.
 
-If the polars feature is enabled, lens can also browse Arrow, Avro/IPC, Parquet, JSON (JSON Array)
+If the polars feature is enabled, lens can browse tabular data in Arrow, Avro/IPC, Parquet, JSON (JSON Array)
 and JSONL files. It also automatically decompresses csv/tsv/tab/ssv files using the gz,zlib & zst
 compression formats (e.g. data.csv.gz, data.tsv.zlib, data.tab.gz & data.ssv.zst).
+
+If the polars feature is not enabled, lens can only browse CSV dialects (CSV, TSV, Tab, SSV) and
+its snappy-compressed variants (CSV.sz, TSV.sz, Tab.sz & SSV.sz).
 
 Press 'q' to exit. Press '?' for help.
 
@@ -18,19 +21,22 @@ Automatically choose delimiter based on the file extension
   $ qsv lens data.tab // Tab-separated
   $ qsv lens data.ssv // Semicolon-separated
   # custom delimiter
-  $ qsv lens --delimiter ';' data.csv
+  $ qsv lens --delimiter '|' data.csv
 
 Auto-decompresses several compression formats:
   $ qsv lens data.csv.sz // Snappy-compressed CSV
+  $ qsv lens data.tsv.sz // Snappy-compressed Tab-separated
+
+  # additional compression formats below require polars feature
   $ qsv lens data.csv.gz // Gzipped CSV
   $ qsv lens data.tsv.zlib // Zlib-compressed Tab-separated
   $ qsv lens data.tab.zst // Zstd-compressed Tab-separated
   $ qsv lens data.ssv.zst // Zstd-compressed Semicolon-separated
   
-Explore tabular data in other formats
+Explore tabular data in other formats (if polars feature is enabled)
+  $ qsv lens data.parquet // Parquet
   $ qsv lens data.jsonl // JSON Lines
   $ qsv lens data.json // JSON - will only work with a JSON Array
-  $ qsv lens data.parquet // Parquet
   $ qsv lens data.avro // Avro
 
 Prompt the user to select a column to display. Once selected,
@@ -39,15 +45,14 @@ exit with the value of the City column for the selected row sent to stdout
 
 Only show rows that contain "NYPD"
   $ qsv lens --filter NYPD data.csv
-  # Show rows that contain "nois" case insensitive
+  # Show rows that contain "nois" case insensitive (for noise, noisy, noisier, etc.)
   $ qsv lens --filter nois --ignore-case data.csv
  
 Find and highlight matches in the data
   $ qsv lens --find 'New York' data.csv
 
 Find and highlight cells that have all numeric values in a column.
-Use -m to disable color output so the matches are easier to see.
-  $ qsv lens --find '^\d+$' -m data.csv
+  $ qsv lens --find '^\d+$' data.csv
 
 lens options:
   -d, --delimiter <char>           Delimiter character (comma by default)
@@ -63,6 +68,7 @@ lens options:
                                    Example: "val1|val2" filters rows with any cells containing "val1", "val2"
                                    or text like "my_val1" or "val234".
       --find <regex>               Use this regex to find and highlight matches by default.
+                                   Automatically sets --monochrome to true so the matches are easier to see.
                                    The regex is matched against each cell in every column.
                                    Example: "val1|val2" highlights text containing "val1", "val2" or
                                    longer text like "val1_ok" or "val2_error".
@@ -80,8 +86,11 @@ lens options:
                                    For convenience, the first character can be used as a shortcut:
                                      qsv lens -W w data.csv // wrap at word boundaries
                                    [default: disabled]
+  -A, --auto-reload                Automatically reload the data when the file changes.
+  -S, --streaming-stdin            Enable streaming stdin (load input as it's being piped in)
+                                   NOTE: This option only applies to stdin input.
 
-  -P. --prompt <prompt>            Set a custom prompt in the status bar. Normally paired w/ --echo-column:
+  -P, --prompt <prompt>            Set a custom prompt in the status bar. Normally paired w/ --echo-column:
                                      qsv lens --prompt 'Select City:' --echo-column 'City'
                                    Supports ANSI escape codes for colored or styled text. When using
                                    escape codes, ensure it's properly escaped. For example, in bash/zsh,
@@ -112,46 +121,52 @@ use crate::{CliError, CliResult, config::Config, util};
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input:           Option<String>,
-    flag_delimiter:      Option<String>,
-    flag_tab_separated:  bool,
-    flag_no_headers:     bool,
-    flag_columns:        Option<String>,
-    flag_filter:         Option<String>,
-    flag_find:           Option<String>,
-    flag_ignore_case:    bool,
-    flag_freeze_columns: Option<u64>,
-    flag_monochrome:     bool,
-    flag_prompt:         Option<String>,
-    flag_echo_column:    Option<String>,
-    flag_wrap_mode:      String,
-    flag_debug:          bool,
+    arg_input:            Option<String>,
+    flag_delimiter:       Option<String>,
+    flag_tab_separated:   bool,
+    flag_no_headers:      bool,
+    flag_columns:         Option<String>,
+    flag_filter:          Option<String>,
+    flag_find:            Option<String>,
+    flag_ignore_case:     bool,
+    flag_freeze_columns:  Option<u64>,
+    flag_monochrome:      bool,
+    flag_prompt:          Option<String>,
+    flag_echo_column:     Option<String>,
+    flag_wrap_mode:       String,
+    flag_auto_reload:     bool,
+    flag_debug:           bool,
+    flag_streaming_stdin: bool,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
-    // Process input file
-    // support stdin and auto-decompress snappy file
-    // stdin/decompressed file is written to a temporary file in tmpdir
-    // which is automatically deleted after the command finishes
     let tmpdir = tempfile::tempdir()?;
-    let work_input = util::process_input(
-        vec![PathBuf::from(
-            // if no input file is specified, read from stdin "-"
-            args.arg_input.unwrap_or_else(|| "-".to_string()),
-        )],
-        &tmpdir,
-        "",
-    )?;
-    let input = work_input[0].to_string_lossy().to_string();
+    let input = if !args.flag_streaming_stdin && args.arg_input.is_none() {
+        "-".to_string()
+    } else {
+        // Process input file
+        // support stdin and auto-decompress snappy file
+        // stdin/decompressed file is written to a temporary file in tmpdir
+        // which is automatically deleted after the command finishes
+        let work_input = util::process_input(
+            vec![PathBuf::from(
+                // if no input file is specified, read from stdin "-"
+                args.arg_input.clone().unwrap_or_else(|| "-".to_string()),
+            )],
+            &tmpdir,
+            "",
+        )?;
+        work_input[0].to_string_lossy().to_string()
+    };
 
     // If the prompt starts with "file:", it's interpreted as a filepath
     // from which to load the prompt, e.g.
     // qsv lens --prompt "file:prompt.txt"
     let prompt = if let Some(prompt) = args.flag_prompt {
-        if prompt.starts_with("file:") {
-            let prompt_file = PathBuf::from(prompt.trim_start_matches("file:"));
+        if prompt.starts_with(util::FILE_PATH_PREFIX) {
+            let prompt_file = PathBuf::from(prompt.trim_start_matches(util::FILE_PATH_PREFIX));
             let prompt = std::fs::read_to_string(prompt_file)?;
             Some(prompt)
         } else {
@@ -178,14 +193,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let input = config.path.clone().map(|p| p.to_string_lossy().to_string());
 
+    let delimiter = if let Some(delimiter) = args.flag_delimiter {
+        Some(delimiter)
+    } else {
+        Some((config.get_delimiter() as char).to_string())
+    };
+
+    let comma_separated = delimiter == Some(",".to_string());
+
+    // monochrome is true if the monochrome flag is set or the find flag is set
+    // we set monochrome to true if the find flag is set because the find flag
+    // uses color output to highlight the matches.
+    let monochrome = args.flag_monochrome || args.flag_find.is_some();
+
     let options = CsvlensOptions {
         filename: input,
-        delimiter: if let Some(delimiter) = args.flag_delimiter {
-            Some(delimiter)
-        } else {
-            Some((config.get_delimiter() as char).to_string())
-        },
+        delimiter,
         tab_separated: args.flag_tab_separated,
+        comma_separated,
         no_headers: args.flag_no_headers,
         columns: args.flag_columns,
         filter: args.flag_filter,
@@ -194,9 +219,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         echo_column: args.flag_echo_column,
         debug: args.flag_debug,
         freeze_cols_offset: args.flag_freeze_columns,
-        color_columns: !args.flag_monochrome,
+        color_columns: !monochrome,
         prompt,
         wrap_mode,
+        auto_reload: args.flag_auto_reload,
+        no_streaming_stdin: !args.flag_streaming_stdin,
     };
 
     let out = run_csvlens_with_options(options)

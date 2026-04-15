@@ -20,6 +20,19 @@ src/.DS_Store
 *.svg
 perf.data*
 *.json
+# Exception: allow Claude Code settings, skill definition JSON files, npm config, and TypeScript configs
+!.claude/settings.json
+!.claude/skills/qsv/*.json
+!.claude/skills/package.json
+!.claude/skills/package-lock.json
+!.claude/skills/tsconfig.json
+!.claude/skills/tsconfig.test.json
+!.claude/skills/.claude-plugin/plugin.json
+!.claude/skills/.mcp.json
+!.claude/skills/hooks/hooks.json
+!.claude/skills/manifest.json
+!.claude/skills/examples/*.*
+!.claude/skills/tests/fixtures/*.csv
 *.log
 *.log.gz
 *.bak
@@ -39,3 +52,9 @@ tmp/*
 *.key
 *.psv
 scripts/benchmark_data.*
+*.mcpb
+.roborev.toml
+/.claude/skills/docs/diagnosis
+/docs/audits
+/.claude/skills/docs/audits
+*.plugin

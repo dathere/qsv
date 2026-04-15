@@ -22,6 +22,23 @@ Concatenating by rows can be done in two ways:
    empty field is written. If a column is missing in the header, an empty field
    is written for all rows.
 
+Examples:
+
+  # Concatenate CSV files by rows:
+  qsv cat rows file1.csv file2.csv -o combined.csv
+
+  # Concatenate CSV files by rows, adding a grouping column with the filename:
+  qsv cat rowskey --group fname --group-name source_file file1.csv file2.csv -o combined_with_keys.csv
+
+  # Concatenate CSV files by columns:
+  qsv cat columns file1.csv file2.csv -o combined_columns.csv
+
+  # Concatenate all CSV files in a directory by rows:
+  qsv cat rows path/to/csv_directory -o combined.csv
+
+  # Concatenate all CSV files listed in a .infile-list file by rows:
+  qsv cat rows path/to/files_to_combine.infile-list -o combined.csv
+
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_cat.rs.
 
 Usage:
@@ -204,7 +221,9 @@ impl Args {
             );
         };
 
+        // Pre-allocate with estimated capacity for better performance
         let mut columns_global: FhashIndexSet<Box<[u8]>> = FhashIndexSet::default();
+        columns_global.reserve(100);
 
         if group_kind != GroupKind::None {
             columns_global.insert(self.flag_group_name.as_bytes().to_vec().into_boxed_slice());
@@ -273,6 +292,7 @@ impl Args {
         let mut conf_path;
         let mut rdr;
         let mut header: &csv::ByteRecord;
+        // Pre-allocate with the known capacity for better performance
         let mut columns_of_this_file: FhashIndexMap<Box<[u8]>, usize> = FhashIndexMap::default();
         columns_of_this_file.reserve(num_columns_global);
         let mut row: csv::ByteRecord = csv::ByteRecord::with_capacity(500, num_columns_global);
@@ -297,14 +317,16 @@ impl Args {
 
             for (n, field) in header.iter().enumerate() {
                 let fi = field.to_vec().into_boxed_slice();
-                if columns_of_this_file.contains_key(&fi) {
+                // Use entry API for more efficient insertion when we need to check for duplicates
+                if let indexmap::map::Entry::Vacant(entry) = columns_of_this_file.entry(fi) {
+                    entry.insert(n);
+                } else {
                     wwarn!(
                         "Duplicate column `{}` name in file `{:?}`.",
-                        String::from_utf8_lossy(&fi),
+                        String::from_utf8_lossy(field),
                         conf.path,
                     );
                 }
-                columns_of_this_file.insert(fi, n);
             }
 
             // safety: we know that this is a valid file path

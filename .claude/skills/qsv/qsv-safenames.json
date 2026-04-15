@@ -1,0 +1,50 @@
+{
+  "name": "qsv-safenames",
+  "version": "19.0.0",
+  "description": "Modify headers of a CSV to only have \"safe\" names - guaranteed \"database-ready\"/\"CKAN-ready\" names.",
+  "category": "validation",
+  "command": {
+    "subcommand": "safenames",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--mode",
+        "type": "string",
+        "description": "Rename header names to \"safe\" names - i.e. guaranteed \"database-ready\" names. It has six modes - conditional, always, verify, Verbose, with Verbose having two submodes - JSON & pretty JSON.",
+        "default": "Always"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout. Note that no output is generated for Verify and Verbose modes."
+      },
+      {
+        "flag": "--prefix",
+        "type": "string",
+        "description": "Certain systems do not allow header names to start with \"_\" (e.g. CKAN Datastore). This option allows the specification of the unsafe prefix to use when a header starts with \"_\".",
+        "default": "unsafe_"
+      },
+      {
+        "flag": "--reserved",
+        "type": "string",
+        "description": "Comma-delimited list of additional case-insensitive reserved names that should be considered \"unsafe.\" If a header name is found in the reserved list, it will be prefixed with \"reserved_\".",
+        "default": "_id"
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  }
+}

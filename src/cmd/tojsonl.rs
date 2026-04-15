@@ -39,12 +39,19 @@ Common options:
     -d, --delimiter <arg>  The field delimiter for reading CSV data.
                            Must be a single character. (default: ,)
     -o, --output <file>    Write output to <file> instead of stdout.
+                           Use "-" to explicitly write to stdout.
     --memcheck             Check if there is enough memory to load the entire
                            CSV into memory using CONSERVATIVE heuristics.
     -q, --quiet            Do not display enum/const list inferencing messages.
 "#;
 
-use std::{fmt::Write, path::PathBuf, str::FromStr};
+use std::{
+    fmt::Write,
+    fs::File,
+    io::{self, BufWriter, Write as IoWrite},
+    path::PathBuf,
+    str::FromStr,
+};
 
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
@@ -140,6 +147,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // with a case-insensitive cardinality of 2
         flag_ignore_case:     true,
         flag_strict_dates:    false,
+        flag_strict_formats:  false,
         flag_pattern_columns: crate::select::SelectColumns::parse("")?,
         // json doesn't have a date type, so don't infer dates
         flag_dates_whitelist: "none".to_string(),
@@ -152,6 +160,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         flag_delimiter:       args.flag_delimiter,
         arg_input:            Some(input_filename.clone()),
         flag_memcheck:        args.flag_memcheck,
+        flag_output:          None,
     };
     // build schema for each field by their inferred type, min/max value/length, and unique values
     let properties_map: Map<String, Value> =
@@ -164,13 +173,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let mut rdr = conf.reader()?;
 
-    // TODO: instead of abusing csv writer to write jsonl file
-    // just use a normal buffered writer
-    let mut wtr = Config::new(args.flag_output.as_ref())
-        .flexible(true)
-        .no_headers(true)
-        .quote_style(csv::QuoteStyle::Never)
-        .writer()?;
+    let mut wtr: Box<dyn IoWrite> = match args.flag_output {
+        Some(ref output_file) if output_file != "-" => {
+            Box::new(BufWriter::new(File::create(output_file)?))
+        },
+        _ => Box::new(BufWriter::new(io::stdout().lock())),
+    };
 
     let headers = rdr.headers()?.clone();
 
@@ -369,21 +377,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
                 json_string.pop(); // remove last comma
                 json_string.push('}');
-                record.clear();
-                record.push_field(&json_string);
-                record
+                json_string
             })
             .collect_into_vec(&mut batch_results);
 
         // rayon collect() guarantees original order, so we can just append results each batch
-        for result_record in &batch_results {
-            wtr.write_record(result_record)?;
+        for json_line in &batch_results {
+            wtr.write_all(json_line.as_bytes())?;
+            wtr.write_all(b"\n")?;
         }
 
         batch.clear();
     } // end of batch loop
 
-    Ok(wtr.flush()?)
+    wtr.flush()?;
+    Ok(())
 }
 
 #[inline]

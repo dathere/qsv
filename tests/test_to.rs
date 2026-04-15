@@ -440,63 +440,6 @@ place       string      string"#
 // }
 
 #[test]
-fn to_parquet_dir() {
-    let wrk = Workdir::new("to_parquet_dir");
-
-    let cities = vec![
-        svec!["city", "state"],
-        svec!["Boston", "MA"],
-        svec!["New York", "NY"],
-        svec!["San Francisco", "CA"],
-        svec!["Buffalo", "NY"],
-    ];
-    let places = vec![
-        svec!["city", "place"],
-        svec!["Boston", "Logan Airport"],
-        svec!["Boston", "Boston Garden"],
-        svec!["Buffalo", "Ralph Wilson Stadium"],
-        svec!["Orlando", "Disney World"],
-    ];
-
-    wrk.create("cities.csv", cities.clone());
-    wrk.create("places.csv", places.clone());
-
-    let parquet_dir = wrk.path("test_parquet_dir");
-    let parquet_dirname = parquet_dir.to_string_lossy().to_string();
-
-    let mut cmd = wrk.command("to");
-    cmd.arg("parquet")
-        .arg(parquet_dirname.clone())
-        .arg("places.csv")
-        .arg("cities.csv");
-
-    let got: String = wrk.stdout(&mut cmd);
-    let expected: String = r#"Table 'places' (4 rows)
-
-Field Name  Field Type  Field Format
-city        string      string
-place       string      string
-
-Table 'cities' (4 rows)
-
-Field Name  Field Type  Field Format
-city        string      string
-state       string      string"#
-        .to_string();
-    assert_eq!(got, expected);
-
-    // check that the parquet files were created
-    let files = std::fs::read_dir(parquet_dir).unwrap();
-    let mut file_names = files
-        .map(|f| f.unwrap().file_name().into_string().unwrap())
-        .collect::<Vec<_>>();
-    file_names.sort();
-    assert_eq!(file_names, vec!["cities.parquet", "places.parquet"]);
-
-    // TODO: check that the parquet files are valid and contain the correct data
-}
-
-#[test]
 fn to_ods_roundtrip() {
     let wrk = Workdir::new("to_ods");
 
@@ -585,6 +528,376 @@ fn to_ods_dir() {
     assert_eq!(got, file2_data);
 
     wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn to_table_xlsx_happy_path() {
+    // --table with xlsx should use the custom sheet name
+    let wrk = Workdir::new("to_table_xlsx_happy");
+    wrk.create(
+        "in.csv",
+        vec![svec!["city", "state"], svec!["Boston", "MA"]],
+    );
+
+    let xlsx_file = wrk.path("test.xlsx").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("xlsx")
+        .arg("--table")
+        .arg("My Sheet")
+        .arg(&xlsx_file)
+        .arg("in.csv");
+
+    let output = wrk.output(&mut cmd);
+    assert!(
+        output.status.success(),
+        "Command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("My Sheet"),
+        "Expected sheet name 'My Sheet' in output, got: {stdout}"
+    );
+    assert!(
+        wrk.path("test.xlsx").exists(),
+        "Expected output file test.xlsx to exist"
+    );
+}
+
+#[test]
+fn to_table_error_xlsx_invalid_chars() {
+    // --table with invalid sheet name characters should fail for xlsx
+    let wrk = Workdir::new("to_table_error_xlsx_chars");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let xlsx_file = wrk.path("test.xlsx").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("xlsx")
+        .arg("--table")
+        .arg("bad[name")
+        .arg(xlsx_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("sheet name cannot contain"),
+        "Expected invalid chars error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_error_xlsx_too_long() {
+    // --table with sheet name > 31 chars should fail for xlsx
+    let wrk = Workdir::new("to_table_error_xlsx_long");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let xlsx_file = wrk.path("test.xlsx").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("xlsx")
+        .arg("--table")
+        .arg("a".repeat(32))
+        .arg(xlsx_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("must not exceed 31 characters"),
+        "Expected length error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_error_ods_too_long() {
+    // --table with sheet name > 31 chars should fail for ods
+    let wrk = Workdir::new("to_table_error_ods_long");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let ods_file = wrk.path("test.ods").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("ods")
+        .arg("--table")
+        .arg("a".repeat(32))
+        .arg(ods_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("must not exceed 31 characters"),
+        "Expected length error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_ods_happy_path() {
+    // --table with ods should use the custom sheet name
+    let wrk = Workdir::new("to_table_ods_happy");
+    wrk.create(
+        "in.csv",
+        vec![svec!["city", "state"], svec!["Boston", "MA"]],
+    );
+
+    let ods_file = wrk.path("test.ods").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("ods")
+        .arg("--table")
+        .arg("My Sheet")
+        .arg(&ods_file)
+        .arg("in.csv");
+
+    let output = wrk.output(&mut cmd);
+    assert!(
+        output.status.success(),
+        "Command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("My Sheet"),
+        "Expected sheet name 'My Sheet' in output, got: {stdout}"
+    );
+    assert!(
+        wrk.path("test.ods").exists(),
+        "Expected output file test.ods to exist"
+    );
+}
+
+#[test]
+fn to_table_error_ods_invalid_chars() {
+    // --table with invalid sheet name characters should fail for ods
+    let wrk = Workdir::new("to_table_error_ods_chars");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let ods_file = wrk.path("test.ods").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("ods")
+        .arg("--table")
+        .arg("bad:name")
+        .arg(ods_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("sheet name cannot contain"),
+        "Expected invalid chars error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_error_datapackage() {
+    // --table should fail with datapackage subcommand
+    let wrk = Workdir::new("to_table_error_dp");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let dp_file = wrk.path("dp.json").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("datapackage")
+        .arg("--table")
+        .arg("custom_name")
+        .arg(dp_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table cannot be used with the datapackage subcommand"),
+        "Expected unsupported subcommand error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_error_empty_name() {
+    // --table with empty name should fail
+    let wrk = Workdir::new("to_table_error_empty");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let sqlite_file = wrk.path("test.db").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("")
+        .arg(sqlite_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table name must not be empty"),
+        "Expected empty name error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_error_invalid_chars() {
+    // --table with special characters should fail
+    let wrk = Workdir::new("to_table_error_chars");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let sqlite_file = wrk.path("test.db").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("my table!@#")
+        .arg(sqlite_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table name must contain only alphanumeric"),
+        "Expected invalid chars error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_error_multiple_inputs() {
+    // --table with multiple input files should fail
+    let wrk = Workdir::new("to_table_error_multi");
+    wrk.create("in1.csv", vec![svec!["col1"], svec!["a"]]);
+    wrk.create("in2.csv", vec![svec!["col1"], svec!["b"]]);
+
+    let sqlite_file = wrk.path("test.db").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("custom_name")
+        .arg(sqlite_file)
+        .arg("in1.csv")
+        .arg("in2.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table can only be used with a single input file"),
+        "Expected multiple inputs error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_sqlite_happy_path() {
+    // --table with sqlite should use the custom table name
+    let wrk = Workdir::new("to_table_sqlite_happy");
+    wrk.create(
+        "in.csv",
+        vec![svec!["city", "state"], svec!["Boston", "MA"]],
+    );
+
+    let dump_file = wrk.path("dump.sql").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("my_custom_table")
+        .arg("--dump")
+        .arg(dump_file.clone())
+        .arg("in.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    // Verify the dump file references the custom table name
+    let dump_content = std::fs::read_to_string(&dump_file).unwrap();
+    assert!(
+        dump_content.contains("my_custom_table"),
+        "Expected dump to contain custom table name 'my_custom_table', got:\n{dump_content}"
+    );
+    // Ensure the original filename-based table name is NOT used (check multiple quoting styles:
+    // double-quoted, single-quoted, backtick-quoted, and unquoted)
+    assert!(
+        !dump_content.contains("CREATE TABLE \"in\"")
+            && !dump_content.contains("CREATE TABLE 'in'")
+            && !dump_content.contains("CREATE TABLE `in`")
+            && !dump_content.contains("CREATE TABLE in(")
+            && !dump_content.contains("CREATE TABLE in ")
+            && !dump_content.contains("CREATE TABLE in\n"),
+        "Dump should not contain original table name 'in', got:\n{dump_content}"
+    );
+}
+
+#[test]
+fn to_table_error_leading_digit() {
+    // --table with a name starting with a digit should fail
+    let wrk = Workdir::new("to_table_error_digit");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let sqlite_file = wrk.path("test.db").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("123table")
+        .arg(sqlite_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table name must start with a letter or underscore"),
+        "Expected leading digit error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_error_hyphen() {
+    // --table with hyphens should fail (invalid SQL identifier)
+    let wrk = Workdir::new("to_table_error_hyphen");
+    wrk.create("in.csv", vec![svec!["col1"], svec!["a"]]);
+
+    let sqlite_file = wrk.path("test.db").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("my-table")
+        .arg(sqlite_file)
+        .arg("in.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--table name must contain only alphanumeric"),
+        "Expected hyphen error, got: {stderr}"
+    );
+}
+
+#[test]
+fn to_table_underscore_prefix() {
+    // --table with underscore-prefixed name should succeed
+    let wrk = Workdir::new("to_table_underscore_prefix");
+    wrk.create(
+        "data.csv",
+        vec![svec!["city", "state"], svec!["Boston", "MA"]],
+    );
+
+    let dump_file = wrk.path("dump.sql").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("_staging")
+        .arg("--dump")
+        .arg(dump_file)
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn to_table_preserves_original_file() {
+    // --table should not rename/modify the user's original file
+    let wrk = Workdir::new("to_table_preserves_file");
+    wrk.create(
+        "original.csv",
+        vec![svec!["city", "state"], svec!["Boston", "MA"]],
+    );
+
+    let original_path = wrk.path("original.csv");
+    assert!(original_path.exists(), "original file should exist before");
+
+    let dump_file = wrk.path("dump.sql").to_string_lossy().to_string();
+    let mut cmd = wrk.command("to");
+    cmd.arg("sqlite")
+        .arg("--table")
+        .arg("custom_name")
+        .arg("--dump")
+        .arg(dump_file)
+        .arg("original.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    // The original file must still exist with its original name
+    assert!(
+        original_path.exists(),
+        "original file should still exist after --table"
+    );
 }
 
 // #[test]
@@ -676,3 +989,665 @@ fn to_ods_dir() {
 //         ]
 //     );
 // }
+
+// ===== Parquet tests (require polars feature) =====
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_basic() {
+    let wrk = Workdir::new("to_parquet_basic");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["city", "pop"],
+            svec!["Boston", "685000"],
+            svec!["New York", "8300000"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists(), "parquet file should be created");
+
+    // Read back and verify contents
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 2, "should have 2 rows");
+    assert_eq!(df.width(), 2, "should have 2 columns");
+    assert_eq!(
+        df.get_column_names(),
+        &["city", "pop"],
+        "column names should match"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_multiple() {
+    let wrk = Workdir::new("to_parquet_multiple");
+    wrk.create(
+        "cities.csv",
+        vec![
+            svec!["city", "state"],
+            svec!["Boston", "MA"],
+            svec!["Albany", "NY"],
+        ],
+    );
+    wrk.create(
+        "places.csv",
+        vec![
+            svec!["place", "city"],
+            svec!["Fenway Park", "Boston"],
+            svec!["Capitol", "Albany"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("cities.csv")
+        .arg("places.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        output_dir.join("cities.parquet").exists(),
+        "cities.parquet should be created"
+    );
+    assert!(
+        output_dir.join("places.parquet").exists(),
+        "places.parquet should be created"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_compression_snappy() {
+    let wrk = Workdir::new("to_parquet_snappy");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "value"],
+            svec!["alpha", "1"],
+            svec!["beta", "2"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--compression")
+        .arg("snappy")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists());
+
+    // Read back and verify the file is valid parquet with correct contents
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 2, "should have 2 rows");
+    assert_eq!(
+        df.get_column_names(),
+        &["name", "value"],
+        "column names should match"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_custom_table() {
+    let wrk = Workdir::new("to_parquet_table");
+    wrk.create(
+        "data.csv",
+        vec![svec!["col1", "col2"], svec!["a", "1"], svec!["b", "2"]],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--table")
+        .arg("custom_name")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        output_dir.join("custom_name.parquet").exists(),
+        "parquet file should use custom table name"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_dir() {
+    let wrk = Workdir::new("to_parquet_dir");
+
+    // Create a subdirectory with CSV files
+    let input_dir = wrk.path("input_csvs");
+    std::fs::create_dir_all(&input_dir).unwrap();
+    std::fs::write(input_dir.join("file1.csv"), "name,value\nalpha,1\nbeta,2\n").unwrap();
+    std::fs::write(
+        input_dir.join("file2.csv"),
+        "city,state\nBoston,MA\nAlbany,NY\n",
+    )
+    .unwrap();
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg(input_dir.to_string_lossy().as_ref());
+
+    wrk.assert_success(&mut cmd);
+
+    assert!(output_dir.join("file1.parquet").exists());
+    assert!(output_dir.join("file2.parquet").exists());
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_invalid_compression() {
+    let wrk = Workdir::new("to_parquet_invalid_compression");
+    wrk.create(
+        "data.csv",
+        vec![svec!["name", "value"], svec!["alpha", "1"]],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--compression")
+        .arg("bogus")
+        .arg("data.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("invalid --compression value"),
+        "Expected invalid compression error, got: {stderr}"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_gzip_level_out_of_range() {
+    let wrk = Workdir::new("to_parquet_gzip_level_oor");
+    wrk.create(
+        "data.csv",
+        vec![svec!["name", "value"], svec!["alpha", "1"]],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--compression")
+        .arg("gzip")
+        .arg("--compress-level")
+        .arg("0")
+        .arg("data.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("invalid gzip compression level"),
+        "Expected gzip level error, got: {stderr}"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_zstd_level_out_of_range() {
+    let wrk = Workdir::new("to_parquet_zstd_level_oor");
+    wrk.create(
+        "data.csv",
+        vec![svec!["name", "value"], svec!["alpha", "1"]],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--compression")
+        .arg("zstd")
+        .arg("--compress-level")
+        .arg("99")
+        .arg("data.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("invalid zstd compression level"),
+        "Expected zstd level error, got: {stderr}"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_all_strings() {
+    let wrk = Workdir::new("to_parquet_all_strings");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "95.5"],
+            svec!["Bob", "25", "88.0"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--all-strings")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists(), "parquet file should be created");
+
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 2);
+
+    // All columns should be String type when --all-strings is used
+    let schema = df.schema();
+    for (name, dtype) in schema.iter() {
+        assert_eq!(
+            dtype,
+            &polars::prelude::DataType::String,
+            "column '{name}' should be String, got {dtype:?}"
+        );
+    }
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_pschema() {
+    let wrk = Workdir::new("to_parquet_pschema");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "30", "95.5"],
+            svec!["Bob", "25", "88.0"],
+        ],
+    );
+
+    // Create a pschema.json that forces specific types
+    let csv_path = wrk.path("data.csv").canonicalize().unwrap();
+    let schema_path = format!("{}.pschema.json", csv_path.display());
+    std::fs::write(
+        &schema_path,
+        r#"{"fields":{"name":"String","age":"UInt8","score":"Float32"},"metadata":null}"#,
+    )
+    .unwrap();
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists(), "parquet file should be created");
+
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 2);
+
+    // Verify the schema matches the pschema.json types
+    let schema = df.schema();
+    assert_eq!(
+        schema.get("name").unwrap(),
+        &polars::prelude::DataType::String,
+        "name should be String"
+    );
+    assert_eq!(
+        schema.get("age").unwrap(),
+        &polars::prelude::DataType::UInt8,
+        "age should be UInt8 per pschema"
+    );
+    assert_eq!(
+        schema.get("score").unwrap(),
+        &polars::prelude::DataType::Float32,
+        "score should be Float32 per pschema"
+    );
+
+    // Clean up the pschema file
+    let _ = std::fs::remove_file(&schema_path);
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_pschema_ignored_when_infer_len_set() {
+    let wrk = Workdir::new("to_parquet_pschema_infer_len");
+    // Use age=300 which overflows UInt8 (max 255) — if pschema were applied, this would fail
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "300", "95.5"],
+            svec!["Bob", "250", "88.0"],
+        ],
+    );
+
+    // Create a pschema.json that forces age to UInt8
+    let csv_path = wrk.path("data.csv").canonicalize().unwrap();
+    let schema_path = format!("{}.pschema.json", csv_path.display());
+    std::fs::write(
+        &schema_path,
+        r#"{"fields":{"name":"String","age":"UInt8","score":"Float32"},"metadata":null}"#,
+    )
+    .unwrap();
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--infer-len")
+        .arg("100")
+        .arg("data.csv");
+
+    // When --infer-len is set, the pschema should be ignored and polars infers the types.
+    // Conversion succeeds because age=300 is valid for inferred integer types, but would
+    // overflow UInt8 if the pschema were applied.
+    wrk.assert_success(&mut cmd);
+
+    let _ = std::fs::remove_file(&schema_path);
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_pschema_ignored_when_infer_len_zero() {
+    let wrk = Workdir::new("to_parquet_pschema_infer_len_zero");
+    // Use age=300 which overflows UInt8 (max 255) — if pschema were applied, this would fail
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score"],
+            svec!["Alice", "300", "95.5"],
+            svec!["Bob", "250", "88.0"],
+        ],
+    );
+
+    // Create a pschema.json that forces age to UInt8
+    let csv_path = wrk.path("data.csv").canonicalize().unwrap();
+    let schema_path = format!("{}.pschema.json", csv_path.display());
+    std::fs::write(
+        &schema_path,
+        r#"{"fields":{"name":"String","age":"UInt8","score":"Float32"},"metadata":null}"#,
+    )
+    .unwrap();
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--infer-len")
+        .arg("0")
+        .arg("data.csv");
+
+    // --infer-len 0 means scan all rows for inference, ignoring pschema.
+    // Conversion succeeds because age=300 is valid for inferred integer types, but would
+    // overflow UInt8 if the pschema were applied.
+    wrk.assert_success(&mut cmd);
+
+    let _ = std::fs::remove_file(&schema_path);
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_pschema_via_schema_cmd() {
+    // End-to-end test: generate pschema with `qsv schema --polars`, then convert with `qsv to
+    // parquet` and verify the pschema types are applied.
+    let wrk = Workdir::new("to_parquet_pschema_via_schema_cmd");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "age", "score", "registered"],
+            svec!["Alice", "30", "95.5", "2024-01-15"],
+            svec!["Bob", "25", "88.0", "2024-06-30"],
+            svec!["Carol", "35", "92.3", "2024-03-20"],
+        ],
+    );
+
+    // Step 1: Run `qsv schema --polars data.csv` to generate pschema
+    let mut schema_cmd = wrk.command("schema");
+    schema_cmd.arg("--polars").arg("data.csv");
+    wrk.assert_success(&mut schema_cmd);
+
+    // Verify pschema file was created
+    let pschema_path = wrk.path("data.csv.pschema.json");
+    assert!(
+        pschema_path.exists(),
+        "pschema.json should be created by schema --polars"
+    );
+
+    // Step 2: Run `qsv to parquet out/ data.csv` — should pick up the pschema
+    let output_dir = wrk.path("parquet_out");
+    let mut to_cmd = wrk.command("to");
+    to_cmd
+        .arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("data.csv");
+
+    wrk.assert_success(&mut to_cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists(), "parquet file should be created");
+
+    // Read back and verify the schema types match the pschema
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 3);
+
+    // Read the generated pschema to know what types were inferred
+    let pschema_content = std::fs::read_to_string(&pschema_path).unwrap();
+    let pschema: serde_json::Value = serde_json::from_str(&pschema_content).unwrap();
+    let pschema_fields = pschema["fields"].as_object().unwrap();
+
+    // Verify the parquet schema matches the pschema types
+    let parquet_schema = df.schema();
+    assert_eq!(
+        parquet_schema.get("name").unwrap(),
+        &polars::prelude::DataType::String,
+        "name should be String per pschema"
+    );
+    // age should be a numeric type per pschema — verify both pschema and parquet agree
+    let age_pschema_type = pschema_fields["age"].as_str().unwrap();
+    assert!(
+        !age_pschema_type.is_empty(),
+        "pschema should have a type for age"
+    );
+    let age_parquet_type = parquet_schema.get("age").unwrap();
+    assert!(
+        age_parquet_type.is_integer(),
+        "age parquet type should be numeric per pschema '{age_pschema_type}', got \
+         {age_parquet_type:?}"
+    );
+
+    // score should be a float type per pschema — verify both pschema and parquet agree
+    let score_pschema_type = pschema_fields["score"].as_str().unwrap();
+    assert!(
+        score_pschema_type.contains("Float") || score_pschema_type.contains("Decimal"),
+        "score pschema type should be a float/decimal type, got {score_pschema_type}"
+    );
+    let score_parquet_type = parquet_schema.get("score").unwrap();
+    assert!(
+        score_parquet_type.is_float() || score_parquet_type.is_decimal(),
+        "score parquet type should be float/decimal per pschema '{score_pschema_type}', got \
+         {score_parquet_type:?}"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_infer_len_zero_full_file() {
+    // Test that --infer-len 0 scans ALL rows for type inference.
+    // The first 2 rows have small integers, but later rows have larger values that
+    // demonstrate full-file scanning produces correct results.
+    let wrk = Workdir::new("to_parquet_infer_len_zero_full");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "value", "amount"],
+            svec!["a", "1", "10.5"],
+            svec!["b", "2", "20.0"],
+            svec!["c", "3", "30.75"],
+            svec!["d", "100000", "999999.99"],
+            svec!["e", "5", "50.25"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--infer-len")
+        .arg("0")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists());
+
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+
+    // All 5 rows should be present — full-file inference doesn't drop rows
+    assert_eq!(df.height(), 5, "all rows should be present");
+
+    // Verify data integrity: the large value in row 4 should be preserved
+    let value_col = df.column("value").unwrap();
+    let row3_value = value_col.i64().unwrap().get(3).unwrap();
+    assert_eq!(
+        row3_value, 100000,
+        "large value 100000 in row 4 should be preserved"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_infer_len() {
+    let wrk = Workdir::new("to_parquet_infer_len");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "value"],
+            svec!["alpha", "1"],
+            svec!["beta", "2"],
+            svec!["gamma", "3"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--infer-len")
+        .arg("2")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists());
+
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 3, "should have 3 rows");
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_try_parse_dates() {
+    let wrk = Workdir::new("to_parquet_try_parse_dates");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "date"],
+            svec!["Alice", "2024-01-15"],
+            svec!["Bob", "2024-06-30"],
+        ],
+    );
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("--try-parse-dates")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let parquet_file = output_dir.join("data.parquet");
+    assert!(parquet_file.exists());
+
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(parquet_file.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 2);
+
+    // With --try-parse-dates, the date column should be parsed as Date type
+    let schema = df.schema();
+    assert_eq!(
+        schema.get("date").unwrap(),
+        &polars::prelude::DataType::Date,
+        "date column should be Date type with --try-parse-dates"
+    );
+}

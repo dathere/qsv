@@ -27,6 +27,7 @@
         clippy::use_self,
         clippy::cognitive_complexity,
         clippy::option_if_let_else,
+        clippy::implicit_clone,
     ),
     warn(
         clippy::missing_asserts_for_indexing,
@@ -37,7 +38,7 @@ use std::{env, io, time::Instant};
 
 extern crate qsv_docopt as docopt;
 use docopt::Docopt;
-use rand::Rng;
+use rand::RngExt;
 use serde::Deserialize;
 
 use crate::{
@@ -45,24 +46,30 @@ use crate::{
     config::SPONSOR_MESSAGE,
 };
 
-#[cfg(feature = "mimalloc")]
+#[cfg(all(feature = "mimalloc", feature = "jemallocator"))]
+compile_error!("Features `mimalloc` and `jemallocator` are mutually exclusive. Enable only one.");
+
+#[cfg(all(feature = "mimalloc", not(feature = "jemallocator")))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-#[cfg(feature = "jemallocator")]
+#[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
 #[global_allocator]
-static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 mod clitypes;
 mod cmd;
 mod config;
+mod help_markdown_gen;
 mod index;
 mod lookup;
+#[cfg(feature = "mcp")]
+mod mcp_skills_gen;
 mod odhtcache;
 mod select;
 mod util;
 
-static USAGE: &str = r#"
+const USAGE_COMMON: &str = r#"
 Usage:
     qsv <command> [<args>...]
     qsv [options]
@@ -72,18 +79,33 @@ Options:
     --envlist            List all qsv-relevant environment variables.
     -u, --update         Update qsv to the latest release from GitHub.
     -U, --updatenow      Update qsv to the latest release from GitHub without confirming.
-    -h, --help           Display this message
+    --generate-help-md   Generate Markdown help files in docs/help/."#;
+
+#[cfg(feature = "mcp")]
+const USAGE_MCP: &str =
+    "    --update-mcp-skills  Regenerate MCP skills JSON files for Claude Desktop.";
+
+const USAGE_FOOTER: &str = "    -h, --help           Display this message
     <command> -h         Display the command help message
-    -v, --version        Print version info, mem allocator, features installed, 
-                         max_jobs, num_cpus, build info then exit"#;
+    -v, --version        Print version info, mem allocator, features installed,
+                         max_jobs, num_cpus, build info then exit";
+
+#[cfg(feature = "mcp")]
+const USAGE: &str = const_format::concatcp!(USAGE_COMMON, "\n", USAGE_MCP, "\n", USAGE_FOOTER);
+
+#[cfg(not(feature = "mcp"))]
+const USAGE: &str = const_format::concatcp!(USAGE_COMMON, "\n", USAGE_FOOTER);
 
 #[derive(Deserialize)]
 struct Args {
-    arg_command:    Option<Command>,
-    flag_list:      bool,
-    flag_envlist:   bool,
-    flag_update:    bool,
-    flag_updatenow: bool,
+    arg_command:            Option<Command>,
+    flag_list:              bool,
+    flag_envlist:           bool,
+    flag_update:            bool,
+    flag_updatenow:         bool,
+    flag_generate_help_md:  bool,
+    #[cfg(feature = "mcp")]
+    flag_update_mcp_skills: bool,
 }
 
 fn main() -> QsvExitCode {
@@ -94,20 +116,25 @@ fn main() -> QsvExitCode {
     #[cfg(all(feature = "apply", feature = "feature_capable"))]
     enabled_commands.push_str("    apply       Apply series of transformations to a column\n");
 
-    enabled_commands.push_str(
-        "    behead      Drop header from CSV file
-    cat         Concatenate by row or column\n",
-    );
+    enabled_commands.push_str("    behead      Drop header from CSV file\n");
+
+    #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+    enabled_commands.push_str("    blake3      Compute BLAKE3 cryptographic hashes of files\n");
+
+    enabled_commands.push_str("    cat         Concatenate by row or column\n");
 
     #[cfg(all(feature = "clipboard", feature = "feature_capable"))]
     enabled_commands
         .push_str("    clipboard   Provide input from clipboard or output to clipboard\n");
 
+    #[cfg(all(feature = "color", feature = "feature_capable"))]
+    enabled_commands.push_str("    color       Print a pretty, colorized table\n");
+
     enabled_commands.push_str(
         "    count       Count records
     datefmt     Format date/datetime strings
     dedup       Remove redundant rows
-    describegpt Infer extended metadata using a LLM
+    describegpt Infer extended metadata or chat with your data using a LLM
     diff        Find the difference between two CSVs
     edit        Replace a cell's value specified by row and column
     enum        Add a new column enumerating CSV lines
@@ -164,12 +191,21 @@ fn main() -> QsvExitCode {
     #[cfg(all(feature = "luau", feature = "feature_capable"))]
     enabled_commands.push_str("    luau        Execute Luau script on CSV data\n");
 
-    enabled_commands.push_str("    partition   Partition CSV data based on a column value\n");
+    #[cfg(feature = "mcp")]
+    enabled_commands.push_str("    log         Log MCP tool invocations to qsvmcp.log\n");
+
+    enabled_commands.push_str(
+        "    moarstats   Add \"moar\" statistics to existing stats CSV
+    partition   Partition CSV data based on a column value\n",
+    );
 
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
     enabled_commands.push_str("    pivotp      Pivots CSV files using the Pola.rs engine\n");
 
-    enabled_commands.push_str("    pro         Interact with the qsv pro API\n");
+    enabled_commands.push_str(
+        "    pragmastat  Pragmatic statistical toolkit
+    pro         Interact with the qsv pro API\n",
+    );
 
     #[cfg(all(feature = "prompt", feature = "feature_capable"))]
     enabled_commands.push_str("    prompt      Open a file dialog to pick a file\n");
@@ -199,6 +235,10 @@ fn main() -> QsvExitCode {
 
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
     enabled_commands.push_str(
+        "    scoresql    Score a SQL query against CSV caches for performance analysis\n",
+    );
+    #[cfg(all(feature = "polars", feature = "feature_capable"))]
+    enabled_commands.push_str(
         "    sqlp        Run a SQL query against several CSVs using the Pola.rs engine\n",
     );
 
@@ -210,8 +250,15 @@ fn main() -> QsvExitCode {
     );
 
     #[cfg(all(feature = "to", feature = "feature_capable"))]
-    enabled_commands
-        .push_str("    to          Convert CSVs to PostgreSQL/XLSX/SQLite/Data Package\n");
+    {
+        #[cfg(feature = "polars")]
+        enabled_commands.push_str(
+            "    to          Convert CSVs to Parquet/PostgreSQL/XLSX/SQLite/Data Package\n",
+        );
+        #[cfg(not(feature = "polars"))]
+        enabled_commands
+            .push_str("    to          Convert CSVs to PostgreSQL/XLSX/SQLite/Data Package\n");
+    }
 
     enabled_commands.push_str(
         "    transpose   Transpose rows/columns of CSV data
@@ -249,6 +296,44 @@ fn main() -> QsvExitCode {
         util::show_env_vars();
         util::log_end(qsv_args, now);
         return QsvExitCode::Good;
+    }
+    if args.flag_generate_help_md {
+        match help_markdown_gen::generate_help_markdown() {
+            Ok(()) => {
+                util::log_end(qsv_args, now);
+                return QsvExitCode::Good;
+            },
+            Err(e) => {
+                util::log_end(qsv_args, now);
+                werr!("Help Markdown generation error: {e}");
+                return QsvExitCode::Bad;
+            },
+        }
+    }
+    #[cfg(feature = "mcp")]
+    {
+        if args.flag_update_mcp_skills {
+            match mcp_skills_gen::generate_mcp_skills() {
+                Ok(()) => {},
+                Err(e) => {
+                    util::log_end(qsv_args, now);
+                    werr!("MCP skills generation error: {e}");
+                    return QsvExitCode::Bad;
+                },
+            }
+            // Also generate help markdown when updating MCP skills
+            match help_markdown_gen::generate_help_markdown() {
+                Ok(()) => {
+                    util::log_end(qsv_args, now);
+                    return QsvExitCode::Good;
+                },
+                Err(e) => {
+                    util::log_end(qsv_args, now);
+                    werr!("Help Markdown generation error: {e}");
+                    return QsvExitCode::Bad;
+                },
+            }
+        }
     }
     if args.flag_update || args.flag_updatenow {
         util::log_end(qsv_args, now);
@@ -342,9 +427,13 @@ enum Command {
     #[cfg(all(feature = "apply", feature = "feature_capable"))]
     Apply,
     Behead,
+    #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+    Blake3,
     Cat,
     #[cfg(all(feature = "clipboard", feature = "feature_capable"))]
     Clipboard,
+    #[cfg(all(feature = "color", feature = "feature_capable"))]
+    Color,
     Count,
     Datefmt,
     Dedup,
@@ -385,9 +474,12 @@ enum Command {
     Lens,
     #[cfg(all(feature = "luau", feature = "feature_capable"))]
     Luau,
+    #[cfg(feature = "mcp")]
+    Log,
     Partition,
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
     PivotP,
+    Pragmastat,
     Pro,
     #[cfg(all(feature = "prompt", feature = "feature_capable"))]
     Prompt,
@@ -410,8 +502,11 @@ enum Command {
     SortCheck,
     Split,
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
+    ScoreSql,
+    #[cfg(all(feature = "polars", feature = "feature_capable"))]
     SqlP,
     Stats,
+    Moarstats,
     Table,
     Template,
     Transpose,
@@ -428,7 +523,10 @@ impl Command {
         let argv = &*argv;
 
         assert!(argv.len() > 1);
-        if !argv[1].chars().all(char::is_lowercase) {
+        if !argv[1]
+            .chars()
+            .all(|c| c.is_lowercase() || c.is_ascii_digit())
+        {
             return fail_incorrectusage_clierror!(
                 "qsv expects commands in lowercase. Did you mean '{}'?",
                 argv[1].to_lowercase()
@@ -438,11 +536,15 @@ impl Command {
         CURRENT_COMMAND.get_or_init(|| argv[1].to_lowercase());
         match self {
             Command::Behead => cmd::behead::run(argv),
+            #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+            Command::Blake3 => cmd::blake3::run(argv),
             #[cfg(all(feature = "apply", feature = "feature_capable"))]
             Command::Apply => cmd::apply::run(argv),
             Command::Cat => cmd::cat::run(argv),
             #[cfg(all(feature = "clipboard", feature = "feature_capable"))]
             Command::Clipboard => cmd::clipboard::run(argv),
+            #[cfg(all(feature = "color", feature = "feature_capable"))]
+            Command::Color => cmd::color::run(argv),
             Command::Count => cmd::count::run(argv),
             Command::Datefmt => cmd::datefmt::run(argv),
             Command::Dedup => cmd::dedup::run(argv),
@@ -487,9 +589,12 @@ impl Command {
             Command::Lens => cmd::lens::run(argv),
             #[cfg(all(feature = "luau", feature = "feature_capable"))]
             Command::Luau => cmd::luau::run(argv),
+            #[cfg(feature = "mcp")]
+            Command::Log => cmd::log::run(argv),
             Command::Partition => cmd::partition::run(argv),
             #[cfg(all(feature = "polars", feature = "feature_capable"))]
             Command::PivotP => cmd::pivotp::run(argv),
+            Command::Pragmastat => cmd::pragmastat::run(argv),
             Command::Pro => cmd::pro::run(argv),
             #[cfg(all(feature = "prompt", feature = "feature_capable"))]
             Command::Prompt => cmd::prompt::run(argv),
@@ -512,8 +617,11 @@ impl Command {
             Command::SortCheck => cmd::sortcheck::run(argv),
             Command::Split => cmd::split::run(argv),
             #[cfg(all(feature = "polars", feature = "feature_capable"))]
+            Command::ScoreSql => cmd::scoresql::run(argv),
+            #[cfg(all(feature = "polars", feature = "feature_capable"))]
             Command::SqlP => cmd::sqlp::run(argv),
             Command::Stats => cmd::stats::run(argv),
+            Command::Moarstats => cmd::moarstats::run(argv),
             Command::Table => cmd::table::run(argv),
             Command::Template => cmd::template::run(argv),
             Command::Transpose => cmd::transpose::run(argv),

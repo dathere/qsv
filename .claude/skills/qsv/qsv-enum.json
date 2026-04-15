@@ -1,0 +1,123 @@
+{
+  "name": "qsv-enum",
+  "version": "19.0.0",
+  "description": "Add a new column enumerating rows by adding a column of incremental or uuid identifiers. Can also be used to copy a column or fill a new column with a constant value.",
+  "category": "utility",
+  "command": {
+    "subcommand": "enum",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--constant",
+        "type": "string",
+        "description": "Fill a new column with the given value. Changes the default column name to \"constant\" unless overridden by --new-column. To specify a null value, pass the literal \"<NULL>\"."
+      },
+      {
+        "flag": "--copy",
+        "type": "string",
+        "description": "Name of a column to copy. Changes the default column name to \"{column}_copy\" unless overridden by --new-column."
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--hash",
+        "type": "string",
+        "description": "Create a new column filled with the hash of the given column/s. Use \"1-\" to hash all columns. Changes the default column name to \"hash\" unless overridden by --new-column. Will remove an existing \"hash\" column if it exists."
+      },
+      {
+        "flag": "--increment",
+        "type": "string",
+        "description": "The value to increment the enumeration by. Only applies in Increment mode. (default: 1)"
+      },
+      {
+        "flag": "--new-column",
+        "type": "string",
+        "description": "Name of the column to create. Will default to \"index\"."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--start",
+        "type": "string",
+        "description": "The value to start the enumeration from. Only applies in Increment mode. (default: 0)"
+      },
+      {
+        "flag": "--uuid4",
+        "type": "flag",
+        "description": "When set, the column will be populated with uuids (v4) instead of the incremental identifier. Changes the default column name to \"uuid4\" unless overridden by --new-column."
+      },
+      {
+        "flag": "--uuid7",
+        "type": "flag",
+        "description": "When set, the column will be populated with uuids (v7) instead of the incremental identifier. uuid v7 is a time-based uuid and is monotonically increasing. See https://buildkite.com/blog/goodbye-integers-hello-uuids Changes the default column name to \"uuid7\" unless overridden by --new-column."
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  },
+  "examples": [
+    {
+      "description": "Add an incremental index column starting from 0 (default)",
+      "command": "qsv enum data.csv"
+    },
+    {
+      "description": "Add an incremental index column starting from 100 and incrementing by 10",
+      "command": "qsv enum --start 100 --increment 10 data.csv"
+    },
+    {
+      "description": "Add a uuid v4 column",
+      "command": "qsv enum --uuid4 data.csv"
+    },
+    {
+      "description": "Add a uuid v7 column",
+      "command": "qsv enum --uuid7 data.csv"
+    },
+    {
+      "description": "Add a constant column with the value \"active\"",
+      "command": "qsv enum --constant active data.csv"
+    },
+    {
+      "description": "Add a constant column with null values",
+      "command": "qsv enum --constant \"<NULL>\" data.csv"
+    },
+    {
+      "description": "Add a copy of the \"username\" column as \"username_copy\"",
+      "command": "qsv enum --copy username data.csv"
+    },
+    {
+      "description": "Add a hash column with the hash of columns \"first_name\" and \"last_name\"",
+      "command": "qsv enum --hash first_name,last_name data.csv"
+    },
+    {
+      "description": "Add a hash column with the hash of all columns except an existing \"hash\" column",
+      "command": "qsv enum --hash 1- data.csv"
+    },
+    {
+      "description": "Add a hash column with the hash of all columns except \"id\" and \"uuid\" columns",
+      "command": "qsv enum --hash \"!id,!uuid\" data.csv"
+    },
+    {
+      "description": "Add a hash column with the hash of all columns that match the regex \"record|name|address\"",
+      "command": "qsv enum --hash \"/record|name|address/\" data.csv"
+    }
+  ]
+}

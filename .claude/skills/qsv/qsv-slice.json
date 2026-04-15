@@ -1,0 +1,114 @@
+{
+  "name": "qsv-slice",
+  "version": "19.0.0",
+  "description": "Slice rows from any part of a CSV. When an index is present, this only has to parse the rows in the slice (instead of all rows leading up to the start of the slice).",
+  "category": "selection",
+  "command": {
+    "subcommand": "slice",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--end",
+        "type": "string",
+        "description": "The index of the record to slice to."
+      },
+      {
+        "flag": "--index",
+        "type": "string",
+        "description": "Slice a single record (shortcut for -s N -l 1). If negative, starts from the last record."
+      },
+      {
+        "flag": "--invert",
+        "type": "flag",
+        "description": "slice all records EXCEPT those in the specified range."
+      },
+      {
+        "flag": "--json",
+        "type": "flag",
+        "description": "Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based)."
+      },
+      {
+        "flag": "--len",
+        "type": "string",
+        "description": "The length of the slice (can be used instead of --end)."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. Otherwise, the first row will always appear in the output as the header row."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--start",
+        "type": "string",
+        "description": "The index of the record to slice from. If negative, starts from the last record."
+      }
+    ]
+  },
+  "hints": {
+    "indexed": true,
+    "memory": "constant"
+  },
+  "examples": [
+    {
+      "description": "Slice from the 3rd record to the end",
+      "command": "qsv slice --start 2 data.csv"
+    },
+    {
+      "description": "Slice the first three records",
+      "command": "qsv slice --start 0 --end 2 data.csv"
+    },
+    {
+      "description": "Slice the first three records (using --len)",
+      "command": "qsv slice --len 3 data.csv"
+    },
+    {
+      "description": "Slice the last record",
+      "command": "qsv slice -s -1 data.csv"
+    },
+    {
+      "description": "Slice the last 10 records",
+      "command": "qsv slice -s -10 data.csv"
+    },
+    {
+      "description": "Get everything except the last 10 records",
+      "command": "qsv slice -s -10 --invert data.csv"
+    },
+    {
+      "description": "Slice the first three records of the last 10 records",
+      "command": "qsv slice -s -10 -l 3 data.csv"
+    },
+    {
+      "description": "Slice the second record",
+      "command": "qsv slice --index 1 data.csv"
+    },
+    {
+      "description": "Slice from the second record, two records",
+      "command": "qsv slice -s 1 --len 2 data.csv"
+    },
+    {
+      "description": "Slice records 10 to 20 as JSON",
+      "command": "qsv slice --start 9 --end 19 --json data.csv"
+    },
+    {
+      "description": "Slice records 1 to 9 and 21 to the end as JSON",
+      "command": "qsv slice --start 9 --len 10 --invert --json data.csv"
+    }
+  ]
+}

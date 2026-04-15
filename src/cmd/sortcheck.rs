@@ -96,7 +96,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let ignore_case = args.flag_ignore_case;
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.flag_select);
 
     let mut rdr = rconfig.reader()?;
@@ -215,10 +215,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if args.flag_pretty_json {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&sortcheck_struct).unwrap()
+                simd_json::to_string_pretty(&sortcheck_struct).unwrap()
             );
         } else {
-            println!("{}", serde_json::to_string(&sortcheck_struct).unwrap());
+            println!("{}", simd_json::to_string(&sortcheck_struct).unwrap());
         }
     }
 

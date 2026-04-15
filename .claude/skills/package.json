@@ -1,0 +1,51 @@
+{
+  "name": "@qsv/agent-skills",
+  "version": "19.1.1",
+  "description": "Agent Skills for qsv tabular data-wrangling toolkit",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "qsv-mcp-server": "./dist/mcp-server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:test": "tsc -p tsconfig.test.json",
+    "test": "npm run build:test && node scripts/run-tests.js",
+    "test:coverage": "npm run build:test && c8 --reporter=text node scripts/run-tests.js",
+    "test:watch": "node --test --watch dist/tests/*.test.js",
+    "test:examples": "node examples/basic.js",
+    "test-update-checker": "node examples/update-checker-demo.js",
+    "mcp:start": "node dist/mcp-server.js",
+    "mcp:install": "node scripts/install-mcp.js",
+    "mcpb:package": "node scripts/package-mcpb.js",
+    "plugin:package": "node scripts/package-plugin.js",
+    "plugin:install": "bash scripts/install-cowork-plugin.sh"
+  },
+  "keywords": [
+    "qsv",
+    "csv",
+    "agent",
+    "skills",
+    "data-wrangling",
+    "claude"
+  ],
+  "author": "Joel Natividad",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "archiver": "^7.0.0",
+    "c8": "^10.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.2.0",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "wink-bm25-text-search": "^3.0.0",
+    "wink-nlp-utils": "^2.1.0",
+    "yaml": "^2.8.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

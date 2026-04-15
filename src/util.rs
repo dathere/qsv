@@ -8,22 +8,23 @@ use std::os::unix::process::ExitStatusExt;
 use std::sync::Arc;
 use std::{
     cmp::min,
-    collections::HashMap,
     env, fs,
     fs::File,
     io::{BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
+    process::Command,
     str,
     sync::OnceLock,
-    time::SystemTime,
+    time::{Duration, Instant, SystemTime},
 };
 
 use csv::ByteRecord;
+use csv_index::RandomAccessSimple;
 use docopt::Docopt;
 use filetime::FileTime;
 use human_panic::setup_panic;
 use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget, ProgressStyle};
-use log::{info, log_enabled};
+use log::{info, log_enabled, warn};
 #[cfg(feature = "polars")]
 use polars::prelude::Schema;
 use reqwest::Client;
@@ -41,7 +42,7 @@ use crate::{
     config,
     config::{
         Config, DEFAULT_RDR_BUFFER_CAPACITY, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter, SpecialFormat,
-        get_special_format,
+        get_delim_by_extension, get_special_format,
     },
     select::SelectColumns,
 };
@@ -58,6 +59,10 @@ macro_rules! regex_oncelock {
 // leave at least 20% of the available memory free
 const DEFAULT_FREEMEMORY_HEADROOM_PCT: u8 = 20;
 
+// safety margin for memory-aware chunking
+// (uses 80% of available memory to leave headroom for system operations & other processes)
+pub const SAFETY_MARGIN: f64 = 0.8;
+
 const DEFAULT_BATCH_SIZE: usize = 50_000;
 
 const DEFAULT_STATSCACHE_MODE: &str = "auto";
@@ -65,6 +70,10 @@ const DEFAULT_STATSCACHE_MODE: &str = "auto";
 static ROW_COUNT: OnceLock<Option<u64>> = OnceLock::new();
 
 static JOBS_TO_USE: OnceLock<usize> = OnceLock::new();
+
+pub static QUIET_FLAG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub static FILE_PATH_PREFIX: &str = "file:";
 
 pub type ByteString = Vec<u8>;
 
@@ -86,6 +95,7 @@ pub struct SchemaArgs {
     pub flag_enum_threshold:  u64,
     pub flag_ignore_case:     bool,
     pub flag_strict_dates:    bool,
+    pub flag_strict_formats:  bool,
     pub flag_pattern_columns: SelectColumns,
     pub flag_dates_whitelist: String,
     pub flag_prefer_dmy:      bool,
@@ -97,6 +107,7 @@ pub struct SchemaArgs {
     pub flag_delimiter:       Option<Delimiter>,
     pub arg_input:            Option<String>,
     pub flag_memcheck:        bool,
+    pub flag_output:          Option<String>,
 }
 
 #[inline]
@@ -104,8 +115,10 @@ pub fn num_cpus() -> usize {
     num_cpus::get()
 }
 
-const CARGO_BIN_NAME: &str = env!("CARGO_BIN_NAME");
-const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
+static QSV_PATH: OnceLock<String> = OnceLock::new();
+
+pub const CARGO_BIN_NAME: &str = env!("CARGO_BIN_NAME");
+pub const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const TARGET: &str = match option_env!("TARGET") {
     Some(target) => target,
@@ -157,6 +170,11 @@ pub fn reset_sigpipe() {
 #[cfg(not(unix))]
 pub fn reset_sigpipe() {
     // no-op
+}
+
+pub fn current_exe() -> CliResult<PathBuf> {
+    let exe_path = std::env::current_exe()?;
+    Ok(exe_path)
 }
 
 /// Visualizes whitespace characters in a string by replacing them with visible markers
@@ -225,7 +243,9 @@ pub fn qsv_custom_panic() {
 fn default_user_agent() -> String {
     let unknown_command = "Unknown".to_string();
     let current_command = CURRENT_COMMAND.get().unwrap_or(&unknown_command);
-    format!("{CARGO_BIN_NAME}/{CARGO_PKG_VERSION} ({TARGET}; {current_command}; {QSV_KIND}; https://github.com/dathere/qsv)")
+    format!(
+        "{CARGO_BIN_NAME}/{CARGO_PKG_VERSION} ({TARGET}; {current_command}; {QSV_KIND}; https://github.com/dathere/qsv)"
+    )
 }
 
 pub fn max_jobs() -> usize {
@@ -321,6 +341,171 @@ pub fn set_user_agent(user_agent: Option<String>) -> CliResult<String> {
     Ok(ua)
 }
 
+/// Creates a standardized async reqwest client with common configuration options.
+/// This function centralizes the client creation logic used across multiple commands.
+///
+/// # Arguments
+///
+/// * `user_agent` - Optional custom user agent string
+/// * `timeout_secs` - Timeout in seconds for HTTP requests. If 0, no timeout is used.
+/// * `base_url` - Optional base URL for retry configuration
+///
+/// # Returns
+///
+/// Returns a configured reqwest client with:
+/// - Custom user agent (or default)
+/// - Compression support (brotli, gzip, deflate, zstd)
+/// - Rustls TLS backend
+/// - HTTP/2 adaptive window
+/// - Connection verbose logging (when debug/trace enabled)
+/// - Timeout configuration
+/// - Retry logic for service unavailable errors
+pub fn create_reqwest_async_client(
+    user_agent: Option<String>,
+    timeout_secs: u16,
+    base_url: Option<String>,
+) -> CliResult<Client> {
+    let base_url_for_retry = base_url.unwrap_or_default();
+
+    let retries = reqwest::retry::for_host(base_url_for_retry).classify_fn(|req_rep| {
+        if req_rep.status() == Some(reqwest::StatusCode::SERVICE_UNAVAILABLE) {
+            req_rep.retryable()
+        } else {
+            req_rep.success()
+        }
+    });
+
+    let mut builder = Client::builder()
+        .user_agent(set_user_agent(user_agent)?)
+        .brotli(true)
+        .gzip(true)
+        .deflate(true)
+        .zstd(true)
+        .use_rustls_tls()
+        .http2_adaptive_window(true)
+        .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
+        .retry(retries);
+
+    if timeout_secs > 0 {
+        builder = builder.timeout(Duration::from_secs(timeout_secs.into()));
+    }
+
+    Ok(builder.build()?)
+}
+
+/// Creates a standardized blocking reqwest client with common configuration options.
+/// This function centralizes the blocking client creation logic used across multiple commands.
+///
+/// # Arguments
+///
+/// * `user_agent` - Optional custom user agent string
+/// * `timeout_secs` - Timeout in seconds for HTTP requests. If 0, no timeout is used.
+/// * `base_url` - Optional base URL for retry configuration
+///
+/// # Returns
+///
+/// Returns a configured blocking reqwest client with the same options
+/// as create_reqwest_async_client
+pub fn create_reqwest_blocking_client(
+    user_agent: Option<String>,
+    timeout_secs: u16,
+    base_url: Option<String>,
+) -> CliResult<reqwest::blocking::Client> {
+    let timeout_duration = Duration::from_secs(timeout_secs.into());
+    let base_url_for_retry = base_url.unwrap_or_default();
+
+    let retries = reqwest::retry::for_host(base_url_for_retry).classify_fn(|req_rep| {
+        if req_rep.status() == Some(reqwest::StatusCode::SERVICE_UNAVAILABLE) {
+            req_rep.retryable()
+        } else {
+            req_rep.success()
+        }
+    });
+
+    let client = reqwest::blocking::Client::builder()
+        .user_agent(set_user_agent(user_agent)?)
+        .brotli(true)
+        .gzip(true)
+        .deflate(true)
+        .zstd(true)
+        .use_rustls_tls()
+        .http2_adaptive_window(true)
+        .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
+        .timeout(if timeout_secs == 0 {
+            None
+        } else {
+            Some(timeout_duration)
+        })
+        .retry(retries)
+        .build()?;
+
+    Ok(client)
+}
+
+/// Transforms a GitHub blob URL to a raw.githubusercontent.com URL.
+/// Returns the original URL unchanged if not a GitHub blob URL.
+///
+/// Query parameters (e.g., `?ref=v1.0`) and fragments (e.g., `#L10-L20`) are stripped
+/// from the transformed URL since they don't apply to raw.githubusercontent.com.
+///
+/// Note: This only works for github.com URLs. GitHub Enterprise URLs
+/// (e.g., `https://github.company.com/...`) are not transformed.
+///
+/// # Arguments
+///
+/// * `url` - The URL to potentially transform
+///
+/// # Returns
+///
+/// A String containing the transformed URL (for GitHub blob URLs)
+/// or the original URL (for all other URLs).
+///
+/// # Examples
+///
+/// ```
+/// // GitHub blob URLs are transformed to raw URLs:
+/// // https://github.com/user/repo/blob/branch/path/file.csv
+/// // becomes:
+/// // https://raw.githubusercontent.com/user/repo/branch/path/file.csv
+///
+/// // Non-GitHub URLs are returned unchanged
+/// ```
+#[inline]
+pub fn transform_github_url(url: &str) -> String {
+    // Pattern: https://github.com/USER/REPO/blob/BRANCH/PATH
+    // Transform: https://raw.githubusercontent.com/USER/REPO/BRANCH/PATH
+
+    let github_prefix_https = "https://github.com/";
+    let github_prefix_http = "http://github.com/";
+
+    let remainder = if let Some(r) = url.strip_prefix(github_prefix_https) {
+        r
+    } else if let Some(r) = url.strip_prefix(github_prefix_http) {
+        r
+    } else {
+        return url.to_string();
+    };
+
+    if let Some(blob_idx) = remainder.find("/blob/") {
+        let user_repo = &remainder[..blob_idx];
+        let mut branch_and_path = &remainder[blob_idx + 6..]; // skip "/blob/"
+
+        // Strip query parameters and fragments - they don't apply to raw.githubusercontent.com
+        if let Some(query_idx) = branch_and_path.find('?') {
+            branch_and_path = &branch_and_path[..query_idx];
+        }
+        if let Some(fragment_idx) = branch_and_path.find('#') {
+            branch_and_path = &branch_and_path[..fragment_idx];
+        }
+
+        let raw_url = format!("https://raw.githubusercontent.com/{user_repo}/{branch_and_path}");
+        log::info!("Transformed GitHub blob URL to raw URL: {raw_url}");
+        raw_url
+    } else {
+        url.to_string()
+    }
+}
+
 pub fn version() -> String {
     let mut enabled_features = String::new();
 
@@ -358,13 +543,15 @@ pub fn version() -> String {
             Err(e) => write!(enabled_features, "Luau - cannot retrieve version: {e};").unwrap(),
         }
     }
+    #[cfg(all(feature = "magika", feature = "feature_capable"))]
+    enabled_features.push_str("magika;");
     #[cfg(all(feature = "prompt", feature = "feature_capable"))]
     enabled_features.push_str("prompt;");
 
     #[cfg(all(feature = "python", not(feature = "lite")))]
     {
         enabled_features.push_str("python-");
-        pyo3::Python::with_gil(|py| {
+        pyo3::Python::attach(|py| {
             enabled_features.push_str(py.version());
             enabled_features.push(';');
         });
@@ -393,9 +580,23 @@ pub fn version() -> String {
     let free_swap = sys.free_swap();
     let max_file_size = mem_file_check(Path::new(""), true, false).unwrap_or(0) as u64;
 
-    #[cfg(feature = "mimalloc")]
-    let malloc_kind = "mimalloc";
-    #[cfg(feature = "jemallocator")]
+    // we also get System info to help with debugging and logging.
+    // we just need the CPU model name, so we ask for nothing
+    sys.refresh_cpu_list(sysinfo::CpuRefreshKind::nothing());
+    let os_version = System::long_os_version().unwrap_or_else(|| "Unknown".to_string());
+    let kernel_version = System::kernel_long_version();
+    let cpu_brand = sys
+        .cpus()
+        .first()
+        .map_or("Unknown", |cpu| cpu.brand().trim());
+    let physical_cpu_count = System::physical_core_count().unwrap_or(0);
+
+    #[cfg(all(feature = "mimalloc", not(feature = "jemallocator")))]
+    let malloc_kind = {
+        let mimalloc_version = mimalloc::MiMalloc.version();
+        format!("mimalloc {mimalloc_version}")
+    };
+    #[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
     let malloc_kind = "jemalloc";
     #[cfg(not(any(feature = "mimalloc", feature = "jemallocator")))]
     let malloc_kind = "standard";
@@ -414,7 +615,8 @@ pub fn version() -> String {
             format!(
                 "{qsvtype} {maj}.{min}.{pat}-{malloc_kind}-{enabled_features}{maxjobs}-{numcpus};\
                  {max_file_size}-{free_swap}-{avail_mem}-{total_mem} ({TARGET} compiled with Rust \
-                 {rustversion}) {QSV_KIND}",
+                 {rustversion};{os_version}-{kernel_version};{cpu_brand}-{physical_cpu_count}) \
+                 {QSV_KIND}",
                 maxjobs = max_jobs(),
                 numcpus = num_cpus(),
                 max_file_size = indicatif::HumanBytes(max_file_size),
@@ -448,7 +650,7 @@ pub fn show_env_vars() {
     for (n, v) in env::vars_os() {
         // safety: we know that the env::vars_os() will not fail
         let env_var = n.into_string().unwrap();
-        #[cfg(feature = "mimalloc")]
+        #[cfg(all(feature = "mimalloc", not(feature = "jemallocator")))]
         if env_var.starts_with("QSV_")
             || env_var.starts_with("MIMALLOC_")
             || OTHER_ENV_VARS.contains(&env_var.to_ascii_lowercase().as_str())
@@ -456,10 +658,10 @@ pub fn show_env_vars() {
             env_var_set = true;
             woutinfo!("{env_var}: {v:?}");
         }
-        #[cfg(feature = "jemallocator")]
+        #[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
         if env_var.starts_with("QSV_")
             || env_var.starts_with("JEMALLOC_")
-            || env_var.starts_with("MALLOC_CONF")
+            || env_var == "MALLOC_CONF"
             || OTHER_ENV_VARS.contains(&env_var.to_ascii_lowercase().as_str())
         {
             env_var_set = true;
@@ -623,25 +825,22 @@ macro_rules! update_cache_info {
         use cached::Cached;
         use indicatif::HumanCount;
 
-        match $cache_instance.lock() {
-            Ok(cache) => {
-                let size = cache.cache_size();
-                if size > 0 {
-                    let hits = cache.cache_hits().unwrap_or_default();
-                    let misses = cache.cache_misses().unwrap_or(1);
-                    #[allow(clippy::cast_precision_loss)]
-                    let hit_ratio = (hits as f64 / (hits + misses) as f64) * 100.0;
-                    let capacity = cache.cache_capacity();
-                    $progress.set_message(format!(
-                        " of {} records. Cache {:.2}% entries: {} capacity: {}.",
-                        HumanCount($progress.length().unwrap()),
-                        hit_ratio,
-                        HumanCount(size as u64),
-                        HumanCount(capacity.unwrap() as u64),
-                    ));
-                }
-            },
-            _ => {},
+        let cache = $cache_instance.lock();
+        let size = cache.cache_size();
+        if size > 0 {
+            let hits = cache.cache_hits().unwrap_or_default();
+            let misses = cache.cache_misses().unwrap_or(1);
+            #[allow(clippy::cast_precision_loss)]
+            let hit_ratio = (hits as f64 / (hits + misses) as f64) * 100.0;
+            let capacity = cache.cache_capacity();
+            drop(cache);
+            $progress.set_message(format!(
+                " of {} records. Cache {:.2}% entries: {} capacity: {}.",
+                HumanCount($progress.length().unwrap()),
+                hit_ratio,
+                HumanCount(size as u64),
+                HumanCount(capacity.unwrap() as u64),
+            ));
         }
     };
     ($progress:expr_2021, $cache_hits:expr_2021, $num_rows:expr_2021) => {
@@ -736,9 +935,10 @@ pub fn file_metadata(md: &fs::Metadata) -> (u64, u64) {
 /// Check if there is enough memory to process the file.
 /// Return the maximum file size that can be processed.
 /// If the file is larger than the maximum file size, return an error.
-/// If memcheck is true, check memory in CONSERVATIVE mode (i.e., Filesize < AVAIL memory + SWAP -
-/// headroom) If memcheck is false, check memory in NORMAL mode (i.e., Filesize < TOTAL memory -
-/// headroom)
+/// If memcheck is true, check memory in CONSERVATIVE mode
+///   (i.e., Filesize < (AVAIL memory + SWAP) * platform_factor - headroom)
+/// If memcheck is false, check memory in NORMAL mode
+///   (i.e., Filesize < TOTAL memory - headroom)
 pub fn mem_file_check(
     path: &Path,
     version_check: bool,
@@ -754,10 +954,11 @@ pub fn mem_file_check(
 
     let conservative_memcheck_work = get_envvar_flag("QSV_MEMORY_CHECK") || conservative_memcheck;
 
-    let mut mem_pct = env::var("QSV_FREEMEMORY_HEADROOM_PCT")
-        .unwrap_or_else(|_| DEFAULT_FREEMEMORY_HEADROOM_PCT.to_string())
-        .parse::<u8>()
-        .unwrap_or(DEFAULT_FREEMEMORY_HEADROOM_PCT);
+    let mut mem_pct =
+        env::var("QSV_FREEMEMORY_HEADROOM_PCT").map_or(DEFAULT_FREEMEMORY_HEADROOM_PCT, |val| {
+            atoi_simd::parse::<u8, false, false>(val.as_bytes())
+                .unwrap_or(DEFAULT_FREEMEMORY_HEADROOM_PCT)
+        });
 
     // if QSV_FREEMEMORY_HEADROOM_PCT is 0, we skip the memory check
     if mem_pct == 0 {
@@ -774,11 +975,30 @@ pub fn mem_file_check(
     // nor above 90% memory headroom as its too memory-restrictive
     mem_pct = mem_pct.clamp(10, 90);
 
+    // Platform-specific adjustment factors for conservative mode
+    // These account for OS-specific memory management capabilities
+    #[cfg(target_os = "macos")]
+    let platform_factor = 1.3; // macOS has aggressive memory compression & dynamic swap                                                                                                    
+
+    #[cfg(target_os = "linux")]
+    let platform_factor = 1.15; // Linux page cache is reclaimable, but be conservative                                                                                                     
+
+    #[cfg(target_os = "windows")]
+    let platform_factor = 1.0; // Windows memory reporting is already conservative                                                                                                          
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    let platform_factor = 1.0; // Other platforms: no adjustment   
+
+    // Calculate maximum available memory based on mode
     #[allow(clippy::cast_precision_loss)]
     let max_avail_mem = if conservative_memcheck_work {
-        ((avail_mem + free_swap) as f32 * ((100 - mem_pct) as f32 / 100.0_f32)) as u64
+        // CONSERVATIVE: Use available + swap, with platform adjustments
+        let base_mem = (avail_mem + free_swap) as f64;
+        let adjusted_mem = base_mem * platform_factor;
+        (adjusted_mem * ((100 - mem_pct) as f64 / 100.0)) as u64
     } else {
-        (total_mem as f32 * ((100 - mem_pct) as f32 / 100.0_f32)) as u64
+        // NORMAL: Use total memory
+        (total_mem as f64 * ((100 - mem_pct) as f64 / 100.0)) as u64
     };
 
     // if we're calling this from version(), we don't need to check the file size
@@ -848,6 +1068,156 @@ pub fn idx_path(csv_path: &Path) -> PathBuf {
         .unwrap();
     p.push_str(".idx");
     PathBuf::from(&p)
+}
+
+/// Creates an index file for the given CSV file path.
+///
+/// This function creates a CSV index file that enables random access and parallel processing.
+/// It checks for edge cases like snappy-compressed files and stdin input.
+///
+/// # Arguments
+///
+/// * `path` - Path to the CSV file to index
+/// * `rconfig` - CSV reader configuration
+///
+/// # Returns
+///
+/// * `Ok(())` - Index was successfully created
+/// * `Err(CliError)` - If index creation failed
+pub fn create_index_for_file(path: &Path, rconfig: &Config) -> CliResult<()> {
+    // Don't create index for snappy-compressed files
+    if path.to_string_lossy().to_ascii_lowercase().ends_with(".sz") {
+        return fail_clierror!(
+            "Cannot create index for snappy-compressed files. Please decompress first."
+        );
+    }
+
+    let pidx = idx_path(path);
+    log::info!("Auto-creating index file: {}", pidx.display());
+
+    let mut rdr = rconfig.reader_file()?;
+    let idxfile = fs::File::create(&pidx)?;
+    let mut wtr = BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, idxfile);
+
+    RandomAccessSimple::create(&mut rdr, &mut wtr)?;
+    wtr.flush()?;
+
+    log::info!("Successfully created index file: {}", pidx.display());
+    Ok(())
+}
+
+/// Samples records from a CSV file for memory estimation.
+///
+/// Reads the first `sample_size` records for a quick estimate of average record size.
+/// First-N sampling is intentionally chosen over reservoir sampling here because this
+/// function is called before the main processing loop — a full-file scan would negate
+/// the benefit of the estimate.
+///
+/// # Arguments
+///
+/// * `rconfig` - CSV reader configuration
+/// * `sample_size` - Number of records to sample (typically 1000)
+///
+/// # Returns
+///
+/// * `Some(Vec<ByteRecord>)` - Sample records if available
+/// * `None` - If no records could be sampled
+pub fn sample_records(rconfig: &Config, sample_size: usize) -> Option<Vec<ByteRecord>> {
+    let mut samples = Vec::with_capacity(sample_size);
+    if let Ok(mut sample_rdr) = rconfig.reader() {
+        let _ = sample_rdr.byte_headers(); // consume header row
+        for (i, record_result) in sample_rdr.byte_records().enumerate() {
+            if i >= sample_size {
+                break;
+            }
+            if let Ok(record) = record_result {
+                samples.push(record);
+            } else {
+                break;
+            }
+        }
+    }
+    if samples.is_empty() {
+        None
+    } else {
+        Some(samples)
+    }
+}
+
+/// Calculates dynamic chunk size based on available memory and record sampling.
+///
+/// This function estimates an appropriate chunk size by:
+/// 1. Calculating average record size from sample records
+/// 2. Getting available system memory
+/// 3. Calculating memory per chunk (80% of available memory / number of jobs)
+/// 4. Dividing memory per chunk by average record size
+///
+/// # Arguments
+///
+/// * `idx_count` - Total number of records in the file
+/// * `njobs` - Number of parallel jobs
+/// * `sample_records` - Optional slice of sample records for memory estimation
+/// * `estimate_fn` - Function to estimate memory usage per record
+///
+/// # Returns
+///
+/// Calculated chunk size (number of records per chunk)
+pub fn calculate_dynamic_chunk_size<F>(
+    idx_count: u64,
+    njobs: usize,
+    sample_records: Option<&[ByteRecord]>,
+    estimate_fn: F,
+) -> usize
+where
+    F: Fn(&ByteRecord) -> usize,
+{
+    if let Some(samples) = sample_records {
+        if samples.is_empty() {
+            // No samples available, fall back to CPU-based chunking
+            log::warn!("No records available for sampling, falling back to CPU-based chunking");
+            return chunk_size(idx_count as usize, njobs);
+        }
+
+        let total_size: usize = samples.iter().map(&estimate_fn).sum();
+
+        // samples.len() is guaranteed to be positive here as we checked above that it is not empty
+        let avg_record_size = (total_size / samples.len()).max(1024);
+
+        // Get available memory from system
+        let mut sys = System::new();
+        sys.refresh_memory();
+        let avail_mem = sys.available_memory();
+
+        // Calculate chunk size based on available memory
+        // Use 80% of available memory divided by number of jobs
+        #[allow(clippy::cast_precision_loss)]
+        let memory_per_chunk = ((avail_mem as f64 * SAFETY_MARGIN) / njobs as f64) as usize;
+        debug_assert!(avg_record_size > 0, "avg_record_size must be positive");
+        let memory_based_chunk_size = memory_per_chunk / avg_record_size.max(1);
+
+        // Ensure chunk size is reasonable
+        let memory_based_chunk_size = memory_based_chunk_size.max(1).min(idx_count as usize);
+
+        // Calculate CPU-based chunk size for optimal parallelization
+        let cpu_based_chunk_size = chunk_size(idx_count as usize, njobs);
+
+        // Calculate how many chunks each approach would create
+        let memory_based_chunks = num_of_chunks(idx_count as usize, memory_based_chunk_size);
+        let cpu_based_chunks = num_of_chunks(idx_count as usize, cpu_based_chunk_size);
+
+        // Prefer CPU-based chunking if:
+        // 1. Memory-based chunk size is smaller than CPU-based (degenerate/low memory), OR
+        // 2. It creates more chunks (better parallelization)
+        if memory_based_chunk_size <= cpu_based_chunk_size || cpu_based_chunks > memory_based_chunks
+        {
+            cpu_based_chunk_size
+        } else {
+            memory_based_chunk_size
+        }
+    } else {
+        // No sample records provided, fall back to CPU-based chunking
+        chunk_size(idx_count as usize, njobs)
+    }
 }
 
 pub type Idx = Option<usize>;
@@ -938,7 +1308,16 @@ impl<'de> Deserialize<'de> for FilenameTemplate {
 pub fn init_logger() -> CliResult<(String, flexi_logger::LoggerHandle)> {
     use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 
-    let qsv_log_env = env::var("QSV_LOG_LEVEL").unwrap_or_else(|_| "off".to_string());
+    let qsv_log_env = env::var("QSV_LOG_LEVEL").unwrap_or_else(|_| {
+        #[cfg(feature = "qsvmcp")]
+        {
+            "info".to_string()
+        }
+        #[cfg(not(feature = "qsvmcp"))]
+        {
+            "off".to_string()
+        }
+    });
     let qsv_log_dir = env::var("QSV_LOG_DIR").unwrap_or_else(|_| ".".to_string());
     let write_mode = if get_envvar_flag("QSV_LOG_UNBUFFERED") {
         flexi_logger::WriteMode::Direct
@@ -988,7 +1367,7 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
         return Ok(false);
     }
 
-    let bin_name = match std::env::current_exe() {
+    let bin_name = match current_exe() {
         Ok(pb) => {
             if let Some(fs) = pb.file_stem() {
                 fs.to_string_lossy().into_owned()
@@ -1009,12 +1388,12 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
     {
         Ok(releases_list) => match releases_list.fetch() {
             Ok(releases) => releases,
-            _ => {
-                return fail!(GITHUB_RATELIMIT_MSG);
+            Err(e) => {
+                return fail!(format!("{GITHUB_RATELIMIT_MSG}: {e}"));
             },
         },
-        _ => {
-            return fail!(GITHUB_RATELIMIT_MSG);
+        Err(e) => {
+            return fail!(format!("{GITHUB_RATELIMIT_MSG}: {e}"));
         },
     };
     let latest_release = &releases[0].version;
@@ -1153,16 +1532,11 @@ fn send_hwsurvey(
     if dry_run {
         log::info!("Survey dry run. hw survey compiled successfully, but not sent.");
     } else {
-        let client = match reqwest::blocking::Client::builder()
-            .user_agent(default_user_agent())
-            .brotli(true)
-            .gzip(true)
-            .deflate(true)
-            .zstd(true)
-            .use_rustls_tls()
-            .http2_adaptive_window(true)
-            .build()
-        {
+        let client = match create_reqwest_blocking_client(
+            Some(default_user_agent()),
+            30, // default timeout for hw survey
+            None,
+        ) {
             Ok(c) => c,
             Err(e) => return fail_format!("Cannot build hw_survey reqwest client: {e}"),
         };
@@ -1340,17 +1714,15 @@ pub fn log_end(mut qsv_args: String, now: std::time::Instant) {
 /// * `input` - A mutable reference to the String to truncate
 /// * `maxsize` - The maximum desired length in bytes
 ///
-/// taken from https://gist.github.com/dginev/f6da5e94335d545e0a7b
+/// Uses Rust 1.91.0's str::floor_char_boundary for efficient UTF-8 boundary detection.
 pub fn utf8_truncate(input: &mut String, maxsize: usize) {
-    let mut utf8_maxsize = input.len();
-    if utf8_maxsize >= maxsize {
-        {
-            let mut char_iter = input.char_indices();
-            while utf8_maxsize >= maxsize {
-                (utf8_maxsize, _) = char_iter.next_back().unwrap_or_default();
-            }
-        } // Extra {} wrap to limit the immutable borrow of char_indices()
-        input.truncate(utf8_maxsize);
+    if input.len() > maxsize {
+        // Find the largest char boundary strictly less than maxsize
+        input.truncate(if maxsize > 0 {
+            input.floor_char_boundary(maxsize - 1)
+        } else {
+            0
+        });
     }
 }
 
@@ -1469,7 +1841,7 @@ pub fn round_num(dec_f64: f64, places: u32) -> String {
 
     // if places is the sentinel value 9999, we don't round, just return the number as is
     if places == 9999 {
-        return ryu::Buffer::new().format(dec_f64).to_owned();
+        return zmij::Buffer::new().format(dec_f64).to_owned();
     }
 
     // use from_f64_retain, so we have all the excess bits before rounding with
@@ -1556,7 +1928,7 @@ pub fn load_dotenv() -> CliResult<()> {
         // no .env file in the current directory or it was invalid
         // now check if there is an .env file with the same name as the executable
         // in the same directory as the executable
-        let qsv_binary_path = std::env::current_exe()?;
+        let qsv_binary_path = current_exe()?;
 
         let qsv_dir = qsv_binary_path.parent().ok_or("No parent directory")?;
 
@@ -1610,7 +1982,7 @@ pub fn get_envvar_flag(key: &str) -> bool {
 }
 
 /// Validates if a file is actually a Snappy-compressed file before attempting decompression
-fn is_valid_snappy_file(path: &PathBuf) -> Result<bool, CliError> {
+pub fn is_valid_snappy_file(path: &PathBuf) -> Result<bool, CliError> {
     let mut file = std::fs::File::open(path)?;
     let mut reader = BufReader::new(&mut file);
 
@@ -1633,25 +2005,73 @@ fn is_valid_snappy_file(path: &PathBuf) -> Result<bool, CliError> {
     }
 }
 
+/// Decompresses a Snappy-compressed file to a temporary directory.
+///
+/// # Arguments
+///
+/// * `path` - Path to the file with `.sz` extension that should be decompressed
+/// * `tmpdir` - Temporary directory where the decompressed file will be placed
+///
+/// # Returns
+///
+/// Returns the path to the decompressed file in the temporary directory as a `String`.
+///
+/// # Fallback Behavior
+///
+/// If a file has a `.sz` extension but is not actually a valid Snappy-compressed file,
+/// this function falls back gracefully by copying the file to the temp directory as a
+/// plain file (without the `.sz` extension). This prevents "corrupt input" errors when
+/// plain CSV files are incorrectly detected as snappy-compressed (e.g., due to temp file
+/// naming bugs or extension detection issues).
+///
+/// This fallback is necessary because this function is used by commands that require
+/// file-based access (like `slice`, `lens`, `describegpt`, `tojsonl`, `joinp`, `sniff`)
+/// which use `process_input()` to decompress files before creating a `Config`. Since
+/// `process_input()` strips the `.sz` extension from the temp file path, `Config::io_reader()`
+/// never sees the extension and cannot handle the fallback. Therefore, the validation and
+/// fallback must happen here in `decompress_snappy_file()`.
+///
+/// Commands that use streaming (like `count`, `stats`, `frequency`) use `Config::io_reader()`
+/// directly, which also has validation and fallback logic. Both code paths need their own
+/// validation because they serve different purposes (file-based vs streaming access).
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The file cannot be opened
+/// - File validation fails (though this now falls back to plain file handling)
+/// - The file cannot be copied to the temp directory (fallback case)
+/// - Decompression fails for valid snappy files
 pub fn decompress_snappy_file(
     path: &PathBuf,
     tmpdir: &tempfile::TempDir,
 ) -> Result<String, CliError> {
     // First, validate that this is actually a Snappy file
     if !is_valid_snappy_file(path)? {
-        return fail_clierror!(
-            r#"File '{}' has an .sz extension but is not a valid Snappy-compressed file.
-This might be a temporary file or incorrectly named file.
-Consider renaming the file or using a different input."#,
+        // File has .sz extension but is not a valid Snappy file.
+        // Fall back gracefully by copying it to temp directory as a plain file.
+        // This prevents "corrupt input" errors when plain CSV files are incorrectly
+        // detected as snappy (e.g., due to temp file naming bugs).
+        warn!(
+            "File {} has .sz extension but is not a valid Snappy file. Treating as plain file.",
             path.display()
         );
+
+        // Copy the file to temp directory with original name (without .sz)
+        let file_stem = Path::new(&path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("plain_file");
+        let fallback_filepath = tmpdir.path().join(file_stem);
+        std::fs::copy(path, &fallback_filepath)?;
+        return Ok(format!("{}", fallback_filepath.display()));
     }
 
     // Proceed with decompression since we've validated the file
     let mut snappy_file = std::fs::File::open(path.clone())?;
     let mut snappy_reader = snap::read::FrameDecoder::new(&mut snappy_file);
-    // safety: we know that the file_stem() will not be None as we opened the file above
-    let file_stem = Path::new(&path).file_stem().unwrap().to_str().unwrap();
+    // safety: we know that file_stem() will not be None as we opened the file above
+    let file_stem = Path::new(&path).file_stem().unwrap().to_string_lossy();
     let decompressed_filepath = tmpdir
         .path()
         .join(format!("qsv_temp_decompressed__{file_stem}"));
@@ -1683,8 +2103,8 @@ Consider renaming the file or using a different input."#,
 /// downloads a file from a url and saves it to a path
 /// if show_progress is true, a progress bar will be shown
 /// if custom_user_agent is Some, it will be used as the user agent
-/// if download_timeout is Some, it will be used as the timeout in seconds
-/// if sample_size is Some, it will be used as the number of bytes to download
+/// if download_timeout is Some, it will be used as the timeout in seconds. If 0, no timeout is
+/// used. If sample_size is Some, it will be used as the number of bytes to download.
 pub async fn download_file(
     url: &str,
     path: PathBuf,
@@ -1703,33 +2123,16 @@ pub async fn download_file(
     };
 
     // setup the reqwest client
-    let client = match Client::builder()
-        .user_agent(user_agent)
-        .brotli(true)
-        .gzip(true)
-        .deflate(true)
-        .zstd(true)
-        .use_rustls_tls()
-        .http2_adaptive_window(true)
-        .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
-        .read_timeout(download_timeout)
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            return fail_clierror!("Cannot build reqwest client: {e}.");
-        },
-    };
+    let client = create_reqwest_async_client(
+        Some(user_agent),
+        download_timeout.as_secs() as u16,
+        Some(url.to_string()),
+    )?;
 
     let res = client.get(url).send().await?;
 
-    let total_size = match res.content_length() {
-        Some(l) => l,
-        None => {
-            // if we can't get the content length, set it to sentinel value
-            u64::MAX
-        },
-    };
+    // if we can't get the content length, set it to sentinel value
+    let total_size = res.content_length().unwrap_or(u64::MAX);
 
     // progressbar setup
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
@@ -1872,9 +2275,7 @@ pub fn process_input(
             // read the file. Each line is a file path
             if input_path
                 .extension()
-                .and_then(std::ffi::OsStr::to_str)
-                .map(str::to_lowercase)
-                == Some("infile-list".to_string())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("infile-list"))
             {
                 let mut input_file = std::fs::File::open(input_path)?;
                 let mut input_file_contents = String::new();
@@ -1928,7 +2329,7 @@ pub fn process_input(
     // check the input files
     for path in work_input {
         // check if the path is "-" (stdin)
-        if path == PathBuf::from("-") {
+        if &path == "-" {
             if !stdin_file_created {
                 // if stdin was not copied to a file, copy stdin to a file named "stdin"
                 let tmp_filename = tmpdir.path().join("stdin.csv");
@@ -1945,7 +2346,10 @@ pub fn process_input(
         }
 
         // is the input file snappy compressed?
-        if path.extension().and_then(std::ffi::OsStr::to_str) == Some("sz") {
+        if path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("sz"))
+        {
             // if so, decompress the file
             let decompressed_filepath = decompress_snappy_file(&path, tmpdir)?;
 
@@ -1964,9 +2368,7 @@ pub fn process_input(
         // is the input file a zip archive?
         else if path
             .extension()
-            .and_then(std::ffi::OsStr::to_str)
-            .map(str::to_lowercase)
-            == Some("zip".to_string())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
         {
             // if so, extract all files from the zip archive to the temp directory
             log::info!("Extracting files from zip archive: {}", path.display());
@@ -2257,13 +2659,11 @@ pub fn write_json_record<W: std::io::Write>(
 }
 
 /// get stats records from stats.csv.data.jsonl file, or if its invalid, by running the stats
-/// command returns tuple (`csv_fields`, `csv_stats`, `stats_col_index_map`)
+/// command returns tuple (`csv_fields`, `csv_stats`)
 pub fn get_stats_records(
     args: &SchemaArgs,
     requested_mode: StatsMode,
-) -> CliResult<(ByteRecord, Vec<StatsData>, HashMap<String, String>)> {
-    const DATASET_STATS_PREFIX: &str = r#"{"field":"qsv__"#;
-
+) -> CliResult<(ByteRecord, Vec<StatsData>)> {
     let env_mode = env::var("QSV_STATSCACHE_MODE")
         .unwrap_or_else(|_| DEFAULT_STATSCACHE_MODE.to_string())
         .to_ascii_lowercase();
@@ -2284,7 +2684,7 @@ pub fn get_stats_records(
     {
         // if stdin or StatsMode::None,
         // we're just doing frequency old school w/o cardinality
-        return Ok((ByteRecord::new(), Vec::new(), HashMap::new()));
+        return Ok((ByteRecord::new(), Vec::new()));
     }
 
     let input_path = args.arg_input.as_ref().ok_or("No input provided")?;
@@ -2317,17 +2717,29 @@ pub fn get_stats_records(
         // if the stats.data file is not current,
         // we're also doing frequency old school w/o cardinality
         // unless env_mode auto overrides
-        return Ok((ByteRecord::new(), Vec::new(), HashMap::new()));
+        return Ok((ByteRecord::new(), Vec::new()));
     }
 
+    // Use qsv's Config system to properly detect delimiter based on file extension
+    let rconfig = Config::new(Some(input_path))
+        .delimiter(args.flag_delimiter)
+        .no_headers_flag(args.flag_no_headers);
+    let mut rdr = rconfig.reader()?;
     // get the headers from the input file
-    let mut rdr = csv::Reader::from_path(input_path)?;
     let csv_fields = rdr.byte_headers()?.clone();
     drop(rdr);
 
+    // Update args with the detected delimiter if it wasn't explicitly set
+    let detected_delimiter = if args.flag_delimiter.is_none() {
+        let path = Path::new(input_path);
+        let (_, detected_delim, _) = get_delim_by_extension(path, b',');
+        Some(Delimiter(detected_delim))
+    } else {
+        args.flag_delimiter
+    };
+
     let mut stats_data_loaded = false;
     let mut csv_stats: Vec<StatsData> = Vec::with_capacity(csv_fields.len());
-    let mut dataset_stats: HashMap<String, String> = HashMap::with_capacity(4);
 
     // if stats_data file exists and is current, use it
     if stats_data_current && !args.flag_force {
@@ -2340,29 +2752,20 @@ pub fn get_stats_records(
         for line in statsdatajson_rdr.lines() {
             curr_line = line?;
             s_slice = curr_line.as_bytes().to_vec();
-            if curr_line.starts_with(DATASET_STATS_PREFIX) {
-                // Parse dataset stats record
-                let v: serde_json::Value =
-                    simd_json::serde::from_slice(&mut s_slice).map_err(|e| {
-                        CliError::Other(format!("Failed to parse dataset stats JSON: {e}"))
-                    })?;
-                let field = &v["field"];
-                let value = v["qsv__value"].clone();
 
-                dataset_stats.insert(
-                    field
-                        .as_str()
-                        .unwrap_or_default()
-                        .trim_matches('"')
-                        .to_string(),
-                    value.to_string(),
-                );
+            // Parse regular stats record
+            #[cfg(target_endian = "big")]
+            let parse_result = serde_json::from_slice::<StatsData>(&s_slice);
+            #[cfg(target_endian = "little")]
+            let parse_result = simd_json::from_slice::<StatsData>(&mut s_slice);
+
+            if let Ok(stats) = parse_result {
+                csv_stats.push(stats);
             } else {
-                // Parse regular stats record
-                match simd_json::from_slice::<StatsData>(&mut s_slice) {
-                    Ok(stats) => csv_stats.push(stats),
-                    Err(e) => eprintln!("error parsing stats: {e}"),
-                }
+                // if we encounter a parsing error, clear csv_stats and break
+                // so that we regenerate the stats data
+                csv_stats.clear();
+                break;
             }
         }
         stats_data_loaded = !csv_stats.is_empty();
@@ -2395,10 +2798,10 @@ pub fn get_stats_records(
             flag_cache_threshold:  1, // force the creation of stats cache files
             flag_output:           None,
             flag_no_headers:       args.flag_no_headers,
-            flag_delimiter:        args.flag_delimiter,
+            flag_delimiter:        detected_delimiter,
             flag_memcheck:         args.flag_memcheck,
             flag_vis_whitespace:   false,
-            flag_dataset_stats:    true,
+            flag_weight:           None,
         };
 
         let tempfile = tempfile::Builder::new().suffix(".stats.csv").tempfile()?;
@@ -2440,7 +2843,17 @@ pub fn get_stats_records(
             StatsMode::PolarsSchema => {
                 // StatsMode::PolarsSchema
                 // we need data types, ranges & cardinality
-                format!("stats\t{input}\t--cardinality\t--stats-jsonl\t--output\t{tempfile_path}")
+                // if sniff detected date columns, also infer dates with the sniffed whitelist
+                if stats_args.flag_dates_whitelist.is_empty() {
+                    format!("stats\t{input}\t--cardinality\t--stats-jsonl\t--output\t{tempfile_path}")
+                } else {
+                    format!(
+                        "stats\t{input}\t--cardinality\
+                        \t--infer-dates\t--dates-whitelist\t{dates_whitelist}\
+                        \t--stats-jsonl\t--output\t{tempfile_path}",
+                        dates_whitelist = stats_args.flag_dates_whitelist
+                    )
+                }
             },
             StatsMode::Outliers => {
                 // StatsMode::Outliers
@@ -2455,10 +2868,18 @@ pub fn get_stats_records(
         if args.flag_no_headers {
             stats_args_str = format!("{stats_args_str}\t--no-headers");
         }
-        if let Some(delimiter) = args.flag_delimiter {
-            let delim = delimiter.as_byte() as char;
-            stats_args_str = format!("{stats_args_str}\t--delimiter\t{delim}");
-        }
+
+        // Use the detected delimiter
+        stats_args_str = format!("{stats_args_str}\t--delimiter\t{}", {
+            // safety: we know it's Some because we set it above
+            let delim_to_use = detected_delimiter.unwrap().as_byte();
+            if delim_to_use == b'\t' {
+                r#"\t"#.to_string()
+            } else {
+                (delim_to_use as char).to_string()
+            }
+        });
+
         if args.flag_memcheck {
             stats_args_str = format!("{stats_args_str}\t--memcheck");
         }
@@ -2475,7 +2896,7 @@ pub fn get_stats_records(
 
         let stats_args_vec: Vec<&str> = stats_args_str.split('\t').collect();
 
-        let qsv_bin = std::env::current_exe()?;
+        let qsv_bin = current_exe()?;
         let mut stats_cmd = std::process::Command::new(qsv_bin);
         if requested_mode == StatsMode::Outliers {
             // set the max length for antimodes
@@ -2511,7 +2932,14 @@ pub fn get_stats_records(
         }
 
         // create a stats data jsonl from the output of the stats command
-        csv_to_jsonl(&tempfile_path, &STATSDATA_TYPES_MAP, statsdatajson_path)?;
+        // stats command always writes comma-delimited CSV to tempfile,
+        // so b',' is correct here regardless of the original input delimiter
+        csv_to_jsonl(
+            &tempfile_path,
+            &STATSDATA_TYPES_MAP,
+            statsdatajson_path,
+            b',',
+        )?;
 
         let statsdatajson_rdr =
             BufReader::with_capacity(DEFAULT_RDR_BUFFER_CAPACITY, File::open(statsdatajson_path)?);
@@ -2521,50 +2949,63 @@ pub fn get_stats_records(
         for line in statsdatajson_rdr.lines() {
             curr_line = line?;
             s_slice = curr_line.as_bytes().to_vec();
-            if curr_line.starts_with(DATASET_STATS_PREFIX) {
-                // Parse dataset stats record
-                let v: serde_json::Value =
-                    simd_json::serde::from_slice(&mut s_slice).map_err(|e| {
-                        CliError::Other(format!("Failed to parse dataset stats JSONL: {e}"))
-                    })?;
-                let field = &v["field"];
-                let value = v["qsv__value"].clone();
 
-                dataset_stats.insert(
-                    field
-                        .as_str()
-                        .unwrap_or_default()
-                        .trim_matches('"')
-                        .to_string(),
-                    value.to_string(),
-                );
-            } else {
-                // Parse regular stats record
-                match simd_json::from_slice::<StatsData>(&mut s_slice) {
-                    Ok(stats) => csv_stats.push(stats),
-                    Err(e) => eprintln!("error parsing stats: {e}"),
-                }
+            // Parse regular stats record
+            #[cfg(target_endian = "big")]
+            let parse_result = serde_json::from_slice::<StatsData>(&s_slice);
+            #[cfg(target_endian = "little")]
+            let parse_result = simd_json::from_slice::<StatsData>(&mut s_slice);
+
+            match parse_result {
+                Ok(stats) => csv_stats.push(stats),
+                Err(e) => return Err(CliError::Other(format!("error parsing stats: {e}"))),
             }
         }
     }
 
-    // ensure csv_fields and csv_stats have the same length
-    // as csv_fields may have the extra "qsv__value" field for dataset stats
-    Ok((
-        csv_fields.iter().take(csv_stats.len()).collect(),
-        csv_stats,
-        dataset_stats,
-    ))
+    if csv_stats.len() != csv_fields.len() {
+        // stats cache is likely corrupted or truncated; fall back to empty stats
+        return Ok((ByteRecord::new(), Vec::new()));
+    }
+    Ok((csv_fields.iter().take(csv_stats.len()).collect(), csv_stats))
+}
+
+/// Reads a CSV file (comma-delimited) and writes it with a different delimiter to a writer.
+pub fn csv_to_delimited_writer<W: Write>(
+    input_csv: &str,
+    writer: &mut W,
+    delimiter: u8,
+) -> CliResult<()> {
+    let file = File::open(input_csv)?;
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .delimiter(b',')
+        .from_reader(file);
+    let mut wtr = csv::WriterBuilder::new()
+        .delimiter(delimiter)
+        .from_writer(writer);
+
+    let headers = rdr.headers()?.clone();
+    wtr.write_record(&headers)?;
+
+    for result in rdr.records() {
+        let record = result?;
+        wtr.write_record(&record)?;
+    }
+    wtr.flush()?;
+    Ok(())
 }
 
 pub fn csv_to_jsonl(
     input_csv: &str,
     csv_types: &phf::Map<&'static str, JsonTypes>,
     output_jsonl: &PathBuf,
+    delimiter: u8,
 ) -> CliResult<()> {
     let file = File::open(input_csv)?;
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(true)
+        .delimiter(delimiter)
         .from_reader(file);
 
     let headers = rdr.headers()?;
@@ -2627,7 +3068,15 @@ pub fn csv_to_jsonl(
             json_object.insert(key.to_string(), value);
         }
 
-        json_line = serde_json::to_string(&json_object)?;
+        // Use platform-appropriate JSON serialization
+        #[cfg(target_endian = "big")]
+        {
+            json_line = serde_json::to_string(&json_object)?;
+        }
+        #[cfg(target_endian = "little")]
+        {
+            json_line = simd_json::to_string(&json_object)?;
+        }
         writeln!(writer, "{json_line}")?;
     }
 
@@ -2678,7 +3127,6 @@ pub fn optimal_batch_size(rconfig: &Config, batch_size: usize, num_jobs: usize) 
 }
 
 /// Expand the tilde (`~`) from within the provided path.
-#[cfg(not(feature = "lite"))]
 pub fn expand_tilde(path: impl AsRef<Path>) -> Option<PathBuf> {
     let p = path.as_ref();
 
@@ -2787,17 +3235,9 @@ pub fn expand_tilde(path: impl AsRef<Path>) -> Option<PathBuf> {
 /// * `Option<Arc<Schema>>` - The loaded schema if the file exists and can be parsed, None otherwise
 #[cfg(feature = "polars")]
 fn load_schema_from_file(path: &Path) -> Result<Option<Arc<Schema>>, Box<dyn std::error::Error>> {
-    // Use only the input file prefix to create the schema file path
-    // e.g. data.tsv.gz, data.parquet, data.ssv should look for a schema file
-    // named data.pschema.json
-    // TODO: replace this with std::path::file_prefix once its stabilized
-    // https://github.com/rust-lang/rust/pull/129114
-    let fileprefix = path
-        .file_name()
-        .and_then(|fname| fname.to_str())
-        .map(|s| s.split('.').next().unwrap_or(""))
-        .unwrap_or_default();
-    let schema_file = path.with_file_name(format!("{fileprefix}.pschema.json"));
+    // Append .pschema.json to the full filename (including extension)
+    // e.g. data.csv -> data.csv.pschema.json, data.tsv.gz -> data.tsv.gz.pschema.json
+    let schema_file = PathBuf::from(format!("{}.pschema.json", path.display()));
 
     if schema_file.exists() {
         // Load the schema from the pschema.json file
@@ -2837,8 +3277,8 @@ pub fn convert_special_format(
     use polars::{
         io::avro::AvroReader,
         prelude::{
-            CsvParseOptions, CsvReadOptions, CsvWriter, IpcReader, JsonLineReader, JsonReader,
-            ParquetReader, SerReader, SerWriter,
+            CsvParseOptions, CsvReadOptions, CsvWriter, IpcReader, JsonReader, LazyFileListReader,
+            LazyJsonLineReader, ParquetReader, PlRefPath, SerReader, SerWriter,
         },
     };
 
@@ -2858,12 +3298,14 @@ pub fn convert_special_format(
         SpecialFormat::Parquet => ParquetReader::new(BufReader::new(File::open(path)?)).finish()?,
         SpecialFormat::Ipc => IpcReader::new(BufReader::new(File::open(path)?)).finish()?,
         SpecialFormat::Jsonl => {
-            let df = JsonLineReader::new(BufReader::new(File::open(path)?));
+            let path_str = path.to_string_lossy();
+            let lf = LazyJsonLineReader::new(PlRefPath::new(&*path_str));
             if let Some(schema) = schema {
-                df.with_schema(schema).finish()?
+                lf.with_schema(Some(schema)).finish()?
             } else {
-                df.finish()?
+                lf.finish()?
             }
+            .collect()?
         },
         SpecialFormat::Json => {
             let df = JsonReader::new(BufReader::new(File::open(path)?));
@@ -2985,15 +3427,91 @@ pub fn infer_polars_schema(
     debuglog_flag: bool,
     table: &Path,
     schema_file: &std::path::PathBuf,
+    prefer_dmy: bool,
 ) -> Result<bool, crate::clitypes::CliError> {
+    // Run sniff to auto-detect date/datetime columns
+    let qsv_bin = current_exe()?;
+    let mut sniff_cmd = std::process::Command::new(&qsv_bin);
+    let table_str = table.to_string_lossy().to_string();
+    sniff_cmd.args(["sniff", "--json"]);
+    if let Some(d) = delimiter {
+        let delim_byte = d.as_byte();
+        if delim_byte == b'\t' {
+            sniff_cmd.args(["--delimiter", r"\t"]);
+        } else {
+            // safety: delimiter is guaranteed to be a valid ASCII byte
+            sniff_cmd.args(["--delimiter", &(delim_byte as char).to_string()]);
+        }
+    }
+    sniff_cmd.arg(&table_str);
+    if prefer_dmy {
+        sniff_cmd.arg("--prefer-dmy");
+    }
+    let sniff_output = sniff_cmd.output()?;
+
+    let mut sniff_dates_whitelist = String::new();
+    if sniff_output.status.success() {
+        match serde_json::from_slice::<serde_json::Value>(&sniff_output.stdout) {
+            Ok(sniff_json) => {
+                if let (Some(fields), Some(types)) = (
+                    sniff_json["fields"].as_array(),
+                    sniff_json["types"].as_array(),
+                ) {
+                    let date_fields: Vec<&str> = fields
+                        .iter()
+                        .zip(types.iter())
+                        .filter_map(|(field, typ)| {
+                            let type_str = typ.as_str().unwrap_or_default();
+                            if type_str == "Date" || type_str == "DateTime" {
+                                field.as_str()
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    sniff_dates_whitelist = date_fields.join(",");
+                    if debuglog_flag {
+                        if sniff_dates_whitelist.is_empty() {
+                            log::debug!(
+                                "sniff did not detect any date/datetime columns for {table_str}"
+                            );
+                        } else {
+                            log::debug!(
+                                "sniff detected date/datetime columns for {table_str}: \
+                                 {sniff_dates_whitelist}"
+                            );
+                        }
+                    }
+                } else if debuglog_flag {
+                    log::debug!(
+                        "sniff JSON for {table_str} did not contain expected 'fields'/'types' \
+                         arrays"
+                    );
+                }
+            },
+            Err(err) => {
+                if debuglog_flag {
+                    log::debug!("failed to parse sniff JSON output for {table_str}: {err}");
+                }
+            },
+        }
+    } else if debuglog_flag {
+        log::debug!(
+            "sniff command failed for {table_str} with status {:?}. stderr: {}",
+            sniff_output.status,
+            String::from_utf8_lossy(&sniff_output.stderr)
+        );
+    }
+
     let schema_args = SchemaArgs {
         flag_enum_threshold:  0,
         flag_ignore_case:     false,
         flag_strict_dates:    false,
+        flag_strict_formats:  false,
         // we still get all the stats columns so we can use the stats cache
         flag_pattern_columns: crate::select::SelectColumns::parse("").unwrap(),
-        flag_dates_whitelist: String::new(),
-        flag_prefer_dmy:      false,
+        flag_dates_whitelist: sniff_dates_whitelist,
+        flag_prefer_dmy:      prefer_dmy,
         flag_force:           false,
         flag_stdout:          false,
         flag_jobs:            Some(njobs(None)),
@@ -3002,9 +3520,16 @@ pub fn infer_polars_schema(
         flag_delimiter:       delimiter,
         arg_input:            Some(table.to_string_lossy().into_owned()),
         flag_memcheck:        false,
+        flag_output:          None,
     };
-    let (csv_fields, csv_stats, _) = get_stats_records(&schema_args, StatsMode::PolarsSchema)?;
+    let (csv_fields, csv_stats) = get_stats_records(&schema_args, StatsMode::PolarsSchema)?;
     let mut schema = polars::prelude::Schema::with_capacity(csv_stats.len());
+
+    // fetch the decimal scale from the QSV_POLARS_DECIMAL_SCALE env var
+    let scale = std::env::var("QSV_POLARS_DECIMAL_SCALE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5); // default scale is 5
     for (idx, stat) in csv_stats.iter().enumerate() {
         // safety: we know that the get(idx) will not be None as we are using an iterator
         schema.insert(
@@ -3061,11 +3586,7 @@ pub fn infer_polars_schema(
                         // document it as the polars engine does support it
                         if precision > 16 {
                             // For very high precision, use Decimal type
-                            polars::datatypes::DataType::Decimal(
-                                Some(precision as usize),
-                                // polars will infer scale from the data if None
-                                None,
-                            )
+                            polars::datatypes::DataType::Decimal(precision as usize, scale)
                         } else if precision > 7
                             || min.parse::<f32>().is_err()
                             || max.parse::<f32>().is_err()
@@ -3077,12 +3598,18 @@ pub fn infer_polars_schema(
                     },
                     "Boolean" => polars::datatypes::DataType::Boolean,
                     "Date" => polars::datatypes::DataType::Date,
+                    "DateTime" => polars::datatypes::DataType::Datetime(
+                        polars::datatypes::TimeUnit::Milliseconds,
+                        None,
+                    ),
                     _ => polars::datatypes::DataType::String,
                 }
             },
         );
     }
     let stats_schema = std::sync::Arc::new(schema);
+    // Use serde_json for schema serialization as the schema may contain compound types
+    // (e.g. Datetime) that simd_json::to_string_pretty doesn't serialize correctly
     let stats_schema_json = serde_json::to_string_pretty(&stats_schema)?;
     let mut file = std::io::BufWriter::new(File::create(schema_file)?);
     file.write_all(stats_schema_json.as_bytes())?;
@@ -3091,4 +3618,285 @@ pub fn infer_polars_schema(
         log::debug!("Saved stats_schema to file: {}", schema_file.display());
     }
     Ok(true)
+}
+
+/// BLAKE3 hash of a file optimized for maximum performance
+/// Uses memory mapping and multithreading for fast hashing of files of any size
+pub fn hash_blake3_file(path: &Path) -> CliResult<String> {
+    let mut hasher = blake3::Hasher::new();
+
+    // Use BLAKE3's optimized memory-mapped + rayon parallel hashing
+    // This automatically handles chunking and parallel processing internally
+    hasher.update_mmap_rayon(path)?;
+
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+#[cfg(unix)]
+pub fn is_executable(path: &str) -> std::io::Result<bool> {
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    let metadata = fs::metadata(path)?;
+    Ok(metadata.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(windows)]
+pub fn is_executable(path: &str) -> std::io::Result<bool> {
+    use std::path::Path;
+    let p = Path::new(path);
+    Ok(p.extension().and_then(|e| e.to_str()).map_or(false, |ext| {
+        matches!(
+            ext.to_ascii_lowercase().as_str(),
+            "exe" | "bat" | "cmd" | "com"
+        )
+    }))
+}
+
+/// Print a status message with elapsed time if not in quiet mode
+pub fn print_status(msg: &str, elapsed: Option<std::time::Duration>) {
+    // this checks the QUIET_FLAG atomic boolean if it was set
+    // Otherwise, it defaults to false and prints the message
+    if !QUIET_FLAG.load(std::sync::atomic::Ordering::Relaxed) {
+        if let Some(duration) = elapsed {
+            eprintln!("{msg} (elapsed: {:.2}s)", duration.as_secs_f64());
+        } else {
+            eprintln!("{msg}");
+        }
+    }
+}
+
+/// Get the stats CSV file path for a given input CSV path.
+/// Returns an absolute path like `/path/to/input.stats.csv`.
+pub fn get_stats_csv_path(input_path: &std::path::Path) -> crate::CliResult<std::path::PathBuf> {
+    let parent = input_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let fstem = input_path.file_stem().ok_or_else(|| {
+        crate::clitypes::CliError::Other("Invalid input path: no file name".to_string())
+    })?;
+
+    let stats_filename = format!("{}.stats.csv", fstem.to_string_lossy());
+    let result = parent.join(stats_filename);
+    if result.is_absolute() {
+        Ok(result)
+    } else {
+        Ok(std::env::current_dir()?.join(result))
+    }
+}
+
+// Helper function to run qsv commands with consistent error handling and timing
+pub fn run_qsv_cmd(
+    command: &str,
+    args: &[&str],
+    input_path: &str,
+    status_msg: &str,
+) -> CliResult<(String, String)> {
+    let start_time = Instant::now();
+
+    // safety: we know that the current_exe() is very unlikely to fail as qsv is already running
+    let qsv_path = QSV_PATH.get_or_init(|| current_exe().unwrap().to_string_lossy().to_string());
+    let mut cmd = Command::new(qsv_path);
+
+    // special case for sample command, as the args are passed as the first argument
+    if command == "sample" {
+        cmd.arg(command).args(args).arg(input_path);
+    } else {
+        cmd.arg(command).arg(input_path).args(args);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| CliError::Other(format!("Error while executing command {command}: {e:?}")))?;
+    log::debug!("qsv command {command} output: {output:?}");
+
+    if !output.status.success() {
+        return fail_clierror!("Command {command} failed: {output:?}");
+    }
+
+    print_status(status_msg, Some(start_time.elapsed()));
+
+    let stdout_str = std::str::from_utf8(&output.stdout).map_err(|e| {
+        CliError::Other(format!(
+            "Unable to parse output of qsv command {command}: {e:?}"
+        ))
+    })?;
+    let stderr_str = std::str::from_utf8(&output.stderr).map_err(|e| {
+        CliError::Other(format!(
+            "Unable to parse stderr of qsv command {command}: {e:?}"
+        ))
+    })?;
+
+    Ok((stdout_str.to_string(), stderr_str.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+
+    use tempfile::NamedTempFile;
+
+    use super::*;
+
+    #[test]
+    fn test_hash_blake3_file() {
+        // Create a temporary file with known content
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content = b"Hello, World! This is a test file for BLAKE3 hashing.";
+        temp_file.write_all(test_content).unwrap();
+        temp_file.flush().unwrap();
+
+        // Calculate expected hash using blake3 directly
+        let mut expected_hasher = blake3::Hasher::new();
+        expected_hasher.update(test_content);
+        let expected_hash = expected_hasher.finalize().to_hex().to_string();
+
+        // Test our function
+        let actual_hash = hash_blake3_file(temp_file.path()).unwrap();
+
+        assert_eq!(actual_hash, expected_hash);
+    }
+
+    #[test]
+    fn test_hash_blake3_file_large() {
+        // Create a larger test file (1MB)
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content = b"Large file test content. ".repeat(40000); // ~1MB
+        temp_file.write_all(&test_content).unwrap();
+        temp_file.flush().unwrap();
+
+        // Calculate expected hash
+        let mut expected_hasher = blake3::Hasher::new();
+        expected_hasher.update(&test_content);
+        let expected_hash = expected_hasher.finalize().to_hex().to_string();
+
+        // Test our function
+        let actual_hash = hash_blake3_file(temp_file.path()).unwrap();
+
+        assert_eq!(actual_hash, expected_hash);
+    }
+
+    #[test]
+    fn benchmark_hash_blake3_file() {
+        // Create a test file for benchmarking
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content = b"Benchmark test content. ".repeat(100000); // ~2.4MB
+        temp_file.write_all(&test_content).unwrap();
+        temp_file.flush().unwrap();
+
+        // Benchmark the function
+        let start = std::time::Instant::now();
+        let hash = hash_blake3_file(temp_file.path()).unwrap();
+        let duration = start.elapsed();
+
+        println!("BLAKE3 Hash: {}", hash);
+        println!("BLAKE3 Time: {:?}", duration);
+        println!("File size: {} bytes", test_content.len());
+        println!(
+            "BLAKE3 Speed: {:.2} MB/s",
+            (test_content.len() as f64 / 1024.0 / 1024.0) / duration.as_secs_f64()
+        );
+        assert_eq!(
+            hash,
+            "87b87c9d36ee75bf8cb30940f6bbbeec3e67328190181f8c59c3cbcd6f35228a"
+        );
+    }
+
+    #[test]
+    fn benchmark_hash_blake3_file_large() {
+        // Create a larger test file (100MB) to test parallel processing
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let test_content =
+            b"Large benchmark test content for parallel processing. ".repeat(2000000); // ~100MB
+        temp_file.write_all(&test_content).unwrap();
+        temp_file.flush().unwrap();
+
+        // Benchmark the function
+        let start = std::time::Instant::now();
+        let hash = hash_blake3_file(temp_file.path()).unwrap();
+        let duration = start.elapsed();
+
+        println!("BLAKE3 Large file hash: {}", hash);
+        println!("BLAKE3 Large file time: {:?}", duration);
+        println!("Large file size: {} bytes", test_content.len());
+        println!(
+            "BLAKE3 Large file speed: {:.2} MB/s",
+            (test_content.len() as f64 / 1024.0 / 1024.0) / duration.as_secs_f64()
+        );
+        assert_eq!(
+            hash,
+            "6cd27b8098295afc42527bcee267ce39e757345f9f82c20b66efc75ffe4c1631"
+        );
+    }
+
+    #[test]
+    fn test_transform_github_url_blob() {
+        // Test GitHub blob URL transformation
+        let blob_url =
+            "https://github.com/dathere/qsv/blob/master/resources/test/boston311-100.csv";
+        let expected =
+            "https://raw.githubusercontent.com/dathere/qsv/master/resources/test/boston311-100.csv";
+        assert_eq!(transform_github_url(blob_url), expected);
+    }
+
+    #[test]
+    fn test_transform_github_url_blob_with_branch() {
+        // Test with a different branch name
+        let blob_url = "https://github.com/user/repo/blob/develop/path/to/file.csv";
+        let expected = "https://raw.githubusercontent.com/user/repo/develop/path/to/file.csv";
+        assert_eq!(transform_github_url(blob_url), expected);
+    }
+
+    #[test]
+    fn test_transform_github_url_blob_http() {
+        // Test HTTP (not HTTPS) URL transformation
+        let blob_url = "http://github.com/user/repo/blob/main/file.csv";
+        let expected = "https://raw.githubusercontent.com/user/repo/main/file.csv";
+        assert_eq!(transform_github_url(blob_url), expected);
+    }
+
+    #[test]
+    fn test_transform_github_url_raw() {
+        // Test that raw URLs are not modified
+        let raw_url =
+            "https://raw.githubusercontent.com/dathere/qsv/master/resources/test/boston311-100.csv";
+        assert_eq!(transform_github_url(raw_url), raw_url);
+    }
+
+    #[test]
+    fn test_transform_github_url_non_github() {
+        // Test that non-GitHub URLs are not modified
+        let other_url = "https://example.com/data/file.csv";
+        assert_eq!(transform_github_url(other_url), other_url);
+    }
+
+    #[test]
+    fn test_transform_github_url_no_blob() {
+        // Test that GitHub URLs without /blob/ are not modified
+        let repo_url = "https://github.com/dathere/qsv";
+        assert_eq!(transform_github_url(repo_url), repo_url);
+    }
+
+    #[test]
+    fn test_transform_github_url_with_query_params() {
+        // Test that query parameters are stripped (they don't apply to raw.githubusercontent.com)
+        let blob_url = "https://github.com/user/repo/blob/main/file.csv?ref=v1.0";
+        let expected = "https://raw.githubusercontent.com/user/repo/main/file.csv";
+        assert_eq!(transform_github_url(blob_url), expected);
+    }
+
+    #[test]
+    fn test_transform_github_url_with_fragment() {
+        // Test that fragments (line highlighting) are stripped
+        let blob_url = "https://github.com/user/repo/blob/main/file.csv#L10-L20";
+        let expected = "https://raw.githubusercontent.com/user/repo/main/file.csv";
+        assert_eq!(transform_github_url(blob_url), expected);
+    }
+
+    #[test]
+    fn test_transform_github_url_with_query_and_fragment() {
+        // Test that both query parameters and fragments are stripped
+        let blob_url = "https://github.com/user/repo/blob/main/file.csv?ref=v1.0#L10";
+        let expected = "https://raw.githubusercontent.com/user/repo/main/file.csv";
+        assert_eq!(transform_github_url(blob_url), expected);
+    }
 }

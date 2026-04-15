@@ -3,11 +3,11 @@ Generate JSON Schema or Polars Schema (with the `--polars` option) from CSV data
 
 JSON Schema Validation:
 =======================
-This command derives a JSON Schema Validation (Draft 7) file from CSV data, 
+This command derives a JSON Schema Validation (Draft 2020-12) file from CSV data,
 including validation rules based on data type and input data domain/range.
 https://json-schema.org/draft/2020-12/json-schema-validation.html
 
-Running `validate` command on original input CSV with generated schema 
+Running `validate` command on original input CSV with generated schema
 should not flag any invalid records.
 
 The intended workflow is to use the `schema` command to generate a JSON schema file
@@ -18,9 +18,9 @@ generated JSON schema.
 After manually fine-tuning the JSON schema file, note that you can also use the
 `validate` command to validate the JSON Schema file as well:
 
-  `qsv validate schema manually-tuned-jsonschema.json`
+  $ qsv validate schema manually-tuned-jsonschema.json
 
-The generated JSON schema file has `.schema.json` suffix appended. For example, 
+The generated JSON schema file has `.schema.json` suffix appended. For example,
 for input `mydata.csv`, the generated JSON schema is `mydata.csv.schema.json`.
 
 If piped from stdin, the schema file will be `stdin.csv.schema.json` and
@@ -43,9 +43,9 @@ instead of a JSON Schema. The generated Polars schema will be written to a file 
 The Polars schema is a JSON object that describes the schema of a CSV file. When present,
 the `sqlp`, `joinp`, and `pivotp` commands will use the Polars schema to read the CSV file
 instead of inferring the schema from the CSV data. Not only does this allow these commands to
-skip schema inferencing which may fail when the inferencing sample is too low, it also allows 
+skip schema inferencing which may fail when the inferencing sample is too low, it also allows
 Polars to optimize the query and gives the user the option to tailor the schema to their specific
-query needs (e.g. using a Decimal type instead of a Float type).
+query needs (e.g. using a Decimal type with explicit precision and scale instead of a Float type).
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_schema.rs.
 
@@ -65,12 +65,18 @@ Schema options:
                                columns are inferred as date/datetime, they are set
                                to type "string" in the schema instead of
                                "date" or "date-time".
+    --strict-formats           Enforce JSON Schema format constraints for
+                               detected email, hostname, and IP address columns.
+                               When enabled, String fields are checked against
+                               email, hostname, IPv4, and IPv6 formats. Format
+                               constraints are only added if ALL unique values
+                               in the field match the detected format.
     --pattern-columns <args>   Select columns to derive regex pattern constraints.
                                That is, this will create a regular expression
                                that matches all values for each specified column.
-                               Columns are selected using `select` syntax 
+                               Columns are selected using `select` syntax
                                (see `qsv select --help` for details).
-    --dates-whitelist <list>   The case-insensitive patterns to look for when 
+    --dates-whitelist <list>   The case-insensitive patterns to look for when
                                shortlisting fields for date inference.
                                i.e. if the field's name has any of these patterns,
                                it is shortlisted for date inferencing.
@@ -85,11 +91,15 @@ Schema options:
     -j, --jobs <arg>           The number of jobs to run in parallel.
                                When not set, the number of jobs is set to the
                                number of CPUs detected.
+    -o, --output <file>        Write output to <file> instead of using the default
+                               filename. For JSON Schema, the default is
+                               <input>.schema.json. For Polars schema, the default
+                               is <input>.pschema.json.
 
     --polars                   Infer a Polars schema instead of a JSON Schema.
                                This option is only available if the `polars` feature is enabled.
                                The generated Polars schema will be written to a file with the
-                               `.pschema.json` suffix appended to the input file stem.
+                               `.pschema.json` suffix appended to the input filename.
 
 Common options:
     -h, --help                 Display this message
@@ -98,19 +108,26 @@ Common options:
                                of the rows. Otherwise, the first row will always
                                appear as the header row in the output.
     -d, --delimiter <arg>      The field delimiter for reading CSV data.
-                               Must be a single character. [default: ,]
+                               Must be a single character.
     --memcheck                 Check if there is enough memory to load the entire
                                CSV into memory using CONSERVATIVE heuristics.
 "#;
 
-use std::{fs::File, io::Write, path::Path};
+#[allow(unused_imports)]
+use std::{
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use csv::ByteRecord;
 use foldhash::{HashMap, HashMapExt, HashSet};
 use grex::RegExpBuilder;
 use itertools::Itertools;
-use log::{debug, error, info, warn};
+use log::{debug, info};
 use rayon::slice::ParallelSliceMut;
+use regex::Regex;
 use serde_json::{Map, Value, json, value::Number};
 use stats::Frequencies;
 
@@ -118,6 +135,7 @@ use crate::{
     CliResult,
     cmd::stats::StatsData,
     config::Config,
+    regex_oncelock,
     util::{self, StatsMode},
 };
 
@@ -130,12 +148,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_polars {
         if let Some(input) = args.arg_input {
             let input_path = Path::new(&input);
-            let schema_file = input_path.with_extension("pschema.json");
+            let schema_file = if let Some(output) = args.flag_output {
+                PathBuf::from(output)
+            } else {
+                PathBuf::from(format!("{}.pschema.json", input_path.display()))
+            };
             if util::infer_polars_schema(
                 args.flag_delimiter,
                 log::log_enabled!(log::Level::Debug),
                 input_path,
                 &schema_file,
+                args.flag_prefer_dmy,
             )? {
                 return Ok(());
             }
@@ -158,7 +181,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // We use a fixed "stdin.csv" filename instead of a temporary file with random characters
     // so the name of the generated schema.json file is readable and predictable
     // (stdin.csv.schema.json)
-    let (input_path, input_filename) = if args.arg_input.is_none() {
+    let (input_path, input_filename) = if let Some(ref input) = args.arg_input {
+        let filename = Path::new(&input)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        (input.clone(), filename)
+    } else {
         let mut stdin_file = File::create(STDIN_CSV)?;
         let stdin = std::io::stdin();
         let mut stdin_handle = stdin.lock();
@@ -166,13 +196,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         drop(stdin_handle);
         args.arg_input = Some(STDIN_CSV.to_string());
         (STDIN_CSV.to_string(), STDIN_CSV.to_string())
-    } else {
-        let filename = Path::new(args.arg_input.as_ref().unwrap())
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
-        (args.arg_input.clone().unwrap(), filename)
     };
 
     // we're loading the entire file into memory, we need to check avail mem
@@ -219,7 +242,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // create final JSON object for output
     let schema = json!({
-        "$schema": "https://json-schema.org/draft-07/schema",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": format!("JSON Schema for {input_filename}"),
         "description": format!("Inferred JSON Schema with `qsv {}`", argv[1..].join(" ")),
         "type": "object",
@@ -227,7 +250,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         "required": Value::Array(required_fields)
     });
 
+    // Use platform-appropriate JSON serialization
+    #[cfg(target_endian = "big")]
     let schema_pretty = match serde_json::to_string_pretty(&schema) {
+        Ok(s) => s,
+        Err(e) => return fail_clierror!("Cannot prettify schema json: {e}"),
+    };
+    #[cfg(target_endian = "little")]
+    let schema_pretty = match simd_json::to_string_pretty(&schema) {
         Ok(s) => s,
         Err(e) => return fail_clierror!("Cannot prettify schema json: {e}"),
     };
@@ -241,7 +271,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         info!("Schema written to stdout");
     } else {
-        let schema_output_filename = input_path + ".schema.json";
+        let schema_output_filename = if let Some(output) = args.flag_output {
+            output
+        } else {
+            input_path + ".schema.json"
+        };
         let mut schema_output_file = File::create(&schema_output_filename)?;
 
         schema_output_file.write_all(schema_pretty.as_bytes())?;
@@ -253,7 +287,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(())
 }
 
-/// Builds JSON MAP object that corresponds to the "properties" object of JSON Schema (Draft 7
+/// Builds JSON MAP object that corresponds to the "properties" object of JSON Schema (Draft
 /// 2020-12) by looking at CSV value stats Supported JSON Schema validation vocabularies:
 ///  * type
 ///    - "null", "boolean", "number", "integer", or "string", with built-in support for date/datetime
@@ -270,7 +304,7 @@ pub fn infer_schema_from_stats(
     quiet: bool,
 ) -> CliResult<Map<String, Value>> {
     // invoke cmd::stats
-    let (csv_fields, csv_stats, _) = util::get_stats_records(args, StatsMode::Schema)?;
+    let (csv_fields, csv_stats) = util::get_stats_records(args, StatsMode::Schema)?;
 
     // amortize memory allocation
     let mut low_cardinality_column_indices: Vec<u64> =
@@ -351,6 +385,19 @@ pub fn infer_schema_from_stats(
                     );
                 }
 
+                // Format inference for email, hostname, and IP addresses
+                if args.flag_strict_formats
+                    && let Some(values) = unique_values_map.get(&header_string)
+                    && let Some(format_str) = infer_format_from_values(values)
+                {
+                    field_map.insert("format".to_string(), Value::String(format_str.to_string()));
+                    if !quiet {
+                        winfo!(
+                            "Format constraint '{format_str}' added for field '{header_string}'"
+                        );
+                    }
+                }
+
                 // const or enum constraint
                 if const_column_indices.contains(&((i + 1) as u64))
                     && unique_values_map.contains_key(&header_string)
@@ -374,7 +421,7 @@ pub fn infer_schema_from_stats(
                     field_map.insert(
                         "minimum".to_string(),
                         Value::Number(Number::from(
-                            atoi_simd::parse::<i64>(min.as_bytes()).unwrap(),
+                            atoi_simd::parse::<i64, false, false>(min.as_bytes()).unwrap(),
                         )),
                     );
                 }
@@ -383,7 +430,7 @@ pub fn infer_schema_from_stats(
                     field_map.insert(
                         "maximum".to_string(),
                         Value::Number(Number::from(
-                            atoi_simd::parse::<i64>(max.as_bytes()).unwrap(),
+                            atoi_simd::parse::<i64, false, false>(max.as_bytes()).unwrap(),
                         )),
                     );
                 }
@@ -391,7 +438,8 @@ pub fn infer_schema_from_stats(
                 // enum constraint
                 if let Some(values) = unique_values_map.get(&header_string) {
                     for value in values {
-                        let int_value = atoi_simd::parse::<i64>(value.as_bytes()).unwrap();
+                        let int_value =
+                            atoi_simd::parse::<i64, false, false>(value.as_bytes()).unwrap();
                         enum_list.push(Value::Number(Number::from(int_value)));
                     }
                 }
@@ -546,32 +594,49 @@ fn get_unique_values(
 ) -> CliResult<HashMap<String, Vec<String>>> {
     // prepare arg for invoking cmd::frequency
     let freq_args = crate::cmd::frequency::Args {
-        arg_input:            args.arg_input.clone(),
-        flag_select:          crate::select::SelectColumns::parse(column_select_arg).unwrap(),
-        flag_limit:           args.flag_enum_threshold as isize,
-        flag_unq_limit:       args.flag_enum_threshold as usize,
-        flag_lmt_threshold:   0,
-        flag_pct_dec_places:  -5,
-        flag_other_sorted:    false,
-        flag_other_text:      "Other".to_string(),
-        flag_asc:             false,
-        flag_no_nulls:        true,
-        flag_no_trim:         false,
-        flag_ignore_case:     args.flag_ignore_case,
+        arg_input: args.arg_input.clone(),
+        flag_select: crate::select::SelectColumns::parse(column_select_arg).unwrap(),
+        flag_limit: args.flag_enum_threshold as isize,
+        flag_unq_limit: args.flag_enum_threshold as usize,
+        flag_lmt_threshold: 0,
+        flag_rank_strategy: crate::cmd::frequency::RankStrategy::Min,
+        flag_pct_dec_places: -5,
+        flag_other_sorted: false,
+        flag_other_text: "Other".to_string(),
+        flag_no_other: false,
+        flag_null_sorted: false,
+        flag_asc: false,
+        flag_null_text: "(NULL)".to_string(),
+        flag_no_nulls: true,
+        flag_pct_nulls: false,
+        flag_no_trim: false,
+        flag_ignore_case: args.flag_ignore_case,
+        flag_no_float: None,
+        #[cfg(feature = "luau")]
+        flag_stats_filter: None,
         flag_all_unique_text: "<ALL UNIQUE>".to_string(),
-        flag_jobs:            Some(util::njobs(args.flag_jobs)),
-        flag_output:          None,
-        flag_no_headers:      args.flag_no_headers,
-        flag_delimiter:       args.flag_delimiter,
-        flag_memcheck:        args.flag_memcheck,
-        flag_vis_whitespace:  false,
+        flag_jobs: Some(util::njobs(args.flag_jobs)),
+        flag_output: None,
+        flag_no_headers: args.flag_no_headers,
+        flag_delimiter: args.flag_delimiter,
+        flag_memcheck: args.flag_memcheck,
+        flag_vis_whitespace: false,
+        flag_frequency_jsonl: false,
+        flag_high_card_threshold: 1000,
+        flag_high_card_pct: 90,
+        flag_force: false,
+        flag_json: false,
+        flag_pretty_json: false,
+        flag_no_stats: false,
+        flag_toon: false,
+        flag_weight: None,
     };
 
     let curr_mode = std::env::var("QSV_STATSCACHE_MODE");
     // safety: we are in single-threaded code.
     unsafe { std::env::set_var("QSV_STATSCACHE_MODE", "none") };
-    let (headers, ftables) = match freq_args.rconfig().indexed()? {
-        Some(ref mut idx) => freq_args.parallel_ftables(idx),
+    let (headers, ftables, _) = match freq_args.rconfig().indexed()? {
+        Some(idx) => freq_args.parallel_ftables(&idx),
         _ => freq_args.sequential_ftables(),
     }?;
     if let Ok(orig_mode) = curr_mode {
@@ -619,6 +684,91 @@ fn construct_map_of_unique_values(
     Ok(unique_values_map)
 }
 
+/// Check if a string is a valid email address using regex
+/// This uses a simplified email regex pattern that covers most common cases
+#[inline]
+fn is_email(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    // Email regex pattern: local-part@domain
+    // Local part: alphanumeric, dots, hyphens, underscores, plus signs
+    // Domain: alphanumeric, dots, hyphens
+    // This is a simplified pattern that covers most RFC 5322 compliant emails
+    let email_re: &'static Regex =
+        regex_oncelock!(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$");
+    email_re.is_match(value)
+}
+
+/// Check if a string is a valid hostname
+#[inline]
+fn is_hostname(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    hostname_validator::is_valid(value)
+}
+
+/// Check if a string is a valid IPv4 address
+#[inline]
+fn is_ipv4(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    std::net::Ipv4Addr::from_str(value).is_ok()
+}
+
+/// Check if a string is a valid IPv6 address
+#[inline]
+fn is_ipv6(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    std::net::Ipv6Addr::from_str(value).is_ok()
+}
+
+/// Infer format for a String field based on all unique values
+/// Returns the format string if all values match, None otherwise
+/// Checks formats in order: IPv6 → IPv4 → email → hostname (most specific first)
+fn infer_format_from_values(values: &[String]) -> Option<&'static str> {
+    if values.is_empty() {
+        return None;
+    }
+
+    // Filter out empty strings
+    let non_empty_values: Vec<&str> = values
+        .iter()
+        .map(std::string::String::as_str)
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if non_empty_values.is_empty() {
+        return None;
+    }
+
+    // Check IPv6 first (most specific)
+    if non_empty_values.iter().all(|v| is_ipv6(v)) {
+        return Some("ipv6");
+    }
+
+    // Check IPv4
+    if non_empty_values.iter().all(|v| is_ipv4(v)) {
+        return Some("ipv4");
+    }
+
+    // Check email
+    if non_empty_values.iter().all(|v| is_email(v)) {
+        return Some("email");
+    }
+
+    // Check hostname
+    if non_empty_values.iter().all(|v| is_hostname(v)) {
+        return Some("hostname");
+    }
+
+    None
+}
+
 /// convert byte slice to UTF8 String
 #[inline]
 fn convert_to_string(byte_slice: &[u8]) -> CliResult<String> {
@@ -652,7 +802,7 @@ fn generate_string_patterns(
 ) -> CliResult<HashMap<String, String>> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.flag_pattern_columns.clone());
 
     let mut rdr = rconfig.reader()?;

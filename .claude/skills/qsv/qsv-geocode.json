@@ -1,0 +1,160 @@
+{
+  "name": "qsv-geocode",
+  "version": "19.0.0",
+  "description": "Geocodes a location against an updatable local copy of the Geonames cities & the Maxmind GeoLite2 databases. With caching and multi-threading, it geocodes up to 360,000 records/sec!",
+  "category": "utility",
+  "command": {
+    "subcommand": "geocode",
+    "args": [
+      {
+        "name": "subcommand",
+        "type": "string",
+        "required": true,
+        "description": "Subcommand to execute. Valid values: countryinfo, countryinfonow, iplookup, iplookupnow, reverse, reversenow, suggest, suggestnow",
+        "enum": [
+          "countryinfo",
+          "countryinfonow",
+          "iplookup",
+          "iplookupnow",
+          "reverse",
+          "reversenow",
+          "suggest",
+          "suggestnow"
+        ]
+      },
+      {
+        "name": "column",
+        "type": "string",
+        "required": false,
+        "description": "The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in \"lat, long\" or \"(lat, long)\" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information."
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": "The input file to read from. If not specified, reads from stdin."
+      },
+      {
+        "name": "location",
+        "type": "string",
+        "required": false,
+        "description": "The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL."
+      },
+      {
+        "name": "index-file",
+        "type": "file",
+        "required": false,
+        "description": "The alternate geonames index file to use. It must be a .rkyv file. For convenience, if this is set to 500, 1000, 5000 or 15000, it will download the corresponding English-only Geonames index rkyv file from the qsv GitHub repo for the current qsv version and use it. Only used by the index-load subcommand."
+      }
+    ],
+    "options": [
+      {
+        "flag": "--admin1",
+        "type": "string",
+        "description": "The comma-delimited, case-insensitive list of admin1s to filter for."
+      },
+      {
+        "flag": "--batch",
+        "type": "string",
+        "description": "The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch.",
+        "default": "50000"
+      },
+      {
+        "flag": "--cache-dir",
+        "type": "string",
+        "description": "The directory to use for caching the Geonames cities index. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead.",
+        "default": "~/.qsv-cache"
+      },
+      {
+        "flag": "--cities-url",
+        "type": "string",
+        "description": "The URL to download the Geonames cities file from. There are several available at https://download.geonames.org/export/dump/. cities500.zip   - cities with populations > 500; ~200k cities, 56mb cities1000.zip  - population > 1000; ~140k cities, 44mb cities5000.zip  - population > 5000; ~53k cities, 21mb cities15000.zip - population > 15000; ~26k cities, 13mb Note that the more cities are included, the larger the local index file will be, lookup times will be slower, and the search results will be different. For convenience, if this is set to 500, 1000, 5000 or 15000, it will be converted to a geonames cities URL.",
+        "default": "https://download.geonames.org/export/dump/cities15000.zip"
+      },
+      {
+        "flag": "--country",
+        "type": "string",
+        "description": "The comma-delimited, case-insensitive list of countries to filter for. Country is specified as a ISO 3166-1 alpha-2 (two-letter) country code. https://en.wikipedia.org/wiki/ISO_3166-2"
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--force",
+        "type": "flag",
+        "description": "Force update the Geonames cities index. If not set, qsv will check if there are updates available at Geonames.org before updating the index."
+      },
+      {
+        "flag": "--formatstr",
+        "type": "string",
+        "description": "",
+        "default": "%+"
+      },
+      {
+        "flag": "--invalid-result",
+        "type": "string",
+        "description": "The string to return when the geocode result is empty/invalid. If not set, the original value is used."
+      },
+      {
+        "flag": "--k_weight",
+        "type": "string",
+        "description": "Use population-weighted distance for reverse subcommand. (i.e. nearest.distance - k * city.population) Larger values will favor more populated cities. If not set (default), the population is not used and the nearest city is returned."
+      },
+      {
+        "flag": "--language",
+        "type": "string",
+        "description": "The language to use when geocoding. The language is specified as a ISO 639-1 code. Note that the Geonames index must have been built with the specified language using the `index-update` subcommand with the --languages option. If the language is not available, the first language in the index is used.",
+        "default": "en"
+      },
+      {
+        "flag": "--languages",
+        "type": "string",
+        "description": "The comma-delimited, case-insensitive list of languages to use when building the Geonames cities index. The languages are specified as a comma-separated list of ISO 639-2 codes. See https://download.geonames.org/export/dump/iso-languagecodes.txt to look up codes and https://download.geonames.org/export/dump/alternatenames/ for the supported language files. 253 languages are currently supported.",
+        "default": "en"
+      },
+      {
+        "flag": "--min-score",
+        "type": "string",
+        "description": "The minimum Jaro-Winkler distance score.",
+        "default": "0.8"
+      },
+      {
+        "flag": "--new-column",
+        "type": "string",
+        "description": "Put the transformed values in a new column instead. Not valid when using the '%dyncols:' --formatstr option."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--rename",
+        "type": "string",
+        "description": "New name for the transformed column."
+      },
+      {
+        "flag": "--timeout",
+        "type": "string",
+        "description": "Timeout for downloading Geonames cities index.",
+        "default": "120"
+      }
+    ]
+  },
+  "hints": {
+    "indexed": true,
+    "memory": "constant"
+  },
+  "examples": [
+    {
+      "description": "For US locations, you can retrieve the us_state_fips_code and us_county_fips_code fields of a US City to help with Census data enrichment.",
+      "command": "qsv geocode suggest city_col --country US -f  \"%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}\" input_data.csv -o output_data_with_fips.csv"
+    },
+    {
+      "description": "For US locations, you can reverse geocode the us_state_fips_code and us_county_fips_code fields of a WGS 84 coordinate to help with Census data enrichment. The coordinate can be in \"lat, long\" or \"(lat, long)\" format.",
+      "command": "qsv geocode reverse wgs84_coordinate_col --country US -f  \"%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}\" input_data.csv -o output_data_with_fips.csv"
+    }
+  ]
+}

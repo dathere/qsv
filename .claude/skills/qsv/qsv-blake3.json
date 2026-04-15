@@ -1,0 +1,68 @@
+{
+  "name": "qsv-blake3",
+  "version": "19.0.0",
+  "description": "Compute or check BLAKE3 hashes of files.",
+  "category": "utility",
+  "command": {
+    "subcommand": "blake3",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--check",
+        "type": "flag",
+        "description": "Read blake3 sums from the input files and check them."
+      },
+      {
+        "flag": "--derive-key",
+        "type": "string",
+        "description": "Use the key derivation mode, with the given context string. Cannot be used with --keyed."
+      },
+      {
+        "flag": "--keyed",
+        "type": "flag",
+        "description": "Use the keyed mode, reading the 32-byte key from stdin. When using --keyed, file arguments are required (cannot also read data from stdin)."
+      },
+      {
+        "flag": "--length",
+        "type": "string",
+        "description": "The number of output bytes, before hex encoding.",
+        "default": "32"
+      },
+      {
+        "flag": "--no-mmap",
+        "type": "flag",
+        "description": "Disable memory mapping. Also disables multithreading."
+      },
+      {
+        "flag": "--no-names",
+        "type": "flag",
+        "description": "Omit filenames in the output."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--raw",
+        "type": "flag",
+        "description": "Write raw output bytes to stdout, rather than hex. Only a single input is allowed. --no-names is implied."
+      },
+      {
+        "flag": "--tag",
+        "type": "flag",
+        "description": "Output checksums in tagged format."
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  }
+}

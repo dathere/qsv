@@ -1,0 +1,44 @@
+{
+  "name": "qsv-jsonl",
+  "version": "19.0.0",
+  "description": "Convert newline-delimited JSON (JSONL/NDJSON) to CSV. See `tojsonl` command to convert CSV to JSONL.",
+  "category": "conversion",
+  "command": {
+    "subcommand": "jsonl",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--batch",
+        "type": "string",
+        "description": "The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch.",
+        "default": "50000"
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The delimiter to use when writing CSV data. Must be a single character.",
+        "default": ","
+      },
+      {
+        "flag": "--ignore-errors",
+        "type": "flag",
+        "description": "Skip malformed input lines."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  }
+}

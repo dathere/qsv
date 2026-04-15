@@ -3,8 +3,8 @@ name: Linux - musl
 on:
   # push:
   #   branches: [ master ]
-  # pull_request:
-  #   branches: [ master ]
+  pull_request:
+    branches: [ master ]
   workflow_dispatch:
 
 concurrency:
@@ -16,45 +16,35 @@ env:
 
 jobs:
   build:
+    # Skip CI for MCP-only commits (commit message contains "(mcp):")
+    if: |
+      github.event_name != 'push' ||
+      !contains(github.event.head_commit.message, '(mcp):')
 
     runs-on: ubuntu-latest
 
     steps:
-    - name: Maximize build space
-      uses: easimon/maximize-build-space@master
-      with:
-        swap-size-mb: 4096
-        remove-dotnet: 'true'
-        remove-android: 'true'
-        remove-haskell: 'true'
-        remove-docker-images: 'true'
     - name: apt-get update Ubuntu
       run: |
         sudo apt-get update
     - name: build prep for x86_64-unknown-linux-musl
       run: |
         sudo apt-get install musl-tools musl-dev
-        sudo ln -s /usr/bin/g++ /usr/bin/musl-g++          
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5.6.0
-      with:
-        python-version: '3.12'
-    - name: Install and Run Redis
-      run: |
-        sudo apt-get install redis-server
-        sudo service redis-server start
+        sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
+        sudo apt-get autoremove --purge
+        sudo apt-get autoclean
+        sudo apt-get clean
+    - uses: actions/checkout@v6
     - name: Installing Rust toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@master
       with:
         toolchain: stable
-        profile: minimal
-        target: x86_64-unknown-linux-musl
-        override: true        
+        targets: x86_64-unknown-linux-musl
     - name: Setup Rust-cache
       uses: Swatinem/rust-cache@v2
       with:
         key: qsv-x86_64-unknown-linux-musl-cache
     - name: Run tests
-      env:
-        RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
-      run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,polars,to,feature_capable,lens
+      # env:
+      #   RUSTFLAGS: -C target-cpu=native
+      run: cargo test --no-default-features --target x86_64-unknown-linux-musl --verbose --locked --features=lite

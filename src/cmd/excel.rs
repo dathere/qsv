@@ -4,72 +4,68 @@ The first non-empty row of a sheet is assumed to be the header row.
 
 Examples:
 
-Export the first sheet of an Excel file to a CSV file:
-    qsv excel input.xlsx > output.csv
-    qsv excel input.xlsx --output output.csv
+# Export the first sheet of an Excel file to a CSV file:
+qsv excel input.xlsx --output output.csv
 
-Export the first sheet of an ODS file to a CSV file:
-    qsv excel input.ods > output.csv
-    qsv excel input.ods -o output.csv
+# Export the first sheet of an ODS file to a CSV file:
+qsv excel input.ods -o output.csv
 
-Export the first sheet of an Excel file to a CSV file with different delimiters:
-    # semicolon
-    qsv excel input.xlsx -d ";" > output.csv
-    # tab
-    qsv excel input.xlsx -d "\t" > output.tsv
+# Export the first sheet of an Excel file to a CSV file with a custom delimiter:
+qsv excel input.xlsx -d ";" > output.csv
 
-Export a sheet by name (case-insensitive):
-    qsv excel --sheet "Sheet 3" input.xlsx
+# Export a sheet by name (case-insensitive):
+qsv excel --sheet "Sheet 3" input.xlsx
 
-Export a sheet by index:
-    # this exports the 3nd sheet (0-based index)
-    qsv excel -s 2 input.xlsx
+# Export a sheet by index:
+# this exports the 3nd sheet (0-based index)
+qsv excel -s 2 input.xlsx
 
-Export the last sheet (negative index)):
-    qsv excel -s -1 input.xlsx
+# Export the last sheet (negative index)):
+qsv excel -s -1 input.xlsx
 
-Export the second to last sheet:
-    qsv excel -s -2 input.xls
+# Export the second to last sheet:
+qsv excel -s -2 input.xls
 
-Export a table named "Table1" in an XLSX file. Note that --sheet is not required
-as the table definition includes the sheet.
-    qsv excel --table "Table1" input.xlsx
+# Export a table named "Table1" in an XLSX file. Note that --sheet is not required
+# as the table definition includes the sheet.
+qsv excel --table "Table1" input.xlsx
 
-Export a range of cells in the first sheet:
-    qsv excel --range C3:T25 input.xlsx
+# Export a range of cells in the first sheet:
+qsv excel --range C3:T25 input.xlsx
 
-Export a named range in the workbook. Note that --sheet is not required
-as named ranges include the sheet.
-    qsv excel --range MyRange input.xlsx
+# Export a named range in the workbook. Note that --sheet is not required
+# as named ranges include the sheet.
+qsv excel --range MyRange input.xlsx
 
-Export a range of cells in the second sheet:
-    qsv excel --range C3:T25 -s 1 input.xlsx
+# Export a range of cells in the second sheet:
+qsv excel --range C3:T25 -s 1 input.xlsx
 
-Export a range of cells in a sheet by name.
-Note the range name must be enclosed in single quotes in certain shells
-as it may contain special characters like ! and $:
-    qsv excel --range 'Sheet2!C3:T25' input.xlsx
-    qsv excel --range 'Sheet2!$C$3:$T$25' input.xlsx
+# Export a range of cells in a sheet by name.
+# Note the range name must be enclosed in single quotes in certain shells
+# as it may contain special characters like ! and $:
+qsv excel --range 'Sheet2!C3:T25' input.xlsx
 
-Export metadata for all sheets in CSV format:
-    qsv excel --metadata csv input.xlsx
-    qsv excel --metadata c input.xlsx
-    # short CSV mode is much faster, but doesn't contain as much metadata
-    qsv excel --metadata short input.xlsx
-    qsv excel --metadata s input.xlsx
+# Export the cell C3 in the first sheet:
+qsv excel --cell C3 input.xlsx
 
-Export metadata for all sheets in JSON format:
-    qsv excel --metadata json input.xlsx
-    qsv excel --metadata j input.xlsx
-    # pretty-printed JSON - first letter is capital J
-    qsv excel --metadata J input.xlsx
-    # short, minified JSON mode - first letter is capital S
-    qsv excel --metadata Short input.xlsx
-    qsv excel --metadata S input.xlsx
+# Export a single cell from a specific sheet:
+qsv excel --cell 'Sheet2!C3' input.xlsx
 
-Prompt for spreadsheets to export and then prompt where to save the CSV:
-    qsv prompt -d ~/Documents -m 'Select a spreadsheet to export to CSV' -F xlsx,xls,ods | \
-     qsv excel - | qsv prompt -m 'Save exported CSV to...' --fd-output
+# Export metadata for all sheets in CSV format:
+qsv excel --metadata csv input.xlsx
+
+# Export metadata in short CSV mode which is much faster
+# but doesn't contain as much metadata
+qsv excel --metadata short input.xlsx
+
+# Export metadata for all sheets in JSON format:
+qsv excel --metadata json input.xlsx
+
+# Export metadata to pretty-printed JSON - first letter is capital J
+qsv excel --metadata JSON input.xlsx
+
+# Export metadata in short, minified JSON mode - first letter is capital S
+qsv excel --metadata Short input.xlsx
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_excel.rs.
 
@@ -83,7 +79,7 @@ Excel argument:
 
 Excel options:
     -s, --sheet <name/index>   Name (case-insensitive) or zero-based index of sheet to export.
-                               Negative indices start from the end (-1 = last sheet). 
+                               Negative indices start from the end (-1 = last sheet).
                                If the sheet cannot be found, qsv will read the first sheet.
                                [default: 0]
     --header-row <row>         The header row. Set if other than the first non-empty row of the sheet.
@@ -100,14 +96,14 @@ Excel options:
                                duplicate_headers_count is a count of duplicate header names.
                                names is a list of defined names in the workbook, with the associated formula.
                                name_count is the number of defined names in the workbook.
-                               tables is a list of tables in the workbook, along with the sheet where 
+                               tables is a list of tables in the workbook, along with the sheet where
                                 the table is found, the columns and the column_count.  (XLSX only)
                                table_count is the number of tables in the workbook.  (XLSX only)
 
                                In CSV(c) mode, the output is in CSV format.
                                In short(s) CSV mode, the output is in CSV format with only the
                                 index, sheet_name, type and visible fields.
-                               
+
                                In JSON(j) mode, the output is minified JSON.
                                In Pretty JSON(J) mode, the output is pretty-printed JSON.
                                In Short(S) JSON mode, the output is minified JSON with only the
@@ -116,7 +112,7 @@ Excel options:
                                 and the number of sheets are also included.
                                If metadata retrieval performance is a concern, use the short modes
                                as they return instantaneously as they don't need to process the sheet data.
-                               
+
                                If this option is used, all other Excel options are ignored.
                                [default: none]
 
@@ -127,14 +123,17 @@ Excel options:
                                extract to the CSV. If the specified range contains the required sheet,
                                the --sheet option is ignored.
                                If the range is not found, qsv will exit with an error.
+    --cell <cell>              A single cell reference - like C3 or 'Sheet1!C3' to extract.
+                               This is a convenience option equivalent to --range C3:C3.
+                               If both --cell and --range are specified, --cell takes precedence.
 
     --error-format <format>    The format to use when formatting error cells.
                                There are 3 formats:
-                                 - "code": return the error code.
+                                 * "code": return the error code.
                                     (#DIV/0!; #N/A; #NAME?; #NULL!; #NUM!; #REF!; #VALUE!; #DATA!)
-                                 - "formula": return the formula, prefixed with '#'.
+                                 * "formula": return the formula, prefixed with '#'.
                                     (e.g. #=A1/B1 where B1 is 0; #=100/0)
-                                 - "both": return both error code and the formula.
+                                 * "both": return both error code and the formula.
                                     (e.g. #DIV/0!: =A1/B1)
                                [default: code]
     --flexible                 Continue even if the number of columns is different from row to row.
@@ -184,6 +183,7 @@ struct Args {
     flag_error_format:   String,
     flag_table:          Option<String>,
     flag_range:          Option<String>,
+    flag_cell:           Option<String>,
     flag_flexible:       bool,
     flag_trim:           bool,
     flag_output:         Option<String>,
@@ -403,7 +403,23 @@ fn get_requested_range(
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
-    let args: Args = util::get_args(USAGE, argv)?;
+    let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // Convert --cell to --range format if --cell is specified
+    if let Some(ref cell_ref) = args.flag_cell {
+        // If both --cell and --range are specified, --cell takes precedence
+        let range_str = if cell_ref.contains('!') {
+            // Sheet-qualified cell reference: Sheet2!C3 -> Sheet2!C3:C3
+            format!(
+                "{cell_ref}:{}",
+                cell_ref.split('!').next_back().unwrap_or(cell_ref)
+            )
+        } else {
+            // Simple cell reference: C3 -> C3:C3
+            format!("{cell_ref}:{cell_ref}")
+        };
+        args.flag_range = Some(range_str);
+    }
 
     // accept spreadsheets from stdin
     let tmpdir = tempfile::tempdir()?;
@@ -566,10 +582,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     let mut safenames_vec: Vec<String> = Vec::with_capacity(column_count);
                     let mut unsafenames_vec: Vec<String> = Vec::new();
                     let mut dupe_count = 0_usize;
-                    let mut header_vec: Vec<String> = Vec::with_capacity(column_count);
-
-                    if let Some(first_row) = sheet_rows.next() {
-                        header_vec = first_row
+                    let header_vec: Vec<String> = if let Some(first_row) = sheet_rows.next() {
+                        first_row
                             .iter()
                             .map(|h| {
                                 let header = h.to_string();
@@ -591,8 +605,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                                 header
                             })
-                            .collect();
-                    }
+                            .collect()
+                    } else {
+                        Vec::with_capacity(column_count)
+                    };
 
                     (
                         header_vec,
@@ -683,13 +699,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 wtr.flush()?;
             },
             MetadataMode::Json => {
-                let Ok(json_result) = serde_json::to_string(&excelmetadata_struct) else {
+                let Ok(json_result) = simd_json::to_string(&excelmetadata_struct) else {
                     return fail!("Cannot create JSON");
                 };
                 println!("{json_result}");
             },
             MetadataMode::PrettyJSON => {
-                let Ok(json_result) = serde_json::to_string_pretty(&excelmetadata_struct) else {
+                let Ok(json_result) = simd_json::to_string_pretty(&excelmetadata_struct) else {
                     return fail!("Cannot create pretty JSON");
                 };
                 println!("{json_result}");
@@ -711,7 +727,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     };
                     short_excelmetadata_struct.sheet.push(short_sheetmetadata);
                 }
-                let Ok(json_result) = serde_json::to_string(&short_excelmetadata_struct) else {
+                let Ok(json_result) = simd_json::to_string(&short_excelmetadata_struct) else {
                     return fail!("Cannot create short JSON");
                 };
                 println!("{json_result}");
@@ -763,7 +779,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_sheet
     } else {
         // otherwise, if --sheet is a number, its a zero-based index, fetch it
-        if let Ok(sheet_index) = atoi_simd::parse::<i32>(args.flag_sheet.as_bytes()) {
+        if let Ok(sheet_index) = atoi_simd::parse::<i32, false, false>(args.flag_sheet.as_bytes()) {
             if sheet_index >= 0 {
                 if let Some(sheet_name) = sheet_names.get(sheet_index as usize) {
                     sheet_name.to_string()
@@ -942,8 +958,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     // amortize allocations
-    let mut record = csv::StringRecord::with_capacity(500, col_count);
-    let mut trimmed_record = csv::StringRecord::with_capacity(500, col_count);
+    let mut record = csv::StringRecord::with_capacity(512, col_count);
 
     // get headers
     info!("exporting sheet ({sheet})...");
@@ -961,6 +976,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     if trim {
         record.trim();
+        let mut trimmed_record = csv::StringRecord::with_capacity(512, col_count);
         record.iter().for_each(|field| {
             if field.contains('\n') {
                 trimmed_record.push_field(&field.replace('\n', " "));
@@ -985,11 +1001,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut rows: Vec<(u32, &[Data])> = Vec::with_capacity(row_count);
 
     // we add 1 as we already processed the header row
-    let mut row_idx = range_start.0 + 1;
     // queue rest of the rows for processing as data rows
-    for row in rows_iter {
+    for (row_idx, row) in (range_start.0 + 1..).zip(rows_iter) {
         rows.push((row_idx, row));
-        row_idx += 1;
     }
 
     let njobs = util::njobs(args.flag_jobs);
@@ -1003,48 +1017,46 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     rows.par_chunks(chunk_size)
         .map(|chunk| {
             // amortize allocations
-            let mut record = csv::StringRecord::with_capacity(500, col_count);
+            let mut record = csv::StringRecord::with_capacity(512, col_count);
             let mut trimmed_record = if trim {
-                csv::StringRecord::with_capacity(500, col_count)
+                csv::StringRecord::with_capacity(512, col_count)
             } else {
                 csv::StringRecord::new()
             };
-            let mut float_val;
+
             let mut work_date;
             let mut error_buffer = String::new();
             let mut formatted_date = String::new();
 
             let mut processed_chunk: Vec<csv::StringRecord> = Vec::with_capacity(chunk_size);
-            let mut col_idx = 0_u32;
 
             let mut cell_formula;
             let mut itoa_buf = itoa::Buffer::new();
-            let mut ryu_buf = ryu::Buffer::new();
+            let mut zmij_buf = zmij::Buffer::new();
 
             for (row_idx, row) in chunk {
-                for cell in *row {
-                    match *cell {
+                for (col_idx, cell) in row.iter().enumerate() {
+                    match cell {
                         Data::Empty => record.push_field(""),
-                        Data::String(ref s) => record.push_field(s),
-                        Data::Int(ref i) => record.push_field(itoa_buf.format(*i)),
-                        Data::Float(ref f) => {
-                            float_val = *f;
-                            // push the ryu-formatted float value if its
+                        Data::String(s) => record.push_field(s),
+                        Data::Int(i) => record.push_field(itoa_buf.format(*i)),
+                        Data::Float(float_val) => {
+                            // push the zmij-formatted float value if its
                             // not an integer or the candidate
                             // integer is too big or too small to be an i64
                             #[allow(clippy::cast_precision_loss)]
                             if float_val.fract().abs() > f64::EPSILON
-                                || float_val > i64::MAX as f64
-                                || float_val < i64::MIN as f64
+                                || *float_val > i64::MAX as f64
+                                || *float_val < i64::MIN as f64
                             {
-                                record.push_field(ryu_buf.format_finite(float_val));
+                                record.push_field(zmij_buf.format_finite(*float_val));
                             } else {
-                                // its an i64 integer. We can't use ryu to format it, because it
+                                // its an i64 integer. We can't use zmij to format it, because it
                                 // will be formatted as a float (have a ".0"). So we use itoa.
-                                record.push_field(itoa_buf.format(float_val as i64));
+                                record.push_field(itoa_buf.format(*float_val as i64));
                             }
                         },
-                        Data::DateTime(ref edt) => {
+                        Data::DateTime(edt) => {
                             if edt.is_datetime() {
                                 if let Some(dt) = edt.as_datetime() {
                                     if no_date_format {
@@ -1088,12 +1100,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                             record.push_field(&work_date);
                         },
-                        Data::Bool(ref b) => {
+                        Data::Bool(b) => {
                             record.push_field(if *b { "true" } else { "false" });
                         },
-                        Data::DateTimeIso(ref dt) => record.push_field(dt),
-                        Data::DurationIso(ref d) => record.push_field(d),
-                        Data::Error(ref e) => {
+                        Data::DateTimeIso(dt) => record.push_field(dt),
+                        Data::DurationIso(d) => record.push_field(d),
+                        Data::Error(e) => {
                             // safety: the unwraps in this block are safe because the format strings
                             // are hardcoded and are guaranteed to be correct
                             error_buffer.clear();
@@ -1101,7 +1113,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 write!(error_buffer, "{e}").unwrap();
                             } else {
                                 cell_formula = sheet_formulas
-                                    .get_value((*row_idx, col_idx))
+                                    .get_value((*row_idx, col_idx as u32))
                                     .unwrap_or(&formula_get_value_error);
                                 if error_format == ErrorFormat::Formula {
                                     write!(error_buffer, "#={cell_formula}").unwrap();
@@ -1113,7 +1125,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             record.push_field(error_buffer.as_str());
                         },
                     }
-                    col_idx += 1;
                 }
 
                 if trim {

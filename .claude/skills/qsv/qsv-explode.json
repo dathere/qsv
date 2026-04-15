@@ -1,0 +1,54 @@
+{
+  "name": "qsv-explode",
+  "version": "19.0.0",
+  "description": "Explode rows into multiple ones by splitting a column value based on the given separator.",
+  "category": "utility",
+  "command": {
+    "subcommand": "explode",
+    "args": [
+      {
+        "name": "column",
+        "type": "string",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "separator",
+        "type": "string",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--rename",
+        "type": "string",
+        "description": "New name for the exploded column."
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  }
+}

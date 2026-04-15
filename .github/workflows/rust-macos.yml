@@ -16,29 +16,28 @@ env:
 
 jobs:
   build:
+    # Skip CI for MCP-only commits (commit message contains "(mcp):")
+    if: |
+      github.event_name != 'push' ||
+      !contains(github.event.head_commit.message, '(mcp):')
 
-    runs-on: self-hosted
-    # runs-on: macos-latest
+    # runs-on: self-hosted
+    runs-on: macos-26
 
     steps:
-    - uses: actions/checkout@v4
-    # - uses: actions/setup-python@v5.0.0
-    #   with:
-    #     python-version: '3.12'
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6.2.0
+      with:
+        python-version: '3.13'
     - name: Installing Rust toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@master
       with:
         toolchain: stable
-        profile: minimal
-        target: x86_64-apple-darwin
-        override: true
-    # - name: Setup Rust-cache
-    #   uses: Swatinem/rust-cache@v2
-    #   with:
-    #     key: qsv-macoslatestcache
-    #     # To only cache runs from `master`:
-    #     save-if: ${{ github.ref == 'refs/heads/master' }}
+    - name: Setup Rust-cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: qsv-macoslatestcache
+    - name: Remove cargo config from GH runner image which has target-cpu=native set
+      run: rm -f .cargo/config.toml
     - name: Run tests
-      env:
-        RUSTFLAGS: -C target-cpu=native
-      run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,polars,to,feature_capable,lens
+      run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,polars,to,feature_capable,ui

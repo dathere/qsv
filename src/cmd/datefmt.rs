@@ -11,33 +11,27 @@ Defaults to ISO 8601/RFC 3339 format when --formatstr is not specified.
 ( "%Y-%m-%dT%H:%M:%S%z" - e.g. 2001-07-08T00:34:60.026490+09:30 )
 
 Examples:
-Format dates in Open Date column to ISO 8601/RFC 3339 format:
 
-  $ qsv datefmt 'Open Date' file.csv
+  # Format dates in Open Date column to ISO 8601/RFC 3339 format:
+  qsv datefmt 'Open Date' file.csv
 
-Format multiple date columns in file.csv to ISO 8601/RFC 3339 format:
+  # Format multiple date columns in file.csv to ISO 8601/RFC 3339 format:
+  qsv datefmt 'Open Date,Modified Date,Closed Date' file.csv
 
-  $ qsv datefmt 'Open Date,Modified Date,Closed Date' file.csv
+  # Format all columns that end with "_date" case-insensitive in file.csv to ISO 8601/RFC 3339 format:
+  qsv datefmt '/(?i)_date$/' file.csv
 
-Format all columns that end with "_date" case-insensitive in file.csv to ISO 8601/RFC 3339 format:
+  # Format dates in OpenDate column using '%Y-%m-%d' format:
+  qsv datefmt OpenDate --formatstr '%Y-%m-%d' file.csv
 
-  $ qsv datefmt '/(?i)_date$/' file.csv
+  # Format multiple date columns using '%Y-%m-%d' format:
+  qsv datefmt OpenDate,CloseDate,ReopenDate --formatstr '%Y-%m-%d' file.csv
 
-Format dates in OpenDate column using '%Y-%m-%d' format:
+  # Get the week number for OpenDate and store it in the week_number column:
+  qsv datefmt OpenDate --formatstr '%V' --new-column week_number file.csv
 
-  $ qsv datefmt OpenDate --formatstr '%Y-%m-%d' file.csv
-
-Format multiple date columns using '%Y-%m-%d' format:
-
-  $ qsv datefmt OpenDate,CloseDate,ReopenDate --formatstr '%Y-%m-%d' file.csv
-
-Get the week number for OpenDate and store it in the week_number column:
-
-  $ qsv datefmt OpenDate --formatstr '%V' --new-column week_number file.csv
-
-Get the day of the week for several date columns and store it in the corresponding weekday columns:
-
-  $ qsv datefmt OpenDate,CloseDate --formatstr '%u' --rename Open_weekday,Close_weekday file.csv
+  # Get the day of the week for several date columns and store it in the corresponding weekday columns:
+  qsv datefmt OpenDate,CloseDate --formatstr '%u' --rename Open_weekday,Close_weekday file.csv
 
 For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs.
 
@@ -170,7 +164,7 @@ impl FromStr for TimestampResolution {
 
 #[inline]
 fn unix_timestamp(input: &str, resolution: TimestampResolution) -> Option<DateTime<Utc>> {
-    let Ok(ts_input_val) = atoi_simd::parse::<i64>(input.as_bytes()) else {
+    let Ok(ts_input_val) = atoi_simd::parse::<i64, false, false>(input.as_bytes()) else {
         return None;
     };
 
@@ -198,7 +192,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.arg_column);
 
     let mut rdr = rconfig.reader()?;
@@ -266,7 +260,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let default_tz = match args.flag_default_tz.as_deref() {
         Some(tz) => {
             if tz.eq_ignore_ascii_case("local") {
-                if let Some(tz) = localzone::get_local_zone() {
+                if let Ok(tz) = iana_time_zone::get_timezone() {
                     log::info!("default-tz local timezone: {tz}");
                     tz.parse::<Tz>()?
                 } else {
@@ -284,7 +278,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Ok(tz) => tz,
         _ => {
             if args.flag_input_tz.eq_ignore_ascii_case("local") {
-                if let Some(tz) = localzone::get_local_zone() {
+                if let Ok(tz) = iana_time_zone::get_timezone() {
                     log::info!("input-tz local timezone: {tz}");
                     tz.parse::<Tz>()?
                 } else {
@@ -300,7 +294,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Ok(tz) => tz,
         _ => {
             if args.flag_output_tz.eq_ignore_ascii_case("local") {
-                if let Some(tz) = localzone::get_local_zone() {
+                if let Ok(tz) = iana_time_zone::get_timezone() {
                     log::info!("output-tz local timezone: {tz}");
                     tz.parse::<Tz>()?
                 } else {

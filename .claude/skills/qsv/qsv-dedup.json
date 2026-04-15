@@ -1,0 +1,98 @@
+{
+  "name": "qsv-dedup",
+  "version": "19.0.0",
+  "description": "Remove duplicate rows (See also `extdedup`, `extsort`, `sort` & `sortcheck` commands).",
+  "category": "utility",
+  "command": {
+    "subcommand": "dedup",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--dupes-output",
+        "type": "string",
+        "description": "Write duplicates to <file>."
+      },
+      {
+        "flag": "--human-readable",
+        "type": "flag",
+        "description": "Comma separate duplicate count."
+      },
+      {
+        "flag": "--ignore-case",
+        "type": "flag",
+        "description": "Compare strings disregarding case."
+      },
+      {
+        "flag": "--memcheck",
+        "type": "flag",
+        "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. That is, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
+      },
+      {
+        "flag": "--numeric",
+        "type": "flag",
+        "description": "Compare according to string numerical value"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select a subset of columns to dedup. Note that the outputs will remain at the full width of the CSV. See 'qsv select --help' for the format details."
+      },
+      {
+        "flag": "--sorted",
+        "type": "flag",
+        "description": "The input is already sorted. Do not load the CSV into memory to sort it first. Meant to be used in tandem and after an extsort."
+      }
+    ]
+  },
+  "hints": {
+    "memory": "full"
+  },
+  "examples": [
+    {
+      "description": "Deduplicate an unsorted CSV file:",
+      "command": "qsv dedup unsorted.csv -o deduped.csv"
+    },
+    {
+      "description": "Deduplicate a sorted CSV file:",
+      "command": "qsv sort unsorted.csv | qsv dedup --sorted -o deduped.csv"
+    },
+    {
+      "description": "Deduplicate based on specific columns:",
+      "command": "qsv dedup --select col1,col2 unsorted.csv -o deduped.csv"
+    },
+    {
+      "description": "Deduplicate based on numeric comparison of col1 and col2 columns:",
+      "command": "qsv dedup -s col1,col2 --numeric unsorted.csv -o deduped.csv"
+    },
+    {
+      "description": "Deduplicate ignoring case of col1 and col2 columns:",
+      "command": "qsv dedup -s col1,col2 --ignore-case unsorted.csv -o deduped.csv"
+    },
+    {
+      "description": "Write duplicates to a separate file:",
+      "command": "qsv dedup -s col1,col2 --dupes-output dupes.csv unsorted.csv -o deduped.csv"
+    }
+  ]
+}

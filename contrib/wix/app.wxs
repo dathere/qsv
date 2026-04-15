@@ -216,8 +216,10 @@
           dialog, or screen. See the WiX Toolset documentation for details about
           customization.
           The dialog BMP dimensions are 493 x 312 pixels.
+          Removed qsv-splash-screen.bmp to reduce repo size.
+          To restore a custom splash, add a 493x312 BMP here and uncomment the line below.
         -->
-        <WixVariable Id='WixUIDialogBmp' Value='contrib\wix\qsv-splash-screen.bmp'/>
+        <!-- <WixVariable Id='WixUIDialogBmp' Value='contrib\wix\qsv-splash-screen.bmp'/> -->
 
     </Product>
 

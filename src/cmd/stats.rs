@@ -7,29 +7,40 @@ Compute summary statistics & infers data types for each column in a CSV.
 > All these optimizations are GUARANTEED to work with well-formed CSVs.
 > If you encounter problems generating stats, use `qsv validate` FIRST to confirm the CSV is valid.
 
+> For MAXIMUM PERFORMANCE, create an index for the CSV first with 'qsv index' to enable multithreading,
+> or set --cache-threshold option or set the QSV_AUTOINDEX_SIZE environment variable to automatically
+> create an index when the file size is greater than the specified size (in bytes).
+
 Summary stats include sum, min/max/range, sort order/sortiness, min/max/sum/avg/stddev/variance/cv length,
 mean, standard error of the mean (SEM), geometric mean, harmonic mean, stddev, variance, coefficient of
-variation (CV), nullcount, max_precision, sparsity, Median Absolute Deviation (MAD), quartiles,
-interquartile range (IQR), lower/upper fences, skewness, median, cardinality/uniqueness ratio,
-mode/s & "antimode/s" & percentiles.
+variation (CV), nullcount, n_negative, n_zero, n_positive, max_precision, sparsity,
+Median Absolute Deviation (MAD), quartiles, lower/upper inner/outer fences, skewness, median,
+cardinality/uniqueness ratio, mode/s & "antimode/s" & percentiles.
 
-Note that some stats require loading the entire file into memory, so they must be enabled explicitly. 
+Note that some stats require loading the entire file into memory, so they must be enabled explicitly.
 
 By default, the following "streaming" statistics are reported for *every* column:
-  sum, min/max/range values, sort order/sortiness, min/max/sum/avg/stddev/variance/cv length, mean, sem,
-  geometric_mean, harmonic_mean,stddev, variance, cv, nullcount, max_precision & sparsity.
+  sum, min/max/range values, sort order/"sortiness", min/max/sum/avg/stddev/variance/cv length, mean, sem,
+  geometric_mean, harmonic_mean,stddev, variance, cv, nullcount, n_negative, n_zero, n_positive,
+  max_precision & sparsity.
 
 The default set of statistics corresponds to ones that can be computed efficiently on a stream of data
 (i.e., constant memory) and works with arbitrarily large CSVs.
 
-The following additional "non-streaming" statistics require loading the entire file into memory:
+The following additional "non-streaming, advanced" statistics require loading the entire file into memory:
 cardinality/uniqueness ratio, modes/antimodes, median, MAD, quartiles and its related measures
 (q1, q2, q3, IQR, lower/upper fences & skewness) and percentiles.
 
-When computing "non-streaming" statistics, an Out-Of-Memory (OOM) heuristic check is done.
-If the file is larger than the available memory minus a headroom buffer of 20% (which can be
-adjusted using the QSV_FREEMEMORY_HEADROOM_PCT environment variable), processing will be
-preemptively prevented.
+When computing "non-streaming" statistics, a memory-aware chunking algorithm is used to dynamically
+calculate chunk size based on available memory & record sampling. This SHOULD help process arbitrarily
+large "real-world" files by creating smaller chunks that fit in available memory.
+However, there is still a chance that the command will run out of memory if the cardinality of
+several columns is very high.
+
+Chunk size is dynamically calculated based on the number of logical CPUs detected.
+You can override this behavior by setting the QSV_STATS_CHUNK_MEMORY_MB environment variable
+(set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk,
+or -1 for CPU-based chunking (1 chunk = records/number of CPUs)).
 
 "Antimode" is the least frequently occurring non-zero value and is the opposite of mode.
 It returns "*ALL" if all the values are unique, and only returns a preview of the first
@@ -48,17 +59,16 @@ For String data types, it also determines if the column is all ASCII characters.
 Unlike the sniff command, stats' data type inferences are GUARANTEED, as the entire file
 is scanned, and not just sampled.
 
-Note that the Date and DateTime data types are only inferred with the --infer-dates option 
+Note that the Date and DateTime data types are only inferred with the --infer-dates option
 as its an expensive operation to match a date candidate against 19 possible date formats,
 with each format, having several variants.
 
-The date formats recognized and its sub-variants along with examples can be found at 
+The date formats recognized and its sub-variants along with examples can be found at
 https://github.com/dathere/qsv-dateparser?tab=readme-ov-file#accepted-date-formats.
 
 Computing statistics on a large file can be made MUCH faster if you create an index for it
-first with 'qsv index' to enable multithreading. With an index, the file is split into equal
-chunks and each chunk is processed in parallel. The number of chunks is determined by the
-number of logical CPUs detected. You can override this by setting the --jobs option.
+first with 'qsv index' to enable multithreading. With an index, the file is split into chunks
+and each chunk is processed in parallel.
 
 As stats is a central command in qsv, and can be expensive to compute, `stats` caches results
 in <FILESTEM>.stats.csv & if the --stats-json option is used, <FILESTEM>.stats.csv.data.jsonl
@@ -71,61 +81,62 @@ hasn't changed, the stats will be loaded from the cache instead of recomputing i
 These cached stats are also used by other qsv commands (currently `describegpt`, `frequency`,
 `joinp`, `pivotp`, `schema`, `sqlp` & `tojsonl`) to work smarter & faster.
 If the cached stats are not current (i.e., the input file is newer than the cached stats),
-the cached stats will be ignored and recomputed. For example, see the "boston311" test files in 
-https://github.com/dathere/qsv/blob/4529d51273218347fef6aca15ac24e22b85b2ec4/tests/test_stats.rs#L608.
+the cached stats will be ignored and recomputed.
 
 Examples:
 
-Compute "streaming" statistics for the "nyc311.csv" file:
-   $ qsv stats nyc311.csv
+  # Compute "streaming" statistics for "nyc311.csv"
+  qsv stats nyc311.csv
 
-Compute all statistics for the "nyc311.csv" file:
-    $ qsv stats --everything nyc311.csv
-    $ qsv stats -E nyc311.csv
+  # Compute all statistics for "nyc311.csv"
+  qsv stats --everything nyc311.csv
 
-Compute all statistics for "nyc311.csv", inferring dates using default date column name patterns:
-    $ qsv stats -E --infer-dates nyc311.csv
+  # Compute all statistics for "nyc311.tsv" (Tab-separated)
+  qsv stats -E nyc311.tsv
 
-Compute all statistics for "nyc311.csv", inferring dates only for columns with "_date" & "_dte"
-in the column names:
-    $ qsv stats -E --infer-dates --dates-whitelist _date,_dte nyc311.csv
+  # Compute all stats for "nyc311.tsv", inferring dates using sniff to auto-detect date columns
+  qsv stats -E --infer-dates nyc311.tsv
 
-In addition, also infer boolean data types for "nyc311.csv" file:
-    $ qsv stats -E --infer-dates --dates-whitelist _date --infer-boolean nyc311.csv
+  # Compute all stats for "nyc311.tab", inferring dates only for columns
+  #  with "_date" & "_dte" in the column names
+  qsv stats -E --infer-dates --dates-whitelist _date,_dte nyc311.tab
 
-In addition to basic "streaming" stats, also compute cardinality for the "nyc311.csv" file:
-    $ qsv stats --cardinality nyc311.csv
+  # Compute all stats, infer dates and boolean data types for "nyc311.ssv" file
+  qsv stats -E --infer-dates --infer-boolean nyc311.ssv
 
-Prefer DMY format when inferring dates for the "nyc311.csv" file:
-    $ qsv stats -E --infer-dates --prefer-dmy nyc311.csv    
+  # In addition to basic "streaming" stats, also compute cardinality for "nyc311.csv"
+  qsv stats --cardinality nyc311.csv
 
-Infer data types only for the "nyc311.csv" file:
-    $ qsv stats --typesonly nyc311.csv
+  # Prefer DMY format when inferring dates for the "nyc311.csv"
+  qsv stats -E --infer-dates --prefer-dmy nyc311.csv
 
-Infer data types only, including boolean and date types for the "nyc311.csv" file:
-    $ qsv stats --typesonly --infer-boolean --infer-dates nyc311.csv
+  # Infer data types only for the "nyc311.csv" file:
+  qsv stats --typesonly nyc311.csv
 
-Automatically create an index for the "nyc311.csv" file to enable multithreading
-if it's larger than 5MB and there is no existing index file:
-    $ qsv stats -E --cache-threshold -5000000 nyc311.csv
+  # Infer data types only, including boolean and date types for "nyc311.csv"
+  $ qsv stats --typesonly --infer-boolean --infer-dates nyc311.csv
 
-Auto-create a TEMPORARY index for the "nyc311.csv" file to enable multithreading
-if it's larger than 5MB and delete the index and the stats cache file after the stats run:
-    $ qsv stats -E --cache-threshold -5000005 nyc311.csv
+  # Automatically create an index for the "nyc311.csv" file to enable multithreading
+  # if it's larger than 5MB and there is no existing index file:
+  qsv stats -E --cache-threshold -5000000 nyc311.csv
 
-Prompt for CSV/TSV/TAB file to compute stats for:
-    $ qsv prompt -F tsv,csv,tab | qsv stats -E | qsv table
-
-Prompt for a file to save the stats to in the ~/Documents directory:
-    $ qsv stats -E nyc311.csv | qsv prompt -d ~/Documents --fd-output
-
-Prompt for both INPUT and OUTPUT files in the ~/Documents dir with custom prompts:
-    $ qsv prompt -m 'Select a CSV file to summarize' -d ~/Documents -F csv | \
-      qsv stats -E --infer-dates | \
-      qsv prompt -m 'Save summary to...' -d ~/Documents --fd-output --save-fname summarystats.csv
+  # Auto-create a TEMPORARY index for the "nyc311.csv" file to enable multithreading
+  # if it's larger than 5MB and delete the index and the stats cache file after the stats run:
+  qsv stats -E --cache-threshold -5000005 nyc311.csv
 
 For more examples, see https://github.com/dathere/qsv/tree/master/resources/test
-For more info, see https://github.com/dathere/qsv/wiki/Supplemental#stats-command-output-explanation
+
+If the polars feature is enabled, support additional tabular file formats and
+compression formats:
+  $ qsv stats data.parquet // Parquet
+  $ qsv stats data.avro // Avro
+  $ qsv stats data.jsonl // JSON Lines
+  $ qsv stats data.json (will only work with a JSON Array)
+  $ qsv stats data.csv.gz // Gzipped CSV
+  $ qsv stats data.tab.zlib // Zlib-compressed Tab-separated
+  $ qsv stats data.ssv.zst // Zstd-compressed Semicolon-separated
+
+For more info, see https://github.com/dathere/qsv/blob/master/docs/STATS_DEFINITIONS.md
 
 Usage:
     qsv stats [options] [<input>]
@@ -136,7 +147,7 @@ stats options:
                               See 'qsv select --help' for the format details.
                               This is provided here because piping 'qsv select'
                               into 'qsv stats' will prevent the use of indexing.
-    -E, --everything          Compute all statistics available EXCEPT --dataset-stats.
+    -E, --everything          Compute all statistics available.
     --typesonly               Infer data types only and do not compute statistics.
                               Note that if you want to infer dates and boolean types, you'll
                               still need to use the --infer-dates & --infer-boolean options.
@@ -186,17 +197,27 @@ stats options:
                               Multiple percentiles are separated by the QSV_STATS_SEPARATOR
                               environment variable. If not set, the default separator is "|".
                               It is ignored if --percentiles is not set.
+                              Special values "deciles" and "quintiles" are automatically expanded
+                              to "10,20,30,40,50,60,70,80,90" and "20,40,60,80" respectively.
                               [default: 5,10,40,60,90,95]
 
     --round <decimal_places>  Round statistics to <decimal_places>. Rounding is done following
                               Midpoint Nearest Even (aka "Bankers Rounding") rule.
                               https://docs.rs/rust_decimal/latest/rust_decimal/enum.RoundingStrategy.html
                               If set to the sentinel value 9999, no rounding is done.
-                              For dates - range, stddev & IQR are always at least 5 decimal places as
-                              they are reported in days, and 5 places gives us millisecond precision.
+                              For dates - range, stddev & IQR are rounded to 1e-5 day precision
+                              (sub-second), with trailing zeros trimmed in the displayed output.
                               [default: 4]
     --nulls                   Include NULLs in the population size for computing
                               mean and standard deviation.
+    --weight <column>         Compute weighted statistics using the specified column as weights.
+                              The weight column must be numeric. When specified, all statistics
+                              (mean, stddev, variance, median, quartiles, mode, etc.) will be
+                              computed using weighted algorithms. The weight column is automatically
+                              excluded from statistics computation. Missing or non-numeric weights
+                              default to 1.0. Zero and negative weights are ignored and do not
+                              contribute to the statistics. The output filename will be
+                              <FILESTEM>.stats.weighted.csv to distinguish from unweighted statistics.
 
                               DATE INFERENCING:
     --infer-dates             Infer date/datetime data types. This is an expensive
@@ -204,22 +225,31 @@ stats options:
                               are date/datetime fields.
                               Also, if timezone is not specified in the data, it'll
                               be set to UTC.
-    --dates-whitelist <list>  The comma-separated, case-insensitive patterns to look for when 
+    --dates-whitelist <list>  The comma-separated, case-insensitive patterns to look for when
                               shortlisting fields for date inferencing.
                               i.e. if the field's name has any of these patterns,
                               it is shortlisted for date inferencing.
-                              Set to "all" to inspect ALL fields for
-                              date/datetime types. Ignored if --infer-dates is false.
+
+                              Special values:
+                              * "all" - inspect ALL fields for date/datetime types
+                              * "sniff" - use `qsv sniff` to auto-detect date/datetime columns
 
                               Note that false positive date matches WILL most likely occur
                               when using "all" as unix epoch timestamps are just numbers.
                               Be sure to only use "all" if you know ALL the columns you're
                               inspecting are dates, boolean or string fields.
 
-                              To avoid false positives, preprocess the file first 
+                              To avoid false positives, preprocess the file first
                               with the `datefmt` command to convert unix epoch timestamp
                               columns to RFC3339 format.
-                              [default: date,time,due,open,close,created]
+
+                              When set to "sniff", we do two-stage date inferencing.
+                              First running sniff on the input file and then second,
+                              only inferring dates for the columns that sniff identifies
+                              as date/datetime candidates.
+                              This is much faster than "all", and more convenient than
+                              manually specifying patterns in the whitelist.
+                              [default: sniff]
     --prefer-dmy              Parse dates in dmy format. Otherwise, use mdy format.
                               Ignored if --infer-dates is false.
 
@@ -230,7 +260,7 @@ stats options:
                               Note that a file handle is opened for each job.
                               When not set, the number of jobs is set to the
                               number of CPUs detected.
-    --stats-jsonl             Also write the stats in JSONL format. 
+    --stats-jsonl             Also write the stats in JSONL format.
                               If set, the stats will be written to <FILESTEM>.stats.csv.data.jsonl.
                               Note that this option used internally by other qsv "smart" commands (see
                               https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#stats-cache)
@@ -238,12 +268,12 @@ stats options:
                               You can preemptively create the stats-jsonl file by using this option
                               BEFORE running "smart" commands and they will automatically use it.
  -c, --cache-threshold <arg>  Controls the creation of stats cache files.
-                                - when greater than 1, the threshold in milliseconds before caching
+                                * when greater than 1, the threshold in milliseconds before caching
                                   stats results. If a stats run takes longer than this threshold,
                                   the stats results will be cached.
-                                - 0 to suppress caching. 
-                                - 1 to force caching.
-                                - a negative number to automatically create an index when
+                                * 0 to suppress caching.
+                                * 1 to force caching.
+                                * a negative number to automatically create an index when
                                   the input file size is greater than abs(arg) in bytes.
                                   If the negative number ends with 5, it will delete the index
                                   file and the stats cache file after the stats run. Otherwise,
@@ -252,10 +282,6 @@ stats options:
     --vis-whitespace          Visualize whitespace characters in the output.
                               See https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers
                               for the list of whitespace markers.
-    --dataset-stats           Compute dataset statistics (e.g. row count, column count, file size and
-                              fingerprint hash) and add them as additional rows to the output, with
-                              the qsv__ prefix and an additional qsv__value column.
-                              The --everything option DOES NOT enable this option.
 
 Common options:
     -h, --help             Display this message
@@ -287,7 +313,7 @@ https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#stats-cache)
 to make them work smarter & faster.
 
 To safeguard against undefined behavior, `stats` is the most extensively tested command,
-with ~520 tests. It also employs numerous performance optimizations (skip repetitive UTF-8
+with ~625 tests. It also employs numerous performance optimizations (skip repetitive UTF-8
 validation, skip bounds checks, cache results, etc.) that may result in undefined behavior
 if the CSV is not well-formed. See "safety:" comments in the code for more details.
 */
@@ -298,23 +324,28 @@ use std::{
     iter::repeat_n,
     path::{Path, PathBuf},
     str,
-    sync::OnceLock,
+    sync::{Arc, OnceLock},
 };
 
+use blake3;
 use crossbeam_channel;
+use foldhash::{HashMap, HashMapExt};
 use itertools::Itertools;
 use phf::phf_map;
 use qsv_dateparser::parse_with_preference;
+use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
-use simd_json::{OwnedValue, prelude::ValueAsScalar};
+// Use serde_json on big-endian platforms (e.g. s390x) due to simd_json endianness issues
+#[cfg(target_endian = "little")]
+use simd_json::{OwnedValue, prelude::ValueAsScalar, prelude::ValueObjectAccess};
 use smallvec::SmallVec;
 use stats::{Commute, MinMax, OnlineStats, Unsorted, merge_all};
-use tempfile::NamedTempFile;
+use tempfile::Builder as TempFileBuilder;
 use threadpool::ThreadPool;
 
 use self::FieldType::{TDate, TDateTime, TFloat, TInteger, TNull, TString};
 use crate::{
-    CliResult,
+    CliError, CliResult,
     config::{Config, Delimiter, get_delim_by_extension},
     select::{SelectColumns, Selection},
     util,
@@ -350,7 +381,7 @@ pub struct Args {
     pub flag_delimiter:        Option<Delimiter>,
     pub flag_memcheck:         bool,
     pub flag_vis_whitespace:   bool,
-    pub flag_dataset_stats:    bool,
+    pub flag_weight:           Option<String>,
 }
 
 // this struct is used to serialize/deserialize the stats to
@@ -384,113 +415,170 @@ struct StatsArgs {
     date_generated:       String,
     compute_duration_ms:  u64,
     qsv_version:          String,
+    flag_weight:          String,
+    field_count:          u64,
+    filesize_bytes:       u64,
+    hash:                 FileHash,
 }
 
+#[derive(Clone, Serialize, Deserialize, PartialEq, Default)]
+struct FileHash {
+    #[serde(rename = "BLAKE3", skip_serializing_if = "String::is_empty")]
+    blake3: String,
+}
+
+#[cfg(target_endian = "little")]
 impl StatsArgs {
     // this is for deserializing the stats.csv.jsonl file
+    // we use .get() instead of [] indexing to avoid panics on missing keys
+    // (e.g. when reading older cache files that don't have newer fields like flag_weight)
     fn from_owned_value(value: &OwnedValue) -> Result<Self, Box<dyn std::error::Error>> {
+        // helper closures for safe access - returns default if key is missing
+        let get_str = |key: &str| -> String {
+            value
+                .get(key)
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
+        let get_str_or = |key: &str, default: &str| -> String {
+            value
+                .get(key)
+                .and_then(|v| v.as_str())
+                .unwrap_or(default)
+                .to_string()
+        };
+        let get_bool = |key: &str| -> bool {
+            value
+                .get(key)
+                .and_then(simd_json::prelude::ValueAsScalar::as_bool)
+                .unwrap_or_default()
+        };
+        let get_u64 = |key: &str| -> u64 {
+            value
+                .get(key)
+                .and_then(simd_json::prelude::ValueAsScalar::as_u64)
+                .unwrap_or_default()
+        };
+        let get_hash = || -> FileHash {
+            value
+                .get("hash")
+                .map(|h| FileHash {
+                    blake3: h
+                        .get("BLAKE3")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                })
+                .unwrap_or_default()
+        };
+
         Ok(Self {
-            arg_input:            value["arg_input"].as_str().unwrap_or_default().to_string(),
-            flag_select:          value["flag_select"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            flag_everything:      value["flag_everything"].as_bool().unwrap_or_default(),
-            flag_typesonly:       value["flag_typesonly"].as_bool().unwrap_or_default(),
-            flag_infer_boolean:   value["flag_infer_boolean"].as_bool().unwrap_or_default(),
-            flag_mode:            value["flag_mode"].as_bool().unwrap_or_default(),
-            flag_cardinality:     value["flag_cardinality"].as_bool().unwrap_or_default(),
-            flag_median:          value["flag_median"].as_bool().unwrap_or_default(),
-            flag_mad:             value["flag_mad"].as_bool().unwrap_or_default(),
-            flag_quartiles:       value["flag_quartiles"].as_bool().unwrap_or_default(),
-            flag_percentiles:     value["flag_percentiles"].as_bool().unwrap_or_default(),
-            flag_percentile_list: value["flag_percentile_list"]
-                .as_str()
-                .unwrap_or("5,10,40,60,90,95")
-                .to_string(),
-            flag_round:           value["flag_round"].as_u64().unwrap_or_default() as u32,
-            flag_nulls:           value["flag_nulls"].as_bool().unwrap_or_default(),
-            flag_infer_dates:     value["flag_infer_dates"].as_bool().unwrap_or_default(),
-            flag_dates_whitelist: value["flag_dates_whitelist"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            flag_prefer_dmy:      value["flag_prefer_dmy"].as_bool().unwrap_or_default(),
-            flag_no_headers:      value["flag_no_headers"].as_bool().unwrap_or_default(),
-            flag_delimiter:       value["flag_delimiter"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            flag_output_snappy:   value["flag_output_snappy"].as_bool().unwrap_or_default(),
-            canonical_input_path: value["canonical_input_path"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            canonical_stats_path: value["canonical_stats_path"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            record_count:         value["record_count"].as_u64().unwrap_or_default(),
-            date_generated:       value["date_generated"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
-            compute_duration_ms:  value["compute_duration_ms"].as_u64().unwrap_or_default(),
-            qsv_version:          value["qsv_version"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
+            arg_input:            get_str("arg_input"),
+            flag_select:          get_str("flag_select"),
+            flag_everything:      get_bool("flag_everything"),
+            flag_typesonly:       get_bool("flag_typesonly"),
+            flag_infer_boolean:   get_bool("flag_infer_boolean"),
+            flag_mode:            get_bool("flag_mode"),
+            flag_cardinality:     get_bool("flag_cardinality"),
+            flag_median:          get_bool("flag_median"),
+            flag_mad:             get_bool("flag_mad"),
+            flag_quartiles:       get_bool("flag_quartiles"),
+            flag_percentiles:     get_bool("flag_percentiles"),
+            flag_percentile_list: get_str_or("flag_percentile_list", "5,10,40,60,90,95"),
+            flag_round:           get_u64("flag_round") as u32,
+            flag_nulls:           get_bool("flag_nulls"),
+            flag_infer_dates:     get_bool("flag_infer_dates"),
+            flag_dates_whitelist: get_str("flag_dates_whitelist"),
+            flag_prefer_dmy:      get_bool("flag_prefer_dmy"),
+            flag_no_headers:      get_bool("flag_no_headers"),
+            flag_delimiter:       get_str("flag_delimiter"),
+            flag_output_snappy:   get_bool("flag_output_snappy"),
+            canonical_input_path: get_str("canonical_input_path"),
+            canonical_stats_path: get_str("canonical_stats_path"),
+            record_count:         get_u64("record_count"),
+            date_generated:       get_str("date_generated"),
+            compute_duration_ms:  get_u64("compute_duration_ms"),
+            qsv_version:          get_str("qsv_version"),
+            flag_weight:          get_str("flag_weight"),
+            field_count:          get_u64("field_count"),
+            filesize_bytes:       get_u64("filesize_bytes"),
+            hash:                 get_hash(),
         })
     }
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Default, Debug)]
 pub struct StatsData {
-    pub field:                String,
+    pub field: String,
     // type is a reserved keyword in Rust
     // so we escape it as r#type
     // we need to do this for serde to work
-    pub r#type:               String,
+    pub r#type: String,
     #[serde(default)]
-    pub is_ascii:             bool,
-    pub sum:                  Option<f64>,
-    pub min:                  Option<String>,
-    pub max:                  Option<String>,
-    pub range:                Option<f64>,
-    pub sort_order:           Option<String>,
-    pub min_length:           Option<usize>,
-    pub max_length:           Option<usize>,
-    pub sum_length:           Option<usize>,
-    pub avg_length:           Option<f64>,
-    pub stddev_length:        Option<f64>,
-    pub variance_length:      Option<f64>,
-    pub cv_length:            Option<f64>,
-    pub mean:                 Option<f64>,
-    pub sem:                  Option<f64>,
-    pub stddev:               Option<f64>,
-    pub variance:             Option<f64>,
-    pub cv:                   Option<f64>,
-    pub nullcount:            u64,
-    pub max_precision:        Option<u32>,
-    pub sparsity:             Option<f64>,
-    pub mad:                  Option<f64>,
-    pub lower_outer_fence:    Option<f64>,
-    pub lower_inner_fence:    Option<f64>,
-    pub q1:                   Option<f64>,
-    pub q2_median:            Option<f64>,
-    pub q3:                   Option<f64>,
-    pub iqr:                  Option<f64>,
-    pub upper_inner_fence:    Option<f64>,
-    pub upper_outer_fence:    Option<f64>,
-    pub skewness:             Option<f64>,
-    pub cardinality:          u64,
-    pub uniqueness_ratio:     Option<f64>,
-    pub mode:                 Option<String>,
-    pub mode_count:           Option<u64>,
-    pub mode_occurrences:     Option<u64>,
-    pub antimode:             Option<String>,
-    pub antimode_count:       Option<u64>,
+    pub is_ascii: bool,
+    pub sum: Option<f64>,
+    pub min: Option<String>,
+    pub max: Option<String>,
+    pub range: Option<f64>,
+    pub sort_order: Option<String>,
+    pub min_length: Option<usize>,
+    pub max_length: Option<usize>,
+    pub sum_length: Option<usize>,
+    pub avg_length: Option<f64>,
+    pub stddev_length: Option<f64>,
+    pub variance_length: Option<f64>,
+    pub cv_length: Option<f64>,
+    pub mean: Option<f64>,
+    pub sem: Option<f64>,
+    pub stddev: Option<f64>,
+    pub variance: Option<f64>,
+    pub cv: Option<f64>,
+    pub nullcount: u64,
+    pub n_negative: Option<u64>,
+    pub n_zero: Option<u64>,
+    pub n_positive: Option<u64>,
+    pub max_precision: Option<u32>,
+    pub sparsity: Option<f64>,
+    pub mad: Option<f64>,
+    pub lower_outer_fence: Option<f64>,
+    pub lower_inner_fence: Option<f64>,
+    pub q1: Option<f64>,
+    pub q2_median: Option<f64>,
+    pub q3: Option<f64>,
+    pub iqr: Option<f64>,
+    pub upper_inner_fence: Option<f64>,
+    pub upper_outer_fence: Option<f64>,
+    pub skewness: Option<f64>,
+    pub cardinality: u64,
+    pub uniqueness_ratio: Option<f64>,
+    pub mode: Option<String>,
+    pub mode_count: Option<u64>,
+    pub mode_occurrences: Option<u64>,
+    pub antimode: Option<String>,
+    pub antimode_count: Option<u64>,
     pub antimode_occurrences: Option<u64>,
+    // moarstats fields (populated when moarstats has been run)
+    #[serde(default)]
+    pub kurtosis: Option<f64>,
+    #[serde(default)]
+    pub bimodality_coefficient: Option<f64>,
+    #[serde(default)]
+    pub pearson_skewness: Option<f64>,
+    #[serde(default)]
+    pub gini_coefficient: Option<f64>,
+    #[serde(default)]
+    pub quartile_coefficient_dispersion: Option<f64>,
+    #[serde(default)]
+    pub outliers_percentage: Option<f64>,
+    #[serde(default)]
+    pub outlier_impact_ratio: Option<f64>,
+    #[serde(default)]
+    pub mad_stddev_ratio: Option<f64>,
+    #[serde(default)]
+    pub median_mean_ratio: Option<f64>,
+    #[serde(default)]
+    pub normalized_entropy: Option<f64>,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -528,6 +616,9 @@ pub static STATSDATA_TYPES_MAP: phf::Map<&'static str, JsonTypes> = phf_map! {
     "variance" => JsonTypes::Float,
     "cv" => JsonTypes::Float,
     "nullcount" => JsonTypes::Int,
+    "n_negative" => JsonTypes::Int,
+    "n_zero" => JsonTypes::Int,
+    "n_positive" => JsonTypes::Int,
     "max_precision" => JsonTypes::Int,
     "sparsity" => JsonTypes::Float,
     "mad" => JsonTypes::Float,
@@ -548,12 +639,24 @@ pub static STATSDATA_TYPES_MAP: phf::Map<&'static str, JsonTypes> = phf_map! {
     "antimode" => JsonTypes::String,
     "antimode_count" => JsonTypes::Int,
     "antimode_occurrences" => JsonTypes::Int,
-    "qsv__value" => JsonTypes::Int,
+    // moarstats fields
+    "kurtosis" => JsonTypes::Float,
+    "bimodality_coefficient" => JsonTypes::Float,
+    "pearson_skewness" => JsonTypes::Float,
+    "gini_coefficient" => JsonTypes::Float,
+    "quartile_coefficient_dispersion" => JsonTypes::Float,
+    "outliers_percentage" => JsonTypes::Float,
+    "outlier_impact_ratio" => JsonTypes::Float,
+    "mad_stddev_ratio" => JsonTypes::Float,
+    "median_mean_ratio" => JsonTypes::Float,
+    "normalized_entropy" => JsonTypes::Float,
 };
 
 static INFER_DATE_FLAGS: OnceLock<SmallVec<[bool; 50]>> = OnceLock::new();
 static RECORD_COUNT: OnceLock<u64> = OnceLock::new();
 static ANTIMODES_LEN: OnceLock<usize> = OnceLock::new();
+static STATS_SEPARATOR: OnceLock<String> = OnceLock::new();
+static STATS_STRING_MAX_LENGTH: OnceLock<Option<usize>> = OnceLock::new();
 
 // standard overflow and underflow strings
 // for sum, sum_length and avg_length
@@ -564,11 +667,11 @@ const UNDERFLOW_STRING: &str = "*UNDERFLOW*";
 const MS_IN_DAY: f64 = 86_400_000.0;
 const MS_IN_DAY_INT: i64 = 86_400_000;
 // number of decimal places when rounding days
-// 5 decimal places give us millisecond precision
+// 5 decimal places give us sub-second precision
 const DAY_DECIMAL_PLACES: u32 = 5;
 
 // maximum number of output columns
-const MAX_STAT_COLUMNS: usize = 44;
+const MAX_STAT_COLUMNS: usize = 47;
 
 // the first N columns are fingerprint hash columns
 const FINGERPRINT_HASH_COLUMNS: usize = 26;
@@ -581,6 +684,9 @@ const DEFAULT_ANTIMODES_LEN: usize = 100;
 // the default separator we use for stats that have multiple values
 // in one column, i.e. antimodes/modes & percentiles
 pub const DEFAULT_STATS_SEPARATOR: &str = "|";
+
+// the threshold for when to use parallel sorting for modes/antimodes etc.
+const PAR_SORT_THRESHOLD: usize = 10_000;
 
 static BOOLEAN_PATTERNS: OnceLock<Vec<BooleanPattern>> = OnceLock::new();
 #[derive(Clone, Debug)]
@@ -759,6 +865,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_mad = false;
     }
 
+    // percentile_list special values
+    // deciles and quintiles are automatically expanded to their corresponding percentile lists
+    // case-insensitive comparison is used to check for these special values
+    if args.flag_percentile_list.to_lowercase() == "deciles" {
+        args.flag_percentile_list = "10,20,30,40,50,60,70,80,90".to_string();
+    } else if args.flag_percentile_list.to_lowercase() == "quintiles" {
+        args.flag_percentile_list = "20,40,60,80".to_string();
+    }
+
+    // validate percentile list
+    let percentile_list = args.flag_percentile_list.split(',').collect::<Vec<&str>>();
+    for p in percentile_list {
+        if fast_float2::parse::<f64, &[u8]>(p.trim().as_bytes()).is_err() {
+            return fail_incorrectusage_clierror!(
+                "Invalid percentile list: {}: {}",
+                args.flag_percentile_list,
+                p
+            );
+        }
+    }
+
     // inferring boolean requires inferring cardinality
     if args.flag_infer_boolean {
         if !args.flag_cardinality {
@@ -779,7 +906,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // save the current args, we'll use it to generate
     // the stats.csv.json file
     let mut current_stats_args = StatsArgs {
-        arg_input:            format!("{:?}", args.arg_input),
+        arg_input:            args.arg_input.clone().unwrap_or_default(),
         flag_select:          format!("{:?}", args.flag_select),
         flag_everything:      args.flag_everything,
         flag_typesonly:       args.flag_typesonly,
@@ -797,7 +924,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         flag_dates_whitelist: args.flag_dates_whitelist.clone(),
         flag_prefer_dmy:      args.flag_prefer_dmy,
         flag_no_headers:      args.flag_no_headers,
-        flag_delimiter:       format!("{:?}", args.flag_delimiter.clone()),
+        flag_delimiter:       args
+            .flag_delimiter
+            .as_ref()
+            .map(|d| (d.as_byte() as char).to_string())
+            .unwrap_or_default(),
         // when we write to stdout, we don't use snappy compression
         // when we write to a file with the --output option, we use
         // snappy compression if the file ends with ".sz"
@@ -816,32 +947,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // so cached stats are automatically invalidated
         // when the qsv version changes
         qsv_version:          env!("CARGO_PKG_VERSION").to_string(),
+        flag_weight:          args.flag_weight.clone().unwrap_or_default(),
+        field_count:          0,
+        filesize_bytes:       0,
+        hash:                 FileHash::default(),
     };
 
     // create a temporary file to store the <FILESTEM>.stats.csv file
-    let stats_csv_tempfile = if current_stats_args.flag_output_snappy {
-        tempfile::Builder::new().suffix(".sz").tempfile()?
-    } else {
-        NamedTempFile::new()?
-    };
+    // The cache is always plain CSV (comma-delimited, uncompressed) regardless of
+    // the --output format, since it's an internal format consumed by moarstats,
+    // schema, frequency, etc. Use .csv suffix so NamedTempFile RAII cleanup
+    // deletes the correct file.
+    let stats_csv_tempfile = TempFileBuilder::new().suffix(".csv").tempfile()?;
+    // safety: we know the tempfile is a valid NamedTempFile, so we can use unwrap
+    let stats_csv_tempfile_fname = stats_csv_tempfile.path().to_str().unwrap().to_string();
 
     // find the delimiter to use based on the extension of the output file
     // and if we need to snappy compress the output
-    let (output_extension, output_delim, snappy) = match args.flag_output {
+    let (_output_extension, output_delim, snappy) = match args.flag_output {
         Some(ref output_path) => get_delim_by_extension(Path::new(&output_path), b','),
         _ => (String::new(), b',', false),
     };
-    let stats_csv_tempfile_fname = format!(
-        "{stem}.{prime_ext}{snappy_ext}",
-        //safety: we know the tempfile is a valid NamedTempFile, so we can use unwrap
-        stem = stats_csv_tempfile.path().to_str().unwrap(),
-        prime_ext = output_extension,
-        snappy_ext = if snappy { ".sz" } else { "" }
-    );
 
-    // we will write the stats to a temp file
-    let wconfig = Config::new(Some(stats_csv_tempfile_fname.clone()).as_ref())
-        .delimiter(Some(Delimiter(output_delim)));
+    // we will write the stats to a temp file - always as plain CSV
+    let wconfig = Config::new(Some(&stats_csv_tempfile_fname)).delimiter(Some(Delimiter(b',')));
     let mut wtr = wconfig.writer()?;
 
     let mut rconfig = args.rconfig();
@@ -859,7 +988,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let temp_dir =
             crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep());
 
-        let mut stdin_file = tempfile::Builder::new().tempfile_in(temp_dir)?;
+        let mut stdin_file = TempFileBuilder::new().tempfile_in(temp_dir)?;
 
         let stdin = std::io::stdin();
         let mut stdin_handle = stdin.lock();
@@ -904,6 +1033,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // Set QSV_DEFAULT_DELIMITER environment variable
             // this is only for the current process. When qsv exits, it will not persist
+            // safety: we wrap the set_var in an unsafe block because it's an unsafe function,
+            // as it assumes a single-threaded environment, which we still are at this point
             unsafe { std::env::set_var("QSV_DEFAULT_DELIMITER", inferred) };
         }
 
@@ -919,6 +1050,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
+    // Resolve "sniff" special value in dates_whitelist
+    // This must happen after stdin processing so we have a valid path
+    let resolved_whitelist =
+        if args.flag_infer_dates && args.flag_dates_whitelist.eq_ignore_ascii_case("sniff") {
+            if let Some(ref path) = rconfig.path {
+                log::info!("Resolving dates-whitelist 'sniff' for {}", path.display());
+                resolve_sniff_whitelist(path)?
+            } else {
+                // No path available - shouldn't happen after stdin handling
+                args.flag_dates_whitelist.clone()
+            }
+        } else {
+            args.flag_dates_whitelist.clone()
+        };
+
+    // Update the cache args with the resolved whitelist so cache comparison
+    // works correctly (comparing actual column names, not "sniff" keyword)
+    current_stats_args
+        .flag_dates_whitelist
+        .clone_from(&resolved_whitelist);
+
     let mut compute_stats = true;
     let mut create_cache = args.flag_cache_threshold == 1
         || args.flag_stats_jsonl
@@ -931,7 +1083,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if let Some(path) = rconfig.path.clone() {
         //safety: we know the path is a valid PathBuf, so we can use unwrap
         let path_file_stem = path.file_stem().unwrap().to_str().unwrap();
-        let stats_file = stats_path(&path, false)?;
+        let stats_file = stats_path(&path, false, args.flag_weight.is_some())?;
         // check if <FILESTEM>.stats.csv file already exists.
         // If it does, check if it was compiled using the same args.
         // However, if the --force flag is set,
@@ -956,25 +1108,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 let time_saved: u64;
                 // deserialize the existing stats args json
                 let existing_stats_args_json: StatsArgs = {
-                    let mut json_buffer = existing_stats_args_json_str.into_bytes();
-                    match simd_json::to_owned_value(&mut json_buffer) {
-                        Ok(value) => {
-                            // Convert OwnedValue to StatsArgs
-                            match StatsArgs::from_owned_value(&value) {
-                                Ok(mut stat_args) => {
-                                    // we init these fields to empty values because we don't want to
-                                    // compare them when checking if the
-                                    // args are the same
-                                    stat_args.canonical_input_path = String::new();
-                                    stat_args.canonical_stats_path = String::new();
-                                    stat_args.record_count = 0;
-                                    stat_args.date_generated = String::new();
-                                    time_saved = stat_args.compute_duration_ms;
-                                    stat_args.compute_duration_ms = 0;
-                                    stat_args
-                                },
+                    #[cfg(target_endian = "big")]
+                    let mut stat_args =
+                        match serde_json::from_str::<StatsArgs>(&existing_stats_args_json_str) {
+                            Ok(args) => args,
+                            Err(e) => {
+                                log::warn!(
+                                    "Could not deserialize {path_file_stem}.stats.csv.json: \
+                                     {e:?}, recomputing..."
+                                );
+                                let _ = fs::remove_file(&stats_file);
+                                let _ = fs::remove_file(&stats_args_json_file);
+                                StatsArgs::default()
+                            },
+                        };
+                    #[cfg(target_endian = "little")]
+                    let mut stat_args = {
+                        let mut json_buffer = existing_stats_args_json_str.into_bytes();
+                        match simd_json::to_owned_value(&mut json_buffer) {
+                            Ok(value) => match StatsArgs::from_owned_value(&value) {
+                                Ok(args) => args,
                                 Err(e) => {
-                                    time_saved = 0;
                                     log::warn!(
                                         "Could not deserialize {path_file_stem}.stats.csv.json: \
                                          {e:?}, recomputing..."
@@ -983,19 +1137,31 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                     let _ = fs::remove_file(&stats_args_json_file);
                                     StatsArgs::default()
                                 },
-                            }
-                        },
-                        Err(e) => {
-                            time_saved = 0;
-                            log::warn!(
-                                "Could not parse {path_file_stem}.stats.csv.json: {e:?}, \
-                                 recomputing..."
-                            );
-                            let _ = fs::remove_file(&stats_file);
-                            let _ = fs::remove_file(&stats_args_json_file);
-                            StatsArgs::default()
-                        },
-                    }
+                            },
+                            Err(e) => {
+                                log::warn!(
+                                    "Could not parse {path_file_stem}.stats.csv.json: {e:?}, \
+                                     recomputing..."
+                                );
+                                let _ = fs::remove_file(&stats_file);
+                                let _ = fs::remove_file(&stats_args_json_file);
+                                StatsArgs::default()
+                            },
+                        }
+                    };
+
+                    // we init these fields to empty values because we don't want to
+                    // compare them when checking if the args are the same
+                    stat_args.canonical_input_path = String::new();
+                    stat_args.canonical_stats_path = String::new();
+                    stat_args.record_count = 0;
+                    stat_args.date_generated = String::new();
+                    time_saved = stat_args.compute_duration_ms;
+                    stat_args.compute_duration_ms = 0;
+                    stat_args.field_count = 0;
+                    stat_args.filesize_bytes = 0;
+                    stat_args.hash = FileHash::default();
+                    stat_args
                 };
 
                 // check if the cached stats are current (ie the stats file is newer than the input
@@ -1018,8 +1184,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 == current_stats_args.flag_prefer_dmy
                             && existing_stats_args_json.flag_no_headers
                                 == current_stats_args.flag_no_headers
-                            && existing_stats_args_json.flag_dates_whitelist
-                                == current_stats_args.flag_dates_whitelist
                             && existing_stats_args_json.flag_delimiter
                                 == current_stats_args.flag_delimiter
                             && existing_stats_args_json.flag_nulls == current_stats_args.flag_nulls
@@ -1044,17 +1208,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if compute_stats {
             let start_time = std::time::Instant::now();
 
-            // we're loading the entire file into memory, we need to check avail mem
-            if args.flag_everything
-                || args.flag_mode
-                || args.flag_cardinality
-                || args.flag_median
-                || args.flag_quartiles
-                || args.flag_mad
-            {
-                util::mem_file_check(&path, false, args.flag_memcheck)?;
-            }
-
             // check if flag_cache_threshold is a negative number,
             // if so, set the autoindex_size to absolute of the number
             if args.flag_cache_threshold.is_negative() {
@@ -1062,16 +1215,86 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 autoindex_set = true;
             }
 
+            // Check if we have an index and will use parallel processing
+            // If so, skip mem_file_check since memory-aware chunking will handle it
+            let mut indexed_result = rconfig.indexed()?;
+            let will_use_parallel = match &indexed_result {
+                Some(_) => {
+                    // We have an index, check if we'll use parallel processing
+                    match args.flag_jobs {
+                        Some(num_jobs) => num_jobs != 1,
+                        _ => true, // Default to parallel when index exists
+                    }
+                },
+                None => false, // No index, will use sequential
+            };
+
+            // we're loading the entire file into memory, we need to check avail mem
+            // Skip this check for parallel processing since memory-aware chunking handles it
+            if !will_use_parallel
+                && (args.flag_everything
+                    || args.flag_mode
+                    || args.flag_cardinality
+                    || args.flag_median
+                    || args.flag_quartiles
+                    || args.flag_mad
+                    || args.flag_percentiles)
+            {
+                // Try mem_file_check, and if it fails for an unindexed file, auto-create index
+                match util::mem_file_check(&path, false, args.flag_memcheck) {
+                    Ok(_) => {
+                        // Memory check passed, proceed with sequential processing
+                    },
+                    Err(e) => {
+                        // Memory check failed - if we don't have an index, try creating one
+                        if indexed_result.is_none() && !rconfig.is_stdin() {
+                            log::info!(
+                                "File too large for sequential processing. Auto-creating index to \
+                                 enable parallel processing..."
+                            );
+
+                            // Create index and retry
+                            match util::create_index_for_file(&path, &rconfig) {
+                                Ok(()) => {
+                                    // Re-check for index after creation
+                                    indexed_result = rconfig.indexed()?;
+                                    if indexed_result.is_some() {
+                                        log::info!(
+                                            "Index created successfully. Switching to parallel \
+                                             processing."
+                                        );
+                                        // Continue - the match statement below will use
+                                        // indexed_result to determine parallel/sequential
+                                    } else {
+                                        // Index creation succeeded but we still can't get it
+                                        // Return the original memory error
+                                        return Err(e);
+                                    }
+                                },
+                                Err(index_err) => {
+                                    // Index creation failed, return the original memory error
+                                    log::warn!("Failed to auto-create index: {index_err}");
+                                    return Err(e);
+                                },
+                            }
+                        } else {
+                            // Either we already have an index or it's stdin - return the error
+                            return Err(e);
+                        }
+                    },
+                }
+            }
+
             // we need to count the number of records in the file to calculate sparsity and
             // cardinality
             let record_count: u64;
 
-            let (headers, stats) = match rconfig.indexed()? {
+            let (headers, stats) = match indexed_result {
                 None => {
                     // without an index, we need to count the number of records in the file
                     // safety: we know util::count_rows() will not return an Err
                     record_count = util::count_rows(&rconfig).unwrap();
-                    args.sequential_stats(&args.flag_dates_whitelist)
+                    args.sequential_stats(&resolved_whitelist)
                 },
                 Some(idx) => {
                     // with an index, we get the rowcount instantaneously from the index
@@ -1079,12 +1302,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     match args.flag_jobs {
                         Some(num_jobs) => {
                             if num_jobs == 1 {
-                                args.sequential_stats(&args.flag_dates_whitelist)
+                                args.sequential_stats(&resolved_whitelist)
                             } else {
-                                args.parallel_stats(&args.flag_dates_whitelist, record_count)
+                                args.parallel_stats(&resolved_whitelist, record_count)
                             }
                         },
-                        _ => args.parallel_stats(&args.flag_dates_whitelist, record_count),
+                        _ => args.parallel_stats(&resolved_whitelist, record_count),
                     }
                 },
             }?;
@@ -1116,75 +1339,43 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 stats_br_vec.push(work_br);
             }
 
-            if args.flag_dataset_stats {
-                // Add dataset-level stats as additional rows ====================
-                let num_stats_fields = stats_headers_sr.len();
-                let mut dataset_stats_br = csv::ByteRecord::with_capacity(128, num_stats_fields);
+            // Always compute file-level metadata for JSON cache
+            let ds_column_count = headers.len() as u64;
+            let ds_filesize_bytes = fs::metadata(&path)?.len();
 
-                // Helper closure to write a dataset stat row
-                let mut write_dataset_stat = |name: &[u8], value: u64| -> CliResult<()> {
-                    dataset_stats_br.clear();
-                    dataset_stats_br.push_field(name);
-                    // Fill middle columns with empty strings
-                    for _ in 2..num_stats_fields {
-                        dataset_stats_br.push_field(b"");
-                    }
-                    // write qsv__value as last column
-                    dataset_stats_br.push_field(itoa::Buffer::new().format(value).as_bytes());
-                    wtr.write_byte_record(&dataset_stats_br)
-                        .map_err(std::convert::Into::into)
-                };
+            // Compute hash of stats for data fingerprinting
+            let stats_hash = {
+                // the first FINGERPRINT_HASH_COLUMNS are used for the fingerprint hash
+                let mut hash_input = Vec::with_capacity(FINGERPRINT_HASH_COLUMNS);
 
-                // Write qsv__rowcount
-                write_dataset_stat(b"qsv__rowcount", record_count)?;
-
-                // Write qsv__columncount
-                let ds_column_count = headers.len() as u64;
-                write_dataset_stat(b"qsv__columncount", ds_column_count)?;
-
-                // Write qsv__filesize_bytes
-                let ds_filesize_bytes = fs::metadata(&path)?.len();
-                write_dataset_stat(b"qsv__filesize_bytes", ds_filesize_bytes)?;
-
-                // Compute hash of stats for data fingerprinting
-                let stats_hash = {
-                    // the first FINGERPRINT_HASH_COLUMNS are used for the fingerprint hash
-                    let mut hash_input = Vec::with_capacity(FINGERPRINT_HASH_COLUMNS);
-
-                    // First, create a stable representation of the stats
-                    for record in &stats_br_vec {
-                        // Take FINGERPRINT_HASH_COLUMNS columns only
-                        for field in record.iter().take(FINGERPRINT_HASH_COLUMNS) {
-                            let s = String::from_utf8_lossy(field);
-                            // Standardize number format
-                            if let Ok(f) = s.parse::<f64>() {
-                                hash_input.extend_from_slice(format!("{f:.10}").as_bytes());
-                            } else {
-                                hash_input.extend_from_slice(field);
-                            }
-                            hash_input.push(0x1F); // field separator
+                // First, create a stable representation of the stats
+                for record in &stats_br_vec {
+                    // Take FINGERPRINT_HASH_COLUMNS columns only
+                    for field in record.iter().take(FINGERPRINT_HASH_COLUMNS) {
+                        let s = String::from_utf8_lossy(field);
+                        // Standardize number format
+                        if let Ok(f) = s.parse::<f64>() {
+                            hash_input.extend_from_slice(format!("{f:.10}").as_bytes());
+                        } else {
+                            hash_input.extend_from_slice(field);
                         }
-                        hash_input.push(b'\n');
+                        hash_input.push(0x1F); // field separator
                     }
-
-                    // Add dataset stats
-                    hash_input.extend_from_slice(
-                        format!("{record_count}\x1F{ds_column_count}\x1F{ds_filesize_bytes}\n")
-                            .as_bytes(),
-                    );
-                    sha256::digest(hash_input.as_slice())
-                };
-
-                dataset_stats_br.clear();
-                dataset_stats_br.push_field(b"qsv__fingerprint_hash");
-                // Fill middle columns with empty strings
-                for _ in 2..num_stats_fields {
-                    dataset_stats_br.push_field(b"");
+                    hash_input.push(b'\n');
                 }
-                // write qsv__value as last column
-                dataset_stats_br.push_field(stats_hash.as_bytes());
-                wtr.write_byte_record(&dataset_stats_br)?;
-            }
+
+                // Add dataset stats
+                hash_input.extend_from_slice(
+                    format!("{record_count}\x1F{ds_column_count}\x1F{ds_filesize_bytes}\n")
+                        .as_bytes(),
+                );
+                blake3::hash(hash_input.as_slice()).to_hex().to_string()
+            };
+
+            // populate file-level metadata in the stats args json
+            current_stats_args.field_count = ds_column_count;
+            current_stats_args.filesize_bytes = ds_filesize_bytes;
+            current_stats_args.hash = FileHash { blake3: stats_hash };
 
             // update the stats args json metadata ===============
             // if the stats run took longer than the cache threshold and the threshold > 0,
@@ -1217,28 +1408,44 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else {
         // we didn't compute the stats, re-use the existing stats file
         // safety: we know the path is a valid PathBuf, so we can use unwrap
-        stats_path(rconfig.path.as_ref().unwrap(), false)?
-            .to_str()
-            .unwrap()
-            .to_owned()
+        stats_path(
+            rconfig.path.as_ref().unwrap(),
+            false,
+            args.flag_weight.is_some(),
+        )?
+        .to_str()
+        .unwrap()
+        .to_owned()
     };
 
     if rconfig.is_stdin() {
-        // if we read from stdin, copy the temp stats file to "stdin.stats.csv"
-        // safety: we know the path is a valid PathBuf, so we can use unwrap
-        let mut stats_pathbuf = stats_path(rconfig.path.as_ref().unwrap(), true)?;
+        // if we read from stdin, copy the temp stats file to "stdin.stats.csv" or
+        // "stdin.stats.weighted.csv" safety: we know the path is a valid PathBuf, so we can
+        // use unwrap
+        let mut stats_pathbuf = stats_path(
+            rconfig.path.as_ref().unwrap(),
+            true,
+            args.flag_weight.is_some(),
+        )?;
         fs::copy(currstats_filename.clone(), stats_pathbuf.clone())?;
 
         // save the stats args to "stdin.stats.csv.json"
         stats_pathbuf.set_extension("csv.json");
-        std::fs::write(
-            stats_pathbuf,
-            serde_json::to_string_pretty(&current_stats_args)?,
-        )?;
+        // Use platform-appropriate JSON serialization
+        #[cfg(target_endian = "big")]
+        let json_string = serde_json::to_string_pretty(&current_stats_args)?;
+        #[cfg(target_endian = "little")]
+        let json_string = simd_json::to_string_pretty(&current_stats_args)?;
+        std::fs::write(stats_pathbuf, json_string)?;
     } else if let Some(path) = rconfig.path {
-        // if we read from a file, copy the temp stats file to "<FILESTEM>.stats.csv"
+        // if we read from a file, copy the temp stats file to "<FILESTEM>.stats.csv" or
+        // "<FILESTEM>.stats.weighted.csv"
         let mut stats_pathbuf = path.clone();
-        stats_pathbuf.set_extension("stats.csv");
+        if args.flag_weight.is_some() {
+            stats_pathbuf.set_extension("stats.weighted.csv");
+        } else {
+            stats_pathbuf.set_extension("stats.csv");
+        }
         // safety: we know the path is a valid PathBuf, so we can use unwrap
         if currstats_filename != stats_pathbuf.to_str().unwrap() {
             // if the stats file is not the same as the input file, copy it
@@ -1283,10 +1490,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .to_str()
                 .unwrap()
                 .to_string();
-            std::fs::write(
-                stats_pathbuf.clone(),
-                serde_json::to_string_pretty(&current_stats_args)?,
-            )?;
+            // Use platform-appropriate JSON serialization
+            #[cfg(target_endian = "big")]
+            let json_string = serde_json::to_string_pretty(&current_stats_args)?;
+            #[cfg(target_endian = "little")]
+            let json_string = simd_json::to_string_pretty(&current_stats_args)?;
+            std::fs::write(stats_pathbuf.clone(), json_string)?;
 
             // save the stats data to "<FILESTEM>.stats.csv.data.jsonl"
             if write_stats_jsonl {
@@ -1296,6 +1505,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     &currstats_filename,
                     &STATSDATA_TYPES_MAP,
                     &stats_jsonl_pathbuf,
+                    b',', // cache is always CSV (comma-delimited)
                 )?;
             }
         }
@@ -1303,14 +1513,41 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     if stdout_output_flag {
         // if we're outputting to stdout, copy the stats file to stdout
-        let currstats = fs::read_to_string(currstats_filename)?;
-        io::stdout().write_all(currstats.as_bytes())?;
-        io::stdout().flush()?;
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
+        if output_delim == b',' {
+            let currstats = fs::read_to_string(currstats_filename)?;
+            handle.write_all(currstats.as_bytes())?;
+        } else {
+            // output has a non-comma delimiter, convert from CSV cache
+            util::csv_to_delimited_writer(&currstats_filename, &mut handle, output_delim)?;
+        }
+        handle.flush()?;
     } else if let Some(output) = args.flag_output {
         // if we're outputting to a file, copy the stats file to the output file
         if currstats_filename != output {
-            // if the stats file is not the same as the output file, copy it
-            fs::copy(currstats_filename, output)?;
+            if output_delim == b',' && !snappy {
+                // same format as cache - just copy the file
+                fs::copy(currstats_filename, output)?;
+            } else {
+                // output needs delimiter conversion and/or Snappy compression;
+                // use Config so .sz extension is handled transparently
+                let out_config =
+                    Config::new(Some(output).as_ref()).delimiter(Some(Delimiter(output_delim)));
+                let mut out_wtr = out_config.writer()?;
+
+                let in_file = fs::File::open(currstats_filename)?;
+                let mut in_rdr = csv::ReaderBuilder::new()
+                    .has_headers(true)
+                    .from_reader(in_file);
+
+                let headers = in_rdr.headers()?.clone();
+                out_wtr.write_record(&headers)?;
+                for result in in_rdr.records() {
+                    out_wtr.write_record(&result?)?;
+                }
+                out_wtr.flush()?;
+            }
         }
     }
 
@@ -1357,11 +1594,15 @@ impl Args {
     /// * File I/O errors are wrapped in appropriate error types
     fn sequential_stats(&self, whitelist: &str) -> CliResult<(csv::ByteRecord, Vec<Stats>)> {
         let mut rdr = self.rconfig().reader()?;
-        let (headers, sel) = self.sel_headers(&mut rdr)?;
+        let full_headers = rdr.byte_headers()?.clone();
+
+        // Find weight column index and exclude it from selection
+        let (weight_col_idx, sel, headers) =
+            self.process_headers_with_weight_exclusion(&full_headers)?;
 
         init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
 
-        let stats = self.compute(&sel, rdr.byte_records());
+        let stats = self.compute(&sel, rdr.byte_records(), weight_col_idx);
         Ok((headers, stats))
     }
 
@@ -1431,21 +1672,97 @@ impl Args {
         }
 
         let mut rdr = self.rconfig().reader()?;
-        let (headers, sel) = self.sel_headers(&mut rdr)?;
+        let full_headers = rdr.byte_headers()?.clone();
+
+        // Find weight column index and exclude it from selection
+        let (weight_col_idx, sel, headers) =
+            self.process_headers_with_weight_exclusion(&full_headers)?;
 
         init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
 
         let njobs = util::njobs(self.flag_jobs);
-        let chunk_size = util::chunk_size(idx_count as usize, njobs);
+
+        // Read memory limit from environment variable
+        // If QSV_STATS_CHUNK_MEMORY_MB is set and can be parsed as a positive u64, set max chunk
+        // memory. If QSV_STATS_CHUNK_MEMORY_MB is not set, use 0 (dynamic sizing).
+        // If QSV_STATS_CHUNK_MEMORY_MB is set to -1, any non-positive value, or any value that
+        // cannot be parsed as u64, use CPU-based chunking (None).
+        let max_chunk_memory_mb = if let Ok(val) = std::env::var("QSV_STATS_CHUNK_MEMORY_MB") {
+            // if valid, set max chunk memory
+            // if invalid or non-positive, use CPU-based chunking
+            atoi_simd::parse::<u64, false, false>(val.as_bytes()).ok()
+        } else {
+            Some(0) // default to dynamic sizing
+        };
+
+        // Get WhichStats configuration
+        let which_stats = self.which_stats();
+
+        // Check if non-streaming stats are enabled (require memory-aware chunking)
+        let needs_memory_aware_chunking =
+            which_stats.needs_memory_aware_chunking() && max_chunk_memory_mb.is_some();
+
+        let (chunking_mode_info, chunk_size) = if needs_memory_aware_chunking {
+            // Sample records for memory estimation
+            let sample_records = util::sample_records(&self.rconfig(), 1000);
+
+            // Calculate memory-aware chunk size
+            let chunk_size = calculate_memory_aware_chunk_size(
+                idx_count,
+                njobs,
+                max_chunk_memory_mb,
+                &which_stats,
+                sample_records.as_deref(),
+            );
+            // Estimate average record size from samples if available
+            let avg_record_size = if let Some(samples) = sample_records {
+                calculate_avg_record_size(&samples, &which_stats)
+            } else {
+                1024
+            };
+
+            let estimated_memory_mb =
+                estimate_chunk_memory(chunk_size, avg_record_size, &which_stats, headers.len())
+                    / (1024 * 1024);
+
+            // Safety: max_chunk_memory_mb is guaranteed Some(...) here since
+            // needs_memory_aware_chunking requires max_chunk_memory_mb.is_some()
+            let chunking_mode = if max_chunk_memory_mb.unwrap_or(0) == 0 {
+                "dynamic (auto)"
+            } else {
+                "fixed limit"
+            };
+
+            (
+                format!(
+                    "Memory-aware chunking ({chunking_mode}): chunk_size={chunk_size}, \
+                     estimated_memory_mb={estimated_memory_mb:.2}"
+                ),
+                chunk_size,
+            )
+        } else {
+            // CPU-based chunking
+            let chunk_size = util::chunk_size(idx_count as usize, njobs);
+            (
+                format!("CPU-based chunking: chunk_size={chunk_size}"),
+                chunk_size,
+            )
+        };
+
         let nchunks = util::num_of_chunks(idx_count as usize, chunk_size);
+        log::info!("({chunking_mode_info}) nchunks={nchunks}");
 
         let pool = ThreadPool::new(njobs);
         let (send, recv) = crossbeam_channel::bounded(nchunks);
+        let args = Arc::new(self.clone());
         for i in 0..nchunks {
-            let (send, args, sel) = (send.clone(), self.clone(), sel.clone());
+            let (send, args, sel) = (send.clone(), Arc::clone(&args), sel.clone());
+            let weight_idx: Option<usize> = weight_col_idx;
             pool.execute(move || {
                 // safety: indexed() is safe as we know we have an index file
                 // and we know it will return an Ok
+                // arguably, there is still a very small risk of a TOCTOU here,
+                // but it's unlikely
                 let mut idx = unsafe {
                     args.rconfig()
                         .indexed()
@@ -1454,17 +1771,21 @@ impl Args {
                 };
                 // safety: seek() is safe as we know we have an index file
                 // we do an expect() here so that it triggers a human-panic
-                // with some actionable infoif the index is corrupted
+                // with some actionable info if the index is corrupted
                 idx.seek((i * chunk_size) as u64)
-                    .expect("File seek failed.");
+                    .expect("Index seek failed.");
                 let it = idx.byte_records().take(chunk_size);
                 // safety: this will only return an Error if the channel has been disconnected
                 unsafe {
-                    send.send(args.compute(&sel, it)).unwrap_unchecked();
+                    send.send(args.compute(&sel, it, weight_idx))
+                        .unwrap_unchecked();
                 }
             });
         }
         drop(send);
+        // safety: we know the merge_all will not return an Error because we're using an iterator
+        // and we know the iterator will not be empty because we're using a bounded channel
+        // in the event of a channel error, we will return an empty vector
         Ok((headers, merge_all(recv.iter()).unwrap_or_default()))
     }
 
@@ -1505,7 +1826,6 @@ impl Args {
     fn stats_to_records(&self, stats: Vec<Stats>, visualize_ws: bool) -> Vec<csv::StringRecord> {
         let round_places = self.flag_round;
         let infer_boolean = self.flag_infer_boolean;
-        let dataset_stats = self.flag_dataset_stats;
         let mut records = Vec::with_capacity(stats.len());
         records.extend(repeat_n(csv::StringRecord::new(), stats.len()));
         let pool = ThreadPool::new(util::njobs(self.flag_jobs));
@@ -1516,7 +1836,7 @@ impl Args {
             pool.execute(move || {
                 // safety: this will only return an Error if the channel has been disconnected
                 // which will not happen in this case
-                send.send(stat.to_record(round_places, infer_boolean, visualize_ws, dataset_stats))
+                send.send(stat.to_record(round_places, infer_boolean, visualize_ws))
                     .unwrap();
             });
         }
@@ -1569,7 +1889,7 @@ impl Args {
     /// * Bounds checking is avoided where safe
     /// * Iterator errors are handled gracefully
     #[inline]
-    fn compute<I>(&self, sel: &Selection, it: I) -> Vec<Stats>
+    fn compute<I>(&self, sel: &Selection, it: I, weight_col_idx: Option<usize>) -> Vec<Stats>
     where
         I: Iterator<Item = csv::Result<csv::ByteRecord>>,
     {
@@ -1585,17 +1905,37 @@ impl Args {
         let prefer_dmy = self.flag_prefer_dmy;
 
         let mut i;
-        #[allow(unused_assignments)]
-        let mut current_row = csv::ByteRecord::with_capacity(1024, sel_len);
         for row in it {
+            // reset the index for each row
             i = 0;
+
+            // safety: we know the row is Ok because we're using an iterator
+            // Note that `stats` assumes a valid CSV, so we don't check for CSV errors
+            // in this performance-critical path
+            let row_result: csv::ByteRecord = unsafe { row.unwrap_unchecked() };
+
+            // Extract weight value if weight column is specified
+            // safety: we know the weight column index is valid because we checked it above
+            // in case of a parse error, invalid weight defaults to 1.0
+            let weight = if let Some(widx) = weight_col_idx {
+                if widx < row_result.len() {
+                    fast_float2::parse::<f64, &[u8]>(row_result.get(widx).unwrap_or(b"1.0"))
+                        .unwrap_or(1.0)
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            };
+
             // safety: because we're using iterators and INFER_DATE_FLAGS has the same size,
             // we know we don't need to bounds check
+            debug_assert_eq!(infer_date_flags.len(), sel_len);
             unsafe {
-                current_row = row.unwrap_unchecked();
-                for field in sel.select(&current_row) {
+                for field in sel.select(&row_result) {
                     stats.get_unchecked_mut(i).add(
                         field,
+                        weight,
                         *infer_date_flags.get_unchecked(i),
                         infer_boolean,
                         prefer_dmy,
@@ -1607,41 +1947,78 @@ impl Args {
         stats
     }
 
-    /// Reads and processes CSV headers with column selection.
+    /// Processes headers and handles weight column exclusion if needed.
     ///
-    /// This function reads the CSV headers from the reader and applies column selection
-    /// based on the configuration. It returns both the selected headers and the selection
-    /// object for use in subsequent processing.
+    /// This function handles the logic for excluding the weight column from statistics
+    /// computation. It finds the weight column index, creates a modified selection that
+    /// excludes it, and returns the selected headers.
     ///
     /// # Arguments
     ///
-    /// * `rdr` - CSV reader with the input data
+    /// * `full_headers` - The full CSV headers as a ByteRecord
     ///
     /// # Returns
     ///
-    /// * `Ok((csv::ByteRecord, Selection))` - Tuple containing selected headers and selection
-    ///   object
-    /// * `Err(CliError)` - If there's an error reading headers or applying selection
+    /// * `Ok((Option<usize>, Selection, csv::ByteRecord))` - Tuple containing:
+    ///   - Weight column index (None if no weight column specified)
+    ///   - Modified selection (excluding weight column if present)
+    ///   - Selected headers (excluding weight column if present)
+    /// * `Err(CliError)` - If weight column is not found or no columns remain after exclusion
     ///
     /// # Process
     ///
-    /// 1. **Header Reading**: Reads byte headers from the CSV reader
-    /// 2. **Selection Creation**: Creates a selection object based on configuration
-    /// 3. **Header Filtering**: Applies the selection to filter headers
-    /// 4. **Return**: Returns both selected headers and selection object
-    ///
-    /// # Performance
-    ///
-    /// * **Inline**: Function is marked as `#[inline]` for performance
-    /// * **Minimal Allocations**: Reuses existing data structures where possible
-    #[inline]
-    fn sel_headers<R: io::Read>(
+    /// 1. **Weight Column Check**: If no weight column is specified, uses normal selection
+    /// 2. **Weight Column Finding**: Finds the weight column index in full headers
+    /// 3. **Selection Modification**: Removes weight column from selection
+    /// 4. **Validation**: Ensures at least one column remains after exclusion
+    /// 5. **Header Filtering**: Applies modified selection to get filtered headers
+    fn process_headers_with_weight_exclusion(
         &self,
-        rdr: &mut csv::Reader<R>,
-    ) -> CliResult<(csv::ByteRecord, Selection)> {
-        let headers = rdr.byte_headers()?.clone();
-        let sel = self.rconfig().selection(&headers)?;
-        Ok((sel.select(&headers).collect(), sel))
+        full_headers: &csv::ByteRecord,
+    ) -> CliResult<(Option<usize>, Selection, csv::ByteRecord)> {
+        if let Some(ref weight_col) = self.flag_weight {
+            // Find weight column index in full headers
+            let weight_idx = full_headers
+                .iter()
+                .position(|h| {
+                    let h_str = String::from_utf8_lossy(h);
+                    h_str.trim().eq_ignore_ascii_case(weight_col.trim())
+                })
+                .ok_or_else(|| {
+                    CliError::Other(format!(
+                        "Weight column '{weight_col}' not found in CSV headers"
+                    ))
+                })?;
+
+            // Create selection excluding weight column
+            let sel = self.rconfig().selection(full_headers)?;
+            // Remove weight column index from selection if present
+            let sel_vec: Vec<usize> = sel
+                .iter()
+                .copied()
+                .filter(|&idx| idx != weight_idx)
+                .collect();
+
+            // Validate that we still have columns after excluding the weight column
+            if sel_vec.is_empty() {
+                return Err(CliError::Other(format!(
+                    "After excluding weight column '{weight_col}', no columns remain for \
+                     statistics computation"
+                )));
+            }
+
+            let modified_sel = Selection::from_indices(sel_vec);
+
+            // Get selected headers (excluding weight column)
+            let selected_headers: csv::ByteRecord = modified_sel.select(full_headers).collect();
+
+            Ok((Some(weight_idx), modified_sel, selected_headers))
+        } else {
+            // No weight column specified, use normal selection
+            let sel = self.rconfig().selection(full_headers)?;
+            let headers: csv::ByteRecord = sel.select(full_headers).collect();
+            Ok((None, sel, headers))
+        }
     }
 
     /// Creates a CSV reader configuration based on the current arguments.
@@ -1669,8 +2046,28 @@ impl Args {
     fn rconfig(&self) -> Config {
         Config::new(self.arg_input.as_ref())
             .delimiter(self.flag_delimiter)
-            .no_headers(self.flag_no_headers)
+            .no_headers_flag(self.flag_no_headers)
             .select(self.flag_select.clone())
+    }
+
+    /// Creates a WhichStats configuration from the current arguments.
+    #[inline]
+    fn which_stats(&self) -> WhichStats {
+        WhichStats {
+            include_nulls:   self.flag_nulls,
+            sum:             !self.flag_typesonly,
+            range:           !self.flag_typesonly || self.flag_infer_boolean,
+            dist:            !self.flag_typesonly,
+            cardinality:     self.flag_everything || self.flag_cardinality,
+            median:          !self.flag_everything && self.flag_median && !self.flag_quartiles,
+            mad:             self.flag_everything || self.flag_mad,
+            quartiles:       self.flag_everything || self.flag_quartiles,
+            mode:            self.flag_everything || self.flag_mode,
+            typesonly:       self.flag_typesonly,
+            percentiles:     self.flag_everything || self.flag_percentiles,
+            percentile_list: self.flag_percentile_list.clone(),
+            use_weights:     self.flag_weight.is_some(),
+        }
     }
 
     /// Creates a vector of `Stats` objects for statistics computation.
@@ -1707,23 +2104,7 @@ impl Args {
     #[inline]
     fn new_stats(&self, record_len: usize) -> Vec<Stats> {
         let mut stats: Vec<Stats> = Vec::with_capacity(record_len);
-        stats.extend(repeat_n(
-            Stats::new(WhichStats {
-                include_nulls:   self.flag_nulls,
-                sum:             !self.flag_typesonly || self.flag_infer_boolean,
-                range:           !self.flag_typesonly || self.flag_infer_boolean,
-                dist:            !self.flag_typesonly || self.flag_infer_boolean,
-                cardinality:     self.flag_everything || self.flag_cardinality,
-                median:          !self.flag_everything && self.flag_median && !self.flag_quartiles,
-                mad:             self.flag_everything || self.flag_mad,
-                quartiles:       self.flag_everything || self.flag_quartiles,
-                mode:            self.flag_everything || self.flag_mode,
-                typesonly:       self.flag_typesonly,
-                percentiles:     self.flag_everything || self.flag_percentiles,
-                percentile_list: self.flag_percentile_list.clone(),
-            }),
-            record_len,
-        ));
+        stats.extend(repeat_n(Stats::new(self.which_stats()), record_len));
         stats
     }
 
@@ -1763,6 +2144,9 @@ impl Args {
             "variance",
             "cv",
             "nullcount",
+            "n_negative",
+            "n_zero",
+            "n_positive",
             "max_precision",
             "sparsity",
         ]);
@@ -1804,12 +2188,189 @@ impl Args {
         if self.flag_percentiles || everything {
             fields.push("percentiles");
         }
-        if self.flag_dataset_stats {
-            // we add the qsv__value field at the end for dataset-level stats
-            fields.push("qsv__value");
-        }
 
         csv::StringRecord::from(fields)
+    }
+}
+
+/// Helper function to calculate average record size from samples
+fn calculate_avg_record_size(samples: &[csv::ByteRecord], which_stats: &WhichStats) -> usize {
+    if samples.is_empty() {
+        1024 // Default
+    } else {
+        let total_size: usize = samples
+            .iter()
+            .map(|record| estimate_record_memory(record, which_stats))
+            .sum();
+        (total_size / samples.len()).max(1024)
+    }
+}
+
+/// Estimates memory usage per record based on enabled statistics.
+///
+/// This function calculates the approximate memory footprint of a single CSV record
+/// when computing statistics. The estimate includes:
+/// - Base record size (sum of field lengths)
+/// - Additional memory for non-streaming statistics (median, quartiles, modes, etc.)
+///
+/// # Arguments
+///
+/// * `record` - The CSV record to estimate memory for
+/// * `which_stats` - Configuration indicating which statistics are enabled
+///
+/// # Returns
+///
+/// Estimated memory in bytes per record
+fn estimate_record_memory(record: &csv::ByteRecord, which_stats: &WhichStats) -> usize {
+    // Base memory: sum of all field lengths
+    let base_size: usize = record.iter().map(<[u8]>::len).sum();
+
+    // Additional memory for non-streaming statistics
+    let mut additional_memory = 0;
+
+    // For unsorted_stats (median, quartiles, MAD, percentiles)
+    // Each numeric/date field requires 8 bytes (f64) to be stored
+    if which_stats.quartiles || which_stats.median || which_stats.mad || which_stats.percentiles {
+        // Estimate: assume half the fields are numeric/date (conservative)
+        additional_memory += (record.len() / 2) * 8;
+    }
+
+    // For modes (mode/cardinality)
+    // Each field value is stored as Vec<u8>, so we need the field length
+    if which_stats.mode || which_stats.cardinality {
+        additional_memory += base_size; // Store all field values
+    }
+
+    // Add overhead for Vec capacity (average of base_size and additional_memory)
+    let overhead = usize::midpoint(base_size, additional_memory);
+
+    base_size + additional_memory + overhead
+}
+
+/// Estimates total memory required for processing a chunk of records.
+///
+/// # Arguments
+///
+/// * `record_count` - Number of records in the chunk
+/// * `avg_record_size` - Average size of a record in bytes
+/// * `which_stats` - Configuration indicating which statistics are enabled
+/// * `field_count` - Number of fields in the record
+///
+/// # Returns
+///
+/// Estimated total memory in bytes for the chunk
+const fn estimate_chunk_memory(
+    record_count: usize,
+    avg_record_size: usize,
+    which_stats: &WhichStats,
+    field_count: usize,
+) -> usize {
+    // Base memory for records
+    let base_memory = record_count.saturating_mul(avg_record_size);
+
+    // Additional memory for non-streaming statistics
+    let mut additional_memory = 0;
+
+    // For unsorted_stats: 8 bytes per record per numeric/date field
+    if which_stats.quartiles || which_stats.median || which_stats.mad || which_stats.percentiles {
+        // Estimate: assume half the fields are numeric/date (conservative)
+        additional_memory += record_count.saturating_mul((field_count / 2).saturating_mul(8));
+    }
+
+    // For modes: store all field values
+    if which_stats.mode || which_stats.cardinality {
+        additional_memory += record_count.saturating_mul(avg_record_size);
+    }
+
+    // Add overhead for data structures (Stats objects, Vec capacity, etc.)
+    // Estimate 20% overhead
+    let overhead = (base_memory + additional_memory) / 5;
+
+    base_memory
+        .saturating_add(additional_memory)
+        .saturating_add(overhead)
+}
+
+/// Calculates memory-aware chunk size for parallel statistics processing.
+///
+/// This function determines an appropriate chunk size based on:
+/// - Available memory per chunk (if configured)
+/// - Dynamic estimation via sampling (if max_chunk_memory_mb is Some(0))
+/// - CPU-based chunking (fallback)
+///
+/// # Arguments
+///
+/// * `idx_count` - Total number of records in the file
+/// * `njobs` - Number of parallel jobs
+/// * `max_chunk_memory_mb` - Maximum memory per chunk in MB (None = use CPU-based, Some(0) =
+///   dynamic, Some(n) = fixed limit)
+/// * `which_stats` - Configuration indicating which statistics are enabled
+/// * `sample_records` - Optional slice of sample records for dynamic sizing
+///
+/// # Returns
+///
+/// Calculated chunk size (number of records per chunk)
+fn calculate_memory_aware_chunk_size(
+    idx_count: u64,
+    njobs: usize,
+    max_chunk_memory_mb: Option<u64>,
+    which_stats: &WhichStats,
+    sample_records: Option<&[csv::ByteRecord]>,
+) -> usize {
+    // Check if non-streaming stats are enabled (require memory-aware chunking)
+    let needs_memory_aware_chunking = which_stats.needs_memory_aware_chunking();
+
+    match max_chunk_memory_mb {
+        None => {
+            // No memory limit configured
+            if needs_memory_aware_chunking {
+                // Non-streaming stats require memory-aware chunking, default to dynamic sizing
+                // This is equivalent to Some(0) - dynamic sizing
+                util::calculate_dynamic_chunk_size(idx_count, njobs, sample_records, |record| {
+                    estimate_record_memory(record, which_stats)
+                })
+            } else {
+                // Streaming stats only, use CPU-based chunking
+                util::chunk_size(idx_count as usize, njobs)
+            }
+        },
+        Some(0) => {
+            // Dynamic sizing: sample records to estimate average size
+            // Note: caller already gates on needs_memory_aware_chunking, so we always
+            // use dynamic sizing here. The None arm has its own guard for direct callers.
+            util::calculate_dynamic_chunk_size(idx_count, njobs, sample_records, |record| {
+                estimate_record_memory(record, which_stats)
+            })
+        },
+        Some(limit_mb) => {
+            // Fixed memory limit per chunk
+            #[allow(clippy::cast_precision_loss)]
+            let max_memory_bytes = (limit_mb as usize * 1024 * 1024) as f64 * util::SAFETY_MARGIN;
+
+            // Estimate average record size
+            // If we can't estimate, use a conservative default (1KB per record)
+            let avg_record_size = if let Some(samples) = sample_records {
+                if samples.is_empty() {
+                    1024 // Default: 1KB per record
+                } else {
+                    let total_size: usize = samples
+                        .iter()
+                        .map(|record| estimate_record_memory(record, which_stats))
+                        .sum();
+                    debug_assert!(total_size > 0, "total_size should be positive here");
+                    total_size / samples.len() // samples.len() is guaranteed to be positive here
+                }
+            } else {
+                1024 // Default: 1KB per record
+            };
+
+            // Calculate chunk size based on memory limit
+            #[allow(clippy::cast_precision_loss)]
+            let chunk_size = (max_memory_bytes / (avg_record_size as f64).max(1.0)) as usize;
+
+            // Ensure chunk size is reasonable
+            chunk_size.max(1).min(idx_count as usize)
+        },
     }
 }
 
@@ -1834,7 +2395,7 @@ impl Args {
 /// * **Regular Files**: Creates a `.stats.csv` file in the same directory as the input
 /// * **Stdin Input**: Creates a `stdin.stats.csv` file in the current directory
 /// * **Path Validation**: Validates that the input path has a parent directory and filename
-fn stats_path(stats_csv_path: &Path, stdin_flag: bool) -> io::Result<PathBuf> {
+fn stats_path(stats_csv_path: &Path, stdin_flag: bool, weighted: bool) -> io::Result<PathBuf> {
     let parent = stats_csv_path
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid path"))?;
@@ -1843,7 +2404,13 @@ fn stats_path(stats_csv_path: &Path, stdin_flag: bool) -> io::Result<PathBuf> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid file name"))?;
 
     let new_fname = if stdin_flag {
-        "stdin.stats.csv".to_string()
+        if weighted {
+            "stdin.stats.weighted.csv".to_string()
+        } else {
+            "stdin.stats.csv".to_string()
+        }
+    } else if weighted {
+        format!("{}.stats.weighted.csv", fstem.to_string_lossy())
     } else {
         format!("{}.stats.csv", fstem.to_string_lossy())
     };
@@ -1916,6 +2483,69 @@ fn init_date_inference(
     Ok(())
 }
 
+/// Minimal struct for parsing sniff JSON output when resolving "sniff" dates-whitelist
+#[derive(Deserialize)]
+struct SniffResult {
+    fields: Vec<String>,
+    types:  Vec<String>,
+}
+
+/// Resolves the "sniff" special value in dates-whitelist by running `qsv sniff --json`
+/// and extracting column names that have Date or DateTime types.
+fn resolve_sniff_whitelist(input_path: &std::path::Path) -> CliResult<String> {
+    let qsv_bin = util::current_exe()?;
+
+    let output = std::process::Command::new(qsv_bin)
+        .args(["sniff", "--json", "--stats-types"])
+        .arg(input_path)
+        .output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return fail_clierror!("Failed to sniff file for date columns: {}", stderr.trim());
+    }
+
+    // Parse JSON output (platform-specific)
+    #[cfg(target_endian = "little")]
+    let sniff_result: SniffResult = {
+        let mut json_bytes = output.stdout;
+        simd_json::from_slice(&mut json_bytes)
+            .map_err(|e| CliError::Other(format!("Failed to parse sniff JSON: {e}")))?
+    };
+
+    #[cfg(target_endian = "big")]
+    let sniff_result: SniffResult = serde_json::from_slice(&output.stdout)
+        .map_err(|e| CliError::Other(format!("Failed to parse sniff JSON: {e}")))?;
+
+    // Extract column names where type is Date or DateTime
+    let date_columns: Vec<&str> = sniff_result
+        .fields
+        .iter()
+        .zip(sniff_result.types.iter())
+        .filter_map(|(field, typ)| {
+            if typ == "Date" || typ == "DateTime" {
+                Some(field.as_str())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if date_columns.is_empty() {
+        log::info!("sniff: no Date/DateTime columns found");
+        // Return a sentinel that will not match any header, avoiding enabling
+        // date inference for all columns when no Date/DateTime columns exist.
+        // This is necessary because "".contains("") is always true.
+        Ok("_qsv_no_date_columns_found".to_string())
+    } else {
+        log::info!(
+            "sniff: found Date/DateTime columns: {}",
+            date_columns.join(", ")
+        );
+        Ok(date_columns.join(","))
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
 struct WhichStats {
     include_nulls:   bool,
@@ -1930,6 +2560,7 @@ struct WhichStats {
     typesonly:       bool,
     percentiles:     bool,
     percentile_list: String,
+    use_weights:     bool,
 }
 
 impl Commute for WhichStats {
@@ -1939,7 +2570,19 @@ impl Commute for WhichStats {
     }
 }
 
+impl WhichStats {
+    const fn needs_memory_aware_chunking(&self) -> bool {
+        self.quartiles
+            || self.median
+            || self.mad
+            || self.percentiles
+            || self.mode
+            || self.cardinality
+    }
+}
+
 #[allow(clippy::unsafe_derive_deserialize)]
+#[allow(clippy::struct_field_names)]
 #[repr(C, align(64))] // Align to cache line size for better performance
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 struct Stats {
@@ -1949,32 +2592,452 @@ struct Stats {
     is_ascii:      bool,      // 1 byte - accessed for strings
     max_precision: u16,       // 2 bytes - accessed for floats
 
-    // 4 bytes padding here for alignment
-    nullcount:   u64, // 8 bytes - frequently updated counter
-    sum_stotlen: u64, // 8 bytes - frequently updated counter
+    // 4 bytes padding (automatic with repr(C) for 8-byte alignment)
 
-    // Configuration flags (accessed once during initialization)
-    which: WhichStats, // 10 bytes - read-only after initialization
+    // Hot counters - all 8-byte aligned, accessed frequently
+    nullcount:    u64, // 8 bytes - frequently updated counter
+    sum_stotlen:  u64, // 8 bytes - frequently updated counter
+    total_weight: f64, // 8 bytes - frequently updated for weighted stats
 
-    // 6 bytes padding here to reach 64 bytes (cache line boundary)
+    // Configuration flags (accessed once during initialization, cold after init)
+    which: WhichStats, // 40 bytes - read-only after initialization
 
     // CACHE LINE 2+: Less frequently accessed but still important
     // Large Option types that may be None, grouped by usage pattern
     sum: Option<TypedSum>, // 32 bytes - updated in add() for numeric types
 
     // CACHE LINE 3+: Statistics computation fields
-    online:     Option<OnlineStats>, // 48 bytes - used for mean/variance calculations
-    online_len: Option<OnlineStats>, // 48 bytes - used for string length stats
+    online:          Option<OnlineStats>, // 72 bytes - used for mean/variance calculations
+    online_len:      Option<OnlineStats>, // 72 bytes - used for string length stats
+    weighted_online: Option<WeightedOnlineStats>, // 72 bytes - Weighted online statistics
 
     // CACHE LINE 4+: Mode and cardinality computation
-    modes: Option<Unsorted<Vec<u8>>>, // 32 bytes - used for mode/cardinality
+    modes:          Option<Unsorted<Vec<u8>>>, // 32 bytes - used for mode/cardinality
+    weighted_modes: Option<HashMap<Vec<u8>, f64>>, // 48 bytes - Weighted mode/antimode tracking
 
     // CACHE LINE 5+: Sorting-based statistics
     #[allow(clippy::struct_field_names)]
-    unsorted_stats: Option<Unsorted<f64>>, // 32 bytes - median/quartiles/percentiles
+    unsorted_stats:          Option<Unsorted<f64>>, // 32 bytes - median/quartiles/percentiles
+    weighted_unsorted_stats: Option<Vec<(f64, f64)>>, /* 24 bytes - (value, weight) tuples for
+                                                       * weighted
+                                                       * quantiles */
 
     // CACHE LINE 6+: Min/Max tracking (largest field, least cache-friendly)
     minmax: Option<TypedMinMax>, // 432 bytes - largest field, accessed less frequently
+}
+
+/// Weighted online statistics using the weighted Welford's algorithm (West, 1979).
+///
+/// This struct implements weighted versions of mean, variance, and standard deviation
+/// using an incremental algorithm that processes data in a single pass without storing
+/// all values. The algorithm is numerically stable and suitable for streaming data.
+///
+/// The weighted mean is computed as: mean = Σ(w_i * x_i) / Σ(w_i)
+/// The weighted variance uses the frequency weight definition: variance = S_n / (W_n - 1)
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
+struct WeightedOnlineStats {
+    /// Sum of all weights: W_n = Σ(w_i)
+    sum_weights:              f64,
+    /// Current weighted mean: M_n
+    weighted_mean:            f64,
+    /// Sum of squared differences: S_n = Σ(w_i * (x_i - M_{i-1}) * (x_i - M_i))
+    sum_squared_diffs:        f64,
+    /// Sum of weighted logarithms: Σ(w_i * ln(x_i)) for weighted geometric mean
+    sum_weighted_logs:        f64,
+    /// Sum of weights for positive values (used as denominator for geometric mean)
+    sum_weights_positive:     f64,
+    /// Sum of weighted reciprocals: Σ(w_i / x_i) for weighted harmonic mean
+    sum_weighted_reciprocals: f64,
+    /// Sum of weights for non-zero values (used as denominator for harmonic mean)
+    sum_weights_nonzero:      f64,
+    /// Count of samples (for compatibility with OnlineStats interface)
+    count:                    usize,
+}
+
+impl WeightedOnlineStats {
+    /// Creates a new `WeightedOnlineStats` with all values initialized to zero.
+    const fn new() -> Self {
+        Self {
+            sum_weights:              0.0,
+            weighted_mean:            0.0,
+            sum_squared_diffs:        0.0,
+            sum_weighted_logs:        0.0,
+            sum_weights_positive:     0.0,
+            sum_weighted_reciprocals: 0.0,
+            sum_weights_nonzero:      0.0,
+            count:                    0,
+        }
+    }
+
+    /// Adds a weighted sample to the statistics.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - The sample value
+    /// * `w` - The weight for this sample (must be >= 0)
+    ///
+    /// # Algorithm
+    ///
+    /// Uses the weighted incremental algorithm:
+    /// - W_n = W_{n-1} + w_n
+    /// - M_n = M_{n-1} + (w_n / W_n) * (x_n - M_{n-1})
+    /// - S_n = S_{n-1} + w_n * (x_n - M_{n-1}) * (x_n - M_n)
+    /// - For geometric mean: accumulate w_i * ln(x_i) (only if x_i > 0)
+    /// - For harmonic mean: accumulate w_i / x_i (only if x_i != 0)
+    #[inline]
+    fn add_weighted(&mut self, x: f64, w: f64) {
+        if w <= 0.0 {
+            return;
+        }
+
+        self.count += 1;
+        self.sum_weights += w;
+
+        let delta = x - self.weighted_mean;
+        self.weighted_mean = (w / self.sum_weights).mul_add(delta, self.weighted_mean);
+        let delta2 = x - self.weighted_mean;
+        self.sum_squared_diffs = (w * delta).mul_add(delta2, self.sum_squared_diffs);
+
+        // Accumulate weighted logs for geometric mean (only if x > 0)
+        if x > 0.0 {
+            self.sum_weighted_logs = w.mul_add(x.ln(), self.sum_weighted_logs);
+            self.sum_weights_positive += w;
+        }
+
+        // Accumulate weighted reciprocals for harmonic mean (only if x != 0)
+        if x != 0.0 {
+            self.sum_weighted_reciprocals += w / x;
+            self.sum_weights_nonzero += w;
+        }
+    }
+
+    /// Returns the weighted mean.
+    #[inline]
+    const fn mean(&self) -> f64 {
+        self.weighted_mean
+    }
+
+    /// Returns the weighted variance using frequency weight definition.
+    ///
+    /// Uses denominator (W_n - 1) for sample variance when weights represent frequency counts.
+    #[inline]
+    fn variance(&self) -> f64 {
+        if self.sum_weights <= 1.0 {
+            return 0.0;
+        }
+        self.sum_squared_diffs / (self.sum_weights - 1.0)
+    }
+
+    /// Returns the weighted standard deviation.
+    #[inline]
+    fn stddev(&self) -> f64 {
+        self.variance().sqrt()
+    }
+
+    /// Returns the weighted geometric mean.
+    ///
+    /// Formula: exp(Σ(w_i * ln(x_i)) / Σ(w_i)) where sums are over positive values only.
+    ///
+    /// Returns NaN if no positive values were encountered or if sum_weights_positive is zero.
+    #[inline]
+    fn geometric_mean(&self) -> f64 {
+        if self.sum_weights_positive <= 0.0 || self.sum_weighted_logs.is_nan() {
+            return f64::NAN;
+        }
+        (self.sum_weighted_logs / self.sum_weights_positive).exp()
+    }
+
+    /// Returns the weighted harmonic mean.
+    ///
+    /// Formula: Σ(w_i) / Σ(w_i / x_i) where sums are over non-zero values only.
+    ///
+    /// Returns NaN if no non-zero values were encountered or if sum_weighted_reciprocals is zero.
+    #[inline]
+    fn harmonic_mean(&self) -> f64 {
+        if self.sum_weights_nonzero <= 0.0 || self.sum_weighted_reciprocals <= 0.0 {
+            return f64::NAN;
+        }
+        self.sum_weights_nonzero / self.sum_weighted_reciprocals
+    }
+
+    /// Returns the number of samples added (for compatibility).
+    #[inline]
+    const fn len(&self) -> usize {
+        self.count
+    }
+
+    /// Merges another `WeightedOnlineStats` into this one.
+    ///
+    /// This is used for parallel processing where statistics from different
+    /// chunks need to be combined.
+    fn merge(&mut self, other: &WeightedOnlineStats) {
+        if other.sum_weights == 0.0 {
+            return;
+        }
+        if self.sum_weights == 0.0 {
+            *self = other.clone();
+            return;
+        }
+
+        let total_weights = self.sum_weights + other.sum_weights;
+        let delta = other.weighted_mean - self.weighted_mean;
+
+        // Update sum of squared differences using parallel merge formula
+        // self.sum_squared_diffs += other.sum_squared_diffs
+        //     + (self.sum_weights * other.sum_weights / total_weights) * delta * delta;
+        // below is the fused multiply-add implementation of the above formula
+        self.sum_squared_diffs += delta.mul_add(
+            delta * (self.sum_weights * other.sum_weights / total_weights),
+            other.sum_squared_diffs,
+        );
+
+        // Update weighted mean
+        // self.weighted_mean = (self.sum_weights * self.weighted_mean
+        //     + other.sum_weights * other.weighted_mean)
+        //     / total_weights;
+        // below is the fused multiply-add implementation of the above formula
+        self.weighted_mean = self
+            .sum_weights
+            .mul_add(self.weighted_mean, other.sum_weights * other.weighted_mean)
+            / total_weights;
+        // Update sum of weighted logs and reciprocals (simple addition)
+        self.sum_weighted_logs += other.sum_weighted_logs;
+        self.sum_weights_positive += other.sum_weights_positive;
+        self.sum_weighted_reciprocals += other.sum_weighted_reciprocals;
+        self.sum_weights_nonzero += other.sum_weights_nonzero;
+        // Update sum of weights and count
+        self.sum_weights = total_weights;
+        self.count += other.count;
+    }
+}
+
+/// Computes weighted quantile from (value, weight) pairs.
+///
+/// # Arguments
+///
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
+/// * `total_weight` - Total sum of all weights
+/// * `percentile` - Percentile to compute (0.0 to 1.0, e.g., 0.5 for median)
+///
+/// # Returns
+///
+/// The value at the specified percentile, computed using the weighted nearest-rank method (no
+/// interpolation).
+fn weighted_quantile(data: &[(f64, f64)], total_weight: f64, percentile: f64) -> Option<f64> {
+    if data.is_empty() || total_weight <= 0.0 {
+        return None;
+    }
+
+    // Data is already sorted by to_record() before calling this function
+    // No need to check or sort again
+
+    let target_weight = percentile * total_weight;
+    let mut cum_weight = 0.0;
+
+    for &(value, weight) in data {
+        cum_weight += weight;
+        // Return the value at which cumulative weight first reaches or exceeds the target
+        // This is the "nearest rank" method for weighted quantiles
+        if cum_weight >= target_weight {
+            return Some(value);
+        }
+    }
+
+    // If we reach here, return the last value
+    data.last().map(|(v, _)| *v)
+}
+
+/// Computes weighted quartiles (Q1, Q2, Q3) from (value, weight) pairs.
+///
+/// # Arguments
+///
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
+/// * `total_weight` - Total sum of all weights
+///
+/// # Returns
+///
+/// Option containing (Q1, Q2, Q3) if data is not empty and total_weight > 0, None otherwise.
+fn weighted_quartiles(data: &[(f64, f64)], total_weight: f64) -> Option<(f64, f64, f64)> {
+    if data.is_empty() || total_weight <= 0.0 {
+        return None;
+    }
+    // Data is already sorted by to_record() before calling this function
+    // No need to check or sort again
+    let thresholds = [
+        0.25_f64 * total_weight,
+        0.5_f64 * total_weight,
+        0.75_f64 * total_weight,
+    ];
+    let mut results: [Option<f64>; 3] = [None, None, None];
+    let mut cumulative_weight = 0.0_f64;
+    let mut t_idx = 0_usize;
+    for (value, weight) in data {
+        cumulative_weight += *weight;
+        // Assign values when cumulative weight first reaches/exceeds each threshold.
+        while t_idx < thresholds.len() && cumulative_weight >= thresholds[t_idx] {
+            if results[t_idx].is_none() {
+                results[t_idx] = Some(*value);
+            }
+            t_idx += 1;
+        }
+        if t_idx >= thresholds.len() {
+            break;
+        }
+    }
+    if let (Some(q1), Some(q2), Some(q3)) = results.into() {
+        Some((q1, q2, q3))
+    } else {
+        None
+    }
+}
+
+/// Computes weighted median from (value, weight) pairs.
+///
+/// # Arguments
+///
+/// * `data` - Vector of (value, weight) tuples
+/// * `total_weight` - Total sum of all weights
+///
+/// # Returns
+///
+/// The weighted median value if data is not empty, None otherwise.
+fn weighted_median(data: &[(f64, f64)], total_weight: f64) -> Option<f64> {
+    weighted_quantile(data, total_weight, 0.5)
+}
+
+/// Computes weighted Median Absolute Deviation (MAD) from (value, weight) pairs.
+///
+/// # Arguments
+///
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
+/// * `total_weight` - Total sum of all weights
+/// * `median` - The weighted median value
+///
+/// # Returns
+///
+/// The weighted MAD value if data is not empty, None otherwise.
+fn weighted_mad(data: &[(f64, f64)], total_weight: f64, median: f64) -> Option<f64> {
+    if data.is_empty() || total_weight <= 0.0 {
+        return None;
+    }
+
+    // Calculate absolute deviations from the median
+    let mut abs_deviations: Vec<(f64, f64)> = data
+        .iter()
+        .map(|&(value, weight)| ((value - median).abs(), weight))
+        .collect();
+
+    // Sort abs_deviations by absolute deviation value (new data, needs sorting)
+    // Use parallel sort only for large datasets to avoid thread pool overhead
+    if abs_deviations.len() > PAR_SORT_THRESHOLD {
+        abs_deviations.par_sort_unstable_by(|a, b| {
+            a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+        });
+    } else {
+        abs_deviations
+            .sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    }
+
+    // Calculate weighted median of absolute deviations
+    weighted_median(&abs_deviations, total_weight)
+}
+
+/// Formats a list of antimodes into a display string with optional preview prefix,
+/// NULL handling, and length truncation.
+///
+/// Used by both weighted and unweighted antimode formatting paths.
+fn format_antimodes(
+    antimodes: &[impl AsRef<[u8]>],
+    antimodes_count: usize,
+    separator: &str,
+    max_len: usize,
+    visualize_ws: bool,
+) -> String {
+    let mut antimodes_list = String::with_capacity(max_len);
+
+    // We only store the first MAX_ANTIMODES antimodes
+    // so if antimodes_count > MAX_ANTIMODES, add the "*PREVIEW: " prefix
+    if antimodes_count > MAX_ANTIMODES {
+        antimodes_list.push_str("*PREVIEW: ");
+    }
+
+    let antimodes_vals = &antimodes
+        .iter()
+        .map(|c| String::from_utf8_lossy(c.as_ref()))
+        .join(separator);
+
+    // if the antimodes result starts with the separator,
+    // it indicates that NULL is the first antimode. Add NULL to the list.
+    if antimodes_vals.starts_with(separator) {
+        antimodes_list.push_str("NULL");
+    }
+    antimodes_list.push_str(antimodes_vals);
+
+    // truncate at max_len characters with an ellipsis
+    if antimodes_list.len() > max_len {
+        util::utf8_truncate(&mut antimodes_list, max_len + 1);
+        antimodes_list.push_str("...");
+    }
+
+    if visualize_ws {
+        util::visualize_whitespace(&antimodes_list)
+    } else {
+        antimodes_list
+    }
+}
+
+/// Computes weighted percentiles from (value, weight) pairs.
+///
+/// # Arguments
+///
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
+/// * `total_weight` - Total sum of all weights
+/// * `percentile_list` - List of percentiles to compute (as u8 values, e.g., 5, 10, 90, 95)
+///
+/// # Returns
+///
+/// Vector of percentile values in the same order as percentile_list, or None if data is empty
+fn weighted_percentiles(
+    data: &[(f64, f64)],
+    total_weight: f64,
+    percentile_list: &[u8],
+) -> Option<Vec<f64>> {
+    if data.is_empty() || total_weight <= 0.0 {
+        return None;
+    }
+
+    // Data is already sorted by to_record() before calling this function
+    // No need to check or sort again
+
+    // Precompute target cumulative weights for each percentile, keeping original index
+    let mut targets: Vec<(f64, usize)> = percentile_list
+        .iter()
+        .enumerate()
+        .map(|(idx, &p)| {
+            let percentile_f64 = p as f64 / 100.0;
+            let target_cum_weight = percentile_f64 * total_weight;
+            (target_cum_weight, idx)
+        })
+        .collect();
+    // targets is typically 5-10 elements (percentile list), so parallel sort overhead
+    // exceeds the sorting time. Use regular sort instead.
+    targets.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut results = vec![0.0; percentile_list.len()];
+    let mut cum_weight = 0.0;
+    let mut target_idx = 0;
+    for &(value, weight) in data {
+        cum_weight += weight;
+        while target_idx < targets.len() && cum_weight >= targets[target_idx].0 {
+            let original_idx = targets[target_idx].1;
+            results[original_idx] = value;
+            target_idx += 1;
+        }
+        if target_idx == targets.len() {
+            break;
+        }
+    }
+
+    Some(results)
 }
 
 /// Converts a timestamp in milliseconds to RFC3339 format.
@@ -2041,8 +3104,13 @@ impl Stats {
     /// * **Cache-Friendly**: Field layout optimized for CPU cache lines
     /// * **Pre-allocation**: Uses record count to pre-allocate appropriate memory sizes
     fn new(which: WhichStats) -> Stats {
+        let use_weights = which.use_weights;
         let (mut sum, mut minmax, mut online, mut online_len, mut modes, mut unsorted_stats) =
             (None, None, None, None, None, None);
+        let mut weighted_online = None;
+        let mut weighted_unsorted_stats = None;
+        let mut weighted_modes = None;
+
         if which.sum {
             sum = Some(TypedSum::default());
         }
@@ -2052,6 +3120,9 @@ impl Stats {
         if which.dist {
             online = Some(stats::OnlineStats::default());
             online_len = Some(stats::OnlineStats::default());
+            if use_weights {
+                weighted_online = Some(WeightedOnlineStats::new());
+            }
         }
 
         // preallocate memory for the unsorted stats structs
@@ -2059,24 +3130,38 @@ impl Stats {
         // to avoid allocating too much memory
         let record_count = *RECORD_COUNT.get().unwrap_or(&10_000) as usize;
         if which.mode || which.cardinality {
-            modes = Some(stats::Unsorted::with_capacity(record_count));
+            if use_weights {
+                // When using weights, weighted_modes handles both mode/antimode and cardinality
+                // computation, so we don't need the separate modes (Unsorted) tracker
+                // Estimate capacity: assume average cardinality of 10% of records
+                weighted_modes = Some(HashMap::with_capacity((record_count / 10).max(16)));
+            } else {
+                modes = Some(stats::Unsorted::with_capacity(record_count));
+            }
         }
         // we use the same Unsorted struct for median, mad, quartiles & percentiles
         if which.quartiles || which.median || which.mad || which.percentiles {
             unsorted_stats = Some(stats::Unsorted::with_capacity(record_count));
+            if use_weights {
+                weighted_unsorted_stats = Some(Vec::with_capacity(record_count));
+            }
         }
         Stats {
             typ: FieldType::default(),
             is_ascii: true,
             max_precision: 0,
-            which,
             nullcount: 0,
             sum_stotlen: 0,
+            total_weight: 0.0,
+            which,
             sum,
-            modes,
-            unsorted_stats,
             online,
             online_len,
+            weighted_online,
+            modes,
+            weighted_modes,
+            unsorted_stats,
+            weighted_unsorted_stats,
             minmax,
         }
     }
@@ -2091,6 +3176,7 @@ impl Stats {
     /// # Arguments
     ///
     /// * `sample` - The field value as bytes to process
+    /// * `weight` - The weight for this sample (defaults to 1.0 when not using weights)
     /// * `infer_dates` - Whether to attempt date inference for this field
     /// * `infer_boolean` - Whether to attempt boolean inference for this field
     /// * `prefer_dmy` - Whether to prefer day/month/year date format over month/day/year
@@ -2121,12 +3207,37 @@ impl Stats {
     ///
     /// # Safety
     ///
-    /// * Uses unsafe code for performance-critical operations
+    /// * Uses unsafe code for performance-critical operations.
+    /// * Updates modes/cardinality trackers with a sample value. Weighted modes and unweighted
+    ///   modes are mutually exclusive.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    fn update_modes(&mut self, sample: &[u8], weight: f64) {
+        if let Some(ref mut wm) = self.weighted_modes {
+            // Weighted modes: accumulate weights per value
+            // Use get_mut first to avoid heap-allocating sample.to_vec() when key already exists
+            if let Some(val) = wm.get_mut(sample) {
+                *val += weight;
+            } else {
+                wm.insert(sample.to_vec(), weight);
+            }
+        } else if let Some(v) = self.modes.as_mut() {
+            v.add_bytes(sample);
+        }
+    }
+
     /// * Assumes valid UTF-8 input for string operations
     /// * Bounds checking is avoided where safe
     #[allow(clippy::inline_always)]
     #[inline(always)]
-    fn add(&mut self, sample: &[u8], infer_dates: bool, infer_boolean: bool, prefer_dmy: bool) {
+    fn add(
+        &mut self,
+        sample: &[u8],
+        weight: f64,
+        infer_dates: bool,
+        infer_boolean: bool,
+        prefer_dmy: bool,
+    ) {
         let (sample_type, int_val, float_val) =
             FieldType::from_sample(infer_dates, prefer_dmy, sample, self.typ);
         self.typ.merge(sample_type);
@@ -2141,6 +3252,34 @@ impl Stats {
         }
 
         let t = self.typ;
+
+        // typesonly + infer_boolean: only need minmax + cardinality for boolean inference
+        if self.which.typesonly {
+            // safety: MinMax is enabled because range=true is set for infer_boolean.
+            // The preceding `if self.which.typesonly && !infer_boolean { return; }` guard
+            // ensures we only reach here when infer_boolean is true.
+            debug_assert!(
+                self.minmax.is_some(),
+                "minmax must be enabled for typesonly+infer_boolean"
+            );
+            unsafe {
+                self.minmax
+                    .as_mut()
+                    .unwrap_unchecked()
+                    .add_with_parsed(t, sample, float_val, int_val);
+            }
+            self.update_modes(sample, weight);
+            if sample_type == TNull {
+                self.nullcount += 1;
+            }
+            return;
+        }
+
+        // Update total weight for weighted statistics
+        // Skip entirely when weights aren't active (the common case)
+        if self.which.use_weights && weight > 0.0 {
+            self.total_weight += weight;
+        }
 
         // Process the frequently used Option-based statistics first
         // These are commonly enabled, so check them in order of likelihood
@@ -2165,9 +3304,9 @@ impl Stats {
         };
 
         // Modes/cardinality less common but still frequent
-        if let Some(v) = self.modes.as_mut() {
-            v.add(sample.to_vec());
-        }
+        // These are mutually exclusive: weighted_modes is used when weights are active,
+        // otherwise the unweighted modes (Unsorted) tracker is used.
+        self.update_modes(sample, weight);
 
         if t == TString {
             // safety: online_len is always enabled when t == TString
@@ -2201,57 +3340,65 @@ impl Stats {
 
         // Process other types - from most to least frequent
         match t {
-            TInteger => {
-                if let Some(v) = self.unsorted_stats.as_mut() {
-                    v.add(float_val);
-                }
-                // safety: online is always enabled
-                unsafe {
-                    self.online.as_mut().unwrap_unchecked().add_f64(float_val);
-                }
-            },
-            TFloat => {
-                if let Some(v) = self.unsorted_stats.as_mut() {
-                    v.add(float_val);
-                }
-                // safety: online is always enabled
-                unsafe {
-                    self.online.as_mut().unwrap_unchecked().add_f64(float_val);
-                }
+            TInteger | TFloat => {
+                self.add_numeric_value(float_val, weight);
 
-                // precision calculation
+                // precision calculation (TFloat only)
                 // note that we are referring to number of decimal places,
                 // not the number of significant digits
-                let precision = if float_val == 0.0 {
-                    0
-                } else {
-                    // safety: we know that f is a valid f64
-                    // so there will always be a fraction part, even if it's 0
-                    unsafe {
-                        ryu::Buffer::new()
-                            .format_finite(float_val)
-                            .split('.')
-                            .next_back()
-                            .unwrap_unchecked()
-                            .len() as u16
-                    }
-                };
-                self.max_precision = std::cmp::max(self.max_precision, precision);
+                if t == TFloat {
+                    let precision = if float_val == 0.0 {
+                        0
+                    } else {
+                        // safety: we know that f is a valid f64
+                        // so there will always be a fraction part, even if it's 0
+                        unsafe {
+                            zmij::Buffer::new()
+                                .format_finite(float_val)
+                                .split('.')
+                                .next_back()
+                                .unwrap_unchecked()
+                                .len() as u16
+                        }
+                    };
+                    self.max_precision = std::cmp::max(self.max_precision, precision);
+                }
             },
             TDateTime | TDate => {
                 // calculate date statistics by adding date samples as unix timestamps
-                // to the millisecond precision.
+                // to the sub-second precision.
                 #[allow(clippy::cast_precision_loss)]
                 let timestamp = int_val as f64;
-                if let Some(v) = self.unsorted_stats.as_mut() {
-                    v.add(timestamp);
-                }
-                // safety: online is always enabled
-                unsafe {
-                    self.online.as_mut().unwrap_unchecked().add_f64(timestamp);
-                }
+                self.add_numeric_value(timestamp, weight);
             },
             _ => {},
+        }
+    }
+
+    /// Adds a numeric value to online stats, unsorted stats, and weighted variants.
+    /// Shared by TInteger/TFloat and TDateTime/TDate paths to reduce code duplication
+    /// and improve instruction cache utilization.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    fn add_numeric_value(&mut self, value: f64, weight: f64) {
+        if let Some(v) = self.unsorted_stats.as_mut() {
+            v.add(value);
+        }
+        // safety: online is always enabled
+        unsafe {
+            self.online.as_mut().unwrap_unchecked().add_f64(value);
+        }
+        // Skip weighted stats branches entirely when weights aren't active
+        if self.which.use_weights {
+            if let Some(v) = self.weighted_unsorted_stats.as_mut() {
+                // Only store valid weights to avoid filtering later
+                if weight > 0.0 {
+                    v.push((value, weight));
+                }
+            }
+            if let Some(ref mut wos) = self.weighted_online {
+                wos.add_weighted(value, weight);
+            }
         }
     }
 
@@ -2267,8 +3414,6 @@ impl Stats {
     /// * `round_places` - Number of decimal places to round numeric values to
     /// * `infer_boolean` - Whether to attempt boolean type inference for columns with cardinality 2
     /// * `visualize_ws` - Whether to visualize whitespace characters in string outputs
-    /// * `dataset_stats` - Whether to include dataset-level statistics (adds empty field for
-    ///   qsv__value)
     ///
     /// # Returns
     ///
@@ -2313,8 +3458,11 @@ impl Stats {
         round_places: u32,
         infer_boolean: bool,
         visualize_ws: bool,
-        dataset_stats: bool,
     ) -> csv::StringRecord {
+        // empty string constant to avoid repeated allocations
+        const EMPTY_STR: &str = "";
+        const EMPTY_STRING: String = String::new();
+
         // we're doing typesonly and not inferring boolean, just return the type
         if self.which.typesonly && !infer_boolean {
             return csv::StringRecord::from(vec![self.typ.to_string()]);
@@ -2323,16 +3471,16 @@ impl Stats {
         let typ = self.typ;
         // prealloc memory for performance
         // we have MAX_STAT_COLUMNS columns at most with --everything
-        let mut pieces = Vec::with_capacity(MAX_STAT_COLUMNS);
+        let mut record = csv::StringRecord::with_capacity(512, MAX_STAT_COLUMNS);
+        // reuse a single itoa::Buffer for all integer-to-string conversions
+        let mut itoa_buf = itoa::Buffer::new();
 
-        let empty = String::new;
-
-        // min/max/range/sort_order/sortiness
+        // min/max/range/sort_order/sortiness (5 fields)
         // we do this first as we want to get the sort_order, so we can skip sorting if not
         // required. We also need to do this before --infer-boolean because we need to know
         // the min/max values to determine if the range is equal to the supported boolean
         // ranges as specified by --boolean-patterns.
-        let mut minmax_range_sortorder_pieces = Vec::with_capacity(5);
+        let minmax_range_sortorder_pieces: Vec<String>;
         let mut minval = String::new();
         let mut maxval = String::new();
         let mut column_sorted = false;
@@ -2347,68 +3495,68 @@ impl Stats {
             if mm.3.starts_with("Ascending") {
                 column_sorted = true;
             }
-            minmax_range_sortorder_pieces.extend_from_slice(&[mm.0, mm.1, mm.2, mm.3, mm.4]);
+            minmax_range_sortorder_pieces = vec![mm.0, mm.1, mm.2, mm.3, mm.4];
         } else {
-            minmax_range_sortorder_pieces.extend_from_slice(&[
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-            ]);
+            minmax_range_sortorder_pieces = vec![EMPTY_STRING; 5];
         }
 
         let record_count = *RECORD_COUNT.get().unwrap_or(&1);
 
         // get the stats separator
-        let stats_separator = if self.which.mode || self.which.percentiles {
-            std::env::var("QSV_STATS_SEPARATOR")
-                .unwrap_or_else(|_| DEFAULT_STATS_SEPARATOR.to_string())
-        } else {
-            DEFAULT_STATS_SEPARATOR.to_string()
-        };
+        let stats_separator = STATS_SEPARATOR.get_or_init(|| {
+            if self.which.mode || self.which.percentiles {
+                std::env::var("QSV_STATS_SEPARATOR")
+                    .unwrap_or_else(|_| DEFAULT_STATS_SEPARATOR.to_string())
+            } else {
+                DEFAULT_STATS_SEPARATOR.to_string()
+            }
+        });
 
-        // modes/antimodes & cardinality/uniqueness_ratio
+        // cardinality, uniqueness_ratio & modes/antimodes (3 fields each) - 8 total fields
         // we do this second because we can use the sort order with cardinality, to skip sorting
         // if its not required. This makes not only cardinality computation faster, it also makes
         // modes/antimodes computation faster.
         // We also need to know the cardinality to --infer-boolean should that be enabled
         let mut cardinality = 0;
-        let mut mc_pieces = Vec::with_capacity(8);
-        match self.modes.as_mut() {
-            None => {
-                if self.which.cardinality {
-                    mc_pieces.extend_from_slice(&[empty(), empty()]);
-                }
-                if self.which.mode {
+        let mut mc_pieces: Vec<String> = Vec::new();
+
+        // Check if we should use weighted modes/antimodes
+        if let Some(ref weighted_modes_map) = self.weighted_modes {
+            // Weighted modes/antimodes computation
+            mc_pieces.reserve(8);
+
+            if self.which.cardinality {
+                // Cardinality is the number of unique values
+                cardinality = weighted_modes_map.len() as u64;
+                mc_pieces.push(itoa_buf.format(cardinality).to_owned());
+                // uniqueness_ratio = cardinality / record_count
+                #[allow(clippy::cast_precision_loss)]
+                mc_pieces.push(util::round_num(
+                    (cardinality as f64) / (record_count as f64),
+                    round_places,
+                ));
+            }
+
+            if self.which.mode {
+                if weighted_modes_map.is_empty() {
+                    // Empty data
                     mc_pieces.extend_from_slice(&[
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
+                        EMPTY_STRING,
+                        "0".to_string(),
+                        "0".to_string(),
+                        EMPTY_STRING,
+                        "0".to_string(),
+                        "0".to_string(),
                     ]);
-                }
-            },
-            Some(ref mut v) => {
-                if self.which.cardinality {
-                    cardinality = v.cardinality(column_sorted, 1);
-                    #[allow(clippy::cast_precision_loss)]
-                    let uniqueness_ratio = (cardinality as f64) / (record_count as f64);
-                    mc_pieces.extend_from_slice(&[
-                        itoa::Buffer::new().format(cardinality).to_owned(),
-                        util::round_num(uniqueness_ratio, round_places),
-                    ]);
-                }
-                if self.which.mode {
-                    // mode/s & antimode/s
-                    if cardinality == record_count {
+                } else {
+                    // Check if all values are unique (cardinality == record_count)
+                    let unique_count = weighted_modes_map.len() as u64;
+                    if unique_count == record_count {
                         // all values unique
                         mc_pieces.extend_from_slice(
                             // modes - short-circuit modes calculation as there is none
                             &[
-                                empty(),
+                                EMPTY_STRING,
                                 "0".to_string(),
                                 "0".to_string(),
                                 // antimodes - instead of returning everything, just say *ALL
@@ -2418,78 +3566,194 @@ impl Stats {
                             ],
                         );
                     } else {
-                        let (
-                            (modes_result, modes_count, mode_occurrences),
-                            (antimodes_result, antimodes_count, antimode_occurrences),
-                        ) = v.modes_antimodes();
-                        // mode/s ============
+                        // Find max and min weights
+                        let max_weight = weighted_modes_map.values().copied().fold(0.0, f64::max);
+                        let min_weight = weighted_modes_map
+                            .values()
+                            .copied()
+                            .fold(f64::INFINITY, f64::min);
+
+                        // Collect modes (values with max weight) in deterministic order
+                        let mut modes_keys: Vec<&Vec<u8>> = weighted_modes_map
+                            .iter()
+                            .filter(|&(_, &weight)| (weight - max_weight).abs() < 1e-10)
+                            .map(|(value, _)| value)
+                            .collect();
+                        if modes_keys.len() > PAR_SORT_THRESHOLD {
+                            modes_keys.par_sort_unstable();
+                        } else {
+                            modes_keys.sort_unstable();
+                        }
+                        // Collect antimodes (values with min weight) in deterministic order
+                        // Sort first, then truncate to MAX_ANTIMODES for deterministic output
+                        let mut antimodes_keys: Vec<&Vec<u8>> = weighted_modes_map
+                            .iter()
+                            .filter(|&(_, &weight)| (weight - min_weight).abs() < 1e-10)
+                            .map(|(value, _)| value)
+                            .collect();
+                        let antimodes_count = antimodes_keys.len();
+                        if antimodes_keys.len() > PAR_SORT_THRESHOLD {
+                            antimodes_keys.par_sort_unstable();
+                        } else {
+                            antimodes_keys.sort_unstable();
+                        }
+                        antimodes_keys.truncate(MAX_ANTIMODES);
+
+                        let modes_count = modes_keys.len();
+
+                        // Format modes - work with &Vec<u8> references directly,
+                        // avoiding heap allocation from .cloned().collect()
                         let modes_list = if visualize_ws {
-                            modes_result
+                            modes_keys
                                 .iter()
                                 .map(|c| util::visualize_whitespace(&String::from_utf8_lossy(c)))
-                                .join(&stats_separator)
+                                .join(stats_separator)
                         } else {
-                            modes_result
+                            modes_keys
                                 .iter()
                                 .map(|c| String::from_utf8_lossy(c))
-                                .join(&stats_separator)
+                                .join(stats_separator)
                         };
 
-                        // antimode/s ============
+                        // Format antimodes
                         let antimodes_len = ANTIMODES_LEN.get_or_init(|| {
-                            std::env::var("QSV_ANTIMODES_LEN")
-                                .map(|val| {
+                            std::env::var("QSV_ANTIMODES_LEN").map_or(
+                                DEFAULT_ANTIMODES_LEN,
+                                |val| {
                                     let parsed =
-                                        val.parse::<usize>().unwrap_or(DEFAULT_ANTIMODES_LEN);
+                                        atoi_simd::parse::<usize, false, false>(val.as_bytes())
+                                            .unwrap_or(DEFAULT_ANTIMODES_LEN);
                                     // if 0, disable length limiting
                                     if parsed == 0 { usize::MAX } else { parsed }
-                                })
-                                .unwrap_or(DEFAULT_ANTIMODES_LEN)
+                                },
+                            )
                         });
 
-                        let mut antimodes_list = String::with_capacity(*antimodes_len);
+                        // Format antimodes - work with &Vec<u8> references directly,
+                        // avoiding heap allocation from .cloned().collect()
+                        let antimodes_list = format_antimodes(
+                            &antimodes_keys,
+                            antimodes_count,
+                            stats_separator,
+                            *antimodes_len,
+                            visualize_ws,
+                        );
 
-                        // We only store the first 10 antimodes
-                        // so if antimodes_count > 10, add the "*PREVIEW: " prefix
-                        if antimodes_count > MAX_ANTIMODES {
-                            antimodes_list.push_str("*PREVIEW: ");
-                        }
-
-                        let antimodes_vals = &antimodes_result
-                            .iter()
-                            .map(|c| String::from_utf8_lossy(c))
-                            .join(&stats_separator);
-
-                        // if the antimodes result starts with the separator,
-                        // it indicates that NULL is the first antimode. Add NULL to the list.
-                        if antimodes_vals.starts_with(&stats_separator) {
-                            antimodes_list.push_str("NULL");
-                        }
-                        antimodes_list.push_str(antimodes_vals);
-
-                        // and truncate at antimodes_len characters with an ellipsis
-                        if antimodes_list.len() > *antimodes_len {
-                            util::utf8_truncate(&mut antimodes_list, *antimodes_len + 1);
-                            antimodes_list.push_str("...");
-                        }
+                        // For weighted modes, mode_occurrences is the max weight (rounded)
+                        // For weighted antimodes, antimode_occurrences is the min weight (rounded)
+                        #[allow(clippy::cast_possible_truncation)]
+                        let mode_occurrences = max_weight.round() as u32;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let antimode_occurrences = min_weight.round() as u32;
 
                         mc_pieces.extend_from_slice(&[
                             // mode/s
                             modes_list,
-                            modes_count.to_string(),
-                            mode_occurrences.to_string(),
+                            itoa_buf.format(modes_count).to_owned(),
+                            itoa_buf.format(mode_occurrences).to_owned(),
                             // antimode/s
-                            if visualize_ws {
-                                util::visualize_whitespace(&antimodes_list)
-                            } else {
-                                antimodes_list
-                            },
-                            antimodes_count.to_string(),
-                            antimode_occurrences.to_string(),
+                            antimodes_list,
+                            itoa_buf.format(antimodes_count).to_owned(),
+                            itoa_buf.format(antimode_occurrences).to_owned(),
                         ]);
                     }
                 }
-            },
+            }
+        } else {
+            // Unweighted modes/antimodes computation (existing logic)
+            match self.modes.as_mut() {
+                None => {
+                    if self.which.cardinality {
+                        mc_pieces = vec![EMPTY_STRING; 2];
+                    }
+                    if self.which.mode {
+                        mc_pieces = vec![EMPTY_STRING; 6];
+                    }
+                },
+                Some(v) => {
+                    mc_pieces.reserve(8);
+                    if self.which.cardinality {
+                        cardinality = v.cardinality(column_sorted, 1);
+                        mc_pieces.push(itoa_buf.format(cardinality).to_owned());
+                        // uniqueness_ratio = cardinality / record_count
+                        #[allow(clippy::cast_precision_loss)]
+                        mc_pieces.push(util::round_num(
+                            (cardinality as f64) / (record_count as f64),
+                            round_places,
+                        ));
+                    }
+                    if self.which.mode {
+                        // mode/s & antimode/s
+                        if cardinality == record_count {
+                            // all values unique
+                            mc_pieces.extend_from_slice(
+                                // modes - short-circuit modes calculation as there is none
+                                &[
+                                    EMPTY_STRING,
+                                    "0".to_string(),
+                                    "0".to_string(),
+                                    // antimodes - instead of returning everything, just say *ALL
+                                    "*ALL".to_string(),
+                                    "0".to_string(),
+                                    "1".to_string(),
+                                ],
+                            );
+                        } else {
+                            let (
+                                (modes_result, modes_count, mode_occurrences),
+                                (antimodes_result, antimodes_count, antimode_occurrences),
+                            ) = v.modes_antimodes();
+                            // mode/s ============
+                            let modes_list = if visualize_ws {
+                                modes_result
+                                    .iter()
+                                    .map(|c| {
+                                        util::visualize_whitespace(&String::from_utf8_lossy(c))
+                                    })
+                                    .join(stats_separator)
+                            } else {
+                                modes_result
+                                    .iter()
+                                    .map(|c| String::from_utf8_lossy(c))
+                                    .join(stats_separator)
+                            };
+
+                            // antimode/s ============
+                            let antimodes_len = ANTIMODES_LEN.get_or_init(|| {
+                                std::env::var("QSV_ANTIMODES_LEN").map_or(
+                                    DEFAULT_ANTIMODES_LEN,
+                                    |val| {
+                                        let parsed =
+                                            atoi_simd::parse::<usize, false, false>(val.as_bytes())
+                                                .unwrap_or(DEFAULT_ANTIMODES_LEN);
+                                        // if 0, disable length limiting
+                                        if parsed == 0 { usize::MAX } else { parsed }
+                                    },
+                                )
+                            });
+
+                            let antimodes_list = format_antimodes(
+                                &antimodes_result,
+                                antimodes_count,
+                                stats_separator,
+                                *antimodes_len,
+                                visualize_ws,
+                            );
+
+                            mc_pieces.extend_from_slice(&[
+                                // mode/s
+                                modes_list,
+                                itoa_buf.format(modes_count).to_owned(),
+                                itoa_buf.format(mode_occurrences).to_owned(),
+                                // antimode/s
+                                antimodes_list,
+                                itoa_buf.format(antimodes_count).to_owned(),
+                                itoa_buf.format(antimode_occurrences).to_owned(),
+                            ]);
+                        }
+                    }
+                },
+            }
         }
 
         // type
@@ -2500,31 +3764,31 @@ impl Stats {
                 let mut is_boolean = false;
                 for pattern in patterns {
                     if pattern.matches(&minval).is_some() && pattern.matches(&maxval).is_some() {
-                        pieces.push("Boolean".to_string());
+                        record.push_field("Boolean");
                         is_boolean = true;
                         break;
                     }
                 }
                 if !is_boolean {
-                    pieces.push(typ.to_string());
+                    record.push_field(typ.as_str());
                 }
             } else {
-                pieces.push(typ.to_string());
+                record.push_field(typ.as_str());
             }
         } else {
-            pieces.push(typ.to_string());
+            record.push_field(typ.as_str());
         }
 
         // we're doing --typesonly with --infer-boolean, we don't need to calculate anything else
         if self.which.typesonly && infer_boolean {
-            return csv::StringRecord::from(pieces);
+            return record;
         }
 
         // is_ascii
         if typ == FieldType::TString {
-            pieces.push(self.is_ascii.to_string());
+            record.push_field(&self.is_ascii.to_string());
         } else {
-            pieces.push(empty());
+            record.push_field(EMPTY_STR);
         }
 
         // sum
@@ -2532,89 +3796,123 @@ impl Stats {
             if let Some((stotlen_work, sum)) = self.sum.as_ref().and_then(|sum| sum.show(typ)) {
                 if typ == FieldType::TFloat {
                     if let Ok(f64_val) = fast_float2::parse::<f64, &[u8]>(sum.as_bytes()) {
-                        pieces.push(util::round_num(f64_val, round_places));
+                        record.push_field(&util::round_num(f64_val, round_places));
                     } else {
-                        pieces.push(format!("ERROR: Cannot convert {sum} to a float."));
+                        record.push_field(&format!("ERROR: Cannot convert {sum} to a float."));
                     }
                 } else {
-                    pieces.push(sum);
+                    record.push_field(&sum);
                 }
                 stotlen_work
             } else {
-                pieces.push(empty());
+                record.push_field(EMPTY_STR);
                 0
             };
 
         // min/max/range/sort_order
         // actually append it here - to preserve legacy ordering of columns
-        pieces.extend_from_slice(&minmax_range_sortorder_pieces);
+        for field in &minmax_range_sortorder_pieces {
+            record.push_field(field);
+        }
 
-        // min/max/sum/avg/stddev/variance/cv length
+        // min/max/sum/avg/stddev/variance/cv length (7 fields)
         // we only show string length stats for String type
         if typ != FieldType::TString {
-            pieces.extend_from_slice(&[
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-            ]);
+            for _ in 0..7 {
+                record.push_field(EMPTY_STR);
+            }
         } else if let Some(mm) = self.minmax.as_ref().and_then(TypedMinMax::len_range) {
             // we have a min/max length
-            pieces.extend_from_slice(&[mm.0, mm.1]);
+            record.push_field(&mm.0);
+            record.push_field(&mm.1);
             if stotlen < u64::MAX {
-                pieces.push(itoa::Buffer::new().format(stotlen).to_owned());
+                record.push_field(itoa_buf.format(stotlen));
                 #[allow(clippy::cast_precision_loss)]
                 let avg_len = stotlen as f64 / record_count as f64;
-                pieces.push(util::round_num(avg_len, round_places));
+                record.push_field(&util::round_num(avg_len, round_places));
 
                 if let Some(vl) = self.online_len.as_ref() {
                     let vlen_stddev = vl.stddev();
-                    let vlen_variance = vl.variance();
-                    pieces.push(util::round_num(vlen_stddev, round_places));
-                    pieces.push(util::round_num(vlen_variance, round_places));
-                    pieces.push(util::round_num(vlen_stddev / avg_len, round_places));
+                    record.push_field(&util::round_num(vlen_stddev, round_places));
+                    record.push_field(&util::round_num(vl.variance(), round_places));
+                    record.push_field(&util::round_num(vlen_stddev / avg_len, round_places));
                 } else {
-                    pieces.push(empty());
-                    pieces.push(empty());
-                    pieces.push(empty());
+                    for _ in 0..3 {
+                        record.push_field(EMPTY_STR);
+                    }
                 }
             } else {
                 // we saturated the sum of string lengths, it means we had an overflow
                 // so we return OVERFLOW_STRING for sum,avg,stddev,variance length
-                pieces.extend_from_slice(&[
-                    OVERFLOW_STRING.to_string(),
-                    OVERFLOW_STRING.to_string(),
-                    OVERFLOW_STRING.to_string(),
-                    OVERFLOW_STRING.to_string(),
-                    OVERFLOW_STRING.to_string(),
-                ]);
+                for _ in 0..5 {
+                    record.push_field(OVERFLOW_STRING);
+                }
             }
         } else {
-            pieces.extend_from_slice(&[
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-            ]);
+            for _ in 0..7 {
+                record.push_field(EMPTY_STR);
+            }
         }
 
-        // mean, sem, geometric_mean, harmonic_mean, stddev, variance & cv
+        // mean, sem, geometric_mean, harmonic_mean, stddev, variance & cv (7 fields)
         if typ == TString || typ == TNull {
-            pieces.extend_from_slice(&[
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-            ]);
+            for _ in 0..7 {
+                record.push_field(EMPTY_STR);
+            }
+        } else if let Some(ref wos) = self.weighted_online {
+            // Use weighted statistics
+            let std_dev = wos.stddev();
+            #[allow(clippy::cast_precision_loss)]
+            let sem = std_dev / (wos.len() as f64).sqrt();
+            let mean = wos.mean();
+            let mean_string = util::round_num(mean, round_places);
+            // if mean is 0, we can't calculate the CV, so we return NaN
+            // we do this as checking for 0.0 floating point values is not reliable
+            // so we do util::round_num() first as that is what is returned to the user
+            // for 0.0 floating point values.
+            let cv = if mean_string == "0" {
+                f64::NAN
+            } else {
+                (std_dev / mean) * 100.0_f64
+            };
+            // Use weighted geometric and harmonic means
+            let geometric_mean = wos.geometric_mean();
+            let harmonic_mean = wos.harmonic_mean();
+            if self.typ == TFloat || self.typ == TInteger {
+                record.push_field(&mean_string);
+                record.push_field(&util::round_num(sem, round_places));
+                record.push_field(&util::round_num(geometric_mean, round_places));
+                record.push_field(&util::round_num(harmonic_mean, round_places));
+                record.push_field(&util::round_num(std_dev, round_places));
+                record.push_field(&util::round_num(wos.variance(), round_places));
+            } else {
+                // by the time we get here, the type is a TDateTime or TDate
+                record.push_field(&timestamp_ms_to_rfc3339(mean as i64, typ));
+                // instead of returning sem, stdev & variance as timestamps, return it in
+                // days as its more human readable and practical for real-world use cases
+                // Round to at least 5 decimal places, so we have sub-second precision
+                record.push_field(&util::round_num(
+                    sem / MS_IN_DAY,
+                    u32::max(round_places, DAY_DECIMAL_PLACES),
+                ));
+                record.push_field(&util::round_num(
+                    geometric_mean / MS_IN_DAY,
+                    u32::max(round_places, DAY_DECIMAL_PLACES),
+                ));
+                record.push_field(&util::round_num(
+                    harmonic_mean / MS_IN_DAY,
+                    u32::max(round_places, DAY_DECIMAL_PLACES),
+                ));
+                record.push_field(&util::round_num(
+                    std_dev / MS_IN_DAY,
+                    u32::max(round_places, DAY_DECIMAL_PLACES),
+                ));
+                record.push_field(&util::round_num(
+                    wos.variance() / (MS_IN_DAY * MS_IN_DAY),
+                    u32::max(round_places, DAY_DECIMAL_PLACES),
+                ));
+            }
+            record.push_field(&util::round_num(cv, round_places));
         } else if let Some(ref v) = self.online {
             let std_dev = v.stddev();
             #[allow(clippy::cast_precision_loss)]
@@ -2633,104 +3931,154 @@ impl Stats {
             let geometric_mean = v.geometric_mean();
             let harmonic_mean = v.harmonic_mean();
             if self.typ == TFloat || self.typ == TInteger {
-                pieces.extend_from_slice(&[
-                    mean_string,
-                    util::round_num(sem, round_places),
-                    util::round_num(geometric_mean, round_places),
-                    util::round_num(harmonic_mean, round_places),
-                    util::round_num(std_dev, round_places),
-                    util::round_num(v.variance(), round_places),
-                    util::round_num(cv, round_places),
-                ]);
+                record.push_field(&mean_string);
+                record.push_field(&util::round_num(sem, round_places));
+                record.push_field(&util::round_num(geometric_mean, round_places));
+                record.push_field(&util::round_num(harmonic_mean, round_places));
+                record.push_field(&util::round_num(std_dev, round_places));
+                record.push_field(&util::round_num(v.variance(), round_places));
             } else {
                 // by the time we get here, the type is a TDateTime or TDate
-                pieces.push(timestamp_ms_to_rfc3339(mean as i64, typ));
+                record.push_field(&timestamp_ms_to_rfc3339(mean as i64, typ));
                 // instead of returning sem, stdev & variance as timestamps, return it in
                 // days as its more human readable and practical for real-world use cases
-                // Round to at least 5 decimal places, so we have millisecond precision
-                pieces.push(util::round_num(
+                // Round to at least 5 decimal places, so we have sub-second precision
+                record.push_field(&util::round_num(
                     sem / MS_IN_DAY,
                     u32::max(round_places, DAY_DECIMAL_PLACES),
                 ));
-                pieces.push(util::round_num(
+                record.push_field(&util::round_num(
                     geometric_mean / MS_IN_DAY,
                     u32::max(round_places, DAY_DECIMAL_PLACES),
                 ));
-                pieces.push(util::round_num(
+                record.push_field(&util::round_num(
                     harmonic_mean / MS_IN_DAY,
                     u32::max(round_places, DAY_DECIMAL_PLACES),
                 ));
-                pieces.push(util::round_num(
+                record.push_field(&util::round_num(
                     std_dev / MS_IN_DAY,
                     u32::max(round_places, DAY_DECIMAL_PLACES),
                 ));
-                pieces.push(util::round_num(
+                record.push_field(&util::round_num(
                     v.variance() / (MS_IN_DAY * MS_IN_DAY),
                     u32::max(round_places, DAY_DECIMAL_PLACES),
                 ));
-                pieces.push(util::round_num(cv, round_places));
             }
+            record.push_field(&util::round_num(cv, round_places));
         } else {
-            pieces.extend_from_slice(&[
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-                empty(),
-            ]);
+            for _ in 0..7 {
+                record.push_field(EMPTY_STR);
+            }
         }
 
         // nullcount
-        pieces.push(itoa::Buffer::new().format(self.nullcount).to_owned());
+        record.push_field(itoa_buf.format(self.nullcount));
+
+        // n_negative, n_zero, n_positive
+        if typ == TInteger || typ == TFloat {
+            if let Some(ref v) = self.online {
+                let (n_negative, n_zero, n_positive) = v.n_counts();
+                record.push_field(itoa_buf.format(n_negative));
+                record.push_field(itoa_buf.format(n_zero));
+                record.push_field(itoa_buf.format(n_positive));
+            } else {
+                for _ in 0..3 {
+                    record.push_field(EMPTY_STR);
+                }
+            }
+        } else {
+            for _ in 0..3 {
+                record.push_field(EMPTY_STR);
+            }
+        }
 
         // max precision
         if typ == TFloat {
-            pieces.push(self.max_precision.to_string());
+            record.push_field(itoa_buf.format(self.max_precision));
         } else {
-            pieces.push(empty());
+            record.push_field(EMPTY_STR);
         }
 
         // sparsity
         #[allow(clippy::cast_precision_loss)]
-        let sparsity: f64 = self.nullcount as f64 / *RECORD_COUNT.get().unwrap_or(&1) as f64;
-        pieces.push(util::round_num(sparsity, round_places));
+        record.push_field(&util::round_num(
+            self.nullcount as f64 / record_count as f64,
+            round_places,
+        ));
 
-        // quartiles
+        // quartiles: lower_outer_fence, lower_inner_fence, q1, q2_median, q3, iqr,
+        // upper_inner_fence, upper_outer_fence, skewness (9 fields)
         // as q2==median, cache and reuse it if the --median or --mad flags are set
         let mut existing_median = None;
-        let mut quartile_pieces = Vec::with_capacity(9);
-        match self.unsorted_stats.as_mut().and_then(|v| match typ {
-            TInteger | TFloat | TDate | TDateTime => {
-                if self.which.quartiles {
-                    v.quartiles()
-                } else {
+        // Initialize quartile_pieces to ensure consistent field counts
+        let mut quartile_pieces: Vec<String> = if self.which.quartiles {
+            vec![EMPTY_STRING; 9]
+        } else {
+            Vec::new()
+        };
+
+        // Sort weighted data once if it exists
+        // to avoid redundant sorting in multiple weighted functions
+        // Take ownership to sort in-place (no clone needed - Stats object is dropped after
+        // to_record)
+        let sorted_weighted_data: Option<Vec<(f64, f64)>> =
+            if let Some(mut weighted_data) = self.weighted_unsorted_stats.take() {
+                if weighted_data.is_empty() {
                     None
+                } else {
+                    // Sort in-place - no clone needed since we took ownership
+                    // Use parallel sort only for large datasets to avoid thread pool overhead
+                    if weighted_data.len() > PAR_SORT_THRESHOLD {
+                        weighted_data.par_sort_unstable_by(|a, b| {
+                            a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                    } else {
+                        weighted_data.sort_unstable_by(|a, b| {
+                            a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                    }
+                    Some(weighted_data)
                 }
-            },
-            _ => None,
-        }) {
+            } else {
+                None
+            };
+
+        // Check if we should use weighted quartiles
+        let quartiles_result = if let Some(weighted_data) = sorted_weighted_data.as_ref() {
+            // Use weighted quartiles
+            match typ {
+                TInteger | TFloat | TDate | TDateTime => {
+                    if self.which.quartiles {
+                        weighted_quartiles(weighted_data, self.total_weight)
+                    } else {
+                        None
+                    }
+                },
+                _ => None,
+            }
+        } else {
+            // Use unweighted quartiles
+            self.unsorted_stats.as_mut().and_then(|v| match typ {
+                TInteger | TFloat | TDate | TDateTime => {
+                    if self.which.quartiles {
+                        v.quartiles()
+                    } else {
+                        None
+                    }
+                },
+                _ => None,
+            })
+        };
+
+        match quartiles_result {
             None => {
-                if self.which.quartiles {
-                    quartile_pieces.extend_from_slice(&[
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                        empty(),
-                    ]);
-                }
+                // quartile_pieces already initialized with empty strings if --quartiles is set
             },
             Some((q1, q2, q3)) => {
                 existing_median = Some(q2);
                 let iqr = q3 - q1;
 
-                // use fused multiply add (mul_add) when possible
+                // use fused multiply add (mul_add)
                 // fused mul_add is more accurate & is more performant if the
                 // target architecture has a dedicated `fma` CPU instruction
                 // https://doc.rust-lang.org/std/primitive.f64.html#method.mul_add
@@ -2753,6 +4101,9 @@ impl Stats {
                 // which in turn, is the basis of the fused multiply add version below
                 let skewness = (2.0f64.mul_add(-q2, q3) + q1) / iqr;
 
+                // Clear and replace quartile_pieces with actual values
+                quartile_pieces.clear();
+                quartile_pieces.reserve(9);
                 if typ == TDateTime || typ == TDate {
                     // casting from f64 to i64 is OK, per
                     // https://doc.rust-lang.org/reference/expressions/operator-expr.html#numeric-cast
@@ -2789,109 +4140,160 @@ impl Stats {
         }
 
         // median
-        if let Some(v) = self.unsorted_stats.as_mut().and_then(|v| {
-            if let TNull | TString = typ {
-                None
-            } else if let Some(existing_median) = existing_median {
-                // if we already calculated the q2 (median) in the quartiles, return it
-                if self.which.median {
-                    Some(existing_median)
-                } else {
-                    None
+        // Only add median field if --median is set but --quartiles is NOT set
+        // (when --quartiles is set, median is included as q2_median in quartile fields)
+        // Note: self.which.median is only true when !flag_quartiles, so we don't need to check
+        // !self.which.quartiles
+        if self.which.median {
+            let median_value = if let Some(weighted_data) = sorted_weighted_data.as_ref() {
+                // Use weighted median
+                match typ {
+                    TNull | TString => None,
+                    _ => weighted_median(weighted_data, self.total_weight),
                 }
-            } else if self.which.median {
-                // otherwise, calculate the median
-                v.median()
             } else {
-                None
+                // Use unweighted median
+                self.unsorted_stats.as_mut().and_then(|v| {
+                    if let TNull | TString = typ {
+                        None
+                    } else {
+                        v.median()
+                    }
+                })
+            };
+
+            // Set existing_median for MAD calculation
+            if median_value.is_some() {
+                existing_median = median_value;
             }
-        }) {
-            if typ == TDateTime || typ == TDate {
-                pieces.push(timestamp_ms_to_rfc3339(v as i64, typ));
+
+            if let Some(v) = median_value {
+                if typ == TDateTime || typ == TDate {
+                    // median rfc3339 timestamp
+                    record.push_field(&timestamp_ms_to_rfc3339(v as i64, typ));
+                } else {
+                    // median as a floating point number
+                    record.push_field(&util::round_num(v, round_places));
+                }
             } else {
-                pieces.push(util::round_num(v, round_places));
+                record.push_field(EMPTY_STR);
             }
-        } else if self.which.median {
-            pieces.push(empty());
         }
 
         // median absolute deviation (MAD)
-        if let Some(v) = self.unsorted_stats.as_mut().and_then(|v| {
-            if let TNull | TString = typ {
-                None
-            } else if self.which.mad {
-                v.mad(existing_median)
+        if self.which.mad {
+            let mad_value = if let Some(weighted_data) = sorted_weighted_data.as_ref() {
+                // Use weighted MAD
+                match typ {
+                    TNull | TString => None,
+                    _ => {
+                        // Get the weighted median for MAD calculation
+                        existing_median
+                            .or_else(|| weighted_median(weighted_data, self.total_weight))
+                            .and_then(|weighted_median_val| {
+                                weighted_mad(weighted_data, self.total_weight, weighted_median_val)
+                            })
+                    },
+                }
             } else {
-                None
-            }
-        }) {
-            if typ == TDateTime || typ == TDate {
-                // like stddev, return MAD in days when the type is a date or datetime
-                pieces.push(util::round_num(
-                    v / MS_IN_DAY,
-                    u32::max(round_places, DAY_DECIMAL_PLACES),
-                ));
+                // Use unweighted MAD
+                self.unsorted_stats.as_mut().and_then(|v| {
+                    if let TNull | TString = typ {
+                        None
+                    } else {
+                        v.mad(existing_median)
+                    }
+                })
+            };
+
+            if let Some(v) = mad_value {
+                if typ == TDateTime || typ == TDate {
+                    // like stddev, return MAD in days when the type is a date or datetime
+                    record.push_field(&util::round_num(
+                        v / MS_IN_DAY,
+                        u32::max(round_places, DAY_DECIMAL_PLACES),
+                    ));
+                } else {
+                    record.push_field(&util::round_num(v, round_places));
+                }
             } else {
-                pieces.push(util::round_num(v, round_places));
+                record.push_field(EMPTY_STR);
             }
-        } else if self.which.mad {
-            pieces.push(empty());
         }
 
         // quartiles
         // append it here to preserve legacy ordering of columns
-        pieces.extend_from_slice(&quartile_pieces);
+        for field in &quartile_pieces {
+            record.push_field(field);
+        }
 
         // mode/modes/antimodes & cardinality
         // append it here to preserve legacy ordering of columns
-        pieces.extend_from_slice(&mc_pieces);
+        for field in &mc_pieces {
+            record.push_field(field);
+        }
 
         // Add percentiles after quartiles
-        if let Some(v) = self.unsorted_stats.as_mut() {
+        // Only add percentiles field if which.percentiles is true (matching header generation)
+        if self.which.percentiles {
             match typ {
                 TInteger | TFloat | TDate | TDateTime => {
-                    let percentile_list = self
+                    // Parse percentile list, preserving both original labels and u8 values
+                    let (percentile_labels, percentile_list): (Vec<String>, Vec<u8>) = self
                         .which
                         .percentile_list
                         .split(',')
-                        .filter_map(|p| p.trim().parse::<f64>().ok())
-                        .map(|p| p as u8)
-                        .collect::<Vec<_>>();
+                        .filter_map(|p: &str| {
+                            fast_float2::parse(p.trim())
+                                .ok()
+                                .map(|p_val: f64| (p.trim().to_string(), p_val as u8))
+                        })
+                        .unzip();
 
-                    if let Some(percentile_values) = v.custom_percentiles(&percentile_list) {
+                    let percentile_values =
+                        if let Some(weighted_data) = sorted_weighted_data.as_ref() {
+                            // Use weighted percentiles
+                            weighted_percentiles(weighted_data, self.total_weight, &percentile_list)
+                        } else {
+                            // Use unweighted percentiles
+                            self.unsorted_stats
+                                .as_mut()
+                                .and_then(|v| v.custom_percentiles(&percentile_list))
+                        };
+
+                    if let Some(percentile_vals) = percentile_values {
                         let formatted_values = if typ == TDateTime || typ == TDate {
-                            percentile_values
+                            percentile_labels
                                 .iter()
-                                .map(|p| {
+                                .zip(percentile_vals.iter())
+                                .map(|(label, p)| {
                                     // Explicitly cast f64 to i64 for timestamp conversion
                                     #[allow(clippy::cast_possible_truncation)]
                                     let ts = p.round() as i64;
-                                    timestamp_ms_to_rfc3339(ts, typ)
+                                    let formatted_value = timestamp_ms_to_rfc3339(ts, typ);
+                                    format!("{label}: {formatted_value}")
                                 })
                                 .collect::<Vec<_>>()
                         } else {
-                            percentile_values
+                            percentile_labels
                                 .iter()
-                                .map(|p| util::round_num(*p, round_places))
+                                .zip(percentile_vals.iter())
+                                .map(|(label, p)| {
+                                    let formatted_value = util::round_num(*p, round_places);
+                                    format!("{label}: {formatted_value}")
+                                })
                                 .collect::<Vec<_>>()
                         };
-                        pieces.push(formatted_values.join(&stats_separator));
+                        record.push_field(&formatted_values.join(stats_separator));
                     } else {
-                        pieces.push(empty());
+                        record.push_field(EMPTY_STR);
                     }
                 },
-                _ => pieces.push(empty()),
+                _ => record.push_field(EMPTY_STR),
             }
-        } else if self.which.percentiles {
-            pieces.push(empty());
         }
 
-        if dataset_stats {
-            // add an empty field for qsv__value
-            pieces.push(empty());
-        }
-
-        csv::StringRecord::from(pieces)
+        record
     }
 }
 
@@ -2910,6 +4312,36 @@ impl Commute for Stats {
         self.online.merge(other.online);
         self.online_len.merge(other.online_len);
         self.minmax.merge(other.minmax);
+
+        // Merge weighted statistics
+        if let Some(ref mut wos) = self.weighted_online {
+            if let Some(ref other_wos) = other.weighted_online {
+                wos.merge(other_wos);
+            }
+        } else if other.weighted_online.is_some() {
+            self.weighted_online = other.weighted_online;
+        }
+
+        if let Some(ref mut wus) = self.weighted_unsorted_stats {
+            if let Some(mut other_wus) = other.weighted_unsorted_stats {
+                wus.append(&mut other_wus);
+            }
+        } else if other.weighted_unsorted_stats.is_some() {
+            self.weighted_unsorted_stats = other.weighted_unsorted_stats;
+        }
+
+        // Merge weighted modes
+        if let Some(ref mut wm) = self.weighted_modes {
+            if let Some(other_wm) = other.weighted_modes {
+                for (value, weight) in other_wm {
+                    *wm.entry(value).or_insert(0.0) += weight;
+                }
+            }
+        } else if other.weighted_modes.is_some() {
+            self.weighted_modes = other.weighted_modes;
+        }
+
+        self.total_weight += other.total_weight;
     }
 }
 
@@ -2955,19 +4387,19 @@ impl FieldType {
         }
 
         // an int can be a float, but once we've seen a float, we can't go back to an int
-        if current_type != FieldType::TFloat {
-            if let Ok(samp_int) = atoi_simd::parse::<i64>(sample) {
-                // Check for integer, with leading zero check for strings like zip codes
-                // safety: we know sample is not null as we checked earlier
-                if samp_int == 0 || unsafe { *sample.get_unchecked(0) != b'0' } {
-                    // note that we still return samp_int as f64 even if it's an integer
-                    // as the qsv-stats crate expects a float value for integer fields
-                    #[allow(clippy::cast_precision_loss)]
-                    return (FieldType::TInteger, samp_int, samp_int as f64);
-                }
-                // If starts with '0' and a valid integer != 0, it's a string with a leading zero
-                return (FieldType::TString, 0, 0.0);
+        if current_type != FieldType::TFloat
+            && let Ok(samp_int) = atoi_simd::parse::<i64, false, false>(sample)
+        {
+            // Check for integer, with leading zero check for strings like zip codes
+            // safety: we know sample is not null as we checked earlier
+            if samp_int == 0 || unsafe { *sample.get_unchecked(0) != b'0' } {
+                // note that we still return samp_int as f64 even if it's an integer
+                // as the qsv-stats crate expects a float value for integer fields
+                #[allow(clippy::cast_precision_loss)]
+                return (FieldType::TInteger, samp_int, samp_int as f64);
             }
+            // If starts with '0' and a valid integer != 0, it's a string with a leading zero
+            return (FieldType::TString, 0, 0.0);
         }
 
         // Check for float
@@ -3028,28 +4460,48 @@ impl Commute for FieldType {
     }
 }
 
+const NULL_FTYPE: &str = "NULL";
+const STRING_FTYPE: &str = "String";
+const FLOAT_FTYPE: &str = "Float";
+const INTEGER_FTYPE: &str = "Integer";
+const DATE_FTYPE: &str = "Date";
+const DATETIME_FTYPE: &str = "DateTime";
+
 impl fmt::Display for FieldType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            TNull => write!(f, "NULL"),
-            TString => write!(f, "String"),
-            TFloat => write!(f, "Float"),
-            TInteger => write!(f, "Integer"),
-            TDate => write!(f, "Date"),
-            TDateTime => write!(f, "DateTime"),
+        match self {
+            TNull => write!(f, "{NULL_FTYPE}"),
+            TString => write!(f, "{STRING_FTYPE}"),
+            TFloat => write!(f, "{FLOAT_FTYPE}"),
+            TInteger => write!(f, "{INTEGER_FTYPE}"),
+            TDate => write!(f, "{DATE_FTYPE}"),
+            TDateTime => write!(f, "{DATETIME_FTYPE}"),
         }
     }
 }
 
 impl fmt::Debug for FieldType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            TNull => write!(f, "NULL"),
-            TString => write!(f, "String"),
-            TFloat => write!(f, "Float"),
-            TInteger => write!(f, "Integer"),
-            TDate => write!(f, "Date"),
-            TDateTime => write!(f, "DateTime"),
+        match self {
+            TNull => write!(f, "{NULL_FTYPE}"),
+            TString => write!(f, "{STRING_FTYPE}"),
+            TFloat => write!(f, "{FLOAT_FTYPE}"),
+            TInteger => write!(f, "{INTEGER_FTYPE}"),
+            TDate => write!(f, "{DATE_FTYPE}"),
+            TDateTime => write!(f, "{DATETIME_FTYPE}"),
+        }
+    }
+}
+
+impl FieldType {
+    pub const fn as_str(&self) -> &str {
+        match self {
+            TNull => NULL_FTYPE,
+            TString => STRING_FTYPE,
+            TFloat => FLOAT_FTYPE,
+            TInteger => INTEGER_FTYPE,
+            TDate => DATE_FTYPE,
+            TDateTime => DATETIME_FTYPE,
         }
     }
 }
@@ -3072,8 +4524,8 @@ impl TypedSum {
         #[allow(clippy::cast_precision_loss)]
         match typ {
             TInteger => {
-                if let Some(ref mut float) = self.float {
-                    *float += float_val;
+                if let Some(ref mut f) = self.float {
+                    *f += float_val;
                 } else {
                     self.integer = self.integer.saturating_add(int_val);
                 }
@@ -3111,7 +4563,7 @@ impl TypedSum {
             },
             TFloat => Some((
                 self.stotlen,
-                ryu::Buffer::new()
+                zmij::Buffer::new()
                     .format(self.float.unwrap_or(0.0))
                     .to_owned(),
             )),
@@ -3157,16 +4609,16 @@ impl TypedMinMax {
         }
 
         match typ {
-            TString => {
-                self.str_len.add(sample_len);
-                self.strings.add(sample.to_vec());
-            },
             TInteger => {
                 self.integers.add(int_val);
                 self.floats.add(float_val);
             },
             TFloat => {
                 self.floats.add(float_val);
+            },
+            TString => {
+                self.str_len.add(sample_len);
+                self.strings.add_bytes(sample);
             },
             TNull => {},
             // it must be a TDate or TDateTime
@@ -3210,11 +4662,15 @@ impl TypedMinMax {
                     let min_str = String::from_utf8_lossy(min).to_string();
                     let max_str = String::from_utf8_lossy(max).to_string();
 
-                    let max_length = std::env::var("QSV_STATS_STRING_MAX_LENGTH")
-                        .ok()
-                        .and_then(|s| s.parse::<usize>().ok());
+                    let max_length = STATS_STRING_MAX_LENGTH.get_or_init(|| {
+                        std::env::var("QSV_STATS_STRING_MAX_LENGTH")
+                            .ok()
+                            .and_then(|s| {
+                                atoi_simd::parse::<usize, false, false>(s.as_bytes()).ok()
+                            })
+                    });
 
-                    let (min_str, max_str) = if let Some(max_len) = max_length {
+                    let (min_str, max_str) = if let Some(max_len) = *max_length {
                         (
                             if min_str.len() > max_len {
                                 format!("{}...", &min_str[..max_len])
@@ -3276,8 +4732,8 @@ impl TypedMinMax {
                     self.floats.sortiness(),
                 ) {
                     Some((
-                        ryu::Buffer::new().format(*min).to_owned(),
-                        ryu::Buffer::new().format(*max).to_owned(),
+                        zmij::Buffer::new().format(*min).to_owned(),
+                        zmij::Buffer::new().format(*max).to_owned(),
                         util::round_num(*max - *min, round_places),
                         sort_order.to_string(),
                         util::round_num(sortiness, round_places),

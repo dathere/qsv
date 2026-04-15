@@ -30,6 +30,7 @@ fn geoconvert_geojson_to_csv_basic() {
 }
 
 #[test]
+#[ignore = "requires large TX_Cities.geojson fixture removed to reduce repo size"]
 fn geoconvert_geojson_to_csv() {
     let wrk = Workdir::new("geoconvert_geojson_to_csv");
     let txcities_geojson = wrk.load_test_file("TX_Cities.geojson");
@@ -70,6 +71,7 @@ Addison,0,0"#;
 }
 
 #[test]
+#[ignore = "requires large TX_Cities.geojson fixture removed to reduce repo size"]
 fn geoconvert_geojson_to_csv_max_length() {
     let wrk = Workdir::new("geoconvert_geojson_to_csv_max_length");
     let txcities_geojson = wrk.load_test_file("TX_Cities.geojson");

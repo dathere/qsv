@@ -1,5 +1,5 @@
 [default]
-extend-ignore-identifiers-re = ["wrk", "flate", "ND", "typ"]
+extend-ignore-identifiers-re = ["wrk", "flate", "ND", "typ", "ful"]
 
 [default.extend-identifiers]
 # typos in third-party code/libraries
@@ -16,6 +16,11 @@ hel           = "hel"
 inout         = "inout"
 UE            = "UE"
 seeked        = "seeked"
+DNE           = "DNE"
+Generice      = "Generice"
+Portugese     = "Portugese"
+ACI           = "ACI"
+consts        = "consts"
 
 [files]
 extend-exclude = [
@@ -27,4 +32,6 @@ extend-exclude = [
     "*.pynb",
     "*.ssv",
     "*.tab",
+    "nyc311-describegpt*.*",
+    "docs/describegpt/*",
 ]

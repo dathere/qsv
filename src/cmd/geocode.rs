@@ -47,9 +47,8 @@ Geonames city name.
 The geocoded information is formatted based on --formatstr, returning it in 
 '%location' format (i.e. "(lat, long)") if not specified.
 
-Use the --new-column option if you want to keep the location column:
+Use the --new-column option if you want to keep the location column, e.g.
 
-Examples:
 Geocode file.csv city column and set the geocoded value to a new column named lat_long.
 
   $ qsv geocode suggest city --new-column lat_long file.csv
@@ -75,7 +74,9 @@ geocoded value a new column named state.
 Use dynamic formatting to create a custom format.
 
   $ qsv geocode suggest city -f "{name}, {admin1}, {country} in {timezone}" file.csv
-  # using French place names. You'll need to rebuild the index with the --languages option first
+
+Using French place names. You'll need to rebuild the index with the --languages option first
+
   $ qsv geocode suggest city -f "{name}, {admin1}, {country} in {timezone}" -l fr file.csv
 
 SUGGESTNOW
@@ -92,9 +93,8 @@ city record based on the Euclidean distance between the coordinate and the neare
 It accepts "lat, long" or "(lat, long)" format.
 
 The geocoded information is formatted based on --formatstr, returning it in
-'%city-admin1' format if not specified.
+'%city-admin1' format if not specified, e.g.
 
-Examples:
 Reverse geocode file.csv LatLong column. Set the geocoded value to a new column named City.
 
   $ qsv geocode reverse LatLong -c City file.csv
@@ -113,7 +113,7 @@ Accepts the same options as reverse, but does not require an input file.
 
   $ qsv geocode reversenow "40.71427, -74.00597"
   $ qsv geocode reversenow --country US -f %cityrecord "40.71427, -74.00597"
-  $ qsv geocode reversenow --admin1 "US:OH" "(39.32924, -82.10126)"
+  $ qsv geocode reversenow "(39.32924, -82.10126)"
 
 COUNTRYINFO
 Returns the country information for the specified ISO-3166 2-letter country code.
@@ -164,19 +164,33 @@ It has four operations:
             If set to 500, 1000, 5000 or 15000, it will download the corresponding English-only
             Geonames index rkyv file from the qsv GitHub repo for the current qsv version.
 
-Examples:
 Update the Geonames cities index with the latest changes.
 
   $ qsv geocode index-update
-  # or rebuild the index using the latest Geonames data
-  # with English, French, German & Spanish place names
+
+Rebuild the index using the latest Geonames data w/ English, French, German & Spanish place names
+
   $ qsv geocode index-update --languages en,fr,de,es
 
 Load an alternative Geonames cities index from a file, making it the default index going forward.
 
   $ qsv geocode index-load my_geonames_index.rkyv
 
-For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_geocode.rs.
+Examples:
+
+# For US locations, you can retrieve the us_state_fips_code and us_county_fips_code fields of a US City
+# to help with Census data enrichment.
+qsv geocode suggest city_col --country US -f \
+"%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}"\
+    input_data.csv -o output_data_with_fips.csv
+
+# For US locations, you can reverse geocode the us_state_fips_code and us_county_fips_code fields of a WGS 84 coordinate
+# to help with Census data enrichment. The coordinate can be in "lat, long" or "(lat, long)" format.
+qsv geocode reverse wgs84_coordinate_col --country US -f \
+"%dyncols: {geocoded_city_col:name}, {state_col:admin1}, {county_col:admin2},  {state_fips_code:us_state_fips_code}, {county_fips_code:us_county_fips_code}"\
+    input_data.csv -o output_data_with_fips.csv
+
+For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_geocode.rs.
 
 Usage:
 qsv geocode suggest [--formatstr=<string>] [options] <column> [<input>]
@@ -273,28 +287,28 @@ geocode options:
                                    columns to the output CSV using fields from a geocode result.
     
                                 PREDEFINED FORMATS:
-                                  - '%city-state' - e.g. Brooklyn, New York
-                                  - '%city-country' - Brooklyn, US
-                                  - '%city-state-country' | '%city-admin1-country' - Brooklyn, New York US
-                                  - '%city-county-state' | '%city-admin2-admin1' - Brooklyn, Kings County, New York
-                                  - '%city' - Brooklyn
-                                  - '%state' | '%admin1' - New York
-                                  - "%county' | '%admin2' - Kings County
-                                  - '%country' - US
-                                  - '%country_name' - United States
-                                  - '%cityrecord' - returns the full city record as a string
-                                  - '%admin1record' - returns the full admin1 record as a string
-                                  - '%admin2record' - returns the full admin2 record as a string
-                                  - '%lat-long' - <latitude>, <longitude>
-                                  - '%location' - (<latitude>, <longitude>)
-                                  - '%id' - the Geonames ID
-                                  - '%capital' - the capital
-                                  - '%continent' - the continent (only valid for countryinfo subcommand)
-                                  - '%population' - the population
-                                  - '%timezone' - the timezone
-                                  - '%json' - the full city record as JSON
-                                  - '%pretty-json' - the full city record as pretty JSON
-                                  - '%+' - use the subcommand's default format. 
+                                  * '%city-state' - e.g. Brooklyn, New York
+                                  * '%city-country' - Brooklyn, US
+                                  * '%city-state-country' | '%city-admin1-country' - Brooklyn, New York US
+                                  * '%city-county-state' | '%city-admin2-admin1' - Brooklyn, Kings County, New York
+                                  * '%city' - Brooklyn
+                                  * '%state' | '%admin1' - New York
+                                  * '%county' | '%admin2' - Kings County
+                                  * '%country' - US
+                                  * '%country_name' - United States
+                                  * '%cityrecord' - returns the full city record as a string
+                                  * '%admin1record' - returns the full admin1 record as a string
+                                  * '%admin2record' - returns the full admin2 record as a string
+                                  * '%lat-long' - <latitude>, <longitude>
+                                  * '%location' - (<latitude>, <longitude>)
+                                  * '%id' - the Geonames ID
+                                  * '%capital' - the capital
+                                  * '%continent' - the continent (only valid for countryinfo subcommand)
+                                  * '%population' - the population
+                                  * '%timezone' - the timezone
+                                  * '%json' - the full city record as JSON
+                                  * '%pretty-json' - the full city record as pretty JSON
+                                  * '%+' - use the subcommand's default format. 
                                            suggest - '%location'
                                            suggestnow - '{name}, {admin1} {country}: {latitude}, {longitude}'
                                            reverse & reversenow - '%city-admin1-country'
@@ -858,7 +872,7 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                     .read_metadata(geocode_index_file)
                     .map_err(|e| format!("index-check error: {e}"))?;
 
-                let index_metadata_json = match serde_json::to_string_pretty(&metadata) {
+                let index_metadata_json = match simd_json::to_string_pretty(&metadata) {
                     Ok(json) => json,
                     Err(e) => {
                         let json_error = json!({
@@ -1169,7 +1183,7 @@ async fn geocode_main(args: Args) -> CliResult<()> {
 
     // reuse batch buffers
     let batchsize: usize = if args.flag_batch == 0 {
-        std::cmp::max(1000, util::count_rows(&rconfig)? as usize)
+        std::cmp::max(1000, util::count_rows_regular(&rconfig)? as usize)
     } else {
         args.flag_batch
     };
@@ -1914,9 +1928,9 @@ fn format_result(
                 // don't have a country record
                 let countryrecord = engine.country_info(country).unwrap();
                 let cr_json =
-                    serde_json::to_string(cityrecord).unwrap_or_else(|_| "null".to_string());
+                    simd_json::to_string(cityrecord).unwrap_or_else(|_| "null".to_string());
                 let country_json =
-                    serde_json::to_string(countryrecord).unwrap_or_else(|_| "null".to_string());
+                    simd_json::to_string(countryrecord).unwrap_or_else(|_| "null".to_string());
                 let us_fips_codes_json = get_us_fips_codes(cityrecord, nameslang);
                 format!(
                     "{{\"cityrecord\":{cr_json}, \"countryrecord\":{country_json} \
@@ -1927,11 +1941,11 @@ fn format_result(
                 // safety: see safety note above for "%json"
                 let countryrecord = engine.country_info(country).unwrap();
                 let cr_json =
-                    serde_json::to_string_pretty(cityrecord).unwrap_or_else(|_| "null".to_string());
-                let country_json = serde_json::to_string_pretty(countryrecord)
+                    simd_json::to_string_pretty(cityrecord).unwrap_or_else(|_| "null".to_string());
+                let country_json = simd_json::to_string_pretty(countryrecord)
                     .unwrap_or_else(|_| "null".to_string());
                 let us_fips_codes = get_us_fips_codes(cityrecord, nameslang);
-                let us_fips_codes_json = serde_json::to_string_pretty(&us_fips_codes)
+                let us_fips_codes_json = simd_json::to_string_pretty(&us_fips_codes)
                     .unwrap_or_else(|_| "null".to_string());
                 format!(
                     "{{\n  \"cityrecord\":{cr_json},\n  \"countryrecord\":{country_json}\n \
@@ -2116,9 +2130,9 @@ fn get_countryinfo(
         let formatted = match formatstr {
             "%capital" => countryrecord.info.capital.to_string(),
             "%continent" => countryrecord.info.continent.to_string(),
-            "%json" => serde_json::to_string(countryrecord).unwrap_or_else(|_| "null".to_string()),
+            "%json" => simd_json::to_string(countryrecord).unwrap_or_else(|_| "null".to_string()),
             "%pretty-json" => {
-                serde_json::to_string_pretty(countryrecord).unwrap_or_else(|_| "null".to_string())
+                simd_json::to_string_pretty(countryrecord).unwrap_or_else(|_| "null".to_string())
             },
             _ => countryrecord
                 .names

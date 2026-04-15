@@ -4,10 +4,14 @@ pub mod apply;
 pub mod applydp;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod behead;
+#[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+pub mod blake3;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod cat;
 #[cfg(feature = "clipboard")]
 pub mod clipboard;
+#[cfg(feature = "color")]
+pub mod color;
 pub mod count;
 pub mod datefmt;
 pub mod dedup;
@@ -46,7 +50,6 @@ pub mod geoconvert;
 pub mod headers;
 pub mod index;
 pub mod input;
-#[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod join;
 #[cfg(all(
     feature = "polars",
@@ -59,8 +62,11 @@ pub mod json;
 pub mod jsonl;
 #[cfg(feature = "lens")]
 pub mod lens;
+#[cfg(feature = "mcp")]
+pub mod log;
 #[cfg(feature = "luau")]
 pub mod luau;
+pub mod moarstats;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod partition;
 #[cfg(all(
@@ -68,6 +74,7 @@ pub mod partition;
     any(feature = "feature_capable", feature = "datapusher_plus")
 ))]
 pub mod pivotp;
+pub mod pragmastat;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod pro;
 #[cfg(feature = "prompt")]
@@ -82,6 +89,11 @@ pub mod safenames;
 pub mod sample;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod schema;
+#[cfg(all(
+    feature = "polars",
+    any(feature = "feature_capable", feature = "datapusher_plus")
+))]
+pub mod scoresql;
 pub mod search;
 pub mod searchset;
 pub mod select;

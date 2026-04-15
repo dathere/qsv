@@ -1,0 +1,90 @@
+{
+  "name": "qsv-input",
+  "version": "19.0.0",
+  "description": "Read CSV data with special commenting, quoting, trimming, line-skipping & non-UTF8 encoding handling rules. Typically used to \"normalize\" a CSV for further processing with other qsv commands.",
+  "category": "conversion",
+  "command": {
+    "subcommand": "input",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--auto-skip",
+        "type": "flag",
+        "description": "Sniffs a CSV for preamble lines and automatically skips them. Takes precedence over --skip-lines option. Does not work with <stdin>."
+      },
+      {
+        "flag": "--comment",
+        "type": "string",
+        "description": "The comment character to use. When set, lines starting with this character will be skipped."
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--encoding-errors",
+        "type": "string",
+        "description": "How to handle UTF-8 encoding errors. Possible values: replace, skip, strict. replace: Replace invalid UTF-8 sequences with �. skip: Fields with encoding errors are \"<SKIPPED>\". strict: Fail on any encoding errors.",
+        "default": "replace"
+      },
+      {
+        "flag": "--escape",
+        "type": "string",
+        "description": "The escape character to use. When not specified, quotes are escaped by doubling them."
+      },
+      {
+        "flag": "--no-quoting",
+        "type": "flag",
+        "description": "Disable quoting completely when reading CSV data."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--quote",
+        "type": "string",
+        "description": "The quote character to use.",
+        "default": "\""
+      },
+      {
+        "flag": "--quote-style",
+        "type": "string",
+        "description": "The quoting style to use when writing CSV data. Possible values: all, necessary, nonnumeric and never. All: Quotes all fields. Necessary: Quotes fields only when necessary - when fields contain a quote, delimiter or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field). NonNumeric: Quotes all fields that are non-numeric. Never: Never write quotes. Even if it produces invalid CSV.",
+        "default": "necessary"
+      },
+      {
+        "flag": "--skip-lastlines",
+        "type": "string",
+        "description": "The number of epilogue lines to skip."
+      },
+      {
+        "flag": "--skip-lines",
+        "type": "string",
+        "description": "The number of preamble lines to skip."
+      },
+      {
+        "flag": "--trim-fields",
+        "type": "flag",
+        "description": "Trim leading & trailing whitespace from field values."
+      },
+      {
+        "flag": "--trim-headers",
+        "type": "flag",
+        "description": "Trim leading & trailing whitespace & quotes from header values."
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  }
+}

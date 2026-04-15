@@ -49,8 +49,16 @@ struct Args {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
-    if args.arg_input.to_lowercase().ends_with(".sz") {
-        return fail_incorrectusage_clierror!("Cannot index a snappy file.");
+    // can only index CSV, TSV, or TAB files
+    let exts = ["csv", "tsv", "tab", "ssv"];
+    let input_path = Path::new(&args.arg_input);
+    let ext = input_path
+        .extension()
+        .and_then(std::ffi::os_str::OsStr::to_str)
+        .map(str::to_ascii_lowercase);
+
+    if ext.as_deref().is_none_or(|e| !exts.contains(&e)) {
+        return fail_incorrectusage_clierror!("Can only index CSV, TSV/TAB or SSV files.");
     }
 
     let pidx = match args.flag_output {

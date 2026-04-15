@@ -1,0 +1,123 @@
+---
+name: mcp-release-prep
+description: Prepare an MCP server and plugin release by bumping versions across all files and updating changelog
+disable-model-invocation: true
+---
+
+# MCP Server & Plugin Release Preparation
+
+Prepare an MCP server and plugin release by updating version numbers across all required files and generating a changelog entry. The MCP server version advances **independently** of the qsv binary version.
+
+## Arguments
+
+- `version` (required): The new MCP server version number (e.g., "16.2.0")
+- `minimum_qsv_version` (optional): New minimum qsv binary version, if changing
+
+All paths below are relative to `.claude/skills/`.
+
+## Version Bump Checklist
+
+### Core (must always update)
+
+1. **`package.json`**: find `"version":` field — source of truth; `version.ts` reads this at runtime
+2. **`manifest.json`**: find `"version":` field near top — must match package.json
+3. **`.claude-plugin/plugin.json`**: find `"version":` field
+4. **`../../.claude-plugin/marketplace.json`** (repo root): find `"version":` in both `metadata` and `plugins[0]` — must match package.json
+5. **`agents/data-analyst.md`**: `version:` in YAML frontmatter
+6. **`agents/data-wrangler.md`**: `version:` in YAML frontmatter
+7. **`agents/policy-analyst.md`**: `version:` in YAML frontmatter
+
+After bumping `package.json`, run `npm install --package-lock-only` to sync `package-lock.json`.
+
+### Conditional (only if minimum qsv binary version changes)
+
+8. **`src/config.ts`**: find `MINIMUM_QSV_VERSION` constant — primary runtime enforcement point
+9. **`manifest.json`**: find `"minimum_qsv_version":` field — must match config.ts
+10. **`scripts/cowork-setup.cjs`**: find `MINIMUM_QSV_VERSION` constant — must match config.ts and manifest.json
+
+### Documentation (hardcoded versions to update)
+
+11. **`README-MCP.md`**: search for `**Version**: X.Y.Z` near the bottom
+12. **`docs/desktop/README-MCPB.md`**: search for download URLs and version badge (multiple occurrences)
+13. **`docs/guides/START_HERE.md`**: check for any hardcoded version references
+
+### Command count verification
+
+Verify the skill-based command count matches actual files:
+
+```bash
+ls qsv/qsv-*.json | wc -l
+```
+
+Then check descriptions in these files for stale counts:
+- `.claude-plugin/plugin.json` description
+- `../../.claude-plugin/marketplace.json` — both `metadata.description` and `plugins[0].description`
+- `cowork-CLAUDE.md` — Tool Discovery section
+- `skills/csv-wrangling/SKILL.md` — Tool Discovery section
+- `manifest.json` — `_meta.com.dathere.qsv.features` array
+
+## Changelog Entry
+
+Add a new section at the top of `CHANGELOG.md` (in `.claude/skills/`) following this format:
+
+```markdown
+## [X.Y.Z] - YYYY-MM-DD
+
+### Added
+- (new features)
+
+### Changed
+- (changes to existing features)
+
+### Fixed
+- (bug fixes)
+```
+
+Find the last qsv release tag and use it to populate the changelog:
+
+```bash
+# Find the most recent qsv release tag
+LAST_TAG=$(git describe --tags --match '[0-9]*.[0-9]*.[0-9]*' --abbrev=0 2>/dev/null || echo "")
+
+# List relevant commits since that tag (or all commits from repo root if no tag exists)
+git log --oneline --no-merges --grep="(mcp)" "${LAST_TAG:-$(git rev-list --max-parents=0 HEAD)}"..HEAD
+```
+
+Only commits with `(mcp)` or `(plugin)` in the title are relevant to MCP server releases.
+
+## Verification Steps
+
+After version bumps:
+
+1. `npm run build` — TypeScript compilation succeeds
+2. `npm test` — all tests pass
+3. `npm run mcpb:package` — generates `qsv-mcp-server-X.Y.Z.mcpb`
+4. `npm run plugin:package` — generates `qsv-data-wrangling-X.Y.Z.plugin`
+
+## Cowork Plugin
+
+The Cowork plugin (`.plugin` file) is a separate distribution artifact from the Desktop Extension (`.mcpb`). It provides the workflow layer (skills, agents, hooks) without the MCP server itself.
+
+### Plugin components (all relative to `.claude/skills/`)
+
+- **`.claude-plugin/plugin.json`** — plugin manifest (version already bumped in Core step 3)
+- **`scripts/cowork-setup.cjs`** — SessionStart hook that deploys `cowork-CLAUDE.md` to the working directory and validates the qsv binary
+- **`cowork-CLAUDE.md`** — workflow template deployed by the hook
+- **`skills/`** — 15 SKILL.md files: 9 user-invocable (csv-query, data-clean, data-convert, data-describe, data-join, data-profile, data-validate, data-viz, infer-ontology) + 6 model-invoked (bls-query, csv-wrangling, data-quality, genai-disclaimer, qsv-performance, reproducible-analysis)
+- **`agents/`** — subagents (data-analyst, data-wrangler, policy-analyst)
+
+### Plugin-specific review
+
+When preparing a release, also review:
+
+- **`cowork-CLAUDE.md`**: check that tool names, workflow steps, and limits are still accurate
+- **`scripts/cowork-setup.cjs`**: if `minimum_qsv_version` changed, update the `MINIMUM_QSV_VERSION` constant (listed in Conditional step 10)
+- **`skills/`**, **`agents/`**: check for any hardcoded version references or stale tool names
+
+## Important Notes
+
+- MCP server version advances **independently** of qsv binary version
+- `minimum_qsv_version` tracks binary compatibility, not server version — enforced in 3 places: `src/config.ts`, `manifest.json`, and `scripts/cowork-setup.cjs` (all must stay in sync)
+- Skill JSON files (`qsv/*.json`) are auto-generated by the **qsv binary** (`qsv --update-mcp-skills`), not by this skill — only bump those via `/release-prep`
+- `version.ts` reads version from `package.json` at runtime — no need to edit `version.ts` directly
+- The `.plugin` package reads its version from `package.json` (same source of truth as the `.mcpb`)

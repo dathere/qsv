@@ -1,7 +1,7 @@
 field,type
 case_enquiry_id,Integer
 open_dt,DateTime
-target_dt,String
+target_dt,DateTime
 closed_dt,DateTime
 ontime,String
 case_status,String
@@ -29,7 +29,3 @@ location_zipcode,String
 latitude,Float
 longitude,Float
 source,String
-qsv__rowcount,10
-qsv__columncount,30
-qsv__filesize_bytes,3922
-qsv__fingerprint_hash,e2f07418c965993a3065ef487afde31a747317d5dac2d1b35ef991f013d0949e

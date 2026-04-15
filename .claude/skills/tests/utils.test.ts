@@ -1,0 +1,149 @@
+/**
+ * Unit tests for utility functions
+ */
+
+import { test } from 'node:test';
+import assert from 'node:assert';
+import { formatBytes, compareVersions, isReservedCachePath, reservedCachePathError, sanitizeErrorForClient } from '../src/utils.js';
+
+test('formatBytes formats bytes correctly', () => {
+  assert.strictEqual(formatBytes(0), '0 Bytes');
+  assert.strictEqual(formatBytes(1024), '1 KB');
+  assert.strictEqual(formatBytes(1024 * 1024), '1 MB');
+  assert.strictEqual(formatBytes(1024 * 1024 * 1024), '1 GB');
+  assert.strictEqual(formatBytes(1536), '1.5 KB');
+  assert.strictEqual(formatBytes(1536 * 1024), '1.5 MB');
+});
+
+test('formatBytes handles edge cases', () => {
+  assert.strictEqual(formatBytes(-1), '0 Bytes');
+  assert.strictEqual(formatBytes(1), '1 Bytes');
+  assert.strictEqual(formatBytes(999), '999 Bytes');
+});
+
+// ============================================================================
+// compareVersions Tests
+// ============================================================================
+
+test('compareVersions returns correct order for valid versions', () => {
+  assert.strictEqual(compareVersions('1.0.0', '1.0.0'), 0);
+  assert.strictEqual(compareVersions('1.0.0', '2.0.0'), -1);
+  assert.strictEqual(compareVersions('2.0.0', '1.0.0'), 1);
+  assert.strictEqual(compareVersions('1.2.3', '1.2.4'), -1);
+  assert.strictEqual(compareVersions('1.3.0', '1.2.99'), 1);
+});
+
+test('compareVersions strips pre-release and build metadata', () => {
+  assert.strictEqual(compareVersions('1.2.3-alpha.1', '1.2.3'), 0);
+  assert.strictEqual(compareVersions('1.2.3+build.123', '1.2.3'), 0);
+  assert.strictEqual(compareVersions('1.2.3-alpha.1+build', '1.2.3'), 0);
+});
+
+test('compareVersions returns NaN for invalid version strings', () => {
+  assert.ok(Number.isNaN(compareVersions('abc', '1.2.3')));
+  assert.ok(Number.isNaN(compareVersions('1.2.3', 'xyz')));
+  assert.ok(Number.isNaN(compareVersions('not.a.version', 'also.not')));
+});
+
+test('compareVersions handles different-length versions', () => {
+  assert.strictEqual(compareVersions('1.0', '1.0.0'), 0);
+  assert.strictEqual(compareVersions('1.0.0.0', '1.0.0'), 0);
+  assert.strictEqual(compareVersions('1.0', '1.0.1'), -1);
+});
+
+// ============================================================================
+// isReservedCachePath Tests
+// ============================================================================
+
+test('isReservedCachePath returns true for each reserved suffix', () => {
+  assert.strictEqual(isReservedCachePath('data.stats.csv'), true);
+  assert.strictEqual(isReservedCachePath('data.stats.csv.data.jsonl'), true);
+  assert.strictEqual(isReservedCachePath('data.stats.bivariate.csv'), true);
+  assert.strictEqual(isReservedCachePath('data.stats.bivariate.joined.csv'), true);
+  assert.strictEqual(isReservedCachePath('data.freq.csv.data.jsonl'), true);
+  assert.strictEqual(isReservedCachePath('data.pschema.json'), true);
+});
+
+test('isReservedCachePath returns true with full paths', () => {
+  assert.strictEqual(isReservedCachePath('/tmp/output/data.stats.csv'), true);
+  assert.strictEqual(isReservedCachePath('/home/user/results.pschema.json'), true);
+});
+
+test('isReservedCachePath returns false for normal output paths', () => {
+  assert.strictEqual(isReservedCachePath('output.csv'), false);
+  assert.strictEqual(isReservedCachePath('results.parquet'), false);
+  assert.strictEqual(isReservedCachePath('data.freq.csv'), false);
+  assert.strictEqual(isReservedCachePath('schema.json'), false);
+  assert.strictEqual(isReservedCachePath('my_stats.csv.bak'), false);
+});
+
+test('isReservedCachePath is case-insensitive', () => {
+  assert.strictEqual(isReservedCachePath('DATA.STATS.CSV'), true);
+  assert.strictEqual(isReservedCachePath('Data.Stats.Csv.Data.Jsonl'), true);
+  assert.strictEqual(isReservedCachePath('FILE.PSCHEMA.JSON'), true);
+});
+
+test('isReservedCachePath handles edge inputs', () => {
+  assert.strictEqual(isReservedCachePath(''), false);
+  // A path that is exactly a suffix (no stem) should still match
+  assert.strictEqual(isReservedCachePath('.stats.csv'), true);
+  assert.strictEqual(isReservedCachePath('.pschema.json'), true);
+});
+
+// ============================================================================
+// reservedCachePathError Tests
+// ============================================================================
+
+// ============================================================================
+// sanitizeErrorForClient Tests
+// ============================================================================
+
+test('sanitizeErrorForClient strips Unix absolute paths', () => {
+  const msg = sanitizeErrorForClient('ENOENT: no such file /Users/joel/data/test.csv');
+  assert.ok(!msg.includes('/Users/joel/data'));
+  assert.ok(msg.includes('test.csv'));
+});
+
+test('sanitizeErrorForClient strips Windows absolute paths', () => {
+  const msg = sanitizeErrorForClient('ENOENT: no such file C:\\Users\\joel\\data\\test.csv');
+  assert.ok(!msg.includes('C:\\Users'));
+  assert.ok(msg.includes('test.csv'));
+});
+
+test('sanitizeErrorForClient handles multiple paths in one message', () => {
+  const msg = sanitizeErrorForClient('Cannot copy /tmp/source.csv to /home/user/dest.csv');
+  assert.ok(!msg.includes('/tmp'));
+  assert.ok(!msg.includes('/home/user'));
+  assert.ok(msg.includes('source.csv'));
+  assert.ok(msg.includes('dest.csv'));
+});
+
+test('sanitizeErrorForClient preserves messages without paths', () => {
+  const original = 'Connection refused: timeout after 5000ms';
+  assert.strictEqual(sanitizeErrorForClient(original), original);
+});
+
+test('sanitizeErrorForClient preserves relative filenames', () => {
+  const msg = sanitizeErrorForClient('File not found: data.csv');
+  assert.ok(msg.includes('data.csv'));
+});
+
+test('sanitizeErrorForClient partially matches paths with spaces (known limitation)', () => {
+  // The regex stops at whitespace, so space-paths are only partially stripped.
+  // This documents the known limitation rather than asserting ideal behavior.
+  const msg = sanitizeErrorForClient('ENOENT: /Users/joel/my documents/file.csv');
+  // The path up to the space is stripped (basename of that segment)
+  assert.ok(!msg.includes('/Users/joel'));
+});
+
+test('reservedCachePathError includes the output path and all suffixes', () => {
+  const msg = reservedCachePathError('data.stats.csv');
+  assert.ok(msg.includes('"data.stats.csv"'));
+  // Verify all suffixes from RESERVED_CACHE_SUFFIXES appear in the message
+  assert.ok(msg.includes('.stats.csv'));
+  assert.ok(msg.includes('.stats.csv.data.jsonl'));
+  assert.ok(msg.includes('.stats.bivariate.csv'));
+  assert.ok(msg.includes('.stats.bivariate.joined.csv'));
+  assert.ok(msg.includes('.freq.csv.data.jsonl'));
+  assert.ok(msg.includes('.pschema.json'));
+});

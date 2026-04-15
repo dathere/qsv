@@ -1,0 +1,257 @@
+field,value,count,percentage,rank
+case_enquiry_id,<ALL_UNIQUE>,100,100,1
+open_dt,<ALL_UNIQUE>,100,100,1
+target_dt,2022-01-04 08:30:00,25,25,1
+target_dt,2022-01-05 08:30:00,14,14,2
+target_dt,(NULL),11,11,3
+target_dt,2022-01-10 08:30:00,7,7,4
+target_dt,2022-01-17 08:30:00,3,3,5
+target_dt,2022-01-06 08:30:00,2,2,6
+target_dt,2022-01-20 08:30:00,2,2,6
+target_dt,2022-01-21 08:30:00,2,2,6
+target_dt,2022-01-03 10:32:34,1,1,9
+target_dt,2022-01-03 11:58:12,1,1,9
+target_dt,Other (32),32,32,0
+closed_dt,(NULL),15,15,1
+closed_dt,2022-01-01 12:56:14,1,1,2
+closed_dt,2022-01-01 14:17:15,1,1,2
+closed_dt,2022-01-01 14:59:41,1,1,2
+closed_dt,2022-01-01 15:10:16,1,1,2
+closed_dt,2022-01-01 19:07:41,1,1,2
+closed_dt,2022-01-02 06:43:42,1,1,2
+closed_dt,2022-01-02 06:49:07,1,1,2
+closed_dt,2022-01-02 08:54:11,1,1,2
+closed_dt,2022-01-02 11:03:10,1,1,2
+closed_dt,Other (76),76,76,0
+ontime,ONTIME,83,83,1
+ontime,OVERDUE,17,17,2
+case_status,Closed,85,85,1
+case_status,Open,15,15,2
+closure_reason,(NULL),15,15,1
+closure_reason,Case Closed Case Resolved  NEW CART#21026466 DELV ON 1/11/22,1,1,2
+closure_reason,Case Closed Case Resolved  NO OVERFLOW NO ADDITIONAL CART DELV 1/11/22,1,1,2
+closure_reason,Case Closed. Closed date : 2022-01-02 23:40:14.32 Case Resolved CLEAR,1,1,2
+closure_reason,Case Closed. Closed date : 2022-01-02 23:54:13.31 Case Resolved BOSTON POLICE WERE THERE TO TICKET,1,1,2
+closure_reason,Case Closed. Closed date : 2022-01-02 23:55:44.4 Case Resolved CLEAR,1,1,2
+closure_reason,Case Closed. Closed date : 2022-01-02 23:59:18.367 Case Resolved CLEAR,1,1,2
+closure_reason,Case Closed. Closed date : 2022-01-03 00:03:27.62 Case Resolved CLEAR,1,1,2
+closure_reason,Case Closed. Closed date : 2022-01-03 00:11:13.85 Case Resolved CLEAR,1,1,2
+closure_reason,Case Closed. Closed date : 2022-01-03 00:11:28.877 Case Resolved CLEAR,1,1,2
+closure_reason,Other (76),76,76,0
+case_title,Parking Enforcement,20,20,1
+case_title,CE Collection,8,8,2
+case_title,Improper Storage of Trash (Barrels),7,7,3
+case_title,Requests for Street Cleaning,5,5,4
+case_title,Pick up Dead Animal,4,4,5
+case_title,Abandoned Vehicles,3,3,6
+case_title,PWD Graffiti,3,3,6
+case_title,Poor Conditions of Property,3,3,6
+case_title,Schedule a Bulk Item Pickup,3,3,6
+case_title,Sidewalk Repair (Make Safe),3,3,6
+case_title,Other (32),41,41,0
+subject,Public Works Department,51,51,1
+subject,Transportation - Traffic Division,28,28,2
+subject,Inspectional Services,8,8,3
+subject,Mayor's 24 Hour Hotline,4,4,4
+subject,Parks & Recreation Department,3,3,5
+subject,Property Management,3,3,5
+subject,Animal Control,1,1,7
+subject,Boston Police Department,1,1,7
+subject,Boston Water & Sewer Commission,1,1,7
+reason,Enforcement & Abandoned Vehicles,23,23,1
+reason,Street Cleaning,17,17,2
+reason,Code Enforcement,10,10,3
+reason,Highway Maintenance,10,10,3
+reason,Sanitation,7,7,5
+reason,Housing,5,5,6
+reason,Signs & Signals,5,5,6
+reason,Street Lights,4,4,8
+reason,Graffiti,3,3,9
+reason,Park Maintenance & Safety,3,3,9
+reason,Other (10),13,13,0
+type,Parking Enforcement,20,20,1
+type,CE Collection,8,8,2
+type,Improper Storage of Trash (Barrels),7,7,3
+type,Requests for Street Cleaning,5,5,4
+type,Pick up Dead Animal,4,4,5
+type,Abandoned Vehicles,3,3,6
+type,Graffiti Removal,3,3,6
+type,Ground Maintenance,3,3,6
+type,Missed Trash/Recycling/Yard Waste/Bulk Item,3,3,6
+type,PWD Graffiti,3,3,6
+type,Other (26),41,41,0
+queue,BTDT_Parking Enforcement,21,21,1
+queue,PWDx_Code Enforcement,10,10,2
+queue,PWDx_District 03: North Dorchester,6,6,3
+queue,ISD_Housing (INTERNAL),5,5,4
+queue,INFO01_GenericeFormforOtherServiceRequestTypes,4,4,5
+queue,PWDx_District 1B: North End,4,4,5
+queue,PWDx_Schedule a Bulk Item Pickup,4,4,5
+queue,BTDT_AVRS Interface Queue,3,3,8
+queue,BTDT_Traffic Signal_Repair,3,3,8
+queue,PROP_GRAF_GraffitiRemoval,3,3,8
+queue,Other (25),37,37,0
+department,PWDx,49,49,1
+department,BTDT,31,31,2
+department,ISD,8,8,3
+department,INFO,4,4,4
+department,PARK,3,3,5
+department,PROP,3,3,5
+department,GEN_,2,2,7
+submittedphoto,(NULL),58,58,1
+submittedphoto,https://311.boston.gov/media/boston/report/photos/61d03f0d05bbcf180c2965fd/report.jpg,1,1,2
+submittedphoto,https://311.boston.gov/media/boston/report/photos/61d0627a05bbcf180c297a39/photo_20220101_091656.jpg,1,1,2
+submittedphoto,https://311.boston.gov/media/boston/report/photos/61d063e505bbcf180c297b6a/photo_20220101_092319.jpg,1,1,2
+submittedphoto,https://311.boston.gov/media/boston/report/photos/61d0688a05bbcf180c297be9/report.jpg,1,1,2
+submittedphoto,https://311.boston.gov/media/boston/report/photos/61d074c005bbcf180c298048/report.jpg,1,1,2
+submittedphoto,https://311.boston.gov/media/boston/report/photos/61d0799d05bbcf180c298225/report.jpg,1,1,2
+submittedphoto,https://311.boston.gov/media/boston/report/photos/61d0815a05bbcf180c298788/photo_20220101_112818.jpg,1,1,2
+submittedphoto,https://311.boston.gov/media/boston/report/photos/61d0debd05bbcf180c29b2c6/report.jpg,1,1,2
+submittedphoto,https://311.boston.gov/media/boston/report/photos/61d0e00705bbcf180c29b41e/report.jpg,1,1,2
+submittedphoto,Other (33),33,33,0
+closedphoto,(NULL),100,100,1
+location,563 Columbus Ave  Roxbury  MA  02118,2,2,1
+location,INTERSECTION of Gallivan Blvd & Washington St  Dorchester  MA,2,2,1
+location,(NULL),1,1,3
+location,103 N Beacon St  Brighton  MA  02135,1,1,3
+location,11 Aberdeen St  Boston  MA  02215,1,1,3
+location,1148 Hyde Park Ave  Hyde Park  MA  02136,1,1,3
+location,119 L St  South Boston  MA  02127,1,1,3
+location,12 Derne St  Boston  MA  02114,1,1,3
+location,126 Elm St  Charlestown  MA  02129,1,1,3
+location,1270 Commonwealth Ave  Allston  MA  02134,1,1,3
+location,Other (88),88,88,0
+fire_district,3,19,19,1
+fire_district,4,16,16,2
+fire_district,7,14,14,3
+fire_district,6,13,13,4
+fire_district,8,9,9,5
+fire_district,1,8,8,6
+fire_district,12,8,8,6
+fire_district,9,7,7,8
+fire_district,11,5,5,9
+fire_district,(NULL),1,1,10
+pwd_district,1B,16,16,1
+pwd_district,1C,14,14,2
+pwd_district,03,11,11,3
+pwd_district,05,10,10,4
+pwd_district,07,9,9,5
+pwd_district,09,8,8,6
+pwd_district,02,5,5,7
+pwd_district,04,5,5,7
+pwd_district,06,5,5,7
+pwd_district,10A,5,5,7
+pwd_district,Other (4),12,12,0
+city_council_district,1,22,22,1
+city_council_district,2,19,19,2
+city_council_district,7,15,15,3
+city_council_district,3,10,10,4
+city_council_district,5,7,7,5
+city_council_district,6,7,7,5
+city_council_district,8,7,7,5
+city_council_district,4,6,6,8
+city_council_district,9,6,6,8
+city_council_district,(NULL),1,1,10
+police_district,A1,20,20,1
+police_district,D4,14,14,2
+police_district,C6,12,12,3
+police_district,B2,9,9,4
+police_district,A7,8,8,5
+police_district,C11,8,8,5
+police_district,B3,7,7,7
+police_district,D14,5,5,8
+police_district,E13,5,5,8
+police_district,E5,5,5,8
+police_district,Other (3),7,7,0
+neighborhood,Dorchester,15,15,1
+neighborhood,Downtown / Financial District,10,10,2
+neighborhood,South Boston / South Boston Waterfront,10,10,2
+neighborhood,East Boston,8,8,4
+neighborhood,Roxbury,8,8,4
+neighborhood,South End,8,8,4
+neighborhood,Beacon Hill,7,7,7
+neighborhood,Jamaica Plain,6,6,8
+neighborhood,Back Bay,5,5,9
+neighborhood,Allston / Brighton,4,4,10
+neighborhood,Other (9),19,19,0
+neighborhood_services_district,3,15,15,1
+neighborhood_services_district,5,12,12,2
+neighborhood_services_district,13,11,11,3
+neighborhood_services_district,7,10,10,4
+neighborhood_services_district,14,9,9,5
+neighborhood_services_district,1,8,8,6
+neighborhood_services_district,10,8,8,6
+neighborhood_services_district,6,7,7,8
+neighborhood_services_district,11,5,5,9
+neighborhood_services_district,15,5,5,9
+neighborhood_services_district,Other (6),10,10,0
+ward,Ward 3,10,10,1
+ward,Ward 6,7,7,2
+ward,Ward 1,6,6,3
+ward,3,5,5,4
+ward,Ward 20,5,5,4
+ward,Ward 4,5,5,4
+ward,Ward 5,5,5,4
+ward,14,4,4,8
+ward,Ward 13,4,4,8
+ward,Ward 16,4,4,8
+ward,Other (32),45,45,0
+precinct,0306,5,5,1
+precinct,0302,4,4,2
+precinct,0606,4,4,2
+precinct,0404,3,3,4
+precinct,1704,3,3,4
+precinct,(NULL),2,2,6
+precinct,0101,2,2,6
+precinct,0106,2,2,6
+precinct,0301,2,2,6
+precinct,0303,2,2,6
+precinct,Other (65),71,71,0
+location_street_name,20 Washington St,2,2,1
+location_street_name,563 Columbus Ave,2,2,1
+location_street_name,INTERSECTION Gallivan Blvd & Washington St,2,2,1
+location_street_name,(NULL),1,1,4
+location_street_name,103 N Beacon St,1,1,4
+location_street_name,11 Aberdeen St,1,1,4
+location_street_name,1148 Hyde Park Ave,1,1,4
+location_street_name,119 L St,1,1,4
+location_street_name,12 Derne St,1,1,4
+location_street_name,126 Elm St,1,1,4
+location_street_name,Other (87),87,87,0
+location_zipcode,(NULL),17,17,1
+location_zipcode,02127,10,10,2
+location_zipcode,02118,7,7,3
+location_zipcode,02128,7,7,3
+location_zipcode,02114,6,6,5
+location_zipcode,02125,6,6,5
+location_zipcode,02113,5,5,7
+location_zipcode,02115,4,4,8
+location_zipcode,02119,4,4,8
+location_zipcode,02130,4,4,8
+location_zipcode,Other (14),30,30,0
+latitude,42.3594,20,20,1
+latitude,42.3336,2,2,2
+latitude,42.3412,2,2,2
+latitude,42.3735,2,2,2
+latitude,42.2553,1,1,5
+latitude,42.2601,1,1,5
+latitude,42.2609,1,1,5
+latitude,42.2645,1,1,5
+latitude,42.2674,1,1,5
+latitude,42.2789,1,1,5
+latitude,Other (68),68,68,0
+longitude,-71.0587,19,19,1
+longitude,-71.0537,3,3,2
+longitude,-71.0676,2,2,3
+longitude,-71.0815,2,2,3
+longitude,-71.0948,2,2,3
+longitude,-71.0298,1,1,6
+longitude,-71.0301,1,1,6
+longitude,-71.0309,1,1,6
+longitude,-71.0323,1,1,6
+longitude,-71.0325,1,1,6
+longitude,Other (67),67,67,0
+source,Citizens Connect App,56,56,1
+source,Constituent Call,30,30,2
+source,City Worker App,11,11,3
+source,Self Service,3,3,4

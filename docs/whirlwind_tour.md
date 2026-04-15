@@ -117,7 +117,7 @@ part of the file. It didn't have to scan the entire file to get the last 10 reco
 without an index, it took 0.25 (41x slower) and 0.66 (39x slower) seconds respectively.
 
 > ℹ️ **NOTE:** Creating/updating an index itself is extremely fast as well. If you want
-qsv to automatically create and update indices, set the environment var `QSV_AUTOINDEX`.
+qsv to automatically create and update indices, set the environment var `QSV_AUTOINDEX_SIZE`.
 
 Okay, okay! Let's switch gears and stop obsessing over how fast :rocket: qsv is... let's go back to exploring :mag_right:
 the data set.
@@ -301,7 +301,7 @@ Not the tiny 10-row sample.csv file, but all 2.7 million rows in the 124MB `wcp.
 
 Indeed we can — because `qsv` is designed for speed - written in [Rust](https://www.rust-lang.org/) with 
 [amortized memory allocations](https://blog.burntsushi.net/csv/#amortizing-allocations), using the 
-performance-focused [mimalloc](https://github.com/microsoft/mimalloc) allocator.
+performance-focused [jemalloc](https://github.com/jemalloc/jemalloc) allocator.
 
 ```
 $ qsv join --ignore-case Country wcp.csv iso2 country_continent.csv |
@@ -325,7 +325,7 @@ Lufkin          33667       United States of America      North America  31.3380
 
 $ qsv count -H wcp_countrycontinent.csv
 47,004
-$ qsv count -H wcp-dupes.,csv
+$ qsv count -H wcp_dupes.csv
 5,155
 ```
 

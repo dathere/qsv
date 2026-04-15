@@ -15,17 +15,37 @@ columns1 and columns2 must specify exactly the same number of columns.
 
 Examples:
 
-    qsv exclude id records.csv id previously-processed.csv
-    qsv exclude col1,col2 records.csv col1,col2 previously-processed.csv
-    qsv exclude col1-col5 records.csv col1-col5 previously-processed.csv
-    qsv exclude id records.csv id previously-processed.csv > new-records.csv
-    qsv exclude id records.csv id previously-processed.csv --output new-records.csv
-    qsv exclude -v id records.csv id previously-processed.csv -o intersection.csv
-    qsv exclude --ignore-case id records.csv id previously-processed.csv
-    qsv exclude id records.csv id previously-processed.csv |
-       qsv sort > new-sorted-records.csv
-    qsv exclude id records.csv id previously-processed.csv | qsv sort |
-       qsv --sorted dedup > new-sorted-deduped-records.csv
+  # Remove all records in previously-processed.csv from records.csv
+  qsv exclude id records.csv id previously-processed.csv
+
+  # Remove all records in previously-processed.csv matching on multiple columns
+  qsv exclude col1,col2 records.csv col1,col2 previously-processed.csv
+
+  # Remove all records in previously-processed.csv matching on column ranges
+  qsv exclude col1-col5 records.csv col1-col5 previously-processed.csv
+
+  # Remove all records in previously-processed.csv with the same id from records.csv
+  # and write to new-records.csv
+  qsv exclude id records.csv id previously-processed.csv > new-records.csv
+
+  # Remove all records in previously-processed.csv with the same id from records.csv
+  # and write to new-records.csv
+  qsv exclude id records.csv id previously-processed.csv --output new-records.csv
+
+  # Get the intersection of records.csv and previously-processed.csv on id column
+  # (i.e., only records present in both files)
+  qsv exclude -v id records.csv id previously-processed.csv -o intersection.csv
+
+  # Do a case insensitive exclusion on the id column
+  qsv exclude --ignore-case id records.csv id previously-processed.csv
+
+  # Chain exclude with sort to create a new sorted records file without previously processed records
+  qsv exclude id records.csv id previously-processed.csv | \
+      qsv sort > new-sorted-records.csv
+
+  # Chain exclude with sort and dedup to create a new sorted deduped records file
+  qsv exclude id records.csv id previously-processed.csv | qsv sort | \
+      qsv --sorted dedup > new-sorted-deduped-records.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_exclude.rs.
 
@@ -35,12 +55,12 @@ Usage:
 
 input arguments:
     <input1> is the file from which data will be removed.
-    <input2> is the file containing the data to be removed from <input1> 
+    <input2> is the file containing the data to be removed from <input1>
      e.g. 'qsv exclude id records.csv id previously-processed.csv'
 
 exclude options:
     -i, --ignore-case      When set, matching is done case insensitively.
-    -v                     When set, matching rows will be the only ones included,
+    -v, --invert     When set, matching rows will be the only ones included,
                            forming set intersection, instead of the ones discarded.
 
 Common options:
@@ -74,7 +94,7 @@ struct Args {
     arg_input1:       String,
     arg_columns2:     SelectColumns,
     arg_input2:       String,
-    flag_v:           bool,
+    flag_invert:      bool,
     flag_output:      Option<String>,
     flag_no_headers:  bool,
     flag_ignore_case: bool,
@@ -85,7 +105,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     let mut state = args.new_io_state()?;
     state.write_headers()?;
-    state.exclude(args.flag_v)
+    state.exclude(args.flag_invert)
 }
 
 struct IoState<R, W: io::Write> {
@@ -137,11 +157,11 @@ impl Args {
     fn new_io_state(&self) -> CliResult<IoState<fs::File, Box<dyn io::Write + 'static>>> {
         let rconf1 = Config::new(Some(self.arg_input1.clone()).as_ref())
             .delimiter(self.flag_delimiter)
-            .no_headers(self.flag_no_headers)
+            .no_headers_flag(self.flag_no_headers)
             .select(self.arg_columns1.clone());
         let rconf2 = Config::new(Some(self.arg_input2.clone()).as_ref())
             .delimiter(self.flag_delimiter)
-            .no_headers(self.flag_no_headers)
+            .no_headers_flag(self.flag_no_headers)
             .select(self.arg_columns2.clone());
 
         let mut rdr1 = rconf1.reader_file()?;

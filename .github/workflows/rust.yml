@@ -16,36 +16,35 @@ env:
 
 jobs:
   build:
+    # Skip CI for MCP-only commits (commit message contains "(mcp):")
+    if: |
+      github.event_name != 'push' ||
+      !contains(github.event.head_commit.message, '(mcp):')
 
     runs-on: ubuntu-latest
 
     steps:
-    # - name: Maximize build space
-    #   uses: easimon/maximize-build-space@master
-    #   with:
-    #     swap-size-mb: 1024
-    #     remove-dotnet: 'true'
-    #     remove-android: 'true'
-    #     remove-haskell: 'true'
-    #     remove-docker-images: 'true'
     - name: apt-get update Ubuntu, libwayland-dev
       run: |
         sudo apt-get update
         sudo apt-get install libwayland-dev
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5.6.0
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6.2.0
       with:
-        python-version: '3.12'
+        python-version: '3.13'
     - name: Install and Run Redis
       run: |
         sudo apt-get install redis-server
         sudo service redis-server start
-    - name: Update Rust
-      run: rustup update
-    # - name: Setup Rust-cache
-    #   uses: Swatinem/rust-cache@v2
-    #   with:
-    #     key: qsv-cache
+    - name: Installing Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+        targets: x86_64-unknown-linux-gnu
+    - name: Setup Rust-cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: qsv-linuxcache
     # - uses: actions/cache@v4
     #   with:
     #     path: |
@@ -56,6 +55,6 @@ jobs:
     #       target/
     #     key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Run tests
-      env:
-        RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
-      run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,feature_capable,lens
+      # env:
+        # RUSTFLAGS: -C target-cpu=native
+      run: cargo test --verbose --locked --features=apply,fetch,foreach,geocode,luau,python,feature_capable,lens,magika,color

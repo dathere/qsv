@@ -36,10 +36,10 @@ Usage:
     qsv fill --help
 
 fill options:
-    -g --groupby <keys>    Group by specified columns.
-    -f --first             Fill using the first valid value of a column, instead of the latest.
-    -b --backfill          Fill initial empty values with the first valid value.
-    -v --default <value>   Fill using this default value.
+    -g, --groupby <keys>    Group by specified columns.
+    -f, --first             Fill using the first valid value of a column, instead of the latest.
+    -b, --backfill          Fill initial empty values with the first valid value.
+    -v, --default <value>   Fill using this default value.
 
 Common options:
     -h, --help             Display this message
@@ -85,7 +85,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.arg_selection);
 
     let wconfig = Config::new(args.flag_output.as_ref());
@@ -154,8 +154,8 @@ trait GroupKeyConstructor {
 
 impl GroupKeyConstructor for GroupKeySelection {
     fn key(&self, record: &csv::ByteRecord) -> Result<GroupKey, String> {
-        match *self {
-            Some(ref value) => Ok(Some(value.iter().map(|&i| record[i].to_vec()).collect())),
+        match self {
+            Some(value) => Ok(Some(value.iter().map(|&i| record[i].to_vec()).collect())),
             None => Ok(None),
         }
     }

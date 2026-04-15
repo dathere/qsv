@@ -3,7 +3,6 @@ use serial_test::serial;
 use crate::workdir::Workdir;
 
 #[test]
-#[ignore = "Temporarily skip this as zippotam.us API is in flux"]
 fn fetch_simple() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -107,7 +106,6 @@ https://api.zippopotam.us/us/92802,"{
 }
 
 #[test]
-#[ignore = "Temporarily skip this as zippotam.us API is in flux"]
 fn fetch_simple_new_col() {
     let wrk = Workdir::new("fetch_simple_new_col");
     wrk.create(
@@ -168,7 +166,6 @@ fn fetch_simple_new_col() {
 }
 
 #[test]
-#[ignore = "Temporarily skip this as zippotam.us API is in flux"]
 fn fetch_simple_report() {
     let wrk = Workdir::new("fetch_simple_report");
     wrk.create(
@@ -229,7 +226,6 @@ fn fetch_simple_report() {
 }
 
 #[test]
-#[ignore = "Temporarily skip this as zippotam.us API is in flux"]
 fn fetch_simple_url_template() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -258,7 +254,6 @@ fn fetch_simple_url_template() {
 }
 
 #[test]
-#[ignore = "Temporarily skip this as zippotam.us API is in flux"]
 fn fetch_simple_redis() {
     // if there is no local redis server, skip fetch_simple_redis test
     let redis_client = redis::Client::open("redis://127.0.0.1:6379").unwrap();
@@ -299,7 +294,6 @@ fn fetch_simple_redis() {
 }
 
 #[test]
-#[ignore = "Temporarily skip this as zippotam.us API is in flux"]
 fn fetch_simple_diskcache() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -371,15 +365,14 @@ fn fetch_simple_diskcache() {
         fetchreport_noelapsed,
         r#"url,status,cache_hit,retries,response
 https://api.zippopotam.us/us/99999,404,1,5,"{""errors"":[{""title"":""HTTP ERROR"",""detail"":""HTTP ERROR 404 - Not Found""}]}"
-https://api.zippopotam.us/us/90210,200,1,0,"{""post code"":""90210"",""country"":""United States"",""country abbreviation"":""US"",""places"":[{""place name"":""Beverly Hills"",""longitude"":""-118.4065"",""state"":""California"",""state abbreviation"":""CA"",""latitude"":""34.0901""}]}"
-https://api.zippopotam.us/us/94105,200,1,0,"{""post code"":""94105"",""country"":""United States"",""country abbreviation"":""US"",""places"":[{""place name"":""San Francisco"",""longitude"":""-122.3892"",""state"":""California"",""state abbreviation"":""CA"",""latitude"":""37.7864""}]}"
-https://api.zippopotam.us/us/92802,200,1,0,"{""post code"":""92802"",""country"":""United States"",""country abbreviation"":""US"",""places"":[{""place name"":""Anaheim"",""longitude"":""-117.9228"",""state"":""California"",""state abbreviation"":""CA"",""latitude"":""33.8085""}]}"
+https://api.zippopotam.us/us/90210,200,1,0,"{""country"":""United States"",""country abbreviation"":""US"",""post code"":""90210"",""places"":[{""place name"":""Beverly Hills"",""longitude"":""-118.4065"",""latitude"":""34.0901"",""state"":""California"",""state abbreviation"":""CA""}]}"
+https://api.zippopotam.us/us/94105,200,1,0,"{""country"":""United States"",""country abbreviation"":""US"",""post code"":""94105"",""places"":[{""place name"":""San Francisco"",""longitude"":""-122.3892"",""latitude"":""37.7864"",""state"":""California"",""state abbreviation"":""CA""}]}"
+https://api.zippopotam.us/us/92802,200,1,0,"{""country"":""United States"",""country abbreviation"":""US"",""post code"":""92802"",""places"":[{""place name"":""Anaheim"",""longitude"":""-117.9228"",""latitude"":""33.8085"",""state"":""California"",""state abbreviation"":""CA""}]}"
 thisisnotaurl,404,1,0,"{""errors"":[{""title"":""Invalid URL"",""detail"":""relative URL without a base""}]}""#
     );
 }
 
 #[test]
-#[ignore = "Temporarily skip this as zippotam.us API is in flux"]
 fn fetch_jaq_single() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -403,17 +396,16 @@ fn fetch_jaq_single() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["URL", "City"],
-        svec!["https://api.zippopotam.us/us/90210", "\"Beverly Hills\""],
-        svec!["https://api.zippopotam.us/us/94105", "\"San Francisco\""],
+        svec!["https://api.zippopotam.us/us/90210", "Beverly Hills"],
+        svec!["https://api.zippopotam.us/us/94105", "San Francisco"],
         svec!["thisisnotaurl", ""],
-        svec!["https://api.zippopotam.us/us/92802", "\"Anaheim\""],
+        svec!["https://api.zippopotam.us/us/92802", "Anaheim"],
     ];
 
     assert_eq!(got, expected);
 }
 
 #[test]
-#[ignore = "Temporarily skip this as zippotam.us API is in flux"]
 fn fetch_jaq_single_file() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -439,15 +431,14 @@ fn fetch_jaq_single_file() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["URL", "City"],
-        svec!["https://api.zippopotam.us/us/90210", "\"Beverly Hills\""],
-        svec!["https://api.zippopotam.us/us/94105", "\"San Francisco\""],
-        svec!["https://api.zippopotam.us/us/92802", "\"Anaheim\""],
+        svec!["https://api.zippopotam.us/us/90210", "Beverly Hills"],
+        svec!["https://api.zippopotam.us/us/94105", "San Francisco"],
+        svec!["https://api.zippopotam.us/us/92802", "Anaheim"],
     ];
     assert_eq!(got, expected);
 }
 
 #[test]
-#[ignore = "Temporarily skip this as zippotam.us API is in flux"]
 fn fetch_jaqfile_doesnotexist_error() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -474,7 +465,6 @@ fn fetch_jaqfile_doesnotexist_error() {
 }
 
 #[test]
-#[ignore = "Temporarily skip this as zippotam.us API is in flux"]
 fn fetch_jaq_jaqfile_error() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -499,7 +489,6 @@ fn fetch_jaq_jaqfile_error() {
 }
 
 #[test]
-#[ignore = "Temporarily skip this as zippotam.us API is in flux"]
 fn fetch_jaq_multiple() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -536,7 +525,6 @@ fn fetch_jaq_multiple() {
 }
 
 #[test]
-#[ignore = "Temporarily skip this as zippotam.us API is in flux"]
 fn fetch_jaq_multiple_file() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -576,7 +564,6 @@ fn fetch_jaq_multiple_file() {
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetch_custom_header() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -601,7 +588,6 @@ fn fetch_custom_header() {
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetch_custom_invalid_header_error() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -620,7 +606,6 @@ fn fetch_custom_invalid_header_error() {
     wrk.assert_err(&mut cmd);
 }
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetch_custom_invalid_user_agent_error() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -641,7 +626,6 @@ fn fetch_custom_invalid_user_agent_error() {
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetch_custom_user_agent() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -664,7 +648,6 @@ fn fetch_custom_user_agent() {
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetch_user_agent() {
     let wrk = Workdir::new("fetch_user_agent");
     wrk.create(
@@ -682,7 +665,6 @@ fn fetch_user_agent() {
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetch_custom_invalid_value_error() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -702,7 +684,6 @@ fn fetch_custom_invalid_value_error() {
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetchpost_custom_invalid_header_error() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -727,7 +708,6 @@ fn fetchpost_custom_invalid_header_error() {
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetchpost_custom_invalid_value_error() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -752,7 +732,6 @@ fn fetchpost_custom_invalid_value_error() {
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetchpost_custom_invalid_user_agent_error() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -778,7 +757,6 @@ fn fetchpost_custom_invalid_user_agent_error() {
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetchpost_custom_user_agent() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -936,31 +914,31 @@ fn fetch_ratelimit() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["URL", "Fullname"],
-        svec![test_url!("user/Smurfette"), "\"Smurfette Smurf\""],
-        svec![test_url!("user/Papa"), "\"Papa Smurf\""],
-        svec![test_url!("user/Clumsy"), "\"Clumsy Smurf\""],
-        svec![test_url!("user/Brainy"), "\"Brainy Smurf\""],
-        svec![test_url!("user/Grouchy"), "\"Grouchy Smurf\""],
-        svec![test_url!("user/Hefty"), "\"Hefty Smurf\""],
-        svec![test_url!("user/Greedy"), "\"Greedy Smurf\""],
-        svec![test_url!("user/Jokey"), "\"Jokey Smurf\""],
-        svec![test_url!("user/Chef"), "\"Chef Smurf\""],
-        svec![test_url!("user/Vanity"), "\"Vanity Smurf\""],
-        svec![test_url!("user/Handy"), "\"Handy Smurf\""],
-        svec![test_url!("user/Scaredy"), "\"Scaredy Smurf\""],
-        svec![test_url!("user/Tracker"), "\"Tracker Smurf\""],
-        svec![test_url!("user/Sloppy"), "\"Sloppy Smurf\""],
-        svec![test_url!("user/Harmony"), "\"Harmony Smurf\""],
-        svec![test_url!("user/Painter"), "\"Painter Smurf\""],
-        svec![test_url!("user/Poet"), "\"Poet Smurf\""],
-        svec![test_url!("user/Farmer"), "\"Farmer Smurf\""],
-        svec![test_url!("user/Natural"), "\"Natural Smurf\""],
-        svec![test_url!("user/Snappy"), "\"Snappy Smurf\""],
+        svec![test_url!("user/Smurfette"), "Smurfette Smurf"],
+        svec![test_url!("user/Papa"), "Papa Smurf"],
+        svec![test_url!("user/Clumsy"), "Clumsy Smurf"],
+        svec![test_url!("user/Brainy"), "Brainy Smurf"],
+        svec![test_url!("user/Grouchy"), "Grouchy Smurf"],
+        svec![test_url!("user/Hefty"), "Hefty Smurf"],
+        svec![test_url!("user/Greedy"), "Greedy Smurf"],
+        svec![test_url!("user/Jokey"), "Jokey Smurf"],
+        svec![test_url!("user/Chef"), "Chef Smurf"],
+        svec![test_url!("user/Vanity"), "Vanity Smurf"],
+        svec![test_url!("user/Handy"), "Handy Smurf"],
+        svec![test_url!("user/Scaredy"), "Scaredy Smurf"],
+        svec![test_url!("user/Tracker"), "Tracker Smurf"],
+        svec![test_url!("user/Sloppy"), "Sloppy Smurf"],
+        svec![test_url!("user/Harmony"), "Harmony Smurf"],
+        svec![test_url!("user/Painter"), "Painter Smurf"],
+        svec![test_url!("user/Poet"), "Poet Smurf"],
+        svec![test_url!("user/Farmer"), "Farmer Smurf"],
+        svec![test_url!("user/Natural"), "Natural Smurf"],
+        svec![test_url!("user/Snappy"), "Snappy Smurf"],
         svec![
             test_url!(
                 "user/The quick brown fox jumped over the lazy dog by the zigzag quarry site"
             ),
-            "\"The quick brown fox jumped over the lazy dog by the zigzag quarry site Smurf\""
+            "The quick brown fox jumped over the lazy dog by the zigzag quarry site Smurf"
         ],
     ];
     assert_eq!(got, expected);
@@ -1030,26 +1008,26 @@ fn fetch_complex_url_template() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["first name", "color", "Fullname"],
-        svec!["Smurfette", "blue", "\"Smurfette blue Smurf\""],
-        svec!["Papa", "blue", "\"Papa blue Smurf\""],
-        svec!["Clumsy", "blue", "\"Clumsy blue Smurf\""],
-        svec!["Brainy", "blue", "\"Brainy blue Smurf\""],
-        svec!["Grouchy", "blue", "\"Grouchy blue Smurf\""],
-        svec!["Hefty", "blue", "\"Hefty blue Smurf\""],
-        svec!["Greedy", "green", "\"Greedy green Smurf\""],
-        svec!["Jokey", "blue", "\"Jokey blue Smurf\""],
-        svec!["Chef", "blue", "\"Chef blue Smurf\""],
-        svec!["Vanity", "blue", "\"Vanity blue Smurf\""],
-        svec!["Handy", "blue", "\"Handy blue Smurf\""],
-        svec!["Scaredy", "black", "\"Scaredy black Smurf\""],
-        svec!["Tracker", "blue", "\"Tracker blue Smurf\""],
-        svec!["Sloppy", "blue", "\"Sloppy blue Smurf\""],
-        svec!["Harmony", "blue", "\"Harmony blue Smurf\""],
-        svec!["Painter", "multicolor", "\"Painter multicolor Smurf\""],
-        svec!["Poet", "blue", "\"Poet blue Smurf\""],
-        svec!["Farmer", "blue", "\"Farmer blue Smurf\""],
-        svec!["Natural", "blue", "\"Natural blue Smurf\""],
-        svec!["Snappy", "blue", "\"Snappy blue Smurf\""],
+        svec!["Smurfette", "blue", "Smurfette blue Smurf"],
+        svec!["Papa", "blue", "Papa blue Smurf"],
+        svec!["Clumsy", "blue", "Clumsy blue Smurf"],
+        svec!["Brainy", "blue", "Brainy blue Smurf"],
+        svec!["Grouchy", "blue", "Grouchy blue Smurf"],
+        svec!["Hefty", "blue", "Hefty blue Smurf"],
+        svec!["Greedy", "green", "Greedy green Smurf"],
+        svec!["Jokey", "blue", "Jokey blue Smurf"],
+        svec!["Chef", "blue", "Chef blue Smurf"],
+        svec!["Vanity", "blue", "Vanity blue Smurf"],
+        svec!["Handy", "blue", "Handy blue Smurf"],
+        svec!["Scaredy", "black", "Scaredy black Smurf"],
+        svec!["Tracker", "blue", "Tracker blue Smurf"],
+        svec!["Sloppy", "blue", "Sloppy blue Smurf"],
+        svec!["Harmony", "blue", "Harmony blue Smurf"],
+        svec!["Painter", "multicolor", "Painter multicolor Smurf"],
+        svec!["Poet", "blue", "Poet blue Smurf"],
+        svec!["Farmer", "blue", "Farmer blue Smurf"],
+        svec!["Natural", "blue", "Natural blue Smurf"],
+        svec!["Snappy", "blue", "Snappy blue Smurf"],
     ];
 
     assert_eq!(got, expected);
@@ -1060,7 +1038,6 @@ fn fetch_complex_url_template() {
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetchpost_simple_test() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -1138,7 +1115,6 @@ fn fetchpost_simple_test() {
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetchpost_simple_diskcache() {
     let wrk = Workdir::new("fetchpost_diskcache");
     wrk.create(
@@ -1224,7 +1200,7 @@ fn fetchpost_simple_diskcache() {
 
     assert!(temp_dir.join("fetchpost_v1/conf").exists());
 
-    // let mut cmd2 = wrk.command("fetchpost");
+    // let mut cmd_2 = wrk.command("fetchpost");
     // cmd.arg("URL")
     //     .arg("bool_col,col1,number col")
     //     .arg("--jaq")
@@ -1238,7 +1214,7 @@ fn fetchpost_simple_diskcache() {
     //     // .args(&["--report", "short"])
     //     .arg("data.csv");
 
-    // let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    // let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
 
     // let mut got_parsed2: Vec<Vec<String>> = Vec::new();
     // let mut record_parsed2: Vec<String> = Vec::new();
@@ -1278,7 +1254,6 @@ fn fetchpost_simple_diskcache() {
 }
 
 #[test]
-#[ignore = "Temporarily skip this as we figure out a cross-platform way to test this"]
 fn fetchpost_compress_test() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -1322,52 +1297,39 @@ fn fetchpost_compress_test() {
     // so it just echoed back the gzipped request body.
     // https://github.com/postmanlabs/httpbin/issues/577#issuecomment-875814469
     // but if this was sent to an internal server that did decompress, it would work.
-    let expected = vec![
-        svec!["col1", "number col", "bool_col", "response"],
-        svec![
-            "a",
-            "42",
-            "true",
-            "{\"\\u{1f}�\\u{8}\\0\\0\\0\\0\\0\\0�K��ωO�ϱ-)*MU\\u{3}2\\u{c}m\\u{13}��Js�R��A�\": \
-             String(\"\"), \"F\\0�}�\\u{12}\\\"\\0\\0\\0\": String(\"\")}"
-        ],
-        svec![
-            "b",
-            "3.14",
-            "false",
-            "{\"\\0�i\\u{85}%\\0\\0\\0\": String(\"\"), \
-             \"\\u{1f}�\\u{8}\\0\\0\\0\\0\\0\\0�K��ωO�ϱMK�)NU\\u{3}�\\u{c}m���Js�R��A��z�\": \
-             String(\"\")}"
-        ],
-        svec![
-            "c",
-            "666",
-            "true",
-            "{\"\\u{1f}�\\u{8}\\0\\0\\0\\0\\0\\0�K��ωO�ϱ-)*MU\\u{3}2\\u{c}m���Js�R��A�fff\\0�K]g#\\
-             \
-             \0\\0\\0\": String(\"\")}"
-        ],
-        svec![
-            "d",
-            "33",
-            "true",
-            "{\"\\u{1f}�\\u{8}\\0\\0\\0\\0\\0\\0�K��ωO�ϱ-)*MU\\u{3}2\\u{c}mS��Js�R��A���\\0[ew\\\
-             u{19}\\\"\\0\\0\\0\": String(\"\")}"
-        ],
-        svec![
-            "e",
-            "0",
-            "false",
-            "{\"\\u{1f}�\\u{8}\\0\\0\\0\\0\\0\\0�K��ωO�ϱMK�)NU\\u{3}�\\u{c}mS��Js�R��A�\\u{6}\\0�,\
-             e�\\\"\\0\\0\\0\": String(\"\")}"
-        ],
+    // The garbled response varies in exact byte representation across jaq versions,
+    // so we just validate the structure: 6 rows (header + 5 data), 4 columns each,
+    // and the response column starts with '{' (garbled form data parsed as object).
+    assert_eq!(got_parsed.len(), 6);
+    assert_eq!(
+        got_parsed[0],
+        svec!["col1", "number col", "bool_col", "response"]
+    );
+    let expected_cols = [
+        ("a", "42", "true"),
+        ("b", "3.14", "false"),
+        ("c", "666", "true"),
+        ("d", "33", "true"),
+        ("e", "0", "false"),
     ];
-
-    assert_eq!(got_parsed, expected);
+    for (i, (col1, num, boolcol)) in expected_cols.iter().enumerate() {
+        let row = &got_parsed[i + 1];
+        assert_eq!(row.len(), 4);
+        assert_eq!(&row[0], col1);
+        assert_eq!(&row[1], num);
+        assert_eq!(&row[2], boolcol);
+        assert!(
+            row[3].starts_with('{'),
+            "row {i} response should be garbled object, got: {}",
+            row[3]
+                .char_indices()
+                .nth(50)
+                .map_or(&row[3][..], |(i, _)| &row[3][..i])
+        );
+    }
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetchpost_jaqfile_doesnotexist_error() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -1397,7 +1359,6 @@ fn fetchpost_jaqfile_doesnotexist_error() {
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetchpost_literalurl_test() {
     let wrk = Workdir::new("fetch_literalurl_test");
     wrk.create(
@@ -1461,7 +1422,6 @@ fn fetchpost_literalurl_test() {
 }
 
 #[test]
-// #[ignore = "Temporarily skip this as it seems httpbin.org is not currently available"]
 fn fetchpost_simple_report() {
     let wrk = Workdir::new("fetchpost_simple_report");
     wrk.create(
@@ -1574,21 +1534,21 @@ fn fetchpost_payload_template() {
             "Smith",
             "35",
             "New York",
-            r#""{"firstName":"John","lastName":"Smith","age":35,"city":"New York"}""#
+            r#"{"firstName":"John","lastName":"Smith","age":35,"city":"New York"}"#
         ],
         svec![
             "Jane",
             "Doe",
             "28",
             "Los Angeles",
-            r#""{"firstName":"Jane","lastName":"Doe","age":28,"city":"Los Angeles"}""#
+            r#"{"firstName":"Jane","lastName":"Doe","age":28,"city":"Los Angeles"}"#
         ],
         svec![
             "Bob",
             "Jones",
             "42",
             "Chicago",
-            r#""{"firstName":"Bob","lastName":"Jones","age":42,"city":"Chicago"}""#
+            r#"{"firstName":"Bob","lastName":"Jones","age":42,"city":"Chicago"}"#
         ],
     ];
 
@@ -1652,21 +1612,21 @@ fn fetchpost_payload_template_with_globals() {
             "Smith",
             "35",
             "New York",
-            r#""{"firstName":"John","lastName":"Smith","age":35,"dog_age":245,"cat_age":490,"city":"New York"}""#
+            r#"{"firstName":"John","lastName":"Smith","age":35,"dog_age":245,"cat_age":490,"city":"New York"}"#
         ],
         svec![
             "Jane",
             "Doe",
             "28",
             "Los Angeles",
-            r#""{"firstName":"Jane","lastName":"Doe","age":28,"dog_age":196,"cat_age":392,"city":"Los Angeles"}""#
+            r#"{"firstName":"Jane","lastName":"Doe","age":28,"dog_age":196,"cat_age":392,"city":"Los Angeles"}"#
         ],
         svec![
             "Bob",
             "Jones",
             "42",
             "Chicago",
-            r#""{"firstName":"Bob","lastName":"Jones","age":42,"dog_age":294,"cat_age":588,"city":"Chicago"}""#
+            r#"{"firstName":"Bob","lastName":"Jones","age":42,"dog_age":294,"cat_age":588,"city":"Chicago"}"#
         ],
     ];
 
@@ -1720,21 +1680,21 @@ fn fetchpost_payload_template_with_report() {
             "Smith",
             "35",
             "New York",
-            r#""{"firstName":"John","lastName":"Smith","age":35,"city":"New York"}""#
+            r#"{"firstName":"John","lastName":"Smith","age":35,"city":"New York"}"#
         ],
         svec![
             "Jane",
             "Doe",
             "28",
             "Los Angeles",
-            r#""{"firstName":"Jane","lastName":"Doe","age":28,"city":"Los Angeles"}""#
+            r#"{"firstName":"Jane","lastName":"Doe","age":28,"city":"Los Angeles"}"#
         ],
         svec![
             "Bob",
             "Jones",
             "42",
             "Chicago",
-            r#""{"firstName":"Bob","lastName":"Jones","age":42,"city":"Chicago"}""#
+            r#"{"firstName":"Bob","lastName":"Jones","age":42,"city":"Chicago"}"#
         ],
     ];
 
@@ -1993,7 +1953,7 @@ fn test_fetch_jaq_number() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["URL", "longitude"],
-        svec!["https://api.zippopotam.us/us/90210", "\"-118.4065\""],
+        svec!["https://api.zippopotam.us/us/90210", "-118.4065"],
     ];
 
     assert_eq!(got, expected);

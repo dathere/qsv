@@ -71,7 +71,7 @@ Some usage examples:
   using the `py` command if Python's shared libraries are not found.
   
   Also, the following Python modules are automatically loaded and available to the user -
-  builtsin, math, random & datetime. The user can import additional modules with the --helper option,
+  builtins, math, random & datetime. The user can import additional modules with the --helper option,
   with the ability to use any Python module that's installed in the current Python virtualenv. 
 
   The Python expression is evaluated on a per record basis.
@@ -191,7 +191,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers);
+        .no_headers_flag(args.flag_no_headers);
 
     let mut rdr = rconfig.reader()?;
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
@@ -199,13 +199,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let debug_flag = log::log_enabled!(log::Level::Debug);
 
     if debug_flag {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let msg = format!("Detected Python={}", py.version());
             winfo!("{msg}");
         });
     }
 
-    let expression = if let Some(expression_filepath) = args.arg_expression.strip_prefix("file:") {
+    let expression = if let Some(expression_filepath) =
+        args.arg_expression.strip_prefix(util::FILE_PATH_PREFIX)
+    {
         match fs::read_to_string(expression_filepath) {
             Ok(file_contents) => file_contents,
             Err(e) => return fail_clierror!("Cannot load Python expression from file: {e}"),
@@ -320,7 +322,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             break 'batch_loop;
         }
 
-        Python::with_gil(|py| -> PyResult<()> {
+        Python::attach(|py| -> PyResult<()> {
             let batch_ref = &mut batch;
             let helpers =
                 PyModule::from_code(py, &helpers_code, &helpers_filename, &helpers_module_name)?;
@@ -349,7 +351,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .getattr("QSVRow")?
                 .call1((headers.iter().collect::<Vec<&str>>(),))?;
 
-            batch_locals.set_item("col", py_row.clone())?;
+            batch_locals.set_item("col", &py_row)?;
 
             let error_result = intern!(py, "<ERROR>");
 
@@ -389,7 +391,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 log::error!("Expression error:{row_number}-{e:?}");
                             }
                             e.print_and_set_sys_last_vars(py);
-                            error_result.clone().into_any()
+                            error_result.as_any().clone()
                         },
                     };
 

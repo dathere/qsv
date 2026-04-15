@@ -1,0 +1,46 @@
+name: Windows - ARM64
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-windows-arm-tests-${{ github.ref }}-1
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    # Skip CI for MCP-only commits (commit message contains "(mcp):")
+    if: |
+      github.event_name != 'push' ||
+      !contains(github.event.head_commit.message, '(mcp):')
+
+    runs-on: windows-11-arm
+
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-python@v6.2.0
+      with:
+        python-version: '3.13'
+    - name: Installing Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+    - name: Setup Rust-cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: qsv-winarm64cache
+    - name: make empty DLLs directory to prevent spurious python warning
+      run: |
+        mkdir DLLs   
+    - name: Run tests
+      env:
+          RUSTFLAGS: -C debuginfo=0
+      #   RUSTFLAGS: -C target-cpu=native
+      run: cargo test --verbose --locked --no-default-features --features=mimalloc,apply,fetch,foreach,luau,python,polars,feature_capable,ui

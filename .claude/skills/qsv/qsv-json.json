@@ -1,0 +1,38 @@
+{
+  "name": "qsv-json",
+  "version": "19.0.0",
+  "description": "Convert JSON array to CSV.",
+  "category": "conversion",
+  "command": {
+    "subcommand": "json",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--jaq",
+        "type": "string",
+        "description": "Filter JSON data using jaq syntax (https://github.com/01mf02/jaq), which is identical to the popular JSON command-line tool - jq. https://jqlang.github.io/jq/ Note that the filter is applied BEFORE converting JSON to CSV"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select, reorder or drop columns for output. Otherwise, all the columns will be output in the same order as the first object's keys in the JSON data. See 'qsv select --help' for the full syntax. Note however that <cols> NEED to be a comma-delimited list of column NAMES and NOT column INDICES.",
+        "default": "1-"
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  }
+}

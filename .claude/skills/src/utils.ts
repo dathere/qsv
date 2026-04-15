@@ -1,0 +1,235 @@
+/**
+ * Shared utility functions for QSV MCP Server
+ */
+
+/**
+ * Extract a human-readable message from an unknown error.
+ * Use in catch blocks: `catch (error: unknown) { getErrorMessage(error) }`
+ */
+export function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Strip absolute filesystem paths from an error message before returning
+ * it to the MCP client. Replaces `/Users/foo/bar/file.csv` or
+ * `C:\Users\foo\file.csv` with just the basename to avoid leaking
+ * system paths in protocol responses.
+ *
+ * Note: paths containing spaces (e.g. `/Users/foo/my docs/file.csv`)
+ * are only partially matched — the regex stops at whitespace. This is
+ * acceptable because qsv itself doesn't handle space-paths reliably.
+ */
+export function sanitizeErrorForClient(message: string): string {
+  // Unix absolute paths: /foo/bar/baz.ext → baz.ext
+  // Windows absolute paths: C:\foo\bar\baz.ext → baz.ext
+  return message.replace(
+    /(?:[A-Za-z]:\\|\/)[^\s:,"']+/g,
+    (match) => {
+      const trimmedMatch = match.replace(/[/\\]+$/g, "");
+      const parts = trimmedMatch.split(/[/\\]/);
+      return parts[parts.length - 1] || trimmedMatch || match;
+    },
+  );
+}
+
+/**
+ * Type guard to check if an error is a NodeJS.ErrnoException (has a `code` property).
+ * Use in catch blocks: `if (isNodeError(err) && err.code === 'ENOENT') { ... }`
+ */
+export function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
+
+/**
+ * MCP tool result helpers to eliminate repetitive { content: [{ type: "text"... }] } boilerplate
+ */
+export function errorResult(message: string) {
+  return { content: [{ type: "text" as const, text: message }], isError: true as const };
+}
+
+export function successResult(text: string) {
+  return { content: [{ type: "text" as const, text }], isError: false as const };
+}
+
+/**
+ * Build a structured response for a completed directory-set operation.
+ * Used when the App UI should show a minimal confirmation instead of the full picker.
+ */
+export function completedDirResult(text: string, path: string) {
+  return {
+    content: [{ type: "text" as const, text }],
+    isError: false as const,
+    structuredContent: {
+      completed: true,
+      currentPath: path,
+    },
+  };
+}
+
+/**
+ * Compare two semantic version strings.
+ * Strips pre-release (-alpha.1) and build metadata (+build.123) before comparing.
+ * Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2.
+ * Returns NaN if either version string is unparsable.
+ */
+export function compareVersions(v1: string, v2: string): number {
+  // Strip pre-release and build metadata (e.g., "1.2.3-alpha.1+build" -> "1.2.3")
+  const strip = (v: string) => v.replace(/[-+].*$/, "");
+  const parts1 = strip(v1).split(".").map(Number);
+  const parts2 = strip(v2).split(".").map(Number);
+
+  // Validate that all parts are valid numbers
+  if (parts1.some(isNaN) || parts2.some(isNaN)) {
+    console.warn(
+      `[Utils] Invalid version format: "${v1}" or "${v2}" - returning NaN`,
+    );
+    return NaN;
+  }
+
+  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+    const part1 = parts1[i] || 0;
+    const part2 = parts2[i] || 0;
+    if (part1 < part2) return -1;
+    if (part1 > part2) return 1;
+  }
+  return 0;
+}
+
+/**
+ * Format bytes to human-readable string
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 Bytes";
+
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB", "PB"];
+  const i = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(k)),
+    sizes.length - 1,
+  );
+
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+/**
+ * Calculate Levenshtein distance between two strings
+ * Returns the minimum number of single-character edits required to change one string into the other
+ */
+export function levenshteinDistance(str1: string, str2: string): number {
+  // Normalize strings to lowercase for case-insensitive comparison
+  const a = str1.toLowerCase();
+  const b = str2.toLowerCase();
+
+  const matrix: number[][] = [];
+
+  // Initialize first column
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i];
+  }
+
+  // Initialize first row
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j;
+  }
+
+  // Fill in the rest of the matrix
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          matrix[i][j - 1] + 1, // insertion
+          matrix[i - 1][j] + 1, // deletion
+        );
+      }
+    }
+  }
+
+  return matrix[b.length][a.length];
+}
+
+/**
+ * Find files that are similar to the target filename using fuzzy matching
+ * Returns files sorted by similarity (most similar first)
+ */
+export function findSimilarFiles(
+  target: string,
+  availableFiles: Array<{ name: string; description?: string }>,
+  maxResults: number = 5,
+): Array<{ name: string; distance: number }> {
+  const results = availableFiles.map((file) => ({
+    name: file.name,
+    distance: levenshteinDistance(target, file.name),
+  }));
+
+  // Sort by distance (lower is better)
+  results.sort((a, b) => a.distance - b.distance);
+
+  // Return top matches
+  return results.slice(0, maxResults);
+}
+
+/**
+ * Find the --output path from a CLI args array.
+ * Handles both `["--output", "path"]` (two elements) and `["--output=path"]` (single element) forms.
+ * Returns the path string, or empty string if not found.
+ */
+export function findOutputPath(args: string[]): string {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--output" && i + 1 < args.length) {
+      return args[i + 1];
+    }
+    if (args[i].startsWith("--output=")) {
+      return args[i].slice("--output=".length);
+    }
+  }
+  return "";
+}
+
+/**
+ * Build a fallback result message for describegpt when stdout is empty.
+ * Points the user to the output file where describegpt persisted its results.
+ */
+export function describegptFallbackResult(args: string[]): string {
+  const outputPath = findOutputPath(args);
+  return outputPath
+    ? `describegpt output written to: ${outputPath}`
+    : "describegpt completed but produced no output.";
+}
+
+/**
+ * Reserved cache file suffixes that must not be used as --output targets.
+ * These are auto-generated sidecar files managed by qsv's smart commands.
+ */
+const RESERVED_CACHE_SUFFIXES = [
+  ".stats.csv",
+  ".stats.csv.data.jsonl",
+  ".stats.bivariate.csv",
+  ".stats.bivariate.joined.csv",
+  ".freq.csv.data.jsonl",
+  ".pschema.json",
+];
+
+/**
+ * Check if a file path matches a reserved cache file pattern.
+ * These files are auto-generated by qsv and should not be overwritten via --output.
+ */
+export function isReservedCachePath(filePath: string): boolean {
+  const normalized = filePath.toLowerCase();
+  return RESERVED_CACHE_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
+}
+
+/**
+ * Build a user-facing error message for reserved cache path violations.
+ * Derives the suffix list from RESERVED_CACHE_SUFFIXES to stay in sync.
+ */
+export function reservedCachePathError(outputPath: string): string {
+  const suffixList = RESERVED_CACHE_SUFFIXES.join(", ");
+  return (
+    `Output path "${outputPath}" matches a reserved cache file pattern. ` +
+    `Files ending in ${suffixList} are auto-managed by qsv. Use a different output path.`
+  );
+}

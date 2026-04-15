@@ -1,0 +1,48 @@
+{
+  "name": "qsv-rename",
+  "version": "19.0.0",
+  "description": "Rename the columns of a CSV efficiently.",
+  "category": "transformation",
+  "command": {
+    "subcommand": "rename",
+    "args": [
+      {
+        "name": "headers",
+        "type": "string",
+        "required": true,
+        "description": "The new headers to use for the CSV. Separate multiple headers with a comma. If \"_all_generic\" is given, the headers will be renamed to generic column names, where the column name uses the format \"_col_N\" where N is the 1-based column index. Alternatively, specify pairs of old,new column names to rename only specific columns."
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the header will be inserted on top."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--pairwise",
+        "type": "flag",
+        "description": "Invoke pairwise renaming."
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  }
+}

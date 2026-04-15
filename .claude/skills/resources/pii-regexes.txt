@@ -1,0 +1,9 @@
+# PII regex patterns for use with qsv searchset
+# Canonical source: docs/cookbook/searchset/pii-regexes.txt
+(?x)(?:\b\d{3}[\s-]?\d{2}[\s-]?\d{4}\b) #SSN
+(?x)\b5[1-5]\d{2}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b # Mastercard
+(?x)\b4\d{3}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b # Visa
+(?x)\b3[47][0-9]{13}\b # American Express
+(?x)\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}([A-Z\d]?){0,16}\b # IBAN
+(?x)\b[\w\.=-]+@[\w\.-]+\.[a-zA-Z]{2,63}\b # Email
+(?x)(?:\+?1)[\s\.]?(([2-9]\d{2})|\(([2-9]\d{2})\))[\s\.\-]?([2-9]\d{2})[\s\.\-]?(\d{4}) #Phone

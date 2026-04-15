@@ -1,0 +1,1050 @@
+/**
+ * Unit tests for MCP tools
+ */
+
+import { test } from 'node:test';
+import { sep } from 'node:path';
+import assert from 'node:assert';
+import {
+  handleToolCall,
+  getActiveProcessCount,
+  createSearchToolsTool,
+  handleSearchToolsCall,
+  buildConversionArgs,
+  createToParquetTool,
+  handleToParquetCall,
+  isCsvLikeFile,
+  getParquetPath,
+  ensureParquet,
+  parseCSVLine,
+  detectDelimiter,
+  statsFilePath,
+  isDateDtype,
+  patchSchemaAmPmDates,
+  createLogTool,
+  handleLogCall,
+  MAX_LOG_MESSAGE_LEN,
+  getToolsWorkingDir,
+  setToolsWorkingDir,
+  paramKeyToFlag,
+  looksLikeFilePath,
+} from '../src/mcp-tools.js';
+import { SkillLoader } from '../src/loader.js';
+import { SkillExecutor } from '../src/executor.js';
+
+test('handleToolCall requires input_file parameter', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+  const executor = new SkillExecutor();
+
+  const result = await handleToolCall(
+    'qsv_select',
+    {},
+    executor,
+    loader,
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('input_file'));
+});
+
+test('handleToolCall rejects unknown commands gracefully', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+  const executor = new SkillExecutor();
+
+  const result = await handleToolCall(
+    'qsv_nonexistent',
+    { input_file: 'test.csv' },
+    executor,
+    loader,
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('not found'));
+});
+
+test('getActiveProcessCount returns number', () => {
+  const count = getActiveProcessCount();
+  assert.ok(typeof count === 'number');
+  assert.ok(count >= 0);
+});
+
+// Note: Testing concurrent operation limit would require mocking activeProcesses
+// which is a private Set. For now, we test that the function exists and works.
+// Full integration testing would require running actual qsv commands.
+
+// ============================================================================
+// qsv_search_tools Tests
+// ============================================================================
+
+test('createSearchToolsTool returns valid tool definition', () => {
+  const toolDef = createSearchToolsTool();
+
+  assert.strictEqual(toolDef.name, 'qsv_search_tools');
+  assert.ok(toolDef.description.includes('Search for qsv tools'));
+  assert.strictEqual(toolDef.inputSchema.type, 'object');
+  assert.ok('query' in toolDef.inputSchema.properties);
+  assert.ok('category' in toolDef.inputSchema.properties);
+  assert.ok('limit' in toolDef.inputSchema.properties);
+  assert.deepStrictEqual(toolDef.inputSchema.required, ['query']);
+});
+
+test('handleSearchToolsCall finds tools by keyword', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  const result = await handleSearchToolsCall({ query: 'stats' }, loader);
+
+  assert.ok(result.content.length > 0);
+  assert.ok(result.content[0].text?.includes('qsv_stats') || result.content[0].text?.includes('stats'));
+});
+
+test('handleSearchToolsCall finds tools by category', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  const result = await handleSearchToolsCall(
+    { query: 'data', category: 'aggregation' },
+    loader
+  );
+
+  assert.ok(result.content.length > 0);
+  // Should include aggregation tools if query matches
+  const text = result.content[0].text || '';
+  assert.ok(text.includes('aggregation') || text.includes('No tools found'));
+});
+
+test('handleSearchToolsCall handles regex patterns', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  const result = await handleSearchToolsCall({ query: '/sort|dedup/' }, loader);
+
+  assert.ok(result.content.length > 0);
+  const text = result.content[0].text || '';
+  // Should find sort and/or dedup
+  assert.ok(text.includes('sort') || text.includes('dedup') || text.includes('No tools found'));
+});
+
+test('handleSearchToolsCall requires query parameter', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  const result = await handleSearchToolsCall({}, loader);
+
+  assert.ok(result.content.length > 0);
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('query'));
+});
+
+test('handleSearchToolsCall respects limit parameter', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  const result = await handleSearchToolsCall({ query: 's', limit: 3 }, loader);
+
+  assert.ok(result.content.length > 0);
+  // Count tool mentions in output (rough check)
+  const text = result.content[0].text || '';
+  const toolMatches = text.match(/\*\*qsv_\w+\*\*/g) || [];
+  assert.ok(toolMatches.length <= 3 || text.includes('No tools found'));
+});
+
+test('handleSearchToolsCall returns helpful message when no matches', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  const result = await handleSearchToolsCall(
+    { query: 'xyznonexistentcommand123' },
+    loader
+  );
+
+  assert.ok(result.content.length > 0);
+  const text = result.content[0].text || '';
+  assert.ok(text.includes('No tools found'));
+  assert.ok(text.includes('Try') || text.includes('suggestions'));
+});
+
+test('handleSearchToolsCall finds tools by description content', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  // Search for a term that appears in descriptions
+  const result = await handleSearchToolsCall({ query: 'duplicate' }, loader);
+
+  assert.ok(result.content.length > 0);
+  const text = result.content[0].text || '';
+  // Should find dedup or extdedup which handle duplicates
+  assert.ok(text.includes('dedup') || text.includes('No tools found'));
+});
+
+// ============================================================================
+// Deferred Loading Tests (loadedTools parameter)
+// ============================================================================
+
+test('handleSearchToolsCall marks found tools as loaded', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  // Create a Set to track loaded tools
+  const loadedTools = new Set<string>();
+
+  // Verify the set is initially empty
+  assert.strictEqual(loadedTools.size, 0);
+
+  // Search for tools - this should populate loadedTools
+  const result = await handleSearchToolsCall({ query: 'stats' }, loader, loadedTools);
+
+  assert.ok(result.content.length > 0);
+  // The search found tools, so they should be marked as loaded
+  if (!result.content[0].text?.includes('No tools found')) {
+    assert.ok(loadedTools.size > 0, 'Found tools should be marked as loaded');
+    // Verify tool names follow expected format (qsv_*)
+    for (const toolName of loadedTools) {
+      assert.ok(toolName.startsWith('qsv_'), `Tool name ${toolName} should start with qsv_`);
+    }
+  }
+});
+
+test('handleSearchToolsCall works without loadedTools parameter', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  // Call without loadedTools (undefined)
+  const result = await handleSearchToolsCall({ query: 'select' }, loader);
+
+  // Should work without errors
+  assert.ok(result.content.length > 0);
+  // Should return results or no-match message
+  const text = result.content[0].text || '';
+  assert.ok(text.includes('qsv_') || text.includes('No tools found'));
+});
+
+test('handleSearchToolsCall accumulates loaded tools across searches', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+
+  const loadedTools = new Set<string>();
+
+  // First search
+  await handleSearchToolsCall({ query: 'stats' }, loader, loadedTools);
+  const sizeAfterFirst = loadedTools.size;
+
+  // Second search for different tools
+  await handleSearchToolsCall({ query: 'join' }, loader, loadedTools);
+  const sizeAfterSecond = loadedTools.size;
+
+  // Should accumulate (not reset)
+  assert.ok(sizeAfterSecond >= sizeAfterFirst, 'loadedTools should accumulate across searches');
+});
+
+// ============================================================================
+// buildConversionArgs Tests (Parquet support)
+// ============================================================================
+
+test('buildConversionArgs returns correct args for Excel', () => {
+  const args = buildConversionArgs('excel', 'input.xlsx', 'output.csv');
+
+  assert.deepStrictEqual(args, ['excel', 'input.xlsx', '--output', 'output.csv']);
+});
+
+test('buildConversionArgs returns correct args for JSONL', () => {
+  const args = buildConversionArgs('jsonl', 'input.jsonl', 'output.csv');
+
+  assert.deepStrictEqual(args, ['jsonl', 'input.jsonl', '--output', 'output.csv']);
+});
+
+test('buildConversionArgs returns correct args for Parquet', () => {
+  const args = buildConversionArgs('parquet', 'input.parquet', 'output.csv');
+
+  assert.deepStrictEqual(args, [
+    'sqlp',
+    'SKIP_INPUT',
+    "select * from read_parquet('input.parquet')",
+    '--output',
+    'output.csv',
+  ]);
+});
+
+test('buildConversionArgs handles Windows paths for Parquet', () => {
+  // Windows paths should have backslashes converted to forward slashes in SQL
+  const args = buildConversionArgs('parquet', 'C:\\data\\file.parquet', 'output.csv');
+
+  assert.deepStrictEqual(args, [
+    'sqlp',
+    'SKIP_INPUT',
+    "select * from read_parquet('C:/data/file.parquet')",
+    '--output',
+    'output.csv',
+  ]);
+});
+
+test('buildConversionArgs escapes single quotes in Parquet paths', () => {
+  // Single quotes in paths need to be escaped for SQL safety
+  const args = buildConversionArgs('parquet', "file's.parquet", 'output.csv');
+
+  assert.deepStrictEqual(args, [
+    'sqlp',
+    'SKIP_INPUT',
+    "select * from read_parquet('file''s.parquet')",
+    '--output',
+    'output.csv',
+  ]);
+});
+
+// ============================================================================
+// qsv_to_parquet Tool Definition Tests
+// ============================================================================
+
+test('createToParquetTool returns valid tool definition', () => {
+  const toolDef = createToParquetTool();
+
+  assert.strictEqual(toolDef.name, 'qsv_to_parquet');
+  assert.ok(toolDef.description.includes('Convert CSV to Parquet'));
+  assert.ok(toolDef.description.includes('USE WHEN'));
+  assert.ok(toolDef.description.includes('Polars'));
+  assert.strictEqual(toolDef.inputSchema.type, 'object');
+  assert.ok('input_file' in toolDef.inputSchema.properties);
+  assert.ok('output_file' in toolDef.inputSchema.properties);
+  assert.deepStrictEqual(toolDef.inputSchema.required, ['input_file']);
+});
+
+test('createToParquetTool description mentions date detection via stats', () => {
+  const toolDef = createToParquetTool();
+
+  assert.ok(
+    toolDef.description.includes('Date/DateTime'),
+    'Description should mention Date/DateTime detection'
+  );
+  assert.ok(
+    toolDef.description.includes('--infer-dates'),
+    'Description should mention --infer-dates flag'
+  );
+  assert.ok(
+    toolDef.description.includes('--dates-whitelist sniff'),
+    'Description should mention --dates-whitelist sniff'
+  );
+});
+
+test('handleToParquetCall requires input_file parameter', async () => {
+  const result = await handleToParquetCall({});
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('input_file'));
+  assert.ok(result.content[0].text?.includes('required'));
+});
+
+// ============================================================================
+// Reserved cache path guard integration tests
+// ============================================================================
+
+test('handleToolCall rejects reserved cache file as --output', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+  const executor = new SkillExecutor();
+
+  const result = await handleToolCall(
+    'qsv_select',
+    { input_file: 'test.csv', columns: '1', output: 'data.stats.csv' },
+    executor,
+    loader,
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('reserved cache file pattern'));
+});
+
+test('handleToParquetCall rejects reserved cache file as output', async () => {
+  const result = await handleToParquetCall({
+    input_file: 'test.csv',
+    output: 'data.stats.csv',
+  });
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('reserved cache file pattern'));
+});
+
+// ============================================================================
+// isCsvLikeFile Tests
+// ============================================================================
+
+test('isCsvLikeFile recognizes standard CSV-like extensions', () => {
+  assert.strictEqual(isCsvLikeFile('data.csv'), true);
+  assert.strictEqual(isCsvLikeFile('data.tsv'), true);
+  assert.strictEqual(isCsvLikeFile('data.tab'), true);
+  assert.strictEqual(isCsvLikeFile('data.ssv'), true);
+});
+
+test('isCsvLikeFile recognizes Snappy-compressed CSV-like extensions', () => {
+  assert.strictEqual(isCsvLikeFile('data.csv.sz'), true);
+  assert.strictEqual(isCsvLikeFile('data.tsv.sz'), true);
+  assert.strictEqual(isCsvLikeFile('data.tab.sz'), true);
+  assert.strictEqual(isCsvLikeFile('data.ssv.sz'), true);
+});
+
+test('isCsvLikeFile is case-insensitive', () => {
+  assert.strictEqual(isCsvLikeFile('DATA.CSV'), true);
+  assert.strictEqual(isCsvLikeFile('FILE.TSV.SZ'), true);
+});
+
+test('isCsvLikeFile rejects non-CSV files', () => {
+  assert.strictEqual(isCsvLikeFile('data.json'), false);
+  assert.strictEqual(isCsvLikeFile('data.parquet'), false);
+  assert.strictEqual(isCsvLikeFile('data.xlsx'), false);
+  assert.strictEqual(isCsvLikeFile('data.sz'), false);
+});
+
+// ============================================================================
+// getParquetPath Tests
+// ============================================================================
+
+test('getParquetPath replaces CSV-like extension with .parquet', () => {
+  assert.strictEqual(getParquetPath('/data/test.csv'), '/data/test.parquet');
+  assert.strictEqual(getParquetPath('/data/test.tsv'), '/data/test.parquet');
+  assert.strictEqual(getParquetPath('/data/test.tab'), '/data/test.parquet');
+  assert.strictEqual(getParquetPath('/data/test.ssv'), '/data/test.parquet');
+});
+
+test('getParquetPath handles Snappy-compressed extensions', () => {
+  assert.strictEqual(getParquetPath('/data/test.csv.sz'), '/data/test.parquet');
+  assert.strictEqual(getParquetPath('/data/test.tsv.sz'), '/data/test.parquet');
+});
+
+test('getParquetPath appends .parquet for non-CSV files', () => {
+  assert.strictEqual(getParquetPath('/data/test.json'), '/data/test.json.parquet');
+});
+
+test('getParquetPath does not false-match on directory names containing CSV-like strings', () => {
+  // Regression test: directory paths like /data/csv_files/ should not match .csv
+  assert.strictEqual(getParquetPath('/data/csv_files/test.json'), '/data/csv_files/test.json.parquet');
+  assert.strictEqual(getParquetPath('/data/CSV_FILES/test.json'), '/data/CSV_FILES/test.json.parquet');
+});
+
+// ============================================================================
+// ensureParquet Tests (early-return paths — no qsv binary needed)
+// ============================================================================
+
+test('ensureParquet passes through non-CSV files unchanged', async () => {
+  // Parquet, JSON, and other non-CSV files should be returned as-is
+  assert.strictEqual(await ensureParquet('/data/test.parquet'), '/data/test.parquet');
+  assert.strictEqual(await ensureParquet('/data/test.json'), '/data/test.json');
+  assert.strictEqual(await ensureParquet('/data/test.jsonl'), '/data/test.jsonl');
+  assert.strictEqual(await ensureParquet('/data/test.xlsx'), '/data/test.xlsx');
+});
+
+// ============================================================================
+// detectDelimiter Tests
+// ============================================================================
+
+test('detectDelimiter returns comma for .csv files', () => {
+  assert.strictEqual(detectDelimiter('data.csv'), ',');
+  assert.strictEqual(detectDelimiter('/path/to/file.CSV'), ',');
+});
+
+test('detectDelimiter returns tab for .tsv and .tab files', () => {
+  assert.strictEqual(detectDelimiter('data.tsv'), '\t');
+  assert.strictEqual(detectDelimiter('data.tab'), '\t');
+  assert.strictEqual(detectDelimiter('/path/to/file.TSV'), '\t');
+  assert.strictEqual(detectDelimiter('/path/to/file.TAB'), '\t');
+});
+
+test('detectDelimiter returns semicolon for .ssv files', () => {
+  assert.strictEqual(detectDelimiter('data.ssv'), ';');
+  assert.strictEqual(detectDelimiter('/path/to/file.SSV'), ';');
+});
+
+test('detectDelimiter defaults to comma for unknown extensions', () => {
+  assert.strictEqual(detectDelimiter('data.txt'), ',');
+  assert.strictEqual(detectDelimiter('data.json'), ',');
+});
+
+// ============================================================================
+// statsFilePath Tests
+// ============================================================================
+
+test('statsFilePath strips .csv extension and appends .stats.csv', () => {
+  // Use path.join for platform-correct separators (Windows uses backslash)
+  const input = ['', 'tmp', 'cities.csv'].join(sep);
+  const expected = ['', 'tmp', 'cities.stats.csv'].join(sep);
+  assert.strictEqual(statsFilePath(input), expected);
+});
+
+test('statsFilePath strips .tsv extension', () => {
+  const input = ['', 'tmp', 'data.tsv'].join(sep);
+  const expected = ['', 'tmp', 'data.stats.csv'].join(sep);
+  assert.strictEqual(statsFilePath(input), expected);
+});
+
+test('statsFilePath strips only last extension for .csv.sz', () => {
+  const input = ['', 'tmp', 'file.csv.sz'].join(sep);
+  const expected = ['', 'tmp', 'file.csv.stats.csv'].join(sep);
+  assert.strictEqual(statsFilePath(input), expected);
+});
+
+test('statsFilePath handles file without directory', () => {
+  assert.strictEqual(statsFilePath('data.csv'), 'data.stats.csv');
+});
+
+test('statsFilePath strips .ssv extension', () => {
+  const input = ['', 'path', 'to', 'data.ssv'].join(sep);
+  const expected = ['', 'path', 'to', 'data.stats.csv'].join(sep);
+  assert.strictEqual(statsFilePath(input), expected);
+});
+
+// ============================================================================
+// parseCSVLine Tests
+// ============================================================================
+
+test('parseCSVLine parses simple comma-delimited fields', () => {
+  assert.deepStrictEqual(parseCSVLine('a,b,c'), ['a', 'b', 'c']);
+});
+
+test('parseCSVLine handles quoted fields with commas', () => {
+  assert.deepStrictEqual(parseCSVLine('"hello, world",b,c'), ['hello, world', 'b', 'c']);
+});
+
+test('parseCSVLine handles escaped quotes in quoted fields', () => {
+  assert.deepStrictEqual(parseCSVLine('"say ""hi""",b'), ['say "hi"', 'b']);
+});
+
+test('parseCSVLine handles empty fields', () => {
+  assert.deepStrictEqual(parseCSVLine('a,,c'), ['a', '', 'c']);
+});
+
+test('parseCSVLine handles single field', () => {
+  assert.deepStrictEqual(parseCSVLine('hello'), ['hello']);
+});
+
+test('parseCSVLine does not produce extra trailing empty field', () => {
+  const result = parseCSVLine('a,b,c');
+  assert.strictEqual(result.length, 3);
+});
+
+test('parseCSVLine supports tab delimiter', () => {
+  assert.deepStrictEqual(parseCSVLine('a\tb\tc', '\t'), ['a', 'b', 'c']);
+});
+
+test('parseCSVLine supports semicolon delimiter', () => {
+  assert.deepStrictEqual(parseCSVLine('a;b;c', ';'), ['a', 'b', 'c']);
+});
+
+test('parseCSVLine with tab delimiter does not split on commas', () => {
+  assert.deepStrictEqual(parseCSVLine('hello,world\tb\tc', '\t'), ['hello,world', 'b', 'c']);
+});
+
+test('parseCSVLine returns single empty field for empty string', () => {
+  assert.deepStrictEqual(parseCSVLine(''), ['']);
+});
+
+test('parseCSVLine preserves trailing empty field after delimiter', () => {
+  assert.deepStrictEqual(parseCSVLine('a,b,'), ['a', 'b', '']);
+});
+
+test('parseCSVLine preserves trailing empty field after quoted field and delimiter', () => {
+  assert.deepStrictEqual(parseCSVLine('"a","b",'), ['a', 'b', '']);
+});
+
+// ============================================================================
+// isDateDtype Tests
+// ============================================================================
+
+test('isDateDtype recognizes "Date" string', () => {
+  assert.strictEqual(isDateDtype('Date'), true);
+});
+
+test('isDateDtype recognizes Datetime object', () => {
+  assert.strictEqual(isDateDtype({ Datetime: ['Milliseconds', null] }), true);
+});
+
+test('isDateDtype recognizes Date object', () => {
+  assert.strictEqual(isDateDtype({ Date: 'something' }), true);
+});
+
+test('isDateDtype rejects non-date types', () => {
+  assert.strictEqual(isDateDtype('String'), false);
+  assert.strictEqual(isDateDtype('Int64'), false);
+  assert.strictEqual(isDateDtype(null), false);
+  assert.strictEqual(isDateDtype(undefined), false);
+  assert.strictEqual(isDateDtype(42), false);
+  assert.strictEqual(isDateDtype({ Float64: null }), false);
+});
+
+// ============================================================================
+// patchSchemaAmPmDates Tests
+// ============================================================================
+
+import { writeFile, readFile, mkdir, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+test('patchSchemaAmPmDates patches AM/PM datetime columns to String', async () => {
+  const dir = join(tmpdir(), `qsv-test-ampm-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const csvFile = join(dir, 'data.csv');
+    const schemaFile = join(dir, 'data.csv.pschema.json');
+
+    await writeFile(csvFile, 'id,timestamp\n1,01/15/2024 02:30 PM\n2,01/16/2024 11:00 AM\n');
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', timestamp: { Datetime: ['Milliseconds', null] } },
+    }));
+
+    const patched = await patchSchemaAmPmDates(csvFile, schemaFile);
+    assert.deepStrictEqual(patched, ['timestamp']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('patchSchemaAmPmDates skips columns without AM/PM', async () => {
+  const dir = join(tmpdir(), `qsv-test-noampm-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const csvFile = join(dir, 'data.csv');
+    const schemaFile = join(dir, 'data.csv.pschema.json');
+
+    await writeFile(csvFile, 'id,date\n1,2024-01-15\n2,2024-01-16\n');
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', date: 'Date' },
+    }));
+
+    const patched = await patchSchemaAmPmDates(csvFile, schemaFile);
+    assert.deepStrictEqual(patched, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('patchSchemaAmPmDates returns empty for missing schema file', async () => {
+  const patched = await patchSchemaAmPmDates('/nonexistent/data.csv', '/nonexistent/schema.json');
+  assert.deepStrictEqual(patched, []);
+});
+
+test('patchSchemaAmPmDates returns empty for CSV with fewer than 2 lines', async () => {
+  const dir = join(tmpdir(), `qsv-test-short-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const csvFile = join(dir, 'data.csv');
+    const schemaFile = join(dir, 'data.csv.pschema.json');
+
+    await writeFile(csvFile, 'id,timestamp\n');
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', timestamp: { Datetime: ['Milliseconds', null] } },
+    }));
+
+    const patched = await patchSchemaAmPmDates(csvFile, schemaFile);
+    assert.deepStrictEqual(patched, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('patchSchemaAmPmDates does not false-positive on "Amsterdam"', async () => {
+  const dir = join(tmpdir(), `qsv-test-amsterdam-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const csvFile = join(dir, 'data.csv');
+    const schemaFile = join(dir, 'data.csv.pschema.json');
+
+    // Polars might misidentify a column as Date — the regex should not match "Amsterdam"
+    await writeFile(csvFile, 'id,city\n1,Amsterdam\n2,Pamphlet\n');
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', city: 'Date' },
+    }));
+
+    const patched = await patchSchemaAmPmDates(csvFile, schemaFile);
+    assert.deepStrictEqual(patched, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('patchSchemaAmPmDates patches AM/PM columns in TSV files', async () => {
+  const dir = join(tmpdir(), `qsv-test-tsv-ampm-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const tsvFile = join(dir, 'data.tsv');
+    const schemaFile = join(dir, 'data.tsv.pschema.json');
+
+    await writeFile(tsvFile, 'id\ttimestamp\n1\t01/15/2024 02:30 PM\n2\t01/16/2024 11:00 AM\n');
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', timestamp: { Datetime: ['Milliseconds', null] } },
+    }));
+
+    const patched = await patchSchemaAmPmDates(tsvFile, schemaFile);
+    assert.deepStrictEqual(patched, ['timestamp']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('patchSchemaAmPmDates handles CSV without trailing newline', async () => {
+  const dir = join(tmpdir(), `qsv-test-csv-no-trailing-nl-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+    const csvFile = join(dir, 'data.csv');
+    const schemaFile = join(dir, 'data.csv.pschema.json');
+
+    // Note: no trailing newline after the last data row
+    await writeFile(
+      csvFile,
+      'id,timestamp\n1,01/15/2024 02:30 PM\n2,01/16/2024 11:00 AM',
+    );
+    await writeFile(schemaFile, JSON.stringify({
+      fields: { id: 'Int64', timestamp: { Datetime: ['Milliseconds', null] } },
+    }));
+
+    const patched = await patchSchemaAmPmDates(csvFile, schemaFile);
+    assert.deepStrictEqual(patched, ['timestamp']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ============================================================================
+// qsv_log Tests
+// ============================================================================
+
+import { config } from '../src/config.js';
+
+test('createLogTool returns valid tool definition', () => {
+  const toolDef = createLogTool();
+
+  assert.strictEqual(toolDef.name, 'qsv_log');
+  assert.ok(toolDef.description.includes('audit log'));
+  assert.strictEqual(toolDef.inputSchema.type, 'object');
+  assert.ok('entry_type' in toolDef.inputSchema.properties);
+  assert.ok('message' in toolDef.inputSchema.properties);
+  assert.deepStrictEqual(toolDef.inputSchema.required, ['entry_type', 'message']);
+
+  // Verify enum values
+  const entryTypeProp = toolDef.inputSchema.properties.entry_type as { enum: string[] };
+  assert.ok(Array.isArray(entryTypeProp.enum));
+  assert.deepStrictEqual(entryTypeProp.enum, [
+    'agent_reasoning', 'agent_action', 'result_summary', 'note',
+  ]);
+});
+
+test('handleLogCall rejects missing params entirely', async () => {
+  const result = await handleLogCall({}, tmpdir());
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('entry_type is required'));
+});
+
+test('handleLogCall rejects missing entry_type', async () => {
+  const result = await handleLogCall({ message: 'hello' }, tmpdir());
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('entry_type is required'));
+});
+
+test('handleLogCall rejects missing message', async () => {
+  const result = await handleLogCall({ entry_type: 'note' }, tmpdir());
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('message is required'));
+});
+
+test('handleLogCall rejects newline-only message', async () => {
+  const result = await handleLogCall(
+    { entry_type: 'note', message: '\n\n' },
+    tmpdir(),
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('non-empty string'));
+});
+
+test('handleLogCall coerces non-string types via String()', async () => {
+  // entry_type as number should be coerced to string and rejected as invalid
+  const result = await handleLogCall(
+    { entry_type: 123, message: true },
+    tmpdir(),
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('Invalid entry_type'));
+  assert.ok(result.content[0].text?.includes('123'));
+});
+
+test('handleLogCall coerces non-string message via String()', async (t) => {
+  if (!config.qsvValidation.valid || !config.qsvValidation.availableCommands?.includes('log')) {
+    t.skip('qsv binary not available or missing log command');
+    return;
+  }
+
+  const dir = join(tmpdir(), `qsv-test-coerce-msg-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+
+    // valid entry_type + numeric message should be coerced to "42" and pass validation
+    const result = await handleLogCall(
+      { entry_type: 'note', message: 42 },
+      dir,
+    );
+
+    // Should not be rejected as invalid input — it passes validation and execution
+    assert.ok(!result.isError);
+    assert.ok(result.content[0].text?.includes('Logged note entry'));
+    assert.ok(!result.content[0].text?.includes('warning'), 'Should succeed without warning');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('handleLogCall rejects invalid entry_type', async () => {
+  const result = await handleLogCall(
+    { entry_type: 'invalid_type', message: 'test message' },
+    tmpdir(),
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('Invalid entry_type'));
+  assert.ok(result.content[0].text?.includes('invalid_type'));
+});
+
+test('handleLogCall rejects empty message', async () => {
+  const result = await handleLogCall(
+    { entry_type: 'note', message: '' },
+    tmpdir(),
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('non-empty'));
+});
+
+test('handleLogCall rejects whitespace-only message', async () => {
+  const result = await handleLogCall(
+    { entry_type: 'note', message: '   ' },
+    tmpdir(),
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('non-empty'));
+});
+
+test('handleLogCall succeeds with valid params and writes to log', async (t) => {
+  if (!config.qsvValidation.valid || !config.qsvValidation.availableCommands?.includes('log')) {
+    t.skip('qsv binary not available or missing log command');
+    return;
+  }
+
+  const dir = join(tmpdir(), `qsv-test-log-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+
+    const result = await handleLogCall(
+      { entry_type: 'note', message: 'test log entry from unit test' },
+      dir,
+    );
+
+    assert.strictEqual(result.isError, false);
+    assert.ok(result.content[0].text?.includes('Logged note entry'));
+
+    // Verify the log file was created and contains the entry
+    const logFile = join(dir, 'qsvmcp.log');
+    const logContent = await readFile(logFile, 'utf-8');
+    assert.ok(logContent.includes('u-'), 'Log entry should have u- prefix');
+    assert.ok(logContent.includes('[note]'), 'Log entry should contain [note] tag');
+    assert.ok(logContent.includes('test log entry from unit test'), 'Log entry should contain the message');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('handleLogCall truncates messages over MAX_LOG_MESSAGE_LEN', async (t) => {
+  if (!config.qsvValidation.valid || !config.qsvValidation.availableCommands?.includes('log')) {
+    t.skip('qsv binary not available or missing log command');
+    return;
+  }
+
+  const dir = join(tmpdir(), `qsv-test-log-trunc-${Date.now()}`);
+  try {
+    await mkdir(dir, { recursive: true });
+
+    // Create a message longer than MAX_LOG_MESSAGE_LEN
+    const longMessage = 'x'.repeat(MAX_LOG_MESSAGE_LEN + 500);
+    const result = await handleLogCall(
+      { entry_type: 'note', message: longMessage },
+      dir,
+    );
+
+    assert.strictEqual(result.isError, false);
+    assert.ok(result.content[0].text?.includes('Logged note entry'));
+
+    // Verify the log file was created but message was truncated
+    const logFile = join(dir, 'qsvmcp.log');
+    const logContent = await readFile(logFile, 'utf-8');
+    assert.ok(logContent.includes('u-'), 'Log entry should have u- prefix');
+    assert.ok(logContent.includes('[note]'), 'Log entry should contain [note] tag');
+    // The truncated message should not contain the full length
+    // (log line overhead + truncated message should be shorter than the full message)
+    assert.ok(logContent.length < longMessage.length, 'Log content should be shorter than the full message');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('handleLogCall returns success with warning when qsv write fails', async (t) => {
+  if (!config.qsvValidation.valid) {
+    t.skip('qsv binary not available');
+    return;
+  }
+
+  // Use a non-existent directory so qsv log cannot create the log file
+  const result = await handleLogCall(
+    { entry_type: 'note', message: 'this should fail to write' },
+    '/nonexistent/path/that/does/not/exist',
+  );
+
+  // The catch block should swallow the error and return success with warning
+  assert.ok(!result.isError, 'Should not be marked as error');
+  assert.ok(result.content[0].text?.includes('Log write failed'), 'Should indicate write failed');
+  assert.ok(result.content[0].text?.includes('non-fatal'), 'Should indicate non-fatal');
+  assert.ok(result.content[0].text?.includes('Workflow continues'), 'Should indicate workflow continues');
+});
+
+// ============================================================================
+// getToolsWorkingDir / setToolsWorkingDir Tests
+// ============================================================================
+
+test('getToolsWorkingDir returns the value set by setToolsWorkingDir', () => {
+  const original = getToolsWorkingDir();
+  try {
+    setToolsWorkingDir('/tmp/test-dir');
+    assert.strictEqual(getToolsWorkingDir(), '/tmp/test-dir');
+  } finally {
+    // Restore original to avoid side effects on other tests
+    setToolsWorkingDir(original);
+  }
+});
+
+test('setToolsWorkingDir throws on relative path', () => {
+  assert.throws(
+    () => setToolsWorkingDir('relative/path'),
+    /expected an absolute path/,
+  );
+});
+
+test('setToolsWorkingDir throws on empty string', () => {
+  assert.throws(
+    () => setToolsWorkingDir(''),
+    /expected an absolute path/,
+  );
+});
+
+test('setToolsWorkingDir throws on whitespace-only string', () => {
+  assert.throws(
+    () => setToolsWorkingDir('   '),
+    /expected an absolute path/,
+  );
+});
+
+test('setToolsWorkingDir trims leading/trailing whitespace from valid path', () => {
+  const original = getToolsWorkingDir();
+  try {
+    setToolsWorkingDir('  /tmp/trimmed  ');
+    assert.strictEqual(getToolsWorkingDir(), '/tmp/trimmed');
+  } finally {
+    setToolsWorkingDir(original);
+  }
+});
+
+// ============================================================================
+// paramKeyToFlag Tests
+// ============================================================================
+
+test('paramKeyToFlag converts underscore param keys to flag format', () => {
+  assert.strictEqual(paramKeyToFlag('dupes_output'), '--dupes-output');
+  assert.strictEqual(paramKeyToFlag('keys_output'), '--keys-output');
+  assert.strictEqual(paramKeyToFlag('unmatched_output'), '--unmatched-output');
+});
+
+test('paramKeyToFlag passes through already-flagged keys', () => {
+  assert.strictEqual(paramKeyToFlag('--dupes-output'), '--dupes-output');
+  assert.strictEqual(paramKeyToFlag('-o'), '-o');
+});
+
+test('paramKeyToFlag handles simple keys without underscores', () => {
+  assert.strictEqual(paramKeyToFlag('output'), '--output');
+  assert.strictEqual(paramKeyToFlag('format'), '--format');
+});
+
+// ============================================================================
+// looksLikeFilePath Tests
+// ============================================================================
+
+test('looksLikeFilePath detects file: prefix', () => {
+  assert.strictEqual(looksLikeFilePath('file:script.luau'), true);
+  assert.strictEqual(looksLikeFilePath('file:/path/to/script.lua'), true);
+});
+
+test('looksLikeFilePath detects .lua and .luau extensions', () => {
+  assert.strictEqual(looksLikeFilePath('script.lua'), true);
+  assert.strictEqual(looksLikeFilePath('myscript.luau'), true);
+});
+
+test('looksLikeFilePath detects path separators in file paths', () => {
+  assert.strictEqual(looksLikeFilePath('./script.lua'), true);
+  assert.strictEqual(looksLikeFilePath('../scripts/init.lua'), true);
+  assert.strictEqual(looksLikeFilePath('/absolute/path/to/file'), true);
+  // Windows-style paths require drive letter, .\ or ..\ prefix
+  assert.strictEqual(looksLikeFilePath('.\\dir\\file.lua'), true);
+  assert.strictEqual(looksLikeFilePath('..\\dir\\file.lua'), true);
+  assert.strictEqual(looksLikeFilePath('C:\\Users\\file.lua'), true);
+});
+
+test('looksLikeFilePath detects tilde home directory', () => {
+  assert.strictEqual(looksLikeFilePath('~/scripts/init.lua'), true);
+  assert.strictEqual(looksLikeFilePath('~'), true);
+});
+
+test('looksLikeFilePath rejects inline Luau scripts with division', () => {
+  assert.strictEqual(looksLikeFilePath('col1 / col2'), false);
+  assert.strictEqual(looksLikeFilePath('a / b + c'), false);
+  assert.strictEqual(looksLikeFilePath('total / count'), false);
+  // Division without spaces — bare `a/b` is NOT treated as a path
+  assert.strictEqual(looksLikeFilePath('a/b'), false);
+  assert.strictEqual(looksLikeFilePath('a/b + c'), false);
+});
+
+test('looksLikeFilePath accepts paths starting with /, ./, or ../', () => {
+  assert.strictEqual(looksLikeFilePath('/absolute/path'), true);
+  assert.strictEqual(looksLikeFilePath('./relative/path'), true);
+  assert.strictEqual(looksLikeFilePath('../parent/path'), true);
+  assert.strictEqual(looksLikeFilePath('/usr/local/bin/script'), true);
+});
+
+test('looksLikeFilePath detects multi-segment relative paths (2+ slashes)', () => {
+  // Multi-segment paths like `path/to/file` (2+ slashes) are detected —
+  // very unlikely to be Luau division expressions
+  assert.strictEqual(looksLikeFilePath('path/to/file'), true);
+  assert.strictEqual(looksLikeFilePath('a/b/c/d'), true);
+  assert.strictEqual(looksLikeFilePath('scripts/init/setup.luau'), true);
+  // But single-slash bare paths are still rejected (could be division)
+  assert.strictEqual(looksLikeFilePath('dir/file.txt'), false);
+});
+
+test('looksLikeFilePath rejects bare backslash without Windows path signals', () => {
+  // Bare backslash without drive letter or .\ prefix is not treated as a path
+  assert.strictEqual(looksLikeFilePath('dir\\file'), false);
+  assert.strictEqual(looksLikeFilePath('a\\b'), false);
+  // But dir\\file.lua still matches via .lua extension (not backslash)
+  assert.strictEqual(looksLikeFilePath('dir\\file.lua'), true);
+  // Windows multi-segment path with drive letter (no recognized extension)
+  assert.strictEqual(looksLikeFilePath('C:\\Users\\scripts\\init'), true);
+});
+
+test('looksLikeFilePath rejects plain identifiers and inline scripts', () => {
+  assert.strictEqual(looksLikeFilePath('myscript'), false);
+  assert.strictEqual(looksLikeFilePath('some_identifier'), false);
+  assert.strictEqual(looksLikeFilePath('col1 + col2'), false);
+  assert.strictEqual(looksLikeFilePath('return x * 2'), false);
+});
+
+test('looksLikeFilePath handles whitespace-padded values', () => {
+  assert.strictEqual(looksLikeFilePath('  script.lua  '), true);
+  assert.strictEqual(looksLikeFilePath('  myscript  '), false);
+});

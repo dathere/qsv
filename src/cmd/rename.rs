@@ -1,27 +1,30 @@
 static USAGE: &str = r#"
-Rename the columns of a CSV efficiently.
+Rename the columns of a CSV efficiently. It has two modes of operation:
 
+Positional mode (default):
 The new column names are given as a comma-separated list of names.
-The number of column names given must match the number of columns in the
+The number of column names given MUST match the number of columns in the
 CSV unless "_all_generic" is used.
 
-Alternatively, you can specify pairs of old and new column names to rename
-only specific columns. The format is "old1,new1,old2,new2,...".
+Pairwise mode:
+The new column names are given as a comma-separated list of pairs of old and new
+column names. The format is "old1,new1,old2,new2,...".
 
+Examples:
   Change the column names of a CSV with three columns:
-    $ qsv rename id,name,title
+  $ qsv rename id,name,title
 
   Rename only specific columns using pairs:
-    $ qsv rename oldname,newname,oldcol,newcol
+  $ qsv rename --pairwise oldname,newname,oldcol,newcol
 
   Replace the column names with generic ones (_col_N):
-    $ qsv rename _all_generic
+  $ qsv rename _all_generic
 
   Add generic column names to a CSV with no headers:
-    $ qsv rename _all_generic --no-headers
+  $ qsv rename _all_generic --no-headers
 
   Use column names that contains commas and conflict with the separator:
-    $ qsv rename '"Date - Opening","Date - Actual Closing"'
+  $ qsv rename '"Date - Opening","Date - Actual Closing"'
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_rename.rs.
 
@@ -37,17 +40,17 @@ rename arguments:
                            the format "_col_N" where N is the 1-based column index.
                            Alternatively, specify pairs of old,new column names
                            to rename only specific columns.
+    --pairwise             Invoke pairwise renaming.
 
 Common options:
     -h, --help             Display this message
     -o, --output <file>    Write output to <file> instead of stdout.
-    -n, --no-headers       When set, the header will be inserted on top.    
+    -n, --no-headers       When set, the header will be inserted on top.
     -d, --delimiter <arg>  The field delimiter for reading CSV data.
                            Must be a single character. (default: ,)
 "#;
 
-use std::collections::HashMap;
-
+use foldhash::{HashMap, HashMapExt};
 use serde::Deserialize;
 
 use crate::{
@@ -63,6 +66,7 @@ struct Args {
     flag_output:     Option<String>,
     flag_no_headers: bool,
     flag_delimiter:  Option<Delimiter>,
+    flag_pairwise:   bool,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -70,7 +74,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers);
+        .no_headers_flag(args.flag_no_headers);
 
     let mut rdr = rconfig.reader()?;
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
@@ -125,7 +129,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let s = rename_headers_all_generic(headers.len());
             let mut new_rdr = csv::Reader::from_reader(s.as_bytes());
             new_rdr.byte_headers()?.clone()
-        } else if is_pairs && has_matching_old {
+        } else if is_pairs && has_matching_old && args.flag_pairwise {
+            // Use pairwise renaming only when explicitly requested with --pairwise flag
             if let Ok(renamed_headers) = parse_rename_pairs(&args.arg_headers, headers) {
                 renamed_headers
             } else {

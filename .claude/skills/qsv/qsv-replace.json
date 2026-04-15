@@ -1,0 +1,92 @@
+{
+  "name": "qsv-replace",
+  "version": "19.0.0",
+  "description": "Replace CSV data using a regex. Applies the regex to each field individually.",
+  "category": "transformation",
+  "command": {
+    "subcommand": "replace",
+    "args": [
+      {
+        "name": "pattern",
+        "type": "regex",
+        "required": true,
+        "description": "Regular expression pattern to match. Uses Rust regex syntax. See https://docs.rs/regex/latest/regex/index.html#syntax or https://regex101.com with the Rust flavor for more info."
+      },
+      {
+        "name": "replacement",
+        "type": "string",
+        "required": true,
+        "description": "Replacement string. Set to '<NULL>' if you want to replace matches with ''. replace options:"
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": "The CSV file to read. If not given, reads from stdin."
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--dfa-size-limit",
+        "type": "string",
+        "description": "Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata.",
+        "default": "10"
+      },
+      {
+        "flag": "--exact",
+        "type": "flag",
+        "description": "Match the ENTIRE field exactly. Treats the pattern as a literal string (like --literal) and automatically anchors it to match the complete field value (^pattern$)."
+      },
+      {
+        "flag": "--ignore-case",
+        "type": "flag",
+        "description": "Case insensitive search. This is equivalent to prefixing the regex with '(?i)'."
+      },
+      {
+        "flag": "--literal",
+        "type": "flag",
+        "description": "Treat the regex pattern as a literal string. This allows you to search for matches that contain regex special characters."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.)"
+      },
+      {
+        "flag": "--not-one",
+        "type": "flag",
+        "description": "Use exit code 0 instead of 1 for no replacement found."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select the columns to search. See 'qsv select -h' for the full syntax."
+      },
+      {
+        "flag": "--size-limit",
+        "type": "string",
+        "description": "Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned.",
+        "default": "50"
+      },
+      {
+        "flag": "--unicode",
+        "type": "flag",
+        "description": "Enable unicode support. When enabled, character classes will match all unicode word characters instead of only ASCII word characters. Decreases performance."
+      }
+    ]
+  },
+  "hints": {
+    "indexed": true,
+    "memory": "constant"
+  }
+}

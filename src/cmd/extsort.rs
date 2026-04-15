@@ -127,7 +127,7 @@ fn sort_csv(
 ) -> Result<(), crate::clitypes::CliError> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.flag_select.clone().unwrap());
 
     let mut idxfile = match rconfig.indexed() {
@@ -235,7 +235,9 @@ fn sort_csv(
 
     for l in sorted_line_rdr.lines() {
         line.clone_from(&l?);
-        let Ok(position) = atoi_simd::parse::<u64>(&line.as_bytes()[line.len() - width..]) else {
+        let Ok(position) =
+            atoi_simd::parse::<u64, false, false>(&line.as_bytes()[line.len() - width..])
+        else {
             return fail!("Failed to retrieve position: invalid integer");
         };
 

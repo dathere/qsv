@@ -14,7 +14,7 @@ EXAMPLE:
 Pseudonymise the value of the "Name" column by replacing it with an
 incremental identifier starting at 1000 and incrementing by 5:
 
-    $ qsv pseudo Name --start 1000 --increment 5 --fmtstr "ID-{}" data.csv
+  $ qsv pseudo Name --start 1000 --increment 5 --fmtstr "ID-{}" data.csv
 
 If run on the following CSV data:
 
@@ -97,7 +97,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.arg_column);
 
     let mut rdr = rconfig.reader()?;

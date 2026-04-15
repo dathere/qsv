@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=6.7.0
+bm_version=7.2.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -568,6 +568,7 @@ run --index frequency_index "$qsv_bin" frequency "$data"
 run --index frequency_index_stats_mode_auto env QSV_STATS_MODE=auto bash -c \'"$qsv_bin" frequency "$data"\'
 run --index frequency_index_stats_mode_force env QSV_STATS_MODE=force bash -c \'"$qsv_bin" frequency "$data"\'
 run --index frequency_index_stats_mode_none env QSV_STATS_MODE=none bash -c \'"$qsv_bin" frequency "$data"\'
+run --index frequency_index_frequency_cache "$qsv_bin" frequency --frequency-jsonl "$data"
 run frequency_no_limit "$qsv_bin" frequency --limit 0 "$data"
 run --index frequency_no_limit_index "$qsv_bin" frequency --limit 0 "$data"
 run frequency_other_sorted "$qsv_bin" frequency --other-sorted "$data"
@@ -612,6 +613,12 @@ run luau_script_debug env QSV_LOG_LEVEL=debug bash -c \'"$qsv_bin" luau map turn
 run luau_script_colidx "$qsv_bin" luau map turnaround_time --colindex "file:turnaround_time.luau" "$data"
 run luau_script_no_globals "$qsv_bin" luau map turnaround_time --no-globals "file:turnaround_time.luau" "$data"
 run luau_script_no_globals_colidx "$qsv_bin" luau map turnaround_time --no-globals --colindex "file:turnaround_time.luau" "$data"
+run --index moarstats_index "$qsv_bin" moarstats "$data"
+run --index moarstats_advanced_index "$qsv_bin" moarstats --advanced "$data"
+run --index moarstats_bivariate_index "$qsv_bin" moarstats --bivariate "$data"
+run --index moarstats_bivariate_all_index "$qsv_bin" moarstats --bivariate --bivariate-stats all "$data"
+run --index moarstats_advanced_bivariate_index "$qsv_bin" moarstats --advanced --bivariate "$data"
+run --index moarstats_advanced_bivariate_all_index "$qsv_bin" moarstats --advanced --bivariate --bivariate-stats all "$data"
 run partition "$qsv_bin" partition \'Community Board\' /tmp/partitioned "$data"
 run pivotp_basic "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" "$data"
 run pivotp_smart "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" --agg smart "$data"
@@ -620,6 +627,7 @@ run pseudo "$qsv_bin" pseudo \'Unique Key\' "$data"
 run pseudo_formatstr "$qsv_bin" pseudo \'Unique Key\' --formatstr 'ID-{}' --increment 5 "$data"
 run rename "$qsv_bin" rename \'unique_key,created_date,closed_date,agency,agency_name,complaint_type,descriptor,loctype,zip,addr1,street,xstreet1,xstreet2,inter1,inter2,addrtype,city,landmark,facility_type,status,due_date,res_desc,res_act_date,comm_board,bbl,boro,xcoord,ycoord,opendata_type,parkname,parkboro,vehtype,taxi_boro,taxi_loc,bridge_hwy_name,bridge_hwy_dir,ramp,bridge_hwy_seg,lat,long,loc\' "$data"
 run replace "$qsv_bin" replace \'zip\' \'postal\' "$data"
+run --index replace_indexed "$qsv_bin" replace \'zip\' \'postal\' "$data"
 run reverse "$qsv_bin" reverse "$data"
 run --index reverse_index "$qsv_bin" reverse "$data"
 run safenames "$qsv_bin" safenames "$data"
@@ -636,7 +644,7 @@ run sample_bernoulli "$qsv_bin" sample --bernoulli 0.25 --seed 42 "$data"
 run sample_1000_systematic "$qsv_bin" sample 1000 --systematic random --seed 42 "$data"
 run sample_1000_stratified "$qsv_bin" sample 1000 --stratified "Agency" --seed 42 "$data"
 run sample_1000_weighted "$qsv_bin" sample 1000 --weighted \"Incident Zip\" --seed 42 "$data"
-run sample_1000_cluster "$qsv_bin" sample 1000 --cluster \"Incident Zip\" --seed 42 "$data"
+run sample_500_cluster "$qsv_bin" sample 500 --cluster \"Incident Zip\" --seed 42 "$data"
 run --index sample_100000_seeded_index "$qsv_bin" sample --seed 42 100000 "$data"
 run --index sample_100000_seeded_index_faster "$qsv_bin" sample --rng faster --seed 42 100000 "$data"
 run --index sample_100000_seeded_index_secure "$qsv_bin" sample --rng cryptosecure --seed 42 100000 "$data"
@@ -653,9 +661,11 @@ run search_file_case_sensitive "$qsv_bin" search "'us'" "$data"
 run search_file_case_sensitive_unicode "$qsv_bin" search --unicode "'us'" "$data"
 run search_file_flag "$qsv_bin" search "'(?i)us'" "$data" --flag flagged
 run search_file_flag_matchonly "$qsv_bin" search "'(?i)us'" "$data" --flag M
+run --index search_index "$qsv_bin" search -s \'Agency Name\' "'(?i)us'" "$data"
 run searchset "$qsv_bin" searchset searchset_patterns.txt "$data"
 run searchset_ignorecase "$qsv_bin" searchset --ignore-case searchset_patterns.txt "$data"
 run searchset_unicode "$qsv_bin" searchset searchset_patterns_unicode.txt --unicode "$data"
+run --index searchset_index "$qsv_bin" searchset searchset_patterns.txt "$data"
 run select "$qsv_bin" select \'Agency,Community Board\' "$data"
 run select_regex "$qsv_bin" select /^L/ "$data"
 run slice_one_middle "$qsv_bin" slice -i 500000 "$data"
@@ -721,7 +731,7 @@ run table "$qsv_bin" table "$data"
 run template "$qsv_bin" template --template-file template.tpl "$data" >/dev/null
 run template_lookup_outdir "$qsv_bin" template --template-file template-with-cb-lookup.tpl "$data" >/dev/null
 run to_xlsx "$qsv_bin" to xlsx benchmark_work.xlsx "$data"
-run to_sqlite "$qsv_bin" to sqlite benchmark_work.db "$data"
+run to_sqlite "$qsv_bin" to sqlite benchmark_work.db "$data";rm benchmark_work.db
 run to_datapackage "$qsv_bin" to datapackage benchmark_work.json "$data"
 run tojsonl "$qsv_bin" tojsonl "$data"
 run tojsonl_batchall "$qsv_bin" tojsonl --batch 0 "$data"

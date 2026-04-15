@@ -1,0 +1,150 @@
+{
+  "name": "qsv-search",
+  "version": "19.0.0",
+  "description": "Run a regex over a CSV. Applies the regex to selected fields & shows only matching rows.",
+  "category": "filtering",
+  "command": {
+    "subcommand": "search",
+    "args": [
+      {
+        "name": "regex",
+        "type": "regex",
+        "required": true,
+        "description": "Regular expression to match. Uses Rust regex syntax. See https://docs.rs/regex/latest/regex/index.html#syntax or https://regex101.com with the Rust flavor for more info."
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": "The CSV file to read. If not given, reads from stdin."
+      }
+    ],
+    "options": [
+      {
+        "flag": "--count",
+        "type": "flag",
+        "description": "Return number of matches to stderr."
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--dfa-size-limit",
+        "type": "string",
+        "description": "Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. Modify this only if you're getting regular expression compilation errors.",
+        "default": "10"
+      },
+      {
+        "flag": "--exact",
+        "type": "flag",
+        "description": "Match the ENTIRE field exactly. Treats the pattern as a literal string (like --literal) and automatically anchors it to match the complete field value (^pattern$)."
+      },
+      {
+        "flag": "--flag",
+        "type": "string",
+        "description": "If given, the command will not filter rows but will instead flag the found rows in a new column named <column>, with the row numbers of the matched rows and 0 for the non-matched rows. If column is named M, only the M column will be written to the output, and only matched rows are returned."
+      },
+      {
+        "flag": "--ignore-case",
+        "type": "flag",
+        "description": "Case insensitive search. This is equivalent to prefixing the regex with '(?i)'."
+      },
+      {
+        "flag": "--invert-match",
+        "type": "flag",
+        "description": "Select only rows that did not match"
+      },
+      {
+        "flag": "--json",
+        "type": "flag",
+        "description": "Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based). Automatically sets --quiet."
+      },
+      {
+        "flag": "--literal",
+        "type": "flag",
+        "description": "Treat the regex as a literal string. This allows you to search for matches that contain regex special characters."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.)"
+      },
+      {
+        "flag": "--not-one",
+        "type": "flag",
+        "description": "Use exit code 0 instead of 1 for no match found."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--preview-match",
+        "type": "string",
+        "description": "Preview the first N matches or all the matches found in N milliseconds, whichever occurs first. Returns the preview to stderr. Output is still written to stdout or --output as usual. Only applicable when CSV is NOT indexed, as it's read sequentially. Forces a sequential search, even if the CSV is indexed."
+      },
+      {
+        "flag": "--quick",
+        "type": "flag",
+        "description": "Return on first match with an exitcode of 0, returning the row number of the first match to stderr. Return exit code 1 if no match is found. No output is produced."
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select the columns to search. See 'qsv select -h' for the full syntax."
+      },
+      {
+        "flag": "--size-limit",
+        "type": "string",
+        "description": "Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned. Modify this only if you're getting regular expression compilation errors.",
+        "default": "50"
+      },
+      {
+        "flag": "--unicode",
+        "type": "flag",
+        "description": "Enable unicode support. When enabled, character classes will match all unicode word characters instead of only ASCII word characters. Decreases performance."
+      }
+    ]
+  },
+  "hints": {
+    "indexed": true,
+    "memory": "constant"
+  },
+  "examples": [
+    {
+      "description": "Search for rows where any field contains the regex 'foo.*bar' (case sensitive)",
+      "command": "qsv search 'foo.*bar' data.csv"
+    },
+    {
+      "description": "Case insensitive search for 'error' in the 'message' column",
+      "command": "qsv search -i 'error' -s message data.csv"
+    },
+    {
+      "description": "Search for exact matches of 'completed' in the 'status' column",
+      "command": "qsv search --exact 'completed' -s status data.csv"
+    },
+    {
+      "description": "Search for literal string 'a.b*c' in all columns",
+      "command": "qsv search --literal 'a.b*c' data.csv"
+    },
+    {
+      "description": "Invert match: select rows that do NOT match the regex 'test'",
+      "command": "qsv search --invert-match 'test' data.csv"
+    },
+    {
+      "description": "Flag matched rows in a new column named 'match_flag'",
+      "command": "qsv search --flag match_flag 'pattern' data.csv"
+    },
+    {
+      "description": "Quick search: return on first match of 'urgent' in the 'subject' column",
+      "command": "qsv search --quick 'urgent' -s subject data.csv"
+    },
+    {
+      "description": "Preview the first 5 matches of 'warning' in all columns",
+      "command": "qsv search --preview-match 5 'warning' data.csv"
+    }
+  ]
+}

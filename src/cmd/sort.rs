@@ -31,11 +31,11 @@ sort options:
     --seed <number>         Random Number Generator (RNG) seed to use if --random is set
     --rng <kind>            The RNG algorithm to use if --random is set.
                             Three RNGs are supported:
-                            - standard: Use the standard RNG.
+                            * standard: Use the standard RNG.
                               1.5 GB/s throughput.
-                            - faster: Use faster RNG using the Xoshiro256Plus algorithm.
+                            * faster: Use faster RNG using the Xoshiro256Plus algorithm.
                               8 GB/s throughput.
-                            - cryptosecure: Use cryptographically secure HC128 algorithm.
+                            * cryptosecure: Use cryptographically secure HC128 algorithm.
                               Recommended by eSTREAM (https://www.ecrypt.eu.org/stream/).
                               2.1 GB/s throughput though slow initialization.
                             [default: standard]
@@ -70,7 +70,7 @@ Common options:
 use std::{cmp, str::FromStr};
 
 // use fastrand; //DevSkim: ignore DS148264
-use rand::{Rng, SeedableRng, rngs::StdRng, seq::SliceRandom};
+use rand::{RngExt, SeedableRng, rngs::StdRng, seq::SliceRandom};
 use rand_hc::Hc128Rng;
 use rand_xoshiro::Xoshiro256Plus;
 use rayon::slice::ParallelSliceMut;
@@ -124,7 +124,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let faster = args.flag_faster;
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
+        .no_headers_flag(args.flag_no_headers)
         .select(args.flag_select);
 
     let Ok(rng_kind) = RngKind::from_str(&args.flag_rng) else {
@@ -180,7 +180,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 },
                 RngKind::Faster => {
                     let mut rng = match args.flag_seed {
-                        None => Xoshiro256Plus::from_os_rng(),
+                        None => rand::make_rng::<Xoshiro256Plus>(),
                         Some(sd) => Xoshiro256Plus::seed_from_u64(sd), // DevSkim: ignore DS148264
                     };
                     SliceRandom::shuffle(&mut *all, &mut rng); //DevSkim: ignore DS148264
@@ -196,7 +196,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         },
                     };
                     let mut rng: Hc128Rng = match args.flag_seed {
-                        None => Hc128Rng::from_os_rng(),
+                        None => rand::make_rng::<Hc128Rng>(),
                         Some(_) => Hc128Rng::from_seed(seed_32),
                     };
                     SliceRandom::shuffle(&mut *all, &mut rng);
@@ -518,15 +518,14 @@ where
 {
     match xs.next() {
         Some(bytes) => {
-            if let Ok(i) = atoi_simd::parse::<i64>(bytes) {
+            if let Ok(i) = atoi_simd::parse::<i64, false, false>(bytes) {
                 Some(Number::Int(i))
             } else {
                 // If parsing as i64 failed, try parsing as f64
-                if let Ok(f) = from_utf8(bytes).unwrap().parse::<f64>() {
-                    Some(Number::Float(f))
-                } else {
-                    None
-                }
+                from_utf8(bytes)
+                    .ok()
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .map(Number::Float)
             }
         },
         None => None,
@@ -620,6 +619,6 @@ fn collect_number_from_bytes(bytes: &[u8], start: usize) -> (i64, usize) {
     }
 
     // Parse the number using SIMD-optimized parsing
-    let num = atoi_simd::parse::<i64>(&bytes[start..pos]).unwrap_or(0);
+    let num = atoi_simd::parse::<i64, false, false>(&bytes[start..pos]).unwrap_or(0);
     (num, pos)
 }

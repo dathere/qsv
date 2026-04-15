@@ -6,14 +6,14 @@ This command processes each row of the CSV file, making the column values availa
 Each row is rendered using the template. Column headers become variable names, with non-alphanumeric
 characters converted to underscore (_).
 
-Templates use Jinja2 syntax (https://jinja.palletsprojects.com/en/stable/templates/) 
+Templates use Jinja2 syntax (https://jinja.palletsprojects.com/en/stable/templates/)
 and can access an extensive library of built-in filters/functions, with additional ones
 from minijinja_contrib https://docs.rs/minijinja-contrib/latest/minijinja_contrib/.
 Additional qsv custom filters are also documented at the end of this file.
 
 If the <outdir> argument is specified, it will create a file for each row in <outdir>, with
 the filename rendered using --outfilename option.
-Otherwise, ALL the rendered rows will be sent to STDOUT or the designated --output. 
+Otherwise, ALL the rendered rows will be sent to STDOUT or the designated --output.
 
 Example:
 data.csv:
@@ -49,7 +49,7 @@ template.tpl
     {% endif %}
     Status: {% if active|to_bool %}Active{% else %}Inactive{% endif %}
 
-qsv template --template-file template.tpl data.csv
+  $ qsv template --template-file template.tpl data.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_template.rs.
 For a relatively complex MiniJinja template, see https://github.com/dathere/qsv/blob/master/scripts/template.tpl
@@ -67,10 +67,10 @@ template arguments:
                                 of --outsubdir-size (default: 1000) files each to avoid filesystem
                                 navigation & performance issues.
                                 For example, with 3500 records:
-                                  <outdir>/0000/0001.txt through <outdir>/0000/1000.txt
-                                  <outdir>/0001/1001.txt through <outdir>/0001/2000.txt
-                                  <outdir>/0002/2001.txt through <outdir>/0002/3000.txt
-                                  <outdir>/0003/3001.txt through <outdir>/0003/4000.txt
+                                  * <outdir>/0000/0001.txt through <outdir>/0000/1000.txt
+                                  * <outdir>/0001/1001.txt through <outdir>/0001/2000.txt
+                                  * <outdir>/0002/2001.txt through <outdir>/0002/3000.txt
+                                  * <outdir>/0003/3001.txt through <outdir>/0003/4000.txt
 template options:
     --template <str>            MiniJinja template string to use (alternative to --template-file)
     -t, --template-file <file>  MiniJinja template file to use
@@ -78,7 +78,7 @@ template options:
                                 The JSON properties can be accessed in templates using the "qsv_g"
                                 namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}).
                                 This allows sharing common values across all template renders.
-    --outfilename <str>         MiniJinja template string to use to create the filename of the output 
+    --outfilename <str>         MiniJinja template string to use to create the filename of the output
                                 files to write to <outdir>. If set to just QSV_ROWNO, the filestem
                                 is set to the current rowno of the record, padded with leading
                                 zeroes, with the ".txt" extension (e.g. 001.txt, 002.txt, etc.)
@@ -272,15 +272,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Set up CSV reader
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers);
+        .no_headers_flag(args.flag_no_headers);
     let mut rdr = rconfig.reader()?;
 
     // Get width of rowcount for padding leading zeroes and early return
-    let rowcount = util::count_rows(&rconfig)?;
-    if rconfig.no_headers && rowcount == 1 {
-        return Ok(());
-    }
-    let width = rowcount.to_string().len();
+    // For stdin, we can't pre-count rows as it would consume the stream
+    let (rowcount, width) = if rconfig.is_stdin() {
+        // For stdin, we'll use a reasonable default width and skip early return check
+        (0, 6) // Default width of 6 for up to 999,999 rows
+    } else {
+        let rowcount = util::count_rows(&rconfig)?;
+        if rconfig.no_headers && rowcount == 1 {
+            return Ok(());
+        }
+        let width = rowcount.to_string().len();
+        (rowcount, width)
+    };
 
     // read headers - the headers are used as MiniJinja variables in the template
     let headers = if args.flag_no_headers {
@@ -476,7 +483,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         if i == headers_len - 1 {
                             // set the last field to QSV_ROWNO
                             // safety: we set row_no earlier in the batch loop
-                            row_number = atoi_simd::parse::<u64>(field.as_bytes()).unwrap();
+                            row_number =
+                                atoi_simd::parse::<u64, false, false>(field.as_bytes()).unwrap();
                             context.insert(
                                 std::borrow::Cow::Borrowed(QSV_ROWNO),
                                 BorrowedValue::String(std::borrow::Cow::Borrowed(field)),
@@ -498,7 +506,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         // when headers are defined, the last one is QSV_ROWNO
                         if header == QSV_ROWNO {
                             // safety: we set row_no earlier in the batch loop
-                            row_number = atoi_simd::parse::<u64>(field.as_bytes()).unwrap();
+                            row_number =
+                                atoi_simd::parse::<u64, false, false>(field.as_bytes()).unwrap();
                         }
                     }
                 }
@@ -639,7 +648,7 @@ fn format_float(value: &Value, precision: u32) -> String {
 fn human_count(value: &Value) -> String {
     if value.kind() == ValueKind::String {
         let s = value.as_str().unwrap().as_bytes();
-        atoi_simd::parse::<u64>(s).map_or_else(
+        atoi_simd::parse::<u64, false, false>(s).map_or_else(
             |_| {
                 if EMPTY_FILTER_ERROR.load(Ordering::Relaxed) {
                     FILTER_ERROR.get().unwrap().clone()
@@ -865,7 +874,7 @@ fn register_lookup(
             let key = if let Ok(num) = key_trim.parse::<i64>() {
                 itoa::Buffer::new().format(num).to_owned()
             } else if let Ok(num) = key_trim.parse::<f64>() {
-                ryu::Buffer::new().format(num).to_owned()
+                zmij::Buffer::new().format(num).to_owned()
             } else {
                 key_trim.to_owned()
             };
@@ -944,7 +953,7 @@ fn lookup_filter(
     let case_sensitive = case_sensitive.unwrap_or(true);
 
     let mut itoa_buf = itoa::Buffer::new();
-    let mut ryu_buf = ryu::Buffer::new();
+    let mut zmij_buf = zmij::Buffer::new();
     let value = match value.kind() {
         ValueKind::String => value.as_str().unwrap(),
         ValueKind::Number => {
@@ -955,7 +964,7 @@ fn lookup_filter(
                 match value.clone().try_into() {
                     Ok(num) => {
                         float_num = num;
-                        ryu_buf.format(float_num)
+                        zmij_buf.format(float_num)
                     },
                     _ => {
                         unreachable!("Kind::Number should be integer or float")

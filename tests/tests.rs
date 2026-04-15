@@ -10,7 +10,7 @@ extern crate stats;
 use std::{env, fmt, mem::transmute, ops};
 
 use quickcheck::{Arbitrary, Gen, QuickCheck, Testable};
-use rand::Rng;
+use rand::RngExt;
 // use assert_eq;
 
 macro_rules! svec[
@@ -38,6 +38,8 @@ mod test_apply;
 mod test_applydp;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_behead;
+#[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+mod test_blake3;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_cat;
 #[cfg(all(
@@ -46,11 +48,14 @@ mod test_cat;
     feature = "clipboard",
 ))]
 mod test_clipboard;
+#[cfg(all(feature = "feature_capable", feature = "color"))]
+mod test_color;
 mod test_combos;
 mod test_comments;
 mod test_count;
 mod test_datefmt;
 mod test_dedup;
+#[cfg(not(target_arch = "powerpc64"))]
 mod test_describegpt;
 mod test_diff;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
@@ -78,13 +83,13 @@ mod test_fmt;
 mod test_foreach;
 mod test_frequency;
 #[cfg(feature = "geocode")]
+// #[cfg(not(target_arch = "powerpc64"))]
 mod test_geocode;
 #[cfg(feature = "geocode")]
 mod test_geoconvert;
 mod test_headers;
 mod test_index;
 mod test_input;
-#[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_join;
 #[cfg(feature = "polars")]
 mod test_joinp;
@@ -92,12 +97,16 @@ mod test_joinp;
 mod test_json;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_jsonl;
+#[cfg(feature = "mcp")]
+mod test_log;
 #[cfg(feature = "luau")]
 mod test_luau;
+mod test_moarstats;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_partition;
 #[cfg(feature = "polars")]
 mod test_pivotp;
+mod test_pragmastat;
 #[cfg(feature = "prompt")]
 mod test_prompt;
 mod test_pseudo;
@@ -110,6 +119,8 @@ mod test_safenames;
 mod test_sample;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_schema;
+#[cfg(all(feature = "polars", feature = "feature_capable"))]
+mod test_scoresql;
 mod test_search;
 mod test_searchset;
 mod test_select;
@@ -138,7 +149,7 @@ mod test_validate;
 fn qcheck<T: Testable>(p: T) {
     // safety: we are in single-threaded code.
     unsafe { env::set_var("QSV_SKIPUTF8_CHECK", "1") };
-    QuickCheck::new().r#gen(Gen::new(5)).quickcheck(p);
+    QuickCheck::new().rng(Gen::new(5)).quickcheck(p);
     // safety: we are in single-threaded code.
     unsafe { env::set_var("QSV_SKIPUTF8_CHECK", "") };
 }
@@ -146,7 +157,7 @@ fn qcheck<T: Testable>(p: T) {
 fn qcheck_sized<T: Testable>(p: T, size: usize) {
     // safety: we are in single-threaded code.
     unsafe { env::set_var("QSV_SKIPUTF8_CHECK", "1") };
-    QuickCheck::new().r#gen(Gen::new(size)).quickcheck(p);
+    QuickCheck::new().rng(Gen::new(size)).quickcheck(p);
     // safety: we are in single-threaded code.
     unsafe { env::set_var("QSV_SKIPUTF8_CHECK", "") };
 }

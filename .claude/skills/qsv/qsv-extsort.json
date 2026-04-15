@@ -1,0 +1,61 @@
+{
+  "name": "qsv-extsort",
+  "version": "19.0.0",
+  "description": "Sort an arbitrarily large CSV/text file using a multithreaded external merge sort algorithm.",
+  "category": "utility",
+  "command": {
+    "subcommand": "extsort",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      },
+      {
+        "name": "output",
+        "type": "string",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--memory-limit",
+        "type": "string",
+        "description": "The maximum amount of memory to buffer the external merge sort. If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory.",
+        "default": "20"
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers and will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output."
+      },
+      {
+        "flag": "--reverse",
+        "type": "flag",
+        "description": "Reverse order"
+      },
+      {
+        "flag": "--select",
+        "type": "string",
+        "description": "Select a subset of columns to sort (CSV MODE). Note that the outputs will remain at the full width of the CSV. If --select is NOT set, extsort will work in LINE MODE, sorting the input as a text file on a line-by-line basis."
+      },
+      {
+        "flag": "--tmp-dir",
+        "type": "string",
+        "description": "The directory to use for externally sorting file segments.",
+        "default": "./"
+      }
+    ]
+  },
+  "hints": {
+    "indexed": true,
+    "memory": "constant"
+  }
+}

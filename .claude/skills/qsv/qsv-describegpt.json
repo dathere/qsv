@@ -1,0 +1,154 @@
+{
+  "name": "qsv-describegpt",
+  "version": "19.0.0",
+  "description": "Infer a \"neuro-symbolic\" Data Dictionary, Description & Tags or ask questions about a CSV with a configurable, Mini Jinja prompt file, using any OpenAI API-compatible LLM, including local LLMs via Ollama, Jan & LM Studio. (e.g. Markdown, JSON, TOON, Everything, Spanish, Mandarin, Controlled Tags; --prompt \"What are the top 10 complaint types by community board & borough by year?\" - deterministic, hallucination-free SQL RAG result; iterative, session-based SQL RAG refinement - refined SQL RAG result)",
+  "category": "documentation",
+  "command": {
+    "subcommand": "describegpt",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--addl-cols",
+        "type": "flag",
+        "description": "Add additional columns to the dictionary from the Summary Statistics."
+      },
+      {
+        "flag": "--addl-cols-list",
+        "type": "string",
+        "description": "A comma-separated list of additional stats columns to add to the dictionary. The columns must be present in the Summary Statistics. If the columns are not present in the Summary Statistics or already in the dictionary, they will be ignored. CONVENIENCE VALUES: These values are case-insensitive and automatically set the --addl-cols option to true. \"everything\" can be used to add all 45 \"available\" statistics columns. You can adjust the available columns with --stats-options. \"everything!\" automatically sets --stats-options to compute \"all\" 51 supported stats. The 6 addl cols are the mode/s & antimode/s stats with each having counts & occurrences. \"moar\" gets you even moar stats, with detailed outliers info. \"moar!\" gets you even moar with --advanced stats (Kurtosis, Gini Coefficient & Shannon Entropy)",
+        "default": "sort_order, sortiness, mean, median, mad, stddev, variance, cv"
+      },
+      {
+        "flag": "--all",
+        "type": "flag",
+        "description": "Shortcut for --dictionary --description --tags."
+      },
+      {
+        "flag": "--description",
+        "type": "flag",
+        "description": "Infer a general Description of the dataset based on detailed statistical context. An Attribution signature is embedded in the Description."
+      },
+      {
+        "flag": "--dictionary",
+        "type": "flag",
+        "description": "Create a Data Dictionary using a hybrid \"neuro-procedural\" pipeline - i.e. the Dictionary is populated deterministically using Summary Statistics and Frequency Distribution data, and only the human-friendly Label and Description are populated by the LLM using the same statistical context."
+      },
+      {
+        "flag": "--disk-cache-dir",
+        "type": "string",
+        "description": "The directory to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different describegpt jobs (e.g. one for a data portal, another for internal data exchange).",
+        "default": "~/.qsv-cache/describegpt"
+      },
+      {
+        "flag": "--enum-threshold",
+        "type": "string",
+        "description": "The threshold for compiling Enumerations with the frequency command before bucketing other unique values into the \"Other\" category. This is a convenience shortcut for --freq-options --limit <n>. If --freq-options contains --limit, this flag is ignored.",
+        "default": "10"
+      },
+      {
+        "flag": "--flush-cache",
+        "type": "flag",
+        "description": "Flush the current cache entries on startup. WARNING: This operation is irreversible."
+      },
+      {
+        "flag": "--forget",
+        "type": "flag",
+        "description": "Remove a cached response if it exists and then exit."
+      },
+      {
+        "flag": "--format",
+        "type": "string",
+        "description": "Output format: Markdown, TSV, JSON, or TOON. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See https://toonformat.dev/ for more info.",
+        "default": "Markdown"
+      },
+      {
+        "flag": "--freq-options",
+        "type": "string",
+        "description": "Options for the frequency command used to generate frequency distributions. You can use this to exclude certain variable types from frequency analysis (e.g., --select '!id,!uuid'), limit results differently per use case, or control output format. If --limit is specified here, it takes precedence over --enum-threshold. If it starts with \"file:\" prefix, the frequency data is read from the specified CSV file instead of running the frequency command. e.g. \"file:my_custom_frequency.csv\"",
+        "default": "--rank-strategy dense"
+      },
+      {
+        "flag": "--fresh",
+        "type": "flag",
+        "description": "Send a fresh request to the LLM API, refreshing a cached response if it exists. When a --prompt SQL query fails, you can also use this option to request the LLM to generate a new SQL query."
+      },
+      {
+        "flag": "--language",
+        "type": "string",
+        "description": "The output language/dialect to use for the response. (e.g., \"Spanish\", \"French\", \"Hindi\", \"Mandarin\", \"Italian\", \"Castilian\", \"Franglais\", \"Taglish\", \"Pig Latin\", \"Valley Girl\", \"Pirate\", \"Shakespearean English\", \"Chavacano\", \"Gen Z\", \"Yoda\", etc.)"
+      },
+      {
+        "flag": "--no-cache",
+        "type": "flag",
+        "description": "Disable default disk cache."
+      },
+      {
+        "flag": "--no-score-sql",
+        "type": "flag",
+        "description": "Disable scoresql validation of generated SQL queries before execution. By default, when --prompt generates a SQL query and --sql-results is set, the query is scored and iteratively improved if below threshold."
+      },
+      {
+        "flag": "--num-examples",
+        "type": "string",
+        "description": "The number of Example values to include in the dictionary.",
+        "default": "5"
+      },
+      {
+        "flag": "--num-tags",
+        "type": "string",
+        "description": "The maximum number of tags to infer when the --tags option is used. Maximum allowed value is 50.",
+        "default": "10"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout. If --format is set to TSV, separate files will be created for each prompt type with the pattern {filestem}.{kind}.tsv (e.g., output.dictionary.tsv, output.tags.tsv)."
+      },
+      {
+        "flag": "--score-max-retries",
+        "type": "string",
+        "description": "Max LLM re-prompts to improve a low-scoring SQL query.",
+        "default": "3"
+      },
+      {
+        "flag": "--score-threshold",
+        "type": "string",
+        "description": "Minimum scoresql score for a SQL query to be accepted. Typical range is 0-100; values >100 will always trigger retries and the below-threshold warning.",
+        "default": "50"
+      },
+      {
+        "flag": "--stats-options",
+        "type": "string",
+        "description": "Options for the stats command used to generate summary statistics. If it starts with \"file:\" prefix, the statistics are read from the specified CSV file instead of running the stats command. e.g. \"file:my_custom_stats.csv\"",
+        "default": "--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl"
+      },
+      {
+        "flag": "--tag-vocab",
+        "type": "string",
+        "description": "The CSV file containing the tag vocabulary to use for inferring tags. If no tag vocabulary file is provided, the model will use free-form tags. Supports local files, remote URLs (http/https), CKAN resources (ckan://), and dathere:// scheme. Remote resources are cached locally. The CSV file must have two columns with headers: first column is the tag, second column is the description. Note that qsvlite only supports local files."
+      },
+      {
+        "flag": "--tags",
+        "type": "flag",
+        "description": "Infer Tags that categorize the dataset based on detailed statistical context. Useful for grouping datasets and filtering."
+      },
+      {
+        "flag": "--truncate-str",
+        "type": "string",
+        "description": "The maximum length of an Example value in the dictionary. An ellipsis is appended to the truncated value. If zero, no truncation is performed.",
+        "default": "25"
+      }
+    ]
+  },
+  "hints": {
+    "indexed": true,
+    "memory": "constant"
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "name": "qsv-count",
+  "version": "19.0.0",
+  "description": "Count the rows and optionally compile record width statistics of a CSV file. (11.87 seconds for a 15gb, 28m row NYC 311 dataset without an index. Instantaneous with an index.) If the `polars` feature is enabled, uses Polars' multithreaded, mem-mapped CSV reader for fast counts even without an index",
+  "category": "aggregation",
+  "command": {
+    "subcommand": "count",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The delimiter to use when reading CSV data. Must be a single character.",
+        "default": ","
+      },
+      {
+        "flag": "--flexible",
+        "type": "flag",
+        "description": "Do not validate if the CSV has different number of fields per record, increasing performance when counting without an index."
+      },
+      {
+        "flag": "--human-readable",
+        "type": "flag",
+        "description": "Comma separate counts."
+      },
+      {
+        "flag": "--json",
+        "type": "flag",
+        "description": "Output the width stats in JSON format."
+      },
+      {
+        "flag": "--low-memory",
+        "type": "flag",
+        "description": "Use the Polars CSV Reader's low-memory mode. This mode is slower but uses less memory. If counting still fails, use --no-polars instead to use the streaming CSV reader."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will be included in the count."
+      },
+      {
+        "flag": "--no-polars",
+        "type": "flag",
+        "description": "Use the \"regular\", single-threaded, streaming CSV reader instead of the much faster multithreaded, mem-mapped Polars CSV reader. Use this when you encounter memory issues when counting with the Polars CSV reader. The streaming reader is slower but can read any valid CSV file of any size."
+      },
+      {
+        "flag": "--width",
+        "type": "flag",
+        "description": "Also return the estimated widths of each record. Its an estimate as it doesn't count quotes, and will be an undercount if the record has quoted fields. The count and width are separated by a semicolon. It will return the max, avg, median, min, variance, stddev & MAD widths, separated by hyphens. If --human-readable is set, the widths will be labeled as \"max\", \"avg\", \"median\", \"min\", \"stddev\" & \"mad\" respectively, separated by spaces. Note that this option will require scanning the entire file using the \"regular\", single-threaded, streaming CSV reader, using the index if available for the count. If the file is very large, it may not be able to compile some stats - particularly avg, variance, stddev & MAD. In this case, it will return 0.0 for those stats."
+      },
+      {
+        "flag": "--width-no-delims",
+        "type": "flag",
+        "description": "Same as --width but does not count the delimiters in the width."
+      }
+    ]
+  },
+  "hints": {
+    "indexed": true,
+    "memory": "constant"
+  },
+  "examples": [
+    {
+      "description": "Basic count of records in data.csv:",
+      "command": "qsv count data.csv"
+    },
+    {
+      "description": "Count records in data.csv without headers:",
+      "command": "qsv count --no-headers data.csv"
+    },
+    {
+      "description": "Count records in data.csv with human-readable output:",
+      "command": "qsv count --human-readable data.csv"
+    },
+    {
+      "description": "Count records in data.csv with width statistics:",
+      "command": "qsv count --width data.csv"
+    },
+    {
+      "description": "Count records in data.csv with width statistics (excluding delimiters):",
+      "command": "qsv count --width-no-delims data.csv"
+    },
+    {
+      "description": "Count records in data.csv with width statistics in JSON format:",
+      "command": "qsv count --width --json data.csv"
+    }
+  ]
+}

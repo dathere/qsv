@@ -1,0 +1,9 @@
+tag,description
+noise,"all noise complaints"
+quality_of_life,"quality of life issues"
+heating,"all heating issues"
+parking,"all parking issues"
+pothole,"all pothole issues"
+building_violations,"all building violation issues"
+safety,"all safety issues"
+crime,"all crime-related issues"

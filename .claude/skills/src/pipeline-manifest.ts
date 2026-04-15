@@ -1,0 +1,613 @@
+/**
+ * Pipeline Manifest — records every qsv tool invocation for reproducibility.
+ *
+ * Accumulates steps in-memory during a session, hashes files via `qsv blake3`,
+ * and serializes to `pipeline.json` + `pipeline.sh` at session end.
+ * An incremental `.qsv-pipeline-steps.jsonl` provides crash resilience.
+ */
+
+import { execFile, execFileSync } from "node:child_process";
+import { appendFileSync, readFileSync, existsSync, writeFileSync, unlinkSync } from "node:fs";
+import { stat as fsStat } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+export type StepKind = "exploratory" | "transformative" | "meta";
+
+export interface FileHash {
+  file: string;
+  blake3: string | null;
+  size_bytes: number;
+}
+
+export interface PipelineStep {
+  step: number;
+  invocation_id: string;
+  tool: string;
+  command: string;
+  args: Record<string, unknown>;
+  reason: string | null;
+  timestamp: string;
+  duration_ms: number;
+  success: boolean;
+  kind: StepKind;
+  deterministic: boolean;
+  seed?: number;
+  input: FileHash | null;
+  output: FileHash | null;
+  additional_inputs: Array<FileHash & { param: string }>;
+  error_message?: string;
+  web_sources?: string[];
+}
+
+export interface PipelineManifestJson {
+  version: string;
+  session: {
+    id: string;
+    started_at: string;
+    ended_at: string;
+    qsv_version: string;
+    mcp_server_version: string;
+    working_directory: string;
+  };
+  steps: PipelineStep[];
+  file_inventory: Record<
+    string,
+    {
+      blake3: string | null;
+      size_bytes: number;
+      first_seen_step: number;
+      role: "input" | "output" | "intermediate";
+    }
+  >;
+}
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const MANIFEST_VERSION = "1.0.0";
+const JSONL_FILENAME = ".qsv-pipeline-steps.jsonl";
+const BLAKE3_TIMEOUT_MS = 30_000;
+const MAX_HASHABLE_SIZE = 10 * 1024 * 1024 * 1024; // 10 GB
+
+/** Tools that are metadata/infrastructure — not data operations. */
+const META_TOOLS = new Set([
+  "qsv_config",
+  "qsv_set_working_dir",
+  "qsv_get_working_dir",
+  "qsv_browse_directory",
+  "qsv_list_files",
+  "qsv_log",
+  "qsv_search_tools",
+  "qsv_setup",
+]);
+
+/** Tools that inspect/profile data without transforming it. */
+const EXPLORATORY_TOOLS = new Set([
+  "qsv_stats",
+  "qsv_frequency",
+  "qsv_count",
+  "qsv_headers",
+  "qsv_sniff",
+  "qsv_schema",
+  "qsv_describegpt",
+  "qsv_moarstats",
+  "qsv_pragmastat",
+]);
+
+/** Commands that may produce non-deterministic output. */
+const NON_DETERMINISTIC_COMMANDS = new Set(["sample", "sort"]);
+
+// ── PipelineManifest Class ───────────────────────────────────────────────────
+
+export class PipelineManifest {
+  private sessionId: string;
+  private startedAt: string;
+  private workingDir: string;
+  private qsvVersion: string;
+  private mcpServerVersion: string;
+  private steps: PipelineStep[] = [];
+  private stepCounter = 0;
+  private blake3Available: boolean;
+  private qsvBinPath: string;
+  private hashCache = new Map<string, { blake3: string | null; mtimeMs: number; size: number }>();
+  private pendingWebSources: string[] = [];
+
+  constructor(
+    sessionId: string,
+    workingDir: string,
+    qsvVersion: string,
+    mcpServerVersion: string,
+    qsvBinPath: string = "qsv",
+  ) {
+    this.sessionId = sessionId;
+    this.startedAt = new Date().toISOString();
+    this.workingDir = workingDir;
+    this.qsvVersion = qsvVersion;
+    this.mcpServerVersion = mcpServerVersion;
+    this.qsvBinPath = qsvBinPath;
+    this.blake3Available = detectBlake3(qsvBinPath);
+  }
+
+  /** Update the working directory (called when user changes it mid-session). */
+  updateWorkingDir(newDir: string): void {
+    this.workingDir = newDir;
+  }
+
+  /** Check if qsv blake3 is available. */
+  isBlake3Available(): boolean {
+    return this.blake3Available;
+  }
+
+  /** Get collected steps (for testing). */
+  getSteps(): readonly PipelineStep[] {
+    return this.steps;
+  }
+
+  /** Attach web source URLs that will be associated with the next recorded step. */
+  addWebSource(url: string): void {
+    this.pendingWebSources.push(url);
+  }
+
+  /**
+   * Record a pipeline step after a tool call completes.
+   * Hashes input/output files incrementally and appends to JSONL for crash resilience.
+   */
+  async recordStep(params: {
+    invocationId: string;
+    toolName: string;
+    toolArgs: Record<string, unknown>;
+    reason: string | null;
+    commandLine: string | null;
+    inputFile: string | null;
+    outputFile: string | null;
+    additionalInputFiles: Array<{ file: string; param: string }>;
+    durationMs: number;
+    success: boolean;
+    errorMessage?: string;
+  }): Promise<void> {
+    // Capture step number before any awaits to prevent concurrent calls
+    // from seeing a stale/shared counter value.
+    const stepNo = ++this.stepCounter;
+    // Capture timestamp before any awaits so it reflects when the tool
+    // call completed, not when hashing finished.
+    const stepTimestamp = new Date().toISOString();
+
+    const kind = classifyKind(params.toolName);
+    const { deterministic, seed } = isDeterministic(params.toolName, params.toolArgs);
+
+    // Hash input/output files
+    const inputHash = params.inputFile
+      ? await this.hashFile(params.inputFile)
+      : null;
+    const outputHash = params.outputFile
+      ? await this.hashFile(params.outputFile)
+      : null;
+
+    // Hash additional inputs (e.g., join second table)
+    const additionalInputs: Array<FileHash & { param: string }> = [];
+    for (const { file, param } of params.additionalInputFiles) {
+      const hash = await this.hashFile(file);
+      if (hash) {
+        additionalInputs.push({ ...hash, param });
+      }
+    }
+
+    // Drain pending web sources
+    const webSources =
+      this.pendingWebSources.length > 0
+        ? [...this.pendingWebSources]
+        : undefined;
+    this.pendingWebSources = [];
+
+    const step: PipelineStep = {
+      step: stepNo,
+      invocation_id: params.invocationId,
+      tool: params.toolName,
+      command: params.commandLine ?? "",
+      args: params.toolArgs,
+      reason: params.reason,
+      timestamp: stepTimestamp,
+      duration_ms: params.durationMs,
+      success: params.success,
+      kind,
+      deterministic,
+      ...(seed !== undefined && { seed }),
+      input: inputHash,
+      output: outputHash,
+      additional_inputs: additionalInputs,
+      ...(params.errorMessage && { error_message: params.errorMessage }),
+      ...(webSources && { web_sources: webSources }),
+    };
+
+    this.steps.push(step);
+
+    // Append to incremental JSONL (sync for atomicity under concurrent calls)
+    try {
+      appendFileSync(
+        join(this.workingDir, JSONL_FILENAME),
+        JSON.stringify(step) + "\n",
+        "utf-8",
+      );
+    } catch (err) {
+      console.error(
+        `[PipelineManifest] Failed to write JSONL: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  /**
+   * Hash a file using qsv blake3.
+   * Caches by path + mtime to avoid redundant hashing.
+   */
+  async hashFile(filePath: string): Promise<FileHash | null> {
+    let fileStats;
+    try {
+      fileStats = await fsStat(filePath);
+    } catch {
+      return null;
+    }
+
+    if (!fileStats.isFile()) return null;
+
+    const result: FileHash = {
+      file: filePath,
+      blake3: null,
+      size_bytes: fileStats.size,
+    };
+
+    if (!this.blake3Available) return result;
+    if (fileStats.size > MAX_HASHABLE_SIZE) return result;
+
+    // Check cache
+    const cached = this.hashCache.get(filePath);
+    if (cached && cached.mtimeMs === fileStats.mtimeMs && cached.size === fileStats.size) {
+      return { ...result, blake3: cached.blake3 };
+    }
+
+    try {
+      const { stdout } = await execFileAsync(
+        this.qsvBinPath,
+        ["blake3", "--no-names", filePath],
+        { timeout: BLAKE3_TIMEOUT_MS },
+      );
+      const hash = stdout.trim();
+      this.hashCache.set(filePath, { blake3: hash, mtimeMs: fileStats.mtimeMs, size: fileStats.size });
+      return { ...result, blake3: hash };
+    } catch (err) {
+      console.error(
+        `[PipelineManifest] qsv blake3 failed for ${filePath}: ${err instanceof Error ? err.message : err}`,
+      );
+      // Cache negative result to avoid repeated timeouts/failures for the same file
+      this.hashCache.set(filePath, { blake3: null, mtimeMs: fileStats.mtimeMs, size: fileStats.size });
+      return result;
+    }
+  }
+
+  /**
+   * Build the file inventory from all recorded steps.
+   */
+  private buildFileInventory(): PipelineManifestJson["file_inventory"] {
+    const inventory: PipelineManifestJson["file_inventory"] = {};
+
+    for (const step of this.steps) {
+      // Input file: create if new, or reclassify prior output to intermediate
+      if (step.input?.file) {
+        const existing = inventory[step.input.file];
+        if (!existing) {
+          inventory[step.input.file] = {
+            blake3: step.input.blake3,
+            size_bytes: step.input.size_bytes,
+            first_seen_step: step.step,
+            role: "input",
+          };
+        } else if (existing.role === "output") {
+          existing.role = "intermediate";
+        }
+      }
+
+      // Additional inputs: same reclassification logic
+      for (const ai of step.additional_inputs) {
+        const existing = inventory[ai.file];
+        if (!existing) {
+          inventory[ai.file] = {
+            blake3: ai.blake3,
+            size_bytes: ai.size_bytes,
+            first_seen_step: step.step,
+            role: "input",
+          };
+        } else if (existing.role === "output") {
+          existing.role = "intermediate";
+        }
+      }
+
+      // Output file: create if new, or reclassify prior input to intermediate
+      if (step.output?.file) {
+        const existing = inventory[step.output.file];
+        if (!existing) {
+          inventory[step.output.file] = {
+            blake3: step.output.blake3,
+            size_bytes: step.output.size_bytes,
+            first_seen_step: step.step,
+            role: "output",
+          };
+        } else {
+          // Reclassify input→intermediate; always update hash/size to reflect
+          // the latest output version (handles both input→output and repeated outputs)
+          if (existing.role === "input") {
+            existing.role = "intermediate";
+          }
+          existing.blake3 = step.output.blake3;
+          existing.size_bytes = step.output.size_bytes;
+        }
+      }
+    }
+
+    return inventory;
+  }
+
+  /**
+   * Generate a bash replay script from transformative steps.
+   */
+  generateReplayScript(): string {
+    const lines = [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "",
+      "# Pipeline replay script generated by qsv MCP Server",
+      `# Session: ${this.sessionId}`,
+      `# Date: ${new Date().toISOString()}`,
+      "#",
+      "# This script replays the transformative (data-modifying) steps from the session.",
+      "# Exploratory steps (stats, frequency, etc.) are omitted.",
+      "",
+    ];
+
+    let hasSteps = false;
+    for (const step of this.steps) {
+      if (step.kind !== "transformative") continue;
+      if (!step.command) continue;
+
+      hasSteps = true;
+
+      if (!step.success) {
+        lines.push(`# SKIPPED (failed in original session): ${step.command}`);
+        lines.push("");
+        continue;
+      }
+      if (!step.deterministic) {
+        lines.push(
+          "# WARNING: non-deterministic — output may differ from original session",
+        );
+      }
+      if (step.reason) {
+        lines.push(`# ${step.reason}`);
+      }
+      lines.push(step.command);
+      lines.push("");
+    }
+
+    if (!hasSteps) {
+      lines.push("# No transformative steps were recorded in this session.");
+      lines.push("");
+    }
+
+    return lines.join("\n");
+  }
+
+  /**
+   * Finalize the manifest: write pipeline.json and pipeline.sh, clean up JSONL.
+   */
+  finalize(endTime?: string): { jsonPath: string; shPath: string | null } | null {
+    if (this.steps.length === 0) {
+      // Clean up empty JSONL if it exists
+      try {
+        unlinkSync(join(this.workingDir, JSONL_FILENAME));
+      } catch {
+        // ignore
+      }
+      return null;
+    }
+
+    // Sort steps by step number to ensure correct order despite concurrent
+    // recordStep() calls (async hashing can cause out-of-order pushes).
+    this.steps.sort((a, b) => a.step - b.step);
+
+    // Merge web_source entries from JSONL BEFORE serializing the manifest.
+    // Hook scripts (log-web-results.cjs) write these from a separate process.
+    const jsonlPath = join(this.workingDir, JSONL_FILENAME);
+    try {
+      if (existsSync(jsonlPath)) {
+        this.mergeWebSourcesFromJsonl(jsonlPath);
+      }
+    } catch {
+      // ignore — may not exist or be inaccessible
+    }
+
+    const ended = endTime ?? new Date().toISOString();
+    const manifest: PipelineManifestJson = {
+      version: MANIFEST_VERSION,
+      session: {
+        id: this.sessionId,
+        started_at: this.startedAt,
+        ended_at: ended,
+        qsv_version: this.qsvVersion,
+        mcp_server_version: this.mcpServerVersion,
+        working_directory: this.workingDir,
+      },
+      steps: this.steps,
+      file_inventory: this.buildFileInventory(),
+    };
+
+    const jsonPath = join(this.workingDir, "pipeline.json");
+    const shPath = join(this.workingDir, "pipeline.sh");
+
+    try {
+      writeFileSync(jsonPath, JSON.stringify(manifest, null, 2) + "\n", "utf-8");
+      console.error(`[PipelineManifest] Wrote ${jsonPath}`);
+    } catch (err) {
+      console.error(
+        `[PipelineManifest] Failed to write pipeline.json: ${err instanceof Error ? err.message : err}`,
+      );
+      return null;
+    }
+
+    let shWritten = false;
+    try {
+      writeFileSync(shPath, this.generateReplayScript(), { encoding: "utf-8", mode: 0o755 });
+      console.error(`[PipelineManifest] Wrote ${shPath}`);
+      shWritten = true;
+    } catch (err) {
+      console.error(
+        `[PipelineManifest] Failed to write pipeline.sh: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
+    // Only delete JSONL when both files were written successfully.
+    // If pipeline.sh failed, keep the JSONL so crash-recovery can regenerate it.
+    if (shWritten) {
+      try {
+        unlinkSync(jsonlPath);
+      } catch {
+        // ignore — may not exist
+      }
+    }
+
+    return { jsonPath, shPath: shWritten ? shPath : null };
+  }
+
+  /**
+   * Merge web_source entries from the JSONL file into in-memory steps.
+   * Hook scripts (log-web-results.cjs) write web_source entries to the JSONL
+   * from a separate process. On clean shutdown, we merge these into the
+   * nearest subsequent step by timestamp before writing the final manifest.
+   */
+  private mergeWebSourcesFromJsonl(jsonlPath: string): void {
+    let content: string;
+    try {
+      content = readFileSync(jsonlPath, "utf-8");
+    } catch {
+      return;
+    }
+
+    const webSources: Array<{ value: string; timestamp: string }> = [];
+    for (const line of content.split("\n").filter(Boolean)) {
+      try {
+        const entry = JSON.parse(line);
+        const ts = entry.timestamp || new Date(0).toISOString();
+        if (entry.type === "web_source" && typeof entry.url === "string" && entry.url.trim()) {
+          webSources.push({ value: entry.url.trim(), timestamp: ts });
+        } else if (entry.type === "web_search" && typeof entry.query === "string" && entry.query.trim()) {
+          webSources.push({ value: `search:${entry.query.trim()}`, timestamp: ts });
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (webSources.length === 0) return;
+
+    // Attach each web provenance entry to the step with the minimal timestamp
+    // that is still >= wsTime. This handles non-monotonic timestamps from
+    // concurrent tool calls (step order and timestamp order can diverge).
+    for (const ws of webSources) {
+      const wsTime = new Date(ws.timestamp).getTime() || 0;
+      let bestStep: PipelineStep | undefined;
+      let bestTime = Infinity;
+      for (const s of this.steps) {
+        const sTime = new Date(s.timestamp).getTime() || 0;
+        if (sTime >= wsTime && sTime < bestTime) {
+          bestTime = sTime;
+          bestStep = s;
+        }
+      }
+      if (bestStep) {
+        if (!bestStep.web_sources) bestStep.web_sources = [];
+        if (!bestStep.web_sources.includes(ws.value)) {
+          bestStep.web_sources.push(ws.value);
+        }
+      }
+    }
+  }
+}
+
+// ── Exported Utility Functions ───────────────────────────────────────────────
+
+/**
+ * Classify a tool invocation as meta, exploratory, or transformative.
+ */
+export function classifyKind(toolName: string): StepKind {
+  if (META_TOOLS.has(toolName)) return "meta";
+  if (EXPLORATORY_TOOLS.has(toolName)) return "exploratory";
+  return "transformative";
+}
+
+/**
+ * Determine if a tool invocation is deterministic.
+ * `sample` and `sort --random` without `--seed` are non-deterministic.
+ */
+export function isDeterministic(
+  toolName: string,
+  args: Record<string, unknown>,
+): { deterministic: boolean; seed?: number } {
+  const commandName = toolName.replace(/^qsv_/, "");
+
+  if (!NON_DETERMINISTIC_COMMANDS.has(commandName)) {
+    return { deterministic: true };
+  }
+
+  // sample is always non-deterministic unless --seed is set
+  if (commandName === "sample") {
+    const seed = extractSeed(args);
+    if (seed !== undefined) {
+      return { deterministic: true, seed };
+    }
+    return { deterministic: false };
+  }
+
+  // sort is only non-deterministic with --random
+  if (commandName === "sort") {
+    const hasRandom =
+      args.random === true ||
+      args["--random"] === true;
+    if (!hasRandom) return { deterministic: true };
+
+    const seed = extractSeed(args);
+    if (seed !== undefined) {
+      return { deterministic: true, seed };
+    }
+    return { deterministic: false };
+  }
+
+  return { deterministic: true };
+}
+
+/**
+ * Detect whether `qsv blake3` is available.
+ */
+export function detectBlake3(qsvBinPath: string): boolean {
+  try {
+    execFileSync(qsvBinPath, ["blake3", "--help"], { timeout: 5_000, stdio: "ignore" });
+    console.error("[PipelineManifest] qsv blake3 detected — BLAKE3 hashing enabled");
+    return true;
+  } catch {
+    console.error(
+      "[PipelineManifest] qsv blake3 not available — BLAKE3 hashing disabled",
+    );
+    return false;
+  }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function extractSeed(args: Record<string, unknown>): number | undefined {
+  const seed = args.seed ?? args["--seed"];
+  if (seed !== undefined && seed !== null) {
+    const n = Number(seed);
+    if (!isNaN(n)) return n;
+  }
+  return undefined;
+}

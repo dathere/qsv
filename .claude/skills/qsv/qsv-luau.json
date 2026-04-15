@@ -1,0 +1,109 @@
+{
+  "name": "qsv-luau",
+  "version": "19.0.0",
+  "description": "Create multiple new computed columns, filter rows, compute aggregations and build complex data pipelines by executing a Luau 0.709 expression/script for every row of a CSV file (sequential mode), or using random access with an index (random access mode). Can process a single Luau expression or full-fledged data-wrangling scripts using lookup tables with discrete BEGIN, MAIN and END sections. It is not just another qsv command, it is qsv's Domain-specific Language (DSL) with numerous qsv-specific helper functions to build production data pipelines.",
+  "category": "utility",
+  "command": {
+    "subcommand": "luau",
+    "args": [
+      {
+        "name": "subcommand",
+        "type": "string",
+        "required": true,
+        "description": "Subcommand to execute. Valid values: filter, map",
+        "enum": [
+          "filter",
+          "map"
+        ]
+      },
+      {
+        "name": "new-columns",
+        "type": "string",
+        "required": false,
+        "description": "is a comma-separated list of new computed columns to add to the CSV when using \"luau map\". The new columns are added to the CSV after the existing columns, unless the --remap option is used."
+      },
+      {
+        "name": "main-script",
+        "type": "string",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--begin",
+        "type": "string",
+        "description": "Luau script/file to execute in the BEGINning, before processing the CSV with the main-script. Typically used to initialize global variables. Takes precedence over an embedded BEGIN script. If <script> begins with \"file:\" or ends with \".luau/.lua\", it's interpreted as a filepath from which to load the script."
+      },
+      {
+        "flag": "--cache-dir",
+        "type": "string",
+        "description": "The directory to use for caching downloaded lookup_table resources using the qsv_register_lookup() helper function. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead.",
+        "default": "~/.qsv-cache"
+      },
+      {
+        "flag": "--ckan-api",
+        "type": "string",
+        "description": "The URL of the CKAN API to use for downloading lookup_table resources using the qsv_register_lookup() helper function with the \"ckan://\" scheme. If the QSV_CKAN_API envvar is set, it will be used instead.",
+        "default": "https://data.dathere.com/api/3/action"
+      },
+      {
+        "flag": "--colindex",
+        "type": "flag",
+        "description": "Create a 1-based column index. Useful when some column names mask standard Luau globals. Automatically enabled with --no-headers."
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--end",
+        "type": "string",
+        "description": "Luau script/file to execute at the END, after processing the CSV with the main-script. Typically used for aggregations. The output of the END script is sent to stderr. Takes precedence over an embedded END script. If <script> begins with \"file:\" or ends with \".luau/.lua\", it's interpreted as a filepath from which to load the script."
+      },
+      {
+        "flag": "--max-errors",
+        "type": "string",
+        "description": "The maximum number of errors to tolerate before aborting. Set to zero to disable error limit.",
+        "default": "10"
+      },
+      {
+        "flag": "--no-globals",
+        "type": "flag",
+        "description": "Don't create Luau global variables for each column, only `col`. Useful when some column names mask standard Luau globals and to increase PERFORMANCE. Note: access to Luau globals thru _G remains even with -g."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. Automatically enables --colindex option."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--remap",
+        "type": "flag",
+        "description": "Only the listed new columns are written to the output CSV. Only applies to \"map\" subcommand."
+      },
+      {
+        "flag": "--timeout",
+        "type": "string",
+        "description": "Timeout for downloading lookup_tables using the qsv_register_lookup() helper function.",
+        "default": "60"
+      }
+    ]
+  },
+  "hints": {
+    "indexed": true,
+    "memory": "constant"
+  }
+}

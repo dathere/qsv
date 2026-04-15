@@ -43,19 +43,23 @@ use crate::{
     config::SPONSOR_MESSAGE,
 };
 
-#[cfg(feature = "mimalloc")]
+#[cfg(all(feature = "mimalloc", feature = "jemallocator"))]
+compile_error!("Features `mimalloc` and `jemallocator` are mutually exclusive. Enable only one.");
+
+#[cfg(all(feature = "mimalloc", not(feature = "jemallocator")))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-#[cfg(feature = "jemallocator")]
+#[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
 #[global_allocator]
-static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 static COMMAND_LIST: &str = r#"
     applydp     Apply series of transformations to a column
+    blake3      Compute BLAKE3 cryptographic hashes of files
     count       Count records
     datefmt     Format date/datetime strings
-    describegpt Infer extended metadata using a LLM
+    describegpt Infer extended metadata or chat with your data using a LLM
     diff        Find the difference between two CSVs
     dedup       Remove redundant rows
     excel       Exports an Excel sheet to a CSV
@@ -68,9 +72,12 @@ static COMMAND_LIST: &str = r#"
     help        Show this usage message
     index       Create CSV index for faster access
     input       Read CSVs w/ special quoting, skipping, trimming & transcoding rules
+    join        Join CSV files
     joinp       Join CSV files using the Pola.rs engine 🐻‍❄️
     luau        Execute Luau script on CSV data 👑
+    moarstats   Add "moar" statistics to existing stats CSV
     pivotp      Pivot CSV data 🐻‍❄️
+    pragmastat  Pragmatic statistical toolkit
     pseudo      Pseudonymise the values of a column
     rename      Rename the columns of CSV data efficiently
     replace     Replace patterns in CSV data
@@ -247,6 +254,7 @@ fn main() -> QsvExitCode {
 #[serde(rename_all = "lowercase")]
 enum Command {
     ApplyDP,
+    Blake3,
     Count,
     Datefmt,
     Dedup,
@@ -262,12 +270,14 @@ enum Command {
     Help,
     Index,
     Input,
+    Join,
     #[cfg(feature = "polars")]
     JoinP,
     #[cfg(feature = "luau")]
     Luau,
     #[cfg(feature = "polars")]
     PivotP,
+    Pragmastat,
     Pseudo,
     Rename,
     Replace,
@@ -285,6 +295,7 @@ enum Command {
     #[cfg(feature = "polars")]
     SqlP,
     Stats,
+    Moarstats,
     Template,
     Validate,
 }
@@ -296,7 +307,10 @@ impl Command {
         let argv = &*argv;
 
         assert!(argv.len() > 1);
-        if !argv[1].chars().all(char::is_lowercase) {
+        if !argv[1]
+            .chars()
+            .all(|c| c.is_lowercase() || c.is_ascii_digit())
+        {
             return fail_incorrectusage_clierror!(
                 "qsv expects commands in lowercase. Did you mean '{}'?",
                 argv[1].to_lowercase()
@@ -305,6 +319,7 @@ impl Command {
         CURRENT_COMMAND.get_or_init(|| argv[1].to_lowercase());
         match self {
             Command::ApplyDP => cmd::applydp::run(argv),
+            Command::Blake3 => cmd::blake3::run(argv),
             Command::Count => cmd::count::run(argv),
             Command::Datefmt => cmd::datefmt::run(argv),
             Command::Dedup => cmd::dedup::run(argv),
@@ -324,12 +339,14 @@ impl Command {
             },
             Command::Index => cmd::index::run(argv),
             Command::Input => cmd::input::run(argv),
+            Command::Join => cmd::join::run(argv),
             #[cfg(feature = "polars")]
             Command::JoinP => cmd::joinp::run(argv),
             #[cfg(feature = "luau")]
             Command::Luau => cmd::luau::run(argv),
             #[cfg(feature = "polars")]
             Command::PivotP => cmd::pivotp::run(argv),
+            Command::Pragmastat => cmd::pragmastat::run(argv),
             Command::Pseudo => cmd::pseudo::run(argv),
             Command::Rename => cmd::rename::run(argv),
             Command::Replace => cmd::replace::run(argv),
@@ -347,6 +364,7 @@ impl Command {
             #[cfg(feature = "polars")]
             Command::SqlP => cmd::sqlp::run(argv),
             Command::Stats => cmd::stats::run(argv),
+            Command::Moarstats => cmd::moarstats::run(argv),
             Command::Template => cmd::template::run(argv),
             Command::Validate => cmd::validate::run(argv),
         }

@@ -1,26 +1,35 @@
 static USAGE: &str = r#"
-Pivots CSV data using the Polars engine.
+Pivots or groups CSV data using the Polars engine.
 
-The pivot operation consists of:
-- One or more index columns (these will be the new rows)
-- A column that will be pivoted (this will create the new columns)
-- A values column that will be aggregated
-- An aggregation function to apply. Features "smart" aggregation auto-selection.
+PIVOT MODE (with <on-cols>):
+  The pivot operation consists of:
+  - One or more index columns (these will be the new rows)
+  - A column that will be pivoted (this will create the new columns)
+  - A values column that will be aggregated
+  - An aggregation function to apply. Features "smart" aggregation auto-selection.
+
+GROUP-BY MODE (without <on-cols>):
+  When <on-cols> is omitted, performs a group-by aggregation instead of a pivot.
+  This is useful for simple aggregations like counting rows per group.
+  In group-by mode, --index is required and --agg smart resolves to len (count).
+  The none aggregation is not supported in group-by mode.
+  If --values is omitted, a single "count" column is produced.
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs.
 
 Usage:
     qsv pivotp [options] <on-cols> <input>
+    qsv pivotp [options] <input>
     qsv pivotp --help
 
 pivotp arguments:
     <on-cols>     The column(s) to pivot on (creates new columns).
-    <input>       is the input CSV file. The file must have headers.
+                  When omitted, pivotp runs in group-by mode.
+    <input>       The input CSV file. The file must have headers.
                   If the file has a pschema.json file, it will be used to
                   inform the pivot operation unless --infer-len is explicitly
                   set to a value other than the default of 10,000 rows.
                   Stdin is not supported.
-
 
 pivotp options:
     -i, --index <cols>      The column(s) to use as the index (row labels).
@@ -28,10 +37,12 @@ pivotp options:
                             The output will have one row for each unique combination of the index's values.
                             If None, all remaining columns not specified on --on and --values will be used.
                             At least one of --index and --values must be specified.
+                            Required in group-by mode.
     -v, --values <cols>     The column(s) containing values to aggregate.
                             If an aggregation is specified, these are the values on which the aggregation
                             will be computed. If None, all remaining columns not specified on --on and --index
                             will be used. At least one of --index and --values must be specified.
+                            In group-by mode, if omitted, a single "count" column is produced.
     -a, --agg <func>        The aggregation function to use:
                               first - First value encountered
                               last - Last value encountered
@@ -40,22 +51,42 @@ pivotp options:
                               max - Maximum value
                               mean - Average value
                               median - Median value
-                              count - Count of values
-                              none - No aggregation is done. Raises error if multiple values are in group.
+                              len - Count of values
+                              item - Get single value from group. Raises error if there are multiple values.
                               smart - use value column data type & statistics to pick an aggregation.
+                                      Always uses type, cardinality, sparsity, CV, sign
+                                      distribution (n_negative/n_positive), and sort_order
+                                      from streaming stats.
+                                      When the stats cache includes non-streaming stats (from a
+                                      prior `stats --everything` or `stats --mode --quartiles`),
+                                      also uses skewness and mode_count.
+                                      When moarstats has been run, also leverages outlier profile,
+                                      Pearson skewness, MAD/stddev ratio, median/mean ratio, and
+                                      quartile coefficient of dispersion for smarter selection.
+                                      With moarstats --advanced, also uses kurtosis, bimodality,
+                                      entropy and Gini coefficient.
+                                      For Date/DateTime values, checks sparsity and sort order.
                                       Will only work if there is one value column, otherwise
                                       it falls back to `first`
                             [default: smart]
-    --sort-columns          Sort the transposed columns by name. Default is by order of discovery.
+    --sort-columns          Sort the transposed columns by name. (pivot mode only)
+    --maintain-order        Maintain output order: preserve input column order in pivot mode,
+                            and preserve group/row order in group-by mode.
     --col-separator <arg>   The separator in generated column names in case of multiple --values columns.
-                            [default: _]
-    --validate              Validate a pivot by checking the pivot column(s)' cardinality.
+                            (pivot mode only; ignored in group-by mode) [default: _]
+    --validate              Validate a pivot by checking the pivot column(s)' cardinality. (pivot mode only)
     --try-parsedates        When set, will attempt to parse columns as dates.
     --infer-len <arg>       Number of rows to scan when inferring schema.
                             Set to 0 to scan entire file. [default: 10000]
     --decimal-comma         Use comma as decimal separator when READING the input.
                             Note that you will need to specify an alternate --delimiter.
     --ignore-errors         Skip rows that can't be parsed.
+    --grand-total           Append a grand total row summing all numeric non-index columns.
+                            The first index column will contain "Grand <total-label>".
+    --subtotal              Insert subtotal rows after each group in the first index column.
+                            The second index column will contain the total label.
+                            Requires 2+ index columns. (pivot mode only)
+    --total-label <arg>     Custom label for total rows. [default: Total]
 
 Common options:
     -h, --help              Display this message
@@ -66,46 +97,52 @@ Common options:
 "#;
 
 use std::{
-    collections::HashMap,
     fs::File,
     io,
     io::{BufReader, Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
     sync::OnceLock,
 };
 
 use csv::ByteRecord;
+use foldhash::HashSet;
 use indicatif::HumanCount;
-use polars::prelude::*;
-use polars_ops::pivot::{PivotAgg, pivot_stable};
-use polars_utils::plpath::PlPath;
+use polars::{frame::PivotColumnNaming, prelude::*};
 use serde::Deserialize;
 
 use crate::{
     CliResult,
     cmd::stats::StatsData,
-    config::{Config, Delimiter},
+    config::Delimiter,
     util,
     util::{StatsMode, get_stats_records},
 };
 
-static STATS_RECORDS: OnceLock<(ByteRecord, Vec<StatsData>, HashMap<String, String>)> =
-    OnceLock::new();
+static STATS_RECORDS: OnceLock<(ByteRecord, Vec<StatsData>)> = OnceLock::new();
+
+/// Helper function to convert a Vec<String> to a vector of Expr for column selection
+fn cols_to_exprs(cols: &[String]) -> Vec<Expr> {
+    cols.iter().map(col).collect()
+}
 
 #[derive(Deserialize)]
 struct Args {
-    arg_on_cols:         String,
-    arg_input:           String,
+    arg_on_cols:         Option<String>,
+    arg_input:           Option<String>,
     flag_index:          Option<String>,
     flag_values:         Option<String>,
     flag_agg:            Option<String>,
     flag_sort_columns:   bool,
+    flag_maintain_order: bool,
     flag_col_separator:  String,
     flag_validate:       bool,
     flag_try_parsedates: bool,
     flag_infer_len:      usize,
     flag_decimal_comma:  bool,
     flag_ignore_errors:  bool,
+    flag_grand_total:    bool,
+    flag_subtotal:       bool,
+    flag_total_label:    String,
     flag_output:         Option<String>,
     flag_delimiter:      Option<Delimiter>,
     flag_quiet:          bool,
@@ -126,12 +163,13 @@ fn calculate_pivot_metadata(
     args: &Args,
     on_cols: &[String],
     value_cols: Option<&Vec<String>>,
-) -> CliResult<Option<PivotMetadata>> {
+) -> Option<PivotMetadata> {
     // Get stats records
     let schema_args = util::SchemaArgs {
         flag_enum_threshold:  0,
         flag_ignore_case:     false,
         flag_strict_dates:    false,
+        flag_strict_formats:  false,
         flag_pattern_columns: crate::select::SelectColumns::parse("").unwrap(),
         flag_dates_whitelist: String::new(),
         flag_prefer_dmy:      false,
@@ -141,18 +179,18 @@ fn calculate_pivot_metadata(
         flag_polars:          false,
         flag_no_headers:      false,
         flag_delimiter:       args.flag_delimiter,
-        arg_input:            Some(args.arg_input.clone()),
+        arg_input:            args.arg_input.clone(),
         flag_memcheck:        false,
+        flag_output:          None,
     };
 
-    #[allow(unused_variables)]
-    let (csv_fields, csv_stats, dataset_stats) = STATS_RECORDS.get_or_init(|| {
+    let (csv_fields, csv_stats) = STATS_RECORDS.get_or_init(|| {
         get_stats_records(&schema_args, StatsMode::FrequencyForceStats)
-            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new(), HashMap::new()))
+            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new()))
     });
 
     if csv_stats.is_empty() {
-        return Ok(None);
+        return None;
     }
 
     // Get cardinalities for pivot columns
@@ -177,10 +215,10 @@ fn calculate_pivot_metadata(
     };
     let estimated_columns = total_new_columns.saturating_mul(value_cols_count);
 
-    Ok(Some(PivotMetadata {
+    Some(PivotMetadata {
         estimated_columns,
         on_col_cardinalities,
-    }))
+    })
 }
 
 /// Validate pivot operation using metadata
@@ -217,6 +255,112 @@ fn validate_pivot_operation(metadata: &PivotMetadata) -> CliResult<()> {
     Ok(())
 }
 
+/// Build a single-row DataFrame containing a total row.
+/// Numeric columns get their sum; index columns get the provided labels.
+#[allow(clippy::missing_asserts_for_indexing)]
+fn build_total_row(
+    df: &DataFrame,
+    index_cols: &[String],
+    first_index_label: &str,
+    second_index_label: &str,
+) -> CliResult<DataFrame> {
+    let mut columns: Vec<Column> = Vec::with_capacity(df.width());
+
+    for col_ref in df.columns() {
+        let name = col_ref.name().to_string();
+
+        if name == index_cols[0] {
+            // First index column gets the primary label
+            columns.push(Column::new(name.into(), &[first_index_label]));
+        } else if index_cols.len() > 1 && name == index_cols[1] {
+            // Second index column gets the secondary label
+            columns.push(Column::new(name.into(), &[second_index_label]));
+        } else if index_cols.iter().any(|ic| ic == &name) {
+            // Other index columns get empty string
+            columns.push(Column::new(name.into(), &[""]));
+        } else if col_ref.dtype().is_numeric() {
+            // Sum numeric columns
+            let sum_series = col_ref.sum_reduce()?.into_column(name.into());
+            columns.push(sum_series);
+        } else {
+            // Non-numeric pivot columns get empty string
+            columns.push(Column::new(name.into(), &[""]));
+        }
+    }
+
+    Ok(DataFrame::new(1, columns)?)
+}
+
+/// Insert subtotal rows after each group in the first index column.
+/// Returns a new DataFrame with subtotal rows interleaved.
+/// The data is sorted by all index columns to ensure contiguous groups and deterministic ordering.
+fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliResult<DataFrame> {
+    // Sort by all index columns to ensure contiguous groups and
+    // deterministic intra-group ordering, since pivot output order is not guaranteed.
+    let df = df.sort(index_cols, SortMultipleOptions::default())?;
+
+    let group_col = df.column(&index_cols[0])?;
+    let str_col = group_col.str().ok();
+    let mut frames: Vec<DataFrame> = Vec::new();
+    let mut group_start = 0_usize;
+
+    for i in 1..=df.height() {
+        // Detect group boundary: end of data or value change in first index col
+        let current_val = if i < df.height() {
+            if let Some(str_col) = &str_col {
+                str_col.get(i).map(String::from)
+            } else {
+                group_col.get(i).map(|v| v.to_string()).ok()
+            }
+        } else {
+            None
+        };
+        let start_val = if let Some(str_col) = &str_col {
+            str_col
+                .get(group_start)
+                .map(std::string::ToString::to_string)
+        } else {
+            group_col.get(group_start).map(|v| v.to_string()).ok()
+        };
+        let is_boundary = i == df.height() || current_val.as_deref() != start_val.as_deref();
+
+        if is_boundary {
+            let group_len = i - group_start;
+            let group_df = df.slice(group_start as i64, group_len);
+
+            // Get the group value for the first index column label
+            let group_value = if let Some(str_col) = &str_col {
+                str_col.get(group_start).unwrap_or_default().to_string()
+            } else {
+                group_col
+                    .get(group_start)
+                    .map(|v| v.to_string())
+                    .ok()
+                    .unwrap_or_default()
+            };
+
+            // Build subtotal row: first index col = group value, second = label
+            let subtotal_row = build_total_row(&group_df, index_cols, &group_value, label)?;
+
+            frames.push(group_df);
+            frames.push(subtotal_row);
+            group_start = i;
+        }
+    }
+
+    // Stack all frames together
+    if frames.is_empty() {
+        return Ok(df.clone());
+    }
+
+    let mut result = frames.remove(0);
+    for frame in frames {
+        result.vstack_mut(&frame)?;
+    }
+
+    Ok(result)
+}
+
 /// Suggest an appropriate aggregation function based on column statistics
 #[allow(clippy::cast_precision_loss)]
 fn suggest_agg_function(
@@ -224,10 +368,10 @@ fn suggest_agg_function(
     on_cols: &[String],
     index_cols: Option<&[String]>,
     value_cols: &[String],
-) -> CliResult<Option<PivotAgg>> {
+) -> CliResult<Option<Expr>> {
     // If multiple value columns, default to First
     if value_cols.len() > 1 {
-        return Ok(Some(PivotAgg::First));
+        return Ok(Some(Expr::Element.first()));
     }
 
     let quiet = args.flag_quiet;
@@ -237,6 +381,7 @@ fn suggest_agg_function(
         flag_enum_threshold:  0,
         flag_ignore_case:     false,
         flag_strict_dates:    false,
+        flag_strict_formats:  false,
         flag_pattern_columns: crate::select::SelectColumns::parse("").unwrap(),
         flag_dates_whitelist: String::new(),
         flag_prefer_dmy:      false,
@@ -246,21 +391,15 @@ fn suggest_agg_function(
         flag_polars:          false,
         flag_no_headers:      false,
         flag_delimiter:       args.flag_delimiter,
-        arg_input:            Some(args.arg_input.clone()),
+        arg_input:            args.arg_input.clone(),
         flag_memcheck:        false,
+        flag_output:          None,
     };
 
-    let (csv_fields, csv_stats, dataset_stats) = STATS_RECORDS.get_or_init(|| {
+    let (csv_fields, csv_stats) = STATS_RECORDS.get_or_init(|| {
         get_stats_records(&schema_args, StatsMode::FrequencyForceStats)
-            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new(), HashMap::new()))
+            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new()))
     });
-
-    let rconfig = Config::new(Some(&args.arg_input));
-    let row_count = if let Some(row_count) = dataset_stats.get("qsv__rowcount") {
-        row_count.parse::<u64>().unwrap()
-    } else {
-        util::count_rows(&rconfig)?
-    };
 
     // Analyze pivot column characteristics
     let mut high_cardinality_pivot = false;
@@ -271,9 +410,11 @@ fn suggest_agg_function(
             .position(|f| std::str::from_utf8(f).unwrap_or("") == on_col)
         {
             let stats = &csv_stats[pos];
+            let uniqueness_ratio = stats.uniqueness_ratio.unwrap_or(0.0);
 
             // Check cardinality ratio
-            if stats.cardinality as f64 / row_count as f64 > 0.5 {
+
+            if uniqueness_ratio > 0.5 {
                 high_cardinality_pivot = true;
                 if !quiet {
                     eprintln!("Info: Pivot column \"{on_col}\" has high cardinality");
@@ -297,12 +438,13 @@ fn suggest_agg_function(
                 .position(|f| std::str::from_utf8(f).unwrap_or("") == idx_col)
             {
                 let stats = &csv_stats[pos];
+                let uniqueness_ratio = stats.uniqueness_ratio.unwrap_or(0.0);
 
-                // Check cardinality ratio
-                if stats.cardinality as f64 / row_count as f64 > 0.5 {
+                // Check uniqueness ratio
+                if uniqueness_ratio > 0.5 {
                     high_cardinality_index = true;
                     if !quiet {
-                        eprintln!("Info: Index column \"{idx_col}\" has high cardinality");
+                        eprintln!("Info: Index column \"{idx_col}\" has high uniqueness ratio");
                     }
                 }
 
@@ -329,65 +471,85 @@ fn suggest_agg_function(
                 if !quiet {
                     eprintln!("Info: \"{value_col}\" contains only NULL values");
                 }
-                PivotAgg::Count
+                Expr::Element.len()
             },
             "Integer" | "Float" => {
-                if stats.nullcount as f64 / row_count as f64 > 0.5 {
+                if stats.cardinality == 1 {
                     if !quiet {
-                        eprintln!("Info: \"{value_col}\" contains >50% NULL values, using Count");
+                        eprintln!("Info: \"{value_col}\" contains only one value, using Item");
                     }
-                    PivotAgg::Count
-                } else if stats.cv > Some(1.0) {
-                    // High coefficient of variation suggests using median for better central
-                    // tendency
+                    Expr::Element.item(true)
+                } else if stats.sparsity.unwrap_or(0.0) > 0.5 {
+                    if !quiet {
+                        eprintln!("Info: \"{value_col}\" contains >50% NULL values, using Len");
+                    }
+                    Expr::Element.len()
+                } else if let Some(mc) = stats.mode_count
+                    && mc > 10
+                {
+                    // Complex multimodal — more than 10 tied modes means
+                    // central tendency is especially misleading
                     if !quiet {
                         eprintln!(
-                            "Info: High variability in values (CV > 1), using Median for more \
-                             robust central tendency"
+                            "Info: Complex multimodal distribution ({mc} modes > 10), using Len"
                         );
                     }
-                    PivotAgg::Median
-                } else if high_cardinality_pivot && high_cardinality_index {
-                    if ordered_pivot && ordered_index {
-                        // With ordered high cardinality columns, mean might be more meaningful
+                    Expr::Element.len()
+                } else if let Some(bc) = stats.bimodality_coefficient {
+                    if bc >= 0.555 {
+                        // Bimodal distribution — central tendency is misleading
                         if !quiet {
                             eprintln!(
-                                "Info: Ordered high cardinality columns detected, using Mean"
+                                "Info: Bimodal distribution detected (bimodality coefficient \
+                                 {bc:.3} >= 0.555), using Len"
                             );
                         }
-                        PivotAgg::Mean
+                        Expr::Element.len()
                     } else {
-                        // With unordered high cardinality, sum might be more appropriate
-                        if !quiet {
-                            eprintln!(
-                                "Info: High cardinality in pivot and index columns, using Sum"
-                            );
-                        }
-                        PivotAgg::Sum
-                    }
-                } else if let Some(skewness) = stats.skewness {
-                    if skewness.abs() > 2.0 {
-                        // Highly skewed data might benefit from median
-                        if !quiet {
-                            eprintln!("Info: Highly skewed numeric data detected, using Median");
-                        }
-                        PivotAgg::Median
-                    } else {
-                        PivotAgg::Sum
+                        suggest_numeric_after_bimodality(
+                            stats,
+                            quiet,
+                            value_col,
+                            high_cardinality_pivot,
+                            high_cardinality_index,
+                            ordered_pivot,
+                            ordered_index,
+                        )
                     }
                 } else {
-                    PivotAgg::Sum
+                    suggest_numeric_after_bimodality(
+                        stats,
+                        quiet,
+                        value_col,
+                        high_cardinality_pivot,
+                        high_cardinality_index,
+                        ordered_pivot,
+                        ordered_index,
+                    )
                 }
             },
             "Date" | "DateTime" => {
-                if high_cardinality_pivot || high_cardinality_index {
+                if stats.cardinality == 1 {
+                    if !quiet {
+                        eprintln!("Info: \"{value_col}\" contains only one value, using Item");
+                    }
+                    Expr::Element.item(true)
+                } else if stats.sparsity.unwrap_or(0.0) > 0.5 {
+                    if !quiet {
+                        eprintln!(
+                            "Info: \"{value_col}\" is a sparse {} column (>50% NULL), using Len",
+                            stats.r#type
+                        );
+                    }
+                    Expr::Element.len()
+                } else if high_cardinality_pivot || high_cardinality_index {
                     if ordered_pivot && ordered_index {
                         if !quiet {
                             eprintln!(
                                 "Info: Ordered temporal data with high cardinality, using Last"
                             );
                         }
-                        PivotAgg::Last
+                        Expr::Element.last()
                     } else {
                         if !quiet {
                             eprintln!(
@@ -395,36 +557,76 @@ fn suggest_agg_function(
                                 stats.r#type
                             );
                         }
-                        PivotAgg::First
+                        Expr::Element.first()
                     }
+                } else if let Some(sort_order) = &stats.sort_order
+                    && sort_order.starts_with("Ascending")
+                {
+                    // Value column itself is sorted ascending — most recent entry
+                    // is typically most useful for temporal data
+                    if !quiet {
+                        eprintln!(
+                            "Info: Ascending {} values detected, using Last for most recent",
+                            stats.r#type
+                        );
+                    }
+                    Expr::Element.last()
                 } else {
                     if !quiet {
-                        eprintln!("Info: Using Count for {} column", stats.r#type);
+                        eprintln!("Info: Using Len for {} column", stats.r#type);
                     }
-                    PivotAgg::Count
+                    Expr::Element.len()
                 }
             },
             _ => {
-                if stats.cardinality == row_count {
+                let uniqueness_ratio = stats.uniqueness_ratio.unwrap_or(0.0);
+                if stats.cardinality == 1 {
+                    if !quiet {
+                        eprintln!("Info: \"{value_col}\" contains only one value, using Item");
+                    }
+                    Expr::Element.item(true)
+                } else if (uniqueness_ratio - 1.0).abs() < 0.0001 {
                     if !quiet {
                         eprintln!("Info: \"{value_col}\" contains all unique values, using First");
                     }
-                    PivotAgg::First
+                    Expr::Element.first()
                 } else if stats.sparsity > Some(0.5) {
                     if !quiet {
-                        eprintln!("Info: Sparse data detected, using Count");
+                        eprintln!("Info: Sparse data detected, using Len");
                     }
-                    PivotAgg::Count
+                    Expr::Element.len()
+                } else if let Some(ne) = stats.normalized_entropy {
+                    if ne > 0.9 {
+                        if !quiet {
+                            eprintln!(
+                                "Info: Near-uniform string distribution (normalized entropy \
+                                 {ne:.3} > 0.9), using Len"
+                            );
+                        }
+                        Expr::Element.len()
+                    } else if high_cardinality_pivot || high_cardinality_index {
+                        if !quiet {
+                            eprintln!("Info: High cardinality detected, using First");
+                        }
+                        Expr::Element.first()
+                    } else {
+                        // Low entropy means few dominant values — First is more
+                        // informative than a count
+                        if !quiet {
+                            eprintln!("Info: Low entropy string column, using First");
+                        }
+                        Expr::Element.first()
+                    }
                 } else if high_cardinality_pivot || high_cardinality_index {
                     if !quiet {
-                        eprintln!("Info: High cardinality detected, using Count");
+                        eprintln!("Info: High cardinality detected, using First");
                     }
-                    PivotAgg::Count
+                    Expr::Element.first()
                 } else {
                     if !quiet {
-                        eprintln!("Info: Using Count for String column");
+                        eprintln!("Info: Using Len for String column");
                     }
-                    PivotAgg::Count
+                    Expr::Element.len()
                 }
             },
         };
@@ -435,16 +637,233 @@ fn suggest_agg_function(
     }
 }
 
+/// Helper for numeric aggregation decisions after the bimodality check.
+/// Contains the remaining moarstats-aware checks (outliers, kurtosis, Gini,
+/// MAD/stddev divergence, mean/median divergence, quartile dispersion)
+/// followed by the original CV, cardinality, and skewness logic.
+#[allow(clippy::fn_params_excessive_bools)]
+fn suggest_numeric_after_bimodality(
+    stats: &StatsData,
+    quiet: bool,
+    value_col: &str,
+    high_cardinality_pivot: bool,
+    high_cardinality_index: bool,
+    ordered_pivot: bool,
+    ordered_index: bool,
+) -> Expr {
+    // moarstats: outlier impact ratio — mean shifted >20% by outliers
+    if let Some(oir) = stats.outlier_impact_ratio
+        && oir > 0.2
+    {
+        if !quiet {
+            eprintln!("Info: High outlier impact (ratio {oir:.3} > 0.2) shifts mean, using Median");
+        }
+        return Expr::Element.median();
+    }
+
+    // moarstats: >15% outlier contamination
+    if let Some(op) = stats.outliers_percentage
+        && op > 15.0
+    {
+        if !quiet {
+            eprintln!("Info: High outlier percentage ({op:.1}% > 15%), using Median");
+        }
+        return Expr::Element.median();
+    }
+
+    // moarstats: leptokurtic / heavy-tailed distribution
+    if let Some(k) = stats.kurtosis
+        && k > 3.0
+    {
+        if !quiet {
+            eprintln!("Info: Heavy-tailed distribution (kurtosis {k:.3} > 3.0), using Median");
+        }
+        return Expr::Element.median();
+    }
+
+    // moarstats: high inequality — few values dominate
+    if let Some(gc) = stats.gini_coefficient
+        && gc > 0.6
+    {
+        if !quiet {
+            eprintln!("Info: High inequality (Gini coefficient {gc:.3} > 0.6), using Median");
+        }
+        return Expr::Element.median();
+    }
+
+    // moarstats: robust vs non-robust spread divergence — outliers inflate stddev
+    if let Some(msr) = stats.mad_stddev_ratio
+        && msr < 0.5
+    {
+        if !quiet {
+            eprintln!(
+                "Info: Robust/non-robust spread divergence (MAD/stddev ratio {msr:.3} < 0.5), \
+                 using Median"
+            );
+        }
+        return Expr::Element.median();
+    }
+
+    // moarstats: direct mean/median divergence
+    if let Some(mmr) = stats.median_mean_ratio
+        && !(0.7..=1.3).contains(&mmr)
+    {
+        if !quiet {
+            eprintln!(
+                "Info: Mean/median divergence (ratio {mmr:.3}, outside 0.7\u{2013}1.3), using \
+                 Median"
+            );
+        }
+        return Expr::Element.median();
+    }
+
+    // moarstats: robust quartile-based variability
+    if let Some(qcd) = stats.quartile_coefficient_dispersion
+        && qcd > 0.5
+    {
+        if !quiet {
+            eprintln!(
+                "Info: High robust variability (quartile coefficient of dispersion {qcd:.3} > \
+                 0.5), using Median"
+            );
+        }
+        return Expr::Element.median();
+    }
+
+    // Original: high CV
+    if stats.cv > Some(1.0) {
+        if !quiet {
+            eprintln!(
+                "Info: High variability in values (CV > 1), using Median for more robust central \
+                 tendency"
+            );
+        }
+        return Expr::Element.median();
+    }
+
+    // Mixed-sign cancellation guard — Sum cancels out with substantial
+    // negative and positive values, Mean is more informative.
+    // Uses integer arithmetic (n * 5 > total ≡ n/total > 20%) to avoid
+    // f64 casts.
+    let is_mixed_sign = if let (Some(n_neg), Some(n_pos)) = (stats.n_negative, stats.n_positive) {
+        let total = n_neg + stats.n_zero.unwrap_or(0) + n_pos;
+        total > 0 && n_neg.saturating_mul(5) > total && n_pos.saturating_mul(5) > total
+    } else {
+        false
+    };
+
+    // Original: high cardinality pivot + index
+    if high_cardinality_pivot && high_cardinality_index {
+        // moarstats: near-uniform distribution makes aggregation uninformative
+        if let Some(ne) = stats.normalized_entropy
+            && ne > 0.9
+        {
+            if !quiet {
+                eprintln!(
+                    "Info: Near-uniform distribution (normalized entropy {ne:.3} > 0.9), using Len"
+                );
+            }
+            return Expr::Element.len();
+        }
+
+        // Mixed-sign guard applies here too — Sum would cancel out
+        if is_mixed_sign {
+            if !quiet {
+                log_mixed_sign(stats);
+            }
+            return Expr::Element.mean();
+        }
+
+        if ordered_pivot && ordered_index {
+            if !quiet {
+                eprintln!("Info: Ordered high cardinality columns detected, using Mean");
+            }
+            return Expr::Element.mean();
+        }
+        if !quiet {
+            eprintln!("Info: High cardinality in pivot and index columns, using Sum");
+        }
+        return Expr::Element.sum();
+    }
+
+    // Original: skewness check
+    if let Some(skewness) = stats.skewness
+        && skewness.abs() > 2.0
+    {
+        if !quiet {
+            eprintln!("Info: Highly skewed numeric data detected, using Median");
+        }
+        return Expr::Element.median();
+    }
+
+    // moarstats: Pearson skewness as complementary measure
+    if let Some(ps) = stats.pearson_skewness
+        && ps.abs() > 1.0
+    {
+        if !quiet {
+            eprintln!(
+                "Info: Pearson skewness ({ps:.3}, |value| > 1.0) indicates asymmetry, using Median"
+            );
+        }
+        return Expr::Element.median();
+    }
+
+    // Mixed-sign guard for the default path
+    if is_mixed_sign {
+        if !quiet {
+            log_mixed_sign(stats);
+        }
+        return Expr::Element.mean();
+    }
+
+    // Default for numeric
+    if !quiet {
+        eprintln!("Info: Using Sum for \"{value_col}\"");
+    }
+    Expr::Element.sum()
+}
+
+/// Log message for the mixed-sign cancellation guard.
+fn log_mixed_sign(stats: &StatsData) {
+    let (n_neg, n_pos) = (stats.n_negative.unwrap_or(0), stats.n_positive.unwrap_or(0));
+    let total = n_neg + stats.n_zero.unwrap_or(0) + n_pos;
+    let neg_pct = (n_neg.saturating_mul(100) + (total / 2)) / total;
+    let pos_pct = (n_pos.saturating_mul(100) + (total / 2)) / total;
+    eprintln!(
+        "Info: Mixed-sign data ({neg_pct}% negative, {pos_pct}% positive), using Mean to avoid \
+         Sum cancellation"
+    );
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
-    // Parse on column(s)
-    let on_cols: Vec<String> = args
-        .arg_on_cols
-        .as_str()
-        .split(',')
-        .map(std::string::ToString::to_string)
-        .collect();
+    // Resolve positional args.
+    // With two usage patterns ("... <on-cols> <input>" and "... <input>"),
+    // docopt assigns one positional to <input> and two to <on-cols> + <input>.
+    let (on_cols, input_path_str) = match (&args.arg_on_cols, &args.arg_input) {
+        (Some(on_cols_val), Some(input_val)) => {
+            // Both provided: pivot mode
+            let oc: Vec<String> = on_cols_val
+                .split(',')
+                .map(std::string::ToString::to_string)
+                .collect();
+            (Some(oc), input_val.clone())
+        },
+        (None, Some(input_val)) => {
+            // Matched second pattern: group-by mode
+            (None, input_val.clone())
+        },
+        (Some(on_cols_val), None) => {
+            // Fallback: single positional assigned to on-cols, treat as input
+            (None, on_cols_val.clone())
+        },
+        (None, None) => {
+            return fail_incorrectusage_clierror!("An input CSV file is required.");
+        },
+    };
+
+    let is_groupby_mode = on_cols.is_none();
 
     // Parse index column(s)
     let index_cols = if let Some(ref flag_index) = args.flag_index {
@@ -470,56 +889,94 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         None
     };
 
-    if index_cols.is_none() && value_cols.is_none() {
+    // Validate mode-specific constraints
+    if is_groupby_mode {
+        if index_cols.is_none() {
+            return fail_incorrectusage_clierror!(
+                "--index <cols> is required in group-by mode (when <on-cols> is omitted)."
+            );
+        }
+        if args.flag_subtotal {
+            return fail_incorrectusage_clierror!("--subtotal is not supported in group-by mode.");
+        }
+        if args.flag_validate {
+            return fail_incorrectusage_clierror!("--validate is not supported in group-by mode.");
+        }
+        if args.flag_sort_columns {
+            return fail_incorrectusage_clierror!(
+                "--sort-columns is not supported in group-by mode."
+            );
+        }
+        if let Some(ref agg) = args.flag_agg
+            && agg.eq_ignore_ascii_case("item")
+        {
+            return fail_incorrectusage_clierror!("--agg item is not supported in group-by mode.");
+        }
+    } else if index_cols.is_none() && value_cols.is_none() {
         return fail_incorrectusage_clierror!(
             "Either --index <cols> or --values <cols> must be specified."
         );
     }
 
-    // Get aggregation function
-    let agg_fn = if let Some(ref agg) = args.flag_agg {
-        let lower_agg = agg.to_lowercase();
-        if lower_agg == "none" {
-            None
-        } else {
-            Some(match lower_agg.as_str() {
-                "first" => PivotAgg::First,
-                "sum" => PivotAgg::Sum,
-                "min" => PivotAgg::Min,
-                "max" => PivotAgg::Max,
-                "mean" => PivotAgg::Mean,
-                "median" => PivotAgg::Median,
-                "count" => PivotAgg::Count,
-                "last" => PivotAgg::Last,
-                "smart" => {
-                    if let Some(value_cols) = &value_cols {
-                        // Try to suggest an appropriate aggregation function
-                        match suggest_agg_function(
-                            &args,
-                            &on_cols,
-                            index_cols.as_deref(),
-                            value_cols,
-                        )? {
-                            Some(suggested_agg) => suggested_agg,
-                            _ => {
-                                // fallback to first, which always works
-                                PivotAgg::First
-                            },
-                        }
-                    } else {
-                        // Default to Count if no value columns specified
-                        PivotAgg::Count
-                    }
-                },
-                _ => {
-                    return fail_incorrectusage_clierror!(
-                        "Invalid pivot aggregation function: {agg}"
-                    );
-                },
-            })
-        }
+    // Parse the aggregation function name (default: "smart", which resolves to "len" in group-by
+    // mode)
+    let agg_name = if let Some(ref agg) = args.flag_agg {
+        agg.to_lowercase()
     } else {
+        "smart".to_string()
+    };
+
+    // Reject --agg none in group-by mode AFTER lowercasing so "None"/"NONE" are also caught
+    if is_groupby_mode && agg_name == "none" {
+        return fail_incorrectusage_clierror!("--agg \"none\" is not supported in group-by mode.");
+    }
+
+    // Get aggregation function - using generic expressions that pivot will apply to value columns
+    // NOTE: This match must stay in sync with the group-by agg_exprs match below.
+    let agg_expr = if agg_name == "none" {
         None
+    } else {
+        Some(match agg_name.as_str() {
+            "first" => Expr::Element.first(),
+            "last" => Expr::Element.last(),
+            "sum" => Expr::Element.sum(),
+            "min" => Expr::Element.min(),
+            "max" => Expr::Element.max(),
+            "mean" => Expr::Element.mean(),
+            "median" => Expr::Element.median(),
+            "len" => Expr::Element.len(),
+            "item" => Expr::Element.item(true),
+            "smart" => {
+                if is_groupby_mode {
+                    // In group-by mode, smart defaults to len (count)
+                    Expr::Element.len()
+                } else if let Some(value_cols) = &value_cols {
+                    // Try to suggest an appropriate aggregation function
+                    let on_cols_ref = on_cols.as_ref().unwrap();
+                    match suggest_agg_function(
+                        &args,
+                        on_cols_ref,
+                        index_cols.as_deref(),
+                        value_cols,
+                    )? {
+                        Some(suggested_agg) => suggested_agg,
+                        _ => {
+                            // fallback to first, which always works
+                            Expr::Element.first()
+                        },
+                    }
+                } else {
+                    // Default to Len if no value columns specified
+                    Expr::Element.len()
+                }
+            },
+            _ => {
+                let agg_mode = if is_groupby_mode { "group-by" } else { "pivot" };
+                return fail_incorrectusage_clierror!(
+                    "Invalid {agg_mode} aggregation function: {agg_name}"
+                );
+            },
+        })
     };
 
     // Set delimiter if specified
@@ -536,7 +993,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Create CSV reader config
-    let mut csv_reader = LazyCsvReader::new(PlPath::new(&args.arg_input))
+    let mut csv_reader = LazyCsvReader::new(PlRefPath::new(&input_path_str))
         .with_has_header(true)
         .with_try_parse_dates(args.flag_try_parsedates)
         .with_decimal_comma(args.flag_decimal_comma)
@@ -545,8 +1002,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // check if the pschema.json file exists and is newer or created at the same time
     // as the table file
-    let input_path = Path::new(&args.arg_input);
-    let schema_file = input_path.canonicalize()?.with_extension("pschema.json");
+    let input_path = Path::new(&input_path_str);
+    let schema_file = PathBuf::from(format!(
+        "{}.pschema.json",
+        input_path.canonicalize()?.display()
+    ));
     let valid_schema_exists = schema_file.exists()
         && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?;
 
@@ -564,39 +1024,328 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         csv_reader = csv_reader.with_infer_schema_length(Some(args.flag_infer_len));
     }
 
-    // Read the CSV into a DataFrame
-    let df = csv_reader.finish()?.collect()?;
+    // Read the CSV into a LazyFrame
+    let mut lf = csv_reader.finish()?;
 
-    if args.flag_validate {
-        // Validate the operation
-        if let Some(metadata) = calculate_pivot_metadata(&args, &on_cols, value_cols.as_ref())? {
-            validate_pivot_operation(&metadata)?;
+    // Add a row index to track discovery order
+    let row_order_col = "__qsv_row_order__";
+    lf = lf.with_row_index(PlSmallStr::from_str(row_order_col), None);
+
+    // Get all column names from the schema to compute index/values if not specified
+    let schema = lf.collect_schema()?;
+    let all_cols: Vec<String> = schema
+        .iter_names()
+        .filter(|name| *name != row_order_col)
+        .map(polars::prelude::PlSmallStr::to_string)
+        .collect();
+
+    // Compute actual index and value columns if not specified
+    let actual_index_cols: Vec<String> = if let Some(idx_cols) = index_cols {
+        idx_cols
+    } else if let Some(ref oc) = on_cols {
+        // If no index specified, use all columns except on and values
+        let on_set: HashSet<&str> = oc.iter().map(std::string::String::as_str).collect();
+        let value_set: HashSet<&str> = value_cols
+            .as_ref()
+            .map(|cols| cols.iter().map(std::string::String::as_str).collect())
+            .unwrap_or_default();
+
+        all_cols
+            .iter()
+            .filter(|c| !on_set.contains(c.as_str()) && !value_set.contains(c.as_str()))
+            .cloned()
+            .collect()
+    } else {
+        // group-by mode with no index — already validated above
+        unreachable!()
+    };
+
+    // Determine the actual value columns
+    // In group-by mode without --values, we don't need value columns (just count rows)
+    let actual_value_cols: Option<Vec<String>> = if let Some(cols) = value_cols {
+        Some(cols)
+    } else if let Some(ref oc) = on_cols {
+        // Pivot mode: default to all columns except on and index
+        let on_set: HashSet<&str> = oc.iter().map(std::string::String::as_str).collect();
+        let index_set: HashSet<&str> = actual_index_cols
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
+
+        Some(
+            all_cols
+                .iter()
+                .filter(|c| !on_set.contains(c.as_str()) && !index_set.contains(c.as_str()))
+                .cloned()
+                .collect(),
+        )
+    } else {
+        // Group-by mode without --values: no value columns, just count rows
+        None
+    };
+
+    // Branch into group-by or pivot path
+    let mut pivot_result = if is_groupby_mode {
+        // === GROUP-BY MODE ===
+        // Build aggregation expressions for each value column
+        // NOTE: This match must stay in sync with the agg_expr match above.
+        // "none" is rejected during validation; if it somehow reaches here, treat as error.
+        let agg_exprs: Vec<Expr> = if let Some(ref val_cols) = actual_value_cols {
+            val_cols
+                .iter()
+                .map(|vc| {
+                    let c = col(PlSmallStr::from_str(vc));
+                    // Use len() (counts all rows including nulls) instead of count()
+                    // (counts non-null only) for consistency with pivot mode's
+                    // Expr::Element.len(). "item" is rejected during validation.
+                    match agg_name.as_str() {
+                        "first" => c.first().alias(PlSmallStr::from_str(vc)),
+                        "last" => c.last().alias(PlSmallStr::from_str(vc)),
+                        "sum" => c.sum().alias(PlSmallStr::from_str(vc)),
+                        "min" => c.min().alias(PlSmallStr::from_str(vc)),
+                        "max" => c.max().alias(PlSmallStr::from_str(vc)),
+                        "mean" => c.mean().alias(PlSmallStr::from_str(vc)),
+                        "median" => c.median().alias(PlSmallStr::from_str(vc)),
+                        "len" | "smart" => len().alias(PlSmallStr::from_str(vc)),
+                        _ => unreachable!(
+                            "Invalid agg_name '{agg_name}' should have been caught during \
+                             validation"
+                        ),
+                    }
+                })
+                .collect()
+        } else {
+            // No value columns: just count rows per group
+            vec![len().alias(PlSmallStr::from_str("count"))]
+        };
+
+        let group_by_exprs: Vec<Expr> = actual_index_cols.iter().map(col).collect();
+
+        if args.flag_maintain_order {
+            // group_by_stable preserves input order — no extra join/sort needed
+            lf.group_by_stable(group_by_exprs)
+                .agg(agg_exprs)
+                .collect()?
+        } else {
+            // Compute discovery order and group-by in a single lazy pipeline
+            // to avoid materializing data multiple times
+            let index_order_lf = lf
+                .clone()
+                .select(
+                    actual_index_cols
+                        .iter()
+                        .map(col)
+                        .chain(std::iter::once(col(row_order_col)))
+                        .collect::<Vec<_>>(),
+                )
+                .group_by(group_by_exprs.clone())
+                .agg([col(row_order_col).min().alias(row_order_col)]);
+
+            lf.group_by(group_by_exprs)
+                .agg(agg_exprs)
+                .join(
+                    index_order_lf,
+                    actual_index_cols.iter().map(col).collect::<Vec<_>>(),
+                    actual_index_cols.iter().map(col).collect::<Vec<_>>(),
+                    JoinArgs::new(JoinType::Left),
+                )
+                .sort([row_order_col], SortMultipleOptions::default())
+                .drop(cols([row_order_col]))
+                .collect()?
+        }
+    } else {
+        // === PIVOT MODE ===
+        // Safety: on_cols is always Some in pivot mode (is_groupby_mode is false iff on_cols is
+        // Some). actual_value_cols is always Some because the pivot-mode fallback
+        // (lines ~940-950) computes remaining columns when --values is omitted.
+        let on_cols = on_cols.unwrap();
+        let actual_value_cols = actual_value_cols.unwrap();
+
+        if args.flag_validate {
+            // Validate the operation - need to collect to get metadata
+            let df_for_validation = lf.clone().collect()?;
+            if let Some(metadata) =
+                calculate_pivot_metadata(&args, &on_cols, Some(&actual_value_cols))
+            {
+                validate_pivot_operation(&metadata)?;
+            }
+            drop(df_for_validation);
+        }
+
+        // Compute unique values for the pivot columns to create on_columns DataFrame
+        // This is required by the new LazyFrame pivot API
+        // We need to maintain discovery order, so we add row numbers and sort by them
+        let on_columns = {
+            let on_exprs_with_order: Vec<Expr> = cols_to_exprs(&on_cols)
+                .into_iter()
+                .chain(std::iter::once(col(row_order_col)))
+                .collect();
+
+            let unique_df = lf
+                .clone()
+                .select(on_exprs_with_order)
+                .unique(
+                    Some(cols(on_cols.iter().map(std::string::String::as_str))),
+                    UniqueKeepStrategy::First,
+                )
+                .sort([row_order_col], SortMultipleOptions::default())
+                .drop(cols([row_order_col]))
+                .collect()?;
+
+            Arc::new(unique_df)
+        };
+
+        // Create the aggregation expression
+        // If agg_expr is None, we need a default
+        let agg = agg_expr.unwrap_or_else(|| Expr::Element.first());
+
+        // Convert separator to PlSmallStr
+        let separator = PlSmallStr::from_str(&args.flag_col_separator);
+
+        // Compute the minimum row order for each unique index combination
+        // This will be used to restore discovery order after pivoting
+        // for deterministic output
+        let index_order = if actual_index_cols.is_empty() {
+            None
+        } else {
+            let order_df = lf
+                .clone()
+                .select(
+                    actual_index_cols
+                        .iter()
+                        .map(col)
+                        .chain(std::iter::once(col(row_order_col)))
+                        .collect::<Vec<_>>(),
+                )
+                .group_by(actual_index_cols.iter().map(col).collect::<Vec<_>>())
+                .agg([col(row_order_col).min().alias(row_order_col)])
+                .collect()?;
+            Some(order_df)
+        };
+
+        // Perform pivot operation using the new LazyFrame.pivot API
+        let on_selector = cols(on_cols.iter().map(std::string::String::as_str));
+        let index_selector = cols(actual_index_cols.iter().map(std::string::String::as_str));
+        let values_selector = cols(actual_value_cols.iter().map(std::string::String::as_str));
+        let column_naming = PivotColumnNaming::default();
+
+        let mut pivot_result = lf
+            .pivot(
+                on_selector,
+                on_columns,
+                index_selector,
+                values_selector,
+                agg,
+                args.flag_maintain_order,
+                separator,
+                column_naming,
+            )
+            .collect()?;
+
+        // Restore discovery order by joining with index_order and sorting
+        if let Some(index_order_df) = index_order {
+            pivot_result = pivot_result
+                .lazy()
+                .join(
+                    index_order_df.lazy(),
+                    &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
+                    &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
+                    JoinArgs::new(JoinType::Left),
+                )
+                .sort([row_order_col], SortMultipleOptions::default())
+                .drop(cols([row_order_col]))
+                .collect()?;
+        }
+
+        // Sort columns if requested
+        if args.flag_sort_columns {
+            let columns = pivot_result
+                .get_column_names()
+                .into_iter()
+                .map(polars::prelude::PlSmallStr::to_string);
+            let index_cols_set: HashSet<_> = actual_index_cols
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
+
+            // Separate index and pivoted columns
+            let (index_names, mut pivot_names): (Vec<_>, Vec<_>) = columns
+                .into_iter()
+                .partition(|name| index_cols_set.contains(name.as_str()));
+
+            // Sort only the pivoted columns alphabetically
+            pivot_names.sort_unstable();
+
+            // Reconstruct column order: index columns first, then sorted pivot columns
+            let mut sorted_columns = index_names;
+            sorted_columns.extend(pivot_names);
+
+            pivot_result = pivot_result.select(sorted_columns.as_slice())?;
+        }
+
+        pivot_result
+    };
+
+    // Add subtotals and/or grand total rows
+    if args.flag_subtotal || args.flag_grand_total {
+        if args.flag_grand_total && actual_index_cols.is_empty() {
+            return fail_incorrectusage_clierror!(
+                "--grand-total requires at least 1 index column (specified via --index)."
+            );
+        }
+        if args.flag_subtotal && actual_index_cols.len() < 2 {
+            return fail_incorrectusage_clierror!(
+                "--subtotal requires 2 or more index columns (specified via --index)."
+            );
+        }
+
+        // Cast index columns to String so we can insert label text
+        for idx_col in &actual_index_cols {
+            let col_data = pivot_result.column(idx_col)?;
+            if col_data.dtype() != &DataType::String {
+                let casted = col_data.cast(&DataType::String)?;
+                pivot_result.replace(idx_col, casted)?;
+            }
+        }
+
+        let total_label = &args.flag_total_label;
+
+        // Compute grand total from pivot result (before subtotals are inserted)
+        let grand_total_row = if args.flag_grand_total {
+            Some(build_total_row(
+                &pivot_result,
+                &actual_index_cols,
+                &format!("Grand {total_label}"),
+                "",
+            )?)
+        } else {
+            None
+        };
+
+        // Insert subtotals
+        if args.flag_subtotal {
+            pivot_result = insert_subtotals(&pivot_result, &actual_index_cols, total_label)?;
+        }
+
+        // Append grand total
+        if let Some(gt_row) = grand_total_row {
+            pivot_result = pivot_result.vstack(&gt_row)?;
         }
     }
-
-    // Perform pivot operation
-    let mut pivot_result = pivot_stable(
-        &df,
-        on_cols,
-        index_cols,
-        value_cols,
-        args.flag_sort_columns,
-        agg_fn,
-        Some(&args.flag_col_separator),
-    )?;
 
     // Write output
     let mut writer = match args.flag_output {
         Some(ref output_file) => {
             // no need to use buffered writer here, as CsvWriter already does that
             let path = Path::new(&output_file);
-            Box::new(File::create(path).unwrap()) as Box<dyn Write>
+            Box::new(File::create(path)?) as Box<dyn Write>
         },
         None => Box::new(io::stdout()) as Box<dyn Write>,
     };
+    let datetime_fmt: PlSmallStr = PlSmallStr::from_str("%Y-%m-%d %H:%M:%S");
     CsvWriter::new(&mut writer)
         .include_header(true)
-        .with_datetime_format(Some("%Y-%m-%d %H:%M:%S".to_string()))
+        .with_datetime_format(Some(datetime_fmt))
         .with_separator(delim)
         .finish(&mut pivot_result)?;
 

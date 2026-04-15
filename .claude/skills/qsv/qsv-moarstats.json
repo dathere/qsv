@@ -1,0 +1,132 @@
+{
+  "name": "qsv-moarstats",
+  "version": "19.0.0",
+  "description": "Add dozens of additional statistics, including extended outlier, robust & bivariate statistics to an existing stats CSV file. (example).",
+  "category": "aggregation",
+  "command": {
+    "subcommand": "moarstats",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--advanced",
+        "type": "flag",
+        "description": "Compute Kurtosis, Shannon Entropy, Bimodality Coefficient, Jarque-Bera, Gini Coefficient, Atkinson Index, Theil Index, Mean Absolute Deviation, and Simpson's Diversity Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing."
+      },
+      {
+        "flag": "--bivariate",
+        "type": "flag",
+        "description": "Enable bivariate statistics computation. Requires indexed CSV file (index will be auto-created if missing). Computes pairwise correlations, covariances, mutual information, and normalized mutual information between columns. The bivariate statistics are saved to a separate file in the same directory as the input: <FILESTEM>.stats.bivariate.csv."
+      },
+      {
+        "flag": "--bivariate-stats",
+        "type": "string",
+        "description": "",
+        "default": "fast"
+      },
+      {
+        "flag": "--cardinality-threshold",
+        "type": "string",
+        "description": "",
+        "default": "1000000"
+      },
+      {
+        "flag": "--epsilon",
+        "type": "string",
+        "description": "The Atkinson Index Inequality Aversion parameter. Epsilon controls the sensitivity of the Atkinson Index to inequality. The higher the epsilon, the more sensitive the index is to inequality. Typical values are 0.5 (standard in economic research), 1.0 (natural boundary), or 2.0 (useful for poverty analysis).",
+        "default": "1.0"
+      },
+      {
+        "flag": "--force",
+        "type": "flag",
+        "description": "Force recomputing stats even if valid precomputed stats cache exists."
+      },
+      {
+        "flag": "--join-inputs",
+        "type": "string",
+        "description": ""
+      },
+      {
+        "flag": "--join-keys",
+        "type": "string",
+        "description": ""
+      },
+      {
+        "flag": "--join-type",
+        "type": "string",
+        "description": "",
+        "default": "inner"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of overwriting the stats CSV file."
+      },
+      {
+        "flag": "--pct-thresholds",
+        "type": "string",
+        "description": "Comma-separated percentile pair (e.g., \"10,90\") to use for winsorization/trimming when --use-percentiles is set. Both values must be between 0 and 100, and lower < upper.",
+        "default": "5,95"
+      },
+      {
+        "flag": "--round",
+        "type": "string",
+        "description": "Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule.",
+        "default": "4"
+      },
+      {
+        "flag": "--stats-options",
+        "type": "string",
+        "description": "Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace.",
+        "default": "--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl"
+      },
+      {
+        "flag": "--use-percentiles",
+        "type": "flag",
+        "description": "Use percentiles instead of Q1/Q3 for winsorization/trimming. Requires percentiles to be computed in the stats CSV."
+      },
+      {
+        "flag": "--xsd-gdate-scan",
+        "type": "string",
+        "description": "Gregorian XSD date type detection mode. \"quick\": Fast detection using min/max values. Produces types with ?? suffix (less confident). \"thorough\": Comprehensive detection checking all percentile values. Slower but ensures all values match the pattern. Produces types with ? suffix (more confident).",
+        "default": "quick"
+      }
+    ]
+  },
+  "hints": {
+    "indexed": true,
+    "memory": "constant"
+  },
+  "examples": [
+    {
+      "description": "Add moar stats to existing stats file",
+      "command": "qsv moarstats data.csv"
+    },
+    {
+      "description": "Generate baseline stats first with custom options, then add moar stats",
+      "command": "qsv moarstats data.csv --stats-options \"--everything --infer-dates\""
+    },
+    {
+      "description": "Compute bivariate statistics between fields",
+      "command": "qsv moarstats data.csv --bivariate"
+    },
+    {
+      "description": "Compute even more bivariate statistics",
+      "command": "qsv moarstats data.csv --bivariate --bivariate-stats pearson,spearman,kendall,mi,nmi,covariance"
+    },
+    {
+      "description": "Join multiple datasets and compute bivariate statistics",
+      "command": "qsv moarstats data.csv --bivariate --join-inputs customers.csv,products.csv --join-keys cust_id,prod_id"
+    },
+    {
+      "description": "Join multiple datasets and compute bivariate statistics with different join type",
+      "command": "qsv moarstats data.csv --bivariate --join-inputs customers.csv,products.csv --join-keys cust_id,prod_id --join-type left"
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "name": "qsv-pseudo",
+  "version": "19.0.0",
+  "description": "Pseudonymise the value of the given column by replacing them with an incremental identifier.",
+  "category": "utility",
+  "command": {
+    "subcommand": "pseudo",
+    "args": [
+      {
+        "name": "column",
+        "type": "string",
+        "required": true,
+        "description": "The column to pseudonymise. You can use the `--select` option to select the column by name or index. See `select` command for more details."
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": "The CSV file to read from. If not specified, then the input will be read from stdin."
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--formatstr",
+        "type": "string",
+        "description": "The format string for the incremental identifier. The format string must contain a single \"{}\" which will be replaced with the incremental identifier.",
+        "default": "{}"
+      },
+      {
+        "flag": "--increment",
+        "type": "string",
+        "description": "The increment for the incremental identifier.",
+        "default": "1"
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--start",
+        "type": "string",
+        "description": "The starting number for the incremental identifier.",
+        "default": "0"
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  }
+}

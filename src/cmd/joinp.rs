@@ -121,16 +121,16 @@ joinp options:
                            Ignored when --infer-len is 0.
                            ‎ -2: treat all columns as String. A Polars schema file is created & cached.
                            ‎ -1: treat all columns as String. No Polars schema file is created.
-                             0: do not cache Polars schema. Uses --infer-len to infer schema.
-                             1: cache Polars schema with the following behavior:
-                                - If schema file exists and is newer than input: use cached schema
-                                - If schema file missing/outdated and stats cache exists: 
+                           ‎  0: do not cache Polars schema. Uses --infer-len to infer schema.
+                           ‎  1: cache Polars schema with the following behavior:
+                                * If schema file exists and is newer than input: use cached schema
+                                * If schema file missing/outdated and stats cache exists: 
                                   derive schema from stats and cache it
-                                - If no schema or stats cache: infer schema using --infer-len 
+                                * If no schema or stats cache: infer schema using --infer-len 
                                   and cache the result
                                 Schema files use the same name as input with .pschema.json extension
-                                (e.g., data.csv -> data.pschema.json)
-                           NOTE: If the input files have pschema.json files that are newer or created
+                                (e.g., data.csv -> data.pschema.json).
+                           ‎NOTE: If the input files have pschema.json files that are newer or created
                            at the same time as the input files, they will be used to inform the join
                            operation regardless of the value of --cache-schema unless --infer-len is 0.
                            [default: 0]
@@ -173,12 +173,12 @@ joinp options:
     --strategy <arg>       The strategy to use for the asof join:
                              backward - For each row in the first CSV data set,
                                         we find the last row in the second data set
-                                        whose key is less than or equal to the key
-                                        in the first data set.
+                                        whose key is less than the key in the first
+                                        data set (or <= with --allow-exact-matches).
                              forward -  For each row in the first CSV data set,
                                         we find the first row in the second data set
-                                        whose key is greater than or equal to the key
-                                        in the first data set.
+                                        whose key is greater than the key in the
+                                        first data set (or >= with --allow-exact-matches).
                              nearest -  selects the last row in the second data set
                                         whose value is nearest to the value in the
                                         first data set.
@@ -269,7 +269,6 @@ use std::{
 };
 
 use polars::prelude::*;
-use polars_utils::plpath::PlPath;
 use serde::Deserialize;
 use tempfile::tempdir;
 
@@ -514,29 +513,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             {
                 // If the tolerance is a positive integer, it is tolerance number of rows.
                 // Otherwise, it is a tolerance date language spec.
-                if let Ok(numeric_tolerance) = atoi_simd::parse_pos::<u64>(tolerance.as_bytes()) {
-                    asof_options.tolerance = Some(AnyValue::UInt64(numeric_tolerance));
+                if let Ok(numeric_tolerance) =
+                    atoi_simd::parse_pos::<u64, false>(tolerance.as_bytes())
+                {
+                    asof_options.tolerance = Some(numeric_tolerance.into());
                 } else {
                     asof_options.tolerance_str = Some(tolerance.into());
                 }
             }
-            if args.flag_left_by.is_some() {
-                asof_options.left_by = Some(
-                    args.flag_left_by
-                        .unwrap()
-                        .split(',')
-                        .map(PlSmallStr::from_str)
-                        .collect(),
-                );
+            if let Some(left_by) = args.flag_left_by {
+                asof_options.left_by = Some(left_by.split(',').map(PlSmallStr::from_str).collect());
             }
-            if args.flag_right_by.is_some() {
-                asof_options.right_by = Some(
-                    args.flag_right_by
-                        .unwrap()
-                        .split(',')
-                        .map(PlSmallStr::from_str)
-                        .collect(),
-                );
+            if let Some(right_by) = args.flag_right_by {
+                asof_options.right_by =
+                    Some(right_by.split(',').map(PlSmallStr::from_str).collect());
             }
             join.run(
                 JoinType::AsOf(Box::new(asof_options)),
@@ -727,8 +717,7 @@ impl JoinStruct {
                 | OptFlags::COMM_SUBPLAN_ELIM
                 | OptFlags::COMM_SUBEXPR_ELIM
                 | OptFlags::ROW_ESTIMATE
-                | OptFlags::FAST_PROJECTION
-                | OptFlags::COLLAPSE_JOINS;
+                | OptFlags::FAST_PROJECTION;
         }
 
         optflags.set(OptFlags::NEW_STREAMING, self.streaming);
@@ -776,8 +765,30 @@ impl JoinStruct {
                 // Add "_left" & "_right" suffixes to all columns before doing the non-equi join.
                 // This is necessary as the NonEqui expression is a SQL where clause and the
                 // column names for the left and right data sets are used in the expression.
-                self.left_lf = self.left_lf.select([all().name().suffix("_left")]);
-                self.right_lf = self.right_lf.select([all().name().suffix("_right")]);
+                let left_cols = self
+                    .left_lf
+                    .collect_schema()?
+                    .iter_names()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let right_cols = self
+                    .right_lf
+                    .collect_schema()?
+                    .iter_names()
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                let left_renamed_cols: Vec<Expr> = left_cols
+                    .iter()
+                    .map(|col| polars::lazy::dsl::col(col.as_str()).alias(format!("{col}_left")))
+                    .collect();
+                let right_renamed_cols: Vec<Expr> = right_cols
+                    .iter()
+                    .map(|col| polars::lazy::dsl::col(col.as_str()).alias(format!("{col}_right")))
+                    .collect();
+
+                self.left_lf = self.left_lf.select(left_renamed_cols);
+                self.right_lf = self.right_lf.select(right_renamed_cols);
 
                 self.left_lf
                     .with_optimizations(optflags)
@@ -850,11 +861,11 @@ impl JoinStruct {
         CsvWriter::new(&mut out_writer)
             .include_header(true)
             .with_separator(out_delim)
-            .with_datetime_format(self.datetime_format)
-            .with_date_format(self.date_format)
-            .with_time_format(self.time_format)
+            .with_datetime_format(self.datetime_format.map(std::convert::Into::into))
+            .with_date_format(self.date_format.map(std::convert::Into::into))
+            .with_time_format(self.time_format.map(std::convert::Into::into))
             .with_float_precision(self.float_precision)
-            .with_null_value(self.null_value)
+            .with_null_value(self.null_value.into())
             .with_decimal_comma(self.decimal_comma)
             .include_bom(util::get_envvar_flag("QSV_OUTPUT_BOM"))
             .finish(&mut results_df)?;
@@ -874,7 +885,7 @@ impl Args {
             args: &Args,
             delim: u8,
         ) -> LazyCsvReader {
-            LazyCsvReader::new(PlPath::new(file_path))
+            LazyCsvReader::new(PlRefPath::new(file_path))
                 .with_has_header(true)
                 .with_missing_is_null(args.flag_nulls)
                 .with_comment_prefix(comment_char.cloned())
@@ -891,6 +902,7 @@ impl Args {
                 flag_enum_threshold:  0,
                 flag_ignore_case:     false,
                 flag_strict_dates:    false,
+                flag_strict_formats:  false,
                 flag_pattern_columns: crate::select::SelectColumns::parse("").unwrap(),
                 flag_dates_whitelist: String::new(),
                 flag_prefer_dmy:      false,
@@ -902,9 +914,10 @@ impl Args {
                 flag_delimiter:       args.flag_delimiter,
                 arg_input:            Some(input_path.to_string_lossy().into_owned()),
                 flag_memcheck:        false,
+                flag_output:          None,
             };
 
-            let (csv_fields, csv_stats, _) =
+            let (csv_fields, csv_stats) =
                 get_stats_records(&schema_args, util::StatsMode::PolarsSchema)?;
 
             let mut schema = Schema::with_capacity(csv_stats.len());
@@ -938,6 +951,10 @@ impl Args {
                             },
                             "Boolean" => polars::datatypes::DataType::Boolean,
                             "Date" => polars::datatypes::DataType::Date,
+                            "DateTime" => polars::datatypes::DataType::Datetime(
+                                polars::datatypes::TimeUnit::Milliseconds,
+                                None,
+                            ),
                             _ => polars::datatypes::DataType::String,
                         }
                     },
@@ -989,7 +1006,10 @@ impl Args {
 
             // First, check if the pschema.json file exists and is newer or created at the same time
             // as the table file
-            let schema_file = input_path.canonicalize()?.with_extension("pschema.json");
+            let schema_file = PathBuf::from(format!(
+                "{}.pschema.json",
+                input_path.canonicalize()?.display()
+            ));
             let mut valid_schema_exists = schema_file.exists()
                 && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?;
 
@@ -1138,7 +1158,10 @@ impl Args {
         if create_left_schema {
             let schema = left_lf.collect_schema()?;
             let schema_json = serde_json::to_string_pretty(&schema)?;
-            let schema_file = input1_path.canonicalize()?.with_extension("pschema.json");
+            let schema_file = PathBuf::from(format!(
+                "{}.pschema.json",
+                input1_path.canonicalize()?.display()
+            ));
             let mut file = BufWriter::new(File::create(&schema_file)?);
             file.write_all(schema_json.as_bytes())?;
             file.flush()?;
@@ -1172,7 +1195,10 @@ impl Args {
         if create_right_schema {
             let schema = right_lf.collect_schema()?;
             let schema_json = serde_json::to_string_pretty(&schema)?;
-            let schema_file = input2_path.canonicalize()?.with_extension("pschema.json");
+            let schema_file = PathBuf::from(format!(
+                "{}.pschema.json",
+                input2_path.canonicalize()?.display()
+            ));
             let mut file = BufWriter::new(File::create(&schema_file)?);
             file.write_all(schema_json.as_bytes())?;
             file.flush()?;

@@ -8,8 +8,8 @@ use std::{
     },
 };
 
+use csv_nose::{SampleSize, Sniffer};
 use log::{debug, info, warn};
-use qsv_sniffer::{SampleSize, Sniffer};
 use serde::de::{Deserialize, Deserializer, Error};
 
 use crate::{
@@ -24,7 +24,7 @@ pub const DEFAULT_RDR_BUFFER_CAPACITY: usize = 128 * (1 << 10);
 // previous wtr default in xsv is 32k, we're making it 512k
 pub const DEFAULT_WTR_BUFFER_CAPACITY: usize = 512 * (1 << 10);
 
-// number of rows for qsv_sniffer to sample
+// number of rows for csv-nose to sample
 const DEFAULT_SNIFFER_SAMPLE: usize = 100;
 
 // file size at which we warn user that a large file has not been indexed
@@ -124,9 +124,7 @@ pub struct Config {
 }
 
 // Empty trait as an alias for Seek and Read that avoids auto trait errors
-#[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub trait SeekRead: io::Seek + io::Read {}
-#[cfg(any(feature = "feature_capable", feature = "lite"))]
 impl<T: io::Seek + io::Read> SeekRead for T {}
 
 impl Config {
@@ -211,7 +209,7 @@ impl Config {
                 };
                 #[cfg(not(feature = "polars"))]
                 let special_format = SpecialFormat::Unknown;
-                let (file_extension, delim, snappy) = if special_format == SpecialFormat::Unknown {
+                let (delim, snappy) = if special_format == SpecialFormat::Unknown {
                     let (file_extension, delim, snappy) =
                         get_delim_by_extension(&path, default_delim);
                     format_error = if skip_format_check {
@@ -226,21 +224,23 @@ impl Config {
                             )),
                         }
                     };
-                    (file_extension, delim, snappy)
+                    (delim, snappy)
                 } else {
                     match util::convert_special_format(&path, special_format, default_delim) {
                         Ok(temp_path) => {
                             path.clone_from(&temp_path);
                             sniff = false;
-                            get_delim_by_extension(&temp_path, default_delim)
+                            let (_, delim, snappy) =
+                                get_delim_by_extension(&temp_path, default_delim);
+                            (delim, snappy)
                         },
                         Err(e) => {
                             format_error = Some(format!("Failed to convert special format: {e}"));
-                            ("DUMMY".to_string(), default_delim, false)
+                            (default_delim, false)
                         },
                     }
                 };
-                (Some(path), delim, snappy || file_extension.ends_with("sz"))
+                (Some(path), delim, snappy)
             },
         };
         let comment: Option<u8> = match env::var("QSV_COMMENT_CHAR") {
@@ -329,11 +329,23 @@ impl Config {
         self.prefer_dmy
     }
 
-    pub fn no_headers(mut self, mut yes: bool) -> Config {
+    /// Explicitly set `no_headers`, unconditionally overriding env var.
+    /// Use this when a command knows the input has (or lacks) headers
+    /// regardless of user configuration (e.g. internally-generated CSVs).
+    pub const fn no_headers(mut self, yes: bool) -> Config {
+        self.no_headers = yes;
+        self
+    }
+
+    /// Apply the `--no-headers` CLI flag without overriding `QSV_NO_HEADERS` env var.
+    /// When the flag is `false` (not passed), the env var value is preserved.
+    /// When the flag is `true` (explicitly passed), it sets `no_headers = true`.
+    /// Also respects `QSV_TOGGLE_HEADERS` to flip the flag value.
+    pub fn no_headers_flag(mut self, mut yes: bool) -> Config {
         if env::var("QSV_TOGGLE_HEADERS").unwrap_or_else(|_| "0".to_owned()) == "1" {
             yes = !yes;
         }
-        self.no_headers = yes;
+        self.no_headers = self.no_headers || yes;
         self
     }
 
@@ -506,7 +518,6 @@ impl Config {
         }
     }
 
-    #[cfg(any(feature = "feature_capable", feature = "lite"))]
     pub fn reader_file_stdin(&self) -> io::Result<csv::Reader<Box<dyn SeekRead + 'static>>> {
         Ok(match self.path {
             None => {
@@ -676,8 +687,31 @@ impl Config {
             Some(ref p) => match fs::File::open(p) {
                 Ok(x) => {
                     if self.snappy {
-                        info!("decoding snappy-compressed file: {}", p.display());
-                        Box::new(snap::read::FrameDecoder::new(x))
+                        // Validate that the file is actually a snappy-compressed file
+                        // before attempting decompression. This prevents "corrupt input" errors
+                        // when a plain CSV file is incorrectly detected as snappy.
+                        match util::is_valid_snappy_file(p) {
+                            Ok(true) => {
+                                info!("decoding snappy-compressed file: {}", p.display());
+                                Box::new(snap::read::FrameDecoder::new(x))
+                            },
+                            Ok(false) => {
+                                warn!(
+                                    "File {} has .sz extension but is not a valid Snappy file. \
+                                     Reading as plain file.",
+                                    p.display()
+                                );
+                                Box::new(x)
+                            },
+                            Err(e) => {
+                                warn!(
+                                    "Failed to validate Snappy file {}: {}. Reading as plain file.",
+                                    p.display(),
+                                    e
+                                );
+                                Box::new(x)
+                            },
+                        }
                     } else {
                         Box::new(x)
                     }
@@ -709,8 +743,7 @@ impl Config {
         Ok(match self.path {
             None => Box::new(io::stdout()),
             Some(ref p) => {
-                let p_str = p.as_os_str();
-                if p_str == "sink" {
+                if p == "sink" {
                     // sink is /dev/null
                     Box::new(io::sink())
                 } else if self.snappy {
@@ -742,22 +775,27 @@ impl Config {
     }
 }
 
-/// Determines the delimiter and compression status based on the file extension.
+/// Checks if a file path has a Snappy compression extension (.sz).
 ///
 /// # Arguments
 ///
 /// * `path` - A reference to the `Path` of the file.
-/// * `default_delim` - The default delimiter to use if not determined by extension.
 ///
 /// # Returns
 ///
-/// A tuple containing:
-/// * `String` - The lowercase file extension.
-/// * `u8` - The determined delimiter.
-/// * `bool` - Whether the file is Snappy-compressed.
+/// `true` if the file has a `.sz` extension (case-insensitive), `false` otherwise.
 ///
 /// # Details
 ///
+/// This function uses Rust's `Path::extension()` method which properly handles
+/// multiple extensions (e.g., `file.csv.sz` → `Some("sz")`). It performs
+/// case-insensitive comparison for robustness.
+#[inline]
+pub fn is_snappy_extension(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("sz"))
+}
+
 /// This function examines the file extension to determine:
 /// 1. The appropriate delimiter (tab for .tsv/.tab, semicolon for .ssv, comma for .csv).
 /// 2. Whether the file is Snappy-compressed (indicated by a .sz extension).
@@ -765,24 +803,21 @@ impl Config {
 ///
 /// If the file extension doesn't match known types, it returns the default delimiter.
 pub fn get_delim_by_extension(path: &Path, default_delim: u8) -> (String, u8, bool) {
-    let path_str = path.to_str().unwrap_or_default().to_ascii_lowercase();
-
-    // we already lowercased the path_str, so allow this false positive lint
-    #[allow(clippy::case_sensitive_file_extension_comparisons)]
-    let snappy = path_str.ends_with(".sz");
+    let snappy = is_snappy_extension(path);
 
     // Get the extension before .sz if it's a snappy file, otherwise get the normal extension
     let file_extension = if snappy {
-        path_str
-            .strip_suffix(".sz")
-            .and_then(|s| s.split('.').next_back())
+        // For snappy files like file.csv.sz, we need to get "csv"
+        // We can do this by getting the file stem, then checking its extension
+        path.file_stem()
+            .and_then(|stem| Path::new(stem).extension())
+            .and_then(|ext| ext.to_str())
             .unwrap_or("")
-            .to_string()
+            .to_ascii_lowercase()
     } else {
         path.extension()
-            .unwrap_or_default()
-            .to_str()
-            .unwrap()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("")
             .to_ascii_lowercase()
     };
 
@@ -943,5 +978,60 @@ mod tests {
         assert_eq!(ext, "");
         assert_eq!(delim, default_delim);
         assert!(!snappy);
+    }
+
+    #[test]
+    fn test_is_snappy_extension_lowercase() {
+        assert!(is_snappy_extension(Path::new("file.csv.sz")));
+        assert!(is_snappy_extension(Path::new("file.sz")));
+        assert!(is_snappy_extension(Path::new("file.tsv.sz")));
+    }
+
+    #[test]
+    fn test_is_snappy_extension_uppercase() {
+        assert!(is_snappy_extension(Path::new("file.csv.SZ")));
+        assert!(is_snappy_extension(Path::new("file.SZ")));
+    }
+
+    #[test]
+    fn test_is_snappy_extension_mixed_case() {
+        assert!(is_snappy_extension(Path::new("file.csv.Sz")));
+        assert!(is_snappy_extension(Path::new("file.sZ")));
+    }
+
+    #[test]
+    fn test_is_snappy_extension_not_snappy() {
+        assert!(!is_snappy_extension(Path::new("file.csv")));
+        assert!(!is_snappy_extension(Path::new("file.gz")));
+        assert!(!is_snappy_extension(Path::new("file")));
+        assert!(!is_snappy_extension(Path::new("file.sz.backup")));
+        // Test that extensions ending with "sz" but not exactly "sz" don't trigger detection
+        assert!(!is_snappy_extension(Path::new("file.esz")));
+        assert!(!is_snappy_extension(Path::new("file.KYpPcb8esz")));
+        assert!(!is_snappy_extension(Path::new("data.esz")));
+    }
+
+    #[test]
+    fn test_snappy_ssv_extension() {
+        let path = PathBuf::from("test.ssv.sz");
+        let (ext, delim, snappy) = get_delim_by_extension(&path, b',');
+        assert_eq!(ext, "ssv");
+        assert_eq!(delim, b';');
+        assert!(snappy);
+    }
+
+    #[test]
+    fn test_snappy_case_insensitive() {
+        let path = PathBuf::from("test.csv.SZ");
+        let (ext, delim, snappy) = get_delim_by_extension(&path, b',');
+        assert_eq!(ext, "csv");
+        assert_eq!(delim, b',');
+        assert!(snappy);
+
+        let path = PathBuf::from("test.TSV.sz");
+        let (ext, delim, snappy) = get_delim_by_extension(&path, b',');
+        assert_eq!(ext, "tsv");
+        assert_eq!(delim, b'\t');
+        assert!(snappy);
     }
 }

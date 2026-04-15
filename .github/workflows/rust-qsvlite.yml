@@ -16,22 +16,28 @@ env:
 
 jobs:
   build:
+    # Skip CI for MCP-only commits (commit message contains "(mcp):")
+    if: |
+      github.event_name != 'push' ||
+      !contains(github.event.head_commit.message, '(mcp):')
 
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: apt-get update Ubuntu, libwayland-dev
       run: |
         sudo apt-get update
         sudo apt-get install libwayland-dev
-    - name: Update Rust
-      run: rustup update
+    - name: Installing Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
     - name: Setup Rust-cache
       uses: Swatinem/rust-cache@v2
       with:
         key: qsvlite-cache
     - name: Run tests
-      env:
-        RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq
+      # env:
+      #   RUSTFLAGS: -C target-cpu=native
       run: cargo test --verbose --locked --features=lite

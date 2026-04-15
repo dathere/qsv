@@ -1,4 +1,4 @@
-These benchmarks are compiled on an Apple Mac Mini 2023 model with an M2 Pro chip with 12 CPU cores & 32GB of RAM; a 1TB SSD primary drive & a 1TB Samsung SSD 970 Evo plus external drive running macOS Sequoia 15.1 Developer Beta.
+These benchmarks are compiled on an Apple Mac Mini 2023 model with an M2 Pro chip with 12 CPU cores & 32GB of RAM; a 1TB SSD primary drive & a 1TB Samsung SSD 970 Evo plus external drive running the latest macOS at the time (see [run_info_history.tsv](run_info_history.tsv)).
 
 It uses the prebuilt, CPU optimized qsv binary variant in aarch64-apple-darwin.zip found at `https://github.com/dathere/qsv/releases/latest`.
 

@@ -253,3 +253,107 @@ fn headers_intersect_infile() {
     let expected = vec![["a"], ["b"], ["c"], ["d"], ["e"], ["f"], ["g"]];
     assert_eq!(got, expected);
 }
+
+#[test]
+fn headers_stdin_explicit() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("headers_stdin_explicit");
+
+    // Create test data
+    let rows = vec![svec!["h1", "h2", "h3"], svec!["a", "b", "c"]];
+    wrk.create("test_data.csv", rows);
+
+    // Set up command to read from stdin
+    let mut cmd = wrk.command("headers");
+    cmd.arg("-"); // Explicitly use stdin
+
+    // Set up stdin and stdout for the command
+    let stdin_data = wrk.read_to_string("test_data.csv").unwrap();
+    cmd.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+
+    // Run the command
+    let mut child = cmd.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    std::thread::spawn(move || {
+        stdin.write_all(stdin_data.as_bytes()).unwrap();
+    });
+
+    // Wait for the command to complete and capture output
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+
+    let got = String::from_utf8_lossy(&output.stdout);
+    let expected = "1   h1\n2   h2\n3   h3";
+    assert_eq!(got.trim(), expected);
+}
+
+#[test]
+fn headers_stdin_implicit() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("headers_stdin_implicit");
+
+    // Create test data
+    let rows = vec![svec!["col1", "col2"], svec!["x", "y"]];
+    wrk.create("test_data.csv", rows);
+
+    // Set up command WITHOUT explicit "-" argument (implicit stdin)
+    let mut cmd = wrk.command("headers");
+
+    // Set up stdin and stdout for the command
+    let stdin_data = wrk.read_to_string("test_data.csv").unwrap();
+    cmd.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+
+    // Run the command
+    let mut child = cmd.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    std::thread::spawn(move || {
+        stdin.write_all(stdin_data.as_bytes()).unwrap();
+    });
+
+    // Wait for the command to complete and capture output
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+
+    let got = String::from_utf8_lossy(&output.stdout);
+    let expected = "1   col1\n2   col2";
+    assert_eq!(got.trim(), expected);
+}
+
+#[test]
+fn headers_stdin_with_just_names() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("headers_stdin_with_just_names");
+
+    // Create test data
+    let rows = vec![svec!["name", "age", "city"], svec!["Alice", "30", "NYC"]];
+    wrk.create("test_data.csv", rows);
+
+    // Set up command to read from stdin with --just-names flag
+    let mut cmd = wrk.command("headers");
+    cmd.arg("--just-names");
+
+    // Set up stdin and stdout for the command
+    let stdin_data = wrk.read_to_string("test_data.csv").unwrap();
+    cmd.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+
+    // Run the command
+    let mut child = cmd.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    std::thread::spawn(move || {
+        stdin.write_all(stdin_data.as_bytes()).unwrap();
+    });
+
+    // Wait for the command to complete and capture output
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+
+    let got = String::from_utf8_lossy(&output.stdout);
+    let expected = "name\nage\ncity";
+    assert_eq!(got.trim(), expected);
+}

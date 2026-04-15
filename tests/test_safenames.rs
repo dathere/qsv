@@ -221,13 +221,10 @@ fn safenames_verify_verbose_pretty_json() {
     // the order of the duplicate headers is not guaranteed as we use a HashMap
     // so we need to check for both possible orders
     let expected = r#"{
-  "header_count": 13,
-  "duplicate_count": 2,
-  "duplicate_headers": [
-    ":4",
-    "col1:5"
-  ],
-  "unsafe_headers": [
+  "header_count": 13,"duplicate_count": 2,"duplicate_headers": [
+    "col1:5",
+    ":4"
+  ],"unsafe_headers": [
     " This is a column with invalid chars!# and leading & trailing spaces ",
     "",
     "this is already a Postgres Safe Column",
@@ -236,20 +233,16 @@ fn safenames_verify_verbose_pretty_json() {
     "",
     "",
     "_1"
-  ],
-  "safe_headers": [
+  ],"safe_headers": [
     "col1"
   ]
 }"#;
 
     let expected2 = r#"{
-  "header_count": 13,
-  "duplicate_count": 2,
-  "duplicate_headers": [
-    "col1:5",
-    ":4"
-  ],
-  "unsafe_headers": [
+  "header_count": 13,"duplicate_count": 2,"duplicate_headers": [
+    ":4",
+    "col1:5"
+  ],"unsafe_headers": [
     " This is a column with invalid chars!# and leading & trailing spaces ",
     "",
     "this is already a Postgres Safe Column",
@@ -258,13 +251,10 @@ fn safenames_verify_verbose_pretty_json() {
     "",
     "",
     "_1"
-  ],
-  "safe_headers": [
+  ],"safe_headers": [
     "col1"
   ]
 }"#;
-
-    // assert_eq!(got, expected);
     assert!(got == expected || got == expected2);
 
     wrk.assert_success(&mut cmd);

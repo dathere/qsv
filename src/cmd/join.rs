@@ -375,7 +375,7 @@ impl<R: io::Read + io::Seek, W: io::Write> IoState<R, W> {
         let mut row1 = csv::ByteRecord::new();
         let rdr2_has_headers = self.rdr2.has_headers();
         while self.rdr1.read_byte_record(&mut row1)? {
-            self.rdr2.seek(pos.clone())?;
+            self.rdr2.seek(pos)?;
             if rdr2_has_headers {
                 // Read and skip the header row, since CSV readers disable
                 // the header skipping logic after being seeked.
@@ -401,11 +401,11 @@ impl Args {
     ) -> CliResult<IoState<Box<dyn SeekRead + 'static>, Box<dyn io::Write + 'static>>> {
         let rconf1 = Config::new(Some(self.arg_input1.clone()).as_ref())
             .delimiter(self.flag_delimiter)
-            .no_headers(self.flag_no_headers)
+            .no_headers_flag(self.flag_no_headers)
             .select(self.arg_columns1.clone());
         let rconf2 = Config::new(Some(self.arg_input2.clone()).as_ref())
             .delimiter(self.flag_delimiter)
-            .no_headers(self.flag_no_headers)
+            .no_headers_flag(self.flag_no_headers)
             .select(self.arg_columns2.clone());
 
         let mut rdr1 = match rconf1.reader_file_stdin() {
@@ -596,7 +596,7 @@ impl<R> fmt::Debug for ValueIndex<R> {
             // This is just for debugging, so assume Unicode for now.
             let keys = keys
                 .iter()
-                .map(|k| String::from_utf8(k.clone()).unwrap())
+                .map(|k| String::from_utf8_lossy(k).into_owned())
                 .collect::<Vec<_>>();
             writeln!(f, "({}) => {rows:?}", keys.join(", "))?;
         }

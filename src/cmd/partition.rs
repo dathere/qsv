@@ -7,11 +7,15 @@ by kb-size.
 The files are written to the output directory with filenames based on the
 values in the partition column and the `--filename` flag.
 
+Note: To account for case-insensitive file system collisions (e.g. macOS APFS
+and Windows NTFS), the command will add a number suffix to the filename if the
+value is already in use.
+
 EXAMPLE:
 
 Partition nyc311.csv file into separate files based on the value of the
 "Borough" column in the current directory:
-    $ qsv partition Borough . --filename "nyc311-{}.csv" nyc311.csv
+  $ qsv partition Borough . --filename "nyc311-{}.csv" nyc311.csv
 
 will create the following files, each containing the data for each borough:
     nyc311-Bronx.csv
@@ -46,6 +50,15 @@ partition options:
                              specified number of bytes when creating the
                              output file.
     --drop                   Drop the partition column from results.
+    --limit <n>              Limit the number of simultaneously open files.
+                             Useful for partitioning large datasets with many
+                             unique values to avoid "too many open files" errors.
+                             Data is processed in batches until all unique values
+                             are processed.
+                             If not set, it will be automatically set to the
+                             system limit with a 10% safety margin.
+                             If set to 0, it will process all data at once,
+                             regardless of the system's open files limit.
 
 Common options:
     -h, --help               Display this message
@@ -56,23 +69,22 @@ Common options:
                              Must be a single character. (default: ,)
 "#;
 
-use std::{
-    collections::{HashSet, hash_map::Entry},
-    fs, io,
-    path::Path,
-};
+use std::{fs, io, path::Path};
 
-use foldhash::{HashMap, HashMapExt};
+use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use regex::Regex;
 use serde::Deserialize;
+use sysinfo::System;
 
 use crate::{
     CliResult,
     config::{Config, Delimiter},
+    regex_oncelock,
     select::SelectColumns,
     util::{self, FilenameTemplate},
 };
 
+#[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Deserialize)]
 struct Args {
     arg_column:         SelectColumns,
@@ -83,10 +95,36 @@ struct Args {
     flag_drop:          bool,
     flag_no_headers:    bool,
     flag_delimiter:     Option<Delimiter>,
+    flag_limit:         Option<usize>,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
-    let args: Args = util::get_args(USAGE, argv)?;
+    let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // if no input file is provided, use stdin and save to a temp file
+    if args.arg_input.is_none() {
+        // Get or initialize temp directory that persists until program exit
+        let temp_dir =
+            crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep());
+
+        // Create a temporary file with .csv extension to store stdin input
+        let mut temp_file = tempfile::Builder::new()
+            .suffix(".csv")
+            .tempfile_in(temp_dir)?;
+        io::copy(&mut io::stdin(), &mut temp_file)?;
+
+        // Get path as string, unwrap is safe as temp files are always valid UTF-8
+        let temp_path = temp_file.path().to_str().unwrap().to_string();
+
+        // Keep temp file from being deleted when it goes out of scope
+        // it will be deleted when the program exits when TEMP_FILE_DIR is deleted
+        temp_file
+            .keep()
+            .map_err(|e| format!("Failed to keep temporary stdin file: {e}"))?;
+
+        args.arg_input = Some(temp_path);
+    }
+
     fs::create_dir_all(&args.arg_outdir)?;
 
     // It would be nice to support efficient parallel partitions, but doing
@@ -101,7 +139,7 @@ impl Args {
     fn rconfig(&self) -> Config {
         Config::new(self.arg_input.as_ref())
             .delimiter(self.flag_delimiter)
-            .no_headers(self.flag_no_headers)
+            .no_headers_flag(self.flag_no_headers)
             .select(self.arg_column.clone())
     }
 
@@ -116,55 +154,183 @@ impl Args {
         }
     }
 
-    /// A basic sequential partition.
-    fn sequential_partition(&self) -> CliResult<()> {
+    /// A basic sequential partition with optional batching for file limit.
+    fn sequential_partition(&mut self) -> CliResult<()> {
         let rconfig = self.rconfig();
         let mut rdr = rconfig.reader()?;
         let headers = rdr.byte_headers()?.clone();
         let key_col = self.key_column(&rconfig, &headers)?;
-        let mut r#gen = WriterGenerator::new(self.flag_filename.clone());
+        let mut writer_gen = WriterGenerator::new(self.flag_filename.clone());
 
+        // default to 256 if no limit is set or sysinfo cannot get the limit
+        let sys_limit = System::open_files_limit().unwrap_or(256);
+
+        // If no limit is specified, get the system limit and set the limit to 90% of it
+        if let Some(limit) = self.flag_limit {
+            if limit == 0 {
+                return self.process_all_data(&mut rdr, &headers, key_col, &mut writer_gen);
+            }
+
+            if limit > sys_limit {
+                return fail_incorrectusage_clierror!(
+                    "Limit is greater than system limit ({limit} > {sys_limit})"
+                );
+            }
+        } else {
+            // 90% of the system limit with 10% safety margin
+            let auto_limit = (sys_limit * 9) / 10;
+            log::info!(
+                "Auto-setting limit to {auto_limit} based on system limit with 10% safety margin"
+            );
+            self.flag_limit = Some(auto_limit);
+        }
+
+        // Process data in batches to respect the file limit
+        if let Some(limit) = self.flag_limit
+            && limit != 0
+        {
+            return self.process_in_batches(&mut rdr, &headers, key_col, &mut writer_gen);
+        }
+
+        // Otherwise, process all data at once
+        self.process_all_data(&mut rdr, &headers, key_col, &mut writer_gen)
+    }
+
+    /// Process all data at once (original behavior when no limit is specified).
+    fn process_all_data(
+        &self,
+        rdr: &mut csv::Reader<Box<dyn io::Read + Send>>,
+        headers: &csv::ByteRecord,
+        key_col: usize,
+        r#gen: &mut WriterGenerator,
+    ) -> CliResult<()> {
         let mut writers: HashMap<Vec<u8>, BoxedWriter> = HashMap::new();
         let mut row = csv::ByteRecord::new();
+
         while rdr.read_byte_record(&mut row)? {
-            // Decide what file to put this in.
+            self.process_row(&mut writers, &row, key_col, headers, r#gen)?;
+        }
+
+        // Final flush of all writers
+        for (_, mut writer) in writers {
+            writer.flush()?;
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    /// Process data in batches to respect the file limit.
+    /// Uses a two-pass strategy: first pass to collect all unique keys,
+    /// then process in batches that don't exceed the limit.
+    fn process_in_batches(
+        &self,
+        _rdr: &mut csv::Reader<Box<dyn io::Read + Send>>,
+        headers: &csv::ByteRecord,
+        key_col: usize,
+        writer_gen: &mut WriterGenerator,
+    ) -> CliResult<()> {
+        let limit = self.flag_limit.unwrap();
+
+        // First pass: collect all unique keys
+        let mut unique_keys = HashSet::new();
+        let mut row = csv::ByteRecord::new();
+
+        // Reset reader to beginning
+        let mut rdr = self.rconfig().reader()?;
+        let _ = rdr.byte_headers()?; // Skip headers
+
+        while rdr.read_byte_record(&mut row)? {
             let column = &row[key_col];
             let key = match self.flag_prefix_length {
-                // We exceed --prefix-length, so ignore the extra bytes.
                 Some(len) if len < column.len() => &column[0..len],
                 _ => column,
             };
-            let mut entry = writers.entry(key.to_vec());
-            let wtr =
-                match entry {
-                    Entry::Occupied(ref mut occupied) => occupied.get_mut(),
-                    Entry::Vacant(vacant) => {
-                        // We have a new key, so make a new writer.
-                        let mut wtr = r#gen.writer(&*self.arg_outdir, key)?;
-                        if !rconfig.no_headers {
-                            if self.flag_drop {
-                                wtr.write_record(headers.iter().enumerate().filter_map(
-                                    |(i, e)| if i == key_col { None } else { Some(e) },
-                                ))?;
-                            } else {
-                                wtr.write_record(&headers)?;
-                            }
-                        }
-                        vacant.insert(wtr)
-                    },
+            unique_keys.insert(key.to_vec());
+        }
+
+        // Convert to sorted vector for consistent processing
+        let mut sorted_keys: Vec<_> = unique_keys.into_iter().collect();
+        sorted_keys.sort_unstable();
+
+        // Process in batches that don't exceed the limit
+        for chunk in sorted_keys.chunks(limit) {
+            let mut writers: HashMap<Vec<u8>, BoxedWriter> = HashMap::with_capacity(chunk.len());
+
+            // Reset reader for this batch
+            let mut rdr = self.rconfig().reader()?;
+            let _ = rdr.byte_headers()?; // Skip headers
+
+            while rdr.read_byte_record(&mut row)? {
+                let column = &row[key_col];
+                let key = match self.flag_prefix_length {
+                    Some(len) if len < column.len() => &column[0..len],
+                    _ => column,
                 };
-            if self.flag_drop {
-                wtr.write_record(
-                    row.iter().enumerate().filter_map(
-                        |(i, e)| {
-                            if i == key_col { None } else { Some(e) }
-                        },
-                    ),
-                )?;
-            } else {
-                wtr.write_byte_record(&row)?;
+                let key_vec = key.to_vec();
+
+                // Only process rows for keys in this batch
+                if chunk.contains(&key_vec) {
+                    self.process_row(&mut writers, &row, key_col, headers, writer_gen)?;
+                }
             }
-            wtr.flush()?;
+
+            // Flush all writers in this batch
+            for (_, mut writer) in writers {
+                writer.flush()?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Process a single row and write it to the appropriate writer.
+    fn process_row(
+        &self,
+        writers: &mut HashMap<Vec<u8>, BoxedWriter>,
+        row: &csv::ByteRecord,
+        key_col: usize,
+        headers: &csv::ByteRecord,
+        writer_gen: &mut WriterGenerator,
+    ) -> CliResult<()> {
+        let column = &row[key_col];
+        let key = match self.flag_prefix_length {
+            Some(len) if len < column.len() => &column[0..len],
+            _ => column,
+        };
+        let key_vec = key.to_vec();
+
+        let wtr = if let Some(writer) = writers.get_mut(&key_vec) {
+            writer
+        } else {
+            // We have a new key, so make a new writer.
+            let mut wtr = writer_gen.writer(&*self.arg_outdir, key)?;
+            if !self.flag_no_headers {
+                if self.flag_drop {
+                    wtr.write_record(
+                        headers
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, e)| if i == key_col { None } else { Some(e) }),
+                    )?;
+                } else {
+                    wtr.write_record(headers)?;
+                }
+            }
+            writers.insert(key_vec.clone(), wtr);
+            // safety: we just inserted the key into the map, so it must be present
+            unsafe { writers.get_mut(&key_vec).unwrap_unchecked() }
+        };
+
+        if self.flag_drop {
+            wtr.write_record(
+                row.iter().enumerate().filter_map(
+                    |(i, e)| {
+                        if i == key_col { None } else { Some(e) }
+                    },
+                ),
+            )?;
+        } else {
+            wtr.write_byte_record(row)?;
         }
         Ok(())
     }
@@ -186,7 +352,7 @@ impl WriterGenerator {
             template,
             counter: 1,
             used: HashSet::new(),
-            non_word_char: Regex::new(r"\W").unwrap(),
+            non_word_char: regex_oncelock!(r"\W").clone(),
         }
     }
 
@@ -201,28 +367,45 @@ impl WriterGenerator {
 
     /// Generate a unique value for `key`, suitable for use in a
     /// "shell-safe" filename.  If you pass `key` twice, you'll get two
-    /// different values.
+    /// different values. Also handles case-insensitive file system collisions.
     fn unique_value(&mut self, key: &[u8]) -> String {
         // Sanitize our key.
-        let utf8 = String::from_utf8_lossy(key);
-        let safe = self.non_word_char.replace_all(&utf8, "").into_owned();
+        let safe = self
+            .non_word_char
+            .replace_all(&String::from_utf8_lossy(key), "")
+            .into_owned();
         let base = if safe.is_empty() {
             "empty".to_owned()
         } else {
             safe
         };
 
-        // Now check for collisions.
-        if self.used.contains(&base) {
+        // Check for both exact and case-insensitive collisions
+        // to ensure uniqueness on case-insensitive file systems
+        let base_lower = base.to_lowercase();
+        let has_collision = self.used.contains(&base)
+            || self
+                .used
+                .iter()
+                .any(|used| used.to_lowercase() == base_lower);
+
+        if has_collision {
             loop {
                 let candidate = format!("{}_{}", &base, self.counter);
-                self.counter = self.counter.checked_add(1).unwrap_or_else(|| {
-                    // We'll run out of other things long before we ever
-                    // reach this, but we'll check just for correctness and
-                    // completeness.
-                    panic!("Cannot generate unique value")
-                });
-                if !self.used.contains(&candidate) {
+                let candidate_lower = candidate.to_lowercase();
+
+                // We'll run out of other things long before we ever
+                // get a panic with strict_add
+                self.counter = self.counter.strict_add(1);
+
+                // Check for both exact and case-insensitive collisions
+                let candidate_has_collision = self.used.contains(&candidate)
+                    || self
+                        .used
+                        .iter()
+                        .any(|used| used.to_lowercase() == candidate_lower);
+
+                if !candidate_has_collision {
                     self.used.insert(candidate.clone());
                     return candidate;
                 }

@@ -1,0 +1,1421 @@
+#![allow(clippy::needless_continue, clippy::ref_as_ptr, clippy::unused_self)]
+// qsv MCP Skills Generator - Generate Agent Skills from qsv command USAGE text
+//
+// This module parses USAGE text from qsv commands and generates Agent Skill
+// definitions in JSON format for use with Claude Desktop (MCP) and the Claude Agent SDK.
+//
+// Uses qsv-docopt Parser for robust USAGE text parsing.
+
+use std::{fs, path::Path};
+
+use foldhash::{HashMap, HashMapExt};
+use qsv_docopt::parse::{Argument as DocoptArgument, Atom, Parser};
+use serde::{Deserialize, Serialize};
+
+use crate::{CliResult, regex_oncelock};
+
+const MAX_ITERATIONS: usize = 100; // Prevent infinite loops
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SkillDefinition {
+    name:        String,
+    version:     String,
+    /// Concise description from README.md command table
+    /// For detailed help, use `qsv <command> --help` via the qsv_help tool
+    description: String,
+    category:    String,
+    command:     CommandSpec,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hints:       Option<BehavioralHints>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    examples:    Vec<Example>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CommandSpec {
+    subcommand: String,
+    args:       Vec<Argument>,
+    options:    Vec<Option_>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Argument {
+    name:        String,
+    #[serde(rename = "type")]
+    arg_type:    String,
+    required:    bool,
+    description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    r#enum:      Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Option_ {
+    flag:        String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    short:       Option<String>,
+    #[serde(rename = "type")]
+    option_type: String,
+    description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default:     Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct BehavioralHints {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    indexed: Option<bool>,
+    memory:  String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Example {
+    description: String,
+    command:     String,
+}
+
+struct UsageParser {
+    usage_text:   String,
+    command_name: String,
+}
+
+impl UsageParser {
+    const fn new(usage_text: String, command_name: String) -> Self {
+        Self {
+            usage_text,
+            command_name,
+        }
+    }
+
+    fn parse(&self) -> Result<SkillDefinition, String> {
+        // Extract concise description from README.md command table
+        // Falls back to first sentence of USAGE text if not found in README
+        let description = Self::extract_short_description_from_readme(&self.command_name)
+            .unwrap_or_else(|| {
+                // Fallback: extract first sentence from USAGE text
+                self.extract_description().map_or_else(
+                    |_| format!("{} command", self.command_name),
+                    |d| d.split('.').next().unwrap_or(&d).trim().to_string() + ".",
+                )
+            });
+
+        // Use qsv-docopt Parser to parse USAGE text
+        let (args, options) = self.parse_with_docopt()?;
+
+        let hints = self.extract_hints();
+        let category = self.infer_category();
+        // Skip examples for commands whose CLI examples reference MCP-stripped options
+        // (e.g., describegpt examples use --api-key, --base-url, --prompt which are
+        // not available in MCP mode). Empty examples lets the guidance hints in
+        // mcp-tools.ts drive agent behavior instead.
+        let skip_examples = ["describegpt"];
+        let examples = if skip_examples.contains(&self.command_name.as_str()) {
+            Vec::new()
+        } else {
+            self.extract_examples()
+        };
+
+        Ok(SkillDefinition {
+            name: format!("qsv-{}", self.command_name),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            description,
+            category,
+            command: CommandSpec {
+                subcommand: self.command_name.clone(),
+                args,
+                options,
+            },
+            hints,
+            examples,
+        })
+    }
+
+    /// Extract positional argument names in order from USAGE lines.
+    /// Uses the variant with the most positional args as the base order,
+    /// then appends any additional args from other variants.
+    /// This ensures correct ordering (e.g., validate: <input> before <json-schema>).
+    fn extract_arg_order_from_usage(&self) -> Vec<String> {
+        // Match positional <args> including docopt's (< >) required syntax,
+        // but NOT option args that follow --flag or -f
+        let positional_re = regex_oncelock!(r"(?:^|\s)[(\[]?<([^>]+)>[)\]]?");
+        let option_arg_re = regex_oncelock!(r"--?\w[\w-]*\s+(?:\[)?<([^>]+)>(?:\])?");
+
+        // Collect args per usage line (positional only, excluding option args)
+        let mut per_line_args: Vec<Vec<String>> = Vec::new();
+        for line in self
+            .usage_text
+            .lines()
+            .skip_while(|l| !l.contains("Usage:"))
+            // Skip "Usage:" line
+            .skip(1)
+        {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || (!trimmed.contains("qsv") && !trimmed.ends_with("--help")) {
+                break;
+            }
+            if trimmed.ends_with("--help") {
+                continue;
+            }
+
+            // Collect option arg names to exclude
+            let option_args: std::collections::HashSet<String> = option_arg_re
+                .captures_iter(line)
+                .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+                .collect();
+
+            let args: Vec<String> = positional_re
+                .captures_iter(line)
+                .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+                .filter(|name| !option_args.contains(name))
+                .collect();
+            if !args.is_empty() {
+                per_line_args.push(args);
+            }
+        }
+
+        // Use the variant with the most positional args as the base order
+        let base = per_line_args
+            .iter()
+            .max_by_key(|args| args.len())
+            .cloned()
+            .unwrap_or_default();
+
+        let mut arg_order = base;
+        let mut seen: std::collections::HashSet<String> = arg_order.iter().cloned().collect();
+
+        // Append any additional args from other variants not in the base
+        for line_args in &per_line_args {
+            for arg in line_args {
+                if seen.insert(arg.clone()) {
+                    arg_order.push(arg.clone());
+                }
+            }
+        }
+
+        arg_order
+    }
+
+    /// Detect which positional args are optional.
+    /// An arg is optional if:
+    ///   1. It's wrapped in brackets: `[<arg>]` or `[<arg>...]`
+    ///   2. It appears in some usage variants but not all (multi-variant optionality, e.g., pivotp
+    ///      has `<on-cols>` in one variant but not another)
+    fn extract_optional_args_from_usage(&self) -> std::collections::HashSet<String> {
+        let mut optional_args = std::collections::HashSet::new();
+
+        // Regex for bracket-wrapped args: [<argname>] and [<argname>...]
+        let bracket_re = regex::Regex::new(r"\[<([^>]+)>(?:\.\.\.)?\]").unwrap();
+        // Regex for ALL positional args (both bracketed and bare)
+        let all_args_re = regex::Regex::new(r"(?:\[)?<([^>]+)>(?:\])?").unwrap();
+
+        // Collect usage lines (non-help, non-blank)
+        let usage_lines: Vec<&str> = self
+            .usage_text
+            .lines()
+            .skip_while(|l| !l.contains("Usage:"))
+            .skip(1)
+            .take_while(|l| {
+                let t = l.trim();
+                !t.is_empty() && (t.contains("qsv") || t.ends_with("--help"))
+            })
+            .filter(|l| !l.trim().ends_with("--help"))
+            .collect();
+
+        // 1. Bracket-wrapped args are always optional
+        for line in &usage_lines {
+            for cap in bracket_re.captures_iter(line) {
+                if let Some(arg_name) = cap.get(1) {
+                    let name = arg_name.as_str().trim_end_matches("...");
+                    optional_args.insert(name.to_string());
+                }
+            }
+        }
+
+        // 2. Multi-variant optionality: args that appear in some lines but not all
+        if usage_lines.len() > 1 {
+            // Collect all unique arg names across all variants
+            let mut all_args = std::collections::HashSet::new();
+            for line in &usage_lines {
+                for cap in all_args_re.captures_iter(line) {
+                    if let Some(arg_name) = cap.get(1) {
+                        all_args.insert(arg_name.as_str().to_string());
+                    }
+                }
+            }
+
+            // An arg is optional if it doesn't appear in every usage line
+            for arg_name in &all_args {
+                let appears_in_all = usage_lines.iter().all(|line| {
+                    let pattern = format!("<{arg_name}>");
+                    line.contains(&pattern)
+                });
+                if !appears_in_all {
+                    optional_args.insert(arg_name.clone());
+                }
+            }
+        }
+
+        optional_args
+    }
+
+    /// Parse USAGE text using qsv-docopt Parser for robust parsing
+    fn parse_with_docopt(&self) -> Result<(Vec<Argument>, Vec<Option_>), String> {
+        // Parse USAGE text with docopt
+        let parser =
+            Parser::new(&self.usage_text).map_err(|e| format!("Docopt parsing failed: {e}"))?;
+
+        let mut args_map = HashMap::new();
+        let mut options = Vec::new();
+        let mut subcommands = Vec::new();
+
+        // Detect which positional args are optional (wrapped in [] in USAGE text)
+        let optional_args = self.extract_optional_args_from_usage();
+
+        // Also parse manually to get descriptions
+        let manual_descriptions = self.extract_descriptions_from_text();
+
+        // Per-command option skip list for MCP
+        // These options are not relevant when using the command through MCP
+        let command_skip_options: HashMap<&str, &[&str]> = HashMap::from_iter([
+            (
+                "describegpt",
+                [
+                    "--prompt",
+                    "--sql-results",
+                    "--session",
+                    "--session-len",
+                    "--fewshot-examples",
+                    "--sample-size",
+                    "--base-url",
+                    "--model",
+                    "--max-tokens",
+                    "--timeout",
+                    "--addl-props",
+                    "--export-prompt",
+                    "--prepare-context",
+                    "--process-response",
+                    "--prompt-file",
+                    "--ckan-api",
+                    "--cache-dir",
+                ]
+                .as_slice(),
+            ),
+            ("index", ["--output"].as_slice()),
+        ]);
+
+        // Iterate over parsed atoms from docopt
+        for (atom, opts) in parser.descs.iter() {
+            match atom {
+                Atom::Short(c) => {
+                    // Short flag like -d
+                    let flag_str = format!("-{c}");
+
+                    // Look for corresponding long flag
+                    let long_flag = parser
+                        .descs
+                        .iter()
+                        .find(|(a, o)| {
+                            // Check if this long flag is a synonym of the short flag
+                            // by comparing pointer equality or field values
+                            matches!(a, Atom::Long(_))
+                                && std::ptr::eq(*o as *const _, opts as *const _)
+                        })
+                        .and_then(|(a, _)| {
+                            if let Atom::Long(s) = a {
+                                Some(format!("--{s}"))
+                            } else {
+                                None
+                            }
+                        });
+
+                    // Use long flag as primary, or short if no long flag
+                    let primary_flag = long_flag.clone().unwrap_or_else(|| flag_str.clone());
+
+                    // Skip if we already added this as a long flag
+                    if options.iter().any(|o: &Option_| o.flag == primary_flag) {
+                        continue;
+                    }
+
+                    // Skip options not relevant for AI agents using MCP
+                    // --quiet: suppresses stderr output (not useful for agents)
+                    // --help: universally available for all commands (handled by MCP server)
+                    // --progressbar: visual terminal output (not useful for agents)
+                    // --user-agent: infrastructure setting (set via environment)
+                    // --redis-cache: infrastructure setting (set via environment)
+                    // --jobs: infrastructure setting (auto-detected or set via environment)
+                    // --api-key: sensitive credential (set via environment)
+                    // --ckan-token: sensitive credential (set via environment)
+                    if matches!(
+                        primary_flag.as_str(),
+                        "--quiet"
+                            | "--help"
+                            | "--progressbar"
+                            | "--user-agent"
+                            | "--redis-cache"
+                            | "--jobs"
+                            | "--api-key"
+                            | "--ckan-token"
+                    ) {
+                        continue;
+                    }
+                    if (flag_str == "-q" && long_flag.as_deref() == Some("--quiet"))
+                        || (flag_str == "-h" && long_flag.as_deref() == Some("--help"))
+                        || (flag_str == "-j" && long_flag.as_deref() == Some("--jobs"))
+                    {
+                        continue;
+                    }
+
+                    // Skip per-command options not relevant for MCP
+                    if command_skip_options
+                        .get(self.command_name.as_str())
+                        .is_some_and(|skips| skips.contains(&primary_flag.as_str()))
+                    {
+                        continue;
+                    }
+
+                    let option_type = match &opts.arg {
+                        DocoptArgument::Zero => "flag",
+                        DocoptArgument::One(_) => {
+                            // Check if it's a number type
+                            let desc = manual_descriptions
+                                .get(&primary_flag)
+                                .or_else(|| manual_descriptions.get(&flag_str))
+                                .map_or("", std::string::String::as_str);
+                            if desc.contains("<number>") || desc.contains("<int>") {
+                                "number"
+                            } else {
+                                "string"
+                            }
+                        },
+                    };
+
+                    let mut description = manual_descriptions
+                        .get(&primary_flag)
+                        .or_else(|| manual_descriptions.get(&flag_str))
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let default = match &opts.arg {
+                        DocoptArgument::One(Some(d)) => Some(d.clone()),
+                        _ => self.extract_default_value(&description),
+                    };
+
+                    // Strip redundant [default: ...] from description if we have a default value
+                    if default.is_some() {
+                        description = Self::strip_default_from_description(&description);
+                    }
+
+                    options.push(Option_ {
+                        flag: primary_flag,
+                        short: long_flag.and(Some(flag_str)),
+                        option_type: option_type.to_string(),
+                        description,
+                        default,
+                    });
+                },
+                Atom::Long(name) => {
+                    let flag_str = format!("--{name}");
+
+                    // Skip if already processed
+                    if options.iter().any(|o| o.flag == flag_str) {
+                        continue;
+                    }
+
+                    // Skip options not relevant for AI agents using MCP
+                    // --quiet: suppresses stderr output (not useful for agents)
+                    // --help: universally available for all commands (handled by MCP server)
+                    // --progressbar: visual terminal output (not useful for agents)
+                    // --user-agent: infrastructure setting (set via environment)
+                    // --redis-cache: infrastructure setting (set via environment)
+                    // --jobs: infrastructure setting (auto-detected or set via environment)
+                    // --api-key: sensitive credential (set via environment)
+                    // --ckan-token: sensitive credential (set via environment)
+                    if matches!(
+                        flag_str.as_str(),
+                        "--quiet"
+                            | "--help"
+                            | "--progressbar"
+                            | "--user-agent"
+                            | "--redis-cache"
+                            | "--jobs"
+                            | "--api-key"
+                            | "--ckan-token"
+                    ) {
+                        continue;
+                    }
+
+                    // Skip per-command options not relevant for MCP
+                    if command_skip_options
+                        .get(self.command_name.as_str())
+                        .is_some_and(|skips| skips.contains(&flag_str.as_str()))
+                    {
+                        continue;
+                    }
+
+                    // Find corresponding short flag if any
+                    let short_flag = parser
+                        .descs
+                        .iter()
+                        .find(|(a, o)| {
+                            matches!(a, Atom::Short(_))
+                                && std::ptr::eq(*o as *const _, opts as *const _)
+                        })
+                        .and_then(|(a, _)| {
+                            if let Atom::Short(c) = a {
+                                Some(format!("-{c}"))
+                            } else {
+                                None
+                            }
+                        });
+
+                    let option_type = match &opts.arg {
+                        DocoptArgument::Zero => "flag",
+                        DocoptArgument::One(_) => {
+                            let desc = manual_descriptions
+                                .get(&flag_str)
+                                .map_or("", std::string::String::as_str);
+                            if desc.contains("<number>") || desc.contains("<int>") {
+                                "number"
+                            } else {
+                                "string"
+                            }
+                        },
+                    };
+
+                    let mut description = manual_descriptions
+                        .get(&flag_str)
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let default = match &opts.arg {
+                        DocoptArgument::One(Some(d)) => Some(d.clone()),
+                        _ => self.extract_default_value(&description),
+                    };
+
+                    // Strip redundant [default: ...] from description if we have a default value
+                    if default.is_some() {
+                        description = Self::strip_default_from_description(&description);
+                    }
+
+                    options.push(Option_ {
+                        flag: flag_str,
+                        short: short_flag,
+                        option_type: option_type.to_string(),
+                        description,
+                        default,
+                    });
+                },
+                Atom::Positional(name) => {
+                    // Positional argument like <input>
+                    let arg_name = name.clone();
+                    let description = manual_descriptions
+                        .get(&format!("<{name}>"))
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let arg_type = self.infer_argument_type(&arg_name, &description);
+
+                    args_map.insert(
+                        arg_name.clone(),
+                        Argument {
+                            name: arg_name.clone(),
+                            arg_type,
+                            required: !opts.arg.has_default()
+                                && !optional_args.contains(&arg_name), // Also check USAGE [] syntax
+                            description,
+                            r#enum: None,
+                        },
+                    );
+                },
+                Atom::Command(cmd_name) => {
+                    // Collect subcommand names (e.g., "rows", "rowskey", "columns" for cat command)
+                    // Skip the main command name itself (e.g., skip "cat" when parsing cat command)
+                    // Also skip "--" which is just a docopt separator, not a real subcommand
+                    // Skip geocode's "index-*" subcommands (index-check, index-update, index-load,
+                    // index-reset) as these are infrastructure commands not useful for AI agents
+                    let is_geocode_index_cmd =
+                        self.command_name == "geocode" && cmd_name.starts_with("index-");
+                    if cmd_name != &self.command_name && cmd_name != "--" && !is_geocode_index_cmd {
+                        subcommands.push(cmd_name.clone());
+                    }
+                },
+            }
+        }
+
+        // If subcommands were found, create a special "subcommand" argument
+        // This should be the first argument in the list
+        if !subcommands.is_empty() {
+            // Sort subcommands alphabetically for deterministic output
+            subcommands.sort_unstable();
+
+            // Extract description for subcommands from USAGE text
+            let subcommand_desc = self.extract_subcommand_description(&subcommands);
+
+            // Check if subcommand is optional by looking for usage patterns without it
+            // e.g., "qsv validate [options] [<input>...]" alongside "qsv validate schema ..."
+            let subcommand_optional = self.is_subcommand_optional(&subcommands);
+
+            // Create subcommand argument with enum of valid values
+            let subcommand_arg = Argument {
+                name:        "subcommand".to_string(),
+                arg_type:    "string".to_string(),
+                required:    !subcommand_optional, // Usually required, but can be optional
+                description: subcommand_desc,
+                r#enum:      Some(subcommands),
+            };
+
+            // Insert at the beginning of args_map (will be reordered below)
+            args_map.insert("subcommand".to_string(), subcommand_arg);
+        }
+
+        // Reorder args based on their appearance in the USAGE line
+        let arg_order = self.extract_arg_order_from_usage();
+        let mut args = Vec::new();
+
+        // If we have subcommands, add the subcommand argument first
+        if let Some(subcommand_arg) = args_map.remove("subcommand") {
+            args.push(subcommand_arg);
+        }
+
+        // Then add other args in their USAGE order
+        for arg_name in arg_order {
+            if let Some(arg) = args_map.remove(&arg_name) {
+                args.push(arg);
+            }
+        }
+
+        // Append any remaining positional args that docopt parsed but weren't
+        // found in any USAGE line (safety net against silently dropping args)
+        if !args_map.is_empty() {
+            let mut remaining: Vec<_> = args_map.into_values().collect();
+            remaining.sort_by(|a, b| a.name.cmp(&b.name));
+            args.extend(remaining);
+        }
+
+        // Sort options for consistent output
+        options.sort_by(|a, b| a.flag.cmp(&b.flag));
+
+        Ok((args, options))
+    }
+
+    /// Check if subcommand is optional by looking for usage patterns without subcommands
+    /// e.g., validate command has both "qsv validate schema" and "qsv validate [<input>]"
+    fn is_subcommand_optional(&self, subcommands: &[String]) -> bool {
+        // Look for usage lines that don't include any subcommand
+        // These indicate the command can run without a subcommand
+        let usage_lines: Vec<&str> = self
+            .usage_text
+            .lines()
+            .skip_while(|l| !l.contains("Usage:"))
+            .skip(1) // Skip "Usage:" line itself
+            .take_while(|l| {
+                !l.trim().is_empty() && !l.contains("options:") && !l.contains("arguments:")
+            })
+            .collect();
+
+        // Check if any usage line has the command name but no subcommands
+        for line in usage_lines {
+            // Skip the --help line as it's not a real usage pattern
+            if line.contains("--help") {
+                continue;
+            }
+
+            // Skip geocode's "index-*" usage lines as those subcommands are excluded
+            if self.command_name == "geocode" && line.contains("index-") {
+                continue;
+            }
+
+            if line.contains(&format!("qsv {}", self.command_name)) {
+                // Check if this line contains any of the subcommand names
+                let has_subcommand = subcommands.iter().any(|sub| line.contains(sub));
+
+                // If line has the command but no subcommand, then subcommands are optional
+                if !has_subcommand {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Extract description for subcommand argument
+    /// Creates a helpful description listing available subcommands
+    fn extract_subcommand_description(&self, subcommands: &[String]) -> String {
+        if subcommands.is_empty() {
+            return String::new();
+        }
+
+        // Simple and clean: just list the valid subcommand values
+        // Detailed help for each subcommand is available via --help
+        format!(
+            "Subcommand to execute. Valid values: {}",
+            subcommands.join(", ")
+        )
+    }
+
+    /// Extract descriptions from the usage text manually
+    /// Returns a map of flag/arg name to description
+    fn extract_descriptions_from_text(&self) -> HashMap<String, String> {
+        let mut descriptions = HashMap::new();
+        let lines: Vec<&str> = self.usage_text.lines().collect();
+
+        let mut i = 0;
+        while i < lines.len() {
+            let line = lines[i];
+            let trimmed = line.trim();
+
+            // Look for option lines: "    -s, --select <arg>    Description"
+            if trimmed.starts_with('-') {
+                // Extract flag and description
+                if let Some((flags_part, desc_part)) = trimmed.split_once("  ") {
+                    let mut description = desc_part.trim().to_string();
+
+                    // Collect multi-line description
+                    let mut j = i + 1;
+                    while j < lines.len() {
+                        let next_line = lines[j].trim();
+                        if next_line.is_empty() || next_line.starts_with('-') {
+                            break;
+                        }
+                        if !next_line.starts_with("Usage:") {
+                            description.push(' ');
+                            description.push_str(next_line);
+                        }
+                        j += 1;
+                    }
+
+                    // Parse flags
+                    for flag in flags_part.split(',') {
+                        let flag = flag.split_whitespace().next().unwrap_or("");
+                        if flag.starts_with("--") || flag.starts_with('-') {
+                            descriptions.insert(flag.to_string(), description.clone());
+                        }
+                    }
+
+                    i = j;
+                    continue;
+                }
+            }
+            // Look for argument lines: "    <input>    Description"
+            else if trimmed.starts_with('<')
+                && trimmed.contains('>')
+                && let Some(close_bracket) = trimmed.find('>')
+            {
+                let arg_name = trimmed[..=close_bracket].trim().to_string();
+                let desc_part = trimmed[close_bracket + 1..].trim();
+
+                // Strip leading "..." (docopt repeating indicator) from description
+                let desc_part = desc_part
+                    .strip_prefix("...")
+                    .map_or(desc_part, str::trim_start);
+                let mut description = desc_part.to_string();
+
+                // Collect multi-line description
+                let mut j = i + 1;
+                while j < lines.len() {
+                    let next_line = lines[j].trim();
+                    if next_line.is_empty()
+                        || next_line.starts_with('<')
+                        || next_line.starts_with('-')
+                    {
+                        break;
+                    }
+                    if !next_line.starts_with("Usage:") {
+                        description.push(' ');
+                        description.push_str(next_line);
+                    }
+                    j += 1;
+                }
+
+                descriptions.insert(arg_name, description);
+                i = j;
+                continue;
+            }
+
+            i += 1;
+        }
+
+        descriptions
+    }
+
+    fn extract_description(&self) -> Result<String, String> {
+        // Extract first paragraph (before "Usage:" section)
+        let lines: Vec<&str> = self.usage_text.lines().collect();
+        let mut description_lines = Vec::new();
+
+        for line in lines {
+            let trimmed = line.trim();
+            if trimmed.starts_with("Usage:") {
+                break;
+            }
+            if trimmed.starts_with("For more examples,") || trimmed.starts_with("Examples:") {
+                break;
+            }
+            if !trimmed.is_empty() && !trimmed.starts_with('$') && !trimmed.starts_with('#') {
+                description_lines.push(trimmed);
+            }
+        }
+
+        if description_lines.is_empty() {
+            return Err("No description found".to_string());
+        }
+
+        Ok(description_lines.join(" "))
+    }
+
+    fn infer_argument_type(&self, name: &str, description: &str) -> String {
+        let name_lower = name.to_lowercase();
+        let desc_lower = description.to_lowercase();
+
+        if name_lower.contains("input") || name_lower.contains("file") {
+            "file".to_string()
+        } else if name_lower.contains("number")
+            || name_lower.contains("count")
+            || desc_lower.contains("number")
+        {
+            "number".to_string()
+        } else if name_lower.contains("regex")
+            || name_lower.contains("pattern")
+            || desc_lower.contains("regex")
+            || desc_lower.contains("regular expression")
+        {
+            "regex".to_string()
+        } else {
+            // if name_lower.contains("column") || name_lower.contains("selection")
+            // Also, default to string if we can't infer a better type
+            "string".to_string()
+        }
+    }
+
+    fn extract_default_value(&self, description: &str) -> Option<String> {
+        // Look for [default: value] pattern
+        if let Some(start) = description.find("[default:")
+            && let Some(end) = description[start..].find(']')
+        {
+            let default_str = &description[start + 9..start + end];
+            return Some(default_str.trim().to_string());
+        }
+        None
+    }
+
+    /// Remove [default: value] text from description to avoid redundancy
+    /// when we have a separate default field
+    fn strip_default_from_description(description: &str) -> String {
+        if let Some(start) = description.find("[default:")
+            && let Some(end) = description[start..].find(']')
+        {
+            // Remove the [default: ...] part and clean up extra whitespace
+            let before = description[..start].trim();
+            let after = description[start + end + 1..].trim();
+
+            // Join with a space, but avoid double spaces
+            if after.is_empty() {
+                before.to_string()
+            } else if before.is_empty() {
+                after.to_string()
+            } else {
+                format!("{before} {after}")
+            }
+        } else {
+            description.to_string()
+        }
+    }
+
+    fn extract_hints(&self) -> Option<BehavioralHints> {
+        // First try to look for emoji markers in usage text
+        let has_memory_intensive_in_usage = self.usage_text.contains("🤯");
+        let has_indexed_in_usage = self.usage_text.contains("📇");
+        let has_proportional_memory_in_usage = self.usage_text.contains("😣");
+
+        // If not found in usage text, check README.md command table
+        let (readme_indexed, readme_memory_intensive, readme_proportional_memory) =
+            Self::extract_hints_from_readme(&self.command_name);
+
+        // Prefer usage text markers, fallback to README markers
+        let has_indexed = has_indexed_in_usage || readme_indexed;
+        let has_memory_intensive = has_memory_intensive_in_usage || readme_memory_intensive;
+        let has_proportional_memory =
+            has_proportional_memory_in_usage || readme_proportional_memory;
+
+        let memory = if has_memory_intensive {
+            "full"
+        } else if has_proportional_memory {
+            "proportional"
+        } else {
+            "constant"
+        };
+
+        Some(BehavioralHints {
+            indexed: if has_indexed { Some(true) } else { None },
+            memory:  memory.to_string(),
+        })
+    }
+
+    /// Extract hints from README.md command table
+    /// Returns (indexed, memory_intensive, proportional_memory)
+    fn extract_hints_from_readme(command_name: &str) -> (bool, bool, bool) {
+        // Try to find the README.md in the repo root
+        let readme_paths = ["README.md", "../README.md", "../../README.md"];
+
+        for readme_path in &readme_paths {
+            if let Ok(readme_content) = fs::read_to_string(readme_path) {
+                // Find the line for this command in the table
+                // Format: | [command](/src/cmd/command.rs#L2)✨<br>📇🚀🧠🤖🔣👆| Description |
+                // Also handles updated format: | [command](docs/help/command.md)✨<br>📇|...
+                // Note: The #L2 line number varies, so we need to match more flexibly
+                let src_pattern = format!("| [{command_name}](/src/cmd/{command_name}.rs#");
+                let help_pattern = format!("| [{command_name}](docs/help/{command_name}.md)");
+
+                if let Some(line) = readme_content
+                    .lines()
+                    .find(|l| l.contains(&src_pattern) || l.contains(&help_pattern))
+                {
+                    // Extract only the emoji marker section (between <br> and the next |)
+                    // to avoid matching emojis in the description text (e.g., "index" has 📇 in
+                    // description)
+                    let emoji_section = if let Some(br_pos) = line.find("<br>") {
+                        if let Some(pipe_pos) = line[br_pos..].find('|') {
+                            &line[br_pos..br_pos + pipe_pos]
+                        } else {
+                            &line[br_pos..]
+                        }
+                    } else {
+                        // No <br> marker means no emoji markers for this command
+                        ""
+                    };
+
+                    let indexed = emoji_section.contains("📇");
+                    let memory_intensive = emoji_section.contains("🤯");
+                    let proportional_memory = emoji_section.contains("😣");
+
+                    return (indexed, memory_intensive, proportional_memory);
+                }
+            }
+        }
+
+        // Fallback: no hints found
+        (false, false, false)
+    }
+
+    /// Extract short description from README.md command table
+    /// Returns concise description suitable for MCP tool listing
+    fn extract_short_description_from_readme(command_name: &str) -> Option<String> {
+        let readme_paths = ["README.md", "../README.md", "../../README.md"];
+
+        for readme_path in &readme_paths {
+            if let Ok(readme_content) = fs::read_to_string(readme_path) {
+                // Find the line for this command in the table
+                // Format: | [command](/src/cmd/command.rs#L2)✨<br>📇| Description |
+                // Also handles updated format: | [command](docs/help/command.md)✨<br>📇|...
+                let src_pattern = format!("| [{command_name}](/src/cmd/{command_name}.rs#");
+                let help_pattern = format!("| [{command_name}](docs/help/{command_name}.md)");
+
+                if let Some(line) = readme_content
+                    .lines()
+                    .find(|l| l.contains(&src_pattern) || l.contains(&help_pattern))
+                {
+                    // Handle escaped pipes in markdown table (e.g., \| in code examples)
+                    // Replace escaped pipes with placeholder before splitting
+                    let placeholder = "\x00PIPE\x00";
+                    let line_escaped = line.replace(r"\|", placeholder);
+
+                    // Extract description: everything after the second | and before trailing |
+                    // The format is: | command_cell | description |
+                    let parts: Vec<&str> = line_escaped.split('|').collect();
+                    if parts.len() >= 3 {
+                        // Restore escaped pipes in description
+                        let description = parts[2].trim().replace(placeholder, "|");
+
+                        // Clean up the description:
+                        // 1. Remove markdown links: [text](url) -> text
+                        // 2. Remove HTML tags like <br>, <a name=...>
+                        // 3. Remove deeplink anchors
+                        let cleaned = Self::clean_readme_description(&description);
+
+                        if !cleaned.is_empty() {
+                            return Some(cleaned);
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Clean README description by removing markdown links, HTML tags, etc.
+    fn clean_readme_description(description: &str) -> String {
+        let mut result = description.to_string();
+
+        // Remove <a name="..."></a> anchor tags
+        let anchor_re = regex_oncelock!(r#"<a name="[^"]*"></a>"#);
+        result = anchor_re.replace_all(&result, "").to_string();
+
+        // Remove <a name=...> anchor tags (without closing tag)
+        let anchor_re2 = regex_oncelock!(r#"<a name=[^>]*>"#);
+        result = anchor_re2.replace_all(&result, "").to_string();
+
+        // Remove markdown links: [text](url) -> text
+        // Handle URLs with nested parentheses (e.g., Wikipedia links like Frequency_(statistics))
+        let link_re = regex_oncelock!(r"\[([^\]]+)\]\((?:[^()]+|\([^()]*\))*\)");
+        result = link_re.replace_all(&result, "$1").to_string();
+
+        // Remove remaining HTML tags
+        let html_re = regex_oncelock!(r"<[^>]+>");
+        result = html_re.replace_all(&result, " ").to_string();
+
+        // Remove emoji markers that might be in description
+        // (these are the behavioral hint emojis, not content emojis)
+        let emojis_to_remove = [
+            "📇",
+            "🤯",
+            "😣",
+            "🧠",
+            "🗄️",
+            "🗃️",
+            "🐻‍❄️",
+            "🤖",
+            "🏎️",
+            "🚀",
+            "🌐",
+            "🔣",
+            "👆",
+            "🪄",
+            "📚",
+            "🌎",
+            "⛩️",
+            "✨",
+        ];
+        for emoji in emojis_to_remove {
+            result = result.replace(emoji, "");
+        }
+
+        // Remove only empty parentheses "()" that remain after stripping emoji references
+        // Don't remove parentheses with content as they may contain legitimate abbreviations
+        // like (SEM), (CV), (XLSX), etc.
+        result = result.replace("()", "");
+
+        // Clean up whitespace
+        let whitespace_re = regex_oncelock!(r"\s+");
+        result = whitespace_re.replace_all(&result, " ").to_string();
+
+        result.trim().to_string()
+    }
+
+    fn infer_category(&self) -> String {
+        match self.command_name.as_str() {
+            "select" | "slice" | "sample" => "selection",
+            "search" | "searchset" => "filtering",
+            "apply" | "applydp" | "rename" | "transpose" | "reverse" | "datefmt" | "replace" => {
+                "transformation"
+            },
+            "stats" | "moarstats" | "frequency" | "count" | "pragmastat" => "aggregation",
+            "join" | "joinp" => "joining",
+            "schema" | "validate" | "safenames" => "validation",
+            "fmt" | "fixlengths" | "table" => "formatting",
+            "to" | "input" | "excel" | "json" | "jsonl" | "tojsonl" => "conversion",
+            "describegpt" => "documentation",
+            _ => "utility",
+        }
+        .to_string()
+    }
+
+    /// Extract examples from the USAGE text in agent-understandable format.
+    ///
+    /// Format specification:
+    /// - Start markers: `Examples:` or `Examples (optional description):`
+    /// - End markers: `end Examples` OR `For more examples, see`
+    /// - Comments: Lines starting with `#` explain the following command
+    /// - Commands: Lines starting with `$ qsv` or just `qsv `
+    /// - Section Headers: Lines starting with `==` are ignored
+    /// - Continuations: Long commands use `\` for line continuation
+    fn extract_examples(&self) -> Vec<Example> {
+        let mut examples = Vec::new();
+        let lines: Vec<&str> = self.usage_text.lines().collect();
+
+        // Find the start of the Examples section
+        let examples_start = lines.iter().position(|line| {
+            let trimmed = line.trim();
+            trimmed.starts_with("Examples:") || trimmed.starts_with("Examples (")
+        });
+
+        let Some(start_idx) = examples_start else {
+            return examples;
+        };
+
+        // Collect lines until we hit an end marker or next section
+        let mut current_description = String::new();
+        let mut current_command = String::new();
+        let mut in_continuation = false;
+
+        for line in lines.iter().skip(start_idx + 1) {
+            let trimmed = line.trim();
+
+            // Skip section headers
+            if trimmed.starts_with("==") {
+                continue;
+            }
+
+            // Check for end markers
+            if trimmed.starts_with("end Examples")
+                || trimmed.starts_with("For more examples, see")
+                || trimmed.starts_with("Usage:")
+            {
+                break;
+            }
+
+            // Skip empty lines (but finalize any pending example)
+            if trimmed.is_empty() {
+                if !current_command.is_empty() && !current_description.is_empty() {
+                    examples.push(Example {
+                        description: current_description.trim().to_string(),
+                        command:     current_command.trim().to_string(),
+                    });
+                    current_description.clear();
+                    current_command.clear();
+                }
+                in_continuation = false;
+                continue;
+            }
+
+            // Handle line continuation
+            if in_continuation {
+                // Remove the trailing backslash from previous line if present
+                if current_command.ends_with('\\') {
+                    current_command.pop();
+                    current_command.push(' ');
+                }
+                current_command.push_str(trimmed);
+                in_continuation = trimmed.ends_with('\\');
+                continue;
+            }
+
+            // Comment line (description for next command)
+            if trimmed.starts_with('#') {
+                let comment_text = trimmed.trim_start_matches('#').trim();
+                if !current_description.is_empty() {
+                    current_description.push(' ');
+                }
+                current_description.push_str(comment_text);
+                continue;
+            }
+
+            // Command line
+            if trimmed.starts_with("$ qsv") || trimmed.starts_with("qsv ") {
+                // Finalize previous example if we have one
+                if !current_command.is_empty() && !current_description.is_empty() {
+                    examples.push(Example {
+                        description: current_description.trim().to_string(),
+                        command:     current_command.trim().to_string(),
+                    });
+                    current_description.clear();
+                    current_command.clear();
+                }
+
+                // Start new command, removing leading "$ " if present
+                let cmd = if trimmed.starts_with("$ ") {
+                    trimmed.trim_start_matches("$ ")
+                } else {
+                    trimmed
+                };
+                current_command = cmd.to_string();
+                in_continuation = trimmed.ends_with('\\');
+            }
+        }
+
+        // Don't forget the last example
+        if !current_command.is_empty() && !current_description.is_empty() {
+            examples.push(Example {
+                description: current_description.trim().to_string(),
+                command:     current_command.trim().to_string(),
+            });
+        }
+
+        examples
+    }
+}
+
+trait HasDefault {
+    fn has_default(&self) -> bool;
+}
+
+impl HasDefault for DocoptArgument {
+    fn has_default(&self) -> bool {
+        matches!(self, DocoptArgument::One(Some(_)))
+    }
+}
+
+fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
+    let content = fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {e}"))?;
+
+    // Find USAGE constant - handle both r#" and r##" delimiters
+    let (usage_start, skip_len, end_delimiter) =
+        if let Some(pos) = content.find("static USAGE: &str = r##\"") {
+            (pos, 26, "\"##;")
+        } else if let Some(pos) = content.find("static USAGE: &str = r#\"") {
+            (pos, 24, "\"#;")
+        } else {
+            return Err("USAGE constant not found".to_string());
+        };
+
+    let after_start = &content[usage_start + skip_len..];
+
+    let usage_end = after_start
+        .find(end_delimiter)
+        .ok_or("End of USAGE constant not found")?;
+
+    Ok(after_start[..usage_end].to_string())
+}
+
+/// Public function to generate MCP skills JSON files
+/// Called via `qsv --update-mcp-skills` flag
+pub fn generate_mcp_skills() -> CliResult<()> {
+    // Get all commands from src/cmd/*.rs (excluding mod.rs and duplicates)
+    // Note: "enumerate" command is invoked as "enum" in qsv
+    // Commands excluded from MCP skills generation:
+    // - apply: not available in qsvmcp
+    // - behead: not needed for AI agents (use slice instead)
+    // - clipboard: not useful for AI agents (requires system clipboard)
+    // - color: not useful for AI agents (color display in terminal)
+    // - edit: not suitable for AI agent use
+    // - fetch: not available in qsvmcp
+    // - fetchpost: not available in qsvmcp
+    // - flatten: not suitable for AI agent use
+    // - foreach: not available in qsvmcp
+    // - geoconvert: experimental command (not yet stable)
+    // - lens: interactive TUI viewer (requires terminal)
+    // - pro: contains interactive/terminal-dependent subcommands (lens, workflow)
+    // - prompt: interactive prompt builder (requires terminal)
+    // - scoresql: not available in qsvmcp
+    // - snappy: compression utility not needed for AI agents
+    //
+    // This list targets commands available in the qsvmcp binary variant.
+    let commands = vec![
+        "blake3",
+        "cat",
+        "count",
+        "datefmt",
+        "dedup",
+        "describegpt",
+        "diff",
+        "enumerate",
+        "excel",
+        "exclude",
+        "explode",
+        "extdedup",
+        "extsort",
+        "fill",
+        "fixlengths",
+        "fmt",
+        "frequency",
+        "geocode",
+        "headers",
+        "index",
+        "input",
+        "join",
+        "joinp",
+        "json",
+        "jsonl",
+        "luau",
+        "moarstats",
+        "partition",
+        "pivotp",
+        "pragmastat",
+        "pseudo",
+        "rename",
+        "replace",
+        "reverse",
+        "safenames",
+        "sample",
+        "schema",
+        "search",
+        "searchset",
+        "select",
+        "slice",
+        "sniff",
+        "sort",
+        "sortcheck",
+        "split",
+        "sqlp",
+        "stats",
+        "table",
+        "template",
+        "to",
+        "tojsonl",
+        "transpose",
+        "validate",
+    ];
+
+    // Determine repository root - look for Cargo.toml with src/cmd
+    // This command must be run from within the qsv repository directory
+    let mut repo_root = std::env::current_dir()?;
+    let original_dir = repo_root.clone();
+
+    let mut iterations = 0;
+
+    loop {
+        if repo_root.join("Cargo.toml").exists() && repo_root.join("src/cmd").exists() {
+            break;
+        }
+
+        iterations += 1;
+        if iterations >= MAX_ITERATIONS {
+            return fail_clierror!(
+                "Could not find qsv repository root after checking {} parent directories. \
+                 This command must be run from within the qsv repository directory \
+                 (where Cargo.toml and src/cmd exist).\n\
+                 Original directory: {}\n\
+                 \n\
+                 If you're using a package-installed qsv binary, you need to:\n\
+                 1. Clone the qsv repository: git clone https://github.com/dathere/qsv.git\n\
+                 2. cd into the repository: cd qsv\n\
+                 3. Run: qsv --update-mcp-skills",
+                MAX_ITERATIONS,
+                original_dir.display()
+            );
+        }
+
+        if !repo_root.pop() {
+            return fail_clierror!(
+                "Could not find qsv repository root. This command must be run from within \
+                 the qsv repository directory (where Cargo.toml and src/cmd exist).\n\
+                 Original directory: {}\n\
+                 \n\
+                 If you're using a package-installed qsv binary, you need to:\n\
+                 1. Clone the qsv repository: git clone https://github.com/dathere/qsv.git\n\
+                 2. cd into the repository: cd qsv\n\
+                 3. Run: qsv --update-mcp-skills",
+                original_dir.display()
+            );
+        }
+    }
+
+    // Create output directory
+    let output_dir = repo_root.join(".claude/skills/qsv");
+    fs::create_dir_all(&output_dir)?;
+
+    eprintln!("QSV MCP Skills Generator (via qsv --update-mcp-skills)");
+    eprintln!("=======================================================");
+    eprintln!("Repository: {}", repo_root.display());
+    eprintln!("Output: {}", output_dir.display());
+    eprintln!("Generating {} skills...\n", commands.len());
+
+    let mut success_count = 0;
+    let mut error_count = 0;
+
+    for cmd_name in &commands {
+        eprintln!("Processing: {cmd_name}");
+
+        // Find command file
+        // Note: enumerate.rs is invoked as "enum"
+        let cmd_file = repo_root.join(format!("src/cmd/{cmd_name}.rs"));
+
+        if !cmd_file.exists() {
+            eprintln!("  ❌ File not found: {}", cmd_file.display());
+            error_count += 1;
+            continue;
+        }
+
+        // Extract USAGE text
+        let usage_text = match extract_usage_from_file(&cmd_file) {
+            Ok(text) => text,
+            Err(e) => {
+                eprintln!("  ❌ Failed to extract usage: {e}");
+                error_count += 1;
+                continue;
+            },
+        };
+
+        // Parse into skill definition
+        // For commands with aliases, extract the actual invocation name from USAGE
+        // - enumerate is invoked as "enum"
+        let invocation_name = if usage_text.contains("qsv enum ") {
+            "enum"
+        } else {
+            cmd_name
+        };
+
+        let parser = UsageParser::new(usage_text, invocation_name.to_string());
+        let skill = match parser.parse() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("  ❌ Failed to parse: {e}");
+                error_count += 1;
+                continue;
+            },
+        };
+
+        // Write JSON file
+        let output_file = output_dir.join(format!("{}.json", skill.name));
+        let json = serde_json::to_string_pretty(&skill)?;
+        fs::write(&output_file, json + "\n")?;
+
+        eprintln!("  ✅ Generated: {}", output_file.display());
+        eprintln!("     - {} argument/s", skill.command.args.len());
+        eprintln!("     - {} option/s", skill.command.options.len());
+        eprintln!("     - {} example/s", skill.examples.len());
+        eprintln!();
+
+        success_count += 1;
+    }
+
+    // Clean up stale skill files that were not generated in this run
+    let generated_filenames: std::collections::HashSet<String> = commands
+        .iter()
+        .map(|cmd| {
+            // Match the naming used during generation: "qsv-<invocation_name>.json"
+            // enumerate is invoked as "enum"
+            let name = if *cmd == "enumerate" { "enum" } else { cmd };
+            format!("qsv-{name}.json")
+        })
+        .collect();
+
+    let mut stale_count = 0u32;
+    if let Ok(entries) = fs::read_dir(&output_dir) {
+        for entry in entries.flatten() {
+            let filename = entry.file_name().to_string_lossy().to_string();
+            // Only consider files matching the exact skill naming pattern:
+            // "qsv-<command>.json" where <command> is lowercase alpha/hyphens only.
+            // This avoids accidentally deleting non-skill files like qsv-config.json
+            // or qsv-metadata.json that might exist in the directory.
+            let is_skill_file = filename
+                .strip_prefix("qsv-")
+                .and_then(|s| s.strip_suffix(".json"))
+                .is_some_and(|stem| {
+                    !stem.is_empty()
+                        && !stem.starts_with('-')
+                        && !stem.ends_with('-')
+                        && stem.chars().all(|c| c.is_ascii_lowercase() || c == '-')
+                });
+            if is_skill_file && !generated_filenames.contains(&filename) {
+                if let Err(e) = fs::remove_file(entry.path()) {
+                    eprintln!("  ⚠️  Failed to remove stale skill file {filename}: {e}");
+                } else {
+                    eprintln!("  🗑️  Removed stale skill file: {filename}");
+                    stale_count += 1;
+                }
+            }
+        }
+    }
+
+    eprintln!("\n✨ MCP Skills generation complete!");
+    eprintln!("📁 Output directory: {}", output_dir.display());
+    eprintln!(
+        "📊 Summary: {} succeeded, {} failed out of {} total",
+        success_count,
+        error_count,
+        commands.len()
+    );
+    if stale_count > 0 {
+        eprintln!("🗑️  Removed {stale_count} stale skill file(s)");
+    }
+
+    if error_count > 0 {
+        return fail_clierror!("{} skill(s) failed to generate", error_count);
+    }
+
+    eprintln!("\n💡 Restart Claude Desktop to load the updated skills.");
+
+    Ok(())
+}

@@ -1,0 +1,133 @@
+name: MCP Server CI
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - '.claude/skills/**'
+      - '.github/workflows/mcp-server-ci.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - '.claude/skills/**'
+      - '.github/workflows/mcp-server-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test Node ${{ matrix.node-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+        node-version: [20, 22, 24]
+
+    defaults:
+      run:
+        working-directory: .claude/skills
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: .claude/skills/package-lock.json
+
+      - name: Install qsv (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          QSV_VERSION=$(gh release view --repo dathere/qsv --json tagName --jq .tagName)
+          echo "Installing qsv $QSV_VERSION"
+          ASSET_NAME="qsv-${QSV_VERSION}-x86_64-unknown-linux-gnu.zip"
+          curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
+          mkdir -p bin
+          unzip -qo "${ASSET_NAME}" -d bin
+          chmod +x bin/qsv*
+          echo "$PWD/bin" >> $GITHUB_PATH
+          bin/qsv --version
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Install qsv (macOS)
+        if: matrix.os == 'macos-14'
+        run: |
+          QSV_VERSION=$(gh release view --repo dathere/qsv --json tagName --jq .tagName)
+          echo "Installing qsv $QSV_VERSION"
+          ASSET_NAME="qsv-${QSV_VERSION}-aarch64-apple-darwin.zip"
+          curl -L "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/${ASSET_NAME}" -o "${ASSET_NAME}"
+          mkdir -p bin
+          unzip -qo "${ASSET_NAME}" -d bin
+          chmod +x bin/qsv*
+          echo "$PWD/bin" >> $GITHUB_PATH
+          bin/qsv --version
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Install qsv (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $QSV_VERSION = gh release view --repo dathere/qsv --json tagName --jq .tagName
+          Write-Host "Installing qsv $QSV_VERSION"
+          $ASSET_NAME = "qsv-$QSV_VERSION-x86_64-pc-windows-msvc.zip"
+          $url = "https://github.com/dathere/qsv/releases/download/$QSV_VERSION/$ASSET_NAME"
+          Invoke-WebRequest -Uri $url -OutFile $ASSET_NAME
+          New-Item -ItemType Directory -Force -Path bin | Out-Null
+          Expand-Archive -Path $ASSET_NAME -DestinationPath bin -Force
+          Write-Output "$PWD\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          .\bin\qsv.exe --version
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check TypeScript compilation
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+        shell: bash
+        env:
+          NODE_ENV: test
+          # Force use of qsv (full binary) which includes the `to` command.
+          # The released qsvmcp may not yet include `to` until the next release.
+          QSV_MCP_BIN_PATH: qsv
+
+      - name: Test build output
+        run: |
+          node dist/mcp-server.js --version || echo "Version check complete"
+        shell: bash
+
+  lint:
+    name: TypeScript Type Check
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: .claude/skills
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: .claude/skills/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript compilation check
+        run: npm run build
+
+      - name: TypeScript test compilation check
+        run: npm run build:test

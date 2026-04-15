@@ -31,6 +31,9 @@
 # and `--delimiter` option. Note that this does not work with stdin.
 QSV_SNIFF_DELIMITER = False
 
+# if true, qsv will attempt to sniff the number of preamble rows.
+# QSV_SNIFF_PREAMBLE = False
+
 # if true, the first row will **NOT** be interpreted as headers.
 # Supersedes QSV_TOGGLE_HEADERS.
 QSV_NO_HEADERS = False
@@ -43,6 +46,28 @@ QSV_NO_HEADERS = False
 # set to the maximum number of characters when listing "antimodes" in `stats`. Otherwise, the default is 100.
 # set to 0 to disable length limiting
 # QSV_ANTIMODES_LEN = 100
+
+# the separator to use to delimit multiple MODE/ANTIMODE and PERCENTILE values.
+# QSV_STATS_SEPARATOR = |
+
+# Specifies the maximum string length for the "min"/"max" stats column.
+# When set, truncates String columns at the specified length and appends an ellipsis (...).
+# QSV_STATS_STRING_MAX_LENGTH = 0
+
+# Controls memory-aware chunk sizing for parallel statistics processing.
+# When set to a positive number, limits the maximum memory per chunk (in MB).
+# When set to 0, dynamically estimates chunk size by sampling records.
+# When unset, automatically uses dynamic memory-aware chunking for non-streaming statistics
+# (median, quartiles, modes, cardinality) and CPU-based chunking for streaming statistics.
+# Set to -1 to force CPU-based chunking (i.e chunk size = num records/num CPUs)
+# This helps process arbitrarily large files by creating smaller chunks that fit in available memory.
+# QSV_STATS_CHUNK_MEMORY_MB = 0
+
+# Controls memory-aware chunk sizing for parallel frequency distribution processing.
+# When set to a positive number, limits the maximum memory per chunk (in MB).
+# When unset or set to 0, dynamically estimates chunk size by sampling records and available system memory.
+# Set to -1 to force CPU-based chunking (i.e chunk size = num records/num CPUs)
+# QSV_FREQ_CHUNK_MEMORY_MB = 0
 
 # if set, specifies the minimum file size (in bytes) of a CSV file before an 
 # index is automatically created. Note that stale indices are automatically 
@@ -61,6 +86,20 @@ QSV_NO_HEADERS = False
 # This is useful when generating CSV files for Excel on Windows.
 # QSV_OUTPUT_BOM = False
 
+# if set, forces colorized output even when redirecting or running in CI.
+# Used by the `color` command to override automatic color detection.
+# QSV_FORCE_COLOR = 1
+
+# sets the color theme for the `color` command. Valid values are DARK or LIGHT
+# (case-insensitive). If not set, the theme is automatically detected based on
+# the terminal background color.
+# QSV_THEME = DARK
+
+# overrides the detected terminal width for the `color` command. Must be a value
+# between 1 and 1000. If not set, the terminal width is automatically detected or
+# defaults to 80 when output is redirected.
+# QSV_TERMWIDTH = 120
+
 # The directory to use for caching various qsv files.
 # Used by the `geocode` command for downloaded geocoding resources.
 # Used by the `luau`` command for downloaded lookup_table resources using
@@ -76,8 +115,22 @@ QSV_NO_HEADERS = False
 # when using the "ckan://" scheme. Only required to access private resources.
 # QSV_CKAN_TOKEN = YOUR_CKAN_API_TOKEN
 
+# The LLM API URL to use with the `describegpt` command.
+# QSV_LLM_BASE_URL = http://localhost:1234/v1
+
 # The API key of the supported LLM service to use with the `describegpt` command.
 # QSV_LLM_APIKEY = YOUR_LLM_APIKEY
+
+# The LLM Model to use with the `describegpt` command.
+# QSV_LLM_MODEL = gpt-oss-20b
+
+# The database engine to use for SQL query execution.
+# To use DuckDB, set to the fully qualified path for the duckdb binary.
+# QSV_DUCKDB_PATH = /usr/local/bin/duckdb
+
+# If set, enables `describegpt` command tests.
+# Requires LM Studio with openai/gpt-oss-20b model loaded.
+# QSV_TEST_DESCRIBEGPT = 1
 
 # set to an ascii character. If set, any lines(including the header) that start
 # with this character are ignored. Note that when you want to use the pound sign
@@ -98,6 +151,12 @@ QSV_COMMENT_CHAR = '#'
 # JSONL and gz,zlib & zst compressed files) to CSV. If set, this will also override the
 # --float-precision option of the `sqlp` command.
 # QSV_POLARS_FLOAT_PRECISION = 8
+
+# The scale to use when using the Polars Decimal type. If not set, defaults to 5.
+# QSV_POLARS_DECIMAL_SCALE = 5
+
+# if true, skips mime-type checking of input files. 
+# QSV_SKIP_FORMAT_CHECK = False
 
 # if true, prohibit self-update version check for the latest qsv release 
 # published on GitHub.
@@ -157,27 +216,31 @@ QSV_LOG_UNBUFFERED = False
 QSV_PROGRESSBAR = False
 
 # set time-to-live of diskcache cached values (default (seconds): 2419200 (28 days)).
-QSV_DISKCACHE_TTL_SECONDS = 2419200
+QSV_DISKCACHE_TTL_SECS = 2419200
 
 # if true, enables cache hits to refresh TTL of diskcache cached values.
 QSV_DISKCACHE_TTL_REFRESH = False
 
 # the `fetch` command can use Redis to cache responses.
-# Set to connect to the desired Redis instance. (default: `redis:127.0.0.1:6379/1`).
-# For more info on valid Redis connection string formats, 
+# Set to connect to the desired Redis instance. (default: `redis://127.0.0.1:6379/1`).
+# For more info on valid Redis connection string formats,
 # see https://docs.rs/redis/latest/redis/#connection-parameters.
-QSV_REDIS_CONNSTR = redis:127.0.0.1:6379/1
+QSV_REDIS_CONNSTR = redis://127.0.0.1:6379/1
 
 # the `fetchpost` command can also use Redis to cache responses
-# (default: `redis:127.0.0.1:6379/2`). Note that `fetchpost` connects to
+# (default: `redis://127.0.0.1:6379/2`). Note that `fetchpost` connects to
 # database 2, as opposed to `fetch` which connects to database 1.
-QSV_FP_REDIS_CONNSTR = redis:127.0.0.1:6379/2
+QSV_FP_REDIS_CONNSTR = redis://127.0.0.1:6379/2
+
+# the `describegpt` command can also use Redis to cache responses
+# (default: `redis://127.0.0.1:6379/3`).
+QSV_DG_REDIS_CONNSTR = redis://127.0.0.1:6379/3
 
 # the maximum Redis connection pool size. (default: 20).
 QSV_REDIS_MAX_POOL_SIZE = 20
 
 # set time-to-live of Redis cached values (default (seconds): 2419200 (28 days)).
-QSV_REDIS_TTL_SECONDS = 2419200
+QSV_REDIS_TTL_SECS = 2419200
 
 # if true, enables cache hits to refresh TTL of Redis cached values.
 QSV_REDIS_TTL_REFRESH = False
@@ -191,7 +254,7 @@ QSV_TIMEOUT = 30
 # (https://tools.ietf.org/html/rfc7231#section-5.5.3). For examples, see 
 # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
 # (default: <qsv_variant>/<version> (<target>; https://github.com/dathere/qsv)).
-# QSV_USER_AGENT = qsv/0.99.1 (x86_64-apple-darwin; https://github.com/dathere/qsv)
+# QSV_USER_AGENT = qsv/8.0.0 (aarch64-apple-darwin; https://github.com/dathere/qsv)
 
 # the filename of the Geonames index file you wish to use for geocoding.
 # If not set, the `geocode` command will download the default index file for
@@ -200,3 +263,88 @@ QSV_TIMEOUT = 30
 # Note that you have to copy the custom index file to the QSV_CACHE_DIR directory
 # for it to be used by qsv.
 # QSV_GEOCODE_INDEX_FILENAME = my-qsv-geocode-index.bincode
+
+# the filename of the GeoIP2 database to use for the `geocode` command.
+# QSV_GEOIP2_FILENAME = GeoLite2-City.mmdb
+
+# ==============================================================================
+# MCP SERVER ENVIRONMENT VARIABLES
+# ==============================================================================
+# These variables configure the qsv MCP (Model Context Protocol) Server,
+# which exposes qsv's capabilities to AI agents like Claude.
+# Used when running qsv as a Claude Desktop Extension or standalone MCP server.
+# ==============================================================================
+
+# --- Core Configuration ---
+
+# Full path to the qsv binary. If not set, auto-detects from PATH and common
+# installation locations (/usr/local/bin/qsv, /opt/homebrew/bin/qsv,
+# ~/.cargo/bin/qsv, etc.). Required for Claude Desktop Extension mode.
+# QSV_MCP_BIN_PATH = /usr/local/bin/qsv
+
+# Default working directory for file operations. Supports template variables:
+# ${HOME}, ${USERPROFILE}, ${DESKTOP}, ${DOCUMENTS}, ${DOWNLOADS}, ${TEMP}
+# (default: ${DOWNLOADS})
+# QSV_MCP_WORKING_DIR = ${DOWNLOADS}
+
+# Additional directories where qsv can access files. Use colon-separated paths
+# on Unix/macOS, semicolon on Windows, or a JSON array. File access is restricted
+# to working directory and these directories only for security.
+# (default: empty - only working directory allowed)
+# QSV_MCP_ALLOWED_DIRS = ${DOCUMENTS}:${DESKTOP}
+
+# Explicitly enable or disable plugin mode. When true, directory security is
+# relaxed (directories are auto-added to allowedDirs) because the host
+# environment provides filesystem isolation. Use this for AI CLI agents
+# (e.g. Gemini CLI) that don't set CLAUDE_PLUGIN_ROOT.
+# When not set, auto-detects based on CLAUDE_PLUGIN_ROOT.
+# (default: unset - auto-detect)
+# QSV_MCP_PLUGIN_MODE = false
+
+# --- Performance Tuning ---
+
+# Operation timeout in milliseconds. Used by legacy MCP mode.
+# (default: 120000 (2 min), min: 1000, max: 1800000)
+# QSV_MCP_OPERATION_TIMEOUT_MS = 120000
+
+# Maximum output size in bytes before results are automatically saved to disk.
+# (default: 52428800 (50 MB), min: 1048576, max: 104857600)
+# QSV_MCP_MAX_OUTPUT_SIZE = 52428800
+
+# Maximum size for the converted file cache (Excel→CSV, JSONL→CSV) in GB.
+# Uses LIFO (Last-In-First-Out) eviction when cache is full.
+# (default: 1.0, min: 0.1, max: 100.0)
+# QSV_MCP_CONVERTED_LIFO_SIZE_GB = 1.0
+
+# Maximum number of files returned in a single directory listing.
+# (default: 1000, min: 1, max: 100000)
+# QSV_MCP_MAX_FILES_PER_LISTING = 1000
+
+# Maximum number of concurrent qsv operations.
+# (default: 10, min: 1, max: 100)
+# QSV_MCP_MAX_CONCURRENT_OPERATIONS = 10
+
+# Maximum number of examples to include in MCP tool descriptions.
+# Set to 0 to disable examples.
+# (default: 5, min: 0, max: 20)
+# QSV_MCP_MAX_EXAMPLES = 5
+
+# --- Update Checking ---
+
+# If true, check for new qsv releases on GitHub at server startup.
+# (default: true)
+QSV_MCP_CHECK_UPDATES_ON_STARTUP = True
+
+# If true, display update notifications in server logs when new versions
+# are available.
+# (default: true)
+QSV_MCP_NOTIFY_UPDATES = True
+
+# If true, automatically regenerate skill definitions when qsv version changes.
+# Runs `qsv --update-mcp-skills` automatically.
+# (default: false - manual regeneration recommended)
+QSV_MCP_AUTO_REGENERATE_SKILLS = False
+
+# GitHub repository for update checks.
+# (default: dathere/qsv)
+# QSV_MCP_GITHUB_REPO = dathere/qsv

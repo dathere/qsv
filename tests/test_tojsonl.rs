@@ -507,3 +507,36 @@ fn tojsonl_issue_1649_false_positive_tf_3recs() {
 
     assert_eq!(got, expected);
 }
+
+#[test]
+#[serial]
+fn tojsonl_output_dash_stdout() {
+    // -o - should write to stdout and not create a file named "-"
+    let wrk = Workdir::new("tojsonl_output_dash_stdout");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "Alice"],
+            svec!["2", "Bob"],
+            svec!["3", "Carol"],
+        ],
+    );
+
+    let mut cmd = wrk.command("tojsonl");
+    cmd.arg("in.csv").args(["-o", "-"]);
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"id":1,"name":"Alice"}
+{"id":2,"name":"Bob"}
+{"id":3,"name":"Carol"}"#;
+
+    assert_eq!(got, expected);
+
+    // ensure no file named "-" was created
+    let dash_path = wrk.path("-");
+    assert!(
+        !dash_path.exists(),
+        "A file named '-' should not be created when using -o -"
+    );
+}

@@ -1,6 +1,6 @@
 # QSV MCP Server
 
-Model Context Protocol (MCP) server that exposes qsv's tabular data-wrangling commands to Claude Desktop. The server works with **qsvmcp** (preferred) or the full **qsv** binary, exposing 51 skill-based commands optimized for AI agent workflows.
+Model Context Protocol (MCP) server that exposes qsv's tabular data-wrangling commands to Claude Desktop. The server works with **qsvmcp** (preferred) or the full **qsv** binary, exposing 53 skill-based commands optimized for AI agent workflows.
 
 ## Overview
 
@@ -223,7 +223,7 @@ Tools for frequently used commands, loaded when discovered via search:
 
 ### Generic Command Tool
 
-`qsv_command` - Execute any qsv command with a skill definition (51 commands):
+`qsv_command` - Execute any qsv command with a skill definition (53 commands):
 - `to`, `tojsonl`, `partition`, `pseudo`, `reverse`, `sniff`, `sort`, `dedup`, `join`, `rename`, `validate`, `sample`, `template`, `diff`, `schema`, etc.
 - Full list: https://github.com/dathere/qsv#commands
 
@@ -489,7 +489,7 @@ npm run mcp:start
 The server should start and log:
 ```
 Loading QSV skills...
-Loaded 51 skills
+Loaded 53 skills
 QSV MCP Server initialized successfully
 QSV MCP Server running on stdio
 ```
@@ -563,7 +563,7 @@ npm test
 
 ## Performance
 
-- **Server Startup**: < 100ms (51 skills loaded)
+- **Server Startup**: < 100ms (53 skills loaded)
 - **Tool Execution**: < 10ms overhead + qsv processing time
 - **File Processing**: Depends on qsv performance (generally very fast)
 - **Streaming**: Large files processed efficiently by qsv
@@ -606,8 +606,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-04-13
-**Version**: 19.1.0
-**Tools**: 10 core tools initially (+1 app-only), 51+ when discovered via search
-**Skills**: 51 qsv commands
+**Updated**: 2026-04-14
+**Version**: 19.1.1
+**Tools**: 10 core tools initially (+1 app-only), 53 when discovered via search
+**Skills**: 53 qsv commands
 **Status**: Production Ready

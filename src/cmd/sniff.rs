@@ -188,18 +188,17 @@ fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String, f32) {
     };
 
     match &*MAGIKA_SESSION {
-        Ok(mutex) => match mutex.lock() {
-            Ok(mut session) => match session.identify_content_sync(bytes) {
-                Ok(result) => (
-                    result.info().mime_type.to_string(),
-                    result.info().label.to_string(),
-                    result.score(),
-                ),
-                Err(_) => default_mime(),
-            },
-            Err(_) => default_mime(),
+        Ok(mutex)
+            if let Ok(mut session) = mutex.lock()
+                && let Ok(result) = session.identify_content_sync(bytes) =>
+        {
+            (
+                result.info().mime_type.to_string(),
+                result.info().label.to_string(),
+                result.score(),
+            )
         },
-        Err(_) => default_mime(),
+        _ => default_mime(),
     }
 }
 
@@ -480,16 +479,12 @@ async fn get_file_to_sniff(args: &Args, tmpdir: &tempfile::TempDir) -> CliResult
                 }
 
                 let last_modified = match res.headers().get("Last-Modified") {
-                    Some(lm) => match lm.to_str() {
-                        Ok(s) => {
-                            // convert Last-Modified RFC2822 to RFC3339 format
-                            let dt = chrono::DateTime::parse_from_rfc2822(s).unwrap();
-                            dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
-                        },
-                        // server did not return Last-Modified header
-                        Err(_) => String::from("Unknown"),
+                    Some(lm) if let Ok(s) = lm.to_str() => {
+                        // convert Last-Modified RFC2822 to RFC3339 format
+                        let dt = chrono::DateTime::parse_from_rfc2822(s).unwrap();
+                        dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
                     },
-                    None => String::from("Unknown"),
+                    _ => String::from("Unknown"),
                 };
 
                 let total_size = match res.content_length() {

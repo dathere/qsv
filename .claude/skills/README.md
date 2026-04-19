@@ -127,15 +127,15 @@ npm run mcpb:package
 
 | Category | Count | Skills |
 |----------|-------|--------|
-| **utility** | 23 | blake3, cat, clipboard, count, headers, index, input, partition, pseudo, reverse, sniff, split, template, etc. |
-| **transformation** | 5 | rename, replace, transpose, etc. |
-| **aggregation** | 5 | frequency, moarstats, stats, count, pragmastat |
-| **conversion** | 6 | excel, json, jsonl, to, tojsonl, etc. |
-| **selection** | 3 | select, slice, sample |
+| **utility** | 23 | blake3, cat, dedup, diff, enum, exclude, explode, extdedup, extsort, fill, geocode, headers, index, luau, partition, pivotp, pseudo, sniff, sort, sortcheck, split, sqlp, template |
+| **conversion** | 6 | excel, input, json, jsonl, to, tojsonl |
+| **aggregation** | 5 | count, frequency, moarstats, pragmastat, stats |
+| **transformation** | 5 | datefmt, rename, replace, reverse, transpose |
+| **selection** | 3 | sample, select, slice |
+| **formatting** | 3 | fixlengths, fmt, table |
+| **validation** | 3 | safenames, schema, validate |
 | **filtering** | 2 | search, searchset |
-| **formatting** | 3 | fmt, fixlengths, table |
 | **joining** | 2 | join, joinp |
-| **validation** | 3 | schema, safenames, validate |
 | **documentation** | 1 | describegpt |
 
 **Total Statistics:**

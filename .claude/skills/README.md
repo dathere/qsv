@@ -127,10 +127,10 @@ npm run mcpb:package
 
 | Category | Count | Skills |
 |----------|-------|--------|
-| **utility** | 22 | cat, clipboard, count, headers, index, input, partition, pseudo, reverse, sniff, split, template, etc. |
+| **utility** | 23 | blake3, cat, clipboard, count, headers, index, input, partition, pseudo, reverse, sniff, split, template, etc. |
 | **transformation** | 5 | rename, replace, transpose, etc. |
 | **aggregation** | 5 | frequency, moarstats, stats, count, pragmastat |
-| **conversion** | 5 | excel, json, jsonl, tojsonl, etc. |
+| **conversion** | 6 | excel, json, jsonl, to, tojsonl, etc. |
 | **selection** | 3 | select, slice, sample |
 | **filtering** | 2 | search, searchset |
 | **formatting** | 3 | fmt, fixlengths, table |

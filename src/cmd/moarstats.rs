@@ -222,10 +222,11 @@ automatically deleted after computing the bivariate statistics.
 The bivariate statistics are saved to `<FILESTEM>.stats.bivariate.joined.csv`.
 
 Non-finite numeric tokens ("NaN", "Infinity", "-Infinity", and their case variants) are
-treated as missing values and excluded from all statistical computations. They are counted
-toward the null/missing totals reported by the underlying `stats` command, not as numeric
-observations. This prevents a single bad cell from silently poisoning correlation, variance
-and mean calculations.
+excluded from moarstats computations — the parser in moarstats filters them out before they
+reach correlation, variance and mean calculations, preventing a single bad cell from silently
+poisoning the results. Note that the baseline `stats` command may still count these tokens
+as Float observations, so the `type`/`null_count` columns in `<FILESTEM>.stats.csv` are not
+affected by this filter.
 
 Examples:
 
@@ -2098,8 +2099,8 @@ fn count_all_outliers(
         // Process each chunk in parallel. Share the read-only field map via Arc
         // instead of deep-cloning the HashMap into every worker. Since the caller
         // no longer needs `fields_to_count` after this call, we move it directly
-        // into the Arc — zero map clones.
-        let input_path_string = input_path.to_str().unwrap_or("").to_string();
+        // into the Arc — zero map clones. `input_path_string` from above is already
+        // UTF-8-validated, so no need to re-validate here.
         let fields_arc = Arc::new(fields_to_count);
         for i in 0..nchunks {
             let send = send.clone();
@@ -2598,8 +2599,8 @@ fn compute_all_bivariatestats(
         // Process each chunk in parallel. Share the read-only field-pair map via
         // Arc instead of deep-cloning the HashMap into every worker. The caller
         // no longer needs `field_pairs` after this call, so we move it directly
-        // into the Arc — zero map clones.
-        let input_path_string = input_path.to_str().unwrap_or("").to_string();
+        // into the Arc — zero map clones. `input_path_string` from above is already
+        // UTF-8-validated, so no need to re-validate here.
         let field_pairs_arc = Arc::new(field_pairs);
         for i in 0..nchunks {
             let send = send.clone();

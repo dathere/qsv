@@ -1233,12 +1233,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 debug!("uniqueCombinedWith: {has_unique_combined}, email: {has_email_format}");
 
                 // parse JSON string - use platform-appropriate JSON deserialization
-                #[cfg(target_endian = "big")]
-                let json_result = serde_json::from_str::<Value>(&s);
-                #[cfg(target_endian = "little")]
-                let json_result = {
-                    let mut s_slice = s.as_bytes().to_vec();
-                    simd_json::serde::from_slice::<Value>(&mut s_slice)
+                let json_result = std::cfg_select! {
+                    target_endian = "big" => serde_json::from_str::<Value>(&s),
+                    target_endian = "little" =>
+                        simd_json::serde::from_slice::<Value>(&mut s.as_bytes().to_vec()),
                 };
 
                 match json_result {
@@ -1379,6 +1377,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
                 let json_instance = match to_json_instance(&header_types, header_len, record) {
                     Ok(obj) => obj,
                     Err(e) => {
+                        std::hint::cold_path();
                         // Only convert to string when we have an error
                         // safety: row number was added as last column. We can do index access, not
                         // use get(), and unwrap_unchecked safely since we know its there
@@ -1396,6 +1395,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
                 {
                     return None;
                 } else {
+                    std::hint::cold_path();
                     // otherwise, fully evaluate the record
                     schema_compiled.evaluate(&json_instance)
                 };
@@ -1403,6 +1403,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
                 if evaluation.flag().valid {
                     None
                 } else {
+                    std::hint::cold_path();
                     // Only convert to string when we have validation errors
                     // safety: see safety comment above
                     let row_number_string = unsafe {

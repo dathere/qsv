@@ -221,6 +221,12 @@ that share common join keys. The joined dataset is saved as a temporary file tha
 automatically deleted after computing the bivariate statistics.
 The bivariate statistics are saved to `<FILESTEM>.stats.bivariate.joined.csv`.
 
+Non-finite numeric tokens ("NaN", "Infinity", "-Infinity", and their case variants) are
+treated as missing values and excluded from all statistical computations. They are counted
+toward the null/missing totals reported by the underlying `stats` command, not as numeric
+observations. This prevents a single bad cell from silently poisoning correlation, variance
+and mean calculations.
+
 Examples:
 
   # Add moar stats to existing stats file
@@ -2049,7 +2055,7 @@ where
 /// Count outliers for all fields, using parallel processing if index is available
 /// Returns a HashMap mapping field names to their outlier statistics
 fn count_all_outliers(
-    fields_to_count: &HashMap<String, OutlierFieldInfo>,
+    fields_to_count: HashMap<String, OutlierFieldInfo>,
     input_path: &Path,
     flag_jobs: Option<usize>,
 ) -> CliResult<HashMap<String, OutlierStats>> {
@@ -2077,7 +2083,7 @@ fn count_all_outliers(
             // Fall back to sequential for small files
             let mut rdr = rconfig.reader_file()?;
             let _headers = rdr.headers()?.clone();
-            return count_all_outliers_from_reader(fields_to_count, rdr);
+            return count_all_outliers_from_reader(&fields_to_count, rdr);
         }
 
         let njobs = util::njobs(flag_jobs);
@@ -2090,9 +2096,11 @@ fn count_all_outliers(
         let (send, recv) = crossbeam_channel::bounded(nchunks);
 
         // Process each chunk in parallel. Share the read-only field map via Arc
-        // instead of deep-cloning the HashMap into every worker.
+        // instead of deep-cloning the HashMap into every worker. Since the caller
+        // no longer needs `fields_to_count` after this call, we move it directly
+        // into the Arc — zero map clones.
         let input_path_string = input_path.to_str().unwrap_or("").to_string();
-        let fields_arc = Arc::new(fields_to_count.clone());
+        let fields_arc = Arc::new(fields_to_count);
         for i in 0..nchunks {
             let send = send.clone();
             let fields_arc = Arc::clone(&fields_arc);
@@ -2123,7 +2131,7 @@ fn count_all_outliers(
         drop(send);
 
         // Aggregate results from all chunks
-        let mut all_stats: HashMap<String, OutlierStats> = fields_to_count
+        let mut all_stats: HashMap<String, OutlierStats> = fields_arc
             .keys()
             .map(|k| (k.clone(), OutlierStats::default()))
             .collect();
@@ -2193,7 +2201,7 @@ fn count_all_outliers(
         // Sequential fallback when no index exists
         let mut rdr = rconfig.reader_file()?;
         let _headers = rdr.headers()?.clone();
-        count_all_outliers_from_reader(fields_to_count, rdr)
+        count_all_outliers_from_reader(&fields_to_count, rdr)
     }
 }
 
@@ -2517,7 +2525,7 @@ fn count_all_outliers_from_reader(
 /// Otherwise, uses sequential processing.
 /// Returns a HashMap mapping field pairs to their bivariate statistics.
 fn compute_all_bivariatestats(
-    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+    field_pairs: HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
     field_names: &[String],
     input_path: &Path,
     progress: Option<&ProgressBar>,
@@ -2555,7 +2563,7 @@ fn compute_all_bivariatestats(
             let _headers = rdr.headers()?.clone();
             winfo!("Computing bivariate statistics sequentially...");
             return compute_all_bivariatestats_sequential(
-                field_pairs,
+                &field_pairs,
                 field_names,
                 rdr,
                 progress,
@@ -2588,9 +2596,11 @@ fn compute_all_bivariatestats(
         let (send, recv) = crossbeam_channel::bounded(nchunks);
 
         // Process each chunk in parallel. Share the read-only field-pair map via
-        // Arc instead of deep-cloning the HashMap into every worker.
+        // Arc instead of deep-cloning the HashMap into every worker. The caller
+        // no longer needs `field_pairs` after this call, so we move it directly
+        // into the Arc — zero map clones.
         let input_path_string = input_path.to_str().unwrap_or("").to_string();
-        let field_pairs_arc = Arc::new(field_pairs.clone());
+        let field_pairs_arc = Arc::new(field_pairs);
         for i in 0..nchunks {
             let send = send.clone();
             let field_pairs_arc = Arc::clone(&field_pairs_arc);
@@ -2622,7 +2632,7 @@ fn compute_all_bivariatestats(
 
         // Aggregate results from all chunks
         // Pre-allocate based on idx_count to avoid repeated reallocations during extend
-        let mut all_stats: HashMap<(u16, u16), BivariateChunkStats> = field_pairs
+        let mut all_stats: HashMap<(u16, u16), BivariateChunkStats> = field_pairs_arc
             .keys()
             .map(|k| {
                 let mut stats = BivariateChunkStats::default();
@@ -2723,7 +2733,7 @@ fn compute_all_bivariatestats(
                     // chunk_stats is pre-populated from field_pairs (see debug_assert!s earlier),
                     // so a miss here indicates an invariant violation from a refactor.
                     let (field1_info, field2_info) =
-                        field_pairs.get(&pair_key).ok_or_else(|| {
+                        field_pairs_arc.get(&pair_key).ok_or_else(|| {
                             CliError::Other(format!(
                                 "Invariant violation: field pair not found: {pair_key:?}"
                             ))
@@ -2923,7 +2933,7 @@ fn compute_all_bivariatestats(
         let mut rdr = rconfig.reader_file()?;
         let _headers = rdr.headers()?.clone();
         compute_all_bivariatestats_sequential(
-            field_pairs,
+            &field_pairs,
             field_names,
             rdr,
             progress,
@@ -4503,8 +4513,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         });
 
-        // Count outliers (will use parallel processing if index exists)
-        count_all_outliers(&fields_to_count, actual_input_path, args.flag_jobs)?
+        // Count outliers (will use parallel processing if index exists).
+        // Pass fields_to_count by value so the parallel path can move it
+        // directly into an Arc without an extra deep-clone.
+        count_all_outliers(fields_to_count, actual_input_path, args.flag_jobs)?
     };
 
     // Compute kurtosis, Gini coefficient & Atkinson Index for all fields
@@ -4740,7 +4752,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             );
 
             let result = compute_all_bivariatestats(
-                &field_pairs,
+                field_pairs,
                 &field_names,
                 actual_input_path,
                 progress.as_ref(),

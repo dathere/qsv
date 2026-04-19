@@ -1882,7 +1882,9 @@ fn compute_entropy_from_counts(counts: &HashMap<String, u64>, total: u64) -> Opt
 
 /// Compute normalized mutual information from mutual information and entropies
 /// NMI = MI / sqrt(H(X) * H(Y))
-/// Returns None if either entropy is invalid (0, negative, or None) or if the denominator is 0
+/// Returns None if either entropy is invalid (0, negative, or None) or if the denominator
+/// is smaller than f64::EPSILON (guards against subnormal products from extremely low
+/// entropies producing Inf/NaN).
 fn compute_normalized_mutual_information(
     mi: Option<f64>,
     h_x: Option<f64>,
@@ -2352,8 +2354,12 @@ where
 
             // Only compute frequency counts if needed for mutual information
             if needs_freq_counts {
-                // Optimization #2 & #6: String interning - get() first (borrowing),
-                // only clone on cache hit; insert + 1 clone on cache miss (cold path)
+                // NOTE: this is not true string interning — each lookup still yields
+                // a cloned String (needed because xy_counts keys by owned tuples).
+                // The benefit over the prior HashMap<String, String> form is just
+                // one fewer clone on insert (cache miss). A future change to
+                // Arc<str> or SmolStr would give real interning (cheap clones on
+                // cache hit), at the cost of a wider refactor of xy_counts.
                 let x_str_interned = if let Some(cached) = string_interner.get(x_str) {
                     cached.clone()
                 } else {
@@ -3108,9 +3114,9 @@ fn compute_all_bivariatestats_sequential(
 
                 // Only compute frequency counts if needed for mutual information
                 if needs_freq_counts {
-                    // Optimization #2 & #6: Reduce string allocations using string interning
-                    // Intern strings - get() first (borrowing), only clone on cache hit;
-                    // insert + 1 clone on cache miss (cold path)
+                    // See note in compute_chunk_bivariate: this is not true interning —
+                    // each cache hit still clones the full String. The only saving
+                    // over ad-hoc cloning is one fewer clone on insert (cache miss).
                     let x_str = if let Some(cached) = string_interner.get(value_str_x) {
                         cached.clone()
                     } else {

@@ -276,7 +276,7 @@ describe("enhanceDescription", () => {
     // frequency is tagged statsAware:true in command-guidance.yaml
     const result = enhanceDescription(makeSkill("frequency"));
     assert.ok(result.includes("\u{1F4CA}"), "expected 📊 emoji for statsAware command"); // 📊
-    assert.ok(!result.includes("\u{1F4CB} Stats"), "📋 must not be used for a statsAware pattern"); // 📋
+    assert.ok(!result.includes("\u{1F4CB}"), "📋 must not appear at all for a statsAware command"); // 📋
   });
 
   test("subcommand hint comes from YAML, not hardcoded", () => {

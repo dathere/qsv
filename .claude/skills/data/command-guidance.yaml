@@ -5,9 +5,11 @@
 #   whenToUse          — when to select this command (string)
 #   commonPattern      — typical workflow patterns (string)
 #   errorPrevention    — common mistakes and pitfalls (string)
+#   subcommandHint     — inline usage example for commands that require a subcommand (string)
 #   needsMemoryWarning — flag: memory-intensive (boolean, only when true)
 #   needsIndexHint     — flag: benefits from indexing (boolean, only when true)
 #   hasCommonMistakes  — flag: shown with errorPrevention (boolean, only when true)
+#   statsAware         — flag: commonPattern leverages the stats cache; emits 📊 instead of 📋 (boolean, only when true)
 
 select:
   whenToUse: 'Choose columns. Syntax: "1,3,5" (specific), "1-10" (range), "!SSN" (exclude), "/<regex>/" (pattern), "_" (last).'

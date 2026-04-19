@@ -1379,6 +1379,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
                 let json_instance = match to_json_instance(&header_types, header_len, record) {
                     Ok(obj) => obj,
                     Err(e) => {
+                        std::hint::cold_path();
                         // Only convert to string when we have an error
                         // safety: row number was added as last column. We can do index access, not
                         // use get(), and unwrap_unchecked safely since we know its there
@@ -1390,19 +1391,24 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
                 };
 
                 // validate JSON instance against JSON Schema
-                // if the schema has no stateful validators (like uniqueCombinedWith),
-                // and the record is valid, then short-circuit and return None
-                let evaluation = if !has_unique_combined && schema_compiled.is_valid(&json_instance)
-                {
+                // if the schema has stateful validators (like uniqueCombinedWith),
+                // we must fully evaluate every record (this is the hot path in that
+                // configuration, so no cold_path hint). Otherwise, fast-check with
+                // is_valid() and short-circuit valid records; only the rare invalid
+                // case falls through to the full evaluate.
+                let evaluation = if has_unique_combined {
+                    schema_compiled.evaluate(&json_instance)
+                } else if schema_compiled.is_valid(&json_instance) {
                     return None;
                 } else {
-                    // otherwise, fully evaluate the record
+                    std::hint::cold_path();
                     schema_compiled.evaluate(&json_instance)
                 };
 
                 if evaluation.flag().valid {
                     None
                 } else {
+                    std::hint::cold_path();
                     // Only convert to string when we have validation errors
                     // safety: see safety comment above
                     let row_number_string = unsafe {

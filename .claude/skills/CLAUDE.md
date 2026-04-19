@@ -49,7 +49,7 @@ Prefer reading `.stats.csv` and `.freq.csv` directly over their `.data.jsonl` co
 |----------|-------|----------|
 | `MAX_MCP_RESPONSE_SIZE` | 850 KB | `mcp-tools.ts` — safe for Claude Desktop (< 1MB) |
 | `LARGE_FILE_THRESHOLD_BYTES` | 10 MB | `mcp-tools.ts` — triggers large-file handling |
-| `MAX_LOG_MESSAGE_LEN` | 4096 chars | `mcp-tools.ts` — silently truncated beyond this |
+| `MAX_LOG_MESSAGE_LEN` | 4096 chars | `mcp-tools.ts` — messages beyond this are truncated and suffixed with "…" |
 | `MAX_OUTPUT_SIZE` | 50 MB | `executor.ts` — stdout/stderr cap per execution |
 | Default timeout | 10 min | `executor.ts` — configurable via params or config |
 

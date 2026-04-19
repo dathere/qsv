@@ -5,9 +5,11 @@
 #   whenToUse          — when to select this command (string)
 #   commonPattern      — typical workflow patterns (string)
 #   errorPrevention    — common mistakes and pitfalls (string)
+#   subcommandHint     — inline usage example for commands that require a subcommand (string)
 #   needsMemoryWarning — flag: memory-intensive (boolean, only when true)
 #   needsIndexHint     — flag: benefits from indexing (boolean, only when true)
 #   hasCommonMistakes  — flag: shown with errorPrevention (boolean, only when true)
+#   statsAware         — flag: commonPattern leverages the stats cache; emits 📊 instead of 📋 (boolean, only when true)
 
 select:
   whenToUse: 'Choose columns. Syntax: "1,3,5" (specific), "1-10" (range), "!SSN" (exclude), "/<regex>/" (pattern), "_" (last).'
@@ -66,6 +68,7 @@ frequency:
     Use --select to target specific columns instead of computing frequency on all columns.
   needsMemoryWarning: true
   hasCommonMistakes: true
+  statsAware: true
 
 join:
   whenToUse: "Join CSV files (<50MB). For large/complex joins, use qsv_joinp."
@@ -78,6 +81,7 @@ joinp:
   commonPattern: "Stats → Join: Use qsv_stats --cardinality on both files, put lower-cardinality join column on right for efficiency. Check nullcount on join columns — nulls never match in joins and high null rates explain missing rows. For time-series joins, use --asof to match on nearest key rather than exact equality; both datasets are auto-sorted on join columns unless --no-sort is set."
   errorPrevention: "Use --try-parsedates for date joins. Check column types with qsv_stats — mismatched types (String vs Integer) cause silent join failures."
   hasCommonMistakes: true
+  statsAware: true
 
 dedup:
   whenToUse: "Remove duplicates. Loads entire CSV. For large files (>1GB), use qsv_extdedup. Use qsv_stats --cardinality to check column cardinality - if key column has unique values only, dedup will be a no-op."
@@ -85,6 +89,7 @@ dedup:
   errorPrevention: "May OOM on files >1GB. Use qsv_extdedup for large files."
   needsMemoryWarning: true
   hasCommonMistakes: true
+  statsAware: true
 
 sort:
   whenToUse: "Sort by columns. Loads entire file. For large files (>1GB), use qsv_extsort. Use stats cache to check if data is already sorted."
@@ -92,6 +97,7 @@ sort:
   errorPrevention: "May OOM on files >1GB. Use qsv_extsort for large files."
   needsMemoryWarning: true
   hasCommonMistakes: true
+  statsAware: true
 
 count:
   whenToUse: "Count rows. Very fast with index. Run qsv_index first for files >10MB."
@@ -150,12 +156,14 @@ cat:
   whenToUse: "Concatenate CSV files. Subcommands: rows (stack vertically), rowskey (different schemas), columns (side-by-side). Specify via subcommand parameter."
   commonPattern: "Combine files: cat rows → headers from first file only. cat rowskey → handles different schemas. cat columns → side-by-side merge."
   errorPrevention: "rows mode requires same column order. Use rowskey for different schemas."
+  subcommandHint: 'Must pass subcommand via args (e.g., args: {subcommand: "rows", input: "file.csv"}).'
   hasCommonMistakes: true
 
 geocode:
   whenToUse: "Geocode locations using Geonames/MaxMind. Subcommands: suggest, reverse, countryinfo, iplookup. Specify via subcommand parameter."
   commonPattern: "Common: suggest for city lookup, reverse for lat/lon → city, iplookup for IP → location."
   errorPrevention: "Needs Geonames index (auto-downloads on first use). iplookup needs MaxMind GeoLite2 DB."
+  subcommandHint: 'Must pass subcommand via args (e.g., args: {subcommand: "suggest", column: "city", input: "data.csv"}).'
   needsIndexHint: true
 
 pivotp:
@@ -163,6 +171,7 @@ pivotp:
   commonPattern: "Stats → Pivot: Use qsv_stats --cardinality to estimate pivot output width (pivot column cardinality × value columns) and keep estimated columns below ~1000. Group-by: omit on-cols, e.g. qsv_pivotp(input_file='data.csv', index='group-col', values='val-col', agg='sum'). Use stats type column to pick the right --agg: sum/mean for numeric, count for categorical."
   errorPrevention: "High-cardinality pivot columns create wide output. Use qsv_stats --cardinality to check cardinality of potential pivot columns. In group-by mode, --index is required, --agg smart resolves to len (count), and none is not supported."
   hasCommonMistakes: true
+  statsAware: true
 
 excel:
   whenToUse: "Convert spreadsheets (Excel and OpenDocument) to CSV. Also can be used to get workbook metadata. Supports multi-sheet workbooks."

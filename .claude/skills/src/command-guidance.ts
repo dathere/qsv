@@ -24,9 +24,11 @@ export interface CommandGuidance {
   whenToUse?: string;
   commonPattern?: string;
   errorPrevention?: string;
+  subcommandHint?: string;
   needsMemoryWarning?: boolean;
   needsIndexHint?: boolean;
   hasCommonMistakes?: boolean;
+  statsAware?: boolean;
 }
 
 // Module-level cache — populated by loadCommandGuidance(), read by getCommandGuidance()
@@ -52,11 +54,17 @@ function resolveGuidancePath(): string {
   return productionPath; // fallback for clear error message
 }
 
-const VALID_STRING_FIELDS = ["whenToUse", "commonPattern", "errorPrevention"];
+const VALID_STRING_FIELDS = [
+  "whenToUse",
+  "commonPattern",
+  "errorPrevention",
+  "subcommandHint",
+];
 const VALID_BOOLEAN_FIELDS = [
   "needsMemoryWarning",
   "needsIndexHint",
   "hasCommonMistakes",
+  "statsAware",
 ];
 
 /** Type guard for a single guidance entry. */
@@ -228,16 +236,17 @@ export function enhanceDescription(skill: QsvSkill): string {
     description += `\n\n💡 ${guidance.whenToUse}`;
   }
 
-  // Add subcommand requirement for commands that need it
-  if (commandName === "cat") {
-    description += `\n\n🔧 SUBCOMMAND: Must pass subcommand via args (e.g., args: {subcommand: "rows", input: "file.csv"}).`;
-  } else if (commandName === "geocode") {
-    description += `\n\n🔧 SUBCOMMAND: Must pass subcommand via args (e.g., args: {subcommand: "suggest", column: "city", input: "data.csv"}).`;
+  // Add subcommand requirement for commands that need it (data-driven via YAML)
+  if (guidance?.subcommandHint) {
+    description += `\n\n🔧 SUBCOMMAND: ${guidance.subcommandHint}`;
   }
 
-  // Add common patterns (helps Claude compose workflows)
+  // Add common patterns (helps Claude compose workflows).
+  // Use 📊 for stats-aware commands where the pattern hinges on the stats cache,
+  // per the skills CLAUDE.md emoji convention.
   if (guidance?.commonPattern) {
-    description += `\n\n📋 ${guidance.commonPattern}`;
+    const icon = guidance.statsAware ? "📊" : "📋";
+    description += `\n\n${icon} ${guidance.commonPattern}`;
   }
 
   // Add performance hints only for commands that benefit from indexing

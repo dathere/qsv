@@ -28,7 +28,8 @@ export interface PipelineMetadata {
 
 /**
  * Maximum length for qsv_log messages (in characters).
- * Messages exceeding this limit are silently truncated.
+ * Messages exceeding this limit are truncated and suffixed with an
+ * ellipsis ("…") so downstream readers can tell the message was cut.
  */
 export const MAX_LOG_MESSAGE_LEN = 4096;
 

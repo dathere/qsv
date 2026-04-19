@@ -21,10 +21,10 @@ The QSV MCP Server now supports **direct access to local tabular data files** (C
 
 This directory contains:
 
-1. **51 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
+1. **53 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
 2. **TypeScript Executor** - Complete implementation for running qsv skills
 3. **MCP Server with Filesystem Access** - Model Context Protocol server for Claude Desktop integration
-5. **Working Demos** - Practical demonstrations of the system
+4. **Working Demos** - Practical demonstrations of the system
 
 Each skill file provides:
 - **Command specification**: Binary, subcommand, arguments, and options (parsed with qsv-docopt)
@@ -123,23 +123,23 @@ npm test
 npm run mcpb:package
 ```
 
-## Generated Skills (51)
+## Generated Skills (53)
 
 | Category | Count | Skills |
 |----------|-------|--------|
-| **utility** | 22 | cat, clipboard, count, headers, index, input, partition, pseudo, reverse, sniff, split, template, etc. |
-| **transformation** | 5 | rename, replace, transpose, etc. |
-| **aggregation** | 5 | frequency, moarstats, stats, count, pragmastat |
-| **conversion** | 5 | excel, json, jsonl, tojsonl, etc. |
-| **selection** | 3 | select, slice, sample |
+| **utility** | 23 | blake3, cat, dedup, diff, enum, exclude, explode, extdedup, extsort, fill, geocode, headers, index, luau, partition, pivotp, pseudo, sniff, sort, sortcheck, split, sqlp, template |
+| **conversion** | 6 | excel, input, json, jsonl, to, tojsonl |
+| **aggregation** | 5 | count, frequency, moarstats, pragmastat, stats |
+| **transformation** | 5 | datefmt, rename, replace, reverse, transpose |
+| **selection** | 3 | sample, select, slice |
+| **formatting** | 3 | fixlengths, fmt, table |
+| **validation** | 3 | safenames, schema, validate |
 | **filtering** | 2 | search, searchset |
-| **formatting** | 3 | fmt, fixlengths, table |
 | **joining** | 2 | join, joinp |
-| **validation** | 3 | schema, safenames, validate |
 | **documentation** | 1 | describegpt |
 
 **Total Statistics:**
-- **Skills**: 51 commands
+- **Skills**: 53 commands
 - **Usage Examples**: 174 from documentation
 - **Options**: 604 command-line options
 - **Arguments**: 87 positional arguments
@@ -148,11 +148,11 @@ npm run mcpb:package
 
 ```
 .claude/skills/
-├── qsv/                    # 51 skill JSON definitions
+├── qsv/                    # 53 skill JSON definitions
 │   ├── qsv-select.json
 │   ├── qsv-stats.json
 │   ├── qsv-moarstats.json
-│   └── ... (48 more)
+│   └── ... (50 more)
 ├── src/                    # TypeScript source
 │   ├── types.ts           # Type definitions
 │   ├── loader.ts          # Skill loading
@@ -201,7 +201,7 @@ npm run mcpb:package
 ```typescript
 import { SkillLoader, SkillExecutor } from './dist/index.js';
 
-// Load all 51 skills
+// Load all 53 skills
 const loader = new SkillLoader();
 await loader.loadAll();
 
@@ -341,7 +341,7 @@ await agent.chat("Remove duplicates from sales.csv");
 
 ## Integration with Claude Desktop (MCP Server)
 
-The QSV MCP Server exposes all 51 qsv skill-based commands to Claude Desktop through the Model Context Protocol.
+The QSV MCP Server exposes all 53 qsv skill-based commands to Claude Desktop through the Model Context Protocol.
 
 ### Quick Start
 
@@ -450,7 +450,7 @@ MIT
 **Updated**: 2026-03-22
 **Version**: 18.0.5
 **Generator**: `qsv --update-mcp-skills`
-**Skills**: 51 commands
+**Skills**: 53 commands
 **Usage Examples**: 174 from documentation
 **Parsing**: qsv-docopt (robust, accurate)
 **Features**: MCP server, filesystem access, type-safe execution

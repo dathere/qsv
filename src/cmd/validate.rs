@@ -1233,10 +1233,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 debug!("uniqueCombinedWith: {has_unique_combined}, email: {has_email_format}");
 
                 // parse JSON string - use platform-appropriate JSON deserialization
-                let json_result = std::cfg_select! {
-                    target_endian = "big" => serde_json::from_str::<Value>(&s),
-                    target_endian = "little" =>
-                        simd_json::serde::from_slice::<Value>(&mut s.as_bytes().to_vec()),
+                #[cfg(target_endian = "big")]
+                let json_result = serde_json::from_str::<Value>(&s);
+                #[cfg(target_endian = "little")]
+                let json_result = {
+                    let mut s_slice = s.as_bytes().to_vec();
+                    simd_json::serde::from_slice::<Value>(&mut s_slice)
                 };
 
                 match json_result {
@@ -1389,14 +1391,17 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
                 };
 
                 // validate JSON instance against JSON Schema
-                // if the schema has no stateful validators (like uniqueCombinedWith),
-                // and the record is valid, then short-circuit and return None
-                let evaluation = if !has_unique_combined && schema_compiled.is_valid(&json_instance)
-                {
+                // if the schema has stateful validators (like uniqueCombinedWith),
+                // we must fully evaluate every record (this is the hot path in that
+                // configuration, so no cold_path hint). Otherwise, fast-check with
+                // is_valid() and short-circuit valid records; only the rare invalid
+                // case falls through to the full evaluate.
+                let evaluation = if has_unique_combined {
+                    schema_compiled.evaluate(&json_instance)
+                } else if schema_compiled.is_valid(&json_instance) {
                     return None;
                 } else {
                     std::hint::cold_path();
-                    // otherwise, fully evaluate the record
                     schema_compiled.evaluate(&json_instance)
                 };
 

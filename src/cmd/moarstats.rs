@@ -5697,3 +5697,90 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_float_opt_filters_nan_and_infinity() {
+        assert_eq!(parse_float_opt(""), None);
+        assert_eq!(parse_float_opt("1.5"), Some(1.5));
+        assert_eq!(parse_float_opt("NaN"), None);
+        assert_eq!(parse_float_opt("nan"), None);
+        assert_eq!(parse_float_opt("Infinity"), None);
+        assert_eq!(parse_float_opt("-Infinity"), None);
+        assert_eq!(parse_float_opt("inf"), None);
+        assert_eq!(parse_float_opt("not a number"), None);
+    }
+
+    #[test]
+    fn parse_float_opt_from_bytes_filters_nan_and_infinity() {
+        assert_eq!(parse_float_opt_from_bytes(b""), None);
+        assert_eq!(parse_float_opt_from_bytes(b"42"), Some(42.0));
+        assert_eq!(parse_float_opt_from_bytes(b"NaN"), None);
+        assert_eq!(parse_float_opt_from_bytes(b"inf"), None);
+    }
+
+    #[test]
+    fn compute_pearson_skewness_handles_zero_stddev() {
+        // Zero stddev -> None (avoid divide-by-zero)
+        assert_eq!(
+            compute_pearson_skewness(Some(5.0), Some(5.0), Some(0.0)),
+            None,
+        );
+        // Any None input -> None
+        assert_eq!(compute_pearson_skewness(None, Some(5.0), Some(1.0)), None);
+        // Normal case: 3 * (mean - median) / stddev
+        assert_eq!(
+            compute_pearson_skewness(Some(10.0), Some(8.0), Some(2.0)),
+            Some(3.0),
+        );
+    }
+
+    #[test]
+    fn compute_kendall_tau_no_nan_on_all_ties() {
+        // All identical values: every pair is a tie in both x and y.
+        // Pre-fix this would produce sqrt(NaN) from rounding making
+        // (n0 - n1) or (n0 - n2) slightly negative.
+        let x = vec![1.0; 10];
+        let y = vec![2.0; 10];
+        let tau = compute_kendall_tau(&x, &y);
+        // Denominator is zero -> None, never NaN.
+        assert!(tau.is_none());
+    }
+
+    #[test]
+    fn compute_kendall_tau_perfect_concordance() {
+        let x: Vec<f64> = (1..=5).map(f64::from).collect();
+        let y: Vec<f64> = (1..=5).map(f64::from).collect();
+        assert_eq!(compute_kendall_tau(&x, &y), Some(1.0));
+    }
+
+    #[test]
+    fn compute_normalized_mutual_information_epsilon_guard() {
+        // h_x = 0 -> None (early guard)
+        assert_eq!(
+            compute_normalized_mutual_information(Some(0.5), Some(0.0), Some(1.0)),
+            None,
+        );
+        // Very small positive entropies that would produce a subnormal
+        // denominator -> None (epsilon guard, not float-equality).
+        let tiny = 1e-200;
+        assert_eq!(
+            compute_normalized_mutual_information(Some(tiny), Some(tiny), Some(tiny)),
+            None,
+        );
+    }
+
+    #[test]
+    fn outlier_count_indices_are_in_range() {
+        // Guard against a refactor changing these without updating COUNTS_LEN.
+        assert!(OUTLIER_EXTREME_LOWER < OUTLIER_COUNTS_LEN);
+        assert!(OUTLIER_MILD_LOWER < OUTLIER_COUNTS_LEN);
+        assert!(OUTLIER_NORMAL < OUTLIER_COUNTS_LEN);
+        assert!(OUTLIER_MILD_UPPER < OUTLIER_COUNTS_LEN);
+        assert!(OUTLIER_EXTREME_UPPER < OUTLIER_COUNTS_LEN);
+        assert!(OUTLIER_TOTAL < OUTLIER_COUNTS_LEN);
+    }
+}

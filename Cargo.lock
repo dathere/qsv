@@ -1776,7 +1776,7 @@ dependencies = [
 [[package]]
 name = "csv"
 version = "1.4.0"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#9fb37525e048b80bc4bde4e1d31f8784e7a7091b"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#ca1c4d2bfb0742dd3eb57826f534606b414a43ef"
 dependencies = [
  "csv-core",
  "itoa",
@@ -1788,7 +1788,7 @@ dependencies = [
 [[package]]
 name = "csv-core"
 version = "0.1.13"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#9fb37525e048b80bc4bde4e1d31f8784e7a7091b"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#ca1c4d2bfb0742dd3eb57826f534606b414a43ef"
 dependencies = [
  "memchr",
  "simdutf8",
@@ -1812,7 +1812,7 @@ dependencies = [
 [[package]]
 name = "csv-index"
 version = "0.1.6"
-source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#9fb37525e048b80bc4bde4e1d31f8784e7a7091b"
+source = "git+https://github.com/dathere/rust-csv?branch=qsv-tuned#ca1c4d2bfb0742dd3eb57826f534606b414a43ef"
 dependencies = [
  "byteorder",
  "csv",

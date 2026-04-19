@@ -418,7 +418,7 @@ export function createLogTool(): McpToolDefinition {
 - result_summary — Outcome of a completed workflow
 - note — Free-form annotation
 
-⚠️ CAUTION: Keep messages concise. Max ${MAX_LOG_MESSAGE_LEN} chars (truncated silently). Newlines are collapsed to spaces. Logging never fails the workflow.`,
+⚠️ CAUTION: Keep messages concise. Max ${MAX_LOG_MESSAGE_LEN} chars (longer messages are truncated and suffixed with "…"). Newlines are collapsed to spaces. Logging never fails the workflow.`,
     inputSchema: {
       type: "object",
       properties: {

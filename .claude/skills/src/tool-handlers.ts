@@ -1383,18 +1383,23 @@ export async function handleLogCall(
     return errorResult("message must be a non-empty string.");
   }
 
-  // Trim, strip newlines, and truncate if needed (use Array.from for Unicode-safe truncation)
+  // Trim, strip newlines, and truncate if needed (use Array.from for Unicode-safe truncation).
+  // Append a visible ellipsis marker so downstream readers of the log can tell
+  // the message was cut — silent truncation masks reproducibility issues in pipeline manifests.
   const sanitized = rawMessage.trim().replace(/[\r\n]+/g, " ");
-  // Fast path: if UTF-16 length is within limit, codepoint count is too
+  const TRUNCATION_MARKER = "…";
   let message: string;
+  // Fast path: if UTF-16 length is within limit, codepoint count is too
   if (sanitized.length <= MAX_LOG_MESSAGE_LEN) {
     message = sanitized;
   } else {
     const codepoints = Array.from(sanitized);
-    message =
-      codepoints.length > MAX_LOG_MESSAGE_LEN
-        ? codepoints.slice(0, MAX_LOG_MESSAGE_LEN).join("")
-        : sanitized;
+    if (codepoints.length > MAX_LOG_MESSAGE_LEN) {
+      const budget = MAX_LOG_MESSAGE_LEN - TRUNCATION_MARKER.length;
+      message = codepoints.slice(0, budget).join("") + TRUNCATION_MARKER;
+    } else {
+      message = sanitized;
+    }
   }
 
   const logId = `u-${randomUUID()}`;

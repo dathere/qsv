@@ -272,6 +272,21 @@ describe("enhanceDescription", () => {
     assert.ok(result.includes("Run 2nd"));
   });
 
+  test("uses 📊 emoji for statsAware commonPattern", () => {
+    // frequency is tagged statsAware:true in command-guidance.yaml
+    const result = enhanceDescription(makeSkill("frequency"));
+    assert.ok(result.includes("\u{1F4CA}"), "expected 📊 emoji for statsAware command"); // 📊
+    assert.ok(!result.includes("\u{1F4CB} Stats"), "📋 must not be used for a statsAware pattern"); // 📋
+  });
+
+  test("subcommand hint comes from YAML, not hardcoded", () => {
+    // cat has subcommandHint set in command-guidance.yaml
+    const guidance = getCommandGuidance()["cat"];
+    assert.ok(guidance?.subcommandHint, "cat should have subcommandHint in YAML");
+    const result = enhanceDescription(makeSkill("cat"));
+    assert.ok(result.includes(guidance!.subcommandHint!));
+  });
+
   test("adds memory warning for full-memory commands", () => {
     const result = enhanceDescription(
       makeSkill("dedup", { hints: { memory: "full" as const } }),

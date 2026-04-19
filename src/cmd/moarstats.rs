@@ -340,7 +340,7 @@ use std::{
 
 use crossbeam_channel;
 use csv::{ReaderBuilder, StringRecord, WriterBuilder};
-use foldhash::{HashMap, HashMapExt, HashSet};
+use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use indexmap::IndexMap;
 use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use qsv_dateparser::parse_with_preference;
@@ -351,6 +351,12 @@ use stats::{atkinson, gini, kurtosis};
 use threadpool::ThreadPool;
 
 use crate::{CliError, CliResult, config::Config, regex_oncelock, util};
+
+/// Minimum record count before parallel processing is worthwhile for outliers and
+/// bivariate stats. Below this, the scheduling overhead outweighs the speedup, so
+/// fall back to the sequential path.
+const PARALLEL_THRESHOLD: usize = 10_000;
+
 #[derive(Debug, Deserialize)]
 struct Args {
     arg_input:                  Option<String>,
@@ -1367,11 +1373,21 @@ struct OutlierFieldInfo {
     upper_threshold: f64, // For winsorization/trimming (Q3 or percentile)
 }
 
+// Indices into `OutlierStats::counts` (keep in sync with OUTLIER_COUNTS_LEN).
+const OUTLIER_EXTREME_LOWER: usize = 0;
+const OUTLIER_MILD_LOWER: usize = 1;
+const OUTLIER_NORMAL: usize = 2;
+const OUTLIER_MILD_UPPER: usize = 3;
+const OUTLIER_EXTREME_UPPER: usize = 4;
+const OUTLIER_TOTAL: usize = 5;
+const OUTLIER_COUNTS_LEN: usize = 6;
+
 /// Statistics tracked during outlier scanning
 #[derive(Clone, Default)]
 struct OutlierStats {
-    // Counts: [extreme_lower, mild_lower, normal, mild_upper, extreme_upper, total]
-    counts:                 [u64; 6],
+    // Counts indexed by OUTLIER_{EXTREME_LOWER, MILD_LOWER, NORMAL, MILD_UPPER, EXTREME_UPPER,
+    // TOTAL}
+    counts:                 [u64; OUTLIER_COUNTS_LEN],
     // Sums
     sum_outliers:           f64,
     sum_normal:             f64,
@@ -1787,7 +1803,9 @@ fn compute_kendall_tau(x: &[f64], y: &[f64]) -> Option<f64> {
     let n1 = ties_x as f64;
     let n2 = ties_y as f64;
 
-    let denominator = ((n0 - n1) * (n0 - n2)).sqrt();
+    // Clamp factors to >= 0 to guard against tiny negative values from rounding
+    // on tie-heavy data, which would otherwise produce sqrt(NaN).
+    let denominator = ((n0 - n1).max(0.0) * (n0 - n2).max(0.0)).sqrt();
 
     if denominator.abs() < f64::EPSILON {
         return None;
@@ -1867,7 +1885,7 @@ fn compute_normalized_mutual_information(
 
     // Compute denominator: sqrt(H(X) * H(Y))
     let denominator = (h_x_val * h_y_val).sqrt();
-    if denominator == 0.0 {
+    if denominator < f64::EPSILON {
         return None;
     }
 
@@ -1981,35 +1999,35 @@ where
 
             // Count outliers and track statistics based on fence comparisons
             if val < field_info.lower_outer {
-                stats.counts[0] += 1; // extreme_lower
-                stats.counts[5] += 1; // total
+                stats.counts[OUTLIER_EXTREME_LOWER] += 1;
+                stats.counts[OUTLIER_TOTAL] += 1;
                 stats.sum_outliers += val;
                 stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else if val < field_info.lower_inner {
-                stats.counts[1] += 1; // mild_lower
-                stats.counts[5] += 1; // total
+                stats.counts[OUTLIER_MILD_LOWER] += 1;
+                stats.counts[OUTLIER_TOTAL] += 1;
                 stats.sum_outliers += val;
                 stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else if val <= field_info.upper_inner {
-                stats.counts[2] += 1; // normal
+                stats.counts[OUTLIER_NORMAL] += 1;
                 stats.sum_normal += val;
                 stats.sum_squares_normal = val.mul_add(val, stats.sum_squares_normal);
                 stats.min_normal = Some(stats.min_normal.map_or(val, |m| m.min(val)));
                 stats.max_normal = Some(stats.max_normal.map_or(val, |m| m.max(val)));
             } else if val <= field_info.upper_outer {
-                stats.counts[3] += 1; // mild_upper
-                stats.counts[5] += 1; // total
+                stats.counts[OUTLIER_MILD_UPPER] += 1;
+                stats.counts[OUTLIER_TOTAL] += 1;
                 stats.sum_outliers += val;
                 stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else {
-                stats.counts[4] += 1; // extreme_upper
-                stats.counts[5] += 1; // total
+                stats.counts[OUTLIER_EXTREME_UPPER] += 1;
+                stats.counts[OUTLIER_TOTAL] += 1;
                 stats.sum_outliers += val;
                 stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
@@ -2047,8 +2065,8 @@ fn count_all_outliers(
             return Ok(HashMap::new());
         }
 
-        // Only parallelize if file is large enough (threshold: 10k records)
-        if idx_count < 10_000 {
+        // Only parallelize if file is large enough
+        if idx_count < PARALLEL_THRESHOLD {
             // Fall back to sequential for small files
             let mut rdr = rconfig.reader_file()?;
             let _headers = rdr.headers()?.clone();
@@ -2108,7 +2126,7 @@ fn count_all_outliers(
             for (field_name, stats) in chunk_stats {
                 if let Some(total_stats) = all_stats.get_mut(&field_name) {
                     // Aggregate counts
-                    for i in 0..6 {
+                    for i in 0..OUTLIER_COUNTS_LEN {
                         total_stats.counts[i] += stats.counts[i];
                     }
                     // Aggregate sums
@@ -2218,12 +2236,13 @@ where
     // Optimization #1: Date parsing cache - Cache parsed dates to avoid re-parsing same strings
     let mut date_cache: HashMap<String, Option<f64>> = HashMap::with_capacity(estimated_capacity);
 
-    // Optimization #6: String interning - Cache frequently used strings to reduce allocations
-    // Only needed if we're computing mutual information
-    let mut string_interner: HashMap<String, String> = if needs_freq_counts {
-        HashMap::with_capacity(estimated_unique_strings)
+    // Optimization #6: String interning - Cache frequently used strings to reduce allocations.
+    // Only needed if we're computing mutual information. A HashSet suffices since key==value;
+    // saves one clone per cache miss over the prior HashMap<String, String> form.
+    let mut string_interner: HashSet<String> = if needs_freq_counts {
+        HashSet::with_capacity(estimated_unique_strings)
     } else {
-        HashMap::new()
+        HashSet::new()
     };
 
     #[allow(unused_assignments)]
@@ -2318,19 +2337,19 @@ where
             // Only compute frequency counts if needed for mutual information
             if needs_freq_counts {
                 // Optimization #2 & #6: String interning - get() first (borrowing),
-                // only clone on cache hit; insert + 2 clones on cache miss (cold path)
+                // only clone on cache hit; insert + 1 clone on cache miss (cold path)
                 let x_str_interned = if let Some(cached) = string_interner.get(x_str) {
                     cached.clone()
                 } else {
                     let owned = x_str.clone();
-                    string_interner.insert(owned.clone(), owned.clone());
+                    string_interner.insert(owned.clone());
                     owned
                 };
                 let y_str_interned = if let Some(cached) = string_interner.get(y_str) {
                     cached.clone()
                 } else {
                     let owned = y_str.clone();
-                    string_interner.insert(owned.clone(), owned.clone());
+                    string_interner.insert(owned.clone());
                     owned
                 };
 
@@ -2445,35 +2464,35 @@ fn count_all_outliers_from_reader(
 
             // Count outliers and track statistics based on fence comparisons
             if val < field_info.lower_outer {
-                stats.counts[0] += 1; // extreme_lower
-                stats.counts[5] += 1; // total
+                stats.counts[OUTLIER_EXTREME_LOWER] += 1;
+                stats.counts[OUTLIER_TOTAL] += 1;
                 stats.sum_outliers += val;
                 stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else if val < field_info.lower_inner {
-                stats.counts[1] += 1; // mild_lower
-                stats.counts[5] += 1; // total
+                stats.counts[OUTLIER_MILD_LOWER] += 1;
+                stats.counts[OUTLIER_TOTAL] += 1;
                 stats.sum_outliers += val;
                 stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else if val <= field_info.upper_inner {
-                stats.counts[2] += 1; // normal
+                stats.counts[OUTLIER_NORMAL] += 1;
                 stats.sum_normal += val;
                 stats.sum_squares_normal = val.mul_add(val, stats.sum_squares_normal);
                 stats.min_normal = Some(stats.min_normal.map_or(val, |m| m.min(val)));
                 stats.max_normal = Some(stats.max_normal.map_or(val, |m| m.max(val)));
             } else if val <= field_info.upper_outer {
-                stats.counts[3] += 1; // mild_upper
-                stats.counts[5] += 1; // total
+                stats.counts[OUTLIER_MILD_UPPER] += 1;
+                stats.counts[OUTLIER_TOTAL] += 1;
                 stats.sum_outliers += val;
                 stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             } else {
-                stats.counts[4] += 1; // extreme_upper
-                stats.counts[5] += 1; // total
+                stats.counts[OUTLIER_EXTREME_UPPER] += 1;
+                stats.counts[OUTLIER_TOTAL] += 1;
                 stats.sum_outliers += val;
                 stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
                 stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
@@ -2522,8 +2541,8 @@ fn compute_all_bivariatestats(
             return Ok(HashMap::new());
         }
 
-        // Only parallelize if file is large enough (threshold: 10k records)
-        if idx_count < 10_000 {
+        // Only parallelize if file is large enough
+        if idx_count < PARALLEL_THRESHOLD {
             // Fall back to sequential for small files
             let mut rdr = rconfig.reader_file()?;
             let _headers = rdr.headers()?.clone();
@@ -2680,94 +2699,111 @@ fn compute_all_bivariatestats(
         // Finalize statistics from aggregated chunk stats (parallelized)
         let final_stats: HashMap<(u16, u16), BivariateStats> = all_stats
             .into_par_iter()
-            .map(|(pair_key, chunk_stats)| {
-                if let Some(pb) = progress {
-                    pb.inc(1);
-                }
-                let n_pairs = chunk_stats
-                    .correlation_state
-                    .count
-                    .max(chunk_stats.total_pairs);
+            .map(
+                |(pair_key, chunk_stats)| -> CliResult<((u16, u16), BivariateStats)> {
+                    if let Some(pb) = progress {
+                        pb.inc(1);
+                    }
+                    let n_pairs = chunk_stats
+                        .correlation_state
+                        .count
+                        .max(chunk_stats.total_pairs);
 
-                // Get field info for this pair to check cardinality threshold
-                let (field1_info, field2_info) = field_pairs
-                    .get(&pair_key)
-                    .unwrap_or_else(|| panic!("Field pair not found: {pair_key:?}"));
+                    // Get field info for this pair to check cardinality threshold.
+                    // chunk_stats is pre-populated from field_pairs (see debug_assert!s earlier),
+                    // so a miss here indicates an invariant violation from a refactor.
+                    let (field1_info, field2_info) =
+                        field_pairs.get(&pair_key).ok_or_else(|| {
+                            CliError::Other(format!(
+                                "Invariant violation: field pair not found: {pair_key:?}"
+                            ))
+                        })?;
 
-                // Early exit: skip all correlation/covariance computations if variance is zero
-                let has_zero_variance = field1_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
-                    || field2_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
-                    || field1_info.variance.is_some_and(|v| v.abs() < f64::EPSILON)
-                    || field2_info.variance.is_some_and(|v| v.abs() < f64::EPSILON);
+                    // Early exit: skip all correlation/covariance computations if variance is zero
+                    let has_zero_variance =
+                        field1_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
+                            || field2_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
+                            || field1_info.variance.is_some_and(|v| v.abs() < f64::EPSILON)
+                            || field2_info.variance.is_some_and(|v| v.abs() < f64::EPSILON);
 
-                // Compute Pearson correlation if requested
-                let pearson = if !stats_config.pearson
-                    || has_zero_variance
-                    || chunk_stats.correlation_state.count < 2
-                {
-                    None
-                } else {
-                    finalize_pearson_correlation(&chunk_stats.correlation_state)
-                };
+                    // Compute Pearson correlation if requested
+                    let pearson = if !stats_config.pearson
+                        || has_zero_variance
+                        || chunk_stats.correlation_state.count < 2
+                    {
+                        None
+                    } else {
+                        finalize_pearson_correlation(&chunk_stats.correlation_state)
+                    };
 
-                // Compute covariance if requested
-                let covariance_sample = if !stats_config.covariance
-                    || has_zero_variance
-                    || chunk_stats.correlation_state.count < 2
-                {
-                    None
-                } else {
-                    finalize_covariance(&chunk_stats.correlation_state, true)
-                };
-                let covariance_population = if !stats_config.covariance
-                    || has_zero_variance
-                    || chunk_stats.correlation_state.count < 2
-                {
-                    None
-                } else {
-                    finalize_covariance(&chunk_stats.correlation_state, false)
-                };
+                    // Compute covariance if requested
+                    let covariance_sample = if !stats_config.covariance
+                        || has_zero_variance
+                        || chunk_stats.correlation_state.count < 2
+                    {
+                        None
+                    } else {
+                        finalize_covariance(&chunk_stats.correlation_state, true)
+                    };
+                    let covariance_population = if !stats_config.covariance
+                        || has_zero_variance
+                        || chunk_stats.correlation_state.count < 2
+                    {
+                        None
+                    } else {
+                        finalize_covariance(&chunk_stats.correlation_state, false)
+                    };
 
-                // Compute Spearman correlation if requested
-                let spearman = if !stats_config.spearman
-                    || has_zero_variance
-                    || chunk_stats.x_values.len() < 2
-                {
-                    None
-                } else {
-                    compute_spearman_correlation(&chunk_stats.x_values, &chunk_stats.y_values)
-                };
+                    // Compute Spearman correlation if requested
+                    let spearman = if !stats_config.spearman
+                        || has_zero_variance
+                        || chunk_stats.x_values.len() < 2
+                    {
+                        None
+                    } else {
+                        compute_spearman_correlation(&chunk_stats.x_values, &chunk_stats.y_values)
+                    };
 
-                // Compute Kendall's tau if requested
-                let kendall =
-                    if !stats_config.kendall || has_zero_variance || chunk_stats.x_values.len() < 2
+                    // Compute Kendall's tau if requested
+                    let kendall = if !stats_config.kendall
+                        || has_zero_variance
+                        || chunk_stats.x_values.len() < 2
                     {
                         None
                     } else {
                         compute_kendall_tau(&chunk_stats.x_values, &chunk_stats.y_values)
                     };
 
-                // Compute mutual information if requested and apply cardinality threshold
-                let mutual_information = if !stats_config.mi || chunk_stats.total_pairs == 0 {
-                    None
-                } else if let Some(threshold) = cardinality_threshold {
-                    // Check if either field exceeds cardinality threshold
-                    let exceeds_threshold = field1_info.cardinality.is_some_and(|c| c > threshold)
-                        || field2_info.cardinality.is_some_and(|c| c > threshold);
-                    if exceeds_threshold {
-                        // Convert indices to names for logging (u16 -> usize for indexing)
-                        let (idx1, idx2) = pair_key;
-                        let field1_name = field_names
-                            .get(idx1 as usize)
-                            .map_or("?", std::string::String::as_str);
-                        let field2_name = field_names
-                            .get(idx2 as usize)
-                            .map_or("?", std::string::String::as_str);
-                        log::debug!(
-                            "Skipping mutual information for pair ({field1_name}, {field2_name}) \
-                             - cardinality exceeds threshold {threshold}"
-                        );
+                    // Compute mutual information if requested and apply cardinality threshold
+                    let mutual_information = if !stats_config.mi || chunk_stats.total_pairs == 0 {
                         None
+                    } else if let Some(threshold) = cardinality_threshold {
+                        // Check if either field exceeds cardinality threshold
+                        let exceeds_threshold =
+                            field1_info.cardinality.is_some_and(|c| c > threshold)
+                                || field2_info.cardinality.is_some_and(|c| c > threshold);
+                        if exceeds_threshold {
+                            // Convert indices to names for logging (u16 -> usize for indexing)
+                            let (idx1, idx2) = pair_key;
+                            let field1_name = field_names
+                                .get(idx1 as usize)
+                                .map_or("?", std::string::String::as_str);
+                            let field2_name = field_names
+                                .get(idx2 as usize)
+                                .map_or("?", std::string::String::as_str);
+                            log::debug!(
+                                "Skipping mutual information for pair ({field1_name}, \
+                                 {field2_name}) - cardinality exceeds threshold {threshold}"
+                            );
+                            None
+                        } else {
+                            compute_mutual_information_from_counts(
+                                &chunk_stats.xy_counts,
+                                &chunk_stats.x_counts,
+                                &chunk_stats.y_counts,
+                                chunk_stats.total_pairs,
+                            )
+                        }
                     } else {
                         compute_mutual_information_from_counts(
                             &chunk_stats.xy_counts,
@@ -2775,40 +2811,56 @@ fn compute_all_bivariatestats(
                             &chunk_stats.y_counts,
                             chunk_stats.total_pairs,
                         )
-                    }
-                } else {
-                    compute_mutual_information_from_counts(
-                        &chunk_stats.xy_counts,
-                        &chunk_stats.x_counts,
-                        &chunk_stats.y_counts,
-                        chunk_stats.total_pairs,
-                    )
-                };
+                    };
 
-                // Compute normalized mutual information if requested
-                // NMI requires MI and entropies computed from the same frequency counts
-                let normalized_mutual_information = if !stats_config.nmi
-                    || chunk_stats.total_pairs == 0
-                {
-                    None
-                } else if let Some(threshold) = cardinality_threshold {
-                    // Check if either field exceeds cardinality threshold (same as MI)
-                    let exceeds_threshold = field1_info.cardinality.is_some_and(|c| c > threshold)
-                        || field2_info.cardinality.is_some_and(|c| c > threshold);
-                    if exceeds_threshold {
-                        // Convert indices to names for logging (u16 -> usize for indexing)
-                        let (idx1, idx2) = pair_key;
-                        let field1_name = field_names
-                            .get(idx1 as usize)
-                            .map_or("?", std::string::String::as_str);
-                        let field2_name = field_names
-                            .get(idx2 as usize)
-                            .map_or("?", std::string::String::as_str);
-                        log::debug!(
-                            "Skipping normalized mutual information for pair ({field1_name}, \
-                             {field2_name}) - cardinality exceeds threshold {threshold}"
-                        );
+                    // Compute normalized mutual information if requested
+                    // NMI requires MI and entropies computed from the same frequency counts
+                    let normalized_mutual_information = if !stats_config.nmi
+                        || chunk_stats.total_pairs == 0
+                    {
                         None
+                    } else if let Some(threshold) = cardinality_threshold {
+                        // Check if either field exceeds cardinality threshold (same as MI)
+                        let exceeds_threshold =
+                            field1_info.cardinality.is_some_and(|c| c > threshold)
+                                || field2_info.cardinality.is_some_and(|c| c > threshold);
+                        if exceeds_threshold {
+                            // Convert indices to names for logging (u16 -> usize for indexing)
+                            let (idx1, idx2) = pair_key;
+                            let field1_name = field_names
+                                .get(idx1 as usize)
+                                .map_or("?", std::string::String::as_str);
+                            let field2_name = field_names
+                                .get(idx2 as usize)
+                                .map_or("?", std::string::String::as_str);
+                            log::debug!(
+                                "Skipping normalized mutual information for pair ({field1_name}, \
+                                 {field2_name}) - cardinality exceeds threshold {threshold}"
+                            );
+                            None
+                        } else {
+                            // Compute entropies from marginal frequency counts
+                            let h_x = compute_entropy_from_counts(
+                                &chunk_stats.x_counts,
+                                chunk_stats.total_pairs,
+                            );
+                            let h_y = compute_entropy_from_counts(
+                                &chunk_stats.y_counts,
+                                chunk_stats.total_pairs,
+                            );
+                            // Compute MI if not already computed (needed for NMI)
+                            let mi = if mutual_information.is_some() {
+                                mutual_information
+                            } else {
+                                compute_mutual_information_from_counts(
+                                    &chunk_stats.xy_counts,
+                                    &chunk_stats.x_counts,
+                                    &chunk_stats.y_counts,
+                                    chunk_stats.total_pairs,
+                                )
+                            };
+                            compute_normalized_mutual_information(mi, h_x, h_y)
+                        }
                     } else {
                         // Compute entropies from marginal frequency counts
                         let h_x = compute_entropy_from_counts(
@@ -2831,42 +2883,24 @@ fn compute_all_bivariatestats(
                             )
                         };
                         compute_normalized_mutual_information(mi, h_x, h_y)
-                    }
-                } else {
-                    // Compute entropies from marginal frequency counts
-                    let h_x =
-                        compute_entropy_from_counts(&chunk_stats.x_counts, chunk_stats.total_pairs);
-                    let h_y =
-                        compute_entropy_from_counts(&chunk_stats.y_counts, chunk_stats.total_pairs);
-                    // Compute MI if not already computed (needed for NMI)
-                    let mi = if mutual_information.is_some() {
-                        mutual_information
-                    } else {
-                        compute_mutual_information_from_counts(
-                            &chunk_stats.xy_counts,
-                            &chunk_stats.x_counts,
-                            &chunk_stats.y_counts,
-                            chunk_stats.total_pairs,
-                        )
                     };
-                    compute_normalized_mutual_information(mi, h_x, h_y)
-                };
 
-                (
-                    pair_key,
-                    BivariateStats {
-                        pearson,
-                        spearman,
-                        kendall,
-                        covariance_sample,
-                        covariance_population,
-                        mutual_information,
-                        normalized_mutual_information,
-                        n_pairs,
-                    },
-                )
-            })
-            .collect();
+                    Ok((
+                        pair_key,
+                        BivariateStats {
+                            pearson,
+                            spearman,
+                            kendall,
+                            covariance_sample,
+                            covariance_population,
+                            mutual_information,
+                            normalized_mutual_information,
+                            n_pairs,
+                        },
+                    ))
+                },
+            )
+            .collect::<CliResult<HashMap<_, _>>>()?;
 
         // Finish progress bar after final statistics computation
         if let Some(pb) = progress {
@@ -2961,12 +2995,13 @@ fn compute_all_bivariatestats_sequential(
     // Optimization #1: Date parsing cache - Cache parsed dates to avoid re-parsing same strings
     let mut date_cache: HashMap<String, Option<f64>> = HashMap::with_capacity(estimated_capacity);
 
-    // Optimization #6: String interning - Cache frequently used strings to reduce allocations
-    // Only needed if we're computing mutual information
-    let mut string_interner: HashMap<String, String> = if needs_freq_counts {
-        HashMap::with_capacity(estimated_unique_strings)
+    // Optimization #6: String interning - Cache frequently used strings to reduce allocations.
+    // Only needed if we're computing mutual information. A HashSet suffices since key==value;
+    // saves one clone per cache miss over the prior HashMap<String, String> form.
+    let mut string_interner: HashSet<String> = if needs_freq_counts {
+        HashSet::with_capacity(estimated_unique_strings)
     } else {
-        HashMap::new()
+        HashSet::new()
     };
 
     // amortize allocations
@@ -3054,19 +3089,19 @@ fn compute_all_bivariatestats_sequential(
                 if needs_freq_counts {
                     // Optimization #2 & #6: Reduce string allocations using string interning
                     // Intern strings - get() first (borrowing), only clone on cache hit;
-                    // insert + 2 clones on cache miss (cold path)
+                    // insert + 1 clone on cache miss (cold path)
                     let x_str = if let Some(cached) = string_interner.get(value_str_x) {
                         cached.clone()
                     } else {
                         let owned = value_str_x.to_string();
-                        string_interner.insert(owned.clone(), owned.clone());
+                        string_interner.insert(owned.clone());
                         owned
                     };
                     let y_str = if let Some(cached) = string_interner.get(value_str_y) {
                         cached.clone()
                     } else {
                         let owned = value_str_y.to_string();
-                        string_interner.insert(owned.clone(), owned.clone());
+                        string_interner.insert(owned.clone());
                         owned
                     };
 
@@ -3092,10 +3127,14 @@ fn compute_all_bivariatestats_sequential(
 
     for (pair_key, (x_nums, y_nums, correlation_state, xy_counts, _, _, total_pairs)) in pair_values
     {
-        // Get field info for this pair to check variance and cardinality
-        let (field1_info, field2_info) = field_pairs
-            .get(&pair_key)
-            .unwrap_or_else(|| panic!("Field pair not found: {pair_key:?}"));
+        // Get field info for this pair to check variance and cardinality.
+        // pair_values was built from field_pairs keys (see debug_assert!s earlier),
+        // so a miss here indicates an invariant violation from a refactor.
+        let (field1_info, field2_info) = field_pairs.get(&pair_key).ok_or_else(|| {
+            CliError::Other(format!(
+                "Invariant violation: field pair not found: {pair_key:?}"
+            ))
+        })?;
 
         // Compute marginal frequencies from joint frequencies if needed for mutual information
         // This ensures x_counts and y_counts are computed from the same set of records
@@ -3672,7 +3711,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
         let mut stats_cmd_args = stats_args_vec.clone();
         stats_cmd_args.push("--output");
-        stats_cmd_args.push(temp_stats_path.to_str().unwrap());
+        let temp_stats_path_str = temp_stats_path
+            .to_str()
+            .ok_or_else(|| CliError::Other("Invalid temp stats path".to_string()))?;
+        stats_cmd_args.push(temp_stats_path_str);
 
         let qsv_path = env::current_exe()
             .map_err(|e| CliError::Other(format!("Failed to get current executable path: {e:?}")))?
@@ -4630,20 +4672,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             BivariateFieldInfo {
                                 col_idx:     field1_col_idx,
                                 field_type:  field1_type,
-                                // mean:        field1_mean,
                                 stddev:      field1_stddev,
                                 variance:    field1_variance,
                                 cardinality: field1_cardinality,
-                                // nullcount:   field1_nullcount,
                             },
                             BivariateFieldInfo {
                                 col_idx:     field2_col_idx,
                                 field_type:  field2_type,
-                                // mean:        field2_mean,
                                 stddev:      field2_stddev,
                                 variance:    field2_variance,
                                 cardinality: field2_cardinality,
-                                // nullcount:   field2_nullcount,
                             },
                         ),
                     );
@@ -5212,32 +5250,32 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             {
                 // Write counts (with _cnt suffix)
                 if let Some(idx) = new_column_indices.get("outliers_extreme_lower_cnt") {
-                    new_values[*idx] = stats.counts[0].to_string();
+                    new_values[*idx] = stats.counts[OUTLIER_EXTREME_LOWER].to_string();
                 }
                 if let Some(idx) = new_column_indices.get("outliers_mild_lower_cnt") {
-                    new_values[*idx] = stats.counts[1].to_string();
+                    new_values[*idx] = stats.counts[OUTLIER_MILD_LOWER].to_string();
                 }
                 if let Some(idx) = new_column_indices.get("outliers_normal_cnt") {
-                    new_values[*idx] = stats.counts[2].to_string();
+                    new_values[*idx] = stats.counts[OUTLIER_NORMAL].to_string();
                 }
                 if let Some(idx) = new_column_indices.get("outliers_mild_upper_cnt") {
-                    new_values[*idx] = stats.counts[3].to_string();
+                    new_values[*idx] = stats.counts[OUTLIER_MILD_UPPER].to_string();
                 }
                 if let Some(idx) = new_column_indices.get("outliers_extreme_upper_cnt") {
-                    new_values[*idx] = stats.counts[4].to_string();
+                    new_values[*idx] = stats.counts[OUTLIER_EXTREME_UPPER].to_string();
                 }
                 if let Some(idx) = new_column_indices.get("outliers_total_cnt") {
-                    new_values[*idx] = stats.counts[5].to_string();
+                    new_values[*idx] = stats.counts[OUTLIER_TOTAL].to_string();
                 }
 
                 // Compute means
-                let mean_outliers = if stats.counts[5] > 0 {
-                    Some(stats.sum_outliers / stats.counts[5] as f64)
+                let mean_outliers = if stats.counts[OUTLIER_TOTAL] > 0 {
+                    Some(stats.sum_outliers / stats.counts[OUTLIER_TOTAL] as f64)
                 } else {
                     None
                 };
-                let mean_normal = if stats.counts[2] > 0 {
-                    Some(stats.sum_normal / stats.counts[2] as f64)
+                let mean_normal = if stats.counts[OUTLIER_NORMAL] > 0 {
+                    Some(stats.sum_normal / stats.counts[OUTLIER_NORMAL] as f64)
                 } else {
                     None
                 };
@@ -5248,8 +5286,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 };
 
                 // Compute outliers variance and stddev once for reuse
-                let (variance_outliers, stddev_outliers) = if stats.counts[5] > 1 {
-                    let n = stats.counts[5] as f64;
+                let (variance_outliers, stddev_outliers) = if stats.counts[OUTLIER_TOTAL] > 1 {
+                    let n = stats.counts[OUTLIER_TOTAL] as f64;
                     let variance = (stats.sum_squares_outliers
                         - (stats.sum_outliers * stats.sum_outliers / n))
                         / (n - 1.0);
@@ -5306,8 +5344,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     }
 
                     // Variance and stddev of non-outliers
-                    if stats.counts[2] > 1 {
-                        let n = stats.counts[2] as f64;
+                    if stats.counts[OUTLIER_NORMAL] > 1 {
+                        let n = stats.counts[OUTLIER_NORMAL] as f64;
                         let variance_normal = (stats.sum_squares_normal
                             - (stats.sum_normal * stats.sum_normal / n))
                             / (n - 1.0);
@@ -5354,7 +5392,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 if stats.count_all > 0
                     && let Some(idx) = new_column_indices.get("outliers_percentage")
                 {
-                    let percentage = (stats.counts[5] as f64 / stats.count_all as f64) * 100.0;
+                    let percentage =
+                        (stats.counts[OUTLIER_TOTAL] as f64 / stats.count_all as f64) * 100.0;
                     new_values[*idx] = util::round_num(percentage, args.flag_round);
                 }
 

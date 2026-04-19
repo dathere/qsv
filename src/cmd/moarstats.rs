@@ -335,6 +335,7 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Command,
+    sync::Arc,
     time::Instant,
 };
 
@@ -880,7 +881,11 @@ fn parse_float_opt(s: &str) -> Option<f64> {
     if s.is_empty() {
         return None;
     }
-    fast_float2::parse::<f64, &[u8]>(s.as_bytes()).ok()
+    // Filter NaN/±Infinity: a single non-finite cell would poison Welford
+    // correlation state and propagate silently through all downstream statistics.
+    fast_float2::parse::<f64, &[u8]>(s.as_bytes())
+        .ok()
+        .filter(|v| v.is_finite())
 }
 
 /// Parse a numeric value from bytes, handling empty bytes and invalid values
@@ -889,7 +894,9 @@ fn parse_float_opt_from_bytes(bytes: &[u8]) -> Option<f64> {
     if bytes.is_empty() {
         return None;
     }
-    fast_float2::parse::<f64, &[u8]>(bytes).ok()
+    fast_float2::parse::<f64, &[u8]>(bytes)
+        .ok()
+        .filter(|v| v.is_finite())
 }
 
 /// Parse a percentile value from the percentiles column string
@@ -2082,14 +2089,14 @@ fn count_all_outliers(
         let pool = ThreadPool::new(njobs);
         let (send, recv) = crossbeam_channel::bounded(nchunks);
 
-        // Process each chunk in parallel
+        // Process each chunk in parallel. Share the read-only field map via Arc
+        // instead of deep-cloning the HashMap into every worker.
         let input_path_string = input_path.to_str().unwrap_or("").to_string();
+        let fields_arc = Arc::new(fields_to_count.clone());
         for i in 0..nchunks {
-            let (send, fields_to_count_clone, input_path_string_clone) = (
-                send.clone(),
-                fields_to_count.clone(),
-                input_path_string.clone(),
-            );
+            let send = send.clone();
+            let fields_arc = Arc::clone(&fields_arc);
+            let input_path_string_clone = input_path_string.clone();
             pool.execute(move || {
                 // Open index for this thread
                 let rconfig_chunk = Config::new(Some(&input_path_string_clone));
@@ -2108,7 +2115,7 @@ fn count_all_outliers(
 
                 // Process chunk records
                 let it = idx_chunk.byte_records().take(chunk_size);
-                let result = count_chunk_outliers(&fields_to_count_clone, it);
+                let result = count_chunk_outliers(&fields_arc, it);
                 let _ = send.send(result);
             });
         }
@@ -2580,11 +2587,14 @@ fn compute_all_bivariatestats(
         let pool = ThreadPool::new(njobs);
         let (send, recv) = crossbeam_channel::bounded(nchunks);
 
-        // Process each chunk in parallel
+        // Process each chunk in parallel. Share the read-only field-pair map via
+        // Arc instead of deep-cloning the HashMap into every worker.
         let input_path_string = input_path.to_str().unwrap_or("").to_string();
+        let field_pairs_arc = Arc::new(field_pairs.clone());
         for i in 0..nchunks {
-            let (send, field_pairs_clone, input_path_string_clone) =
-                (send.clone(), field_pairs.clone(), input_path_string.clone());
+            let send = send.clone();
+            let field_pairs_arc = Arc::clone(&field_pairs_arc);
+            let input_path_string_clone = input_path_string.clone();
             pool.execute(move || {
                 // Open index for this thread
                 let rconfig_chunk = Config::new(Some(&input_path_string_clone));
@@ -2603,7 +2613,7 @@ fn compute_all_bivariatestats(
 
                 // Process chunk records
                 let it = idx_chunk.byte_records().take(chunk_size);
-                let result = compute_chunk_bivariate(&field_pairs_clone, it, stats_config);
+                let result = compute_chunk_bivariate(&field_pairs_arc, it, stats_config);
                 let _ = send.send(result);
             });
         }

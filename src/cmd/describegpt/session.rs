@@ -15,7 +15,8 @@ use reqwest::blocking::Client;
 use serde_json::json;
 
 use super::{
-    Args, CliError, CliResult, PromptType, check_model, extract_sql_sample, get_completion,
+    Args, CliError, CliResult, PromptType, check_model, duckdb_sql::extract_sql_sample,
+    get_completion,
 };
 
 /// One turn of the chat-mode conversation. `timestamp` is written back to the

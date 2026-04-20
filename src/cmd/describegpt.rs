@@ -353,7 +353,6 @@ use std::{
     env, fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::Command,
     sync::OnceLock,
     time::{Duration, Instant},
 };
@@ -383,12 +382,17 @@ use crate::{
 use crate::{lookup, lookup::LookupTableOptions};
 
 mod dictionary;
+mod duckdb_sql;
 mod formatters;
 mod session;
 
 use dictionary::{
     combine_dictionary_entries, generate_code_based_dictionary, parse_frequency_csv,
     parse_llm_dictionary_response, parse_stats_csv,
+};
+use duckdb_sql::{
+    build_score_refinement_prompt, escape_sql_string, extract_sql_sample, handle_sql_error,
+    run_duckdb_query, score_sql_query, should_use_duckdb,
 };
 use session::{
     SessionMessage, SessionState, apply_sliding_window, check_message_relevance, load_session,
@@ -609,25 +613,6 @@ static READ_CSV_AUTO_REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyL
     regex::Regex::new("read_csv_auto\\([^)]*\\)").expect("Invalid regex pattern")
 });
 
-/// Escape a string for safe usage as a SQL string literal.
-///
-/// This function ensures that common problematic characters (such as single quotes, backslashes,
-/// newlines, carriage returns, and null bytes) are properly escaped according to SQL string
-/// literal rules.
-///
-/// - Single quotes are escaped by doubling them (`'` → `''`), as per the SQL standard.
-/// - Backslashes are escaped by doubling (`\` → `\\`). Backslash escaping is non-standard SQL but
-///   prevents certain injection scenarios, and must come first in this implementation.
-/// - Newline (`\n`), carriage return (`\r`), and null byte (`\0`) are replaced by their C-like
-///   escape sequence representations (`\\n`, `\\r`, `\\0`).
-fn escape_sql_string(s: &str) -> String {
-    s.replace('\\', "\\\\") // Backslash must be first!
-        .replace('\'', "''")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\0', "\\0")
-}
-
 static DEFAULT_REDIS_CONN_STRING: OnceLock<String> = OnceLock::new();
 static DEFAULT_REDIS_TTL_SECS: u64 = 60 * 60 * 24 * 28; // 28 days in seconds
 static DEFAULT_REDIS_POOL_SIZE: u32 = 20;
@@ -730,106 +715,6 @@ fn parse_language_option(language: Option<&String>) -> (bool, f64, Option<String
     } else {
         (true, DEFAULT_LANGDETECTION_THRESHOLD, None)
     }
-}
-
-// Check if DuckDB should be used based on environment variable
-fn should_use_duckdb() -> bool {
-    env::var(QSV_DUCKDB_PATH_ENV).is_ok_and(|val| !val.is_empty())
-}
-
-/// Score a SQL query using the scoresql command.
-/// Returns Ok((score, rating, report_json)) on success.
-fn score_sql_query(
-    input_path: &str,
-    sql_query: &str,
-    use_duckdb: bool,
-) -> CliResult<(u32, String, String)> {
-    let qsv_path = std::env::current_exe()?;
-    let mut cmd = Command::new(qsv_path);
-    cmd.arg("scoresql").arg(input_path).arg("--json").arg("-q");
-    if use_duckdb {
-        cmd.arg("--duckdb");
-    }
-    cmd.arg(sql_query);
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to run scoresql: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return fail_clierror!("scoresql failed: {stderr}");
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let report: serde_json::Value =
-        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse scoresql JSON: {e}"))?;
-
-    let score = report["score"].as_u64().unwrap_or(0) as u32;
-    let rating = report["rating"].as_str().unwrap_or("Unknown").to_string();
-
-    Ok((score, rating, stdout))
-}
-
-/// Build a prompt asking the LLM to improve a low-scoring SQL query.
-fn build_score_refinement_prompt(
-    sql_query: &str,
-    score_report_json: &str,
-    attempt: u32,
-    max_retries: u32,
-    table_name: &str,
-) -> String {
-    let report: serde_json::Value = serde_json::from_str(score_report_json).unwrap_or_default();
-    let score = report["score"].as_u64().unwrap_or(0);
-    let rating = report["rating"].as_str().unwrap_or("Unknown");
-    let suggestions: Vec<&str> = report["suggestions"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-        .unwrap_or_default();
-    let suggestions_text = suggestions
-        .iter()
-        .enumerate()
-        .map(|(i, s)| format!("{}. {s}", i + 1))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    format!(
-        "The SQL query scored {score}/100 ({rating}), below the acceptable threshold. Retry \
-         {attempt} of {max_retries}.\n\nCurrent \
-         SQL:\n```sql\n{sql_query}\n```\n\nSuggestions:\n{suggestions_text}\n\nImprove the SQL \
-         query addressing these suggestions. Use `{table_name}` as the table name. Return ONLY \
-         the improved SQL in a ```sql code block. Keep the same logic/results, optimize structure \
-         and performance."
-    )
-}
-
-// Get DuckDB binary path from environment variable
-fn get_duckdb_path() -> CliResult<String> {
-    // Return cached path if already initialized
-    if let Some(path) = DUCKDB_PATH.get() {
-        return Ok(path.clone());
-    }
-
-    let duckdb_path =
-        env::var(QSV_DUCKDB_PATH_ENV).map_err(|_| "QSV_DUCKDB_PATH env var not set")?;
-
-    // Check if the binary exists
-    let path = Path::new(&duckdb_path);
-    if !path.exists() {
-        return fail_clierror!("DuckDB binary not found at path: {duckdb_path}");
-    }
-    if !path.is_file() {
-        return fail_clierror!("DuckDB path is not a file: {duckdb_path}");
-    }
-    if !util::is_executable(&duckdb_path)? {
-        return fail_clierror!("DuckDB path is not executable: {duckdb_path}");
-    }
-
-    // Cache the path
-    // safety: we're only setting the path once, so it's safe to unwrap
-    DUCKDB_PATH.set(duckdb_path.clone()).unwrap();
-
-    Ok(duckdb_path)
 }
 
 /// Sends an HTTP request using the provided client and parameters.
@@ -3352,65 +3237,6 @@ fn run_inference_options(
     Ok(())
 }
 
-// Helper function to run DuckDB queries
-fn run_duckdb_query(
-    sql_query: &str,
-    output_path: &str,
-    status_msg: &str,
-) -> CliResult<(String, String)> {
-    let duckdb_path = get_duckdb_path()?;
-    let start_time = Instant::now();
-
-    let mut cmd = Command::new(duckdb_path);
-    cmd.arg("-csv").arg("-c").arg(sql_query);
-
-    let output = cmd
-        .output()
-        .map_err(|e| CliError::Other(format!("Error while executing DuckDB command: {e:?}")))?;
-
-    if !status_msg.is_empty() {
-        print_status(status_msg, Some(start_time.elapsed()));
-    }
-
-    // Check if DuckDB command failed (non-zero exit status)
-    if !output.status.success() {
-        // If SQL execution failed, write the SQL query to output file with a .sql extension
-        let output_path = Path::new(output_path).with_extension("sql");
-        if let Err(e) = fs::write(&output_path, sql_query) {
-            return fail_clierror!("Failed to write SQL query to {output_path:?}: {e}");
-        }
-        let stderr_str =
-            simdutf8::basic::from_utf8(&output.stderr).unwrap_or("<unable to parse stderr>");
-        return fail_clierror!(
-            "DuckDB SQL query execution failed:\n{stderr_str}\nFailed SQL query saved to \
-             {output_path:?}"
-        );
-    }
-
-    let Ok(stdout_str) = simdutf8::basic::from_utf8(&output.stdout) else {
-        return fail_clierror!("Unable to parse stdout of DuckDB command:\n{output:?}");
-    };
-    let Ok(stderr_str) = simdutf8::basic::from_utf8(&output.stderr) else {
-        return fail_clierror!("Unable to parse stderr of DuckDB command:\n{output:?}");
-    };
-
-    // Also check stderr for error messages even if exit status is 0
-    if stderr_str.to_ascii_lowercase().contains(" error:") {
-        return fail_clierror!("DuckDB SQL query error detected:\n{stderr_str}");
-    }
-
-    // SQL successful, write the output to the specified file with a .csv extension
-    if !output_path.is_empty() {
-        let output_path = Path::new(output_path).with_extension("csv");
-
-        if let Err(e) = fs::write(&output_path, stdout_str) {
-            return fail_clierror!("Failed to write SQL results to {output_path:?}: {e}");
-        }
-    }
-
-    Ok((stdout_str.to_string(), stderr_str.to_string()))
-}
-
 fn determine_cache_kinds_to_remove(args: &Args) -> Vec<PromptType> {
     if args.flag_dictionary {
         vec![PromptType::Dictionary]
@@ -3508,55 +3334,6 @@ fn remove_prompt_cache_entries_for_both_flags(
         let key = get_cache_key_with_flag(args, kind, actual_model, flag);
         remove_cache_entry_by_key(&key, args, kind, success_msg);
     }
-}
-
-#[allow(dead_code)]
-/// Helper function to handle SQL error cases by invalidating cache and saving the failed query
-fn handle_sql_error(
-    args: &Args,
-    cache_type: &CacheType,
-    sql_query_file: &std::path::Path,
-    sql_results_path: &std::path::Path,
-    error_msg: &str,
-) -> CliResult<()> {
-    // Invalidate cache entry so user can try again without reinferring dictionary
-    if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
-        let _ = invalidate_cache_entry(args, PromptType::Prompt);
-    }
-    // SQL execution failed, copy sql_query_file to sql_results_path
-    let output_path = Path::new(sql_results_path).with_extension("sql");
-    if let Err(e) = fs::copy(sql_query_file, &output_path) {
-        return fail_clierror!("Failed to copy SQL query to {sql_results_path:?}: {e}");
-    }
-    fail_clierror!("{error_msg}")
-}
-
-/// Extract first 10 rows from a CSV file
-fn extract_sql_sample(csv_path: &Path) -> CliResult<String> {
-    use std::io::{BufRead, BufReader};
-
-    let file = fs::File::open(csv_path)?;
-    let reader = BufReader::new(file);
-    let mut lines = reader.lines();
-    let mut result = String::new();
-
-    // Read header
-    if let Some(Ok(header)) = lines.next() {
-        result.push_str(&header);
-        result.push('\n');
-    }
-
-    // Read up to 10 data rows
-    for _ in 0..10 {
-        if let Some(Ok(line)) = lines.next() {
-            result.push_str(&line);
-            result.push('\n');
-        } else {
-            break;
-        }
-    }
-
-    Ok(result.trim().to_string())
 }
 
 /// Determine which additional columns to include based on args

@@ -50,8 +50,10 @@ NOTE: LLMs are prone to inaccurate information being produced. Verify output res
 CACHING:
 As LLM inferencing takes time and can be expensive, describegpt caches the LLM inferencing results
 in a either a disk cache (default) or a Redis cache. It does so by calculating the BLAKE3 hash of the
-input file and using it as the primary cache key along with the prompt type, model and other parameters
-as required.
+input file and using it as the primary cache key along with the prompt type, model and every flag that
+influences the rendered prompt (including prompt-file, language, tag-vocab, num-tags, enum-threshold,
+sample-size, fewshot-examples, the QSV_DUCKDB_PATH toggle and the generated Data Dictionary), so
+changing any of them produces a fresh LLM call rather than stale cached output.
 
 The default disk cache is stored in the ~/.qsv-cache/describegpt directory with a default TTL of 28 days
 and cache hits NOT refreshing an existing cached value's TTL.
@@ -1729,6 +1731,10 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
 /// Build a cache key with an explicit validity flag. Used by both `get_cache_key`
 /// (which reads the current flag) and cache-invalidation paths (which need to
 /// reconstruct keys for both "valid" and "invalid" flags to purge stored entries).
+///
+/// The key incorporates every input that affects the rendered prompt so the cache
+/// never returns output that was produced under different flags. When adding a
+/// new template-affecting flag, append it here and add a unit-test assertion.
 fn get_cache_key_with_flag(
     args: &Args,
     kind: PromptType,
@@ -1742,14 +1748,28 @@ fn get_cache_key_with_flag(
     } else {
         None
     };
+    // Short fingerprint of the generated data dictionary (when populated) — this JSON
+    // is injected as the `dictionary` template var for description/tags kinds, so a
+    // change in the dictionary must miss the cache.
+    let dictionary_fingerprint = DATA_DICTIONARY_JSON
+        .get()
+        .map(|s| blake3::hash(s.as_bytes()).to_hex()[..16].to_string());
+    let duckdb_enabled = should_use_duckdb();
 
     format!(
         "{file_hash};{prompt_file:?};{prompt_content:?};{max_tokens};{addl_props:?};\
-         {actual_model};{kind};{validity_flag};{language:?}",
+         {actual_model};{kind};{validity_flag};{language:?};{tag_vocab:?};{num_tags};\
+         {enum_threshold};{sample_size};{fewshot_examples};{duckdb_enabled};\
+         {dictionary_fingerprint:?}",
         prompt_file = args.flag_prompt_file,
         max_tokens = args.flag_max_tokens,
         addl_props = args.flag_addl_props,
         language = args.flag_language,
+        tag_vocab = args.flag_tag_vocab,
+        num_tags = args.flag_num_tags,
+        enum_threshold = args.flag_enum_threshold,
+        sample_size = args.flag_sample_size,
+        fewshot_examples = args.flag_fewshot_examples,
     )
 }
 
@@ -4470,6 +4490,68 @@ mod tests {
         let key_via_get = get_cache_key(&args, PromptType::Prompt, "gpt-x");
         let key_via_flag = get_cache_key_with_flag(&args, PromptType::Prompt, "gpt-x", "valid");
         assert_eq!(key_via_get, key_via_flag);
+    }
+
+    #[test]
+    fn cache_key_reflects_template_affecting_flags() {
+        // Every flag that feeds into the rendered prompt must change the cache key,
+        // otherwise tweaking the flag silently returns stale cached output.
+        let args = default_args_for_test();
+        let baseline = get_cache_key_with_flag(&args, PromptType::Tags, "gpt-x", "valid");
+
+        let cases: Vec<(&str, Box<dyn Fn(&mut Args)>)> = vec![
+            (
+                "flag_tag_vocab",
+                Box::new(|a| a.flag_tag_vocab = Some("vocab.csv".to_string())),
+            ),
+            ("flag_num_tags", Box::new(|a| a.flag_num_tags = 7)),
+            (
+                "flag_enum_threshold",
+                Box::new(|a| a.flag_enum_threshold = 42),
+            ),
+            ("flag_sample_size", Box::new(|a| a.flag_sample_size = 99)),
+            (
+                "flag_fewshot_examples",
+                Box::new(|a| a.flag_fewshot_examples = true),
+            ),
+        ];
+
+        for (label, mutate) in cases {
+            let mut mutated = default_args_for_test();
+            mutate(&mut mutated);
+            let key = get_cache_key_with_flag(&mutated, PromptType::Tags, "gpt-x", "valid");
+            assert_ne!(key, baseline, "{label} did not change the cache key");
+        }
+
+        // Restoring defaults must reproduce the baseline key exactly.
+        let restored = default_args_for_test();
+        let restored_key = get_cache_key_with_flag(&restored, PromptType::Tags, "gpt-x", "valid");
+        assert_eq!(restored_key, baseline);
+    }
+
+    #[test]
+    fn cache_key_reflects_dictionary_fingerprint() {
+        // The generated Data Dictionary JSON is injected into description/tags prompts.
+        // If the key doesn't track it, dictionary-aware and naked outputs would share
+        // a cache slot. `OnceLock::set` can only succeed once per process, so we check
+        // whichever state is live for this test-binary run and assert the key reflects it.
+        let args = default_args_for_test();
+        let key = get_cache_key_with_flag(&args, PromptType::Tags, "gpt-x", "valid");
+        match DATA_DICTIONARY_JSON.get() {
+            Some(dict) => {
+                let expected_prefix = &blake3::hash(dict.as_bytes()).to_hex()[..16];
+                assert!(
+                    key.contains(expected_prefix),
+                    "key {key:?} should contain fingerprint {expected_prefix:?}"
+                );
+            },
+            None => {
+                assert!(
+                    key.ends_with(";None"),
+                    "unset dictionary should serialize as None: {key}"
+                );
+            },
+        }
     }
 
     /// Minimal Args for unit tests: zero-values everywhere.

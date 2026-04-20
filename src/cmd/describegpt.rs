@@ -2873,6 +2873,10 @@ fn run_prompt_phase(
     // Handle session if --session is provided
     if let Some(normalized_path) = normalized_session_path {
         let session_path = Path::new(normalized_path);
+        // `flag_session_len == 0` is a sentinel that collapses "user did not set it"
+        // and "user explicitly set 0" into the default window size (10). Preserved
+        // from the pre-refactor behavior; if we ever want to distinguish them, move
+        // to `Option<usize>` at the arg level.
         let session_len = if args.flag_session_len == 0 {
             10
         } else {
@@ -2991,6 +2995,10 @@ fn execute_sql_query_phase(
     session_state: &mut Option<SessionState>,
     normalized_session_path: Option<&str>,
 ) -> CliResult<()> {
+    // Bind once so the 4 error-path track_sql_error_in_session call sites below
+    // pass a borrow instead of allocating a fresh String each time.
+    let session_path_owned: Option<String> = normalized_session_path.map(String::from);
+
     // Check if file exists and is writable, or can be created
     let sql_results_path = Path::new(sql_results);
     if sql_results_path.exists() {
@@ -3222,7 +3230,7 @@ fn execute_sql_query_phase(
                     if stderr.to_ascii_lowercase().contains(" error:") {
                         track_sql_error_in_session(
                             session_state.as_mut(),
-                            normalized_session_path.map(String::from).as_ref(),
+                            session_path_owned.as_ref(),
                             format!("DuckDB SQL query execution failed: {stderr}"),
                         );
                         if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
@@ -3235,7 +3243,7 @@ fn execute_sql_query_phase(
                 Err(e) => {
                     track_sql_error_in_session(
                         session_state.as_mut(),
-                        normalized_session_path.map(String::from).as_ref(),
+                        session_path_owned.as_ref(),
                         format!("DuckDB SQL query execution failed: {e}"),
                     );
                     if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
@@ -3285,7 +3293,7 @@ fn execute_sql_query_phase(
                 if stderr.to_ascii_lowercase().contains("error:") {
                     track_sql_error_in_session(
                         session_state.as_mut(),
-                        normalized_session_path.map(String::from).as_ref(),
+                        session_path_owned.as_ref(),
                         format!("Polars SQL query error detected: {stderr}"),
                     );
                     return handle_sql_error(
@@ -3320,7 +3328,7 @@ fn execute_sql_query_phase(
             Err(e) => {
                 track_sql_error_in_session(
                     session_state.as_mut(),
-                    normalized_session_path.map(String::from).as_ref(),
+                    session_path_owned.as_ref(),
                     format!("Polars SQL query execution failed: {e}"),
                 );
                 return handle_sql_error(
@@ -3336,7 +3344,7 @@ fn execute_sql_query_phase(
         if stderr.starts_with("Failed to execute query:") {
             track_sql_error_in_session(
                 session_state.as_mut(),
-                normalized_session_path.map(String::from).as_ref(),
+                session_path_owned.as_ref(),
                 stderr.clone(),
             );
             return handle_sql_error(
@@ -3449,7 +3457,10 @@ fn run_inference_options(
             &base_url,
             output_format,
         )?;
-        last_completion = data_dict.clone();
+        // Intentionally do NOT update `last_completion` here: the original
+        // behavior is that the max-tokens gate only fires against a
+        // description/tags/prompt completion, so a dictionary-only run with
+        // high token usage is not treated as an error.
     }
 
     if args.flag_description || args.flag_all {

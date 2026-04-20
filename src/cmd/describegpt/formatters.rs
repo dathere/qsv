@@ -9,7 +9,7 @@ use std::fmt::Write as _;
 use indicatif::HumanCount;
 use serde_json::{Value, json};
 
-use super::DictionaryEntry;
+use super::dictionary::DictionaryEntry;
 
 /// Extract ordered additional column names from entries.
 ///

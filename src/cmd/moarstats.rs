@@ -2086,7 +2086,7 @@ fn count_all_outliers(
             // Fall back to sequential for small files
             let mut rdr = rconfig.reader_file()?;
             let _headers = rdr.headers()?.clone();
-            return count_all_outliers_from_reader(&fields_to_count, rdr);
+            return count_chunk_outliers(&fields_to_count, rdr.byte_records());
         }
 
         let njobs = util::njobs(flag_jobs);
@@ -2215,7 +2215,7 @@ fn count_all_outliers(
         // Sequential fallback when no index exists
         let mut rdr = rconfig.reader_file()?;
         let _headers = rdr.headers()?.clone();
-        count_all_outliers_from_reader(&fields_to_count, rdr)
+        count_chunk_outliers(&fields_to_count, rdr.byte_records())
     }
 }
 
@@ -2399,142 +2399,6 @@ where
     }
 
     Ok(chunk_stats)
-}
-
-/// Count outliers for all fields in a single pass through the CSV (sequential)
-/// The CSV reader should already be positioned after the headers
-/// Returns a HashMap mapping field names to their outlier statistics
-fn count_all_outliers_from_reader(
-    fields_to_count: &HashMap<String, OutlierFieldInfo>,
-    mut rdr: csv::Reader<std::fs::File>,
-) -> CliResult<HashMap<String, OutlierStats>> {
-    if fields_to_count.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    // Initialize statistics for all fields
-    let mut all_stats: HashMap<String, OutlierStats> = fields_to_count
-        .keys()
-        .map(|k| (k.clone(), OutlierStats::default()))
-        .collect();
-
-    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-
-    // amortize allocations - use ByteRecord for consistency with parallel path (no UTF-8
-    // validation overhead)
-    #[allow(unused_assignments)]
-    let mut record: csv::ByteRecord = csv::ByteRecord::new();
-    let mut value_bytes;
-    let mut numeric_value;
-
-    // Process each record once, checking all fields
-    for result in rdr.byte_records() {
-        record = result?;
-
-        for (field_name, field_info) in fields_to_count {
-            value_bytes = record.get(field_info.col_idx).unwrap_or(&[]);
-
-            if value_bytes.is_empty() {
-                continue; // Skip null/empty values
-            }
-
-            // Parse the value based on field type
-            numeric_value = if field_info.field_type.is_date_or_datetime() {
-                // Convert bytes to string for date parsing
-                if let Ok(value_str) = from_utf8(value_bytes) {
-                    parse_date_to_days(value_str, prefer_dmy)
-                } else {
-                    None
-                }
-            } else {
-                parse_float_opt_from_bytes(value_bytes)
-            };
-
-            let Some(val) = numeric_value else {
-                continue; // Skip values that can't be parsed
-            };
-
-            // Get mutable reference to stats for this field
-            // safety: all_stats is pre-populated with all field names
-            let Some(stats) = all_stats.get_mut(field_name) else {
-                debug_assert!(false, "all_stats missing expected key: {field_name}");
-                continue;
-            };
-
-            // Update sums and count
-            stats.sum_all += val;
-            stats.count_all += 1;
-
-            // Compute winsorized and trimmed statistics
-            let winsorized_val = val
-                .max(field_info.lower_threshold)
-                .min(field_info.upper_threshold);
-            stats.winsorized_sum += winsorized_val;
-            stats.winsorized_count += 1;
-            // Track winsorized min/max and sum of squares
-            stats.min_winsorized = Some(
-                stats
-                    .min_winsorized
-                    .map_or(winsorized_val, |m| m.min(winsorized_val)),
-            );
-            stats.max_winsorized = Some(
-                stats
-                    .max_winsorized
-                    .map_or(winsorized_val, |m| m.max(winsorized_val)),
-            );
-            stats.sum_squares_winsorized =
-                winsorized_val.mul_add(winsorized_val, stats.sum_squares_winsorized);
-
-            // For trimmed mean, only include values within thresholds
-            if val >= field_info.lower_threshold && val <= field_info.upper_threshold {
-                stats.trimmed_sum += val;
-                stats.trimmed_count += 1;
-                // Track trimmed min/max and sum of squares
-                stats.min_trimmed = Some(stats.min_trimmed.map_or(val, |m| m.min(val)));
-                stats.max_trimmed = Some(stats.max_trimmed.map_or(val, |m| m.max(val)));
-                stats.sum_squares_trimmed = val.mul_add(val, stats.sum_squares_trimmed);
-            }
-
-            // Count outliers and track statistics based on fence comparisons
-            if val < field_info.lower_outer {
-                stats.counts[OUTLIER_EXTREME_LOWER] += 1;
-                stats.counts[OUTLIER_TOTAL] += 1;
-                stats.sum_outliers += val;
-                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
-                stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
-                stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
-            } else if val < field_info.lower_inner {
-                stats.counts[OUTLIER_MILD_LOWER] += 1;
-                stats.counts[OUTLIER_TOTAL] += 1;
-                stats.sum_outliers += val;
-                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
-                stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
-                stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
-            } else if val <= field_info.upper_inner {
-                stats.counts[OUTLIER_NORMAL] += 1;
-                stats.sum_normal += val;
-                stats.sum_squares_normal = val.mul_add(val, stats.sum_squares_normal);
-                stats.min_normal = Some(stats.min_normal.map_or(val, |m| m.min(val)));
-                stats.max_normal = Some(stats.max_normal.map_or(val, |m| m.max(val)));
-            } else if val <= field_info.upper_outer {
-                stats.counts[OUTLIER_MILD_UPPER] += 1;
-                stats.counts[OUTLIER_TOTAL] += 1;
-                stats.sum_outliers += val;
-                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
-                stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
-                stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
-            } else {
-                stats.counts[OUTLIER_EXTREME_UPPER] += 1;
-                stats.counts[OUTLIER_TOTAL] += 1;
-                stats.sum_outliers += val;
-                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
-                stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
-                stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
-            }
-        }
-    }
-
-    Ok(all_stats)
 }
 
 /// Compute all bivariate statistics

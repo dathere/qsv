@@ -2401,6 +2401,142 @@ where
     Ok(chunk_stats)
 }
 
+/// Finalize per-pair bivariate statistics from an aggregated `BivariateChunkStats`.
+///
+/// Caller must have already populated marginal frequencies (`x_counts`/`y_counts`)
+/// from `xy_counts` when mutual information / NMI are requested. This function only
+/// reads from `chunk_stats` — it does not mutate frequency maps.
+fn finalize_bivariate_pair_stats(
+    pair_key: (u16, u16),
+    chunk_stats: BivariateChunkStats,
+    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+    field_names: &[String],
+    cardinality_threshold: Option<u64>,
+    stats_config: BivariateStatsConfig,
+) -> CliResult<((u16, u16), BivariateStats)> {
+    let n_pairs = chunk_stats
+        .correlation_state
+        .count
+        .max(chunk_stats.total_pairs);
+
+    // chunk_stats keys mirror field_pairs keys; a miss indicates an invariant violation.
+    let (field1_info, field2_info) = field_pairs.get(&pair_key).ok_or_else(|| {
+        CliError::Other(format!(
+            "Invariant violation: field pair not found: {pair_key:?}"
+        ))
+    })?;
+
+    // Early exit: skip all correlation/covariance computations if variance is zero
+    let has_zero_variance = field1_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
+        || field2_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
+        || field1_info.variance.is_some_and(|v| v.abs() < f64::EPSILON)
+        || field2_info.variance.is_some_and(|v| v.abs() < f64::EPSILON);
+
+    let pearson =
+        if !stats_config.pearson || has_zero_variance || chunk_stats.correlation_state.count < 2 {
+            None
+        } else {
+            finalize_pearson_correlation(&chunk_stats.correlation_state)
+        };
+
+    let (covariance_sample, covariance_population) =
+        if !stats_config.covariance || has_zero_variance || chunk_stats.correlation_state.count < 2
+        {
+            (None, None)
+        } else {
+            (
+                finalize_covariance(&chunk_stats.correlation_state, true),
+                finalize_covariance(&chunk_stats.correlation_state, false),
+            )
+        };
+
+    let spearman = if !stats_config.spearman || has_zero_variance || chunk_stats.x_values.len() < 2
+    {
+        None
+    } else {
+        compute_spearman_correlation(&chunk_stats.x_values, &chunk_stats.y_values)
+    };
+
+    let kendall = if !stats_config.kendall || has_zero_variance || chunk_stats.x_values.len() < 2 {
+        None
+    } else {
+        compute_kendall_tau(&chunk_stats.x_values, &chunk_stats.y_values)
+    };
+
+    // MI / NMI share a cardinality-threshold gate; compute it once.
+    // `exceeds_cardinality` is None when no threshold is configured (always proceed).
+    let exceeds_cardinality = cardinality_threshold.map(|threshold| {
+        field1_info.cardinality.is_some_and(|c| c > threshold)
+            || field2_info.cardinality.is_some_and(|c| c > threshold)
+    });
+
+    let log_skip = |what: &str| {
+        if let Some(threshold) = cardinality_threshold {
+            let (idx1, idx2) = pair_key;
+            let field1_name = field_names
+                .get(idx1 as usize)
+                .map_or("?", std::string::String::as_str);
+            let field2_name = field_names
+                .get(idx2 as usize)
+                .map_or("?", std::string::String::as_str);
+            log::debug!(
+                "Skipping {what} for pair ({field1_name}, {field2_name}) - cardinality exceeds \
+                 threshold {threshold}"
+            );
+        }
+    };
+
+    let mutual_information = if !stats_config.mi || chunk_stats.total_pairs == 0 {
+        None
+    } else if exceeds_cardinality == Some(true) {
+        log_skip("mutual information");
+        None
+    } else {
+        compute_mutual_information_from_counts(
+            &chunk_stats.xy_counts,
+            &chunk_stats.x_counts,
+            &chunk_stats.y_counts,
+            chunk_stats.total_pairs,
+        )
+    };
+
+    // NMI requires MI and entropies computed from the same frequency counts.
+    let normalized_mutual_information = if !stats_config.nmi || chunk_stats.total_pairs == 0 {
+        None
+    } else if exceeds_cardinality == Some(true) {
+        log_skip("normalized mutual information");
+        None
+    } else {
+        let h_x = compute_entropy_from_counts(&chunk_stats.x_counts, chunk_stats.total_pairs);
+        let h_y = compute_entropy_from_counts(&chunk_stats.y_counts, chunk_stats.total_pairs);
+        let mi = if mutual_information.is_some() {
+            mutual_information
+        } else {
+            compute_mutual_information_from_counts(
+                &chunk_stats.xy_counts,
+                &chunk_stats.x_counts,
+                &chunk_stats.y_counts,
+                chunk_stats.total_pairs,
+            )
+        };
+        compute_normalized_mutual_information(mi, h_x, h_y)
+    };
+
+    Ok((
+        pair_key,
+        BivariateStats {
+            pearson,
+            spearman,
+            kendall,
+            covariance_sample,
+            covariance_population,
+            mutual_information,
+            normalized_mutual_information,
+            n_pairs,
+        },
+    ))
+}
+
 /// Compute all bivariate statistics
 /// Uses parallel chunked processing when an index is available and there
 /// are more than 10,000 records.
@@ -2612,207 +2748,19 @@ fn compute_all_bivariatestats(
         // Finalize statistics from aggregated chunk stats (parallelized)
         let final_stats: HashMap<(u16, u16), BivariateStats> = all_stats
             .into_par_iter()
-            .map(
-                |(pair_key, chunk_stats)| -> CliResult<((u16, u16), BivariateStats)> {
-                    if let Some(pb) = progress {
-                        pb.inc(1);
-                    }
-                    let n_pairs = chunk_stats
-                        .correlation_state
-                        .count
-                        .max(chunk_stats.total_pairs);
-
-                    // Get field info for this pair to check cardinality threshold.
-                    // chunk_stats is pre-populated from field_pairs (see debug_assert!s earlier),
-                    // so a miss here indicates an invariant violation from a refactor.
-                    let (field1_info, field2_info) =
-                        field_pairs_arc.get(&pair_key).ok_or_else(|| {
-                            CliError::Other(format!(
-                                "Invariant violation: field pair not found: {pair_key:?}"
-                            ))
-                        })?;
-
-                    // Early exit: skip all correlation/covariance computations if variance is zero
-                    let has_zero_variance =
-                        field1_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
-                            || field2_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
-                            || field1_info.variance.is_some_and(|v| v.abs() < f64::EPSILON)
-                            || field2_info.variance.is_some_and(|v| v.abs() < f64::EPSILON);
-
-                    // Compute Pearson correlation if requested
-                    let pearson = if !stats_config.pearson
-                        || has_zero_variance
-                        || chunk_stats.correlation_state.count < 2
-                    {
-                        None
-                    } else {
-                        finalize_pearson_correlation(&chunk_stats.correlation_state)
-                    };
-
-                    // Compute covariance if requested
-                    let covariance_sample = if !stats_config.covariance
-                        || has_zero_variance
-                        || chunk_stats.correlation_state.count < 2
-                    {
-                        None
-                    } else {
-                        finalize_covariance(&chunk_stats.correlation_state, true)
-                    };
-                    let covariance_population = if !stats_config.covariance
-                        || has_zero_variance
-                        || chunk_stats.correlation_state.count < 2
-                    {
-                        None
-                    } else {
-                        finalize_covariance(&chunk_stats.correlation_state, false)
-                    };
-
-                    // Compute Spearman correlation if requested
-                    let spearman = if !stats_config.spearman
-                        || has_zero_variance
-                        || chunk_stats.x_values.len() < 2
-                    {
-                        None
-                    } else {
-                        compute_spearman_correlation(&chunk_stats.x_values, &chunk_stats.y_values)
-                    };
-
-                    // Compute Kendall's tau if requested
-                    let kendall = if !stats_config.kendall
-                        || has_zero_variance
-                        || chunk_stats.x_values.len() < 2
-                    {
-                        None
-                    } else {
-                        compute_kendall_tau(&chunk_stats.x_values, &chunk_stats.y_values)
-                    };
-
-                    // Compute mutual information if requested and apply cardinality threshold
-                    let mutual_information = if !stats_config.mi || chunk_stats.total_pairs == 0 {
-                        None
-                    } else if let Some(threshold) = cardinality_threshold {
-                        // Check if either field exceeds cardinality threshold
-                        let exceeds_threshold =
-                            field1_info.cardinality.is_some_and(|c| c > threshold)
-                                || field2_info.cardinality.is_some_and(|c| c > threshold);
-                        if exceeds_threshold {
-                            // Convert indices to names for logging (u16 -> usize for indexing)
-                            let (idx1, idx2) = pair_key;
-                            let field1_name = field_names
-                                .get(idx1 as usize)
-                                .map_or("?", std::string::String::as_str);
-                            let field2_name = field_names
-                                .get(idx2 as usize)
-                                .map_or("?", std::string::String::as_str);
-                            log::debug!(
-                                "Skipping mutual information for pair ({field1_name}, \
-                                 {field2_name}) - cardinality exceeds threshold {threshold}"
-                            );
-                            None
-                        } else {
-                            compute_mutual_information_from_counts(
-                                &chunk_stats.xy_counts,
-                                &chunk_stats.x_counts,
-                                &chunk_stats.y_counts,
-                                chunk_stats.total_pairs,
-                            )
-                        }
-                    } else {
-                        compute_mutual_information_from_counts(
-                            &chunk_stats.xy_counts,
-                            &chunk_stats.x_counts,
-                            &chunk_stats.y_counts,
-                            chunk_stats.total_pairs,
-                        )
-                    };
-
-                    // Compute normalized mutual information if requested
-                    // NMI requires MI and entropies computed from the same frequency counts
-                    let normalized_mutual_information = if !stats_config.nmi
-                        || chunk_stats.total_pairs == 0
-                    {
-                        None
-                    } else if let Some(threshold) = cardinality_threshold {
-                        // Check if either field exceeds cardinality threshold (same as MI)
-                        let exceeds_threshold =
-                            field1_info.cardinality.is_some_and(|c| c > threshold)
-                                || field2_info.cardinality.is_some_and(|c| c > threshold);
-                        if exceeds_threshold {
-                            // Convert indices to names for logging (u16 -> usize for indexing)
-                            let (idx1, idx2) = pair_key;
-                            let field1_name = field_names
-                                .get(idx1 as usize)
-                                .map_or("?", std::string::String::as_str);
-                            let field2_name = field_names
-                                .get(idx2 as usize)
-                                .map_or("?", std::string::String::as_str);
-                            log::debug!(
-                                "Skipping normalized mutual information for pair ({field1_name}, \
-                                 {field2_name}) - cardinality exceeds threshold {threshold}"
-                            );
-                            None
-                        } else {
-                            // Compute entropies from marginal frequency counts
-                            let h_x = compute_entropy_from_counts(
-                                &chunk_stats.x_counts,
-                                chunk_stats.total_pairs,
-                            );
-                            let h_y = compute_entropy_from_counts(
-                                &chunk_stats.y_counts,
-                                chunk_stats.total_pairs,
-                            );
-                            // Compute MI if not already computed (needed for NMI)
-                            let mi = if mutual_information.is_some() {
-                                mutual_information
-                            } else {
-                                compute_mutual_information_from_counts(
-                                    &chunk_stats.xy_counts,
-                                    &chunk_stats.x_counts,
-                                    &chunk_stats.y_counts,
-                                    chunk_stats.total_pairs,
-                                )
-                            };
-                            compute_normalized_mutual_information(mi, h_x, h_y)
-                        }
-                    } else {
-                        // Compute entropies from marginal frequency counts
-                        let h_x = compute_entropy_from_counts(
-                            &chunk_stats.x_counts,
-                            chunk_stats.total_pairs,
-                        );
-                        let h_y = compute_entropy_from_counts(
-                            &chunk_stats.y_counts,
-                            chunk_stats.total_pairs,
-                        );
-                        // Compute MI if not already computed (needed for NMI)
-                        let mi = if mutual_information.is_some() {
-                            mutual_information
-                        } else {
-                            compute_mutual_information_from_counts(
-                                &chunk_stats.xy_counts,
-                                &chunk_stats.x_counts,
-                                &chunk_stats.y_counts,
-                                chunk_stats.total_pairs,
-                            )
-                        };
-                        compute_normalized_mutual_information(mi, h_x, h_y)
-                    };
-
-                    Ok((
-                        pair_key,
-                        BivariateStats {
-                            pearson,
-                            spearman,
-                            kendall,
-                            covariance_sample,
-                            covariance_population,
-                            mutual_information,
-                            normalized_mutual_information,
-                            n_pairs,
-                        },
-                    ))
-                },
-            )
+            .map(|(pair_key, chunk_stats)| {
+                if let Some(pb) = progress {
+                    pb.inc(1);
+                }
+                finalize_bivariate_pair_stats(
+                    pair_key,
+                    chunk_stats,
+                    &field_pairs_arc,
+                    field_names,
+                    cardinality_threshold,
+                    stats_config,
+                )
+            })
             .collect::<CliResult<HashMap<_, _>>>()?;
 
         // Finish progress bar after final statistics computation

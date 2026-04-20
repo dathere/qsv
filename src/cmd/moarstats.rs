@@ -2109,18 +2109,29 @@ fn count_all_outliers(
             let fields_arc = Arc::clone(&fields_arc);
             let input_path_string_clone = input_path_string.clone();
             pool.execute(move || {
-                // Open index for this thread
+                // Open index for this thread. If this fails, propagate an error
+                // through the channel — dropping the chunk silently would
+                // under-count outliers without any indication to the user.
                 let rconfig_chunk = Config::new(Some(&input_path_string_clone));
-                // safety: we know the file is indexed and seekable
-                let Ok(Some(mut idx_chunk)) = rconfig_chunk.indexed() else {
-                    // If we can't open index, send empty result
-                    let _ = send.send(Ok(HashMap::new()));
-                    return;
+                let mut idx_chunk = match rconfig_chunk.indexed() {
+                    Ok(Some(idx)) => idx,
+                    Ok(None) => {
+                        let _ = send.send(Err(CliError::Other(format!(
+                            "Chunk {i}: index is not available for {input_path_string_clone}"
+                        ))));
+                        return;
+                    },
+                    Err(e) => {
+                        let _ = send.send(Err(CliError::Other(format!(
+                            "Chunk {i}: failed to open index: {e}"
+                        ))));
+                        return;
+                    },
                 };
 
                 // Seek to chunk start position
                 if let Err(e) = idx_chunk.seek((i * chunk_size) as u64) {
-                    let _ = send.send(Err(CliError::Other(format!("Seek failed: {e}"))));
+                    let _ = send.send(Err(CliError::Other(format!("Chunk {i}: seek failed: {e}"))));
                     return;
                 }
 
@@ -2613,18 +2624,29 @@ fn compute_all_bivariatestats(
             let field_pairs_arc = Arc::clone(&field_pairs_arc);
             let input_path_string_clone = input_path_string.clone();
             pool.execute(move || {
-                // Open index for this thread
+                // Open index for this thread. If this fails, propagate an error
+                // through the channel — dropping the chunk silently would
+                // produce incorrect bivariate stats without any indication.
                 let rconfig_chunk = Config::new(Some(&input_path_string_clone));
-                // safety: we know the file is indexed and seekable
-                let Ok(Some(mut idx_chunk)) = rconfig_chunk.indexed() else {
-                    // If we can't open index, send empty result
-                    let _ = send.send(Ok(HashMap::new()));
-                    return;
+                let mut idx_chunk = match rconfig_chunk.indexed() {
+                    Ok(Some(idx)) => idx,
+                    Ok(None) => {
+                        let _ = send.send(Err(CliError::Other(format!(
+                            "Chunk {i}: index is not available for {input_path_string_clone}"
+                        ))));
+                        return;
+                    },
+                    Err(e) => {
+                        let _ = send.send(Err(CliError::Other(format!(
+                            "Chunk {i}: failed to open index: {e}"
+                        ))));
+                        return;
+                    },
                 };
 
                 // Seek to chunk start position
                 if let Err(e) = idx_chunk.seek((i * chunk_size) as u64) {
-                    let _ = send.send(Err(CliError::Other(format!("Seek failed: {e}"))));
+                    let _ = send.send(Err(CliError::Other(format!("Chunk {i}: seek failed: {e}"))));
                     return;
                 }
 

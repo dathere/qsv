@@ -2086,7 +2086,7 @@ fn count_all_outliers(
             // Fall back to sequential for small files
             let mut rdr = rconfig.reader_file()?;
             let _headers = rdr.headers()?.clone();
-            return count_all_outliers_from_reader(&fields_to_count, rdr);
+            return count_chunk_outliers(&fields_to_count, rdr.byte_records());
         }
 
         let njobs = util::njobs(flag_jobs);
@@ -2215,7 +2215,7 @@ fn count_all_outliers(
         // Sequential fallback when no index exists
         let mut rdr = rconfig.reader_file()?;
         let _headers = rdr.headers()?.clone();
-        count_all_outliers_from_reader(&fields_to_count, rdr)
+        count_chunk_outliers(&fields_to_count, rdr.byte_records())
     }
 }
 
@@ -2276,77 +2276,53 @@ where
 
     #[allow(unused_assignments)]
     let mut record: csv::ByteRecord = csv::ByteRecord::new();
-    let mut value_bytes_x;
-    let mut value_bytes_y;
-    let mut numeric_value_x;
-    let mut numeric_value_y;
-
-    // Optimization #4: Batch string conversions - collect all column indices once (immutable across
-    // records)
-    let col_indices_needed: HashSet<usize> = field_pairs
-        .values()
-        .flat_map(|(f1, f2)| [f1.col_idx, f2.col_idx])
-        .collect();
-    let mut record_strings: HashMap<usize, String> =
-        HashMap::with_capacity(col_indices_needed.len());
 
     // Process each record in the chunk
     for result in records {
         record = result?;
 
-        // Convert needed columns to strings once per record (reuse HashMap allocation)
-        record_strings.clear();
-        for &col_idx in &col_indices_needed {
-            if let Some(bytes) = record.get(col_idx)
-                && !bytes.is_empty()
-                && let Ok(s) = from_utf8(bytes)
-            {
-                record_strings.insert(col_idx, s.to_string());
-            }
-        }
-
         for ((idx1, idx2), (field1_info, field2_info)) in field_pairs {
-            // Optimization: Check record_strings first (already excludes empty values)
-            // This avoids redundant empty checks and byte fetching for empty fields
-            let (Some(x_str), Some(y_str)) = (
-                record_strings.get(&field1_info.col_idx),
-                record_strings.get(&field2_info.col_idx),
-            ) else {
-                continue; // Skip if either value is empty (not in record_strings)
-            };
+            let value_bytes_x = record.get(field1_info.col_idx).unwrap_or(&[]);
+            let value_bytes_y = record.get(field2_info.col_idx).unwrap_or(&[]);
 
-            // Get mutable reference to stats for this field pair
+            if value_bytes_x.is_empty() || value_bytes_y.is_empty() {
+                continue;
+            }
+
             // safety: chunk_stats is pre-populated with all field pair indices
             let Some(stats) = chunk_stats.get_mut(&(*idx1, *idx2)) else {
                 debug_assert!(false, "chunk_stats missing expected key: ({idx1}, {idx2})");
                 continue;
             };
 
-            // Get bytes only for numeric parsing (date fields use strings from cache)
-            value_bytes_x = record.get(field1_info.col_idx).unwrap_or(&[]);
-            value_bytes_y = record.get(field2_info.col_idx).unwrap_or(&[]);
-
-            // Optimization #1: Use date parsing cache
-            // Optimization #5: Skip date parsing for non-date fields
-            numeric_value_x = if field1_info.field_type.is_date_or_datetime() {
-                // Use cached parsed date or parse and cache - get() first to avoid alloc on hit
-                if let Some(cached) = date_cache.get(x_str.as_str()) {
+            // Date parsing needs &str; numeric parsing reads bytes directly to avoid an
+            // allocation on every record. Per-cell from_utf8 is a cheap byte scan compared
+            // to the String allocation it replaces, so we no longer pre-stringify needed
+            // columns into a per-record HashMap.
+            let numeric_value_x = if field1_info.field_type.is_date_or_datetime() {
+                let Ok(x_str) = from_utf8(value_bytes_x) else {
+                    continue;
+                };
+                if let Some(cached) = date_cache.get(x_str) {
                     *cached
                 } else {
                     let val = parse_date_to_days(x_str, prefer_dmy);
-                    date_cache.insert(x_str.clone(), val);
+                    date_cache.insert(x_str.to_string(), val);
                     val
                 }
             } else {
                 parse_float_opt_from_bytes(value_bytes_x)
             };
 
-            numeric_value_y = if field2_info.field_type.is_date_or_datetime() {
-                if let Some(cached) = date_cache.get(y_str.as_str()) {
+            let numeric_value_y = if field2_info.field_type.is_date_or_datetime() {
+                let Ok(y_str) = from_utf8(value_bytes_y) else {
+                    continue;
+                };
+                if let Some(cached) = date_cache.get(y_str) {
                     *cached
                 } else {
                     let val = parse_date_to_days(y_str, prefer_dmy);
-                    date_cache.insert(y_str.clone(), val);
+                    date_cache.insert(y_str.to_string(), val);
                     val
                 }
             } else {
@@ -2363,25 +2339,31 @@ where
                 }
             }
 
-            // Only compute frequency counts if needed for mutual information
+            // Only compute frequency counts if needed for mutual information.
+            // This is the only branch that needs owned strings — allocate lazily here.
             if needs_freq_counts {
+                let (Ok(x_str_ref), Ok(y_str_ref)) =
+                    (from_utf8(value_bytes_x), from_utf8(value_bytes_y))
+                else {
+                    continue;
+                };
                 // NOTE: this is not true string interning — each lookup still yields
                 // a cloned String (needed because xy_counts keys by owned tuples).
-                // The benefit over the prior HashMap<String, String> form is just
-                // one fewer clone on insert (cache miss). A future change to
-                // Arc<str> or SmolStr would give real interning (cheap clones on
-                // cache hit), at the cost of a wider refactor of xy_counts.
-                let x_str_interned = if let Some(cached) = string_interner.get(x_str) {
+                // The benefit over ad-hoc cloning is one fewer clone on insert (cache
+                // miss). A future change to Arc<str> or SmolStr would give real
+                // interning (cheap clones on cache hit), at the cost of a wider
+                // refactor of xy_counts.
+                let x_str_interned = if let Some(cached) = string_interner.get(x_str_ref) {
                     cached.clone()
                 } else {
-                    let owned = x_str.clone();
+                    let owned = x_str_ref.to_string();
                     string_interner.insert(owned.clone());
                     owned
                 };
-                let y_str_interned = if let Some(cached) = string_interner.get(y_str) {
+                let y_str_interned = if let Some(cached) = string_interner.get(y_str_ref) {
                     cached.clone()
                 } else {
-                    let owned = y_str.clone();
+                    let owned = y_str_ref.to_string();
                     string_interner.insert(owned.clone());
                     owned
                 };
@@ -2401,140 +2383,140 @@ where
     Ok(chunk_stats)
 }
 
-/// Count outliers for all fields in a single pass through the CSV (sequential)
-/// The CSV reader should already be positioned after the headers
-/// Returns a HashMap mapping field names to their outlier statistics
-fn count_all_outliers_from_reader(
-    fields_to_count: &HashMap<String, OutlierFieldInfo>,
-    mut rdr: csv::Reader<std::fs::File>,
-) -> CliResult<HashMap<String, OutlierStats>> {
-    if fields_to_count.is_empty() {
-        return Ok(HashMap::new());
-    }
+/// Finalize per-pair bivariate statistics from an aggregated `BivariateChunkStats`.
+///
+/// Caller must have already populated marginal frequencies (`x_counts`/`y_counts`)
+/// from `xy_counts` when mutual information / NMI are requested. This function only
+/// reads from `chunk_stats` — it does not mutate frequency maps.
+fn finalize_bivariate_pair_stats(
+    pair_key: (u16, u16),
+    chunk_stats: BivariateChunkStats,
+    field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
+    field_names: &[String],
+    cardinality_threshold: Option<u64>,
+    stats_config: BivariateStatsConfig,
+) -> CliResult<((u16, u16), BivariateStats)> {
+    let n_pairs = chunk_stats
+        .correlation_state
+        .count
+        .max(chunk_stats.total_pairs);
 
-    // Initialize statistics for all fields
-    let mut all_stats: HashMap<String, OutlierStats> = fields_to_count
-        .keys()
-        .map(|k| (k.clone(), OutlierStats::default()))
-        .collect();
+    // chunk_stats keys mirror field_pairs keys; a miss indicates an invariant violation.
+    let (field1_info, field2_info) = field_pairs.get(&pair_key).ok_or_else(|| {
+        CliError::Other(format!(
+            "Invariant violation: field pair not found: {pair_key:?}"
+        ))
+    })?;
 
-    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+    // Early exit: skip all correlation/covariance computations if variance is zero
+    let has_zero_variance = field1_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
+        || field2_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
+        || field1_info.variance.is_some_and(|v| v.abs() < f64::EPSILON)
+        || field2_info.variance.is_some_and(|v| v.abs() < f64::EPSILON);
 
-    // amortize allocations - use ByteRecord for consistency with parallel path (no UTF-8
-    // validation overhead)
-    #[allow(unused_assignments)]
-    let mut record: csv::ByteRecord = csv::ByteRecord::new();
-    let mut value_bytes;
-    let mut numeric_value;
+    let pearson =
+        if !stats_config.pearson || has_zero_variance || chunk_stats.correlation_state.count < 2 {
+            None
+        } else {
+            finalize_pearson_correlation(&chunk_stats.correlation_state)
+        };
 
-    // Process each record once, checking all fields
-    for result in rdr.byte_records() {
-        record = result?;
+    let (covariance_sample, covariance_population) =
+        if !stats_config.covariance || has_zero_variance || chunk_stats.correlation_state.count < 2
+        {
+            (None, None)
+        } else {
+            (
+                finalize_covariance(&chunk_stats.correlation_state, true),
+                finalize_covariance(&chunk_stats.correlation_state, false),
+            )
+        };
 
-        for (field_name, field_info) in fields_to_count {
-            value_bytes = record.get(field_info.col_idx).unwrap_or(&[]);
+    let spearman = if !stats_config.spearman || has_zero_variance || chunk_stats.x_values.len() < 2
+    {
+        None
+    } else {
+        compute_spearman_correlation(&chunk_stats.x_values, &chunk_stats.y_values)
+    };
 
-            if value_bytes.is_empty() {
-                continue; // Skip null/empty values
-            }
+    let kendall = if !stats_config.kendall || has_zero_variance || chunk_stats.x_values.len() < 2 {
+        None
+    } else {
+        compute_kendall_tau(&chunk_stats.x_values, &chunk_stats.y_values)
+    };
 
-            // Parse the value based on field type
-            numeric_value = if field_info.field_type.is_date_or_datetime() {
-                // Convert bytes to string for date parsing
-                if let Ok(value_str) = from_utf8(value_bytes) {
-                    parse_date_to_days(value_str, prefer_dmy)
-                } else {
-                    None
-                }
-            } else {
-                parse_float_opt_from_bytes(value_bytes)
-            };
+    // MI / NMI share a cardinality-threshold gate; compute it once.
+    // `exceeds_cardinality` is None when no threshold is configured (always proceed).
+    let exceeds_cardinality = cardinality_threshold.map(|threshold| {
+        field1_info.cardinality.is_some_and(|c| c > threshold)
+            || field2_info.cardinality.is_some_and(|c| c > threshold)
+    });
 
-            let Some(val) = numeric_value else {
-                continue; // Skip values that can't be parsed
-            };
-
-            // Get mutable reference to stats for this field
-            // safety: all_stats is pre-populated with all field names
-            let Some(stats) = all_stats.get_mut(field_name) else {
-                debug_assert!(false, "all_stats missing expected key: {field_name}");
-                continue;
-            };
-
-            // Update sums and count
-            stats.sum_all += val;
-            stats.count_all += 1;
-
-            // Compute winsorized and trimmed statistics
-            let winsorized_val = val
-                .max(field_info.lower_threshold)
-                .min(field_info.upper_threshold);
-            stats.winsorized_sum += winsorized_val;
-            stats.winsorized_count += 1;
-            // Track winsorized min/max and sum of squares
-            stats.min_winsorized = Some(
-                stats
-                    .min_winsorized
-                    .map_or(winsorized_val, |m| m.min(winsorized_val)),
+    let log_skip = |what: &str| {
+        if let Some(threshold) = cardinality_threshold {
+            let (idx1, idx2) = pair_key;
+            let field1_name = field_names
+                .get(idx1 as usize)
+                .map_or("?", std::string::String::as_str);
+            let field2_name = field_names
+                .get(idx2 as usize)
+                .map_or("?", std::string::String::as_str);
+            log::debug!(
+                "Skipping {what} for pair ({field1_name}, {field2_name}) - cardinality exceeds \
+                 threshold {threshold}"
             );
-            stats.max_winsorized = Some(
-                stats
-                    .max_winsorized
-                    .map_or(winsorized_val, |m| m.max(winsorized_val)),
-            );
-            stats.sum_squares_winsorized =
-                winsorized_val.mul_add(winsorized_val, stats.sum_squares_winsorized);
-
-            // For trimmed mean, only include values within thresholds
-            if val >= field_info.lower_threshold && val <= field_info.upper_threshold {
-                stats.trimmed_sum += val;
-                stats.trimmed_count += 1;
-                // Track trimmed min/max and sum of squares
-                stats.min_trimmed = Some(stats.min_trimmed.map_or(val, |m| m.min(val)));
-                stats.max_trimmed = Some(stats.max_trimmed.map_or(val, |m| m.max(val)));
-                stats.sum_squares_trimmed = val.mul_add(val, stats.sum_squares_trimmed);
-            }
-
-            // Count outliers and track statistics based on fence comparisons
-            if val < field_info.lower_outer {
-                stats.counts[OUTLIER_EXTREME_LOWER] += 1;
-                stats.counts[OUTLIER_TOTAL] += 1;
-                stats.sum_outliers += val;
-                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
-                stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
-                stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
-            } else if val < field_info.lower_inner {
-                stats.counts[OUTLIER_MILD_LOWER] += 1;
-                stats.counts[OUTLIER_TOTAL] += 1;
-                stats.sum_outliers += val;
-                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
-                stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
-                stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
-            } else if val <= field_info.upper_inner {
-                stats.counts[OUTLIER_NORMAL] += 1;
-                stats.sum_normal += val;
-                stats.sum_squares_normal = val.mul_add(val, stats.sum_squares_normal);
-                stats.min_normal = Some(stats.min_normal.map_or(val, |m| m.min(val)));
-                stats.max_normal = Some(stats.max_normal.map_or(val, |m| m.max(val)));
-            } else if val <= field_info.upper_outer {
-                stats.counts[OUTLIER_MILD_UPPER] += 1;
-                stats.counts[OUTLIER_TOTAL] += 1;
-                stats.sum_outliers += val;
-                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
-                stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
-                stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
-            } else {
-                stats.counts[OUTLIER_EXTREME_UPPER] += 1;
-                stats.counts[OUTLIER_TOTAL] += 1;
-                stats.sum_outliers += val;
-                stats.sum_squares_outliers = val.mul_add(val, stats.sum_squares_outliers);
-                stats.min_outliers = Some(stats.min_outliers.map_or(val, |m| m.min(val)));
-                stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
-            }
         }
-    }
+    };
 
-    Ok(all_stats)
+    let mutual_information = if !stats_config.mi || chunk_stats.total_pairs == 0 {
+        None
+    } else if exceeds_cardinality == Some(true) {
+        log_skip("mutual information");
+        None
+    } else {
+        compute_mutual_information_from_counts(
+            &chunk_stats.xy_counts,
+            &chunk_stats.x_counts,
+            &chunk_stats.y_counts,
+            chunk_stats.total_pairs,
+        )
+    };
+
+    // NMI requires MI and entropies computed from the same frequency counts.
+    let normalized_mutual_information = if !stats_config.nmi || chunk_stats.total_pairs == 0 {
+        None
+    } else if exceeds_cardinality == Some(true) {
+        log_skip("normalized mutual information");
+        None
+    } else {
+        let h_x = compute_entropy_from_counts(&chunk_stats.x_counts, chunk_stats.total_pairs);
+        let h_y = compute_entropy_from_counts(&chunk_stats.y_counts, chunk_stats.total_pairs);
+        let mi = if mutual_information.is_some() {
+            mutual_information
+        } else {
+            compute_mutual_information_from_counts(
+                &chunk_stats.xy_counts,
+                &chunk_stats.x_counts,
+                &chunk_stats.y_counts,
+                chunk_stats.total_pairs,
+            )
+        };
+        compute_normalized_mutual_information(mi, h_x, h_y)
+    };
+
+    Ok((
+        pair_key,
+        BivariateStats {
+            pearson,
+            spearman,
+            kendall,
+            covariance_sample,
+            covariance_population,
+            mutual_information,
+            normalized_mutual_information,
+            n_pairs,
+        },
+    ))
 }
 
 /// Compute all bivariate statistics
@@ -2748,207 +2730,19 @@ fn compute_all_bivariatestats(
         // Finalize statistics from aggregated chunk stats (parallelized)
         let final_stats: HashMap<(u16, u16), BivariateStats> = all_stats
             .into_par_iter()
-            .map(
-                |(pair_key, chunk_stats)| -> CliResult<((u16, u16), BivariateStats)> {
-                    if let Some(pb) = progress {
-                        pb.inc(1);
-                    }
-                    let n_pairs = chunk_stats
-                        .correlation_state
-                        .count
-                        .max(chunk_stats.total_pairs);
-
-                    // Get field info for this pair to check cardinality threshold.
-                    // chunk_stats is pre-populated from field_pairs (see debug_assert!s earlier),
-                    // so a miss here indicates an invariant violation from a refactor.
-                    let (field1_info, field2_info) =
-                        field_pairs_arc.get(&pair_key).ok_or_else(|| {
-                            CliError::Other(format!(
-                                "Invariant violation: field pair not found: {pair_key:?}"
-                            ))
-                        })?;
-
-                    // Early exit: skip all correlation/covariance computations if variance is zero
-                    let has_zero_variance =
-                        field1_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
-                            || field2_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
-                            || field1_info.variance.is_some_and(|v| v.abs() < f64::EPSILON)
-                            || field2_info.variance.is_some_and(|v| v.abs() < f64::EPSILON);
-
-                    // Compute Pearson correlation if requested
-                    let pearson = if !stats_config.pearson
-                        || has_zero_variance
-                        || chunk_stats.correlation_state.count < 2
-                    {
-                        None
-                    } else {
-                        finalize_pearson_correlation(&chunk_stats.correlation_state)
-                    };
-
-                    // Compute covariance if requested
-                    let covariance_sample = if !stats_config.covariance
-                        || has_zero_variance
-                        || chunk_stats.correlation_state.count < 2
-                    {
-                        None
-                    } else {
-                        finalize_covariance(&chunk_stats.correlation_state, true)
-                    };
-                    let covariance_population = if !stats_config.covariance
-                        || has_zero_variance
-                        || chunk_stats.correlation_state.count < 2
-                    {
-                        None
-                    } else {
-                        finalize_covariance(&chunk_stats.correlation_state, false)
-                    };
-
-                    // Compute Spearman correlation if requested
-                    let spearman = if !stats_config.spearman
-                        || has_zero_variance
-                        || chunk_stats.x_values.len() < 2
-                    {
-                        None
-                    } else {
-                        compute_spearman_correlation(&chunk_stats.x_values, &chunk_stats.y_values)
-                    };
-
-                    // Compute Kendall's tau if requested
-                    let kendall = if !stats_config.kendall
-                        || has_zero_variance
-                        || chunk_stats.x_values.len() < 2
-                    {
-                        None
-                    } else {
-                        compute_kendall_tau(&chunk_stats.x_values, &chunk_stats.y_values)
-                    };
-
-                    // Compute mutual information if requested and apply cardinality threshold
-                    let mutual_information = if !stats_config.mi || chunk_stats.total_pairs == 0 {
-                        None
-                    } else if let Some(threshold) = cardinality_threshold {
-                        // Check if either field exceeds cardinality threshold
-                        let exceeds_threshold =
-                            field1_info.cardinality.is_some_and(|c| c > threshold)
-                                || field2_info.cardinality.is_some_and(|c| c > threshold);
-                        if exceeds_threshold {
-                            // Convert indices to names for logging (u16 -> usize for indexing)
-                            let (idx1, idx2) = pair_key;
-                            let field1_name = field_names
-                                .get(idx1 as usize)
-                                .map_or("?", std::string::String::as_str);
-                            let field2_name = field_names
-                                .get(idx2 as usize)
-                                .map_or("?", std::string::String::as_str);
-                            log::debug!(
-                                "Skipping mutual information for pair ({field1_name}, \
-                                 {field2_name}) - cardinality exceeds threshold {threshold}"
-                            );
-                            None
-                        } else {
-                            compute_mutual_information_from_counts(
-                                &chunk_stats.xy_counts,
-                                &chunk_stats.x_counts,
-                                &chunk_stats.y_counts,
-                                chunk_stats.total_pairs,
-                            )
-                        }
-                    } else {
-                        compute_mutual_information_from_counts(
-                            &chunk_stats.xy_counts,
-                            &chunk_stats.x_counts,
-                            &chunk_stats.y_counts,
-                            chunk_stats.total_pairs,
-                        )
-                    };
-
-                    // Compute normalized mutual information if requested
-                    // NMI requires MI and entropies computed from the same frequency counts
-                    let normalized_mutual_information = if !stats_config.nmi
-                        || chunk_stats.total_pairs == 0
-                    {
-                        None
-                    } else if let Some(threshold) = cardinality_threshold {
-                        // Check if either field exceeds cardinality threshold (same as MI)
-                        let exceeds_threshold =
-                            field1_info.cardinality.is_some_and(|c| c > threshold)
-                                || field2_info.cardinality.is_some_and(|c| c > threshold);
-                        if exceeds_threshold {
-                            // Convert indices to names for logging (u16 -> usize for indexing)
-                            let (idx1, idx2) = pair_key;
-                            let field1_name = field_names
-                                .get(idx1 as usize)
-                                .map_or("?", std::string::String::as_str);
-                            let field2_name = field_names
-                                .get(idx2 as usize)
-                                .map_or("?", std::string::String::as_str);
-                            log::debug!(
-                                "Skipping normalized mutual information for pair ({field1_name}, \
-                                 {field2_name}) - cardinality exceeds threshold {threshold}"
-                            );
-                            None
-                        } else {
-                            // Compute entropies from marginal frequency counts
-                            let h_x = compute_entropy_from_counts(
-                                &chunk_stats.x_counts,
-                                chunk_stats.total_pairs,
-                            );
-                            let h_y = compute_entropy_from_counts(
-                                &chunk_stats.y_counts,
-                                chunk_stats.total_pairs,
-                            );
-                            // Compute MI if not already computed (needed for NMI)
-                            let mi = if mutual_information.is_some() {
-                                mutual_information
-                            } else {
-                                compute_mutual_information_from_counts(
-                                    &chunk_stats.xy_counts,
-                                    &chunk_stats.x_counts,
-                                    &chunk_stats.y_counts,
-                                    chunk_stats.total_pairs,
-                                )
-                            };
-                            compute_normalized_mutual_information(mi, h_x, h_y)
-                        }
-                    } else {
-                        // Compute entropies from marginal frequency counts
-                        let h_x = compute_entropy_from_counts(
-                            &chunk_stats.x_counts,
-                            chunk_stats.total_pairs,
-                        );
-                        let h_y = compute_entropy_from_counts(
-                            &chunk_stats.y_counts,
-                            chunk_stats.total_pairs,
-                        );
-                        // Compute MI if not already computed (needed for NMI)
-                        let mi = if mutual_information.is_some() {
-                            mutual_information
-                        } else {
-                            compute_mutual_information_from_counts(
-                                &chunk_stats.xy_counts,
-                                &chunk_stats.x_counts,
-                                &chunk_stats.y_counts,
-                                chunk_stats.total_pairs,
-                            )
-                        };
-                        compute_normalized_mutual_information(mi, h_x, h_y)
-                    };
-
-                    Ok((
-                        pair_key,
-                        BivariateStats {
-                            pearson,
-                            spearman,
-                            kendall,
-                            covariance_sample,
-                            covariance_population,
-                            mutual_information,
-                            normalized_mutual_information,
-                            n_pairs,
-                        },
-                    ))
-                },
-            )
+            .map(|(pair_key, chunk_stats)| {
+                if let Some(pb) = progress {
+                    pb.inc(1);
+                }
+                finalize_bivariate_pair_stats(
+                    pair_key,
+                    chunk_stats,
+                    &field_pairs_arc,
+                    field_names,
+                    cardinality_threshold,
+                    stats_config,
+                )
+            })
             .collect::<CliResult<HashMap<_, _>>>()?;
 
         // Finish progress bar after final statistics computation
@@ -2972,7 +2766,11 @@ fn compute_all_bivariatestats(
     }
 }
 
-/// Sequential processing for small files (< 10k records) or when no index exists
+/// Sequential processing for small files (< 10k records) or when no index exists.
+///
+/// Delegates to `compute_chunk_bivariate` for the per-record scan (treating the whole
+/// file as a single chunk), then computes marginal frequencies and finalizes per pair
+/// via `finalize_bivariate_pair_stats` — sharing all of that logic with the parallel path.
 fn compute_all_bivariatestats_sequential(
     field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
     field_names: &[String],
@@ -2985,359 +2783,61 @@ fn compute_all_bivariatestats_sequential(
         return Ok(HashMap::new());
     }
 
-    // Check what we need based on config
-    let needs_all_values = stats_config.needs_all_values();
     let needs_freq_counts = stats_config.needs_frequency_counts();
 
-    // Collect all values for each field pair
-    // Use frequency counts for strings instead of storing all strings
-    let estimated_capacity = 5000; // Reasonable estimate for sequential processing
-    let estimated_unique_strings = estimated_capacity.min(1000); // Estimate for string frequency maps
-    let mut pair_values: HashMap<
-        (u16, u16),
-        (
-            Vec<f64>,
-            Vec<f64>,
-            CorrelationState, // Always track correlation state for Pearson/covariance
-            HashMap<(String, String), u64>,
-            HashMap<String, u64>,
-            HashMap<String, u64>,
-            u64,
-        ),
-    > = field_pairs
-        .keys()
-        .map(|k| {
-            let mut xy_counts = HashMap::new();
-            let mut x_counts = HashMap::new();
-            let mut y_counts = HashMap::new();
-            // Only allocate if needed
-            if needs_freq_counts {
-                xy_counts.reserve(estimated_unique_strings);
-                x_counts.reserve(estimated_unique_strings / 2);
-                y_counts.reserve(estimated_unique_strings / 2);
-            }
-            (
-                *k,
-                (
-                    if needs_all_values {
-                        Vec::with_capacity(estimated_capacity)
-                    } else {
-                        Vec::new()
-                    },
-                    if needs_all_values {
-                        Vec::with_capacity(estimated_capacity)
-                    } else {
-                        Vec::new()
-                    },
-                    CorrelationState::default(), // Always initialize for Pearson/covariance
-                    xy_counts,
-                    x_counts,
-                    y_counts,
-                    0,
-                ),
-            )
-        })
-        .collect();
-
-    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-
-    // Optimization #1: Date parsing cache - Cache parsed dates to avoid re-parsing same strings
-    let mut date_cache: HashMap<String, Option<f64>> = HashMap::with_capacity(estimated_capacity);
-
-    // Optimization #6: String interning - Cache frequently used strings to reduce allocations.
-    // Only needed if we're computing mutual information. A HashSet suffices since key==value;
-    // saves one clone per cache miss over the prior HashMap<String, String> form.
-    let mut string_interner: HashSet<String> = if needs_freq_counts {
-        HashSet::with_capacity(estimated_unique_strings)
-    } else {
-        HashSet::new()
-    };
-
-    // amortize allocations
-    #[allow(unused_assignments)]
-    let mut record: StringRecord = StringRecord::new();
-    let mut value_str_x;
-    let mut value_str_y;
-    let mut numeric_value_x;
-    let mut numeric_value_y;
-
-    // Process each record once, collecting values for all field pairs
-    let mut processed = 0u64;
-    for result in rdr.records() {
-        record = result?;
-        processed += 1;
-
-        // Update progress bar every 1000 records
-        if let Some(pb) = progress {
-            if processed == 1 {
-                // Initialize progress bar on first record (unknown total)
-                pb.set_style(
-                    ProgressStyle::default_bar()
-                        .template("[{elapsed_precise}] [{wide_bar}] {pos} records ({per_sec})")
-                        .unwrap(),
-                );
-                pb.set_length(0); // Unknown length
-            }
-            if processed.is_multiple_of(1000) {
-                pb.set_position(processed);
-            }
-        }
-
-        // Optimization #4: Batch string conversions - record is already StringRecord, so strings
-        // are available But we still need to cache date parsing results
-
-        for ((idx1, idx2), (field1_info, field2_info)) in field_pairs {
-            value_str_x = record.get(field1_info.col_idx).unwrap_or("");
-            value_str_y = record.get(field2_info.col_idx).unwrap_or("");
-
-            if value_str_x.is_empty() || value_str_y.is_empty() {
-                continue;
-            }
-
-            if let Some((x_nums, y_nums, correlation_state, xy_counts, _, _, total_pairs)) =
-                pair_values.get_mut(&(*idx1, *idx2))
-            {
-                // Optimization #1: Use date parsing cache
-                // Optimization #5: Skip date parsing for non-date fields
-                numeric_value_x = if field1_info.field_type.is_date_or_datetime() {
-                    // get() first to avoid alloc on cache hit
-                    if let Some(cached) = date_cache.get(value_str_x) {
-                        *cached
-                    } else {
-                        let val = parse_date_to_days(value_str_x, prefer_dmy);
-                        date_cache.insert(value_str_x.to_string(), val);
-                        val
-                    }
-                } else {
-                    parse_float_opt(value_str_x)
-                };
-
-                numeric_value_y = if field2_info.field_type.is_date_or_datetime() {
-                    if let Some(cached) = date_cache.get(value_str_y) {
-                        *cached
-                    } else {
-                        let val = parse_date_to_days(value_str_y, prefer_dmy);
-                        date_cache.insert(value_str_y.to_string(), val);
-                        val
-                    }
-                } else {
-                    parse_float_opt(value_str_y)
-                };
-
-                if let (Some(x_val), Some(y_val)) = (numeric_value_x, numeric_value_y) {
-                    // Always update correlation state for Pearson/covariance
-                    update_correlation_state(correlation_state, x_val, y_val);
-                    // Only store values if needed for Spearman/Kendall
-                    if needs_all_values {
-                        x_nums.push(x_val);
-                        y_nums.push(y_val);
-                    }
-                }
-
-                // Only compute frequency counts if needed for mutual information
-                if needs_freq_counts {
-                    // See note in compute_chunk_bivariate: this is not true interning —
-                    // each cache hit still clones the full String. The only saving
-                    // over ad-hoc cloning is one fewer clone on insert (cache miss).
-                    let x_str = if let Some(cached) = string_interner.get(value_str_x) {
-                        cached.clone()
-                    } else {
-                        let owned = value_str_x.to_string();
-                        string_interner.insert(owned.clone());
-                        owned
-                    };
-                    let y_str = if let Some(cached) = string_interner.get(value_str_y) {
-                        cached.clone()
-                    } else {
-                        let owned = value_str_y.to_string();
-                        string_interner.insert(owned.clone());
-                        owned
-                    };
-
-                    // Accumulate joint frequency counts (xy_counts) - these are needed for mutual
-                    // information. Marginal frequencies (x_counts, y_counts) are computed from
-                    // xy_counts at finalization to ensure consistency.
-                    *xy_counts.entry((x_str, y_str)).or_insert(0) += 1;
-                    *total_pairs += 1;
-                }
-            }
-        }
+    // Set up progress bar once before iteration (unknown total, ticks per record).
+    if let Some(pb) = progress {
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("[{elapsed_precise}] [{wide_bar}] {pos} records ({per_sec})")
+                .unwrap(),
+        );
+        pb.set_length(0);
     }
 
-    // Finish progress bar
+    // Wrap byte_records() with inspect() so the progress bar ticks every 1000 records
+    // without coupling compute_chunk_bivariate to a ProgressBar parameter.
+    let mut processed = 0u64;
+    let it = rdr.byte_records().inspect(|_| {
+        processed += 1;
+        if let Some(pb) = progress
+            && processed.is_multiple_of(1000)
+        {
+            pb.set_position(processed);
+        }
+    });
+    let mut all_stats = compute_chunk_bivariate(field_pairs, it, stats_config)?;
+
     if let Some(pb) = progress {
         pb.set_position(processed);
         util::finish_progress(pb);
     }
 
-    // Compute statistics for each field pair
-    let mut final_stats: HashMap<(u16, u16), BivariateStats> =
-        HashMap::with_capacity(field_pairs.len() * 2);
-
-    for (pair_key, (x_nums, y_nums, correlation_state, xy_counts, _, _, total_pairs)) in pair_values
-    {
-        // Get field info for this pair to check variance and cardinality.
-        // pair_values was built from field_pairs keys (see debug_assert!s earlier),
-        // so a miss here indicates an invariant violation from a refactor.
-        let (field1_info, field2_info) = field_pairs.get(&pair_key).ok_or_else(|| {
-            CliError::Other(format!(
-                "Invariant violation: field pair not found: {pair_key:?}"
-            ))
-        })?;
-
-        // Compute marginal frequencies from joint frequencies if needed for mutual information
-        // This ensures x_counts and y_counts are computed from the same set of records
-        // as xy_counts (only pairs where both fields are non-empty)
-        let (x_counts, y_counts) = if needs_freq_counts && !xy_counts.is_empty() {
-            let mut x_counts: HashMap<String, u64> = HashMap::new();
-            let mut y_counts: HashMap<String, u64> = HashMap::new();
-            for ((x_val, y_val), &count) in &xy_counts {
-                *x_counts.entry(x_val.clone()).or_insert(0) += count;
-                *y_counts.entry(y_val.clone()).or_insert(0) += count;
+    // Compute marginal frequencies from joint frequencies (same as parallel path).
+    if needs_freq_counts {
+        for chunk_stats in all_stats.values_mut() {
+            chunk_stats.x_counts.clear();
+            chunk_stats.y_counts.clear();
+            for ((x_val, y_val), &count) in &chunk_stats.xy_counts {
+                *chunk_stats.x_counts.entry(x_val.clone()).or_insert(0) += count;
+                *chunk_stats.y_counts.entry(y_val.clone()).or_insert(0) += count;
             }
-            (x_counts, y_counts)
-        } else {
-            (HashMap::new(), HashMap::new())
-        };
-
-        // Early termination: check for zero variance
-        let has_zero_variance = field1_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
-            || field2_info.stddev.is_some_and(|s| s.abs() < f64::EPSILON)
-            || field1_info.variance.is_some_and(|v| v.abs() < f64::EPSILON)
-            || field2_info.variance.is_some_and(|v| v.abs() < f64::EPSILON);
-
-        let n_pairs = correlation_state.count.max(total_pairs);
-
-        // Compute Pearson correlation if requested (use correlation_state)
-        let pearson = if !stats_config.pearson || has_zero_variance || correlation_state.count < 2 {
-            None
-        } else {
-            finalize_pearson_correlation(&correlation_state)
-        };
-
-        // Compute Spearman correlation if requested (requires arrays)
-        let spearman = if !stats_config.spearman || has_zero_variance || x_nums.len() < 2 {
-            None
-        } else {
-            compute_spearman_correlation(&x_nums, &y_nums)
-        };
-
-        // Compute Kendall's tau if requested (requires arrays)
-        let kendall = if !stats_config.kendall || has_zero_variance || x_nums.len() < 2 {
-            None
-        } else {
-            compute_kendall_tau(&x_nums, &y_nums)
-        };
-
-        // Compute covariance from correlation state (skip if not requested or variance is zero)
-        let (covariance_sample, covariance_population) =
-            if !stats_config.covariance || has_zero_variance || correlation_state.count < 2 {
-                (None, None)
-            } else {
-                (
-                    finalize_covariance(&correlation_state, true),
-                    finalize_covariance(&correlation_state, false),
-                )
-            };
-
-        // Compute mutual information if requested and apply cardinality threshold
-        let mutual_information = if !stats_config.mi || total_pairs == 0 {
-            None
-        } else if let Some(threshold) = cardinality_threshold {
-            // Check if either field exceeds cardinality threshold
-            let exceeds_threshold = field1_info.cardinality.is_some_and(|c| c > threshold)
-                || field2_info.cardinality.is_some_and(|c| c > threshold);
-            if exceeds_threshold {
-                // Convert indices to names for logging (u16 -> usize for indexing)
-                let (idx1, idx2) = pair_key;
-                let field1_name = field_names.get(idx1 as usize).map_or("?", |s| s.as_str());
-                let field2_name = field_names.get(idx2 as usize).map_or("?", |s| s.as_str());
-                log::debug!(
-                    "Skipping mutual information for pair ({field1_name}, {field2_name}) - \
-                     cardinality exceeds threshold {threshold}",
-                );
-                None
-            } else {
-                compute_mutual_information_from_counts(
-                    &xy_counts,
-                    &x_counts,
-                    &y_counts,
-                    total_pairs,
-                )
-            }
-        } else {
-            compute_mutual_information_from_counts(&xy_counts, &x_counts, &y_counts, total_pairs)
-        };
-
-        // Compute normalized mutual information if requested
-        // NMI requires MI and entropies computed from the same frequency counts
-        let normalized_mutual_information = if !stats_config.nmi || total_pairs == 0 {
-            None
-        } else if let Some(threshold) = cardinality_threshold {
-            // Check if either field exceeds cardinality threshold (same as MI)
-            let exceeds_threshold = field1_info.cardinality.is_some_and(|c| c > threshold)
-                || field2_info.cardinality.is_some_and(|c| c > threshold);
-            if exceeds_threshold {
-                // Convert indices to names for logging (u16 -> usize for indexing)
-                let (idx1, idx2) = pair_key;
-                let field1_name = field_names.get(idx1 as usize).map_or("?", |s| s.as_str());
-                let field2_name = field_names.get(idx2 as usize).map_or("?", |s| s.as_str());
-                log::debug!(
-                    "Skipping normalized mutual information for pair ({field1_name}, \
-                     {field2_name}) - cardinality exceeds threshold {threshold}",
-                );
-                None
-            } else {
-                // Compute entropies from marginal frequency counts
-                let h_x = compute_entropy_from_counts(&x_counts, total_pairs);
-                let h_y = compute_entropy_from_counts(&y_counts, total_pairs);
-                // Compute MI if not already computed (needed for NMI)
-                let mi = if mutual_information.is_some() {
-                    mutual_information
-                } else {
-                    compute_mutual_information_from_counts(
-                        &xy_counts,
-                        &x_counts,
-                        &y_counts,
-                        total_pairs,
-                    )
-                };
-                compute_normalized_mutual_information(mi, h_x, h_y)
-            }
-        } else {
-            // Compute entropies from marginal frequency counts
-            let h_x = compute_entropy_from_counts(&x_counts, total_pairs);
-            let h_y = compute_entropy_from_counts(&y_counts, total_pairs);
-            // Compute MI if not already computed (needed for NMI)
-            let mi = if mutual_information.is_some() {
-                mutual_information
-            } else {
-                compute_mutual_information_from_counts(
-                    &xy_counts,
-                    &x_counts,
-                    &y_counts,
-                    total_pairs,
-                )
-            };
-            compute_normalized_mutual_information(mi, h_x, h_y)
-        };
-
-        final_stats.insert(
-            pair_key,
-            BivariateStats {
-                pearson,
-                spearman,
-                kendall,
-                covariance_sample,
-                covariance_population,
-                mutual_information,
-                normalized_mutual_information,
-                n_pairs,
-            },
-        );
+        }
     }
 
-    Ok(final_stats)
+    all_stats
+        .into_iter()
+        .map(|(pair_key, chunk_stats)| {
+            finalize_bivariate_pair_stats(
+                pair_key,
+                chunk_stats,
+                field_pairs,
+                field_names,
+                cardinality_threshold,
+                stats_config,
+            )
+        })
+        .collect()
 }
 
 /// Compute Kurtosis, Gini coefficient, and Atkinson index for all fields.

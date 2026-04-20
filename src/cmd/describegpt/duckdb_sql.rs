@@ -4,12 +4,7 @@
 //! The LLM produces SQL in answer to a user question; everything else in this
 //! module is the deterministic plumbing around running it and scoring it.
 
-use std::{
-    env, fs,
-    path::Path,
-    process::Command,
-    time::{Duration, Instant},
-};
+use std::{env, fs, path::Path, process::Command, time::Instant};
 
 use super::{
     Args, CacheType, DUCKDB_PATH, PromptType, QSV_DUCKDB_PATH_ENV, invalidate_cache_entry,
@@ -120,8 +115,6 @@ pub(super) fn run_duckdb_query(
     if !status_msg.is_empty() {
         print_status(status_msg, Some(start_time.elapsed()));
     }
-    // Silence unused-warning if `Duration` import ends up redundant across build configs.
-    let _ = Duration::from_secs(0);
 
     if !output.status.success() {
         // SQL execution failed — preserve the failing query as a .sql sibling for debugging.

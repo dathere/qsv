@@ -2565,7 +2565,846 @@ fn process_phase_output(
     }
 }
 
-// Generates output for all inference options
+/// Build the messages JSON array sent to the LLM API for a single inference phase.
+/// Incorporates the system prompt, optional data-dictionary context, optional session
+/// state (for refinement / follow-up prompts), and the user prompt.
+fn build_inference_messages(
+    prompt: &str,
+    system_prompt: &str,
+    dictionary_completion: &str,
+    session_state: Option<&SessionState>,
+) -> serde_json::Value {
+    let mut messages: Vec<serde_json::Value> = Vec::new();
+
+    // Start with system prompt
+    messages.push(json!({"role": "system", "content": system_prompt}));
+
+    // Add dictionary completion if present
+    if !dictionary_completion.is_empty() {
+        messages.push(json!({
+            "role": "assistant",
+            "content": format!("The following is the Data Dictionary for the Dataset:\n\n{dictionary_completion}")
+        }));
+    }
+
+    // Add session context if present
+    if let Some(session) = session_state {
+        // Add summary if present
+        if let Some(ref summary) = session.summary {
+            messages.push(json!({
+                "role": "system",
+                "content": format!("Previous conversation summary:\n\n{summary}")
+            }));
+        }
+
+        let is_refinement = !session.messages.is_empty();
+
+        // Add baseline SQL if this is a refinement request
+        if is_refinement {
+            let baseline_sql_used = if let Some(ref baseline_sql) = session.baseline_sql
+                && !baseline_sql.trim().is_empty()
+            {
+                messages.push(json!({
+                    "role": "assistant",
+                    "content": format!("The baseline SQL query we are refining is:\n\n```sql\n{baseline_sql}\n```\n\nIMPORTANT: You must refine and modify this existing SQL query based on the user's request. Do NOT create a completely new query. Modify the baseline query to incorporate the requested changes.")
+                }));
+                true
+            } else {
+                false
+            };
+
+            // If no baseline SQL in state but we have messages, try to extract it from the last
+            // assistant message
+            if !baseline_sql_used
+                && let Some(last_msg) = session
+                    .messages
+                    .iter()
+                    .rev()
+                    .find(|m| m.role == "assistant")
+                && let Some(sql) = regex_oncelock!(r"(?s)```sql\s*\n(.*?)\n\s*```")
+                    .captures(&last_msg.content)
+                    .and_then(|caps| caps.get(1).map(|m| m.as_str().trim().to_string()))
+                && !sql.is_empty()
+            {
+                messages.push(json!({
+                    "role": "assistant",
+                    "content": format!("The baseline SQL query we are refining is:\n\n```sql\n{sql}\n```\n\nIMPORTANT: You must refine and modify this existing SQL query based on the user's request. Do NOT create a completely new query. Modify the baseline query to incorporate the requested changes.")
+                }));
+            }
+        }
+
+        // Add recent messages (within sliding window)
+        for msg in &session.messages {
+            messages.push(json!({
+                "role": msg.role,
+                "content": msg.content
+            }));
+        }
+
+        // Add SQL results if available (for refinement context)
+        if is_refinement && let Some(ref results) = session.sql_results {
+            messages.push(json!({
+                "role": "assistant",
+                "content": format!("Here are the first 10 rows from the last successful SQL query execution:\n\n```csv\n{results}\n```")
+            }));
+        }
+
+        // Add SQL errors if any (for refinement context)
+        if is_refinement && !session.sql_errors.is_empty() {
+            let errors_text = session.sql_errors.join("\n");
+            messages.push(json!({
+                "role": "assistant",
+                "content": format!("Previous SQL execution errors encountered:\n\n{errors_text}")
+            }));
+        }
+
+        // Modify the prompt to emphasize refinement
+        if is_refinement {
+            let refined_prompt = format!(
+                "User request: {prompt}\n\nPlease refine the baseline SQL query above to address \
+                 this request. Return the complete refined SQL query that modifies the baseline \
+                 query."
+            );
+            messages.push(json!({"role": "user", "content": refined_prompt}));
+        } else {
+            messages.push(json!({"role": "user", "content": prompt}));
+        }
+    } else {
+        // No session, just add the prompt
+        messages.push(json!({"role": "user", "content": prompt}));
+    }
+
+    json!(messages)
+}
+
+/// Run the Data Dictionary inference phase. Returns the completion so later phases
+/// (Description / Tags / Prompt) can inline its response as context.
+#[allow(clippy::too_many_arguments)]
+fn run_dictionary_phase(
+    args: &Args,
+    client: &reqwest::blocking::Client,
+    model: &str,
+    api_key: &str,
+    cache_type: &CacheType,
+    analysis_results: &AnalysisResults,
+    total_json_output: &mut serde_json::Value,
+    base_url: &str,
+    output_format: OutputFormat,
+) -> CliResult<CompletionResponse> {
+    let (prompt, system_prompt) = get_prompt(PromptType::Dictionary, Some(analysis_results), args)?;
+    let start_time = Instant::now();
+    print_status("  Inferring Data Dictionary...", None);
+    let messages = build_inference_messages(&prompt, &system_prompt, "", None);
+
+    // Special case: if --prompt is used with --fresh, force non-Fresh cache for the
+    // dictionary so the prompt phase can reuse it without re-inferring.
+    let dictionary_cache_type = if args.flag_prompt.is_some() && args.flag_fresh {
+        if args.flag_redis_cache {
+            &CacheType::Redis
+        } else {
+            &CacheType::Disk
+        }
+    } else {
+        cache_type
+    };
+
+    let data_dict = get_cached_completion(
+        args,
+        client,
+        model,
+        api_key,
+        dictionary_cache_type,
+        PromptType::Dictionary,
+        &messages,
+    )?;
+    print_status(
+        &format!(
+            "   Received dictionary inference.\n   {:?}\n  ",
+            data_dict.token_usage
+        ),
+        Some(start_time.elapsed()),
+    );
+    process_phase_output(
+        PromptType::Dictionary,
+        &data_dict,
+        total_json_output,
+        args,
+        analysis_results,
+        model,
+        base_url,
+        output_format,
+    )?;
+    Ok(data_dict)
+}
+
+/// Run the Description inference phase.
+#[allow(clippy::too_many_arguments)]
+fn run_description_phase(
+    args: &Args,
+    client: &reqwest::blocking::Client,
+    model: &str,
+    api_key: &str,
+    cache_type: &CacheType,
+    analysis_results: &AnalysisResults,
+    dictionary_response: &str,
+    total_json_output: &mut serde_json::Value,
+    base_url: &str,
+    output_format: OutputFormat,
+) -> CliResult<CompletionResponse> {
+    let (prompt, system_prompt) =
+        get_prompt(PromptType::Description, Some(analysis_results), args)?;
+    let messages = build_inference_messages(&prompt, &system_prompt, dictionary_response, None);
+    let start_time = Instant::now();
+    print_status("  Inferring Description...", None);
+    let completion_response = get_cached_completion(
+        args,
+        client,
+        model,
+        api_key,
+        cache_type,
+        PromptType::Description,
+        &messages,
+    )?;
+    print_status(
+        format!(
+            "   Received Description Inference.\n   {:?}\n  ",
+            completion_response.token_usage
+        )
+        .as_str(),
+        Some(start_time.elapsed()),
+    );
+    process_phase_output(
+        PromptType::Description,
+        &completion_response,
+        total_json_output,
+        args,
+        analysis_results,
+        model,
+        base_url,
+        output_format,
+    )?;
+    Ok(completion_response)
+}
+
+/// Run the Tags inference phase.
+#[allow(clippy::too_many_arguments)]
+fn run_tags_phase(
+    args: &Args,
+    client: &reqwest::blocking::Client,
+    model: &str,
+    api_key: &str,
+    cache_type: &CacheType,
+    analysis_results: &AnalysisResults,
+    dictionary_context: &str,
+    total_json_output: &mut serde_json::Value,
+    base_url: &str,
+    output_format: OutputFormat,
+) -> CliResult<CompletionResponse> {
+    let (prompt, system_prompt) = get_prompt(PromptType::Tags, Some(analysis_results), args)?;
+    let messages = build_inference_messages(&prompt, &system_prompt, dictionary_context, None);
+    let start_time = Instant::now();
+    if let Some(ref tag_vocab_uri) = args.flag_tag_vocab {
+        print_status(
+            &format!("  Inferring Tags with Tag Vocabulary ({tag_vocab_uri})..."),
+            None,
+        );
+    } else {
+        print_status("  Inferring Tags...", None);
+    }
+    let completion_response = get_cached_completion(
+        args,
+        client,
+        model,
+        api_key,
+        cache_type,
+        PromptType::Tags,
+        &messages,
+    )?;
+    print_status(
+        &format!(
+            "   Received Tags inference.\n   {:?}\n  ",
+            completion_response.token_usage
+        ),
+        Some(start_time.elapsed()),
+    );
+    process_phase_output(
+        PromptType::Tags,
+        &completion_response,
+        total_json_output,
+        args,
+        analysis_results,
+        model,
+        base_url,
+        output_format,
+    )?;
+    Ok(completion_response)
+}
+
+/// Outcome of the custom-prompt phase, returned to `run_inference_options` so it can
+/// apply the max-tokens check and optionally route into `execute_sql_query_phase`.
+struct PromptPhaseOutcome {
+    completion_response: CompletionResponse,
+    has_sql_query:       bool,
+    session_state:       Option<SessionState>,
+    system_prompt:       String,
+}
+
+/// Run the Custom Prompt inference phase. Handles session loading, relevance check against
+/// the baseline SQL, sliding-window trimming, LLM call, and appending the new user / assistant
+/// turn to the in-memory session state (the session file is persisted by the caller).
+/// Does NOT execute any embedded SQL query — that's `execute_sql_query_phase`.
+#[allow(clippy::too_many_arguments)]
+fn run_prompt_phase(
+    args: &Args,
+    user_prompt: &str,
+    client: &reqwest::blocking::Client,
+    model: &str,
+    api_key: &str,
+    cache_type: &CacheType,
+    analysis_results: &AnalysisResults,
+    dictionary_response: &str,
+    normalized_session_path: Option<&str>,
+    total_json_output: &mut serde_json::Value,
+    base_url: &str,
+    output_format: OutputFormat,
+) -> CliResult<PromptPhaseOutcome> {
+    let mut session_state: Option<SessionState> = None;
+
+    // Handle session if --session is provided
+    if let Some(normalized_path) = normalized_session_path {
+        let session_path = Path::new(normalized_path);
+        let session_len = if args.flag_session_len == 0 {
+            10
+        } else {
+            args.flag_session_len
+        };
+
+        session_state = Some(load_session(session_path)?);
+        if let Some(ref mut state) = session_state
+            && !state.messages.is_empty()
+        {
+            if let Some(ref baseline_sql) = state.baseline_sql
+                && !check_message_relevance(user_prompt, baseline_sql, args, client, api_key)?
+            {
+                return fail_clierror!(
+                    "The current message does not appear to be related to refining the baseline \
+                     SQL query. Please start a new session for unrelated queries."
+                );
+            }
+            apply_sliding_window(state, session_len, args, client, api_key)?;
+        }
+    }
+
+    let (prompt, system_prompt) = get_prompt(PromptType::Prompt, Some(analysis_results), args)?;
+    let start_time = Instant::now();
+    print_status("  Answering Custom Prompt...", None);
+    let messages = build_inference_messages(
+        &prompt,
+        &system_prompt,
+        dictionary_response,
+        session_state.as_ref(),
+    );
+    let completion_response = get_cached_completion(
+        args,
+        client,
+        model,
+        api_key,
+        cache_type,
+        PromptType::Prompt,
+        &messages,
+    )?;
+    print_status(
+        &format!(
+            "   Received Custom Prompt Answer.\n   {:?}\n  ",
+            completion_response.token_usage
+        ),
+        Some(start_time.elapsed()),
+    );
+    let has_sql_query = completion_response.response.contains("```sql");
+    if has_sql_query {
+        print_status(
+            &format!(
+                "  Cannot answer the prompt using just Summary Statistics & Frequency \
+                 Distribution data.\n  Generated a {} SQL query to answer the prompt \
+                 deterministically.",
+                if should_use_duckdb() {
+                    "DuckDB"
+                } else {
+                    "Polars"
+                }
+            ),
+            None,
+        );
+    }
+
+    // Append the new user / assistant turn to the session (not saved yet — caller persists
+    // after SQL execution to avoid overwriting multiple times per run).
+    if let Some(ref mut state) = session_state {
+        state.messages.push(SessionMessage {
+            role:      "user".to_string(),
+            content:   user_prompt.to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        });
+        state.messages.push(SessionMessage {
+            role:      "assistant".to_string(),
+            content:   completion_response.response.clone(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        });
+    }
+
+    process_phase_output(
+        PromptType::Prompt,
+        &completion_response,
+        total_json_output,
+        args,
+        analysis_results,
+        model,
+        base_url,
+        output_format,
+    )?;
+
+    Ok(PromptPhaseOutcome {
+        completion_response,
+        has_sql_query,
+        session_state,
+        system_prompt,
+    })
+}
+
+/// Execute the SQL query embedded in a Custom Prompt response:
+/// 1. Validate the SQL-results file is writable.
+/// 2. Extract the ```sql ... ``` fence from the LLM response.
+/// 3. Optionally score the SQL via `scoresql` and refine via the LLM up to N times.
+/// 4. Run the final query through DuckDB (when `QSV_DUCKDB_PATH` is set) or Polars (`sqlp`).
+/// 5. Track the outcome (success / error rows) in the session state for future refinements.
+#[allow(clippy::too_many_arguments)]
+fn execute_sql_query_phase(
+    input_path: &str,
+    args: &Args,
+    client: &reqwest::blocking::Client,
+    model: &str,
+    api_key: &str,
+    cache_type: &CacheType,
+    completion_response: &CompletionResponse,
+    system_prompt: &str,
+    sql_results: &str,
+    session_state: &mut Option<SessionState>,
+    normalized_session_path: Option<&str>,
+) -> CliResult<()> {
+    // Check if file exists and is writable, or can be created
+    let sql_results_path = Path::new(sql_results);
+    if sql_results_path.exists() {
+        if fs::metadata(sql_results_path)?.permissions().readonly() {
+            return fail_clierror!(
+                "SQL results file exists but is not writable: {}",
+                sql_results_path.display()
+            );
+        }
+    } else {
+        match fs::File::create(sql_results_path) {
+            Ok(_) => {
+                fs::remove_file(sql_results_path)?;
+            },
+            Err(e) => {
+                return fail_clierror!(
+                    "Cannot create SQL results file {}: {}",
+                    sql_results_path.display(),
+                    e
+                );
+            },
+        }
+    }
+
+    let sql_query_start = Instant::now();
+    print_status(
+        &format!(
+            "\nSQL results file specified.\n  Executing SQL query and saving results to \
+             {sql_results}..."
+        ),
+        None,
+    );
+
+    // Extract SQL query code block using regex
+    let Some(mut sql_query) = regex_oncelock!(r"(?s)```sql\s*\n(.*?)\n\s*```")
+        .captures(&completion_response.response)
+        .and_then(|caps| caps.get(1).map(|m| m.as_str().trim().to_string()))
+    else {
+        // Invalidate the prompt cache entry so user can try again without reinferring
+        // the dictionary
+        if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
+            let _ = invalidate_cache_entry(args, PromptType::Prompt);
+        }
+        return fail_clierror!("Failed to extract SQL query from custom prompt response");
+    };
+
+    // Score SQL before execution (enabled by default, disable with --no-score-sql)
+    // When polars feature is disabled, scoresql only works with --duckdb
+    #[cfg(feature = "polars")]
+    let can_score = !args.flag_no_score_sql;
+    #[cfg(not(feature = "polars"))]
+    let can_score = !args.flag_no_score_sql && should_use_duckdb();
+
+    if can_score {
+        let use_duckdb = should_use_duckdb();
+        let threshold = args.flag_score_threshold;
+        let max_retries = args.flag_score_max_retries.min(100);
+        if args.flag_score_max_retries > 100 {
+            print_status(
+                &format!(
+                    "  Warning: --score-max-retries {} clamped to 100.",
+                    args.flag_score_max_retries
+                ),
+                None,
+            );
+        }
+
+        let file_stem = Path::new(input_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("input");
+        let mut scoring_sql = sql_query.replace(INPUT_TABLE_NAME, file_stem);
+        let mut best_sql_template = sql_query.clone();
+        let mut best_score: u32 = 0;
+
+        // Targeted regex: only replace file_stem when it appears as a table name
+        // (after FROM/JOIN/INTO/UPDATE), optionally quoted, to avoid corrupting column
+        // names or literals that contain the file stem.
+        // NOTE: INPUT_TABLE_NAME must not contain regex replacement-special chars
+        // (e.g. `$`); the current value `{INPUT_TABLE_NAME}` is safe.
+        let table_re = regex::Regex::new(&format!(
+            r#"(?i)\b(FROM|JOIN|INTO|UPDATE)\s+["'`]?{}["'`]?(?:\b|$)"#,
+            regex::escape(file_stem)
+        ))
+        .expect("Invalid table-name regex");
+
+        for attempt in 1..=max_retries.saturating_add(1) {
+            match score_sql_query(input_path, &scoring_sql, use_duckdb) {
+                Ok((score, rating, report_json)) => {
+                    print_status(
+                        &format!("  SQL score: {score}/100 ({rating}) [attempt {attempt}]"),
+                        None,
+                    );
+
+                    if score > best_score {
+                        best_score = score;
+                        best_sql_template = table_re
+                            .replace_all(&scoring_sql, format!("${{1}} {INPUT_TABLE_NAME}"))
+                            .to_string();
+                    }
+
+                    if score >= threshold || attempt > max_retries {
+                        if score < threshold {
+                            print_status(
+                                &format!(
+                                    "  Warning: Best SQL score {best_score}/100 below threshold \
+                                     {threshold} after {max_retries} retries. Using best query."
+                                ),
+                                None,
+                            );
+                        }
+                        // Restore {INPUT_TABLE_NAME} so the downstream replacement works
+                        sql_query.clone_from(&best_sql_template);
+                        break;
+                    }
+
+                    // Ask LLM to improve — use file_stem as the table name so the LLM
+                    // returns SQL we can score directly.
+                    let refinement_prompt = build_score_refinement_prompt(
+                        &scoring_sql,
+                        &report_json,
+                        attempt,
+                        max_retries,
+                        file_stem,
+                    );
+                    let refinement_messages = json!([
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": refinement_prompt}
+                    ]);
+
+                    match get_completion(
+                        args,
+                        client,
+                        model,
+                        api_key,
+                        &refinement_messages,
+                        PromptType::Prompt,
+                    ) {
+                        Ok(response) => {
+                            if let Some(new_sql) = regex_oncelock!(r"(?s)```sql\s*\n(.*?)\n\s*```")
+                                .captures(&response.response)
+                                .and_then(|caps| caps.get(1).map(|m| m.as_str().trim().to_string()))
+                            {
+                                scoring_sql = new_sql;
+                            } else {
+                                print_status(
+                                    "  LLM refinement had no SQL block. Using best query.",
+                                    None,
+                                );
+                                sql_query.clone_from(&best_sql_template);
+                                break;
+                            }
+                        },
+                        Err(e) => {
+                            log::warn!("SQL refinement LLM call failed: {e}");
+                            sql_query.clone_from(&best_sql_template);
+                            break;
+                        },
+                    }
+                },
+                Err(e) => {
+                    // scoresql itself failed — SQL is likely invalid, counts as score=0
+                    log::warn!("scoresql failed: {e}");
+                    if attempt > max_retries {
+                        print_status(
+                            "  scoresql failed on all attempts. Proceeding with original query.",
+                            None,
+                        );
+                        break;
+                    }
+                    // Feed the error to the LLM as feedback
+                    let error_prompt = format!(
+                        "The SQL query failed validation:\n```sql\n{scoring_sql}\n```\n\nError: \
+                         {e}\n\nFix the SQL query. Use `{file_stem}` as the table name. Return \
+                         ONLY the corrected SQL in a ```sql code block."
+                    );
+                    let error_messages = json!([
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": error_prompt}
+                    ]);
+                    match get_completion(
+                        args,
+                        client,
+                        model,
+                        api_key,
+                        &error_messages,
+                        PromptType::Prompt,
+                    ) {
+                        Ok(response) => {
+                            if let Some(new_sql) = regex_oncelock!(r"(?s)```sql\s*\n(.*?)\n\s*```")
+                                .captures(&response.response)
+                                .and_then(|caps| caps.get(1).map(|m| m.as_str().trim().to_string()))
+                            {
+                                scoring_sql = new_sql;
+                            } else {
+                                break;
+                            }
+                        },
+                        Err(_) => break,
+                    }
+                },
+            }
+        }
+    }
+
+    if should_use_duckdb() {
+        // For DuckDB, replace {INPUT_TABLE_NAME} with a read_csv_auto call
+        // Escape single quotes in path to prevent SQL injection
+        let escaped_path = escape_sql_string(input_path);
+        if READ_CSV_AUTO_REGEX.is_match(&sql_query) {
+            sql_query = READ_CSV_AUTO_REGEX
+                .replace_all(
+                    &sql_query,
+                    format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
+                )
+                .into_owned();
+        } else {
+            // Fallback: replace {INPUT_TABLE_NAME} directly
+            sql_query = sql_query.replace(
+                INPUT_TABLE_NAME,
+                &format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
+            );
+        }
+        log::debug!("DuckDB SQL query:\n{sql_query}");
+
+        let (_, stderr) =
+            match run_duckdb_query(&sql_query, sql_results, "  DuckDB SQL query issued.") {
+                Ok((stdout, stderr)) => {
+                    if stderr.to_ascii_lowercase().contains(" error:") {
+                        track_sql_error_in_session(
+                            session_state.as_mut(),
+                            normalized_session_path.map(String::from).as_ref(),
+                            format!("DuckDB SQL query execution failed: {stderr}"),
+                        );
+                        if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
+                            let _ = invalidate_cache_entry(args, PromptType::Prompt);
+                        }
+                        return fail_clierror!("DuckDB SQL query execution failed: {stderr}");
+                    }
+                    (stdout, stderr)
+                },
+                Err(e) => {
+                    track_sql_error_in_session(
+                        session_state.as_mut(),
+                        normalized_session_path.map(String::from).as_ref(),
+                        format!("DuckDB SQL query execution failed: {e}"),
+                    );
+                    if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
+                        let _ = invalidate_cache_entry(args, PromptType::Prompt);
+                    }
+                    return Err(e);
+                },
+            };
+
+        update_session_after_sql_success(session_state.as_mut(), sql_results, &sql_query);
+
+        print_status(
+            &format!("DuckDB SQL query successful. Saved results to {sql_results} {stderr}"),
+            Some(sql_query_start.elapsed()),
+        );
+        return Ok(());
+    }
+
+    #[cfg(feature = "polars")]
+    {
+        sql_query = sql_query.replace(INPUT_TABLE_NAME, "_t_1");
+        log::debug!("SQL query:\n{sql_query}");
+
+        // Clone sql_query before moving it into fs::write, so we can use it later for
+        // baseline SQL
+        let sql_query_for_baseline = sql_query.clone();
+
+        // Save SQL query to a temporary file with a .sql extension. tempfile is
+        // deleted automatically when dropped.
+        let sql_query_file = tempfile::Builder::new().suffix(".sql").tempfile()?;
+        fs::write(&sql_query_file, sql_query)?;
+
+        let (_, stderr) = match run_qsv_cmd(
+            "sqlp",
+            &[
+                &sql_query_file.path().display().to_string(),
+                "--try-parsedates",
+                "--infer-len",
+                "10000",
+                "--output",
+                sql_results,
+            ],
+            input_path,
+            "  Polars SQL query issued.",
+        ) {
+            Ok((stdout, stderr)) => {
+                if stderr.to_ascii_lowercase().contains("error:") {
+                    track_sql_error_in_session(
+                        session_state.as_mut(),
+                        normalized_session_path.map(String::from).as_ref(),
+                        format!("Polars SQL query error detected: {stderr}"),
+                    );
+                    return handle_sql_error(
+                        args,
+                        cache_type,
+                        sql_query_file.path(),
+                        sql_results_path,
+                        &format!("Polars SQL query error detected: {stderr}"),
+                    );
+                }
+                // Polars writes to sql_results, then we rename to *.csv
+                let csv_path = sql_results_path.with_extension("csv");
+                let _ = fs::rename(sql_results_path, &csv_path);
+
+                // Track successful execution in session. We can't use
+                // update_session_after_sql_success here because Polars renames the file.
+                if let Some(state) = session_state.as_mut() {
+                    if csv_path.exists()
+                        && let Ok(sample) = extract_sql_sample(&csv_path)
+                    {
+                        state.sql_results = Some(sample);
+                        state.sql_errors.clear();
+                    }
+                    // Store baseline SQL only after successful execution.
+                    if state.baseline_sql.is_none() {
+                        state.baseline_sql = Some(sql_query_for_baseline);
+                    }
+                }
+
+                (stdout, stderr)
+            },
+            Err(e) => {
+                track_sql_error_in_session(
+                    session_state.as_mut(),
+                    normalized_session_path.map(String::from).as_ref(),
+                    format!("Polars SQL query execution failed: {e}"),
+                );
+                return handle_sql_error(
+                    args,
+                    cache_type,
+                    sql_query_file.path(),
+                    sql_results_path,
+                    &format!("Polars SQL query execution failed: {e}"),
+                );
+            },
+        };
+
+        if stderr.starts_with("Failed to execute query:") {
+            track_sql_error_in_session(
+                session_state.as_mut(),
+                normalized_session_path.map(String::from).as_ref(),
+                stderr.clone(),
+            );
+            return handle_sql_error(
+                args,
+                cache_type,
+                sql_query_file.path(),
+                sql_results_path,
+                &stderr,
+            );
+        }
+        print_status(
+            &format!("Polars SQL query successful. Saved results to {sql_results} {stderr}"),
+            Some(sql_query_start.elapsed()),
+        );
+        Ok(())
+    }
+
+    #[cfg(not(feature = "polars"))]
+    {
+        if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
+            let _ = invalidate_cache_entry(args, PromptType::Prompt);
+        }
+        fail_clierror!(
+            "Cannot answer the prompt using just Summary Statistics & Frequency Distribution \
+             data. However, \"SQL RAG\" mode is only supported when the `polars` feature is \
+             enabled, or when using DuckDB via the QSV_DUCKDB_PATH environment variable."
+        )
+    }
+}
+
+/// Emit the accumulated JSON / TOON output, if the configured `OutputFormat` produces one.
+/// Markdown / TSV phases wrote to stdout or a file inline, so this is a no-op for those.
+fn finalize_structured_output(
+    args: &Args,
+    total_json_output: &serde_json::Value,
+    output_format: OutputFormat,
+) -> CliResult<()> {
+    match output_format {
+        OutputFormat::Json => {
+            let json_output = &simd_json::to_string_pretty(total_json_output)?;
+            if let Some(output_file_path) = &args.flag_output {
+                fs::write(output_file_path, json_output)?;
+            } else {
+                println!("{json_output}");
+            }
+        },
+        OutputFormat::Toon => {
+            let opts = EncodeOptions::new();
+            let toon_output = encode(total_json_output, &opts)
+                .map_err(|e| CliError::Other(format!("Failed to encode to TOON: {e}")))?;
+            if let Some(output_file_path) = &args.flag_output {
+                fs::write(output_file_path, toon_output)?;
+            } else {
+                println!("{toon_output}");
+            }
+        },
+        OutputFormat::Markdown | OutputFormat::Tsv => {
+            // Already written inline by per-phase helpers.
+        },
+    }
+    Ok(())
+}
+
+/// Top-level orchestrator for all inference phases. Thin: runs `check_model`, dispatches
+/// to the per-phase helpers in `Dictionary → Description → Tags → Prompt` order, applies
+/// the max-tokens gate against the final phase's token usage, routes any SQL response
+/// through `execute_sql_query_phase`, emits the accumulated JSON/TOON output, and persists
+/// the session file.
 fn run_inference_options(
     input_path: &str,
     args: &Args,
@@ -2573,426 +3412,118 @@ fn run_inference_options(
     cache_type: &CacheType,
     analysis_results: &AnalysisResults,
 ) -> CliResult<()> {
-    // Add --dictionary output as context if it is not empty
-    fn get_messages(
-        prompt: &str,
-        system_prompt: &str,
-        dictionary_completion: &str,
-        session_state: Option<&SessionState>,
-    ) -> serde_json::Value {
-        let mut messages: Vec<serde_json::Value> = Vec::new();
-
-        // Start with system prompt
-        messages.push(json!({"role": "system", "content": system_prompt}));
-
-        // Add dictionary completion if present
-        if !dictionary_completion.is_empty() {
-            messages.push(json!({
-                "role": "assistant",
-                "content": format!("The following is the Data Dictionary for the Dataset:\n\n{dictionary_completion}")
-            }));
-        }
-
-        // Add session context if present
-        if let Some(session) = session_state {
-            // Add summary if present
-            if let Some(ref summary) = session.summary {
-                messages.push(json!({
-                    "role": "system",
-                    "content": format!("Previous conversation summary:\n\n{summary}")
-                }));
-            }
-
-            let is_refinement = !session.messages.is_empty();
-
-            // Add baseline SQL if this is a refinement request
-            if is_refinement {
-                let baseline_sql_used = if let Some(ref baseline_sql) = session.baseline_sql
-                    && !baseline_sql.trim().is_empty()
-                {
-                    messages.push(json!({
-                            "role": "assistant",
-                            "content": format!("The baseline SQL query we are refining is:\n\n```sql\n{baseline_sql}\n```\n\nIMPORTANT: You must refine and modify this existing SQL query based on the user's request. Do NOT create a completely new query. Modify the baseline query to incorporate the requested changes.")
-                        }));
-                    true
-                } else {
-                    false
-                };
-
-                // If no baseline SQL in state but we have messages, try to extract it from the last
-                // assistant message
-                if !baseline_sql_used
-                    && let Some(last_msg) = session
-                        .messages
-                        .iter()
-                        .rev()
-                        .find(|m| m.role == "assistant")
-                    && let Some(sql) = regex_oncelock!(r"(?s)```sql\s*\n(.*?)\n\s*```")
-                        .captures(&last_msg.content)
-                        .and_then(|caps| caps.get(1).map(|m| m.as_str().trim().to_string()))
-                    && !sql.is_empty()
-                {
-                    messages.push(json!({
-                                    "role": "assistant",
-                                    "content": format!("The baseline SQL query we are refining is:\n\n```sql\n{sql}\n```\n\nIMPORTANT: You must refine and modify this existing SQL query based on the user's request. Do NOT create a completely new query. Modify the baseline query to incorporate the requested changes.")
-                                }));
-                }
-            }
-
-            // Add recent messages (within sliding window) - but skip the last assistant message if
-            // it's the baseline
-            // We want to show the conversation history but emphasize refinement
-            for msg in &session.messages {
-                messages.push(json!({
-                    "role": msg.role,
-                    "content": msg.content
-                }));
-            }
-
-            // Add SQL results if available (for refinement context)
-            if is_refinement && let Some(ref results) = session.sql_results {
-                messages.push(json!({
-                        "role": "assistant",
-                        "content": format!("Here are the first 10 rows from the last successful SQL query execution:\n\n```csv\n{results}\n```")
-                    }));
-            }
-
-            // Add SQL errors if any (for refinement context)
-            if is_refinement && !session.sql_errors.is_empty() {
-                let errors_text = session.sql_errors.join("\n");
-                messages.push(json!({
-                    "role": "assistant",
-                    "content": format!("Previous SQL execution errors encountered:\n\n{errors_text}")
-                }));
-            }
-
-            // Modify the prompt to emphasize refinement
-            if is_refinement {
-                let refined_prompt = format!(
-                    "User request: {prompt}\n\nPlease refine the baseline SQL query above to \
-                     address this request. Return the complete refined SQL query that modifies \
-                     the baseline query."
-                );
-                messages.push(json!({"role": "user", "content": refined_prompt}));
-            } else {
-                messages.push(json!({"role": "user", "content": prompt}));
-            }
-        } else {
-            // No session, just add the prompt
-            messages.push(json!({"role": "user", "content": prompt}));
-        }
-
-        json!(messages)
-    }
-    // Generate the plaintext and/or JSON output of an inference option.
-    // Delegates to process_phase_output to keep a single source of truth.
-    fn process_output(
-        kind: PromptType,
-        completion_response: &CompletionResponse,
-        total_json_output: &mut serde_json::Value,
-        args: &Args,
-        analysis_results: &AnalysisResults,
-        model: &str,
-        base_url: &str,
-    ) -> CliResult<()> {
-        let output_format = get_output_format(args)?;
-        process_phase_output(
-            kind,
-            completion_response,
-            total_json_output,
-            args,
-            analysis_results,
-            model,
-            base_url,
-            output_format,
-        )
-    }
-
-    // Get completion from API
     let llm_start = Instant::now();
 
     let client = util::create_reqwest_blocking_client(
         args.flag_user_agent.clone(),
-        // we do unwrap_or 0 here as we allow 0 as a valid timeout
-        // per the usage text (normally, when using a local LLM)
+        // unwrap_or 0 because 0 is a valid timeout per the usage text (local LLMs)
         util::timeout_secs(args.flag_timeout).unwrap_or(0) as u16,
         args.flag_base_url.clone(),
     )?;
 
-    // Verify model is valid
     let model = check_model(&client, Some(api_key), args)?;
+    let output_format = get_output_format(args)?;
+    let base_url = get_prompt_file(args)?.base_url.clone();
 
     let mut total_json_output: serde_json::Value = json!({});
-    let mut prompt: String;
-    let mut system_prompt = String::new();
-    let mut messages: serde_json::Value;
-    let mut data_dict: CompletionResponse = CompletionResponse::default();
-    let mut completion_response: CompletionResponse = CompletionResponse::default();
-
-    // Generate dictionary output
-    if args.flag_dictionary || args.flag_all || args.flag_prompt.is_some() {
-        (prompt, system_prompt) = get_prompt(PromptType::Dictionary, Some(analysis_results), args)?;
-        let start_time = Instant::now();
-        print_status("  Inferring Data Dictionary...", None);
-        messages = get_messages(&prompt, &system_prompt, "", None);
-
-        // Special case: if --prompt is used with --fresh, use normal cache for dictionary
-        let dictionary_cache_type = if args.flag_prompt.is_some() && args.flag_fresh {
-            if args.flag_redis_cache {
-                &CacheType::Redis
-            } else {
-                &CacheType::Disk
-            }
-        } else {
-            cache_type
-        };
-
-        data_dict = get_cached_completion(
-            args,
-            &client,
-            &model,
-            api_key,
-            dictionary_cache_type,
-            PromptType::Dictionary,
-            &messages,
-        )?;
-        print_status(
-            &format!(
-                "   Received dictionary inference.\n   {:?}\n  ",
-                data_dict.token_usage
-            ),
-            Some(start_time.elapsed()),
-        );
-        let prompt_file = get_prompt_file(args)?;
-        process_output(
-            PromptType::Dictionary,
-            &data_dict,
-            &mut total_json_output,
-            args,
-            analysis_results,
-            &model,
-            &prompt_file.base_url,
-        )?;
-    }
-
-    // Generate description output
-    if args.flag_description || args.flag_all {
-        (prompt, system_prompt) =
-            get_prompt(PromptType::Description, Some(analysis_results), args)?;
-        messages = get_messages(&prompt, &system_prompt, &data_dict.response, None);
-        let start_time = Instant::now();
-        print_status("  Inferring Description...", None);
-        completion_response = get_cached_completion(
-            args,
-            &client,
-            &model,
-            api_key,
-            cache_type,
-            PromptType::Description,
-            &messages,
-        )?;
-        print_status(
-            format!(
-                "   Received Description Inference.\n   {:?}\n  ",
-                completion_response.token_usage
-            )
-            .as_str(),
-            Some(start_time.elapsed()),
-        );
-        let prompt_file = get_prompt_file(args)?;
-        process_output(
-            PromptType::Description,
-            &completion_response,
-            &mut total_json_output,
-            args,
-            analysis_results,
-            &model,
-            &prompt_file.base_url,
-        )?;
-    }
-
-    // Generate tags output
-    if args.flag_tags || args.flag_all {
-        (prompt, system_prompt) = get_prompt(PromptType::Tags, Some(analysis_results), args)?;
-        // Only include dictionary context if dictionary was actually generated
-        let dictionary_context = if args.flag_dictionary || args.flag_all {
-            &data_dict.response
-        } else {
-            ""
-        };
-        messages = get_messages(&prompt, &system_prompt, dictionary_context, None);
-        let start_time = Instant::now();
-        if let Some(ref tag_vocab_uri) = args.flag_tag_vocab {
-            print_status(
-                &format!("  Inferring Tags with Tag Vocabulary ({tag_vocab_uri})..."),
-                None,
-            );
-        } else {
-            print_status("  Inferring Tags...", None);
-        }
-        completion_response = get_cached_completion(
-            args,
-            &client,
-            &model,
-            api_key,
-            cache_type,
-            PromptType::Tags,
-            &messages,
-        )?;
-        print_status(
-            &format!(
-                "   Received Tags inference.\n   {:?}\n  ",
-                completion_response.token_usage
-            ),
-            Some(start_time.elapsed()),
-        );
-        let prompt_file = get_prompt_file(args)?;
-        process_output(
-            PromptType::Tags,
-            &completion_response,
-            &mut total_json_output,
-            args,
-            analysis_results,
-            &model,
-            &prompt_file.base_url,
-        )?;
-    }
-
-    // Generate custom prompt output
+    let mut data_dict = CompletionResponse::default();
+    let mut last_completion = CompletionResponse::default();
     let mut has_sql_query = false;
     let mut session_state: Option<SessionState> = None;
+    let mut prompt_system_prompt = String::new();
 
-    // Normalize session path once if provided
     let normalized_session_path: Option<String> = args
         .flag_session
         .as_ref()
         .map(|p| normalize_session_path(p));
 
-    if let Some(ref user_prompt) = args.flag_prompt {
-        // Handle session if --session is provided
-        if let Some(ref normalized_path) = normalized_session_path {
-            let session_path = Path::new(normalized_path);
-
-            // Set default session length if not provided
-            let session_len = if args.flag_session_len == 0 {
-                10
-            } else {
-                args.flag_session_len
-            };
-
-            session_state = Some(load_session(session_path)?);
-            if let Some(ref mut state) = session_state {
-                // If not first message, check relevance and apply sliding window
-                if !state.messages.is_empty() {
-                    if let Some(ref baseline_sql) = state.baseline_sql
-                        && !check_message_relevance(
-                            user_prompt,
-                            baseline_sql,
-                            args,
-                            &client,
-                            api_key,
-                        )?
-                    {
-                        return fail_clierror!(
-                            "The current message does not appear to be related to refining the \
-                             baseline SQL query. Please start a new session for unrelated queries."
-                        );
-                    }
-
-                    // Apply sliding window
-                    apply_sliding_window(state, session_len, args, &client, api_key)?;
-                }
-            }
-        }
-
-        (prompt, system_prompt) = get_prompt(PromptType::Prompt, Some(analysis_results), args)?;
-        let start_time = Instant::now();
-        print_status("  Answering Custom Prompt...", None);
-        messages = get_messages(
-            &prompt,
-            &system_prompt,
-            &data_dict.response,
-            session_state.as_ref(),
-        );
-        completion_response = get_cached_completion(
+    if args.flag_dictionary || args.flag_all || args.flag_prompt.is_some() {
+        data_dict = run_dictionary_phase(
             args,
             &client,
             &model,
             api_key,
             cache_type,
-            PromptType::Prompt,
-            &messages,
-        )?;
-        print_status(
-            &format!(
-                "   Received Custom Prompt Answer.\n   {:?}\n  ",
-                completion_response.token_usage
-            ),
-            Some(start_time.elapsed()),
-        );
-        has_sql_query = completion_response.response.contains("```sql");
-        if has_sql_query {
-            print_status(
-                &format!(
-                    "  Cannot answer the prompt using just Summary Statistics & Frequency \
-                     Distribution data.\n  Generated a {} SQL query to answer the prompt \
-                     deterministically.",
-                    if should_use_duckdb() {
-                        "DuckDB"
-                    } else {
-                        "Polars"
-                    }
-                ),
-                None,
-            );
-        }
-
-        // Update session state with new messages
-        if let Some(ref mut state) = session_state {
-            // Add user message
-            state.messages.push(SessionMessage {
-                role:      "user".to_string(),
-                content:   user_prompt.clone(),
-                timestamp: chrono::Utc::now().to_rfc3339(),
-            });
-
-            // Add assistant response
-            state.messages.push(SessionMessage {
-                role:      "assistant".to_string(),
-                content:   completion_response.response.clone(),
-                timestamp: chrono::Utc::now().to_rfc3339(),
-            });
-
-            // Note: We don't save here to avoid overwriting the session file multiple times
-            // The session will be saved after SQL execution (if any) or at the end of the function
-        }
-
-        let prompt_file = get_prompt_file(args)?;
-        process_output(
-            PromptType::Prompt,
-            &completion_response,
-            &mut total_json_output,
-            args,
             analysis_results,
+            &mut total_json_output,
+            &base_url,
+            output_format,
+        )?;
+        last_completion = data_dict.clone();
+    }
+
+    if args.flag_description || args.flag_all {
+        last_completion = run_description_phase(
+            args,
+            &client,
             &model,
-            &prompt_file.base_url,
+            api_key,
+            cache_type,
+            analysis_results,
+            &data_dict.response,
+            &mut total_json_output,
+            &base_url,
+            output_format,
         )?;
     }
 
-    // if max-tokens is set and completion token usage is greater than max-tokens, return an error
+    if args.flag_tags || args.flag_all {
+        // Only include dictionary context if dictionary was actually generated
+        let dictionary_context = if args.flag_dictionary || args.flag_all {
+            data_dict.response.as_str()
+        } else {
+            ""
+        };
+        last_completion = run_tags_phase(
+            args,
+            &client,
+            &model,
+            api_key,
+            cache_type,
+            analysis_results,
+            dictionary_context,
+            &mut total_json_output,
+            &base_url,
+            output_format,
+        )?;
+    }
+
+    if let Some(ref user_prompt) = args.flag_prompt {
+        let outcome = run_prompt_phase(
+            args,
+            user_prompt,
+            &client,
+            &model,
+            api_key,
+            cache_type,
+            analysis_results,
+            &data_dict.response,
+            normalized_session_path.as_deref(),
+            &mut total_json_output,
+            &base_url,
+            output_format,
+        )?;
+        last_completion = outcome.completion_response;
+        has_sql_query = outcome.has_sql_query;
+        session_state = outcome.session_state;
+        prompt_system_prompt = outcome.system_prompt;
+    }
+
+    // If --max-tokens is set and the last phase's completion token usage exceeded it,
+    // fail now. This matches the pre-refactor behavior of checking against whichever
+    // phase ran last.
     if args.flag_max_tokens > 0
-        && completion_response.token_usage.completion >= args.flag_max_tokens as u64
+        && last_completion.token_usage.completion >= args.flag_max_tokens as u64
     {
         return fail_clierror!(
             "Completion token usage is greater than or equal to --max-tokens ({}): {}",
             args.flag_max_tokens,
-            completion_response.token_usage.completion,
+            last_completion.token_usage.completion,
         );
     }
 
     print_status("LLM inference/s completed.", Some(llm_start.elapsed()));
 
-    // if args.flag_output is set, display the output to the console
     if let Some(output) = &args.flag_output {
         print_status(&format!("Output written to {output}"), None);
     }
@@ -3000,439 +3531,23 @@ fn run_inference_options(
     if let Some(sql_results) = &args.flag_sql_results
         && has_sql_query
     {
-        // Check if file exists and is writable, or can be created
-        let sql_results_path = Path::new(sql_results);
-        if sql_results_path.exists() {
-            if fs::metadata(sql_results_path)?.permissions().readonly() {
-                return fail_clierror!(
-                    "SQL results file exists but is not writable: {}",
-                    sql_results_path.display()
-                );
-            }
-        } else {
-            // Try creating the file to verify we can write to it
-            match fs::File::create(sql_results_path) {
-                Ok(_) => {
-                    // Clean up the test file
-                    fs::remove_file(sql_results_path)?;
-                },
-                Err(e) => {
-                    return fail_clierror!(
-                        "Cannot create SQL results file {}: {}",
-                        sql_results_path.display(),
-                        e
-                    );
-                },
-            }
-        }
-
-        let sql_query_start = Instant::now();
-        print_status(
-            &format!(
-                "\nSQL results file specified.\n  Executing SQL query and saving results to \
-                 {sql_results}..."
-            ),
-            None,
-        );
-
-        // Extract SQL query code block using regex
-        let Some(mut sql_query) = regex_oncelock!(r"(?s)```sql\s*\n(.*?)\n\s*```")
-            .captures(&completion_response.response)
-            .and_then(|caps| caps.get(1).map(|m| m.as_str().trim().to_string()))
-        else {
-            // Invalidate the prompt cache entry so user can try again without reinferring
-            // dictionary
-            if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
-                let _ = invalidate_cache_entry(args, PromptType::Prompt);
-            }
-            return fail_clierror!("Failed to extract SQL query from custom prompt response");
-        };
-
-        // Score SQL before execution (enabled by default, disable with --no-score-sql)
-        // When polars feature is disabled, scoresql only works with --duckdb
-        #[cfg(feature = "polars")]
-        let can_score = !args.flag_no_score_sql;
-        #[cfg(not(feature = "polars"))]
-        let can_score = !args.flag_no_score_sql && should_use_duckdb();
-
-        if can_score {
-            let use_duckdb = should_use_duckdb();
-            let threshold = args.flag_score_threshold;
-            let max_retries = args.flag_score_max_retries.min(100);
-            if args.flag_score_max_retries > 100 {
-                print_status(
-                    &format!(
-                        "  Warning: --score-max-retries {} clamped to 100.",
-                        args.flag_score_max_retries
-                    ),
-                    None,
-                );
-            }
-
-            // Replace {INPUT_TABLE_NAME} with file stem for scoresql
-            let file_stem = Path::new(input_path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("input");
-            let mut scoring_sql = sql_query.replace(INPUT_TABLE_NAME, file_stem);
-            let mut best_sql_template = sql_query.clone();
-            let mut best_score: u32 = 0;
-
-            // Use a targeted regex to only replace file_stem when it appears as a
-            // table name (after FROM/JOIN/INTO/UPDATE), optionally quoted, avoiding
-            // corruption of column names or literals that contain the file stem.
-            // NOTE: INPUT_TABLE_NAME must not contain regex replacement-special chars
-            // (e.g. `$`); the current value `{INPUT_TABLE_NAME}` is safe.
-            let table_re = regex::Regex::new(&format!(
-                r#"(?i)\b(FROM|JOIN|INTO|UPDATE)\s+["'`]?{}["'`]?(?:\b|$)"#,
-                regex::escape(file_stem)
-            ))
-            .expect("Invalid table-name regex");
-
-            for attempt in 1..=max_retries.saturating_add(1) {
-                match score_sql_query(input_path, &scoring_sql, use_duckdb) {
-                    Ok((score, rating, report_json)) => {
-                        print_status(
-                            &format!("  SQL score: {score}/100 ({rating}) [attempt {attempt}]"),
-                            None,
-                        );
-
-                        if score > best_score {
-                            best_score = score;
-                            best_sql_template = table_re
-                                .replace_all(&scoring_sql, format!("${{1}} {INPUT_TABLE_NAME}"))
-                                .to_string();
-                        }
-
-                        if score >= threshold || attempt > max_retries {
-                            if score < threshold {
-                                print_status(
-                                    &format!(
-                                        "  Warning: Best SQL score {best_score}/100 below \
-                                         threshold {threshold} after {max_retries} retries. Using \
-                                         best query."
-                                    ),
-                                    None,
-                                );
-                            }
-                            // Restore {INPUT_TABLE_NAME} so the existing replacement logic works
-                            sql_query.clone_from(&best_sql_template);
-                            break;
-                        }
-
-                        // Ask LLM to improve — use the file_stem as the table
-                        // name in the prompt so the LLM returns SQL we can score directly
-                        let refinement_prompt = build_score_refinement_prompt(
-                            &scoring_sql,
-                            &report_json,
-                            attempt,
-                            max_retries,
-                            file_stem,
-                        );
-                        let refinement_messages = json!([
-                            {"role": "system", "content": &system_prompt},
-                            {"role": "user", "content": refinement_prompt}
-                        ]);
-
-                        match get_completion(
-                            args,
-                            &client,
-                            &model,
-                            api_key,
-                            &refinement_messages,
-                            PromptType::Prompt,
-                        ) {
-                            Ok(response) => {
-                                if let Some(new_sql) =
-                                    regex_oncelock!(r"(?s)```sql\s*\n(.*?)\n\s*```")
-                                        .captures(&response.response)
-                                        .and_then(|caps| {
-                                            caps.get(1).map(|m| m.as_str().trim().to_string())
-                                        })
-                                {
-                                    // Use LLM's SQL directly for scoring — the refinement
-                                    // prompt instructs the LLM to use `file_stem` as the
-                                    // table name
-                                    scoring_sql = new_sql;
-                                } else {
-                                    print_status(
-                                        "  LLM refinement had no SQL block. Using best query.",
-                                        None,
-                                    );
-                                    sql_query.clone_from(&best_sql_template);
-                                    break;
-                                }
-                            },
-                            Err(e) => {
-                                log::warn!("SQL refinement LLM call failed: {e}");
-                                sql_query.clone_from(&best_sql_template);
-                                break;
-                            },
-                        }
-                    },
-                    Err(e) => {
-                        // scoresql itself failed — SQL is likely invalid, counts as score=0
-                        log::warn!("scoresql failed: {e}");
-                        if attempt > max_retries {
-                            print_status(
-                                "  scoresql failed on all attempts. Proceeding with original \
-                                 query.",
-                                None,
-                            );
-                            break;
-                        }
-                        // Feed the error to the LLM as feedback
-                        let error_prompt = format!(
-                            "The SQL query failed \
-                             validation:\n```sql\n{scoring_sql}\n```\n\nError: {e}\n\nFix the SQL \
-                             query. Use `{file_stem}` as the table name. Return ONLY the \
-                             corrected SQL in a ```sql code block."
-                        );
-                        let error_messages = json!([
-                            {"role": "system", "content": &system_prompt},
-                            {"role": "user", "content": error_prompt}
-                        ]);
-                        match get_completion(
-                            args,
-                            &client,
-                            &model,
-                            api_key,
-                            &error_messages,
-                            PromptType::Prompt,
-                        ) {
-                            Ok(response) => {
-                                if let Some(new_sql) =
-                                    regex_oncelock!(r"(?s)```sql\s*\n(.*?)\n\s*```")
-                                        .captures(&response.response)
-                                        .and_then(|caps| {
-                                            caps.get(1).map(|m| m.as_str().trim().to_string())
-                                        })
-                                {
-                                    scoring_sql = new_sql;
-                                } else {
-                                    break;
-                                }
-                            },
-                            Err(_) => break,
-                        }
-                    },
-                }
-            }
-        }
-
-        // Check if DuckDB should be used
-        if should_use_duckdb() {
-            // For DuckDB, replace {INPUT_TABLE_NAME} with read_csv function call
-            // Escape single quotes in path to prevent SQL injection
-            let escaped_path = escape_sql_string(input_path);
-            if READ_CSV_AUTO_REGEX.is_match(&sql_query) {
-                // DuckDB with read_csv_auto so replace with quoted path
-                sql_query = READ_CSV_AUTO_REGEX
-                    .replace_all(
-                        &sql_query,
-                        format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
-                    )
-                    .into_owned();
-            } else {
-                // if READ_CSV_AUTO_REGEX doesn't match, add fallback to replace {INPUT_TABLE_NAME}
-                // with read_csv_auto function call
-                sql_query = sql_query.replace(
-                    INPUT_TABLE_NAME,
-                    &format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
-                );
-            }
-            log::debug!("DuckDB SQL query:\n{sql_query}");
-
-            let (_, stderr) =
-                match run_duckdb_query(&sql_query, sql_results, "  DuckDB SQL query issued.") {
-                    Ok((stdout, stderr)) => {
-                        // Check stderr for error messages
-                        if stderr.to_ascii_lowercase().contains(" error:") {
-                            track_sql_error_in_session(
-                                session_state.as_mut(),
-                                normalized_session_path.as_ref(),
-                                format!("DuckDB SQL query execution failed: {stderr}"),
-                            );
-                            // Invalidate the prompt cache entry so user can try again without
-                            // reinferring dictionary
-                            if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
-                                let _ = invalidate_cache_entry(args, PromptType::Prompt);
-                            }
-                            return fail_clierror!("DuckDB SQL query execution failed: {stderr}");
-                        }
-                        (stdout, stderr)
-                    },
-                    Err(e) => {
-                        track_sql_error_in_session(
-                            session_state.as_mut(),
-                            normalized_session_path.as_ref(),
-                            format!("DuckDB SQL query execution failed: {e}"),
-                        );
-                        // Invalidate the prompt cache entry so user can try again
-                        if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
-                            let _ = invalidate_cache_entry(args, PromptType::Prompt);
-                        }
-                        return Err(e);
-                    },
-                };
-
-            // Track successful execution in session
-            update_session_after_sql_success(session_state.as_mut(), sql_results, &sql_query);
-
-            print_status(
-                &format!("DuckDB SQL query successful. Saved results to {sql_results} {stderr}"),
-                Some(sql_query_start.elapsed()),
-            );
-        } else {
-            #[cfg(feature = "polars")]
-            {
-                // Use the existing sqlp functionality
-                sql_query = sql_query.replace(INPUT_TABLE_NAME, "_t_1");
-                log::debug!("SQL query:\n{sql_query}");
-
-                // Clone sql_query before moving it into fs::write, so we can use it later for
-                // baseline SQL
-                let sql_query_for_baseline = sql_query.clone();
-
-                // save sql query to a temporary file with a .sql extension
-                // this tempfile is automatically deleted after the command finishes
-                let sql_query_file = tempfile::Builder::new().suffix(".sql").tempfile()?;
-                fs::write(&sql_query_file, sql_query)?;
-
-                let (_, stderr) = match run_qsv_cmd(
-                    "sqlp",
-                    &[
-                        &sql_query_file.path().display().to_string(),
-                        "--try-parsedates",
-                        "--infer-len",
-                        "10000",
-                        "--output",
-                        sql_results,
-                    ],
-                    input_path,
-                    "  Polars SQL query issued.",
-                ) {
-                    Ok((stdout, stderr)) => {
-                        // Check stderr for error messages
-                        if stderr.to_ascii_lowercase().contains("error:") {
-                            track_sql_error_in_session(
-                                session_state.as_mut(),
-                                normalized_session_path.as_ref(),
-                                format!("Polars SQL query error detected: {stderr}"),
-                            );
-                            return handle_sql_error(
-                                args,
-                                cache_type,
-                                sql_query_file.path(),
-                                sql_results_path,
-                                &format!("Polars SQL query error detected: {stderr}"),
-                            );
-                        }
-                        // the polars sql query is successful
-                        // set the sql_results file to have a .csv extension
-                        let csv_path = sql_results_path.with_extension("csv");
-                        let _ = fs::rename(sql_results_path, &csv_path);
-
-                        // Track successful execution in session
-                        if let Some(ref mut state) = session_state {
-                            if csv_path.exists()
-                                && let Ok(sample) = extract_sql_sample(&csv_path)
-                            {
-                                state.sql_results = Some(sample);
-                                state.sql_errors.clear(); // Clear errors on success
-                            }
-
-                            // Extract and store baseline SQL only after successful execution
-                            // This ensures baseline SQL is only set when the query executes
-                            // successfully
-                            if state.baseline_sql.is_none() {
-                                state.baseline_sql = Some(sql_query_for_baseline);
-                            }
-                        }
-                        // Note: We can't use update_session_after_sql_success here because
-                        // Polars renames the file, so we need to handle it inline
-
-                        (stdout, stderr)
-                    },
-                    Err(e) => {
-                        track_sql_error_in_session(
-                            session_state.as_mut(),
-                            normalized_session_path.as_ref(),
-                            format!("Polars SQL query execution failed: {e}"),
-                        );
-                        return handle_sql_error(
-                            args,
-                            cache_type,
-                            sql_query_file.path(),
-                            sql_results_path,
-                            &format!("Polars SQL query execution failed: {e}"),
-                        );
-                    },
-                };
-
-                if stderr.starts_with("Failed to execute query:") {
-                    track_sql_error_in_session(
-                        session_state.as_mut(),
-                        normalized_session_path.as_ref(),
-                        stderr.clone(),
-                    );
-                    return handle_sql_error(
-                        args,
-                        cache_type,
-                        sql_query_file.path(),
-                        sql_results_path,
-                        // "Polars SQL query failed. Failed SQL query saved to output file",
-                        &stderr,
-                    );
-                }
-                print_status(
-                    &format!(
-                        "Polars SQL query successful. Saved results to {sql_results} {stderr}"
-                    ),
-                    Some(sql_query_start.elapsed()),
-                );
-            }
-            #[cfg(not(feature = "polars"))]
-            {
-                // Invalidate cache entry so user can try again without reinferring dictionary
-                if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
-                    let _ = invalidate_cache_entry(args, PromptType::Prompt);
-                }
-                return fail_clierror!(
-                    "Cannot answer the prompt using just Summary Statistics & Frequency \
-                     Distribution data. However, \"SQL RAG\" mode is only supported when the \
-                     `polars` feature is enabled, or when using DuckDB via the QSV_DUCKDB_PATH \
-                     environment variable."
-                );
-            }
-        }
+        execute_sql_query_phase(
+            input_path,
+            args,
+            &client,
+            &model,
+            api_key,
+            cache_type,
+            &last_completion,
+            &prompt_system_prompt,
+            sql_results,
+            &mut session_state,
+            normalized_session_path.as_deref(),
+        )?;
     }
 
-    // Expecting JSON or TOON output
-    let output_format = get_output_format(args)?;
-    if output_format == OutputFormat::Json {
-        // Format & print JSON output
-        let json_output = &simd_json::to_string_pretty(&total_json_output)?;
-        // Write to file if --output is used, or overwrite if already exists
-        if let Some(output_file_path) = &args.flag_output {
-            fs::write(output_file_path, json_output)?;
-        } else {
-            println!("{json_output}");
-        }
-    } else if output_format == OutputFormat::Toon {
-        // Format & print TOON output - encode the entire accumulated JSON structure
-        let opts = EncodeOptions::new();
-        let toon_output = encode(&total_json_output, &opts)
-            .map_err(|e| CliError::Other(format!("Failed to encode to TOON: {e}")))?;
-        // Write to file if --output is used, or overwrite if already exists
-        if let Some(output_file_path) = &args.flag_output {
-            fs::write(output_file_path, toon_output)?;
-        } else {
-            println!("{toon_output}");
-        }
-    }
+    finalize_structured_output(args, &total_json_output, output_format)?;
 
-    // Save session if it exists
     if let Some(ref state) = session_state
         && let Some(ref normalized_path) = normalized_session_path
     {

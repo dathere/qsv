@@ -2276,77 +2276,53 @@ where
 
     #[allow(unused_assignments)]
     let mut record: csv::ByteRecord = csv::ByteRecord::new();
-    let mut value_bytes_x;
-    let mut value_bytes_y;
-    let mut numeric_value_x;
-    let mut numeric_value_y;
-
-    // Optimization #4: Batch string conversions - collect all column indices once (immutable across
-    // records)
-    let col_indices_needed: HashSet<usize> = field_pairs
-        .values()
-        .flat_map(|(f1, f2)| [f1.col_idx, f2.col_idx])
-        .collect();
-    let mut record_strings: HashMap<usize, String> =
-        HashMap::with_capacity(col_indices_needed.len());
 
     // Process each record in the chunk
     for result in records {
         record = result?;
 
-        // Convert needed columns to strings once per record (reuse HashMap allocation)
-        record_strings.clear();
-        for &col_idx in &col_indices_needed {
-            if let Some(bytes) = record.get(col_idx)
-                && !bytes.is_empty()
-                && let Ok(s) = from_utf8(bytes)
-            {
-                record_strings.insert(col_idx, s.to_string());
-            }
-        }
-
         for ((idx1, idx2), (field1_info, field2_info)) in field_pairs {
-            // Optimization: Check record_strings first (already excludes empty values)
-            // This avoids redundant empty checks and byte fetching for empty fields
-            let (Some(x_str), Some(y_str)) = (
-                record_strings.get(&field1_info.col_idx),
-                record_strings.get(&field2_info.col_idx),
-            ) else {
-                continue; // Skip if either value is empty (not in record_strings)
-            };
+            let value_bytes_x = record.get(field1_info.col_idx).unwrap_or(&[]);
+            let value_bytes_y = record.get(field2_info.col_idx).unwrap_or(&[]);
 
-            // Get mutable reference to stats for this field pair
+            if value_bytes_x.is_empty() || value_bytes_y.is_empty() {
+                continue;
+            }
+
             // safety: chunk_stats is pre-populated with all field pair indices
             let Some(stats) = chunk_stats.get_mut(&(*idx1, *idx2)) else {
                 debug_assert!(false, "chunk_stats missing expected key: ({idx1}, {idx2})");
                 continue;
             };
 
-            // Get bytes only for numeric parsing (date fields use strings from cache)
-            value_bytes_x = record.get(field1_info.col_idx).unwrap_or(&[]);
-            value_bytes_y = record.get(field2_info.col_idx).unwrap_or(&[]);
-
-            // Optimization #1: Use date parsing cache
-            // Optimization #5: Skip date parsing for non-date fields
-            numeric_value_x = if field1_info.field_type.is_date_or_datetime() {
-                // Use cached parsed date or parse and cache - get() first to avoid alloc on hit
-                if let Some(cached) = date_cache.get(x_str.as_str()) {
+            // Date parsing needs &str; numeric parsing reads bytes directly to avoid an
+            // allocation on every record. Per-cell from_utf8 is a cheap byte scan compared
+            // to the String allocation it replaces, so we no longer pre-stringify needed
+            // columns into a per-record HashMap.
+            let numeric_value_x = if field1_info.field_type.is_date_or_datetime() {
+                let Ok(x_str) = from_utf8(value_bytes_x) else {
+                    continue;
+                };
+                if let Some(cached) = date_cache.get(x_str) {
                     *cached
                 } else {
                     let val = parse_date_to_days(x_str, prefer_dmy);
-                    date_cache.insert(x_str.clone(), val);
+                    date_cache.insert(x_str.to_string(), val);
                     val
                 }
             } else {
                 parse_float_opt_from_bytes(value_bytes_x)
             };
 
-            numeric_value_y = if field2_info.field_type.is_date_or_datetime() {
-                if let Some(cached) = date_cache.get(y_str.as_str()) {
+            let numeric_value_y = if field2_info.field_type.is_date_or_datetime() {
+                let Ok(y_str) = from_utf8(value_bytes_y) else {
+                    continue;
+                };
+                if let Some(cached) = date_cache.get(y_str) {
                     *cached
                 } else {
                     let val = parse_date_to_days(y_str, prefer_dmy);
-                    date_cache.insert(y_str.clone(), val);
+                    date_cache.insert(y_str.to_string(), val);
                     val
                 }
             } else {
@@ -2363,25 +2339,31 @@ where
                 }
             }
 
-            // Only compute frequency counts if needed for mutual information
+            // Only compute frequency counts if needed for mutual information.
+            // This is the only branch that needs owned strings — allocate lazily here.
             if needs_freq_counts {
+                let (Ok(x_str_ref), Ok(y_str_ref)) =
+                    (from_utf8(value_bytes_x), from_utf8(value_bytes_y))
+                else {
+                    continue;
+                };
                 // NOTE: this is not true string interning — each lookup still yields
                 // a cloned String (needed because xy_counts keys by owned tuples).
-                // The benefit over the prior HashMap<String, String> form is just
-                // one fewer clone on insert (cache miss). A future change to
-                // Arc<str> or SmolStr would give real interning (cheap clones on
-                // cache hit), at the cost of a wider refactor of xy_counts.
-                let x_str_interned = if let Some(cached) = string_interner.get(x_str) {
+                // The benefit over ad-hoc cloning is one fewer clone on insert (cache
+                // miss). A future change to Arc<str> or SmolStr would give real
+                // interning (cheap clones on cache hit), at the cost of a wider
+                // refactor of xy_counts.
+                let x_str_interned = if let Some(cached) = string_interner.get(x_str_ref) {
                     cached.clone()
                 } else {
-                    let owned = x_str.clone();
+                    let owned = x_str_ref.to_string();
                     string_interner.insert(owned.clone());
                     owned
                 };
-                let y_str_interned = if let Some(cached) = string_interner.get(y_str) {
+                let y_str_interned = if let Some(cached) = string_interner.get(y_str_ref) {
                     cached.clone()
                 } else {
-                    let owned = y_str.clone();
+                    let owned = y_str_ref.to_string();
                     string_interner.insert(owned.clone());
                     owned
                 };

@@ -1728,14 +1728,25 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
     get_cache_key_with_flag(args, kind, actual_model, &validity_flag)
 }
 
+/// Per-process memo of `path_fingerprint` results, keyed by `"<path>:<mtime_nanos>:<size>"`.
+/// `get_cache_key_with_flag` runs once per phase lookup (and again on invalidation paths), so
+/// without memoization a ~100MB DuckDB binary would be re-hashed several times per run.
+/// Keying on stat metadata as well as path means in-place edits (which bump mtime and/or size)
+/// still produce a cache miss and fresh hash; we only short-circuit when the file is
+/// demonstrably unchanged on disk. `stat` is ~microseconds while `hash_blake3_file` on a big
+/// binary is ~tens of milliseconds, so the stat probe is essentially free.
+static PATH_FINGERPRINT_CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<String, String>>> =
+    std::sync::OnceLock::new();
+
 /// Content fingerprint of a local file as a short BLAKE3 hex prefix, or empty string if
-/// `path` is empty, a remote URL (`http`, `ckan://`, `dathere://` — case-insensitive), or
-/// unreadable. Used to catch in-place edits of files inlined into the rendered prompt
-/// (the tag-vocabulary CSV, the DuckDB binary). Content hashing is preferred over
-/// `stat(mtime, size)` because same-second same-size rewrites (possible on HFS+ / FAT /
-/// NFS mtime granularity) would otherwise collide; `hash_blake3_file` uses mmap + rayon
-/// so even a ~100MB DuckDB binary hashes in tens of milliseconds, an acceptable cost
-/// given describegpt operations are dominated by LLM latency.
+/// `path` is empty, a remote URL (`http://`, `https://`, `ckan://`, `dathere://` —
+/// case-insensitive), or unreadable. Used to catch in-place edits of files inlined into the
+/// rendered prompt (the tag-vocabulary CSV, the DuckDB binary). Content hashing is preferred
+/// over `stat(mtime, size)` alone because same-second same-size rewrites (possible on
+/// HFS+ / FAT / NFS mtime granularity) would otherwise collide; `hash_blake3_file` uses
+/// mmap + rayon so even a ~100MB DuckDB binary hashes in tens of milliseconds. Results are
+/// memoized per `(path, mtime, size)` tuple via `PATH_FINGERPRINT_CACHE`, so cache-key
+/// rebuilds in the same process are free when the file is unchanged.
 fn path_fingerprint(path: &str) -> String {
     if path.is_empty() {
         return String::new();
@@ -1748,10 +1759,26 @@ fn path_fingerprint(path: &str) -> String {
     {
         return String::new();
     }
-    match util::hash_blake3_file(Path::new(path)) {
+    let meta = match fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return String::new(),
+    };
+    let mtime_nanos = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos());
+    let memo_key = format!("{path}:{mtime_nanos}:{}", meta.len());
+    let cache = PATH_FINGERPRINT_CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
+    if let Some(cached) = cache.lock().unwrap().get(&memo_key) {
+        return cached.clone();
+    }
+    let fp = match util::hash_blake3_file(Path::new(path)) {
         Ok(hex) => hex[..16].to_string(),
         Err(_) => String::new(),
-    }
+    };
+    cache.lock().unwrap().insert(memo_key, fp.clone());
+    fp
 }
 
 /// Build a cache key with an explicit validity flag. Used by both `get_cache_key`
@@ -1782,7 +1809,8 @@ fn get_cache_key_with_flag(
         .map(|s| blake3::hash(s.as_bytes()).to_hex()[..16].to_string());
     let duckdb_enabled = should_use_duckdb();
     // The tag-vocab CSV contents are inlined into the Tags prompt; track local-file
-    // edits by stat fingerprint. Remote URLs are fingerprinted by URL via `tag_vocab`.
+    // edits by BLAKE3 content hash. Remote URLs (http://, https://, ckan://, dathere://)
+    // return empty here and are fingerprinted by URL via `tag_vocab`.
     let tag_vocab_fp = args
         .flag_tag_vocab
         .as_deref()
@@ -1791,18 +1819,23 @@ fn get_cache_key_with_flag(
     // extensions and bakes them into the SQL guidance. Fingerprint the binary so a
     // binary swap / upgrade invalidates cached prompts. `should_use_duckdb()` is true
     // iff `QSV_DUCKDB_PATH` is set and non-empty, so the env var is guaranteed present
-    // here — no PATH-resolved default path exists for describegpt.
-    let duckdb_binary_fp = if duckdb_enabled {
-        path_fingerprint(&std::env::var(QSV_DUCKDB_PATH_ENV).unwrap_or_default())
+    // here — no PATH-resolved default path exists for describegpt. The env var *value*
+    // is included in the key alongside the content fingerprint so different paths never
+    // collide under a single cache slot even if hashing the binary fails (permission
+    // error, binary removed between lookup and hash, etc.).
+    let (duckdb_path, duckdb_binary_fp) = if duckdb_enabled {
+        let p = std::env::var(QSV_DUCKDB_PATH_ENV).unwrap_or_default();
+        let fp = path_fingerprint(&p);
+        (p, fp)
     } else {
-        String::new()
+        (String::new(), String::new())
     };
 
     format!(
         "{file_hash};{prompt_file:?};{prompt_content:?};{max_tokens};{addl_props:?};\
          {actual_model};{kind};{validity_flag};{language:?};{tag_vocab:?};{tag_vocab_fp};\
          {num_tags};{enum_threshold};{sample_size};{fewshot_examples};{duckdb_enabled};\
-         {duckdb_binary_fp};{dictionary_fingerprint:?}",
+         {duckdb_path};{duckdb_binary_fp};{dictionary_fingerprint:?}",
         prompt_file = args.flag_prompt_file,
         max_tokens = args.flag_max_tokens,
         addl_props = args.flag_addl_props,
@@ -2503,8 +2536,9 @@ fn process_phase_output(
 
     // SQL responses (for any requested output format) always fall through to the markdown
     // helper, which renders the SQL block and handles the read_csv_auto / INPUT_TABLE_NAME
-    // rewrite. Markdown requests also land there. New `OutputFormat` variants MUST pick
-    // a branch explicitly rather than relying on the `_` fallback.
+    // rewrite. Markdown requests also land there. The match is exhaustive on (OutputFormat,
+    // is_sql_response) so adding a new OutputFormat variant is a compile error here,
+    // forcing an explicit routing decision.
     match (output_format, is_sql_response) {
         (OutputFormat::Json, false) => {
             format_phase_json(kind, args, completion_response, total_json_output);
@@ -2522,7 +2556,12 @@ fn process_phase_output(
             );
             Ok(())
         },
-        _ => format_phase_markdown(kind, args, completion_response, is_sql_response),
+        (OutputFormat::Markdown, _)
+        | (OutputFormat::Json, true)
+        | (OutputFormat::Tsv, true)
+        | (OutputFormat::Toon, true) => {
+            format_phase_markdown(kind, args, completion_response, is_sql_response)
+        },
     }
 }
 

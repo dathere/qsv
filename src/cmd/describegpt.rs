@@ -1046,10 +1046,16 @@ fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
         return Ok(v);
     }
 
-    if let Some(start) = output.find(['{', '['])
-        && let Some(v) = attempt(&output[start..])
-    {
-        return Ok(v);
+    // Scan every `{`/`[` in the response, not just the first — the LLM may
+    // precede the actual JSON with markdown bullet points (`- {thing}`) or
+    // other text that contains a bare `{`. Return the first position that
+    // yields a valid parse.
+    for (idx, ch) in output.char_indices() {
+        if (ch == '{' || ch == '[')
+            && let Some(v) = attempt(&output[idx..])
+        {
+            return Ok(v);
+        }
     }
 
     fail_clierror!(
@@ -3256,27 +3262,15 @@ fn determine_cache_kinds_to_remove(args: &Args) -> Vec<PromptType> {
     }
 }
 
-/// Remove a cache entry by key (works for both disk and redis cache)
+/// Remove a cache entry by key from whichever backend is active.
+///
+/// Backend selection mirrors `run`'s match on `(flag_no_cache, flag_redis_cache)`:
+/// `--redis-cache` wins over the default disk cache, and `--no-cache` is a
+/// no-op. Previously this always took the disk path when `--no-cache` was
+/// false, so `--forget` / SQL-failure invalidation silently did nothing on
+/// Redis installations.
 fn remove_cache_entry_by_key(key: &str, args: &Args, kind: PromptType, success_msg: &str) {
-    if !args.flag_no_cache {
-        // Disk cache
-        let key_string = key.to_string();
-        if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key_string) {
-            print_status(
-                &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
-                None,
-            );
-        } else {
-            print_status(success_msg, None);
-            // Flush the disk cache to ensure changes are persisted
-            if let Err(e) = GET_DISKCACHE_COMPLETION.connection().flush() {
-                print_status(&format!("Warning: Cannot flush disk cache: {e:?}"), None);
-            } else if success_msg.contains("removed") {
-                print_status("Flushed disk cache after removing cache entry", None);
-            }
-        }
-    } else if args.flag_redis_cache {
-        // Redis cache
+    if args.flag_redis_cache {
         let conn_str = &REDISCONFIG.get().unwrap().conn_str;
         if let Ok(redis_client) = redis::Client::open(conn_str.to_string())
             && let Ok(mut redis_conn) = redis_client.get_connection()
@@ -3287,6 +3281,21 @@ fn remove_cache_entry_by_key(key: &str, args: &Args, kind: PromptType, success_m
                     &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
                     None,
                 ),
+            }
+        }
+    } else if !args.flag_no_cache {
+        let key_string = key.to_string();
+        if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key_string) {
+            print_status(
+                &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
+                None,
+            );
+        } else {
+            print_status(success_msg, None);
+            if let Err(e) = GET_DISKCACHE_COMPLETION.connection().flush() {
+                print_status(&format!("Warning: Cannot flush disk cache: {e:?}"), None);
+            } else if success_msg.contains("removed") {
+                print_status("Flushed disk cache after removing cache entry", None);
             }
         }
     }
@@ -3639,21 +3648,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // If --forget is set, remove cache entries and exit
             if args.flag_forget {
-                // Determine which cache entries to remove
                 let kinds_to_remove = determine_cache_kinds_to_remove(&args);
-
-                // Get the model from prompt file for cache key generation
                 let prompt_file = get_prompt_file(&args)?;
 
-                // Remove cache entries for all specified kinds
                 for kind in kinds_to_remove {
-                    let key = get_cache_key(&args, kind, &prompt_file.model);
-                    remove_cache_entry_by_key(
-                        &key,
-                        &args,
-                        kind,
-                        &format!("Found and removed cache entry for {kind}"),
-                    );
+                    if kind == PromptType::Prompt {
+                        // PromptType::Prompt keys include the validity flag, so purge
+                        // both "valid" and "invalid" variants — same as the disk path.
+                        remove_prompt_cache_entries_for_both_flags(
+                            &args,
+                            kind,
+                            &prompt_file.model,
+                            &format!("Found and removed cache entry for {kind}"),
+                        );
+                    } else {
+                        let key = get_cache_key(&args, kind, &prompt_file.model);
+                        remove_cache_entry_by_key(
+                            &key,
+                            &args,
+                            kind,
+                            &format!("Found and removed cache entry for {kind}"),
+                        );
+                    }
                 }
                 return Ok(());
             }
@@ -4327,6 +4343,17 @@ mod tests {
     fn extract_json_errors_on_non_json() {
         let err = extract_json_from_output("no json here").unwrap_err();
         assert!(format!("{err}").contains("Failed to extract JSON"));
+    }
+
+    #[test]
+    fn extract_json_skips_earlier_non_json_brace() {
+        // The LLM preceded the real JSON with a markdown-style mention like
+        // `use {thing}` — a bare `{` that doesn't open valid JSON. The old code
+        // gave up after failing at the first `{`; the fix scans subsequent
+        // positions until one parses successfully.
+        let out = "Per RFC {thing}, the answer is:\n{\"k\": 1}";
+        let v = extract_json_from_output(out).unwrap();
+        assert_eq!(v["k"], 1);
     }
 
     #[test]

@@ -85,7 +85,7 @@ pub(super) fn get_duckdb_path() -> CliResult<String> {
         return fail_clierror!("DuckDB path is not executable: {duckdb_path}");
     }
 
-    // Safety: this is the first and only set of DUCKDB_PATH.
+    // safety: this is the first and only set of DUCKDB_PATH.
     DUCKDB_PATH.set(duckdb_path.clone()).unwrap();
 
     Ok(duckdb_path)
@@ -234,7 +234,7 @@ pub(super) fn handle_sql_error(
     }
     let output_path = Path::new(sql_results_path).with_extension("sql");
     if let Err(e) = fs::copy(sql_query_file, &output_path) {
-        return fail_clierror!("Failed to copy SQL query to {sql_results_path:?}: {e}");
+        return fail_clierror!("Failed to copy SQL query to {output_path:?}: {e}");
     }
     fail_clierror!("{error_msg}")
 }

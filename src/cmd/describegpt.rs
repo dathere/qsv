@@ -1728,6 +1728,34 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
     get_cache_key_with_flag(args, kind, actual_model, &validity_flag)
 }
 
+/// Cheap filesystem fingerprint: `"<mtime_nanos>:<size>"` if `path` resolves to a readable
+/// local file, otherwise an empty string. Used to catch in-place edits of files referenced
+/// by flags that get inlined into the rendered prompt (e.g. the tag-vocabulary CSV, the
+/// DuckDB binary). Full content hashing is avoided here because the fingerprint is computed
+/// on every cache lookup, including cache hits; `stat` is O(1) while hashing scales with
+/// file size. Remote URLs (`http`, `ckan://`, `dathere://`) return empty — the URL itself
+/// is already part of the key and remote content is TTL-cached by the lookup layer.
+fn path_fingerprint(path: &str) -> String {
+    if path.is_empty()
+        || path.to_lowercase().starts_with("http")
+        || path.starts_with("ckan://")
+        || path.starts_with("dathere://")
+    {
+        return String::new();
+    }
+    match fs::metadata(path) {
+        Ok(meta) => {
+            let mtime = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_nanos());
+            format!("{mtime}:{}", meta.len())
+        },
+        Err(_) => String::new(),
+    }
+}
+
 /// Build a cache key with an explicit validity flag. Used by both `get_cache_key`
 /// (which reads the current flag) and cache-invalidation paths (which need to
 /// reconstruct keys for both "valid" and "invalid" flags to purge stored entries).
@@ -1755,12 +1783,28 @@ fn get_cache_key_with_flag(
         .get()
         .map(|s| blake3::hash(s.as_bytes()).to_hex()[..16].to_string());
     let duckdb_enabled = should_use_duckdb();
+    // The tag-vocab CSV contents are inlined into the Tags prompt; track local-file
+    // edits by stat fingerprint. Remote URLs are fingerprinted by URL via `tag_vocab`.
+    let tag_vocab_fp = args
+        .flag_tag_vocab
+        .as_deref()
+        .map_or(String::new(), path_fingerprint);
+    // When DuckDB is enabled, `get_prompt` queries the binary for version() and loaded
+    // extensions and bakes them into the SQL guidance. Fingerprint the binary so a
+    // binary swap / upgrade invalidates cached prompts.
+    let duckdb_binary_fp = if duckdb_enabled {
+        std::env::var(QSV_DUCKDB_PATH_ENV)
+            .ok()
+            .map_or(String::new(), |p| path_fingerprint(&p))
+    } else {
+        String::new()
+    };
 
     format!(
         "{file_hash};{prompt_file:?};{prompt_content:?};{max_tokens};{addl_props:?};\
-         {actual_model};{kind};{validity_flag};{language:?};{tag_vocab:?};{num_tags};\
-         {enum_threshold};{sample_size};{fewshot_examples};{duckdb_enabled};\
-         {dictionary_fingerprint:?}",
+         {actual_model};{kind};{validity_flag};{language:?};{tag_vocab:?};{tag_vocab_fp};\
+         {num_tags};{enum_threshold};{sample_size};{fewshot_examples};{duckdb_enabled};\
+         {duckdb_binary_fp};{dictionary_fingerprint:?}",
         prompt_file = args.flag_prompt_file,
         max_tokens = args.flag_max_tokens,
         addl_props = args.flag_addl_props,
@@ -4527,6 +4571,47 @@ mod tests {
         let restored = default_args_for_test();
         let restored_key = get_cache_key_with_flag(&restored, PromptType::Tags, "gpt-x", "valid");
         assert_eq!(restored_key, baseline);
+    }
+
+    #[test]
+    fn cache_key_reflects_tag_vocab_file_contents() {
+        // Editing a local tag-vocab CSV in place must change the cache key so the
+        // cache doesn't return output generated against different vocabulary.
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("qsv_describegpt_vocab_{}.csv", std::process::id()));
+        let mut f = fs::File::create(&path).expect("create vocab tmp");
+        writeln!(f, "tag,description\nfoo,first version").expect("write v1");
+        drop(f);
+
+        let mut args = default_args_for_test();
+        args.flag_tag_vocab = Some(path.to_string_lossy().into_owned());
+        let key_v1 = get_cache_key_with_flag(&args, PromptType::Tags, "gpt-x", "valid");
+
+        // Sleep briefly so mtime advances, then rewrite with different contents+size.
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let mut f = fs::File::create(&path).expect("rewrite vocab tmp");
+        writeln!(f, "tag,description\nfoo,second version now longer").expect("write v2");
+        drop(f);
+
+        let key_v2 = get_cache_key_with_flag(&args, PromptType::Tags, "gpt-x", "valid");
+        let _ = fs::remove_file(&path);
+        assert_ne!(
+            key_v1, key_v2,
+            "in-place vocab edit must change the cache key"
+        );
+    }
+
+    #[test]
+    fn path_fingerprint_is_empty_for_remote_or_missing() {
+        assert_eq!(path_fingerprint(""), "");
+        assert_eq!(path_fingerprint("https://example.com/vocab.csv"), "");
+        assert_eq!(path_fingerprint("ckan://some-resource"), "");
+        assert_eq!(path_fingerprint("dathere://some-dataset"), "");
+        assert_eq!(
+            path_fingerprint("/path/that/definitely/does/not/exist.csv"),
+            ""
+        );
     }
 
     #[test]

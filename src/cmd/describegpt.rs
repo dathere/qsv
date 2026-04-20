@@ -353,7 +353,6 @@ use std::{
     env, fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::Command,
     sync::OnceLock,
     time::{Duration, Instant},
 };
@@ -362,8 +361,7 @@ use cached::{
     DiskCache, IOCached, RedisCache, Return, proc_macro::io_cached, stores::DiskCacheBuilder,
 };
 use foldhash::{HashMap, HashMapExt, HashSet};
-use indexmap::{IndexMap, IndexSet};
-use indicatif::HumanCount;
+use indexmap::IndexSet;
 use minijinja::{Environment, context};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -382,6 +380,25 @@ use crate::{
 };
 #[cfg(feature = "feature_capable")]
 use crate::{lookup, lookup::LookupTableOptions};
+
+mod dictionary;
+mod duckdb_sql;
+mod formatters;
+mod session;
+
+use dictionary::{
+    combine_dictionary_entries, generate_code_based_dictionary, parse_frequency_csv,
+    parse_llm_dictionary_response, parse_stats_csv,
+};
+use duckdb_sql::{
+    build_score_refinement_prompt, escape_sql_string, extract_sql_sample, handle_sql_error,
+    run_duckdb_query, score_sql_query, should_use_duckdb,
+};
+use session::{
+    SessionMessage, SessionState, apply_sliding_window, check_message_relevance, load_session,
+    normalize_session_path, save_session, track_sql_error_in_session,
+    update_session_after_sql_success,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
@@ -457,23 +474,6 @@ struct Args {
     flag_no_score_sql:      bool,
     flag_score_threshold:   u32,
     flag_score_max_retries: u32,
-}
-
-#[derive(Debug, Clone)]
-struct SessionMessage {
-    role:      String,
-    content:   String,
-    #[allow(dead_code)]
-    timestamp: String,
-}
-
-#[derive(Debug, Clone)]
-struct SessionState {
-    baseline_sql: Option<String>,
-    messages:     Vec<SessionMessage>,
-    sql_results:  Option<String>,
-    sql_errors:   Vec<String>,
-    summary:      Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -601,43 +601,6 @@ struct PhaseResponse {
     token_usage: TokenUsage,
 }
 
-// Data structures for neuro-procedural dictionary generation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct DictionaryEntry {
-    name:        String,
-    r#type:      String,
-    label:       String,
-    description: String,
-    min:         String, // Empty string if not available
-    max:         String, // Empty string if not available
-    cardinality: u64,
-    enumeration: String, // Empty string if not enumerable, otherwise values on separate lines
-    null_count:  u64,
-    addl_cols:   IndexMap<String, String>, // Addl columns from stats (preserves order)
-    examples:    String,                   // Format: "val1 [cnt1], ... or "<ALL_UNIQUE>"
-}
-
-// Helper structs for parsing CSV data
-#[derive(Debug, Clone)]
-struct StatsRecord {
-    field:       String,
-    r#type:      String,
-    cardinality: u64,
-    nullcount:   u64,
-    min:         String,                   // Empty string if not available
-    max:         String,                   // Empty string if not available
-    addl_cols:   IndexMap<String, String>, // Addl columns from stats CSV (preserves order)
-}
-
-#[derive(Debug, Clone)]
-struct FrequencyRecord {
-    field:      String,
-    value:      String,
-    count:      u64,
-    percentage: f64,
-    rank:       f64,
-}
-
 // environment variables
 static QSV_REDIS_CONNSTR_ENV: &str = "QSV_DG_REDIS_CONNSTR";
 static QSV_REDIS_MAX_POOL_SIZE_ENV: &str = "QSV_REDIS_MAX_POOL_SIZE";
@@ -649,25 +612,6 @@ static QSV_DUCKDB_PATH_ENV: &str = "QSV_DUCKDB_PATH";
 static READ_CSV_AUTO_REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new("read_csv_auto\\([^)]*\\)").expect("Invalid regex pattern")
 });
-
-/// Escape a string for safe usage as a SQL string literal.
-///
-/// This function ensures that common problematic characters (such as single quotes, backslashes,
-/// newlines, carriage returns, and null bytes) are properly escaped according to SQL string
-/// literal rules.
-///
-/// - Single quotes are escaped by doubling them (`'` → `''`), as per the SQL standard.
-/// - Backslashes are escaped by doubling (`\` → `\\`). Backslash escaping is non-standard SQL but
-///   prevents certain injection scenarios, and must come first in this implementation.
-/// - Newline (`\n`), carriage return (`\r`), and null byte (`\0`) are replaced by their C-like
-///   escape sequence representations (`\\n`, `\\r`, `\\0`).
-fn escape_sql_string(s: &str) -> String {
-    s.replace('\\', "\\\\") // Backslash must be first!
-        .replace('\'', "''")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\0', "\\0")
-}
 
 static DEFAULT_REDIS_CONN_STRING: OnceLock<String> = OnceLock::new();
 static DEFAULT_REDIS_TTL_SECS: u64 = 60 * 60 * 24 * 28; // 28 days in seconds
@@ -771,106 +715,6 @@ fn parse_language_option(language: Option<&String>) -> (bool, f64, Option<String
     } else {
         (true, DEFAULT_LANGDETECTION_THRESHOLD, None)
     }
-}
-
-// Check if DuckDB should be used based on environment variable
-fn should_use_duckdb() -> bool {
-    env::var(QSV_DUCKDB_PATH_ENV).is_ok_and(|val| !val.is_empty())
-}
-
-/// Score a SQL query using the scoresql command.
-/// Returns Ok((score, rating, report_json)) on success.
-fn score_sql_query(
-    input_path: &str,
-    sql_query: &str,
-    use_duckdb: bool,
-) -> CliResult<(u32, String, String)> {
-    let qsv_path = std::env::current_exe()?;
-    let mut cmd = Command::new(qsv_path);
-    cmd.arg("scoresql").arg(input_path).arg("--json").arg("-q");
-    if use_duckdb {
-        cmd.arg("--duckdb");
-    }
-    cmd.arg(sql_query);
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to run scoresql: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return fail_clierror!("scoresql failed: {stderr}");
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let report: serde_json::Value =
-        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse scoresql JSON: {e}"))?;
-
-    let score = report["score"].as_u64().unwrap_or(0) as u32;
-    let rating = report["rating"].as_str().unwrap_or("Unknown").to_string();
-
-    Ok((score, rating, stdout))
-}
-
-/// Build a prompt asking the LLM to improve a low-scoring SQL query.
-fn build_score_refinement_prompt(
-    sql_query: &str,
-    score_report_json: &str,
-    attempt: u32,
-    max_retries: u32,
-    table_name: &str,
-) -> String {
-    let report: serde_json::Value = serde_json::from_str(score_report_json).unwrap_or_default();
-    let score = report["score"].as_u64().unwrap_or(0);
-    let rating = report["rating"].as_str().unwrap_or("Unknown");
-    let suggestions: Vec<&str> = report["suggestions"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-        .unwrap_or_default();
-    let suggestions_text = suggestions
-        .iter()
-        .enumerate()
-        .map(|(i, s)| format!("{}. {s}", i + 1))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    format!(
-        "The SQL query scored {score}/100 ({rating}), below the acceptable threshold. Retry \
-         {attempt} of {max_retries}.\n\nCurrent \
-         SQL:\n```sql\n{sql_query}\n```\n\nSuggestions:\n{suggestions_text}\n\nImprove the SQL \
-         query addressing these suggestions. Use `{table_name}` as the table name. Return ONLY \
-         the improved SQL in a ```sql code block. Keep the same logic/results, optimize structure \
-         and performance."
-    )
-}
-
-// Get DuckDB binary path from environment variable
-fn get_duckdb_path() -> CliResult<String> {
-    // Return cached path if already initialized
-    if let Some(path) = DUCKDB_PATH.get() {
-        return Ok(path.clone());
-    }
-
-    let duckdb_path =
-        env::var(QSV_DUCKDB_PATH_ENV).map_err(|_| "QSV_DUCKDB_PATH env var not set")?;
-
-    // Check if the binary exists
-    let path = Path::new(&duckdb_path);
-    if !path.exists() {
-        return fail_clierror!("DuckDB binary not found at path: {duckdb_path}");
-    }
-    if !path.is_file() {
-        return fail_clierror!("DuckDB path is not a file: {duckdb_path}");
-    }
-    if !util::is_executable(&duckdb_path)? {
-        return fail_clierror!("DuckDB path is not executable: {duckdb_path}");
-    }
-
-    // Cache the path
-    // safety: we're only setting the path once, so it's safe to unwrap
-    DUCKDB_PATH.set(duckdb_path.clone()).unwrap();
-
-    Ok(duckdb_path)
 }
 
 /// Sends an HTTP request using the provided client and parameters.
@@ -1137,357 +981,37 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
     }
 }
 
-/// Parse stats CSV into structured records
-/// Returns the records and the ordered list of additional column names (in CSV order)
-fn parse_stats_csv(stats_csv: &str) -> CliResult<(Vec<StatsRecord>, Vec<String>)> {
-    let mut rdr = csv::ReaderBuilder::new()
-        .has_headers(true)
-        .from_reader(stats_csv.as_bytes());
-
-    let headers = rdr.headers()?.clone();
-
-    // Standard column names that we handle explicitly
-    let std_cols: HashSet<&str> = ["field", "type", "cardinality", "nullcount", "min", "max"]
-        .iter()
-        .copied()
-        .collect();
-
-    // Find column indices for standard columns
-    let field_idx = headers
-        .iter()
-        .position(|h| h == "field")
-        .ok_or_else(|| CliError::Other("Stats CSV missing 'field' column".to_string()))?;
-
-    let type_idx = headers
-        .iter()
-        .position(|h| h == "type")
-        .ok_or_else(|| CliError::Other("Stats CSV missing 'type' column".to_string()))?;
-
-    let cardinality_idx = headers.iter().position(|h| h == "cardinality");
-    let nullcount_idx = headers
-        .iter()
-        .position(|h| h == "nullcount")
-        .ok_or_else(|| CliError::Other("Stats CSV missing 'nullcount' column".to_string()))?;
-    let min_idx = headers.iter().position(|h| h == "min");
-    let max_idx = headers.iter().position(|h| h == "max");
-
-    // Collect indices of additional (non-standard) columns
-    let addl_col_indices: Vec<(usize, String)> = headers
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, header)| {
-            if std_cols.contains(header) {
-                None
-            } else {
-                Some((idx, header.to_string()))
-            }
-        })
-        .collect();
-
-    let mut records = Vec::new();
-
-    for result in rdr.records() {
-        let record = result?;
-        let field = record
-            .get(field_idx)
-            .ok_or_else(|| CliError::Other("Stats CSV record missing field value".to_string()))?
-            .to_string();
-
-        let r#type = record
-            .get(type_idx)
-            .ok_or_else(|| CliError::Other("Stats CSV record missing type value".to_string()))?
-            .to_string();
-
-        let cardinality = cardinality_idx
-            .and_then(|idx| record.get(idx))
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
-
-        let nullcount = record
-            .get(nullcount_idx)
-            .ok_or_else(|| CliError::Other("Stats CSV record missing nullcount value".to_string()))?
-            .parse::<u64>()
-            .map_err(|e| CliError::Other(format!("Failed to parse nullcount: {e}")))?;
-
-        let min = min_idx
-            .and_then(|idx| record.get(idx))
-            .map(std::string::ToString::to_string)
-            .unwrap_or_default();
-
-        let max = max_idx
-            .and_then(|idx| record.get(idx))
-            .map(std::string::ToString::to_string)
-            .unwrap_or_default();
-
-        // Collect additional columns, preserving CSV order
-        // Ensure all cols are present (w/ empty string if missing) to maintain consistent order
-        let mut addl_cols = IndexMap::new();
-        for (idx, col_name) in &addl_col_indices {
-            let value = record
-                .get(*idx)
-                .map(std::string::ToString::to_string)
-                .unwrap_or_default();
-            addl_cols.insert(col_name.clone(), value);
-        }
-
-        records.push(StatsRecord {
-            field,
-            r#type,
-            cardinality,
-            nullcount,
-            min,
-            max,
-            addl_cols,
-        });
-    }
-
-    // Extract ordered column names (preserving CSV order)
-    let ordered_col_names: Vec<String> =
-        addl_col_indices.into_iter().map(|(_, name)| name).collect();
-
-    Ok((records, ordered_col_names))
-}
-
-/// Parse frequency CSV into structured records
-fn parse_frequency_csv(frequency_csv: &str) -> CliResult<Vec<FrequencyRecord>> {
-    let mut rdr = csv::ReaderBuilder::new()
-        .has_headers(true)
-        .from_reader(frequency_csv.as_bytes());
-
-    let headers = rdr.headers()?.clone();
-
-    // Find column indices
-    let field_idx = headers
-        .iter()
-        .position(|h| h == "field")
-        .ok_or_else(|| CliError::Other("Frequency CSV missing 'field' column".to_string()))?;
-
-    let value_idx = headers
-        .iter()
-        .position(|h| h == "value")
-        .ok_or_else(|| CliError::Other("Frequency CSV missing 'value' column".to_string()))?;
-
-    let count_idx = headers
-        .iter()
-        .position(|h| h == "count")
-        .ok_or_else(|| CliError::Other("Frequency CSV missing 'count' column".to_string()))?;
-
-    let percentage_idx = headers
-        .iter()
-        .position(|h| h == "percentage")
-        .ok_or_else(|| CliError::Other("Frequency CSV missing 'percentage' column".to_string()))?;
-
-    let rank_idx = headers
-        .iter()
-        .position(|h| h == "rank")
-        .ok_or_else(|| CliError::Other("Frequency CSV missing 'rank' column".to_string()))?;
-
-    let mut records = Vec::new();
-
-    for result in rdr.records() {
-        let record = result?;
-        let field = record
-            .get(field_idx)
-            .ok_or_else(|| CliError::Other("Frequency CSV record missing field value".to_string()))?
-            .to_string();
-
-        let value = record
-            .get(value_idx)
-            .ok_or_else(|| CliError::Other("Frequency CSV record missing value".to_string()))?
-            .to_string();
-
-        let count = record
-            .get(count_idx)
-            .ok_or_else(|| CliError::Other("Frequency CSV record missing count".to_string()))
-            .and_then(|s| {
-                if s.is_empty() {
-                    Ok(0)
-                } else {
-                    s.parse::<u64>().map_err(|e| {
-                        CliError::Other(format!("Failed to parse count in frequency CSV: {e}"))
-                    })
-                }
-            })?;
-
-        let percentage = record
-            .get(percentage_idx)
-            .ok_or_else(|| CliError::Other("Frequency CSV record missing percentage".to_string()))
-            .and_then(|s| {
-                if s.is_empty() {
-                    Ok(0.0)
-                } else {
-                    s.parse::<f64>().map_err(|e| {
-                        CliError::Other(format!("Failed to parse percentage in frequency CSV: {e}"))
-                    })
-                }
-            })?;
-
-        let rank = record
-            .get(rank_idx)
-            .ok_or_else(|| CliError::Other("Frequency CSV record missing rank".to_string()))
-            .and_then(|s| {
-                if s.is_empty() {
-                    Ok(0.0)
-                } else {
-                    s.parse::<f64>().map_err(|e| {
-                        CliError::Other(format!("Failed to parse rank in frequency CSV: {e}"))
-                    })
-                }
-            })?;
-
-        records.push(FrequencyRecord {
-            field,
-            value,
-            count,
-            percentage,
-            rank,
-        });
-    }
-
-    Ok(records)
-}
-
-/// Generate code-based dictionary entries from stats and frequency data
-fn generate_code_based_dictionary(
-    stats_records: &[StatsRecord],
-    frequency_records: &[FrequencyRecord],
-    enum_threshold: usize,
-    num_examples: u16,
-    truncate_str: usize,
-    addl_cols: &[String],
-) -> Vec<DictionaryEntry> {
-    // Group frequency records by field
-    let mut frequency_by_field: HashMap<String, Vec<&FrequencyRecord>> = HashMap::new();
-    for freq_record in frequency_records {
-        frequency_by_field
-            .entry(freq_record.field.clone())
-            .or_default()
-            .push(freq_record);
-    }
-
-    let mut dictionary_entries = Vec::new();
-
-    for stats_record in stats_records {
-        let field_name = &stats_record.field;
-        let field_frequencies = frequency_by_field
-            .get(field_name)
-            .cloned()
-            .unwrap_or_default();
-
-        // Generate enumeration
-        let enumeration = if stats_record.cardinality <= enum_threshold as u64 {
-            // Check if there's a rank=0 entry (Other category) or <ALL_UNIQUE> value
-            let has_other = field_frequencies
-                .iter()
-                .any(|f| f.rank == 0.0 && !f.value.contains("<ALL_UNIQUE>"));
-            if has_other {
-                String::new()
-            } else {
-                // Enumerate all values (excluding <ALL_UNIQUE>), each on its own line
-                let mut enum_values: Vec<String> = field_frequencies
-                    .iter()
-                    .filter(|f| !f.value.contains("<ALL_UNIQUE>"))
-                    .map(|f| f.value.clone())
-                    .collect();
-                enum_values.sort(); // Sort alphabetically for consistency
-                enum_values.join("\n")
-            }
-        } else {
-            String::new()
-        };
-
-        // Generate examples
-        let examples = if field_frequencies
-            .iter()
-            .any(|f| (f.percentage - 100.0).abs() < 0.0001)
-        {
-            "<ALL_UNIQUE>".to_string()
-        } else {
-            // Get top N values sorted by count descending
-            let mut sorted_freqs = field_frequencies.clone();
-            sorted_freqs.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
-
-            let top_n: Vec<String> = sorted_freqs
-                .iter()
-                .take(num_examples as usize)
-                .map(|f| {
-                    // For frequency bucket entries (rank == 0.0), strip the redundant
-                    // "(n)" count and append "…" to disambiguate from literal values
-                    // with the same name (e.g. bucket "Other… [4,091]" vs literal
-                    // "Other [2,006]")
-                    let raw_value = if f.rank == 0.0 {
-                        let base = if let Some(pos) = f.value.rfind(" (") {
-                            &f.value[..pos]
-                        } else {
-                            &f.value
-                        };
-                        format!("{base}…")
-                    } else {
-                        f.value.clone()
-                    };
-
-                    let v = if truncate_str > 0 && raw_value.chars().count() > truncate_str {
-                        let mut s = raw_value.chars().take(truncate_str).collect::<String>();
-                        s.push('…');
-                        s
-                    } else {
-                        raw_value
-                    };
-                    format!("{} [{}]", v, f.count)
-                })
-                .collect();
-
-            top_n.join("\n")
-        };
-
-        // Collect additional columns for this entry, preserving order
-        let mut entry_addl_cols = IndexMap::new();
-        for col_name in addl_cols {
-            if let Some(value) = stats_record.addl_cols.get(col_name) {
-                entry_addl_cols.insert(col_name.clone(), value.clone());
-            }
-        }
-
-        dictionary_entries.push(DictionaryEntry {
-            name: stats_record.field.clone(),
-            r#type: stats_record.r#type.clone(),
-            label: String::new(),       // Will be filled by LLM
-            description: String::new(), // Will be filled by LLM
-            min: stats_record.min.clone(),
-            max: stats_record.max.clone(),
-            cardinality: stats_record.cardinality,
-            enumeration,
-            null_count: stats_record.nullcount,
-            addl_cols: entry_addl_cols,
-            examples,
-        });
-    }
-
-    dictionary_entries
-}
-
-/// Extract JSON from LLM response AND Output using common pattern
+/// Extract a single JSON value from an LLM response.
+///
+/// Strategy (in order):
+/// 1. If a markdown code fence (```json … ``` or ``` … ```) is present, try to parse the content
+///    inside it.
+/// 2. Starting at the first `{` or `[` in the response, use `serde_json`'s streaming parser so
+///    balanced braces/brackets are matched correctly even when the JSON contains `}` or `]` inside
+///    string values. The streaming parser also allows trailing explanation text after the JSON.
+/// 3. As a last resort, run `try_fix_json` (which escapes unescaped newlines / tabs / CRs inside
+///    strings) on the same substring and re-parse.
 fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
-    // Helper function to validate and return JSON candidate
-    fn validate_json_candidate(candidate: &str) -> Option<serde_json::Value> {
-        serde_json::from_str::<serde_json::Value>(candidate.trim()).ok()
+    fn parse_first_value(s: &str) -> Option<serde_json::Value> {
+        serde_json::Deserializer::from_str(s)
+            .into_iter::<serde_json::Value>()
+            .next()
+            .and_then(Result::ok)
     }
 
-    // Helper function to try to fix common JSON issues,
-    // particularly unescaped newlines in strings
+    /// Escape literal newlines / CRs / tabs that appear inside string values.
+    /// Only runs when strict parsing fails, so already-valid JSON is untouched.
     fn try_fix_json(json_str: &str) -> String {
         let mut result = String::with_capacity(json_str.len());
-        let chars = json_str.chars();
         let mut in_string = false;
         let mut escape_next = false;
 
-        for ch in chars {
+        for ch in json_str.chars() {
             if escape_next {
                 result.push(ch);
                 escape_next = false;
                 continue;
             }
-
             match ch {
                 '\\' => {
                     result.push(ch);
@@ -1497,146 +1021,47 @@ fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
                     result.push(ch);
                     in_string = !in_string;
                 },
-                '\n' if in_string => {
-                    // Escape newlines inside strings
-                    result.push_str("\\n");
-                },
-                '\r' if in_string => {
-                    // Escape carriage returns inside strings
-                    result.push_str("\\r");
-                },
-                '\t' if in_string => {
-                    // Escape tabs inside strings
-                    result.push_str("\\t");
-                },
-                _ => {
-                    result.push(ch);
-                },
+                '\n' if in_string => result.push_str("\\n"),
+                '\r' if in_string => result.push_str("\\r"),
+                '\t' if in_string => result.push_str("\\t"),
+                _ => result.push(ch),
             }
         }
-
         result
     }
 
-    // Helper function to try parsing with fallback to fixed version
-    fn try_parse_json(candidate: &str) -> Option<serde_json::Value> {
-        // First try parsing as-is
-        if let Some(json) = validate_json_candidate(candidate) {
-            return Some(json);
+    fn attempt(candidate: &str) -> Option<serde_json::Value> {
+        if let Some(v) = parse_first_value(candidate) {
+            return Some(v);
         }
-        // If that fails, try fixing common issues
-        let fixed = try_fix_json(candidate);
-        validate_json_candidate(&fixed)
+        parse_first_value(&try_fix_json(candidate))
     }
 
-    // Pattern 1: JSON wrapped in ```json and ``` blocks (improved regex to handle multiline)
-    if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*?)\n```").captures(output)
+    // Accept ```json\n…\n``` or ```\n…\n```. The fence inner can contain any text.
+    let fence_re = regex_oncelock!(r"(?s)```(?:json)?\s*\n(.*?)\n\s*```");
+    if let Some(caps) = fence_re.captures(output)
         && let Some(m) = caps.get(1)
-        && let Some(valid_json) = try_parse_json(m.as_str())
+        && let Some(v) = attempt(m.as_str().trim())
     {
-        return Ok(valid_json);
+        return Ok(v);
     }
 
-    // Pattern 1b: JSON wrapped in ```json and ``` blocks (greedy match as fallback)
-    if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*)\n```").captures(output)
-        && let Some(m) = caps.get(1)
-        && let Some(valid_json) = try_parse_json(m.as_str())
-    {
-        return Ok(valid_json);
-    }
-
-    // Pattern 2: JSON wrapped in ``` and ``` blocks (without json specifier)
-    if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*?)\n```").captures(output)
-        && let Some(m) = caps.get(1)
-        && let Some(valid_json) = try_parse_json(m.as_str())
-    {
-        return Ok(valid_json);
-    }
-
-    // Pattern 2b: JSON wrapped in ``` and ``` blocks (greedy match as fallback)
-    if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*)\n```").captures(output)
-        && let Some(m) = caps.get(1)
-        && let Some(valid_json) = try_parse_json(m.as_str())
-    {
-        return Ok(valid_json);
-    }
-
-    // Pattern 3: Try to find JSON array or object at the start of the response
-    if let Some(caps) = regex_oncelock!(r"(?s)^\s*(\[.*?\]|\{.*?\})").captures(output)
-        && let Some(m) = caps.get(1)
-        && let Some(valid_json) = try_parse_json(m.as_str())
-    {
-        return Ok(valid_json);
-    }
-
-    // Pattern 4: Try to find JSON array or object anywhere in the response (non-greedy)
-    if let Some(caps) = regex_oncelock!(r"(?s)(\[.*?\]|\{.*?\})").captures(output)
-        && let Some(m) = caps.get(1)
-        && let Some(valid_json) = try_parse_json(m.as_str())
-    {
-        return Ok(valid_json);
-    }
-
-    // If no pattern matches, return the entire output (might be raw JSON)
-    if (output.trim().starts_with('[') || output.trim().starts_with('{'))
-        && let Some(valid_json) = try_parse_json(output)
-    {
-        return Ok(valid_json);
+    // Scan every `{`/`[` in the response, not just the first — the LLM may
+    // precede the actual JSON with markdown bullet points (`- {thing}`) or
+    // other text that contains a bare `{`. Return the first position that
+    // yields a valid parse.
+    for (idx, ch) in output.char_indices() {
+        if (ch == '{' || ch == '[')
+            && let Some(v) = attempt(&output[idx..])
+        {
+            return Ok(v);
+        }
     }
 
     fail_clierror!(
         "Failed to extract JSON content from LLM response. Output: {}",
         if output.is_empty() { "<empty>" } else { output }
     )
-}
-
-/// Parse LLM JSON response to extract Label and Description for each field
-fn parse_llm_dictionary_response(
-    llm_response: &str,
-    field_names: &[String],
-) -> CliResult<HashMap<String, (String, String)>> {
-    let json_value = extract_json_from_output(llm_response)?;
-
-    let mut result = HashMap::new();
-
-    // Parse JSON object
-    if let Some(obj) = json_value.as_object() {
-        for field_name in field_names {
-            if let Some(field_obj) = obj.get(field_name)
-                && let Some(field_map) = field_obj.as_object()
-            {
-                let label = field_map
-                    .get("label")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-
-                let description = field_map
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-
-                result.insert(field_name.clone(), (label, description));
-            }
-        }
-    }
-
-    Ok(result)
-}
-
-/// Combine code-generated dictionary entries with LLM-generated Label/Description
-fn combine_dictionary_entries(
-    mut code_entries: Vec<DictionaryEntry>,
-    llm_labels_descriptions: &HashMap<String, (String, String)>,
-) -> Vec<DictionaryEntry> {
-    for entry in &mut code_entries {
-        if let Some((label, description)) = llm_labels_descriptions.get(&entry.name) {
-            entry.label = label.clone();
-            entry.description = description.clone();
-        }
-    }
-    code_entries
 }
 
 /// Replace {GENERATED_BY_SIGNATURE} placeholder with actual attribution
@@ -1763,251 +1188,6 @@ fn replace_attribution_placeholder(
     );
 
     text.replace("{GENERATED_BY_SIGNATURE}", &attribution)
-}
-
-/// Extract ordered additional column names from entries
-/// Returns columns in the order they appear in IndexMap (preserves insertion order)
-fn extract_ordered_addl_cols(entries: &[DictionaryEntry]) -> Vec<String> {
-    // Get the ordered column names from the first entry (all entries should have the same order)
-    // IndexMap preserves insertion order, so we can iterate over keys directly
-    entries
-        .first()
-        .map(|e| e.addl_cols.keys().cloned().collect())
-        .unwrap_or_default()
-}
-
-/// Format dictionary entries as markdown table
-fn format_dictionary_markdown(entries: &[DictionaryEntry]) -> String {
-    use std::fmt::Write;
-
-    // Determine which additional columns are present (preserving order)
-    let addl_col_names = extract_ordered_addl_cols(entries);
-
-    let mut output = String::with_capacity(1024); //from("# Data Dictionary\n");
-
-    // Build header row
-    output.push_str(
-        "| Name | Type | Label | Description | Min | Max | Cardinality | Enumeration | Null Count",
-    );
-    for col_name in &addl_col_names {
-        let _ = write!(output, " | {col_name}");
-    }
-    output.push_str(" | Examples |\n");
-
-    // Build separator row
-    output.push_str(
-        "|------|------|-------|-------------|-----|-----|-------------|-------------|------------",
-    );
-    for _ in &addl_col_names {
-        output.push_str("|----------");
-    }
-    output.push_str("|----------|\n");
-
-    for entry in entries {
-        // Escape pipe characters in markdown table cells
-        let name = entry.name.replace('|', "\\|");
-        let r#type = entry.r#type.replace('|', "\\|");
-        let label = entry.label.replace('|', "\\|");
-        let description = entry.description.replace('|', "\\|").replace('\n', "<br>");
-        let min = entry.min.replace('|', "\\|");
-        let max = entry.max.replace('|', "\\|");
-        let enumeration = entry.enumeration.replace('|', "\\|");
-        let examples = entry.examples.replace('|', "\\|");
-
-        // Format enumeration: if empty, show empty string, otherwise show values on separate lines
-        let enumeration_display = if enumeration.is_empty() {
-            String::new()
-        } else {
-            // Replace newlines with <br> for markdown table compatibility
-            enumeration.replace('\n', "<br>")
-        };
-
-        // Format examples: replace newlines with <br> and format counts using HumanCount
-        let examples_display = if examples == "<ALL_UNIQUE>" {
-            examples.clone()
-        } else {
-            // Parse and reformat counts in examples (format: "value [count]")
-            examples
-                .lines()
-                .map(|line| {
-                    if let Some(pos) = line.rfind(" [") {
-                        let (value_part, count_part) = line.split_at(pos + 2);
-                        if let Some(end_pos) = count_part.find(']') {
-                            let count_str = &count_part[..end_pos];
-                            if let Ok(count) = count_str.parse::<u64>() {
-                                format!(
-                                    "{} [{}]",
-                                    value_part.trim_end_matches(" ["),
-                                    HumanCount(count)
-                                )
-                            } else {
-                                line.to_string()
-                            }
-                        } else {
-                            line.to_string()
-                        }
-                    } else {
-                        line.to_string()
-                    }
-                })
-                .collect::<Vec<String>>()
-                .join("<br>")
-        };
-
-        // Build row with additional columns
-        let _ = write!(
-            output,
-            "| **{}** | {} | {} | {} | {} | {} | {} | {} | {}",
-            name,
-            r#type,
-            label,
-            description,
-            min,
-            max,
-            HumanCount(entry.cardinality),
-            enumeration_display,
-            HumanCount(entry.null_count)
-        );
-
-        // Add additional columns
-        for col_name in &addl_col_names {
-            let value = entry
-                .addl_cols
-                .get(col_name)
-                .map(|v| {
-                    if col_name == "percentiles" {
-                        // Replace | with <br> for readability in percentiles
-                        v.replace(['|', '\n'], "<br>")
-                    } else {
-                        v.replace('|', "\\|").replace('\n', "<br>")
-                    }
-                })
-                .unwrap_or_default();
-            let _ = write!(output, " | {value}");
-        }
-
-        // Add Examples column
-        let _ = writeln!(output, " | {examples_display} |");
-    }
-
-    // Add attribution at the bottom
-    output.push_str("\n*Attribution: {GENERATED_BY_SIGNATURE}*\n");
-
-    output
-}
-
-/// Format dictionary entries as JSON
-fn format_dictionary_json(entries: &[DictionaryEntry], args: &Args) -> serde_json::Value {
-    let entries_json: Vec<serde_json::Value> = entries
-        .iter()
-        .map(|e| {
-            let mut entry_obj = json!({
-                "name": e.name,
-                "type": e.r#type,
-                "label": e.label,
-                "description": e.description,
-                "min": if e.min.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(e.min.clone()) },
-                "max": if e.max.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(e.max.clone()) },
-                "cardinality": e.cardinality,
-                "enumeration": if e.enumeration.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(e.enumeration.clone()) },
-                "null_count": e.null_count,
-            });
-
-            // Add additional columns to the JSON object
-            if let Some(obj) = entry_obj.as_object_mut() {
-                for (key, value) in &e.addl_cols {
-                    let json_value = if value.is_empty() {
-                        serde_json::Value::Null
-                    } else if key == "percentiles" {
-                        // Replace | with \n for readability in percentiles
-                        serde_json::Value::String(value.replace('|', "\n"))
-                    } else {
-                        serde_json::Value::String(value.clone())
-                    };
-                    obj.insert(key.clone(), json_value);
-                }
-                // Add examples at the end
-                obj.insert("examples".to_string(), json!(e.examples));
-            }
-
-            entry_obj
-        })
-        .collect();
-
-    json!({
-        "fields": entries_json,
-        "enum_threshold": args.flag_enum_threshold,
-        "num_examples": args.flag_num_examples,
-        "truncate_str": args.flag_truncate_str,
-        "attribution": "{GENERATED_BY_SIGNATURE}"
-    })
-}
-
-/// Format dictionary entries as TSV
-fn format_dictionary_tsv(entries: &[DictionaryEntry]) -> String {
-    use std::fmt::Write;
-
-    // Determine which additional columns are present (preserving order)
-    let addl_col_names = extract_ordered_addl_cols(entries);
-
-    let mut output = String::with_capacity(1024);
-    // TSV header
-    output
-        .push_str("Name\tType\tLabel\tDescription\tMin\tMax\tCardinality\tEnumeration\tNull Count");
-    for col_name in &addl_col_names {
-        let _ = write!(output, "\t{col_name}");
-    }
-    output.push_str("\tExamples\n");
-
-    for entry in entries {
-        // Escape tabs and newlines in TSV cells
-        let name = entry.name.replace(['\t', '\n', '\r'], " ");
-        let r#type = entry.r#type.replace(['\t', '\n', '\r'], " ");
-        let label = entry.label.replace(['\t', '\n', '\r'], " ");
-        let description = entry.description.replace(['\t', '\n', '\r'], " ");
-        let min = entry.min.replace(['\t', '\n', '\r'], " ");
-        let max = entry.max.replace(['\t', '\n', '\r'], " ");
-        let enumeration = entry.enumeration.replace(['\t', '\n', '\r'], " ");
-        let examples = entry.examples.replace(['\t', '\n', '\r'], " ");
-
-        // Build row with additional columns
-        let _ = write!(
-            output,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            name,
-            r#type,
-            label,
-            description,
-            min,
-            max,
-            HumanCount(entry.cardinality),
-            enumeration,
-            HumanCount(entry.null_count)
-        );
-
-        // Add additional columns
-        for col_name in &addl_col_names {
-            let value = entry
-                .addl_cols
-                .get(col_name)
-                .map(|v| {
-                    if col_name == "percentiles" {
-                        // Replace | and newlines with "; " for readability in percentiles
-                        // then escape tabs and carriage returns
-                        v.replace(['|', '\n'], "; ").replace(['\t', '\r'], " ")
-                    } else {
-                        v.replace(['\t', '\n', '\r'], " ")
-                    }
-                })
-                .unwrap_or_default();
-            let _ = write!(output, "\t{value}");
-        }
-
-        // Add Examples column
-        let _ = writeln!(output, "\t{examples}");
-    }
-
-    output
 }
 
 /// Format token usage and reasoning as comment lines for TSV
@@ -2536,20 +1716,31 @@ fn get_completion(
 }
 
 fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
-    let file_hash = FILE_HASH.get().unwrap_or(&String::new()).clone();
+    // For prompt kind, include the currently-stored validity flag so an invalidated
+    // prompt misses the cache. Other kinds are always "valid".
+    let validity_flag = if kind == PromptType::Prompt {
+        get_prompt_validity_flag(args, args.flag_prompt.as_ref())
+    } else {
+        "valid".to_string()
+    };
+    get_cache_key_with_flag(args, kind, actual_model, &validity_flag)
+}
+
+/// Build a cache key with an explicit validity flag. Used by both `get_cache_key`
+/// (which reads the current flag) and cache-invalidation paths (which need to
+/// reconstruct keys for both "valid" and "invalid" flags to purge stored entries).
+fn get_cache_key_with_flag(
+    args: &Args,
+    kind: PromptType,
+    actual_model: &str,
+    validity_flag: &str,
+) -> String {
+    let file_hash = FILE_HASH.get().map_or("", String::as_str);
     // Only include prompt content in cache key for "prompt" kind
     let prompt_content = if kind == PromptType::Prompt {
         args.flag_prompt.as_ref()
     } else {
         None
-    };
-
-    // For prompt kind, include a validity flag that can be invalidated
-    let validity_flag = if kind == PromptType::Prompt {
-        // Check if there's a validity flag stored for this prompt
-        get_prompt_validity_flag(args, prompt_content)
-    } else {
-        "valid".to_string()
     };
 
     format!(
@@ -2600,36 +1791,6 @@ fn invalidate_prompt_validity_flag(args: &Args, prompt_content: Option<&String>)
 
     // Simply mark as invalid - no need for timestamps
     flags.insert(prompt_key, "invalid".to_string());
-}
-
-// Try to remove prompt cache entries with different validity flags
-fn try_remove_prompt_cache_entries(base_key: &str) -> bool {
-    let mut removed = false;
-
-    // Try with "valid" flag
-    let key_with_valid = format!("{base_key}valid");
-    if GET_DISKCACHE_COMPLETION
-        .cache_remove(&key_with_valid)
-        .is_ok()
-    {
-        removed = true;
-    }
-
-    // Try with "invalid" flag
-    let key_with_invalid = format!("{base_key}invalid");
-    if GET_DISKCACHE_COMPLETION
-        .cache_remove(&key_with_invalid)
-        .is_ok()
-    {
-        removed = true;
-    }
-
-    // Flush the disk cache to ensure changes are persisted
-    if let Err(e) = GET_DISKCACHE_COMPLETION.connection().flush() {
-        log::warn!("Failed to flush disk cache: {e:?}");
-    }
-
-    removed
 }
 
 // this is a disk cache that can be used across qsv sessions
@@ -2900,7 +2061,12 @@ fn process_phase_output(
             parse_llm_dictionary_response(&completion_response.response, &field_names)
                 .unwrap_or_default();
         let combined_entries = combine_dictionary_entries(code_entries, &llm_labels_descriptions);
-        let mut dictionary_json = format_dictionary_json(&combined_entries, args);
+        let mut dictionary_json = formatters::format_dictionary_json(
+            &combined_entries,
+            args.flag_enum_threshold,
+            args.flag_num_examples,
+            args.flag_truncate_str,
+        );
         if let Some(attribution) = dictionary_json.get_mut("attribution")
             && let Some(attr_str) = attribution.as_str()
         {
@@ -2939,7 +2105,12 @@ fn process_phase_output(
         let combined_entries = combine_dictionary_entries(code_entries, &llm_labels_descriptions);
 
         if output_format == OutputFormat::Json || output_format == OutputFormat::Toon {
-            let mut dictionary_json = format_dictionary_json(&combined_entries, args);
+            let mut dictionary_json = formatters::format_dictionary_json(
+                &combined_entries,
+                args.flag_enum_threshold,
+                args.flag_num_examples,
+                args.flag_truncate_str,
+            );
             if let Some(attribution) = dictionary_json.get_mut("attribution")
                 && let Some(attr_str) = attribution.as_str()
             {
@@ -2960,12 +2131,17 @@ fn process_phase_output(
             DATA_DICTIONARY_JSON
                 .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
         } else if output_format == OutputFormat::Tsv {
-            let mut tsv_output = format_dictionary_tsv(&combined_entries);
+            let mut tsv_output = formatters::format_dictionary_tsv(&combined_entries);
             tsv_output.push_str(&format_token_usage_comments(
                 &completion_response.reasoning,
                 &completion_response.token_usage,
             ));
-            let dictionary_json = format_dictionary_json(&combined_entries, args);
+            let dictionary_json = formatters::format_dictionary_json(
+                &combined_entries,
+                args.flag_enum_threshold,
+                args.flag_num_examples,
+                args.flag_truncate_str,
+            );
             DATA_DICTIONARY_JSON
                 .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
             if let Some(output) = &args.flag_output {
@@ -2976,7 +2152,7 @@ fn process_phase_output(
             }
         } else {
             // Markdown
-            let mut markdown_output = format_dictionary_markdown(&combined_entries);
+            let mut markdown_output = formatters::format_dictionary_markdown(&combined_entries);
             markdown_output = replace_attribution_placeholder(
                 &markdown_output,
                 args,
@@ -2992,7 +2168,12 @@ fn process_phase_output(
                 completion_response.reasoning,
                 completion_response.token_usage
             );
-            let dictionary_json = format_dictionary_json(&combined_entries, args);
+            let dictionary_json = formatters::format_dictionary_json(
+                &combined_entries,
+                args.flag_enum_threshold,
+                args.flag_num_examples,
+                args.flag_truncate_str,
+            );
             DATA_DICTIONARY_JSON
                 .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
             if let Some(output) = &args.flag_output {
@@ -4062,65 +3243,6 @@ fn run_inference_options(
     Ok(())
 }
 
-// Helper function to run DuckDB queries
-fn run_duckdb_query(
-    sql_query: &str,
-    output_path: &str,
-    status_msg: &str,
-) -> CliResult<(String, String)> {
-    let duckdb_path = get_duckdb_path()?;
-    let start_time = Instant::now();
-
-    let mut cmd = Command::new(duckdb_path);
-    cmd.arg("-csv").arg("-c").arg(sql_query);
-
-    let output = cmd
-        .output()
-        .map_err(|e| CliError::Other(format!("Error while executing DuckDB command: {e:?}")))?;
-
-    if !status_msg.is_empty() {
-        print_status(status_msg, Some(start_time.elapsed()));
-    }
-
-    // Check if DuckDB command failed (non-zero exit status)
-    if !output.status.success() {
-        // If SQL execution failed, write the SQL query to output file with a .sql extension
-        let output_path = Path::new(output_path).with_extension("sql");
-        if let Err(e) = fs::write(&output_path, sql_query) {
-            return fail_clierror!("Failed to write SQL query to {output_path:?}: {e}");
-        }
-        let stderr_str =
-            simdutf8::basic::from_utf8(&output.stderr).unwrap_or("<unable to parse stderr>");
-        return fail_clierror!(
-            "DuckDB SQL query execution failed:\n{stderr_str}\nFailed SQL query saved to \
-             {output_path:?}"
-        );
-    }
-
-    let Ok(stdout_str) = simdutf8::basic::from_utf8(&output.stdout) else {
-        return fail_clierror!("Unable to parse stdout of DuckDB command:\n{output:?}");
-    };
-    let Ok(stderr_str) = simdutf8::basic::from_utf8(&output.stderr) else {
-        return fail_clierror!("Unable to parse stderr of DuckDB command:\n{output:?}");
-    };
-
-    // Also check stderr for error messages even if exit status is 0
-    if stderr_str.to_ascii_lowercase().contains(" error:") {
-        return fail_clierror!("DuckDB SQL query error detected:\n{stderr_str}");
-    }
-
-    // SQL successful, write the output to the specified file with a .csv extension
-    if !output_path.is_empty() {
-        let output_path = Path::new(output_path).with_extension("csv");
-
-        if let Err(e) = fs::write(&output_path, stdout_str) {
-            return fail_clierror!("Failed to write SQL results to {output_path:?}: {e}");
-        }
-    }
-
-    Ok((stdout_str.to_string(), stderr_str.to_string()))
-}
-
 fn determine_cache_kinds_to_remove(args: &Args) -> Vec<PromptType> {
     if args.flag_dictionary {
         vec![PromptType::Dictionary]
@@ -4140,10 +3262,41 @@ fn determine_cache_kinds_to_remove(args: &Args) -> Vec<PromptType> {
     }
 }
 
-/// Remove a cache entry by key (works for both disk and redis cache)
+/// Remove a cache entry by key from whichever backend is active.
+///
+/// Backend selection mirrors `run`'s match on `(flag_no_cache, flag_redis_cache)`:
+/// `--redis-cache` wins over the default disk cache, and `--no-cache` is a
+/// no-op. Previously this always took the disk path when `--no-cache` was
+/// false, so `--forget` / SQL-failure invalidation silently did nothing on
+/// Redis installations.
 fn remove_cache_entry_by_key(key: &str, args: &Args, kind: PromptType, success_msg: &str) {
-    if !args.flag_no_cache {
-        // Disk cache
+    if args.flag_redis_cache {
+        let conn_str = &REDISCONFIG.get().unwrap().conn_str;
+        match redis::Client::open(conn_str.to_string()) {
+            Err(e) => print_status(
+                &format!(
+                    "Warning: Cannot open Redis client for removing cache entry for {kind}: {e:?}"
+                ),
+                None,
+            ),
+            Ok(redis_client) => match redis_client.get_connection() {
+                Err(e) => print_status(
+                    &format!(
+                        "Warning: Cannot connect to Redis for removing cache entry for {kind}: \
+                         {e:?}"
+                    ),
+                    None,
+                ),
+                Ok(mut redis_conn) => match redis::cmd("DEL").arg(key).exec(&mut redis_conn) {
+                    Ok(()) => print_status(success_msg, None),
+                    Err(e) => print_status(
+                        &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
+                        None,
+                    ),
+                },
+            },
+        }
+    } else if !args.flag_no_cache {
         let key_string = key.to_string();
         if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key_string) {
             print_status(
@@ -4152,25 +3305,10 @@ fn remove_cache_entry_by_key(key: &str, args: &Args, kind: PromptType, success_m
             );
         } else {
             print_status(success_msg, None);
-            // Flush the disk cache to ensure changes are persisted
             if let Err(e) = GET_DISKCACHE_COMPLETION.connection().flush() {
                 print_status(&format!("Warning: Cannot flush disk cache: {e:?}"), None);
             } else if success_msg.contains("removed") {
                 print_status("Flushed disk cache after removing cache entry", None);
-            }
-        }
-    } else if args.flag_redis_cache {
-        // Redis cache
-        let conn_str = &REDISCONFIG.get().unwrap().conn_str;
-        if let Ok(redis_client) = redis::Client::open(conn_str.to_string())
-            && let Ok(mut redis_conn) = redis_client.get_connection()
-        {
-            match redis::cmd("DEL").arg(key).exec(&mut redis_conn) {
-                Ok(()) => print_status(success_msg, None),
-                Err(e) => print_status(
-                    &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
-                    None,
-                ),
             }
         }
     }
@@ -4178,47 +3316,22 @@ fn remove_cache_entry_by_key(key: &str, args: &Args, kind: PromptType, success_m
 
 // Helper function to invalidate a specific cache entry by modifying the cache key
 fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
+    let prompt_file = get_prompt_file(args)?;
+
     if kind == PromptType::Prompt {
-        // For prompt kind, invalidate the validity flag
-        let prompt_content = args.flag_prompt.as_ref();
-        invalidate_prompt_validity_flag(args, prompt_content);
+        // Invalidate the validity flag so future cache lookups miss.
+        invalidate_prompt_validity_flag(args, args.flag_prompt.as_ref());
 
-        // Use the existing helper function to remove cache entries with both "valid" and "invalid"
-        // flags
-        let prompt_file = get_prompt_file(args)?;
-        let base_key = {
-            let file_hash = FILE_HASH.get().unwrap_or(&String::new()).clone();
-            let prompt_content_for_key = args.flag_prompt.as_ref();
-
-            format!(
-                "{:?}{:?}{:?}{:?}{:?}{:?}{}{}{:?}",
-                args.arg_input,
-                args.flag_prompt_file,
-                prompt_content_for_key,
-                args.flag_max_tokens,
-                args.flag_addl_props,
-                &prompt_file.model,
-                kind,
-                file_hash,
-                args.flag_language
-            )
-        };
-
-        let removed = try_remove_prompt_cache_entries(&base_key);
-        if removed {
-            print_status(
-                &format!("Removed cache entry for {kind} due to SQL execution failure"),
-                None,
-            );
-        } else {
-            print_status(
-                &format!("Warning: Could not remove cache entry for {kind}"),
-                None,
-            );
-        }
+        // The stored key encodes whichever flag was active at write time, so purge
+        // both "valid" and "invalid" variants via the same helper used to build keys.
+        remove_prompt_cache_entries_for_both_flags(
+            args,
+            kind,
+            &prompt_file.model,
+            &format!("Removed cache entry for {kind} due to SQL execution failure"),
+        );
     } else {
-        // For other kinds, try to remove the cache entry directly
-        let prompt_file = get_prompt_file(args)?;
+        // For other kinds, remove the cache entry directly
         let key = get_cache_key(args, kind, &prompt_file.model);
         remove_cache_entry_by_key(
             &key,
@@ -4231,467 +3344,18 @@ fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
     Ok(())
 }
 
-/// Track SQL error in session state if present
-fn track_sql_error_in_session(
-    session_state: Option<&mut SessionState>,
-    normalized_session_path: Option<&String>,
-    error_msg: String,
+/// Remove `PromptType::Prompt` cache entries for both "valid" and "invalid" validity
+/// flags, since the stored key is whichever flag was current at the time it was cached.
+fn remove_prompt_cache_entries_for_both_flags(
+    args: &Args,
+    kind: PromptType,
+    actual_model: &str,
+    success_msg: &str,
 ) {
-    if let Some(state) = session_state {
-        state.sql_errors.push(error_msg);
-        if let Some(normalized_path) = normalized_session_path {
-            let _ = save_session(Path::new(normalized_path), state);
-        }
+    for flag in ["valid", "invalid"] {
+        let key = get_cache_key_with_flag(args, kind, actual_model, flag);
+        remove_cache_entry_by_key(&key, args, kind, success_msg);
     }
-}
-
-/// Update session state after successful SQL execution
-fn update_session_after_sql_success(
-    session_state: Option<&mut SessionState>,
-    sql_results: &str,
-    sql_query: &str,
-) {
-    if let Some(state) = session_state {
-        let results_path = Path::new(sql_results).with_extension("csv");
-        if results_path.exists()
-            && let Ok(sample) = extract_sql_sample(&results_path)
-        {
-            state.sql_results = Some(sample);
-            state.sql_errors.clear(); // Clear errors on success
-        }
-
-        // Extract and store baseline SQL only after successful execution
-        // This ensures baseline SQL is only set when the query executes successfully
-        if state.baseline_sql.is_none() {
-            state.baseline_sql = Some(sql_query.to_string());
-        }
-    }
-}
-
-#[allow(dead_code)]
-/// Helper function to handle SQL error cases by invalidating cache and saving the failed query
-fn handle_sql_error(
-    args: &Args,
-    cache_type: &CacheType,
-    sql_query_file: &std::path::Path,
-    sql_results_path: &std::path::Path,
-    error_msg: &str,
-) -> CliResult<()> {
-    // Invalidate cache entry so user can try again without reinferring dictionary
-    if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
-        let _ = invalidate_cache_entry(args, PromptType::Prompt);
-    }
-    // SQL execution failed, copy sql_query_file to sql_results_path
-    let output_path = Path::new(sql_results_path).with_extension("sql");
-    if let Err(e) = fs::copy(sql_query_file, &output_path) {
-        return fail_clierror!("Failed to copy SQL query to {sql_results_path:?}: {e}");
-    }
-    fail_clierror!("{error_msg}")
-}
-
-/// Normalize session path to always have .md extension
-fn normalize_session_path(session_path: &str) -> String {
-    let path = Path::new(session_path);
-    if let Some(ext) = path.extension()
-        && ext == "md"
-    {
-        return session_path.to_string();
-    }
-    // If no extension or wrong extension, ensure .md extension
-    // Use with_extension which replaces existing extension or adds if none exists
-    path.with_extension("md").to_string_lossy().to_string()
-}
-
-/// Load session state from a markdown file
-fn load_session(session_path: &Path) -> CliResult<SessionState> {
-    if !session_path.exists() {
-        return Ok(SessionState {
-            baseline_sql: None,
-            messages:     Vec::new(),
-            sql_results:  None,
-            sql_errors:   Vec::new(),
-            summary:      None,
-        });
-    }
-
-    let content = fs::read_to_string(session_path)?;
-    let mut state = SessionState {
-        baseline_sql: None,
-        messages:     Vec::new(),
-        sql_results:  None,
-        sql_errors:   Vec::new(),
-        summary:      None,
-    };
-
-    let lines: Vec<&str> = content.lines().collect();
-    let mut i = 0;
-    let mut current_content = String::new();
-    let mut current_role = String::new();
-
-    while i < lines.len() {
-        let line = lines[i].trim();
-
-        if line.starts_with("# Session:") {
-            // Skip header
-        } else if line == "## Baseline SQL Query" {
-            current_content.clear();
-            i += 1;
-            // Skip opening ```sql
-            if i < lines.len() && lines[i].trim() == "```sql" {
-                i += 1;
-            }
-            // Read SQL until closing ```
-            while i < lines.len() && !lines[i].trim().starts_with("```") {
-                if !current_content.is_empty() {
-                    current_content.push('\n');
-                }
-                current_content.push_str(lines[i]);
-                i += 1;
-            }
-            state.baseline_sql = Some(current_content.trim().to_string());
-            current_content.clear();
-        } else if line == "## Conversation History" {
-            i += 1;
-            // Parse messages
-            let mut in_content_section = false;
-            let mut in_code_block = false;
-            while i < lines.len() {
-                let msg_line = lines[i];
-                let msg_line_trimmed = msg_line.trim();
-
-                // Check if we've hit the next section header (## at start of line, not indented)
-                // Only break if we're not inside a code block
-                if !in_code_block
-                    && msg_line_trimmed.starts_with("##")
-                    && !msg_line_trimmed.starts_with("###")
-                {
-                    // Save the current message before breaking
-                    if !current_content.is_empty() && !current_role.is_empty() {
-                        state.messages.push(SessionMessage {
-                            role:      current_role.clone(),
-                            content:   current_content.trim().to_string(),
-                            timestamp: chrono::Utc::now().to_rfc3339(),
-                        });
-                    }
-                    break;
-                }
-
-                // Track code blocks to avoid breaking on ## inside them
-                if msg_line_trimmed.starts_with("```") {
-                    in_code_block = !in_code_block;
-                }
-
-                if msg_line_trimmed.starts_with("### Message") {
-                    // New message - save previous if exists
-                    if !current_content.is_empty() && !current_role.is_empty() {
-                        state.messages.push(SessionMessage {
-                            role:      current_role.clone(),
-                            content:   current_content.trim().to_string(),
-                            timestamp: chrono::Utc::now().to_rfc3339(),
-                        });
-                    }
-                    // Reset for new message
-                    current_content.clear();
-                    current_role.clear();
-                    in_content_section = false;
-                    in_code_block = false;
-                } else if msg_line_trimmed.starts_with("**Role:**") {
-                    current_role = msg_line_trimmed.replace("**Role:**", "").trim().to_string();
-                    in_content_section = false;
-                } else if msg_line_trimmed.starts_with("**Content:**") {
-                    // Content section starts - clear any previous content for this message
-                    current_content.clear();
-                    in_content_section = true;
-                } else if in_content_section {
-                    // We're in the content section - add everything (including empty lines and code
-                    // blocks) Always add a newline before adding content
-                    // (except for the very first line)
-                    if !current_content.is_empty() {
-                        current_content.push('\n');
-                    }
-                    // Add the line as-is (preserving original formatting)
-                    current_content.push_str(msg_line);
-                }
-                i += 1;
-            }
-            // Add last message if we didn't break on a section header
-            if !current_content.is_empty() && !current_role.is_empty() {
-                state.messages.push(SessionMessage {
-                    role:      current_role.clone(),
-                    content:   current_content.trim().to_string(),
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                });
-            }
-            continue;
-        } else if line == "## SQL Results (Last Successful)" {
-            current_content.clear();
-            i += 1;
-            // Skip opening ```csv
-            if i < lines.len() && lines[i].trim() == "```csv" {
-                i += 1;
-            }
-            // Read CSV until closing ```
-            while i < lines.len() && !lines[i].trim().starts_with("```") {
-                if !current_content.is_empty() {
-                    current_content.push('\n');
-                }
-                current_content.push_str(lines[i]);
-                i += 1;
-            }
-            state.sql_results = Some(current_content.trim().to_string());
-            current_content.clear();
-        } else if line == "## SQL Errors" {
-            i += 1;
-            // Read error list items
-            while i < lines.len() && !lines[i].trim().starts_with("##") {
-                let line = lines[i].trim();
-                if line.starts_with("- ") {
-                    let error = line.strip_prefix("- ").unwrap_or(line).to_string();
-                    state.sql_errors.push(error);
-                }
-                i += 1;
-            }
-            continue;
-        } else if line == "## Summary" {
-            current_content.clear();
-            i += 1;
-            // Read summary until next section or end
-            while i < lines.len() && !lines[i].trim().starts_with("##") {
-                if !current_content.is_empty() {
-                    current_content.push('\n');
-                }
-                current_content.push_str(lines[i]);
-                i += 1;
-            }
-            state.summary = Some(current_content.trim().to_string());
-            current_content.clear();
-            continue;
-        }
-        i += 1;
-    }
-
-    Ok(state)
-}
-
-/// Save session state to a markdown file
-fn save_session(session_path: &Path, state: &SessionState) -> CliResult<()> {
-    use std::fmt::Write as _; // import without risk of name clashing
-
-    // Ensure parent directory exists
-    if let Some(parent) = session_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let mut content = String::new();
-    let _ = write!(
-        content,
-        "# Session: {}\n\n",
-        session_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-    );
-
-    // Baseline SQL Query
-    if let Some(ref sql) = state.baseline_sql {
-        content.push_str("## Baseline SQL Query\n\n");
-        content.push_str("```sql\n");
-        content.push_str(sql);
-        content.push_str("\n```\n\n");
-    }
-
-    // Conversation History
-    content.push_str("## Conversation History\n\n");
-    for (idx, msg) in state.messages.iter().enumerate() {
-        let _ = write!(content, "### Message {}\n\n", idx + 1);
-        let _ = write!(content, "**Role:** {}\n\n", msg.role);
-        let _ = write!(content, "**Content:**\n\n{}\n\n", msg.content);
-    }
-
-    // SQL Results
-    if let Some(ref results) = state.sql_results {
-        content.push_str("## SQL Results (Last Successful)\n\n");
-        content.push_str("```csv\n");
-        content.push_str(results);
-        content.push_str("\n```\n\n");
-    }
-
-    // SQL Errors
-    if !state.sql_errors.is_empty() {
-        content.push_str("## SQL Errors\n\n");
-        for error in &state.sql_errors {
-            let _ = writeln!(content, "- {error}");
-        }
-        content.push('\n');
-    }
-
-    // Summary
-    if let Some(ref summary) = state.summary {
-        content.push_str("## Summary\n\n");
-        content.push_str(summary);
-        content.push('\n');
-    }
-
-    fs::write(session_path, content)?;
-    Ok(())
-}
-
-/// Extract first 10 rows from a CSV file
-fn extract_sql_sample(csv_path: &Path) -> CliResult<String> {
-    use std::io::{BufRead, BufReader};
-
-    let file = fs::File::open(csv_path)?;
-    let reader = BufReader::new(file);
-    let mut lines = reader.lines();
-    let mut result = String::new();
-
-    // Read header
-    if let Some(Ok(header)) = lines.next() {
-        result.push_str(&header);
-        result.push('\n');
-    }
-
-    // Read up to 10 data rows
-    for _ in 0..10 {
-        if let Some(Ok(line)) = lines.next() {
-            result.push_str(&line);
-            result.push('\n');
-        } else {
-            break;
-        }
-    }
-
-    Ok(result.trim().to_string())
-}
-
-/// Generate summary of old messages using LLM
-fn generate_summary(
-    old_messages: &[SessionMessage],
-    args: &Args,
-    client: &Client,
-    api_key: &str,
-) -> CliResult<String> {
-    use std::fmt::Write as _; // import without risk of name clashing
-
-    let mut summary_prompt = String::from(
-        "Please provide a concise summary of the following conversation history. Focus on the key \
-         SQL query refinements, user requests, and assistant responses:\n\n",
-    );
-
-    for msg in old_messages {
-        let _ = write!(summary_prompt, "{}: {}\n\n", msg.role, msg.content);
-    }
-
-    summary_prompt
-        .push_str("\nProvide a brief summary that captures the essence of this conversation:");
-
-    let system_prompt = "You are a helpful assistant that summarizes conversation history for SQL \
-                         query refinement sessions.";
-    let messages = json!([
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": summary_prompt}
-    ]);
-
-    let model = check_model(client, Some(api_key), args)?;
-    let completion = get_completion(args, client, &model, api_key, &messages, PromptType::Prompt)?;
-    Ok(completion.response)
-}
-
-/// Apply sliding window to session messages, summarizing older ones if needed
-fn apply_sliding_window(
-    state: &mut SessionState,
-    max_len: usize,
-    args: &Args,
-    client: &Client,
-    api_key: &str,
-) -> CliResult<()> {
-    if state.messages.len() <= max_len {
-        return Ok(());
-    }
-
-    let num_to_summarize = state.messages.len() - max_len;
-    let old_messages: Vec<SessionMessage> = state.messages.drain(..num_to_summarize).collect();
-
-    // Generate summary of old messages
-    let summary = generate_summary(&old_messages, args, client, api_key)?;
-
-    // Combine with existing summary if present
-    if let Some(ref existing_summary) = state.summary {
-        state.summary = Some(format!("{existing_summary}\n\n{summary}"));
-    } else {
-        state.summary = Some(summary);
-    }
-
-    Ok(())
-}
-
-/// Check if a message is relevant to the baseline SQL query
-fn check_message_relevance(
-    prompt: &str,
-    baseline_sql: &str,
-    args: &Args,
-    client: &Client,
-    api_key: &str,
-) -> CliResult<bool> {
-    // Heuristic check: Look for SQL-related keywords
-    let sql_keywords = [
-        "sql",
-        "query",
-        "select",
-        "where",
-        "join",
-        "group",
-        "order",
-        "filter",
-        "refine",
-        "modify",
-        "change",
-        "update",
-        "fix",
-        "correct",
-        "improve",
-        "add",
-        "remove",
-        "include",
-        "exclude",
-        "sort",
-        "aggregate",
-        "count",
-    ];
-
-    let prompt_lower = prompt.to_lowercase();
-    let has_sql_keywords = sql_keywords.iter().any(|kw| prompt_lower.contains(kw));
-
-    // Also check if prompt references previous query/results
-    let has_references = prompt_lower.contains("previous")
-        || prompt_lower.contains("last")
-        || prompt_lower.contains("above")
-        || prompt_lower.contains("before");
-
-    if has_sql_keywords || has_references {
-        return Ok(true);
-    }
-
-    // LLM check: Ask LLM if message is related to refining the SQL query
-    let relevance_prompt = format!(
-        "The user has been working on refining a SQL query. The baseline SQL query \
-         is:\n\n```sql\n{baseline_sql}\n```\n\nUser's new message: \"{prompt}\"\n\nIs this \
-         message related to refining, modifying, or improving the SQL query above? Answer with \
-         only 'yes' or 'no'."
-    );
-
-    let system_prompt = "You are a helpful assistant that determines if user messages are related \
-                         to SQL query refinement.";
-    let messages = json!([
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": relevance_prompt}
-    ]);
-
-    let model = check_model(client, Some(api_key), args)?;
-    let completion = get_completion(args, client, &model, api_key, &messages, PromptType::Prompt)?;
-    let response_lower = completion.response.to_lowercase().trim().to_string();
-
-    Ok(response_lower.contains("yes") || response_lower == "y")
 }
 
 /// Determine which additional columns to include based on args
@@ -4866,16 +3530,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // to prevent panics in the #[io_cached] macros.
     let diskcache_dir = if let Some(dir) = &args.flag_disk_cache_dir {
         if dir.starts_with('~') {
-            // expand the tilde
-            let expanded_dir = util::expand_tilde(dir).unwrap();
-            expanded_dir.to_string_lossy().to_string()
+            util::expand_tilde(dir)
+                .ok_or_else(|| {
+                    CliError::Other(format!(
+                        "Cannot expand tilde in --disk-cache-dir '{dir}': HOME is not set",
+                    ))
+                })?
+                .to_string_lossy()
+                .to_string()
         } else {
             dir.to_string()
         }
     } else {
-        // Default disk cache directory
-        let default_dir = util::expand_tilde("~/.qsv-cache/describegpt").unwrap();
-        default_dir.to_string_lossy().to_string()
+        util::expand_tilde("~/.qsv-cache/describegpt")
+            .ok_or_else(|| {
+                CliError::Other(
+                    "Cannot resolve default disk cache directory: HOME is not set".to_string(),
+                )
+            })?
+            .to_string_lossy()
+            .to_string()
     };
 
     // Initialize DiskCache Config unconditionally
@@ -4926,51 +3600,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // macro
                 for kind in kinds_to_remove {
                     if kind == PromptType::Prompt {
-                        // For prompt kind, we need to remove cache entries with any validity flag
-                        // Get the base key without validity flag
-                        let base_key = format!(
-                            "{:?}{:?}{:?}{:?}{:?}{:?}{}{}{:?}",
-                            args.arg_input,
-                            args.flag_prompt_file,
-                            args.flag_prompt,
-                            args.flag_max_tokens,
-                            args.flag_addl_props,
-                            prompt_file.model,
+                        // For prompt kind, the stored key depends on which validity
+                        // flag was active when cached, so remove both variants.
+                        remove_prompt_cache_entries_for_both_flags(
+                            &args,
                             kind,
-                            FILE_HASH.get().unwrap_or(&String::new()),
-                            args.flag_language
+                            &prompt_file.model,
+                            &format!("Found and removed cache entry for {kind}"),
                         );
-
-                        let removed = try_remove_prompt_cache_entries(&base_key);
-
-                        if removed {
-                            print_status(
-                                &format!("Found and removed cache entry for {kind}"),
-                                None,
-                            );
-                        } else {
-                            print_status(
-                                &format!("Warning: Cannot remove cache entry for {kind}"),
-                                None,
-                            );
-                        }
                     } else {
                         // For other kinds, use the normal key format
                         let key = get_cache_key(&args, kind, &prompt_file.model);
-
-                        if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key) {
-                            print_status(
-                                &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
-                                None,
-                            );
-                        } else {
-                            remove_cache_entry_by_key(
-                                &key,
-                                &args,
-                                kind,
-                                &format!("Found and removed cache entry for {kind}"),
-                            );
-                        }
+                        remove_cache_entry_by_key(
+                            &key,
+                            &args,
+                            kind,
+                            &format!("Found and removed cache entry for {kind}"),
+                        );
                     }
                 }
                 return Ok(());
@@ -5015,21 +3661,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // If --forget is set, remove cache entries and exit
             if args.flag_forget {
-                // Determine which cache entries to remove
                 let kinds_to_remove = determine_cache_kinds_to_remove(&args);
-
-                // Get the model from prompt file for cache key generation
                 let prompt_file = get_prompt_file(&args)?;
 
-                // Remove cache entries for all specified kinds
                 for kind in kinds_to_remove {
-                    let key = get_cache_key(&args, kind, &prompt_file.model);
-                    remove_cache_entry_by_key(
-                        &key,
-                        &args,
-                        kind,
-                        &format!("Found and removed cache entry for {kind}"),
-                    );
+                    if kind == PromptType::Prompt {
+                        // PromptType::Prompt keys include the validity flag, so purge
+                        // both "valid" and "invalid" variants — same as the disk path.
+                        remove_prompt_cache_entries_for_both_flags(
+                            &args,
+                            kind,
+                            &prompt_file.model,
+                            &format!("Found and removed cache entry for {kind}"),
+                        );
+                    } else {
+                        let key = get_cache_key(&args, kind, &prompt_file.model);
+                        remove_cache_entry_by_key(
+                            &key,
+                            &args,
+                            kind,
+                            &format!("Found and removed cache entry for {kind}"),
+                        );
+                    }
                 }
                 return Ok(());
             }
@@ -5651,5 +4304,136 @@ fn get_cached_analysis(
             Ok(Some(result.value))
         },
         CacheType::None => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_json_handles_fenced_json() {
+        let out = "Here is the result:\n```json\n{\"a\": 1, \"b\": \"x\"}\n```\nTrailing text.";
+        let v = extract_json_from_output(out).unwrap();
+        assert_eq!(v["a"], 1);
+        assert_eq!(v["b"], "x");
+    }
+
+    #[test]
+    fn extract_json_handles_unfenced_with_trailing_text() {
+        let out = "{\"k\": 42}\n\nThe value is 42.";
+        let v = extract_json_from_output(out).unwrap();
+        assert_eq!(v["k"], 42);
+    }
+
+    #[test]
+    fn extract_json_handles_braces_inside_strings() {
+        // The old non-greedy regex would stop at the first `}`, truncating and
+        // corrupting this. The streaming parser handles it correctly.
+        let out = r#"Response: {"sql": "SELECT * FROM t WHERE x = '}'", "ok": true}"#;
+        let v = extract_json_from_output(out).unwrap();
+        assert_eq!(v["sql"], "SELECT * FROM t WHERE x = '}'");
+        assert_eq!(v["ok"], true);
+    }
+
+    #[test]
+    fn extract_json_handles_array() {
+        let out = "The tags are:\n[\"one\", \"two\", \"three\"]";
+        let v = extract_json_from_output(out).unwrap();
+        assert_eq!(v.as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn extract_json_repairs_unescaped_newlines_in_string() {
+        // Actual newline between "line1" and "line2" inside a JSON string — invalid JSON,
+        // but try_fix_json should escape it and allow parsing.
+        let out = "{\"s\": \"line1\nline2\"}";
+        let v = extract_json_from_output(out).unwrap();
+        assert_eq!(v["s"], "line1\nline2");
+    }
+
+    #[test]
+    fn extract_json_errors_on_non_json() {
+        let err = extract_json_from_output("no json here").unwrap_err();
+        assert!(format!("{err}").contains("Failed to extract JSON"));
+    }
+
+    #[test]
+    fn extract_json_skips_earlier_non_json_brace() {
+        // The LLM preceded the real JSON with a markdown-style mention like
+        // `use {thing}` — a bare `{` that doesn't open valid JSON. The old code
+        // gave up after failing at the first `{`; the fix scans subsequent
+        // positions until one parses successfully.
+        let out = "Per RFC {thing}, the answer is:\n{\"k\": 1}";
+        let v = extract_json_from_output(out).unwrap();
+        assert_eq!(v["k"], 1);
+    }
+
+    #[test]
+    fn cache_key_round_trip_preserves_format() {
+        // get_cache_key and get_cache_key_with_flag must produce matching keys
+        // so that invalidation can reconstruct the stored key.
+        let mut args = default_args_for_test();
+        args.arg_input = Some("foo.csv".to_string());
+        args.flag_prompt = Some("ask".to_string());
+        args.flag_max_tokens = 1000;
+        args.flag_language = Some("en".to_string());
+
+        let key_via_get = get_cache_key(&args, PromptType::Prompt, "gpt-x");
+        let key_via_flag = get_cache_key_with_flag(&args, PromptType::Prompt, "gpt-x", "valid");
+        assert_eq!(key_via_get, key_via_flag);
+    }
+
+    /// Minimal Args for unit tests: zero-values everywhere.
+    fn default_args_for_test() -> Args {
+        Args {
+            arg_input:              None,
+            flag_dictionary:        false,
+            flag_description:       false,
+            flag_tags:              false,
+            flag_all:               false,
+            flag_num_tags:          0,
+            flag_tag_vocab:         None,
+            flag_cache_dir:         String::new(),
+            flag_ckan_api:          String::new(),
+            flag_ckan_token:        None,
+            flag_stats_options:     String::new(),
+            flag_freq_options:      String::new(),
+            flag_enum_threshold:    0,
+            flag_num_examples:      0,
+            flag_truncate_str:      0,
+            flag_prompt:            None,
+            flag_sql_results:       None,
+            flag_prompt_file:       None,
+            flag_sample_size:       0,
+            flag_fewshot_examples:  false,
+            flag_base_url:          None,
+            flag_model:             None,
+            flag_language:          None,
+            flag_addl_props:        None,
+            flag_api_key:           None,
+            flag_max_tokens:        0,
+            flag_timeout:           0,
+            flag_user_agent:        None,
+            flag_export_prompt:     None,
+            flag_no_cache:          true,
+            flag_disk_cache_dir:    None,
+            flag_redis_cache:       false,
+            flag_fresh:             false,
+            flag_forget:            false,
+            flag_flush_cache:       false,
+            flag_prepare_context:   false,
+            flag_process_response:  false,
+            flag_format:            None,
+            flag_output:            None,
+            flag_quiet:             false,
+            flag_addl_cols:         false,
+            flag_addl_cols_list:    None,
+            flag_session:           None,
+            flag_session_len:       0,
+            flag_no_score_sql:      false,
+            flag_score_threshold:   0,
+            flag_score_max_retries: 0,
+        }
     }
 }

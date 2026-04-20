@@ -1728,30 +1728,28 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
     get_cache_key_with_flag(args, kind, actual_model, &validity_flag)
 }
 
-/// Cheap filesystem fingerprint: `"<mtime_nanos>:<size>"` if `path` resolves to a readable
-/// local file, otherwise an empty string. Used to catch in-place edits of files referenced
-/// by flags that get inlined into the rendered prompt (e.g. the tag-vocabulary CSV, the
-/// DuckDB binary). Full content hashing is avoided here because the fingerprint is computed
-/// on every cache lookup, including cache hits; `stat` is O(1) while hashing scales with
-/// file size. Remote URLs (`http`, `ckan://`, `dathere://`) return empty — the URL itself
-/// is already part of the key and remote content is TTL-cached by the lookup layer.
+/// Content fingerprint of a local file as a short BLAKE3 hex prefix, or empty string if
+/// `path` is empty, a remote URL (`http`, `ckan://`, `dathere://` — case-insensitive), or
+/// unreadable. Used to catch in-place edits of files inlined into the rendered prompt
+/// (the tag-vocabulary CSV, the DuckDB binary). Content hashing is preferred over
+/// `stat(mtime, size)` because same-second same-size rewrites (possible on HFS+ / FAT /
+/// NFS mtime granularity) would otherwise collide; `hash_blake3_file` uses mmap + rayon
+/// so even a ~100MB DuckDB binary hashes in tens of milliseconds, an acceptable cost
+/// given describegpt operations are dominated by LLM latency.
 fn path_fingerprint(path: &str) -> String {
-    if path.is_empty()
-        || path.to_lowercase().starts_with("http")
-        || path.starts_with("ckan://")
-        || path.starts_with("dathere://")
+    if path.is_empty() {
+        return String::new();
+    }
+    let lower = path.to_lowercase();
+    if lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("ckan://")
+        || lower.starts_with("dathere://")
     {
         return String::new();
     }
-    match fs::metadata(path) {
-        Ok(meta) => {
-            let mtime = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map_or(0, |d| d.as_nanos());
-            format!("{mtime}:{}", meta.len())
-        },
+    match util::hash_blake3_file(Path::new(path)) {
+        Ok(hex) => hex[..16].to_string(),
         Err(_) => String::new(),
     }
 }
@@ -1791,11 +1789,11 @@ fn get_cache_key_with_flag(
         .map_or(String::new(), path_fingerprint);
     // When DuckDB is enabled, `get_prompt` queries the binary for version() and loaded
     // extensions and bakes them into the SQL guidance. Fingerprint the binary so a
-    // binary swap / upgrade invalidates cached prompts.
+    // binary swap / upgrade invalidates cached prompts. `should_use_duckdb()` is true
+    // iff `QSV_DUCKDB_PATH` is set and non-empty, so the env var is guaranteed present
+    // here — no PATH-resolved default path exists for describegpt.
     let duckdb_binary_fp = if duckdb_enabled {
-        std::env::var(QSV_DUCKDB_PATH_ENV)
-            .ok()
-            .map_or(String::new(), |p| path_fingerprint(&p))
+        path_fingerprint(&std::env::var(QSV_DUCKDB_PATH_ENV).unwrap_or_default())
     } else {
         String::new()
     };
@@ -4577,25 +4575,28 @@ mod tests {
     fn cache_key_reflects_tag_vocab_file_contents() {
         // Editing a local tag-vocab CSV in place must change the cache key so the
         // cache doesn't return output generated against different vocabulary.
+        // Uses tempfile for RAII cleanup — tmpfile drops even if the assert panics.
         use std::io::Write;
-        let dir = std::env::temp_dir();
-        let path = dir.join(format!("qsv_describegpt_vocab_{}.csv", std::process::id()));
-        let mut f = fs::File::create(&path).expect("create vocab tmp");
-        writeln!(f, "tag,description\nfoo,first version").expect("write v1");
-        drop(f);
+        let mut tmp = tempfile::Builder::new()
+            .prefix("qsv_describegpt_vocab_")
+            .suffix(".csv")
+            .tempfile()
+            .expect("create vocab tmpfile");
+        writeln!(tmp, "tag,description\nfoo,first version").expect("write v1");
+        tmp.flush().expect("flush v1");
 
         let mut args = default_args_for_test();
-        args.flag_tag_vocab = Some(path.to_string_lossy().into_owned());
+        args.flag_tag_vocab = Some(tmp.path().to_string_lossy().into_owned());
         let key_v1 = get_cache_key_with_flag(&args, PromptType::Tags, "gpt-x", "valid");
 
-        // Sleep briefly so mtime advances, then rewrite with different contents+size.
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        let mut f = fs::File::create(&path).expect("rewrite vocab tmp");
-        writeln!(f, "tag,description\nfoo,second version now longer").expect("write v2");
+        // Rewrite in place with different bytes. Content hashing (not mtime) detects
+        // this, so no mtime-tick sleep needed.
+        let mut f = fs::File::create(tmp.path()).expect("rewrite vocab tmpfile");
+        writeln!(f, "tag,description\nbar,different contents entirely").expect("write v2");
+        f.flush().expect("flush v2");
         drop(f);
 
         let key_v2 = get_cache_key_with_flag(&args, PromptType::Tags, "gpt-x", "valid");
-        let _ = fs::remove_file(&path);
         assert_ne!(
             key_v1, key_v2,
             "in-place vocab edit must change the cache key"
@@ -4605,12 +4606,33 @@ mod tests {
     #[test]
     fn path_fingerprint_is_empty_for_remote_or_missing() {
         assert_eq!(path_fingerprint(""), "");
+        assert_eq!(path_fingerprint("http://example.com/vocab.csv"), "");
         assert_eq!(path_fingerprint("https://example.com/vocab.csv"), "");
+        assert_eq!(path_fingerprint("HTTPS://Example.com/vocab.csv"), "");
         assert_eq!(path_fingerprint("ckan://some-resource"), "");
+        assert_eq!(path_fingerprint("CKAN://Some-Resource"), "");
         assert_eq!(path_fingerprint("dathere://some-dataset"), "");
+        assert_eq!(path_fingerprint("Dathere://Some-Dataset"), "");
         assert_eq!(
             path_fingerprint("/path/that/definitely/does/not/exist.csv"),
             ""
+        );
+    }
+
+    #[test]
+    fn path_fingerprint_returns_hex_for_local_file() {
+        // Positive-path assertion: a readable local file yields a 16-char hex fingerprint.
+        // Guards against a regression that makes path_fingerprint always return empty,
+        // which would silently neutralize the tag-vocab and DuckDB binary cache-key fields.
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::new().expect("create tmpfile");
+        writeln!(tmp, "payload").expect("write payload");
+        tmp.flush().expect("flush");
+        let fp = path_fingerprint(&tmp.path().to_string_lossy());
+        assert_eq!(fp.len(), 16, "expected 16-char hex prefix, got {fp:?}");
+        assert!(
+            fp.chars().all(|c| c.is_ascii_hexdigit()),
+            "expected hex chars, got {fp:?}"
         );
     }
 

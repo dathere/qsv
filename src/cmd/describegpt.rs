@@ -2536,20 +2536,31 @@ fn get_completion(
 }
 
 fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
-    let file_hash = FILE_HASH.get().unwrap_or(&String::new()).clone();
+    // For prompt kind, include the currently-stored validity flag so an invalidated
+    // prompt misses the cache. Other kinds are always "valid".
+    let validity_flag = if kind == PromptType::Prompt {
+        get_prompt_validity_flag(args, args.flag_prompt.as_ref())
+    } else {
+        "valid".to_string()
+    };
+    get_cache_key_with_flag(args, kind, actual_model, &validity_flag)
+}
+
+/// Build a cache key with an explicit validity flag. Used by both `get_cache_key`
+/// (which reads the current flag) and cache-invalidation paths (which need to
+/// reconstruct keys for both "valid" and "invalid" flags to purge stored entries).
+fn get_cache_key_with_flag(
+    args: &Args,
+    kind: PromptType,
+    actual_model: &str,
+    validity_flag: &str,
+) -> String {
+    let file_hash = FILE_HASH.get().map_or("", String::as_str);
     // Only include prompt content in cache key for "prompt" kind
     let prompt_content = if kind == PromptType::Prompt {
         args.flag_prompt.as_ref()
     } else {
         None
-    };
-
-    // For prompt kind, include a validity flag that can be invalidated
-    let validity_flag = if kind == PromptType::Prompt {
-        // Check if there's a validity flag stored for this prompt
-        get_prompt_validity_flag(args, prompt_content)
-    } else {
-        "valid".to_string()
     };
 
     format!(
@@ -2600,36 +2611,6 @@ fn invalidate_prompt_validity_flag(args: &Args, prompt_content: Option<&String>)
 
     // Simply mark as invalid - no need for timestamps
     flags.insert(prompt_key, "invalid".to_string());
-}
-
-// Try to remove prompt cache entries with different validity flags
-fn try_remove_prompt_cache_entries(base_key: &str) -> bool {
-    let mut removed = false;
-
-    // Try with "valid" flag
-    let key_with_valid = format!("{base_key}valid");
-    if GET_DISKCACHE_COMPLETION
-        .cache_remove(&key_with_valid)
-        .is_ok()
-    {
-        removed = true;
-    }
-
-    // Try with "invalid" flag
-    let key_with_invalid = format!("{base_key}invalid");
-    if GET_DISKCACHE_COMPLETION
-        .cache_remove(&key_with_invalid)
-        .is_ok()
-    {
-        removed = true;
-    }
-
-    // Flush the disk cache to ensure changes are persisted
-    if let Err(e) = GET_DISKCACHE_COMPLETION.connection().flush() {
-        log::warn!("Failed to flush disk cache: {e:?}");
-    }
-
-    removed
 }
 
 // this is a disk cache that can be used across qsv sessions
@@ -4178,47 +4159,22 @@ fn remove_cache_entry_by_key(key: &str, args: &Args, kind: PromptType, success_m
 
 // Helper function to invalidate a specific cache entry by modifying the cache key
 fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
+    let prompt_file = get_prompt_file(args)?;
+
     if kind == PromptType::Prompt {
-        // For prompt kind, invalidate the validity flag
-        let prompt_content = args.flag_prompt.as_ref();
-        invalidate_prompt_validity_flag(args, prompt_content);
+        // Invalidate the validity flag so future cache lookups miss.
+        invalidate_prompt_validity_flag(args, args.flag_prompt.as_ref());
 
-        // Use the existing helper function to remove cache entries with both "valid" and "invalid"
-        // flags
-        let prompt_file = get_prompt_file(args)?;
-        let base_key = {
-            let file_hash = FILE_HASH.get().unwrap_or(&String::new()).clone();
-            let prompt_content_for_key = args.flag_prompt.as_ref();
-
-            format!(
-                "{:?}{:?}{:?}{:?}{:?}{:?}{}{}{:?}",
-                args.arg_input,
-                args.flag_prompt_file,
-                prompt_content_for_key,
-                args.flag_max_tokens,
-                args.flag_addl_props,
-                &prompt_file.model,
-                kind,
-                file_hash,
-                args.flag_language
-            )
-        };
-
-        let removed = try_remove_prompt_cache_entries(&base_key);
-        if removed {
-            print_status(
-                &format!("Removed cache entry for {kind} due to SQL execution failure"),
-                None,
-            );
-        } else {
-            print_status(
-                &format!("Warning: Could not remove cache entry for {kind}"),
-                None,
-            );
-        }
+        // The stored key encodes whichever flag was active at write time, so purge
+        // both "valid" and "invalid" variants via the same helper used to build keys.
+        remove_prompt_cache_entries_for_both_flags(
+            args,
+            kind,
+            &prompt_file.model,
+            &format!("Removed cache entry for {kind} due to SQL execution failure"),
+        );
     } else {
-        // For other kinds, try to remove the cache entry directly
-        let prompt_file = get_prompt_file(args)?;
+        // For other kinds, remove the cache entry directly
         let key = get_cache_key(args, kind, &prompt_file.model);
         remove_cache_entry_by_key(
             &key,
@@ -4229,6 +4185,20 @@ fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
     }
 
     Ok(())
+}
+
+/// Remove `PromptType::Prompt` cache entries for both "valid" and "invalid" validity
+/// flags, since the stored key is whichever flag was current at the time it was cached.
+fn remove_prompt_cache_entries_for_both_flags(
+    args: &Args,
+    kind: PromptType,
+    actual_model: &str,
+    success_msg: &str,
+) {
+    for flag in ["valid", "invalid"] {
+        let key = get_cache_key_with_flag(args, kind, actual_model, flag);
+        remove_cache_entry_by_key(&key, args, kind, success_msg);
+    }
 }
 
 /// Track SQL error in session state if present
@@ -4473,12 +4443,17 @@ fn load_session(session_path: &Path) -> CliResult<SessionState> {
     Ok(state)
 }
 
-/// Save session state to a markdown file
+/// Save session state to a markdown file.
+///
+/// Writes atomically via a temp file in the same directory, then renames into place,
+/// so a crash mid-write leaves either the previous good file or the new one — never
+/// a truncated file.
 fn save_session(session_path: &Path, state: &SessionState) -> CliResult<()> {
-    use std::fmt::Write as _; // import without risk of name clashing
+    use std::{fmt::Write as _, io::Write as _}; // import without risk of name clashing
 
     // Ensure parent directory exists
-    if let Some(parent) = session_path.parent() {
+    let parent_dir = session_path.parent().filter(|p| !p.as_os_str().is_empty());
+    if let Some(parent) = parent_dir {
         fs::create_dir_all(parent)?;
     }
 
@@ -4532,7 +4507,17 @@ fn save_session(session_path: &Path, state: &SessionState) -> CliResult<()> {
         content.push('\n');
     }
 
-    fs::write(session_path, content)?;
+    // Atomic write: create temp file in the destination directory (so the final
+    // rename is a same-filesystem op), write+flush, then persist over the target.
+    let tmp_dir = parent_dir.unwrap_or(Path::new("."));
+    let mut tmp = tempfile::Builder::new()
+        .prefix(".describegpt-session-")
+        .suffix(".tmp")
+        .tempfile_in(tmp_dir)?;
+    tmp.as_file_mut().write_all(content.as_bytes())?;
+    tmp.as_file_mut().sync_all()?;
+    tmp.persist(session_path)
+        .map_err(|e| CliError::from(e.error))?;
     Ok(())
 }
 
@@ -4866,16 +4851,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // to prevent panics in the #[io_cached] macros.
     let diskcache_dir = if let Some(dir) = &args.flag_disk_cache_dir {
         if dir.starts_with('~') {
-            // expand the tilde
-            let expanded_dir = util::expand_tilde(dir).unwrap();
-            expanded_dir.to_string_lossy().to_string()
+            util::expand_tilde(dir)
+                .ok_or_else(|| {
+                    CliError::Other(format!(
+                        "Cannot expand tilde in --disk-cache-dir '{dir}': HOME is not set",
+                    ))
+                })?
+                .to_string_lossy()
+                .to_string()
         } else {
             dir.to_string()
         }
     } else {
-        // Default disk cache directory
-        let default_dir = util::expand_tilde("~/.qsv-cache/describegpt").unwrap();
-        default_dir.to_string_lossy().to_string()
+        util::expand_tilde("~/.qsv-cache/describegpt")
+            .ok_or_else(|| {
+                CliError::Other(
+                    "Cannot resolve default disk cache directory: HOME is not set".to_string(),
+                )
+            })?
+            .to_string_lossy()
+            .to_string()
     };
 
     // Initialize DiskCache Config unconditionally
@@ -4926,51 +4921,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // macro
                 for kind in kinds_to_remove {
                     if kind == PromptType::Prompt {
-                        // For prompt kind, we need to remove cache entries with any validity flag
-                        // Get the base key without validity flag
-                        let base_key = format!(
-                            "{:?}{:?}{:?}{:?}{:?}{:?}{}{}{:?}",
-                            args.arg_input,
-                            args.flag_prompt_file,
-                            args.flag_prompt,
-                            args.flag_max_tokens,
-                            args.flag_addl_props,
-                            prompt_file.model,
+                        // For prompt kind, the stored key depends on which validity
+                        // flag was active when cached, so remove both variants.
+                        remove_prompt_cache_entries_for_both_flags(
+                            &args,
                             kind,
-                            FILE_HASH.get().unwrap_or(&String::new()),
-                            args.flag_language
+                            &prompt_file.model,
+                            &format!("Found and removed cache entry for {kind}"),
                         );
-
-                        let removed = try_remove_prompt_cache_entries(&base_key);
-
-                        if removed {
-                            print_status(
-                                &format!("Found and removed cache entry for {kind}"),
-                                None,
-                            );
-                        } else {
-                            print_status(
-                                &format!("Warning: Cannot remove cache entry for {kind}"),
-                                None,
-                            );
-                        }
                     } else {
                         // For other kinds, use the normal key format
                         let key = get_cache_key(&args, kind, &prompt_file.model);
-
-                        if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key) {
-                            print_status(
-                                &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
-                                None,
-                            );
-                        } else {
-                            remove_cache_entry_by_key(
-                                &key,
-                                &args,
-                                kind,
-                                &format!("Found and removed cache entry for {kind}"),
-                            );
-                        }
+                        remove_cache_entry_by_key(
+                            &key,
+                            &args,
+                            kind,
+                            &format!("Found and removed cache entry for {kind}"),
+                        );
                     }
                 }
                 return Ok(());

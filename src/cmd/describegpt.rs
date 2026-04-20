@@ -363,7 +363,6 @@ use cached::{
 };
 use foldhash::{HashMap, HashMapExt, HashSet};
 use indexmap::{IndexMap, IndexSet};
-use indicatif::HumanCount;
 use minijinja::{Environment, context};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -382,6 +381,8 @@ use crate::{
 };
 #[cfg(feature = "feature_capable")]
 use crate::{lookup, lookup::LookupTableOptions};
+
+mod formatters;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
@@ -1718,251 +1719,6 @@ fn replace_attribution_placeholder(
     text.replace("{GENERATED_BY_SIGNATURE}", &attribution)
 }
 
-/// Extract ordered additional column names from entries
-/// Returns columns in the order they appear in IndexMap (preserves insertion order)
-fn extract_ordered_addl_cols(entries: &[DictionaryEntry]) -> Vec<String> {
-    // Get the ordered column names from the first entry (all entries should have the same order)
-    // IndexMap preserves insertion order, so we can iterate over keys directly
-    entries
-        .first()
-        .map(|e| e.addl_cols.keys().cloned().collect())
-        .unwrap_or_default()
-}
-
-/// Format dictionary entries as markdown table
-fn format_dictionary_markdown(entries: &[DictionaryEntry]) -> String {
-    use std::fmt::Write;
-
-    // Determine which additional columns are present (preserving order)
-    let addl_col_names = extract_ordered_addl_cols(entries);
-
-    let mut output = String::with_capacity(1024); //from("# Data Dictionary\n");
-
-    // Build header row
-    output.push_str(
-        "| Name | Type | Label | Description | Min | Max | Cardinality | Enumeration | Null Count",
-    );
-    for col_name in &addl_col_names {
-        let _ = write!(output, " | {col_name}");
-    }
-    output.push_str(" | Examples |\n");
-
-    // Build separator row
-    output.push_str(
-        "|------|------|-------|-------------|-----|-----|-------------|-------------|------------",
-    );
-    for _ in &addl_col_names {
-        output.push_str("|----------");
-    }
-    output.push_str("|----------|\n");
-
-    for entry in entries {
-        // Escape pipe characters in markdown table cells
-        let name = entry.name.replace('|', "\\|");
-        let r#type = entry.r#type.replace('|', "\\|");
-        let label = entry.label.replace('|', "\\|");
-        let description = entry.description.replace('|', "\\|").replace('\n', "<br>");
-        let min = entry.min.replace('|', "\\|");
-        let max = entry.max.replace('|', "\\|");
-        let enumeration = entry.enumeration.replace('|', "\\|");
-        let examples = entry.examples.replace('|', "\\|");
-
-        // Format enumeration: if empty, show empty string, otherwise show values on separate lines
-        let enumeration_display = if enumeration.is_empty() {
-            String::new()
-        } else {
-            // Replace newlines with <br> for markdown table compatibility
-            enumeration.replace('\n', "<br>")
-        };
-
-        // Format examples: replace newlines with <br> and format counts using HumanCount
-        let examples_display = if examples == "<ALL_UNIQUE>" {
-            examples.clone()
-        } else {
-            // Parse and reformat counts in examples (format: "value [count]")
-            examples
-                .lines()
-                .map(|line| {
-                    if let Some(pos) = line.rfind(" [") {
-                        let (value_part, count_part) = line.split_at(pos + 2);
-                        if let Some(end_pos) = count_part.find(']') {
-                            let count_str = &count_part[..end_pos];
-                            if let Ok(count) = count_str.parse::<u64>() {
-                                format!(
-                                    "{} [{}]",
-                                    value_part.trim_end_matches(" ["),
-                                    HumanCount(count)
-                                )
-                            } else {
-                                line.to_string()
-                            }
-                        } else {
-                            line.to_string()
-                        }
-                    } else {
-                        line.to_string()
-                    }
-                })
-                .collect::<Vec<String>>()
-                .join("<br>")
-        };
-
-        // Build row with additional columns
-        let _ = write!(
-            output,
-            "| **{}** | {} | {} | {} | {} | {} | {} | {} | {}",
-            name,
-            r#type,
-            label,
-            description,
-            min,
-            max,
-            HumanCount(entry.cardinality),
-            enumeration_display,
-            HumanCount(entry.null_count)
-        );
-
-        // Add additional columns
-        for col_name in &addl_col_names {
-            let value = entry
-                .addl_cols
-                .get(col_name)
-                .map(|v| {
-                    if col_name == "percentiles" {
-                        // Replace | with <br> for readability in percentiles
-                        v.replace(['|', '\n'], "<br>")
-                    } else {
-                        v.replace('|', "\\|").replace('\n', "<br>")
-                    }
-                })
-                .unwrap_or_default();
-            let _ = write!(output, " | {value}");
-        }
-
-        // Add Examples column
-        let _ = writeln!(output, " | {examples_display} |");
-    }
-
-    // Add attribution at the bottom
-    output.push_str("\n*Attribution: {GENERATED_BY_SIGNATURE}*\n");
-
-    output
-}
-
-/// Format dictionary entries as JSON
-fn format_dictionary_json(entries: &[DictionaryEntry], args: &Args) -> serde_json::Value {
-    let entries_json: Vec<serde_json::Value> = entries
-        .iter()
-        .map(|e| {
-            let mut entry_obj = json!({
-                "name": e.name,
-                "type": e.r#type,
-                "label": e.label,
-                "description": e.description,
-                "min": if e.min.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(e.min.clone()) },
-                "max": if e.max.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(e.max.clone()) },
-                "cardinality": e.cardinality,
-                "enumeration": if e.enumeration.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(e.enumeration.clone()) },
-                "null_count": e.null_count,
-            });
-
-            // Add additional columns to the JSON object
-            if let Some(obj) = entry_obj.as_object_mut() {
-                for (key, value) in &e.addl_cols {
-                    let json_value = if value.is_empty() {
-                        serde_json::Value::Null
-                    } else if key == "percentiles" {
-                        // Replace | with \n for readability in percentiles
-                        serde_json::Value::String(value.replace('|', "\n"))
-                    } else {
-                        serde_json::Value::String(value.clone())
-                    };
-                    obj.insert(key.clone(), json_value);
-                }
-                // Add examples at the end
-                obj.insert("examples".to_string(), json!(e.examples));
-            }
-
-            entry_obj
-        })
-        .collect();
-
-    json!({
-        "fields": entries_json,
-        "enum_threshold": args.flag_enum_threshold,
-        "num_examples": args.flag_num_examples,
-        "truncate_str": args.flag_truncate_str,
-        "attribution": "{GENERATED_BY_SIGNATURE}"
-    })
-}
-
-/// Format dictionary entries as TSV
-fn format_dictionary_tsv(entries: &[DictionaryEntry]) -> String {
-    use std::fmt::Write;
-
-    // Determine which additional columns are present (preserving order)
-    let addl_col_names = extract_ordered_addl_cols(entries);
-
-    let mut output = String::with_capacity(1024);
-    // TSV header
-    output
-        .push_str("Name\tType\tLabel\tDescription\tMin\tMax\tCardinality\tEnumeration\tNull Count");
-    for col_name in &addl_col_names {
-        let _ = write!(output, "\t{col_name}");
-    }
-    output.push_str("\tExamples\n");
-
-    for entry in entries {
-        // Escape tabs and newlines in TSV cells
-        let name = entry.name.replace(['\t', '\n', '\r'], " ");
-        let r#type = entry.r#type.replace(['\t', '\n', '\r'], " ");
-        let label = entry.label.replace(['\t', '\n', '\r'], " ");
-        let description = entry.description.replace(['\t', '\n', '\r'], " ");
-        let min = entry.min.replace(['\t', '\n', '\r'], " ");
-        let max = entry.max.replace(['\t', '\n', '\r'], " ");
-        let enumeration = entry.enumeration.replace(['\t', '\n', '\r'], " ");
-        let examples = entry.examples.replace(['\t', '\n', '\r'], " ");
-
-        // Build row with additional columns
-        let _ = write!(
-            output,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            name,
-            r#type,
-            label,
-            description,
-            min,
-            max,
-            HumanCount(entry.cardinality),
-            enumeration,
-            HumanCount(entry.null_count)
-        );
-
-        // Add additional columns
-        for col_name in &addl_col_names {
-            let value = entry
-                .addl_cols
-                .get(col_name)
-                .map(|v| {
-                    if col_name == "percentiles" {
-                        // Replace | and newlines with "; " for readability in percentiles
-                        // then escape tabs and carriage returns
-                        v.replace(['|', '\n'], "; ").replace(['\t', '\r'], " ")
-                    } else {
-                        v.replace(['\t', '\n', '\r'], " ")
-                    }
-                })
-                .unwrap_or_default();
-            let _ = write!(output, "\t{value}");
-        }
-
-        // Add Examples column
-        let _ = writeln!(output, "\t{examples}");
-    }
-
-    output
-}
-
 /// Format token usage and reasoning as comment lines for TSV
 fn format_token_usage_comments(reasoning: &str, token_usage: &TokenUsage) -> String {
     format!(
@@ -2834,7 +2590,12 @@ fn process_phase_output(
             parse_llm_dictionary_response(&completion_response.response, &field_names)
                 .unwrap_or_default();
         let combined_entries = combine_dictionary_entries(code_entries, &llm_labels_descriptions);
-        let mut dictionary_json = format_dictionary_json(&combined_entries, args);
+        let mut dictionary_json = formatters::format_dictionary_json(
+            &combined_entries,
+            args.flag_enum_threshold,
+            args.flag_num_examples,
+            args.flag_truncate_str,
+        );
         if let Some(attribution) = dictionary_json.get_mut("attribution")
             && let Some(attr_str) = attribution.as_str()
         {
@@ -2873,7 +2634,12 @@ fn process_phase_output(
         let combined_entries = combine_dictionary_entries(code_entries, &llm_labels_descriptions);
 
         if output_format == OutputFormat::Json || output_format == OutputFormat::Toon {
-            let mut dictionary_json = format_dictionary_json(&combined_entries, args);
+            let mut dictionary_json = formatters::format_dictionary_json(
+                &combined_entries,
+                args.flag_enum_threshold,
+                args.flag_num_examples,
+                args.flag_truncate_str,
+            );
             if let Some(attribution) = dictionary_json.get_mut("attribution")
                 && let Some(attr_str) = attribution.as_str()
             {
@@ -2894,12 +2660,17 @@ fn process_phase_output(
             DATA_DICTIONARY_JSON
                 .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
         } else if output_format == OutputFormat::Tsv {
-            let mut tsv_output = format_dictionary_tsv(&combined_entries);
+            let mut tsv_output = formatters::format_dictionary_tsv(&combined_entries);
             tsv_output.push_str(&format_token_usage_comments(
                 &completion_response.reasoning,
                 &completion_response.token_usage,
             ));
-            let dictionary_json = format_dictionary_json(&combined_entries, args);
+            let dictionary_json = formatters::format_dictionary_json(
+                &combined_entries,
+                args.flag_enum_threshold,
+                args.flag_num_examples,
+                args.flag_truncate_str,
+            );
             DATA_DICTIONARY_JSON
                 .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
             if let Some(output) = &args.flag_output {
@@ -2910,7 +2681,7 @@ fn process_phase_output(
             }
         } else {
             // Markdown
-            let mut markdown_output = format_dictionary_markdown(&combined_entries);
+            let mut markdown_output = formatters::format_dictionary_markdown(&combined_entries);
             markdown_output = replace_attribution_placeholder(
                 &markdown_output,
                 args,
@@ -2926,7 +2697,12 @@ fn process_phase_output(
                 completion_response.reasoning,
                 completion_response.token_usage
             );
-            let dictionary_json = format_dictionary_json(&combined_entries, args);
+            let dictionary_json = formatters::format_dictionary_json(
+                &combined_entries,
+                args.flag_enum_threshold,
+                args.flag_num_examples,
+                args.flag_truncate_str,
+            );
             DATA_DICTIONARY_JSON
                 .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
             if let Some(output) = &args.flag_output {

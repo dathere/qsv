@@ -2674,7 +2674,7 @@ fn build_inference_messages(
         messages.push(json!({"role": "user", "content": prompt}));
     }
 
-    json!(messages)
+    serde_json::Value::Array(messages)
 }
 
 /// Run the Data Dictionary inference phase. Returns the completion so later phases
@@ -3039,7 +3039,7 @@ fn execute_sql_query_phase(
     else {
         // Invalidate the prompt cache entry so user can try again without reinferring
         // the dictionary
-        if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
+        if cache_type != &CacheType::None {
             let _ = invalidate_cache_entry(args, PromptType::Prompt);
         }
         return fail_clierror!("Failed to extract SQL query from custom prompt response");
@@ -3233,7 +3233,7 @@ fn execute_sql_query_phase(
                             session_path_owned.as_ref(),
                             format!("DuckDB SQL query execution failed: {stderr}"),
                         );
-                        if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
+                        if cache_type != &CacheType::None {
                             let _ = invalidate_cache_entry(args, PromptType::Prompt);
                         }
                         return fail_clierror!("DuckDB SQL query execution failed: {stderr}");
@@ -3246,7 +3246,7 @@ fn execute_sql_query_phase(
                         session_path_owned.as_ref(),
                         format!("DuckDB SQL query execution failed: {e}"),
                     );
-                    if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
+                    if cache_type != &CacheType::None {
                         let _ = invalidate_cache_entry(args, PromptType::Prompt);
                     }
                     return Err(e);
@@ -3364,7 +3364,7 @@ fn execute_sql_query_phase(
 
     #[cfg(not(feature = "polars"))]
     {
-        if cache_type != &CacheType::Fresh && cache_type != &CacheType::None {
+        if cache_type != &CacheType::None {
             let _ = invalidate_cache_entry(args, PromptType::Prompt);
         }
         fail_clierror!(

@@ -233,7 +233,7 @@ polars = { version = "0.53", features = [
 ], optional = true }
 pyo3 = { version = "0.28", features = ["auto-initialize"], optional = true }
 qsv-dateparser = "0.14"
-qsv_docopt = "1.9"
+qsv_docopt = "1.10"
 qsv-stats = "0.49"
 qsv_currency = "0.7"
 qsv-tabwriter = "2"

@@ -6199,9 +6199,9 @@ dependencies = [
 
 [[package]]
 name = "qsv_docopt"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1016abf6a80828727b29243436e1a825c9cadd0f833ef3d8774d7b280acea7c5"
+checksum = "680f8cbd84ff404d63eca9ca9d4d32252f78a0d9a81eec85fc5d4edabc0eaa40"
 dependencies = [
  "ahash 0.8.12",
  "regex",

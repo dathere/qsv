@@ -1466,28 +1466,37 @@ fn generate_code_based_dictionary(
     dictionary_entries
 }
 
-/// Extract JSON from LLM response AND Output using common pattern
+/// Extract a single JSON value from an LLM response.
+///
+/// Strategy (in order):
+/// 1. If a markdown code fence (```json … ``` or ``` … ```) is present, try to parse the content
+///    inside it.
+/// 2. Starting at the first `{` or `[` in the response, use `serde_json`'s streaming parser so
+///    balanced braces/brackets are matched correctly even when the JSON contains `}` or `]` inside
+///    string values. The streaming parser also allows trailing explanation text after the JSON.
+/// 3. As a last resort, run `try_fix_json` (which escapes unescaped newlines / tabs / CRs inside
+///    strings) on the same substring and re-parse.
 fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
-    // Helper function to validate and return JSON candidate
-    fn validate_json_candidate(candidate: &str) -> Option<serde_json::Value> {
-        serde_json::from_str::<serde_json::Value>(candidate.trim()).ok()
+    fn parse_first_value(s: &str) -> Option<serde_json::Value> {
+        serde_json::Deserializer::from_str(s)
+            .into_iter::<serde_json::Value>()
+            .next()
+            .and_then(Result::ok)
     }
 
-    // Helper function to try to fix common JSON issues,
-    // particularly unescaped newlines in strings
+    /// Escape literal newlines / CRs / tabs that appear inside string values.
+    /// Only runs when strict parsing fails, so already-valid JSON is untouched.
     fn try_fix_json(json_str: &str) -> String {
         let mut result = String::with_capacity(json_str.len());
-        let chars = json_str.chars();
         let mut in_string = false;
         let mut escape_next = false;
 
-        for ch in chars {
+        for ch in json_str.chars() {
             if escape_next {
                 result.push(ch);
                 escape_next = false;
                 continue;
             }
-
             match ch {
                 '\\' => {
                     result.push(ch);
@@ -1497,91 +1506,35 @@ fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
                     result.push(ch);
                     in_string = !in_string;
                 },
-                '\n' if in_string => {
-                    // Escape newlines inside strings
-                    result.push_str("\\n");
-                },
-                '\r' if in_string => {
-                    // Escape carriage returns inside strings
-                    result.push_str("\\r");
-                },
-                '\t' if in_string => {
-                    // Escape tabs inside strings
-                    result.push_str("\\t");
-                },
-                _ => {
-                    result.push(ch);
-                },
+                '\n' if in_string => result.push_str("\\n"),
+                '\r' if in_string => result.push_str("\\r"),
+                '\t' if in_string => result.push_str("\\t"),
+                _ => result.push(ch),
             }
         }
-
         result
     }
 
-    // Helper function to try parsing with fallback to fixed version
-    fn try_parse_json(candidate: &str) -> Option<serde_json::Value> {
-        // First try parsing as-is
-        if let Some(json) = validate_json_candidate(candidate) {
-            return Some(json);
+    fn attempt(candidate: &str) -> Option<serde_json::Value> {
+        if let Some(v) = parse_first_value(candidate) {
+            return Some(v);
         }
-        // If that fails, try fixing common issues
-        let fixed = try_fix_json(candidate);
-        validate_json_candidate(&fixed)
+        parse_first_value(&try_fix_json(candidate))
     }
 
-    // Pattern 1: JSON wrapped in ```json and ``` blocks (improved regex to handle multiline)
-    if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*?)\n```").captures(output)
+    // Accept ```json\n…\n``` or ```\n…\n```. The fence inner can contain any text.
+    let fence_re = regex_oncelock!(r"(?s)```(?:json)?\s*\n(.*?)\n\s*```");
+    if let Some(caps) = fence_re.captures(output)
         && let Some(m) = caps.get(1)
-        && let Some(valid_json) = try_parse_json(m.as_str())
+        && let Some(v) = attempt(m.as_str().trim())
     {
-        return Ok(valid_json);
+        return Ok(v);
     }
 
-    // Pattern 1b: JSON wrapped in ```json and ``` blocks (greedy match as fallback)
-    if let Some(caps) = regex_oncelock!(r"(?s)```json\s*\n(.*)\n```").captures(output)
-        && let Some(m) = caps.get(1)
-        && let Some(valid_json) = try_parse_json(m.as_str())
+    if let Some(start) = output.find(['{', '['])
+        && let Some(v) = attempt(&output[start..])
     {
-        return Ok(valid_json);
-    }
-
-    // Pattern 2: JSON wrapped in ``` and ``` blocks (without json specifier)
-    if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*?)\n```").captures(output)
-        && let Some(m) = caps.get(1)
-        && let Some(valid_json) = try_parse_json(m.as_str())
-    {
-        return Ok(valid_json);
-    }
-
-    // Pattern 2b: JSON wrapped in ``` and ``` blocks (greedy match as fallback)
-    if let Some(caps) = regex_oncelock!(r"(?s)```\s*\n(.*)\n```").captures(output)
-        && let Some(m) = caps.get(1)
-        && let Some(valid_json) = try_parse_json(m.as_str())
-    {
-        return Ok(valid_json);
-    }
-
-    // Pattern 3: Try to find JSON array or object at the start of the response
-    if let Some(caps) = regex_oncelock!(r"(?s)^\s*(\[.*?\]|\{.*?\})").captures(output)
-        && let Some(m) = caps.get(1)
-        && let Some(valid_json) = try_parse_json(m.as_str())
-    {
-        return Ok(valid_json);
-    }
-
-    // Pattern 4: Try to find JSON array or object anywhere in the response (non-greedy)
-    if let Some(caps) = regex_oncelock!(r"(?s)(\[.*?\]|\{.*?\})").captures(output)
-        && let Some(m) = caps.get(1)
-        && let Some(valid_json) = try_parse_json(m.as_str())
-    {
-        return Ok(valid_json);
-    }
-
-    // If no pattern matches, return the entire output (might be raw JSON)
-    if (output.trim().starts_with('[') || output.trim().starts_with('{'))
-        && let Some(valid_json) = try_parse_json(output)
-    {
-        return Ok(valid_json);
+        return Ok(v);
     }
 
     fail_clierror!(
@@ -5618,5 +5571,125 @@ fn get_cached_analysis(
             Ok(Some(result.value))
         },
         CacheType::None => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_json_handles_fenced_json() {
+        let out = "Here is the result:\n```json\n{\"a\": 1, \"b\": \"x\"}\n```\nTrailing text.";
+        let v = extract_json_from_output(out).unwrap();
+        assert_eq!(v["a"], 1);
+        assert_eq!(v["b"], "x");
+    }
+
+    #[test]
+    fn extract_json_handles_unfenced_with_trailing_text() {
+        let out = "{\"k\": 42}\n\nThe value is 42.";
+        let v = extract_json_from_output(out).unwrap();
+        assert_eq!(v["k"], 42);
+    }
+
+    #[test]
+    fn extract_json_handles_braces_inside_strings() {
+        // The old non-greedy regex would stop at the first `}`, truncating and
+        // corrupting this. The streaming parser handles it correctly.
+        let out = r#"Response: {"sql": "SELECT * FROM t WHERE x = '}'", "ok": true}"#;
+        let v = extract_json_from_output(out).unwrap();
+        assert_eq!(v["sql"], "SELECT * FROM t WHERE x = '}'");
+        assert_eq!(v["ok"], true);
+    }
+
+    #[test]
+    fn extract_json_handles_array() {
+        let out = "The tags are:\n[\"one\", \"two\", \"three\"]";
+        let v = extract_json_from_output(out).unwrap();
+        assert_eq!(v.as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn extract_json_repairs_unescaped_newlines_in_string() {
+        // Actual newline between "line1" and "line2" inside a JSON string — invalid JSON,
+        // but try_fix_json should escape it and allow parsing.
+        let out = "{\"s\": \"line1\nline2\"}";
+        let v = extract_json_from_output(out).unwrap();
+        assert_eq!(v["s"], "line1\nline2");
+    }
+
+    #[test]
+    fn extract_json_errors_on_non_json() {
+        let err = extract_json_from_output("no json here").unwrap_err();
+        assert!(format!("{err}").contains("Failed to extract JSON"));
+    }
+
+    #[test]
+    fn cache_key_round_trip_preserves_format() {
+        // get_cache_key and get_cache_key_with_flag must produce matching keys
+        // so that invalidation can reconstruct the stored key.
+        let mut args = default_args_for_test();
+        args.arg_input = Some("foo.csv".to_string());
+        args.flag_prompt = Some("ask".to_string());
+        args.flag_max_tokens = 1000;
+        args.flag_language = Some("en".to_string());
+
+        let key_via_get = get_cache_key(&args, PromptType::Prompt, "gpt-x");
+        let key_via_flag = get_cache_key_with_flag(&args, PromptType::Prompt, "gpt-x", "valid");
+        assert_eq!(key_via_get, key_via_flag);
+    }
+
+    /// Minimal Args for unit tests: zero-values everywhere.
+    fn default_args_for_test() -> Args {
+        Args {
+            arg_input:              None,
+            flag_dictionary:        false,
+            flag_description:       false,
+            flag_tags:              false,
+            flag_all:               false,
+            flag_num_tags:          0,
+            flag_tag_vocab:         None,
+            flag_cache_dir:         String::new(),
+            flag_ckan_api:          String::new(),
+            flag_ckan_token:        None,
+            flag_stats_options:     String::new(),
+            flag_freq_options:      String::new(),
+            flag_enum_threshold:    0,
+            flag_num_examples:      0,
+            flag_truncate_str:      0,
+            flag_prompt:            None,
+            flag_sql_results:       None,
+            flag_prompt_file:       None,
+            flag_sample_size:       0,
+            flag_fewshot_examples:  false,
+            flag_base_url:          None,
+            flag_model:             None,
+            flag_language:          None,
+            flag_addl_props:        None,
+            flag_api_key:           None,
+            flag_max_tokens:        0,
+            flag_timeout:           0,
+            flag_user_agent:        None,
+            flag_export_prompt:     None,
+            flag_no_cache:          true,
+            flag_disk_cache_dir:    None,
+            flag_redis_cache:       false,
+            flag_fresh:             false,
+            flag_forget:            false,
+            flag_flush_cache:       false,
+            flag_prepare_context:   false,
+            flag_process_response:  false,
+            flag_format:            None,
+            flag_output:            None,
+            flag_quiet:             false,
+            flag_addl_cols:         false,
+            flag_addl_cols_list:    None,
+            flag_session:           None,
+            flag_session_len:       0,
+            flag_no_score_sql:      false,
+            flag_score_threshold:   0,
+            flag_score_max_retries: 0,
+        }
     }
 }

@@ -2081,8 +2081,9 @@ fn get_cached_completion(
     }
 }
 
-/// Unescape and pad output for non-dictionary, non-structured phase responses.
-fn format_output_str(s: &str) -> String {
+/// Unescape literal escape sequences emitted by the LLM (\n, \t, \", \', \`) and
+/// append trailing blank lines. Used before rendering an LLM response as Markdown.
+fn unescape_llm_output_str(s: &str) -> String {
     s.replace("\\n", "\n")
         .replace("\\t", "\t")
         .replace("\\\"", "\"")
@@ -2091,15 +2092,14 @@ fn format_output_str(s: &str) -> String {
         + "\n\n"
 }
 
-/// Dictionary phase when `--prompt` is active: still build the dictionary JSON and stash it
-/// in `DATA_DICTIONARY_JSON` for later prompt rendering, but emit no output.
-fn emit_dictionary_context_only(
+/// Run the shared dictionary-entry build pipeline used by both dictionary output
+/// paths: parse the stats + frequency CSVs, merge code-generated entries with any
+/// LLM-provided labels / descriptions, and return the combined list.
+fn build_combined_dictionary_entries(
     args: &Args,
     analysis_results: &AnalysisResults,
     completion_response: &CompletionResponse,
-    model: &str,
-    base_url: &str,
-) -> CliResult<()> {
+) -> CliResult<Vec<dictionary::DictionaryEntry>> {
     let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
     let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
     let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
@@ -2116,7 +2116,23 @@ fn emit_dictionary_context_only(
     let llm_labels_descriptions =
         parse_llm_dictionary_response(&completion_response.response, &field_names)
             .unwrap_or_default();
-    let combined_entries = combine_dictionary_entries(code_entries, &llm_labels_descriptions);
+    Ok(combine_dictionary_entries(
+        code_entries,
+        &llm_labels_descriptions,
+    ))
+}
+
+/// Dictionary phase when `--prompt` is active: still build the dictionary JSON and stash it
+/// in `DATA_DICTIONARY_JSON` for later prompt rendering, but emit no output.
+fn emit_dictionary_context_only(
+    args: &Args,
+    analysis_results: &AnalysisResults,
+    completion_response: &CompletionResponse,
+    model: &str,
+    base_url: &str,
+) -> CliResult<()> {
+    let combined_entries =
+        build_combined_dictionary_entries(args, analysis_results, completion_response)?;
     let mut dictionary_json = formatters::format_dictionary_json(
         &combined_entries,
         args.flag_enum_threshold,
@@ -2151,23 +2167,8 @@ fn format_dictionary_phase(
     base_url: &str,
     output_format: OutputFormat,
 ) -> CliResult<()> {
-    let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
-    let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
-    let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
-    let addl_cols = determine_addl_cols(args, &avail_cols);
-    let code_entries = generate_code_based_dictionary(
-        &stats_records,
-        &frequency_records,
-        args.flag_enum_threshold,
-        args.flag_num_examples,
-        args.flag_truncate_str,
-        &addl_cols,
-    );
-    let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
-    let llm_labels_descriptions =
-        parse_llm_dictionary_response(&completion_response.response, &field_names)
-            .unwrap_or_default();
-    let combined_entries = combine_dictionary_entries(code_entries, &llm_labels_descriptions);
+    let combined_entries =
+        build_combined_dictionary_entries(args, analysis_results, completion_response)?;
 
     if output_format == OutputFormat::Json || output_format == OutputFormat::Toon {
         let mut dictionary_json = formatters::format_dictionary_json(
@@ -2415,13 +2416,18 @@ fn format_phase_toon(
 
 /// Non-dictionary phase output to Markdown / plaintext.
 /// Also handles the SQL-response fallthrough when `is_sql_response` is true for the Prompt kind.
+/// `is_sql_response` can only be true when `kind == Prompt` — enforced via `debug_assert!`.
 fn format_phase_markdown(
     kind: PromptType,
     args: &Args,
     completion_response: &CompletionResponse,
     is_sql_response: bool,
 ) -> CliResult<()> {
-    let mut formatted_output = format_output_str(&completion_response.response);
+    debug_assert!(
+        !is_sql_response || kind == PromptType::Prompt,
+        "is_sql_response must only be set for PromptType::Prompt, got kind={kind:?}"
+    );
+    let mut formatted_output = unescape_llm_output_str(&completion_response.response);
     if kind == PromptType::Prompt && is_sql_response {
         formatted_output = {
             let input_path = args.arg_input.as_deref().unwrap_or("input.csv");
@@ -2495,6 +2501,10 @@ fn process_phase_output(
         && args.flag_sql_results.is_some()
         && completion_response.response.contains("```sql");
 
+    // SQL responses (for any requested output format) always fall through to the markdown
+    // helper, which renders the SQL block and handles the read_csv_auto / INPUT_TABLE_NAME
+    // rewrite. Markdown requests also land there. New `OutputFormat` variants MUST pick
+    // a branch explicitly rather than relying on the `_` fallback.
     match (output_format, is_sql_response) {
         (OutputFormat::Json, false) => {
             format_phase_json(kind, args, completion_response, total_json_output);

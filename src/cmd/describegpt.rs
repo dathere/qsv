@@ -2995,7 +2995,7 @@ fn execute_sql_query_phase(
     session_state: &mut Option<SessionState>,
     normalized_session_path: Option<&str>,
 ) -> CliResult<()> {
-    // Bind once so the 4 error-path track_sql_error_in_session call sites below
+    // Bind once so the error-path track_sql_error_in_session call sites below
     // pass a borrow instead of allocating a fresh String each time.
     let session_path_owned: Option<String> = normalized_session_path.map(String::from);
 

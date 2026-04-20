@@ -2698,15 +2698,18 @@ fn run_dictionary_phase(
 
     // Special case: if --prompt is used with --fresh, force non-Fresh cache for the
     // dictionary so the prompt phase can reuse it without re-inferring.
-    let dictionary_cache_type = if args.flag_prompt.is_some() && args.flag_fresh {
-        if args.flag_redis_cache {
-            &CacheType::Redis
+    // Gate on caching actually being enabled — otherwise `--no-cache --prompt X --fresh`
+    // would silently re-enable Disk/Redis caching just for the dictionary phase.
+    let dictionary_cache_type =
+        if args.flag_prompt.is_some() && args.flag_fresh && cache_type != &CacheType::None {
+            if args.flag_redis_cache {
+                &CacheType::Redis
+            } else {
+                &CacheType::Disk
+            }
         } else {
-            &CacheType::Disk
-        }
-    } else {
-        cache_type
-    };
+            cache_type
+        };
 
     let data_dict = get_cached_completion(
         args,
@@ -2999,16 +3002,21 @@ fn execute_sql_query_phase(
     // pass a borrow instead of allocating a fresh String each time.
     let session_path_owned: Option<String> = normalized_session_path.map(String::from);
 
-    // Check if file exists and is writable, or can be created
+    // Check that the primary SQL-results path is writable, or can be created. Also probe
+    // the `.csv` sibling the Polars path renames to (DuckDB writes directly to
+    // `sql_results`, so the sibling may not exist there — read-only detection is
+    // best-effort and only fires if the sibling already exists).
     let sql_results_path = Path::new(sql_results);
-    if sql_results_path.exists() {
-        if fs::metadata(sql_results_path)?.permissions().readonly() {
+    let sql_results_csv_path = sql_results_path.with_extension("csv");
+    for candidate in [sql_results_path, sql_results_csv_path.as_path()] {
+        if candidate.exists() && fs::metadata(candidate)?.permissions().readonly() {
             return fail_clierror!(
                 "SQL results file exists but is not writable: {}",
-                sql_results_path.display()
+                candidate.display()
             );
         }
-    } else {
+    }
+    if !sql_results_path.exists() {
         match fs::File::create(sql_results_path) {
             Ok(_) => {
                 fs::remove_file(sql_results_path)?;
@@ -3536,7 +3544,18 @@ fn run_inference_options(
     print_status("LLM inference/s completed.", Some(llm_start.elapsed()));
 
     if let Some(output) = &args.flag_output {
-        print_status(&format!("Output written to {output}"), None);
+        // TSV mode doesn't write a single file at the --output path; per-phase helpers
+        // derive per-kind siblings via `get_tsv_output_path` (e.g. `{filestem}.tags.tsv`).
+        // Surface that in the status so users don't look for `output` verbatim.
+        let message = if output_format == OutputFormat::Tsv {
+            format!(
+                "TSV output written using {output} as the base path (one derived file per phase, \
+                 e.g. {{filestem}}.{{kind}}.tsv)"
+            )
+        } else {
+            format!("Output written to {output}")
+        };
+        print_status(&message, None);
     }
 
     if let Some(sql_results) = &args.flag_sql_results

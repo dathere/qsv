@@ -3272,16 +3272,29 @@ fn determine_cache_kinds_to_remove(args: &Args) -> Vec<PromptType> {
 fn remove_cache_entry_by_key(key: &str, args: &Args, kind: PromptType, success_msg: &str) {
     if args.flag_redis_cache {
         let conn_str = &REDISCONFIG.get().unwrap().conn_str;
-        if let Ok(redis_client) = redis::Client::open(conn_str.to_string())
-            && let Ok(mut redis_conn) = redis_client.get_connection()
-        {
-            match redis::cmd("DEL").arg(key).exec(&mut redis_conn) {
-                Ok(()) => print_status(success_msg, None),
+        match redis::Client::open(conn_str.to_string()) {
+            Err(e) => print_status(
+                &format!(
+                    "Warning: Cannot open Redis client for removing cache entry for {kind}: {e:?}"
+                ),
+                None,
+            ),
+            Ok(redis_client) => match redis_client.get_connection() {
                 Err(e) => print_status(
-                    &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
+                    &format!(
+                        "Warning: Cannot connect to Redis for removing cache entry for {kind}: \
+                         {e:?}"
+                    ),
                     None,
                 ),
-            }
+                Ok(mut redis_conn) => match redis::cmd("DEL").arg(key).exec(&mut redis_conn) {
+                    Ok(()) => print_status(success_msg, None),
+                    Err(e) => print_status(
+                        &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
+                        None,
+                    ),
+                },
+            },
         }
     } else if !args.flag_no_cache {
         let key_string = key.to_string();

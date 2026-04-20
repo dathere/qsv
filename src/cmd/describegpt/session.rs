@@ -303,12 +303,17 @@ pub(super) fn update_session_after_sql_success(
     sql_query: &str,
 ) {
     if let Some(state) = session_state {
+        // SQL execution succeeded, so any previously-recorded errors are stale —
+        // clear them unconditionally. Sampling the results is best-effort: if it
+        // fails (missing file, permission, parse error), we still clear errors
+        // and set the baseline; we just skip updating sql_results.
+        state.sql_errors.clear();
+
         let results_path = Path::new(sql_results).with_extension("csv");
         if results_path.exists()
             && let Ok(sample) = extract_sql_sample(&results_path)
         {
             state.sql_results = Some(sample);
-            state.sql_errors.clear();
         }
 
         // Baseline SQL is only set after a successful execution, so we don't
@@ -446,7 +451,15 @@ pub(super) fn check_message_relevance(
 
     let model = check_model(client, Some(api_key), args)?;
     let completion = get_completion(args, client, &model, api_key, &messages, PromptType::Prompt)?;
-    let response_lower = completion.response.to_lowercase().trim().to_string();
 
-    Ok(response_lower.contains("yes") || response_lower == "y")
+    // The system prompt asks for "yes" / "no". Be strict so tokens that merely
+    // contain "yes" (e.g. "yesterday") don't get read as affirmative. Accept
+    // "yes" / "y" exactly, optionally followed by punctuation, plus "yes, …"
+    // or "yes." leading responses.
+    let response_lower = completion.response.to_lowercase();
+    let trimmed = response_lower
+        .trim()
+        .trim_end_matches(['.', ',', '!', '?', ' ']);
+
+    Ok(trimmed == "yes" || trimmed == "y" || trimmed.starts_with("yes "))
 }

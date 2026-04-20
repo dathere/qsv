@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `describegpt`: widen cache key to cover all template-affecting flags (`--tag-vocab`, `--num-tags`, `--enum-threshold`, `--sample-size`, `--fewshot-examples`, the `QSV_DUCKDB_PATH` toggle, and the generated Data Dictionary). Previously, changing any of these between runs silently returned stale cached output. First run after upgrade will re-invoke the LLM once per phase as prior cache entries no longer match.
+
+### Changed
+- `describegpt`: split `process_phase_output` into per-branch helpers (dictionary context-only, full dictionary, JSON, TSV, TOON, Markdown). No behavior change — same output, smaller functions.
+
 ## [19.1.0] - 2026-04-12
 
 ### Added

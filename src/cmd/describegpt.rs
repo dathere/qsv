@@ -50,8 +50,10 @@ NOTE: LLMs are prone to inaccurate information being produced. Verify output res
 CACHING:
 As LLM inferencing takes time and can be expensive, describegpt caches the LLM inferencing results
 in a either a disk cache (default) or a Redis cache. It does so by calculating the BLAKE3 hash of the
-input file and using it as the primary cache key along with the prompt type, model and other parameters
-as required.
+input file and using it as the primary cache key along with the prompt type, model and every flag that
+influences the rendered prompt (including prompt-file, language, tag-vocab, num-tags, enum-threshold,
+sample-size, fewshot-examples, the QSV_DUCKDB_PATH toggle and the generated Data Dictionary), so
+changing any of them produces a fresh LLM call rather than stale cached output.
 
 The default disk cache is stored in the ~/.qsv-cache/describegpt directory with a default TTL of 28 days
 and cache hits NOT refreshing an existing cached value's TTL.
@@ -1726,9 +1728,66 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
     get_cache_key_with_flag(args, kind, actual_model, &validity_flag)
 }
 
+/// Per-process memo of `path_fingerprint` results, keyed by `"<path>:<mtime_nanos>:<size>"`.
+/// `get_cache_key_with_flag` runs once per phase lookup (and again on invalidation paths), so
+/// without memoization a ~100MB DuckDB binary would be re-hashed several times per run.
+/// Keying on stat metadata as well as path means in-place edits (which bump mtime and/or size)
+/// still produce a cache miss and fresh hash; we only short-circuit when the file is
+/// demonstrably unchanged on disk. `stat` is ~microseconds while `hash_blake3_file` on a big
+/// binary is ~tens of milliseconds, so the stat probe is essentially free.
+static PATH_FINGERPRINT_CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<String, String>>> =
+    std::sync::OnceLock::new();
+
+/// Content fingerprint of a local file as a short BLAKE3 hex prefix, or empty string if
+/// `path` is empty, a remote URL (`http://`, `https://`, `ckan://`, `dathere://` —
+/// case-insensitive), or unreadable. Used to catch in-place edits of files inlined into the
+/// rendered prompt (the tag-vocabulary CSV, the DuckDB binary). Content hashing is preferred
+/// over `stat(mtime, size)` alone because same-second same-size rewrites (possible on
+/// HFS+ / FAT / NFS mtime granularity) would otherwise collide; `hash_blake3_file` uses
+/// mmap + rayon so even a ~100MB DuckDB binary hashes in tens of milliseconds. Results are
+/// memoized per `(path, mtime, size)` tuple via `PATH_FINGERPRINT_CACHE`, so cache-key
+/// rebuilds in the same process are free when the file is unchanged.
+fn path_fingerprint(path: &str) -> String {
+    if path.is_empty() {
+        return String::new();
+    }
+    let lower = path.to_lowercase();
+    if lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("ckan://")
+        || lower.starts_with("dathere://")
+    {
+        return String::new();
+    }
+    let meta = match fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return String::new(),
+    };
+    let mtime_nanos = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos());
+    let memo_key = format!("{path}:{mtime_nanos}:{}", meta.len());
+    let cache = PATH_FINGERPRINT_CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
+    if let Some(cached) = cache.lock().unwrap().get(&memo_key) {
+        return cached.clone();
+    }
+    let fp = match util::hash_blake3_file(Path::new(path)) {
+        Ok(hex) => hex[..16].to_string(),
+        Err(_) => String::new(),
+    };
+    cache.lock().unwrap().insert(memo_key, fp.clone());
+    fp
+}
+
 /// Build a cache key with an explicit validity flag. Used by both `get_cache_key`
 /// (which reads the current flag) and cache-invalidation paths (which need to
 /// reconstruct keys for both "valid" and "invalid" flags to purge stored entries).
+///
+/// The key incorporates every input that affects the rendered prompt so the cache
+/// never returns output that was produced under different flags. When adding a
+/// new template-affecting flag, append it here and add a unit-test assertion.
 fn get_cache_key_with_flag(
     args: &Args,
     kind: PromptType,
@@ -1742,14 +1801,50 @@ fn get_cache_key_with_flag(
     } else {
         None
     };
+    // Short fingerprint of the generated data dictionary (when populated) — this JSON
+    // is injected as the `dictionary` template var for description/tags kinds, so a
+    // change in the dictionary must miss the cache.
+    let dictionary_fingerprint = DATA_DICTIONARY_JSON
+        .get()
+        .map(|s| blake3::hash(s.as_bytes()).to_hex()[..16].to_string());
+    let duckdb_enabled = should_use_duckdb();
+    // The tag-vocab CSV contents are inlined into the Tags prompt; track local-file
+    // edits by BLAKE3 content hash. Remote URLs (http://, https://, ckan://, dathere://)
+    // return empty here and are fingerprinted by URL via `tag_vocab`.
+    let tag_vocab_fp = args
+        .flag_tag_vocab
+        .as_deref()
+        .map_or(String::new(), path_fingerprint);
+    // When DuckDB is enabled, `get_prompt` queries the binary for version() and loaded
+    // extensions and bakes them into the SQL guidance. Fingerprint the binary so a
+    // binary swap / upgrade invalidates cached prompts. `should_use_duckdb()` is true
+    // iff `QSV_DUCKDB_PATH` is set and non-empty, so the env var is guaranteed present
+    // here — no PATH-resolved default path exists for describegpt. The env var *value*
+    // is included in the key alongside the content fingerprint so different paths never
+    // collide under a single cache slot even if hashing the binary fails (permission
+    // error, binary removed between lookup and hash, etc.).
+    let (duckdb_path, duckdb_binary_fp) = if duckdb_enabled {
+        let p = std::env::var(QSV_DUCKDB_PATH_ENV).unwrap_or_default();
+        let fp = path_fingerprint(&p);
+        (p, fp)
+    } else {
+        (String::new(), String::new())
+    };
 
     format!(
         "{file_hash};{prompt_file:?};{prompt_content:?};{max_tokens};{addl_props:?};\
-         {actual_model};{kind};{validity_flag};{language:?}",
+         {actual_model};{kind};{validity_flag};{language:?};{tag_vocab:?};{tag_vocab_fp};\
+         {num_tags};{enum_threshold};{sample_size};{fewshot_examples};{duckdb_enabled};\
+         {duckdb_path};{duckdb_binary_fp};{dictionary_fingerprint:?}",
         prompt_file = args.flag_prompt_file,
         max_tokens = args.flag_max_tokens,
         addl_props = args.flag_addl_props,
         language = args.flag_language,
+        tag_vocab = args.flag_tag_vocab,
+        num_tags = args.flag_num_tags,
+        enum_threshold = args.flag_enum_threshold,
+        sample_size = args.flag_sample_size,
+        fewshot_examples = args.flag_fewshot_examples,
     )
 }
 
@@ -2019,48 +2114,96 @@ fn get_cached_completion(
     }
 }
 
-/// Process the output of a single inference phase.
-/// Extracted from run_inference_options::process_output for reuse by --process-response.
-#[allow(clippy::too_many_arguments)]
-fn process_phase_output(
-    kind: PromptType,
-    completion_response: &CompletionResponse,
-    total_json_output: &mut serde_json::Value,
+/// Unescape literal escape sequences emitted by the LLM (\n, \t, \", \', \`) and
+/// append trailing blank lines. Used before rendering an LLM response as Markdown.
+fn unescape_llm_output_str(s: &str) -> String {
+    s.replace("\\n", "\n")
+        .replace("\\t", "\t")
+        .replace("\\\"", "\"")
+        .replace("\\'", "'")
+        .replace("\\`", "`")
+        + "\n\n"
+}
+
+/// Run the shared dictionary-entry build pipeline used by both dictionary output
+/// paths: parse the stats + frequency CSVs, merge code-generated entries with any
+/// LLM-provided labels / descriptions, and return the combined list.
+fn build_combined_dictionary_entries(
     args: &Args,
     analysis_results: &AnalysisResults,
+    completion_response: &CompletionResponse,
+) -> CliResult<Vec<dictionary::DictionaryEntry>> {
+    let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
+    let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
+    let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
+    let addl_cols = determine_addl_cols(args, &avail_cols);
+    let code_entries = generate_code_based_dictionary(
+        &stats_records,
+        &frequency_records,
+        args.flag_enum_threshold,
+        args.flag_num_examples,
+        args.flag_truncate_str,
+        &addl_cols,
+    );
+    let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
+    let llm_labels_descriptions =
+        parse_llm_dictionary_response(&completion_response.response, &field_names)
+            .unwrap_or_default();
+    Ok(combine_dictionary_entries(
+        code_entries,
+        &llm_labels_descriptions,
+    ))
+}
+
+/// Dictionary phase when `--prompt` is active: still build the dictionary JSON and stash it
+/// in `DATA_DICTIONARY_JSON` for later prompt rendering, but emit no output.
+fn emit_dictionary_context_only(
+    args: &Args,
+    analysis_results: &AnalysisResults,
+    completion_response: &CompletionResponse,
+    model: &str,
+    base_url: &str,
+) -> CliResult<()> {
+    let combined_entries =
+        build_combined_dictionary_entries(args, analysis_results, completion_response)?;
+    let mut dictionary_json = formatters::format_dictionary_json(
+        &combined_entries,
+        args.flag_enum_threshold,
+        args.flag_num_examples,
+        args.flag_truncate_str,
+    );
+    if let Some(attribution) = dictionary_json.get_mut("attribution")
+        && let Some(attr_str) = attribution.as_str()
+    {
+        *attribution = json!(replace_attribution_placeholder(
+            attr_str,
+            args,
+            model,
+            base_url,
+            AttributionFormat::Markdown,
+            PromptType::Dictionary
+        ));
+    }
+    DATA_DICTIONARY_JSON.get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+    Ok(())
+}
+
+/// Full Dictionary phase output across JSON/TOON/TSV/Markdown formats.
+#[allow(clippy::too_many_arguments)]
+fn format_dictionary_phase(
+    kind: PromptType,
+    args: &Args,
+    analysis_results: &AnalysisResults,
+    completion_response: &CompletionResponse,
+    total_json_output: &mut serde_json::Value,
     model: &str,
     base_url: &str,
     output_format: OutputFormat,
 ) -> CliResult<()> {
-    // For non-dictionary types, format output
-    fn format_output_str(str: &str) -> String {
-        str.replace("\\n", "\n")
-            .replace("\\t", "\t")
-            .replace("\\\"", "\"")
-            .replace("\\'", "'")
-            .replace("\\`", "`")
-            + "\n\n"
-    }
+    let combined_entries =
+        build_combined_dictionary_entries(args, analysis_results, completion_response)?;
 
-    // Skip outputting dictionary when using --prompt (but still generate it for context)
-    if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
-        let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
-        let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
-        let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
-        let addl_cols = determine_addl_cols(args, &avail_cols);
-        let code_entries = generate_code_based_dictionary(
-            &stats_records,
-            &frequency_records,
-            args.flag_enum_threshold,
-            args.flag_num_examples,
-            args.flag_truncate_str,
-            &addl_cols,
-        );
-        let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
-        let llm_labels_descriptions =
-            parse_llm_dictionary_response(&completion_response.response, &field_names)
-                .unwrap_or_default();
-        let combined_entries = combine_dictionary_entries(code_entries, &llm_labels_descriptions);
+    if output_format == OutputFormat::Json || output_format == OutputFormat::Toon {
         let mut dictionary_json = formatters::format_dictionary_json(
             &combined_entries,
             args.flag_enum_threshold,
@@ -2079,124 +2222,77 @@ fn process_phase_output(
                 PromptType::Dictionary
             ));
         }
+        total_json_output[kind.to_string()] = json!({
+            "response": dictionary_json,
+            "reasoning": completion_response.reasoning,
+            "token_usage": completion_response.token_usage,
+        });
         DATA_DICTIONARY_JSON
             .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
-        return Ok(());
-    }
-
-    // Handle Dictionary type with neuro-procedural approach
-    if kind == PromptType::Dictionary {
-        let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
-        let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
-        let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
-        let addl_cols = determine_addl_cols(args, &avail_cols);
-        let code_entries = generate_code_based_dictionary(
-            &stats_records,
-            &frequency_records,
+    } else if output_format == OutputFormat::Tsv {
+        let mut tsv_output = formatters::format_dictionary_tsv(&combined_entries);
+        tsv_output.push_str(&format_token_usage_comments(
+            &completion_response.reasoning,
+            &completion_response.token_usage,
+        ));
+        let dictionary_json = formatters::format_dictionary_json(
+            &combined_entries,
             args.flag_enum_threshold,
             args.flag_num_examples,
             args.flag_truncate_str,
-            &addl_cols,
         );
-        let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
-        let llm_labels_descriptions =
-            parse_llm_dictionary_response(&completion_response.response, &field_names)
-                .unwrap_or_default();
-        let combined_entries = combine_dictionary_entries(code_entries, &llm_labels_descriptions);
-
-        if output_format == OutputFormat::Json || output_format == OutputFormat::Toon {
-            let mut dictionary_json = formatters::format_dictionary_json(
-                &combined_entries,
-                args.flag_enum_threshold,
-                args.flag_num_examples,
-                args.flag_truncate_str,
-            );
-            if let Some(attribution) = dictionary_json.get_mut("attribution")
-                && let Some(attr_str) = attribution.as_str()
-            {
-                *attribution = json!(replace_attribution_placeholder(
-                    attr_str,
-                    args,
-                    model,
-                    base_url,
-                    AttributionFormat::Markdown,
-                    PromptType::Dictionary
-                ));
-            }
-            total_json_output[kind.to_string()] = json!({
-                "response": dictionary_json,
-                "reasoning": completion_response.reasoning,
-                "token_usage": completion_response.token_usage,
-            });
-            DATA_DICTIONARY_JSON
-                .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
-        } else if output_format == OutputFormat::Tsv {
-            let mut tsv_output = formatters::format_dictionary_tsv(&combined_entries);
-            tsv_output.push_str(&format_token_usage_comments(
-                &completion_response.reasoning,
-                &completion_response.token_usage,
-            ));
-            let dictionary_json = formatters::format_dictionary_json(
-                &combined_entries,
-                args.flag_enum_threshold,
-                args.flag_num_examples,
-                args.flag_truncate_str,
-            );
-            DATA_DICTIONARY_JSON
-                .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
-            if let Some(output) = &args.flag_output {
-                let tsv_path = get_tsv_output_path(output, kind);
-                fs::write(&tsv_path, tsv_output.as_bytes())?;
-            } else {
-                print!("{tsv_output}");
-            }
+        DATA_DICTIONARY_JSON
+            .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+        if let Some(output) = &args.flag_output {
+            let tsv_path = get_tsv_output_path(output, kind);
+            fs::write(&tsv_path, tsv_output.as_bytes())?;
         } else {
-            // Markdown
-            let mut markdown_output = formatters::format_dictionary_markdown(&combined_entries);
-            markdown_output = replace_attribution_placeholder(
-                &markdown_output,
-                args,
-                model,
-                base_url,
-                AttributionFormat::Markdown,
-                PromptType::Dictionary,
-            );
-            let formatted_output = format!(
-                "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
-                kind,
-                markdown_output,
-                completion_response.reasoning,
-                completion_response.token_usage
-            );
-            let dictionary_json = formatters::format_dictionary_json(
-                &combined_entries,
-                args.flag_enum_threshold,
-                args.flag_num_examples,
-                args.flag_truncate_str,
-            );
-            DATA_DICTIONARY_JSON
-                .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
-            if let Some(output) = &args.flag_output {
-                fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(output)?
-                    .write_all(formatted_output.as_bytes())?;
-            } else {
-                println!("{formatted_output}");
-            }
+            print!("{tsv_output}");
         }
-        return Ok(());
+    } else {
+        let mut markdown_output = formatters::format_dictionary_markdown(&combined_entries);
+        markdown_output = replace_attribution_placeholder(
+            &markdown_output,
+            args,
+            model,
+            base_url,
+            AttributionFormat::Markdown,
+            PromptType::Dictionary,
+        );
+        let formatted_output = format!(
+            "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
+            kind, markdown_output, completion_response.reasoning, completion_response.token_usage
+        );
+        let dictionary_json = formatters::format_dictionary_json(
+            &combined_entries,
+            args.flag_enum_threshold,
+            args.flag_num_examples,
+            args.flag_truncate_str,
+        );
+        DATA_DICTIONARY_JSON
+            .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+        if let Some(output) = &args.flag_output {
+            fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(output)?
+                .write_all(formatted_output.as_bytes())?;
+        } else {
+            println!("{formatted_output}");
+        }
     }
+    Ok(())
+}
 
-    let is_sql_response = kind == PromptType::Prompt
-        && args.flag_sql_results.is_some()
-        && completion_response.response.contains("```sql");
-
-    if output_format == OutputFormat::Json && !is_sql_response {
-        total_json_output[kind.to_string()] = if kind == PromptType::Description
-            || kind == PromptType::Prompt
-        {
+/// Non-dictionary phase output to JSON (accumulates into `total_json_output`).
+fn format_phase_json(
+    kind: PromptType,
+    args: &Args,
+    completion_response: &CompletionResponse,
+    total_json_output: &mut serde_json::Value,
+) {
+    total_json_output[kind.to_string()] =
+        if kind == PromptType::Description || kind == PromptType::Prompt {
             json!({
                 "response": completion_response.response,
                 "reasoning": completion_response.reasoning,
@@ -2231,139 +2327,242 @@ fn process_phase_output(
             }
             output_value
         };
-    } else if output_format == OutputFormat::Tsv && !is_sql_response {
-        let tsv_output = if kind == PromptType::Description {
-            format_description_tsv(
-                &completion_response.response,
-                &completion_response.reasoning,
-                &completion_response.token_usage,
-            )
-        } else if kind == PromptType::Prompt {
-            format_prompt_tsv(
-                &completion_response.response,
-                &completion_response.reasoning,
-                &completion_response.token_usage,
-            )
-        } else if kind == PromptType::Tags {
-            let tags_json = match extract_json_from_output(&completion_response.response) {
-                Ok(json_value) => json_value,
-                Err(_) => json!({"tags": []}),
-            };
-            format_tags_tsv(
-                &tags_json,
-                &completion_response.reasoning,
-                &completion_response.token_usage,
-            )
-        } else {
-            format_description_tsv(
-                &completion_response.response,
-                &completion_response.reasoning,
-                &completion_response.token_usage,
-            )
+}
+
+/// Non-dictionary phase output to TSV.
+fn format_phase_tsv(
+    kind: PromptType,
+    args: &Args,
+    completion_response: &CompletionResponse,
+) -> CliResult<()> {
+    let tsv_output = if kind == PromptType::Description {
+        format_description_tsv(
+            &completion_response.response,
+            &completion_response.reasoning,
+            &completion_response.token_usage,
+        )
+    } else if kind == PromptType::Prompt {
+        format_prompt_tsv(
+            &completion_response.response,
+            &completion_response.reasoning,
+            &completion_response.token_usage,
+        )
+    } else if kind == PromptType::Tags {
+        let tags_json = match extract_json_from_output(&completion_response.response) {
+            Ok(json_value) => json_value,
+            Err(_) => json!({"tags": []}),
         };
-        if let Some(output) = &args.flag_output {
-            let tsv_path = get_tsv_output_path(output, kind);
-            fs::write(&tsv_path, tsv_output.as_bytes())?;
-        } else {
-            print!("{tsv_output}");
-        }
-    } else if output_format == OutputFormat::Toon && !is_sql_response {
-        total_json_output[kind.to_string()] =
-            if kind == PromptType::Description || kind == PromptType::Prompt {
-                json!({
-                    "response": completion_response.response,
-                    "reasoning": completion_response.reasoning,
-                    "token_usage": completion_response.token_usage,
-                })
-            } else {
-                let mut response_value = completion_response.response.clone();
-                let mut attribution_value = serde_json::Value::Null;
-                if kind == PromptType::Tags {
-                    if let Some(attr_start) = response_value.find("Generated by") {
-                        let attribution_text = response_value[attr_start..].trim().to_string();
-                        response_value = response_value[..attr_start].trim().to_string();
-                        attribution_value = json!(attribution_text);
-                    } else if response_value.contains("{GENERATED_BY_SIGNATURE}") {
-                        let attribution_text = replace_attribution_placeholder(
-                            "{GENERATED_BY_SIGNATURE}",
-                            args,
-                            model,
-                            base_url,
-                            AttributionFormat::Markdown,
-                            PromptType::Tags,
-                        );
-                        response_value = response_value
-                            .replace("{GENERATED_BY_SIGNATURE}", "")
-                            .trim()
-                            .to_string();
-                        attribution_value = json!(attribution_text);
-                    }
-                }
-                let mut output_value =
-                    if let Ok(json_value) = extract_json_from_output(&response_value) {
-                        json!({
-                            "response": json_value,
-                            "reasoning": completion_response.reasoning,
-                            "token_usage": completion_response.token_usage,
-                        })
-                    } else {
-                        json!({
-                            "response": response_value,
-                            "reasoning": completion_response.reasoning,
-                            "token_usage": completion_response.token_usage,
-                        })
-                    };
-                if kind == PromptType::Tags
-                    && let Some(obj) = output_value.as_object_mut()
-                {
-                    obj.insert("num_tags".to_string(), json!(args.flag_num_tags));
-                    obj.insert(
-                        "tag_vocab".to_string(),
-                        match &args.flag_tag_vocab {
-                            Some(path) => json!(path.as_str()),
-                            None => serde_json::Value::Null,
-                        },
-                    );
-                    if attribution_value != serde_json::Value::Null {
-                        obj.insert("attribution".to_string(), attribution_value);
-                    }
-                }
-                output_value
-            };
+        format_tags_tsv(
+            &tags_json,
+            &completion_response.reasoning,
+            &completion_response.token_usage,
+        )
     } else {
-        // Markdown / plaintext
-        let mut formatted_output = format_output_str(&completion_response.response);
-        if kind == PromptType::Prompt && is_sql_response {
-            formatted_output = {
-                let input_path = args.arg_input.as_deref().unwrap_or("input.csv");
-                if READ_CSV_AUTO_REGEX.is_match(&formatted_output) {
-                    let escaped_path = escape_sql_string(input_path);
-                    READ_CSV_AUTO_REGEX
-                        .replace_all(
-                            &formatted_output,
-                            format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
-                        )
-                        .into_owned()
-                } else {
-                    formatted_output.replace(INPUT_TABLE_NAME, "_t_1")
-                }
-            };
-        }
-        formatted_output = format!(
-            "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
-            kind, formatted_output, completion_response.reasoning, completion_response.token_usage
-        );
-        if let Some(output) = &args.flag_output {
-            fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(output)?
-                .write_all(formatted_output.as_bytes())?;
-        } else {
-            println!("{formatted_output}");
-        }
+        format_description_tsv(
+            &completion_response.response,
+            &completion_response.reasoning,
+            &completion_response.token_usage,
+        )
+    };
+    if let Some(output) = &args.flag_output {
+        let tsv_path = get_tsv_output_path(output, kind);
+        fs::write(&tsv_path, tsv_output.as_bytes())?;
+    } else {
+        print!("{tsv_output}");
     }
     Ok(())
+}
+
+/// Non-dictionary phase output to TOON (accumulates into `total_json_output`;
+/// TOON encoding happens later by the caller).
+fn format_phase_toon(
+    kind: PromptType,
+    args: &Args,
+    completion_response: &CompletionResponse,
+    total_json_output: &mut serde_json::Value,
+    model: &str,
+    base_url: &str,
+) {
+    total_json_output[kind.to_string()] = if kind == PromptType::Description
+        || kind == PromptType::Prompt
+    {
+        json!({
+            "response": completion_response.response,
+            "reasoning": completion_response.reasoning,
+            "token_usage": completion_response.token_usage,
+        })
+    } else {
+        let mut response_value = completion_response.response.clone();
+        let mut attribution_value = serde_json::Value::Null;
+        if kind == PromptType::Tags {
+            if let Some(attr_start) = response_value.find("Generated by") {
+                let attribution_text = response_value[attr_start..].trim().to_string();
+                response_value = response_value[..attr_start].trim().to_string();
+                attribution_value = json!(attribution_text);
+            } else if response_value.contains("{GENERATED_BY_SIGNATURE}") {
+                let attribution_text = replace_attribution_placeholder(
+                    "{GENERATED_BY_SIGNATURE}",
+                    args,
+                    model,
+                    base_url,
+                    AttributionFormat::Markdown,
+                    PromptType::Tags,
+                );
+                response_value = response_value
+                    .replace("{GENERATED_BY_SIGNATURE}", "")
+                    .trim()
+                    .to_string();
+                attribution_value = json!(attribution_text);
+            }
+        }
+        let mut output_value = if let Ok(json_value) = extract_json_from_output(&response_value) {
+            json!({
+                "response": json_value,
+                "reasoning": completion_response.reasoning,
+                "token_usage": completion_response.token_usage,
+            })
+        } else {
+            json!({
+                "response": response_value,
+                "reasoning": completion_response.reasoning,
+                "token_usage": completion_response.token_usage,
+            })
+        };
+        if kind == PromptType::Tags
+            && let Some(obj) = output_value.as_object_mut()
+        {
+            obj.insert("num_tags".to_string(), json!(args.flag_num_tags));
+            obj.insert(
+                "tag_vocab".to_string(),
+                match &args.flag_tag_vocab {
+                    Some(path) => json!(path.as_str()),
+                    None => serde_json::Value::Null,
+                },
+            );
+            if attribution_value != serde_json::Value::Null {
+                obj.insert("attribution".to_string(), attribution_value);
+            }
+        }
+        output_value
+    };
+}
+
+/// Non-dictionary phase output to Markdown / plaintext.
+/// Also handles the SQL-response fallthrough when `is_sql_response` is true for the Prompt kind.
+/// `is_sql_response` can only be true when `kind == Prompt` — enforced via `debug_assert!`.
+fn format_phase_markdown(
+    kind: PromptType,
+    args: &Args,
+    completion_response: &CompletionResponse,
+    is_sql_response: bool,
+) -> CliResult<()> {
+    debug_assert!(
+        !is_sql_response || kind == PromptType::Prompt,
+        "is_sql_response must only be set for PromptType::Prompt, got kind={kind:?}"
+    );
+    let mut formatted_output = unescape_llm_output_str(&completion_response.response);
+    if kind == PromptType::Prompt && is_sql_response {
+        formatted_output = {
+            let input_path = args.arg_input.as_deref().unwrap_or("input.csv");
+            if READ_CSV_AUTO_REGEX.is_match(&formatted_output) {
+                let escaped_path = escape_sql_string(input_path);
+                READ_CSV_AUTO_REGEX
+                    .replace_all(
+                        &formatted_output,
+                        format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
+                    )
+                    .into_owned()
+            } else {
+                formatted_output.replace(INPUT_TABLE_NAME, "_t_1")
+            }
+        };
+    }
+    formatted_output = format!(
+        "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
+        kind, formatted_output, completion_response.reasoning, completion_response.token_usage
+    );
+    if let Some(output) = &args.flag_output {
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(output)?
+            .write_all(formatted_output.as_bytes())?;
+    } else {
+        println!("{formatted_output}");
+    }
+    Ok(())
+}
+
+/// Process the output of a single inference phase.
+/// Extracted from run_inference_options::process_output for reuse by --process-response.
+#[allow(clippy::too_many_arguments)]
+fn process_phase_output(
+    kind: PromptType,
+    completion_response: &CompletionResponse,
+    total_json_output: &mut serde_json::Value,
+    args: &Args,
+    analysis_results: &AnalysisResults,
+    model: &str,
+    base_url: &str,
+    output_format: OutputFormat,
+) -> CliResult<()> {
+    // Dictionary when --prompt is active: generate dictionary JSON for prompt context, no output.
+    if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
+        return emit_dictionary_context_only(
+            args,
+            analysis_results,
+            completion_response,
+            model,
+            base_url,
+        );
+    }
+
+    if kind == PromptType::Dictionary {
+        return format_dictionary_phase(
+            kind,
+            args,
+            analysis_results,
+            completion_response,
+            total_json_output,
+            model,
+            base_url,
+            output_format,
+        );
+    }
+
+    let is_sql_response = kind == PromptType::Prompt
+        && args.flag_sql_results.is_some()
+        && completion_response.response.contains("```sql");
+
+    // SQL responses (for any requested output format) always fall through to the markdown
+    // helper, which renders the SQL block and handles the read_csv_auto / INPUT_TABLE_NAME
+    // rewrite. Markdown requests also land there. The match is exhaustive on (OutputFormat,
+    // is_sql_response) so adding a new OutputFormat variant is a compile error here,
+    // forcing an explicit routing decision.
+    match (output_format, is_sql_response) {
+        (OutputFormat::Json, false) => {
+            format_phase_json(kind, args, completion_response, total_json_output);
+            Ok(())
+        },
+        (OutputFormat::Tsv, false) => format_phase_tsv(kind, args, completion_response),
+        (OutputFormat::Toon, false) => {
+            format_phase_toon(
+                kind,
+                args,
+                completion_response,
+                total_json_output,
+                model,
+                base_url,
+            );
+            Ok(())
+        },
+        (OutputFormat::Markdown, _)
+        | (OutputFormat::Json, true)
+        | (OutputFormat::Tsv, true)
+        | (OutputFormat::Toon, true) => {
+            format_phase_markdown(kind, args, completion_response, is_sql_response)
+        },
+    }
 }
 
 // Generates output for all inference options
@@ -4382,6 +4581,133 @@ mod tests {
         let key_via_get = get_cache_key(&args, PromptType::Prompt, "gpt-x");
         let key_via_flag = get_cache_key_with_flag(&args, PromptType::Prompt, "gpt-x", "valid");
         assert_eq!(key_via_get, key_via_flag);
+    }
+
+    #[test]
+    fn cache_key_reflects_template_affecting_flags() {
+        // Every flag that feeds into the rendered prompt must change the cache key,
+        // otherwise tweaking the flag silently returns stale cached output.
+        let args = default_args_for_test();
+        let baseline = get_cache_key_with_flag(&args, PromptType::Tags, "gpt-x", "valid");
+
+        let cases: Vec<(&str, Box<dyn Fn(&mut Args)>)> = vec![
+            (
+                "flag_tag_vocab",
+                Box::new(|a| a.flag_tag_vocab = Some("vocab.csv".to_string())),
+            ),
+            ("flag_num_tags", Box::new(|a| a.flag_num_tags = 7)),
+            (
+                "flag_enum_threshold",
+                Box::new(|a| a.flag_enum_threshold = 42),
+            ),
+            ("flag_sample_size", Box::new(|a| a.flag_sample_size = 99)),
+            (
+                "flag_fewshot_examples",
+                Box::new(|a| a.flag_fewshot_examples = true),
+            ),
+        ];
+
+        for (label, mutate) in cases {
+            let mut mutated = default_args_for_test();
+            mutate(&mut mutated);
+            let key = get_cache_key_with_flag(&mutated, PromptType::Tags, "gpt-x", "valid");
+            assert_ne!(key, baseline, "{label} did not change the cache key");
+        }
+
+        // Restoring defaults must reproduce the baseline key exactly.
+        let restored = default_args_for_test();
+        let restored_key = get_cache_key_with_flag(&restored, PromptType::Tags, "gpt-x", "valid");
+        assert_eq!(restored_key, baseline);
+    }
+
+    #[test]
+    fn cache_key_reflects_tag_vocab_file_contents() {
+        // Editing a local tag-vocab CSV in place must change the cache key so the
+        // cache doesn't return output generated against different vocabulary.
+        // Uses tempfile for RAII cleanup — tmpfile drops even if the assert panics.
+        use std::io::Write;
+        let mut tmp = tempfile::Builder::new()
+            .prefix("qsv_describegpt_vocab_")
+            .suffix(".csv")
+            .tempfile()
+            .expect("create vocab tmpfile");
+        writeln!(tmp, "tag,description\nfoo,first version").expect("write v1");
+        tmp.flush().expect("flush v1");
+
+        let mut args = default_args_for_test();
+        args.flag_tag_vocab = Some(tmp.path().to_string_lossy().into_owned());
+        let key_v1 = get_cache_key_with_flag(&args, PromptType::Tags, "gpt-x", "valid");
+
+        // Rewrite in place with different bytes. Content hashing (not mtime) detects
+        // this, so no mtime-tick sleep needed.
+        let mut f = fs::File::create(tmp.path()).expect("rewrite vocab tmpfile");
+        writeln!(f, "tag,description\nbar,different contents entirely").expect("write v2");
+        f.flush().expect("flush v2");
+        drop(f);
+
+        let key_v2 = get_cache_key_with_flag(&args, PromptType::Tags, "gpt-x", "valid");
+        assert_ne!(
+            key_v1, key_v2,
+            "in-place vocab edit must change the cache key"
+        );
+    }
+
+    #[test]
+    fn path_fingerprint_is_empty_for_remote_or_missing() {
+        assert_eq!(path_fingerprint(""), "");
+        assert_eq!(path_fingerprint("http://example.com/vocab.csv"), "");
+        assert_eq!(path_fingerprint("https://example.com/vocab.csv"), "");
+        assert_eq!(path_fingerprint("HTTPS://Example.com/vocab.csv"), "");
+        assert_eq!(path_fingerprint("ckan://some-resource"), "");
+        assert_eq!(path_fingerprint("CKAN://Some-Resource"), "");
+        assert_eq!(path_fingerprint("dathere://some-dataset"), "");
+        assert_eq!(path_fingerprint("Dathere://Some-Dataset"), "");
+        assert_eq!(
+            path_fingerprint("/path/that/definitely/does/not/exist.csv"),
+            ""
+        );
+    }
+
+    #[test]
+    fn path_fingerprint_returns_hex_for_local_file() {
+        // Positive-path assertion: a readable local file yields a 16-char hex fingerprint.
+        // Guards against a regression that makes path_fingerprint always return empty,
+        // which would silently neutralize the tag-vocab and DuckDB binary cache-key fields.
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::new().expect("create tmpfile");
+        writeln!(tmp, "payload").expect("write payload");
+        tmp.flush().expect("flush");
+        let fp = path_fingerprint(&tmp.path().to_string_lossy());
+        assert_eq!(fp.len(), 16, "expected 16-char hex prefix, got {fp:?}");
+        assert!(
+            fp.chars().all(|c| c.is_ascii_hexdigit()),
+            "expected hex chars, got {fp:?}"
+        );
+    }
+
+    #[test]
+    fn cache_key_reflects_dictionary_fingerprint() {
+        // The generated Data Dictionary JSON is injected into description/tags prompts.
+        // If the key doesn't track it, dictionary-aware and naked outputs would share
+        // a cache slot. `OnceLock::set` can only succeed once per process, so we check
+        // whichever state is live for this test-binary run and assert the key reflects it.
+        let args = default_args_for_test();
+        let key = get_cache_key_with_flag(&args, PromptType::Tags, "gpt-x", "valid");
+        match DATA_DICTIONARY_JSON.get() {
+            Some(dict) => {
+                let expected_prefix = &blake3::hash(dict.as_bytes()).to_hex()[..16];
+                assert!(
+                    key.contains(expected_prefix),
+                    "key {key:?} should contain fingerprint {expected_prefix:?}"
+                );
+            },
+            None => {
+                assert!(
+                    key.ends_with(";None"),
+                    "unset dictionary should serialize as None: {key}"
+                );
+            },
+        }
     }
 
     /// Minimal Args for unit tests: zero-values everywhere.

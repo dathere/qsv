@@ -223,7 +223,7 @@ jobs:
         is-executable: false
         working-directory: "."
     - name: Download latest release zip
-      uses: robinraju/release-downloader@v1.12
+      uses: robinraju/release-downloader@v1.13
       with:
         repository: "dathere/qsv"
         latest: true

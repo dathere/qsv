@@ -39,22 +39,6 @@ jobs:
     - name: make empty DLLs directory to prevent spurious python warning
       run: |
         mkdir DLLs   
-    # TEMP DIAGNOSTIC: tracking sniff_url_snappy hang on Windows ARM64.
-    # Builds qsv and invokes the exact command the hanging test runs, with a
-    # 5-minute hard timeout. The qsv binary emits "[diag] ..." breadcrumbs
-    # directly to stderr (not the qsv log file) so each boundary it crosses
-    # is visible in CI live, even if the next stage hangs. The last
-    # breadcrumb seen tells us which boundary the process never crossed.
-    # Remove this step once the root cause is identified and fixed.
-    - name: Diagnose sniff_url_snappy hang
-      timeout-minutes: 5
-      env:
-          RUSTFLAGS: -C debuginfo=0
-          RUST_BACKTRACE: 1
-      continue-on-error: true
-      run: |
-        cargo build --locked --no-default-features --features=mimalloc,apply,fetch,foreach,luau,python,polars,feature_capable,ui --bin qsv
-        ./target/debug/qsv.exe sniff https://github.com/dathere/qsv/raw/master/resources/test/boston311-100.csv.sz
     - name: Run tests
       env:
           RUSTFLAGS: -C debuginfo=0

@@ -2080,6 +2080,11 @@ pub fn decompress_snappy_file(
     match std::io::copy(&mut snappy_reader, &mut decompressed_file) {
         Ok(num_bytes) => {
             decompressed_file.flush()?;
+            // Explicitly close the write handle before returning. On Windows
+            // the next reader to open this path can deadlock if a writer
+            // handle is still alive in this process — observed as an
+            // indefinite hang on Windows ARM64 (sniff URL → snappy → sniffer).
+            drop(decompressed_file);
             log::debug!(
                 "Successfully decompressed Snappy file: {} ({} bytes)",
                 path.display(),

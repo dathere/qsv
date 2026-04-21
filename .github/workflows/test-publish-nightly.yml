@@ -34,6 +34,7 @@ jobs:
             target: x86_64-pc-windows-msvc
             architecture: x86_64
             addl-build-args: --features=apply,luau,fetch,nightly,to,self_update,polars
+            # Windows: jemallocator is not supported on Windows, so we use the system allocator.
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:
@@ -42,6 +43,7 @@ jobs:
             target: x86_64-pc-windows-gnu
             architecture: x86_64
             addl-build-args: --features=apply,luau,fetch,nightly,self_update,polars
+            # Windows: jemallocator is not supported on Windows, so we use the system allocator.
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:

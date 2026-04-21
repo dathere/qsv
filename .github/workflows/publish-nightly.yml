@@ -43,6 +43,7 @@ jobs:
             target: x86_64-pc-windows-msvc
             architecture: x86_64
             addl-build-args: --features=apply,fetch,nightly,self_update,polars,geocode,to,lens,prompt,nightly-polars
+            # Windows: jemallocator is not supported on Windows, so we use the system allocator.
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:

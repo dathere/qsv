@@ -43,4 +43,5 @@ jobs:
       env:
           RUSTFLAGS: -C debuginfo=0
       #   RUSTFLAGS: -C target-cpu=native
+      # Windows: jemallocator is not supported on Windows, so we use the system allocator.
       run: cargo test --verbose --locked --no-default-features --features=apply,fetch,foreach,luau,python,polars,feature_capable,ui

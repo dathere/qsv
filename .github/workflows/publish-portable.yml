@@ -68,6 +68,7 @@ jobs:
             architecture: x86_64
             use-cross: false
             addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,prompt,foreach
+            # Windows: jemallocator is not supported on Windows, so we use the system allocator.
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:
@@ -88,6 +89,7 @@ jobs:
             architecture: x86_64
             use-cross: false
             addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,prompt
+            # Windows: jemallocator is not supported on Windows, so we use the system allocator.
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:

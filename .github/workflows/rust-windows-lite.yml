@@ -36,4 +36,5 @@ jobs:
     - name: Run tests
       # env:
       #   RUSTFLAGS: -C target-cpu=native
+      # Windows: jemallocator is not supported on Windows, so we use the system allocator.
       run: cargo test --verbose --locked --no-default-features --features=lite

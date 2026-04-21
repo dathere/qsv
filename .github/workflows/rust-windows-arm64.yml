@@ -43,4 +43,4 @@ jobs:
       env:
           RUSTFLAGS: -C debuginfo=0
       #   RUSTFLAGS: -C target-cpu=native
-      run: cargo test --verbose --locked --no-default-features --features=mimalloc,apply,fetch,foreach,luau,python,polars,feature_capable,ui
+      run: cargo test --verbose --locked --no-default-features --features=apply,fetch,foreach,luau,python,polars,feature_capable,ui

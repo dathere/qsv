@@ -70,10 +70,10 @@ jobs:
             target: x86_64-pc-windows-msvc
             architecture: x86_64
             use-cross: false
-            addl-build-args: --features=mimalloc,apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt,magika,color
+            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt,magika,color
             default-features: --no-default-features
-            addl-qsvlite-features: mimalloc
-            addl-qsvdp-features: mimalloc
+            addl-qsvlite-features:
+            addl-qsvdp-features:
             addl-rustflags:
           # - os: windows-latest
           #   os-name: windows
@@ -90,10 +90,10 @@ jobs:
             target: x86_64-pc-windows-gnu
             architecture: x86_64
             use-cross: false
-            addl-build-args: --features=mimalloc,apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt,color
+            addl-build-args: --features=apply,luau,fetch,self_update,geocode,polars,to,lens,foreach,prompt,color
             default-features: --no-default-features
-            addl-qsvlite-features: mimalloc
-            addl-qsvdp-features: mimalloc
+            addl-qsvlite-features:
+            addl-qsvdp-features:
             addl-rustflags:
           # - os: macos-12
           #   os-name: macos

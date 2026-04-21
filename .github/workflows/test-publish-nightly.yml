@@ -33,18 +33,18 @@ jobs:
             os-name: windows
             target: x86_64-pc-windows-msvc
             architecture: x86_64
-            addl-build-args: --features=mimalloc,apply,luau,fetch,nightly,to,self_update,polars
+            addl-build-args: --features=apply,luau,fetch,nightly,to,self_update,polars
             default-features: --no-default-features
-            addl-qsvlite-features: mimalloc
-            addl-qsvdp-features: mimalloc
+            addl-qsvlite-features:
+            addl-qsvdp-features:
           - os: windows-latest
             os-name: windows
             target: x86_64-pc-windows-gnu
             architecture: x86_64
-            addl-build-args: --features=mimalloc,apply,luau,fetch,nightly,self_update,polars
+            addl-build-args: --features=apply,luau,fetch,nightly,self_update,polars
             default-features: --no-default-features
-            addl-qsvlite-features: mimalloc
-            addl-qsvdp-features: mimalloc
+            addl-qsvlite-features:
+            addl-qsvdp-features:
           # - os: macos-latest
           #   os-name: macos
           #   target: x86_64-apple-darwin

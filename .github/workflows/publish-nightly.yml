@@ -42,10 +42,10 @@ jobs:
             os-name: windows
             target: x86_64-pc-windows-msvc
             architecture: x86_64
-            addl-build-args: --features=mimalloc,apply,fetch,nightly,self_update,polars,geocode,to,lens,prompt,nightly-polars
+            addl-build-args: --features=apply,fetch,nightly,self_update,polars,geocode,to,lens,prompt,nightly-polars
             default-features: --no-default-features
-            addl-qsvlite-features: mimalloc
-            addl-qsvdp-features: mimalloc
+            addl-qsvlite-features:
+            addl-qsvdp-features:
             addl-rustflags: -C target-cpu=native -Z unstable-options -C panic=immediate-abort
 
     steps:

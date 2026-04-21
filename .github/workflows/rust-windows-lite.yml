@@ -36,4 +36,4 @@ jobs:
     - name: Run tests
       # env:
       #   RUSTFLAGS: -C target-cpu=native
-      run: cargo test --verbose --locked --no-default-features --features=mimalloc,lite
+      run: cargo test --verbose --locked --no-default-features --features=lite

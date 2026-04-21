@@ -49,7 +49,7 @@ jobs:
             os-name: windows
             target: x86_64-pc-windows-msvc
             architecture: x86_64
-            addl-build-args: --features=mimalloc,apply,luau,fetch,self_update,polars,geocode,to,python,lens,foreach,prompt,magika,color
+            addl-build-args: --features=apply,luau,fetch,self_update,polars,geocode,to,python,lens,foreach,prompt,magika,color
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:

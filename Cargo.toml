@@ -167,7 +167,7 @@ libc = "0.2"
 log = "0.4"
 magika = { version = "1.0", optional = true }
 memmap2 = "0.9"
-mimalloc = { version = "0.1", default-features = false, features = ["extended", "v3"], optional = true }
+mimalloc = { version = "0.1", default-features = false, features = ["extended"], optional = true }
 minijinja = { version = "2", features = [
     "json",
     "loop_controls",

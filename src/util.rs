@@ -1983,11 +1983,6 @@ pub fn get_envvar_flag(key: &str) -> bool {
 
 /// Validates if a file is actually a Snappy-compressed file before attempting decompression
 pub fn is_valid_snappy_file(path: &PathBuf) -> Result<bool, CliError> {
-    // TEMP DIAGNOSTIC: tracking Windows ARM64 hang in sniff_url_snappy.
-    // Use eprintln! (not log::warn!) so the breadcrumb reaches stderr directly,
-    // even when the qsv logger isn't configured and even from a child process
-    // whose stdio is piped — which is exactly the case during CI tests.
-    eprintln!("[diag] snappy: validating {}", path.display());
     let mut file = std::fs::File::open(path)?;
     let mut reader = BufReader::new(&mut file);
 
@@ -1999,16 +1994,12 @@ pub fn is_valid_snappy_file(path: &PathBuf) -> Result<bool, CliError> {
     match decoder.take(50).read_to_end(&mut buffer) {
         Ok(_) => {
             // Successfully read some bytes, this is likely a valid Snappy file
-            eprintln!("[diag] snappy: validated {} -> true", path.display());
+            log::debug!("File {} appears to be a valid Snappy file", path.display());
             Ok(true)
         },
         Err(e) => {
             // Failed to read, this is not a valid Snappy file
-            eprintln!(
-                "[diag] snappy: validated {} -> false ({})",
-                path.display(),
-                e
-            );
+            log::debug!("File {} is not a valid Snappy file: {}", path.display(), e);
             Ok(false)
         },
     }
@@ -2086,24 +2077,17 @@ pub fn decompress_snappy_file(
         .join(format!("qsv_temp_decompressed__{file_stem}"));
     let mut decompressed_file = std::fs::File::create(decompressed_filepath.clone())?;
 
-    // TEMP DIAGNOSTIC: tracking Windows ARM64 hang in sniff_url_snappy
-    eprintln!(
-        "[diag] snappy: decompressing {} -> {}",
-        path.display(),
-        decompressed_filepath.display()
-    );
-
     match std::io::copy(&mut snappy_reader, &mut decompressed_file) {
         Ok(num_bytes) => {
             decompressed_file.flush()?;
-            // Explicitly drop the write handle so any reader (e.g. a Sniffer
-            // re-opening this path) sees a fully-closed file. On Windows the
-            // lingering write handle has been observed to interact badly with
-            // a subsequent re-open for read.
+            // Explicitly close the write handle before returning. On Windows
+            // the next reader to open this path can deadlock if a writer
+            // handle is still alive in this process — observed as an
+            // indefinite hang on Windows ARM64 (sniff URL → snappy → sniffer).
             drop(decompressed_file);
-            eprintln!(
-                "[diag] snappy: decompressed {} ({} bytes)",
-                decompressed_filepath.display(),
+            log::debug!(
+                "Successfully decompressed Snappy file: {} ({} bytes)",
+                path.display(),
                 num_bytes
             );
             Ok(format!("{}", decompressed_filepath.display()))

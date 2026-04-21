@@ -1040,11 +1040,6 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
     };
 
     // now that we have all the sniffing parameters, we can sniff the file
-    // TEMP DIAGNOSTIC: tracking Windows ARM64 hang in sniff_url_snappy
-    eprintln!(
-        "[diag] sniff: starting sniff_reader on {} (sample_all={sample_all})",
-        sfile_info.file_to_sniff
-    );
     let sniff_results = if sample_all {
         log::info!("Sniffing ALL rows...");
         if let Some(delimiter) = args.flag_delimiter {
@@ -1081,12 +1076,6 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
                 .sniff_reader(rdr.into_inner())
         }
     };
-
-    // TEMP DIAGNOSTIC: tracking Windows ARM64 hang in sniff_url_snappy
-    eprintln!(
-        "[diag] sniff: sniff_reader done (ok={})",
-        sniff_results.is_ok()
-    );
 
     let mut processed_results = SniffStruct::default();
     let mut sniff_error: Option<String> = None;

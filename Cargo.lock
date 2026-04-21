@@ -1874,7 +1874,7 @@ dependencies = [
  "pdatastructs",
  "petgraph",
  "postgres",
- "qsv-stats",
+ "qsv-stats 0.49.0",
  "rand 0.10.1",
  "regex",
  "rusqlite",
@@ -6102,7 +6102,7 @@ dependencies = [
  "pragmastat",
  "pyo3",
  "qsv-dateparser",
- "qsv-stats",
+ "qsv-stats 0.50.0",
  "qsv-tabwriter",
  "qsv_currency",
  "qsv_docopt",
@@ -6169,6 +6169,18 @@ name = "qsv-stats"
 version = "0.49.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62e7077c6f3ffb0962b82e00d61e7d57bd2386e1dbbe2d8563a434e1e1655995"
+dependencies = [
+ "foldhash 0.2.0",
+ "num-traits",
+ "rayon",
+ "serde",
+]
+
+[[package]]
+name = "qsv-stats"
+version = "0.50.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa2ddfaedb9826a5e42a52a481ebcfb7fbba9d3826ed64b96a9b50006932504a"
 dependencies = [
  "foldhash 0.2.0",
  "num-traits",

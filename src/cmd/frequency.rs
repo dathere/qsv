@@ -241,10 +241,11 @@ use std::{fs, io, str::FromStr, sync::OnceLock};
 use crossbeam_channel;
 use foldhash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use indicatif::HumanCount;
+use rayon::prelude::*;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
-use stats::{Frequencies, merge_all};
+use stats::{Commute, Frequencies};
 use threadpool::ThreadPool;
 use toon_format::{EncodeOptions, encode};
 
@@ -958,6 +959,51 @@ type FTable = Frequencies<Vec<u8>>;
 type FTables = Vec<Frequencies<Vec<u8>>>;
 // Weighted frequency tables: HashMap for each column storing value -> weighted count
 type WeightedFTables = Vec<HashMap<Vec<u8>, f64>>;
+
+// Pairwise merge of two FTables. Empty acts as identity so this composes with
+// rayon `reduce(Vec::new, ...)`. Per-column Frequencies merges run in parallel
+// across the rayon pool.
+fn merge_ftables(mut a: FTables, b: FTables) -> FTables {
+    if a.is_empty() {
+        return b;
+    }
+    if b.is_empty() {
+        return a;
+    }
+    debug_assert_eq!(
+        a.len(),
+        b.len(),
+        "all chunks share the same column selection"
+    );
+    a.par_iter_mut()
+        .zip(b.into_par_iter())
+        .for_each(|(left, right)| left.merge(right));
+    a
+}
+
+// Pairwise merge of two WeightedFTables — per-column HashMap fold, parallel over columns.
+fn merge_weighted_ftables(mut a: WeightedFTables, b: WeightedFTables) -> WeightedFTables {
+    if a.is_empty() {
+        return b;
+    }
+    if b.is_empty() {
+        return a;
+    }
+    debug_assert_eq!(
+        a.len(),
+        b.len(),
+        "all chunks share the same column selection"
+    );
+    a.par_iter_mut()
+        .zip(b.into_par_iter())
+        .for_each(|(left, right)| {
+            left.reserve(right.len());
+            for (k, v) in right {
+                *left.entry(k).or_insert(0.0) += v;
+            }
+        });
+    a
+}
 
 /// Apply ranking strategy to grouped unweighted frequency values (u64 counts)
 ///
@@ -2573,25 +2619,11 @@ impl Args {
                 });
             }
             drop(send);
-
-            // Merge weighted frequencies
-            let mut merged: WeightedFTables = Vec::new();
-            for weighted_chunk in &recv {
-                if merged.is_empty() {
-                    merged = weighted_chunk;
-                } else {
-                    // Merge HashMaps
-                    for (col_idx, weighted_map) in weighted_chunk.into_iter().enumerate() {
-                        if col_idx < merged.len() {
-                            for (value, weight) in weighted_map {
-                                *merged[col_idx].entry(value).or_insert(0.0) += weight;
-                            }
-                        } else {
-                            merged.push(weighted_map);
-                        }
-                    }
-                }
-            }
+            // Parallel tree-reduce of partial WeightedFTables.
+            let partials: Vec<WeightedFTables> = recv.iter().collect();
+            let merged = partials
+                .into_par_iter()
+                .reduce(Vec::new, merge_weighted_ftables);
             Ok((headers, vec![], Some(merged)))
         } else {
             // Parallel unweighted frequencies
@@ -2608,7 +2640,11 @@ impl Args {
                 });
             }
             drop(send);
-            Ok((headers, merge_all(recv.iter()).unwrap(), None))
+            // Parallel tree-reduce of partial FTables: O(log N) merge rounds
+            // with per-column parallelism inside each round.
+            let partials: Vec<FTables> = recv.iter().collect();
+            let merged = partials.into_par_iter().reduce(Vec::new, merge_ftables);
+            Ok((headers, merged, None))
         }
     }
 

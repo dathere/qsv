@@ -970,7 +970,11 @@ fn merge_ftables(mut a: FTables, b: FTables) -> FTables {
     if b.is_empty() {
         return a;
     }
-    debug_assert_eq!(
+    // Real assert (not debug_assert) because `zip` would silently truncate
+    // and drop columns on mismatch. The invariant is structural (all chunks
+    // share `sel`), but enforcing it in release prevents silent corruption
+    // if that ever changes.
+    assert_eq!(
         a.len(),
         b.len(),
         "all chunks share the same column selection"
@@ -989,7 +993,8 @@ fn merge_weighted_ftables(mut a: WeightedFTables, b: WeightedFTables) -> Weighte
     if b.is_empty() {
         return a;
     }
-    debug_assert_eq!(
+    // Real assert (see merge_ftables for rationale).
+    assert_eq!(
         a.len(),
         b.len(),
         "all chunks share the same column selection"
@@ -2619,10 +2624,14 @@ impl Args {
                 });
             }
             drop(send);
-            // Parallel tree-reduce of partial WeightedFTables.
-            let partials: Vec<WeightedFTables> = recv.iter().collect();
-            let merged = partials
-                .into_par_iter()
+            // Parallel reduce of partial WeightedFTables. Use `par_bridge` so
+            // the reducer can consume chunks as they arrive instead of
+            // materializing all of them — peak memory is bounded by the
+            // rayon pool's working set, not by `nchunks` (which can grow
+            // large when memory-aware chunking picks small chunks).
+            let merged = recv
+                .into_iter()
+                .par_bridge()
                 .reduce(Vec::new, merge_weighted_ftables);
             Ok((headers, vec![], Some(merged)))
         } else {
@@ -2640,10 +2649,14 @@ impl Args {
                 });
             }
             drop(send);
-            // Parallel tree-reduce of partial FTables: O(log N) merge rounds
-            // with per-column parallelism inside each round.
-            let partials: Vec<FTables> = recv.iter().collect();
-            let merged = partials.into_par_iter().reduce(Vec::new, merge_ftables);
+            // Parallel reduce of partial FTables. Use `par_bridge` so the
+            // reducer can consume chunks as they arrive instead of
+            // materializing all of them — peak memory is bounded by the
+            // rayon pool's working set, not by `nchunks`.
+            let merged = recv
+                .into_iter()
+                .par_bridge()
+                .reduce(Vec::new, merge_ftables);
             Ok((headers, merged, None))
         }
     }

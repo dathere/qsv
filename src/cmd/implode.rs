@@ -27,7 +27,8 @@ columns are dropped.
 
 By default, all input rows are buffered in memory and groups are emitted in the
 order keys are first seen. If the input is already sorted by the key column(s),
-use --sorted to stream groups with O(1) memory.
+use --sorted to stream groups as they are seen (memory proportional to the
+largest group, not the whole input).
 
 Usage:
     qsv implode [options] -k <keys> -v <value> <separator> [<input>]
@@ -40,7 +41,8 @@ implode options:
                            Must resolve to exactly one column.
     -r, --rename <name>    New name for the imploded value column.
     --sorted               Assume input is pre-sorted by the key column(s).
-                           Streams groups as they are seen (O(1) memory).
+                           Streams groups as they are seen; memory is bounded
+                           by the size of the largest group.
     --skip-empty           Skip empty values when joining. By default, empty
                            values are included as empty tokens so that
                            round-tripping with `explode` is lossless.
@@ -54,13 +56,15 @@ Common options:
                            Must be a single character. (default: ,)
 "#;
 
+use std::collections::hash_map::Entry;
+
 use foldhash::HashMap;
 use serde::Deserialize;
 
 use crate::{
     CliResult,
     config::{Config, Delimiter},
-    select::SelectColumns,
+    select::{SelectColumns, Selection},
     util,
 };
 
@@ -76,6 +80,20 @@ struct Args {
     flag_output:     Option<String>,
     flag_no_headers: bool,
     flag_delimiter:  Option<Delimiter>,
+}
+
+#[inline]
+fn extract_key_value(
+    record: &csv::ByteRecord,
+    key_sel: &Selection,
+    value_idx: usize,
+) -> (Vec<Vec<u8>>, Vec<u8>) {
+    let key = key_sel
+        .iter()
+        .map(|&i| record.get(i).unwrap_or(&[]).to_vec())
+        .collect();
+    let value = record.get(value_idx).unwrap_or(&[]).to_vec();
+    (key, value)
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -131,15 +149,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut current_values: Vec<Vec<u8>> = Vec::new();
 
         while rdr.read_byte_record(&mut record)? {
-            let key: Vec<Vec<u8>> = key_sel
-                .iter()
-                .map(|&i| record.get(i).unwrap_or(&[]).to_vec())
-                .collect();
-            let value = record.get(value_idx).unwrap_or(&[]).to_vec();
+            let (key, value) = extract_key_value(&record, &key_sel, value_idx);
+            let include = !(skip_empty && value.is_empty());
 
             match &current_key {
                 Some(ck) if ck == &key => {
-                    if !(skip_empty && value.is_empty()) {
+                    if include {
                         current_values.push(value);
                     }
                 },
@@ -148,7 +163,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         write_group(&mut wtr, &ck, &current_values, separator_bytes)?;
                     }
                     current_values.clear();
-                    if !(skip_empty && value.is_empty()) {
+                    if include {
                         current_values.push(value);
                     }
                     current_key = Some(key);
@@ -164,25 +179,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut groups: HashMap<Vec<Vec<u8>>, Vec<Vec<u8>>> = HashMap::default();
 
         while rdr.read_byte_record(&mut record)? {
-            let key: Vec<Vec<u8>> = key_sel
-                .iter()
-                .map(|&i| record.get(i).unwrap_or(&[]).to_vec())
-                .collect();
-            let value = record.get(value_idx).unwrap_or(&[]).to_vec();
+            let (key, value) = extract_key_value(&record, &key_sel, value_idx);
+            let include = !(skip_empty && value.is_empty());
 
-            if skip_empty && value.is_empty() {
-                groups.entry(key.clone()).or_insert_with(|| {
-                    order.push(key);
-                    Vec::new()
-                });
-                continue;
-            }
-
-            if let Some(vals) = groups.get_mut(&key) {
-                vals.push(value);
-            } else {
-                order.push(key.clone());
-                groups.insert(key, vec![value]);
+            match groups.entry(key) {
+                Entry::Occupied(mut o) => {
+                    if include {
+                        o.get_mut().push(value);
+                    }
+                },
+                Entry::Vacant(v) => {
+                    order.push(v.key().clone());
+                    let vals = if include { vec![value] } else { Vec::new() };
+                    v.insert(vals);
+                },
             }
         }
 
@@ -207,14 +217,7 @@ fn write_group<W: std::io::Write>(
     for k in key {
         out.push_field(k);
     }
-    let mut joined: Vec<u8> = Vec::new();
-    for (i, v) in values.iter().enumerate() {
-        if i > 0 {
-            joined.extend_from_slice(separator);
-        }
-        joined.extend_from_slice(v);
-    }
-    out.push_field(&joined);
+    out.push_field(&values.join(separator));
     wtr.write_byte_record(&out)?;
     Ok(())
 }

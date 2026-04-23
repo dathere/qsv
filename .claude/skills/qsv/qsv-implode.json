@@ -53,7 +53,7 @@
       {
         "flag": "--sorted",
         "type": "flag",
-        "description": "Assume input is pre-sorted by the key column(s). Streams groups as they are seen (O(1) memory)."
+        "description": "Assume input is pre-sorted by the key column(s). Streams groups as they are seen; memory is bounded by the size of the largest group."
       },
       {
         "flag": "--value",

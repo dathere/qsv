@@ -39,7 +39,8 @@ columns are dropped.
 
 By default, all input rows are buffered in memory and groups are emitted in the
 order keys are first seen. If the input is already sorted by the key column(s),
-use --sorted to stream groups with O(1) memory.
+use --sorted to stream groups as they are seen (memory proportional to the
+largest group, not the whole input).
 
 
 <a name="usage"></a>
@@ -60,7 +61,7 @@ qsv implode --help
 | &nbsp;`‑k,`<br>`‑‑keys`&nbsp; | string | Key column(s) to group by. Supports the usual selector syntax (e.g. "name", "1", "1-3", "a,c"). |  |
 | &nbsp;`‑v,`<br>`‑‑value`&nbsp; | string | The column whose values will be joined per group. Must resolve to exactly one column. |  |
 | &nbsp;`‑r,`<br>`‑‑rename`&nbsp; | string | New name for the imploded value column. |  |
-| &nbsp;`‑‑sorted`&nbsp; | flag | Assume input is pre-sorted by the key column(s). Streams groups as they are seen (O(1) memory). |  |
+| &nbsp;`‑‑sorted`&nbsp; | flag | Assume input is pre-sorted by the key column(s). Streams groups as they are seen; memory is bounded by the size of the largest group. |  |
 | &nbsp;`‑‑skip‑empty`&nbsp; | flag | Skip empty values when joining. By default, empty values are included as empty tokens so that round-tripping with `explode` is lossless. |  |
 
 <a name="common-options"></a>

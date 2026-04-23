@@ -269,10 +269,11 @@ describegpt options:
                            NOTE: If set, takes precedence over the QSV_LLM_BASE_URL environment variable
                            and the base URL specified in the prompt file.
                            [default: http://localhost:1234/v1]
-    -m, --model <model>    The model to use for inferencing.
+    -m, --model <model>    The model to use for inferencing. This model must be compatible with OpenAI API spec.
+                           Works with both cloud LLM providers and local LLMs.
                            If set, takes precedence over the QSV_LLM_MODEL environment variable.
                            Tested open weights models include OpenAI's gpt-oss-20b and gpt-oss-120b;
-                           Google's gemma-4 family of open models; and Mistral 3 reasoning models.
+                           Google's Gemma family of open models; and Mistral's Magistral reasoning models.
                            [default: openai/gpt-oss-20b]
     --language <lang>      The output language/dialect/tone to use for the response. (e.g., "Spanish", "French",
                            "Hindi", "Mandarin", "Italian", "Castilian", "Franglais", "Taglish", "Pig Latin",

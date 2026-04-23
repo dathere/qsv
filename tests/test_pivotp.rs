@@ -1537,17 +1537,21 @@ pivotp_test!(
     }
 );
 
-// Same schema-preservation guarantee for --subtotal: a per-group subtotal
-// row should render non-numeric pivoted columns as empty (null), not error.
+// Same schema-preservation guarantee for --subtotal as the grand-total
+// variant above. To actually exercise build_total_row's non-numeric
+// pivoted-value path under --subtotal (not just the index-cast path),
+// pivot a Date-typed value column: `sales` as on-col (cardinality is
+// small enough for pivot), product+region as the two index columns,
+// and `date` + --try-parsedates as the Date value column.
 pivotp_test!(
     pivotp_subtotal_non_numeric_value,
     |wrk: Workdir, mut cmd: process::Command| {
         cmd.args(&[
-            "product",
-            "--index",
-            "date,region",
-            "--values",
             "sales",
+            "--index",
+            "product,region",
+            "--values",
+            "date",
             "--agg",
             "first",
             "--try-parsedates",
@@ -1555,15 +1559,22 @@ pivotp_test!(
             "sales.csv",
         ]);
 
-        // Smoke test: this previously could fail on schema mismatch when
-        // pivoted value columns were non-numeric. We only assert success
-        // and that Total rows appear in the second index column.
         wrk.assert_success(&mut cmd);
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-        assert!(
-            got.iter()
-                .any(|row| row.get(1).map(String::as_str) == Some("Total"))
-        );
+        // A subtotal row should appear, with "Total" in the second index
+        // column and empty (null-rendered) Date values in the pivoted
+        // columns — previously this would fail with a schema mismatch
+        // because we inserted an empty string into a Date column.
+        let subtotal_row = got
+            .iter()
+            .find(|row| row.get(1).map(String::as_str) == Some("Total"))
+            .expect("expected at least one subtotal row");
+        for cell in &subtotal_row[2..] {
+            assert_eq!(
+                cell, "",
+                "pivoted Date column should be empty in subtotal row"
+            );
+        }
     }
 );
 

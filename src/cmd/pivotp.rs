@@ -153,6 +153,10 @@ fn build_schema_args(args: &Args) -> util::SchemaArgs {
 /// result so the command can still run (smart-agg and validation just become
 /// no-ops without stats).
 fn get_cached_stats(args: &Args) -> &'static (ByteRecord, Vec<StatsData>) {
+    // `quiet` is latched on the first call because STATS_RECORDS is a
+    // process-global OnceLock. In practice `Args` is constructed once per
+    // `run()` so every call site sees the same flag, but if this ever gets
+    // reused across multiple Args, only the first call's --quiet takes effect.
     let quiet = args.flag_quiet;
     STATS_RECORDS.get_or_init(|| {
         let schema_args = build_schema_args(args);

@@ -412,6 +412,7 @@ struct ParsedOption {
     flag:        String,
     short:       Option<String>,
     option_type: String,
+    required:    bool,
     description: String,
     default:     Option<String>,
 }
@@ -597,12 +598,22 @@ fn generate_command_markdown(
                 .default
                 .as_ref()
                 .map_or(String::new(), |d| format!("`{d}`"));
+            let description = if opt.required {
+                let desc = opt.description.trim_end();
+                if desc.is_empty() {
+                    "**(required)**".to_string()
+                } else {
+                    format!("{desc} **(required)**")
+                }
+            } else {
+                opt.description.clone()
+            };
             let _ = writeln!(
                 md,
                 "| {} | {} | {} | {} |",
                 option_display,
                 opt.option_type,
-                escape_table_cell(&linkify_bare_urls(&opt.description)),
+                escape_table_cell(&linkify_bare_urls(&description)),
                 default_str
             );
         }
@@ -1429,6 +1440,10 @@ fn parse_options_with_docopt(
     // Get manual descriptions
     let _manual_descriptions = extract_descriptions_from_text(usage_text);
 
+    // Detect which options are required (appear outside [options]/[...] in the
+    // Usage: section).
+    let required_options = extract_required_options_from_usage(usage_text);
+
     // Build a map of flag -> docopt info (type, default, short/long pairing)
     let mut docopt_map: HashMap<String, (String, Option<String>, Option<String>)> = HashMap::new();
     // (option_type, default, paired_short_or_long)
@@ -1550,7 +1565,7 @@ fn parse_options_with_docopt(
 
             // Option line starts with -
             if trimmed.starts_with('-')
-                && let Some(parsed) = parse_option_line(trimmed, &lines[i + 1..], &docopt_map)
+                && let Some(mut parsed) = parse_option_line(trimmed, &lines[i + 1..], &docopt_map)
             {
                 // Skip if we've already seen this flag (from docopt pairing)
                 let primary = parsed.flag.clone();
@@ -1559,6 +1574,11 @@ fn parse_options_with_docopt(
                         seen_flags.push(short.clone());
                     }
                     seen_flags.push(primary);
+                    parsed.required = required_options.contains(&parsed.flag)
+                        || parsed
+                            .short
+                            .as_deref()
+                            .is_some_and(|s| required_options.contains(s));
                     options.push(parsed);
                 }
 
@@ -1706,10 +1726,16 @@ fn parse_option_line(
         flag,
         short,
         option_type,
+        required: false,
         description: description.trim().to_string(),
         default,
     })
 }
+
+// `extract_required_options_from_usage` lives in `crate::generators_common`.
+// Both generators share that implementation so the detection semantics stay
+// consistent.
+use crate::generators_common::extract_required_options_from_usage;
 
 /// Format option group title
 fn format_option_group_title(group_name: &str, _command_name: &str) -> String {

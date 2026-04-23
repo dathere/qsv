@@ -60,6 +60,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 mod clitypes;
 mod cmd;
 mod config;
+mod generators_common;
 mod help_markdown_gen;
 mod index;
 mod lookup;

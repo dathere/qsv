@@ -30,6 +30,13 @@ export interface Option {
   flag: string;
   short?: string;
   type: "flag" | "string" | "number";
+  /**
+   * True when the option is required by the command (i.e., it appears
+   * outside `[options]` and any `(A | B)` alternative group in every
+   * Usage: variant). Emitted by the Rust generator only when required;
+   * optional options omit the field entirely.
+   */
+  required?: boolean;
   description: string;
   default?: string;
 }

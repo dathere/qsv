@@ -56,6 +56,8 @@ struct Option_ {
     short:       Option<String>,
     #[serde(rename = "type")]
     option_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    required:    Option<bool>,
     description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     default:     Option<String>,
@@ -258,6 +260,12 @@ impl UsageParser {
         optional_args
     }
 
+    /// Global required-option set derived from the USAGE string. Delegates to
+    /// the shared helper so `help_markdown_gen` stays in sync.
+    fn extract_required_options_from_usage(&self) -> std::collections::HashSet<String> {
+        crate::generators_common::extract_required_options_from_usage(&self.usage_text)
+    }
+
     /// Parse USAGE text using qsv-docopt Parser for robust parsing
     fn parse_with_docopt(&self) -> Result<(Vec<Argument>, Vec<Option_>), String> {
         // Parse USAGE text with docopt
@@ -270,6 +278,10 @@ impl UsageParser {
 
         // Detect which positional args are optional (wrapped in [] in USAGE text)
         let optional_args = self.extract_optional_args_from_usage();
+
+        // Detect which options are required (appear outside [options] / [...] in
+        // the Usage: section).
+        let required_options = self.extract_required_options_from_usage();
 
         // Also parse manually to get descriptions
         let manual_descriptions = self.extract_descriptions_from_text();
@@ -405,10 +417,18 @@ impl UsageParser {
                         description = Self::strip_default_from_description(&description);
                     }
 
+                    let required = if required_options.contains(&primary_flag)
+                        || required_options.contains(&flag_str)
+                    {
+                        Some(true)
+                    } else {
+                        None
+                    };
                     options.push(Option_ {
                         flag: primary_flag,
                         short: long_flag.and(Some(flag_str)),
                         option_type: option_type.to_string(),
+                        required,
                         description,
                         default,
                     });
@@ -497,10 +517,20 @@ impl UsageParser {
                         description = Self::strip_default_from_description(&description);
                     }
 
+                    let required = if required_options.contains(&flag_str)
+                        || short_flag
+                            .as_deref()
+                            .is_some_and(|s| required_options.contains(s))
+                    {
+                        Some(true)
+                    } else {
+                        None
+                    };
                     options.push(Option_ {
                         flag: flag_str,
                         short: short_flag,
                         option_type: option_type.to_string(),
+                        required,
                         description,
                         default,
                     });

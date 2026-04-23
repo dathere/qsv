@@ -28,6 +28,7 @@
       {
         "flag": "--keys",
         "type": "string",
+        "required": true,
         "description": "Key column(s) to group by. Supports the usual selector syntax (e.g. \"name\", \"1\", \"1-3\", \"a,c\")."
       },
       {
@@ -58,6 +59,7 @@
       {
         "flag": "--value",
         "type": "string",
+        "required": true,
         "description": "The column whose values will be joined per group. Must resolve to exactly one column."
       }
     ]

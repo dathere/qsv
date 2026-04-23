@@ -358,7 +358,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .to_lowercase();
     let validation = match flag_validate.as_str() {
         // no unique checks
-        "manytomany" | "none" => JoinValidation::ManyToMany,
+        "none" => JoinValidation::ManyToMany,
         // join keys are unique in the left data set
         "onetomany" => JoinValidation::OneToMany,
         // join keys are unique in the right data set
@@ -448,6 +448,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         ),
         // right anti join
         // swap left and right data sets and run left anti join
+        // NOTE: after this swap the `left_*` fields of JoinStruct hold what was
+        // originally the right dataset. The field names are not renamed, so the
+        // underlying run() below is operating on inverted semantics.
         (false, false, false, false, true, false, false, false, false, false) => {
             let mut swapped_join = join;
             swap(&mut swapped_join.left_lf, &mut swapped_join.right_lf);
@@ -462,6 +465,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         },
         // right semi join
         // swap left and right data sets and run left semi join
+        // (see NOTE above about inverted field names after the swap)
         (false, false, false, false, false, true, false, false, false, false) => {
             let mut swapped_join = join;
             swap(&mut swapped_join.left_lf, &mut swapped_join.right_lf);
@@ -494,12 +498,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // as of join
         (false, false, false, false, false, false, false, false, true, false) => {
             // safety: flag_strategy is always is_some() as it has a default value
-            args.flag_strategy = Some(args.flag_strategy.unwrap().to_lowercase());
-            let strategy = match args.flag_strategy.as_deref() {
-                Some("backward") | None => AsofStrategy::Backward,
-                Some("forward") => AsofStrategy::Forward,
-                Some("nearest") => AsofStrategy::Nearest,
-                Some(s) => return fail_incorrectusage_clierror!("Invalid asof strategy: {}", s),
+            let flag_strategy = args.flag_strategy.as_ref().unwrap().to_lowercase();
+            let strategy = match flag_strategy.as_str() {
+                "backward" => AsofStrategy::Backward,
+                "forward" => AsofStrategy::Forward,
+                "nearest" => AsofStrategy::Nearest,
+                s => return fail_incorrectusage_clierror!("Invalid asof strategy: {}", s),
             };
 
             let mut asof_options = AsOfOptions {
@@ -593,21 +597,27 @@ impl JoinStruct {
         special_join: SpecialJoin,
         normalization_form: Option<&UnicodeForm>,
     ) -> CliResult<(usize, usize)> {
-        let mut left_selcols: Vec<_> = self
-            .left_sel
-            .split(',')
+        // Split the raw column-name lists once — we use them both for building join
+        // expressions and (when transformations are enabled) for deriving temp column
+        // names. We intentionally avoid round-tripping column names through Expr::to_string()
+        // since that format has changed across Polars versions.
+        let left_col_names: Vec<&str> = self.left_sel.split(',').collect();
+        let right_col_names: Vec<&str> = self.right_sel.split(',').collect();
+
+        let mut left_selcols: Vec<Expr> = left_col_names
+            .iter()
+            .copied()
             .map(polars::lazy::dsl::col)
             .collect();
-        let mut right_selcols: Vec<_> = self
-            .right_sel
-            .split(',')
+        let mut right_selcols: Vec<Expr> = right_col_names
+            .iter()
+            .copied()
             .map(polars::lazy::dsl::col)
             .collect();
 
         // Handle ignore_case, ignore_leading_zeros, and unicode normalization transformations
         let keys_transformed =
             if self.ignore_case || self.ignore_leading_zeros || normalization_form.is_some() {
-                // Create transformation function that applies all enabled transformations
                 let transform_col = |col: Expr| {
                     let mut transformed = col.cast(DataType::String);
                     if self.ignore_leading_zeros {
@@ -622,46 +632,23 @@ impl JoinStruct {
                     transformed
                 };
 
-                // Helper to get clean column name without col("") wrapper
-                let clean_col_name = |col: &Expr| {
-                    col.to_string()
-                        .trim_start_matches(r#"col(""#)
-                        .trim_end_matches(r#"")"#)
-                        .to_string()
+                // Apply transformations to one side: add a `_qsv-<name>-transformed` column
+                // to the lazyframe and return the list of expressions pointing at those
+                // temp columns so the join runs against them.
+                let apply_side = |lf: &mut LazyFrame, names: &[&str]| -> Vec<Expr> {
+                    let mut temp_exprs = Vec::with_capacity(names.len());
+                    for name in names {
+                        let temp_col_name = format!("_qsv-{name}-transformed");
+                        *lf = lf.clone().with_column(
+                            transform_col(polars::lazy::dsl::col(*name)).alias(&temp_col_name),
+                        );
+                        temp_exprs.push(polars::lazy::dsl::col(temp_col_name));
+                    }
+                    temp_exprs
                 };
 
-                // Transform left dataframe columns
-                for col in &left_selcols {
-                    let col_name = clean_col_name(col);
-                    let temp_col_name = format!("_qsv-{col_name}-transformed");
-                    self.left_lf = self
-                        .left_lf
-                        .with_column(transform_col(col.clone()).alias(&temp_col_name));
-                }
-
-                // Transform right dataframe columns
-                for col in &right_selcols {
-                    let col_name = clean_col_name(col);
-                    let temp_col_name = format!("_qsv-{col_name}-transformed");
-                    self.right_lf = self
-                        .right_lf
-                        .with_column(transform_col(col.clone()).alias(&temp_col_name));
-                }
-
-                // Update selcols to use transformed column names
-                left_selcols = left_selcols
-                    .iter()
-                    .map(|col| {
-                        polars::lazy::dsl::col(format!("_qsv-{}-transformed", clean_col_name(col)))
-                    })
-                    .collect();
-
-                right_selcols = right_selcols
-                    .iter()
-                    .map(|col| {
-                        polars::lazy::dsl::col(format!("_qsv-{}-transformed", clean_col_name(col)))
-                    })
-                    .collect();
+                left_selcols = apply_side(&mut self.left_lf, &left_col_names);
+                right_selcols = apply_side(&mut self.right_lf, &right_col_names);
 
                 true
             } else {
@@ -684,25 +671,27 @@ impl JoinStruct {
             JoinCoalesce::JoinSpecific
         };
 
-        let mut out_delim = self.delim;
-        let mut out_writer = match self.output {
-            Some(ref output_file) => {
-                out_delim = tsvssv_delim(output_file, self.delim);
-
-                // no need to use buffered writer here, as CsvWriter already does that
-                let path = Path::new(&output_file);
-                Box::new(File::create(path).unwrap()) as Box<dyn Write>
-            },
-            None => Box::new(io::stdout()) as Box<dyn Write>,
+        // Resolve the output delimiter up front so we can validate the flag combination
+        // BEFORE creating/truncating the output file.
+        let out_delim = match self.output {
+            Some(ref output_file) => tsvssv_delim(output_file, self.delim),
+            None => self.delim,
         };
 
         if out_delim == b',' && self.decimal_comma {
-            out_writer.flush()?;
             return fail_clierror!(
                 "Using --decimal-comma with a comma separator is invalid, use --delimiter to set \
                  a different separator."
             );
         }
+
+        let mut out_writer: Box<dyn Write> = match self.output {
+            Some(ref output_file) => {
+                // no need to use buffered writer here, as CsvWriter already does that
+                Box::new(File::create(Path::new(output_file))?)
+            },
+            None => Box::new(io::stdout()),
+        };
 
         let mut optflags = OptFlags::from_bits_truncate(0);
         if self.no_optimizations {
@@ -1001,15 +990,13 @@ impl Args {
             args: &Args,
             delim: u8,
             debuglog_flag: bool,
-        ) -> CliResult<(LazyFrame, bool)> {
+        ) -> CliResult<(LazyFrame, bool, PathBuf)> {
             let mut create_schema = false;
 
             // First, check if the pschema.json file exists and is newer or created at the same time
-            // as the table file
-            let schema_file = PathBuf::from(format!(
-                "{}.pschema.json",
-                input_path.canonicalize()?.display()
-            ));
+            // as the table file. Canonicalize once and reuse for any later schema writeback.
+            let canonical_path = input_path.canonicalize()?;
+            let schema_file = PathBuf::from(format!("{}.pschema.json", canonical_path.display()));
             let mut valid_schema_exists = schema_file.exists()
                 && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?;
 
@@ -1070,8 +1057,12 @@ impl Args {
                     }
                 },
                 -1 | -2 => {
-                    // get the headers from the input file
-                    let mut rdr = csv::Reader::from_path(input_path)?;
+                    // get the headers from the input file, honoring the resolved delimiter
+                    // (so TSV / SSV / --delimiter inputs don't come back as a single
+                    // mashed-together field and produce a garbage all-string schema).
+                    let mut rdr = csv::ReaderBuilder::new()
+                        .delimiter(tsvssv_delim(input_path, delim))
+                        .from_path(input_path)?;
                     let csv_fields = rdr.byte_headers()?.clone();
                     drop(rdr);
 
@@ -1111,7 +1102,7 @@ impl Args {
                 },
             }
 
-            Ok((reader.finish()?, create_schema))
+            Ok((reader.finish()?, create_schema, canonical_path))
         }
 
         // ============ START OF NEW_JOIN MAIN CODE ==============
@@ -1142,12 +1133,12 @@ impl Args {
         // Handle snappy compression for left input
         if input1_path.extension().and_then(std::ffi::OsStr::to_str) == Some("sz") {
             let decompressed_path = util::decompress_snappy_file(&input1_path, tmpdir)?;
-            self.arg_input1.clone_from(&decompressed_path);
-            input1_path = PathBuf::from(decompressed_path);
+            input1_path = PathBuf::from(&decompressed_path);
+            self.arg_input1 = decompressed_path;
         }
 
         // Setup left LazyFrame
-        let (mut left_lf, create_left_schema) = setup_lazy_frame(
+        let (mut left_lf, create_left_schema, left_canonical) = setup_lazy_frame(
             &input1_path,
             comment_char.as_ref(),
             self,
@@ -1158,10 +1149,7 @@ impl Args {
         if create_left_schema {
             let schema = left_lf.collect_schema()?;
             let schema_json = serde_json::to_string_pretty(&schema)?;
-            let schema_file = PathBuf::from(format!(
-                "{}.pschema.json",
-                input1_path.canonicalize()?.display()
-            ));
+            let schema_file = PathBuf::from(format!("{}.pschema.json", left_canonical.display()));
             let mut file = BufWriter::new(File::create(&schema_file)?);
             file.write_all(schema_json.as_bytes())?;
             file.flush()?;
@@ -1179,12 +1167,12 @@ impl Args {
         // Handle snappy compression for right input
         if input2_path.extension().and_then(std::ffi::OsStr::to_str) == Some("sz") {
             let decompressed_path = util::decompress_snappy_file(&input2_path, tmpdir)?;
-            self.arg_input2.clone_from(&decompressed_path);
-            input2_path = PathBuf::from(decompressed_path);
+            input2_path = PathBuf::from(&decompressed_path);
+            self.arg_input2 = decompressed_path;
         }
 
         // Setup right LazyFrame
-        let (mut right_lf, create_right_schema) = setup_lazy_frame(
+        let (mut right_lf, create_right_schema, right_canonical) = setup_lazy_frame(
             &input2_path,
             comment_char.as_ref(),
             self,
@@ -1195,10 +1183,7 @@ impl Args {
         if create_right_schema {
             let schema = right_lf.collect_schema()?;
             let schema_json = serde_json::to_string_pretty(&schema)?;
-            let schema_file = PathBuf::from(format!(
-                "{}.pschema.json",
-                input2_path.canonicalize()?.display()
-            ));
+            let schema_file = PathBuf::from(format!("{}.pschema.json", right_canonical.display()));
             let mut file = BufWriter::new(File::create(&schema_file)?);
             file.write_all(schema_json.as_bytes())?;
             file.flush()?;

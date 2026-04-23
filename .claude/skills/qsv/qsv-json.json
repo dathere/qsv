@@ -1,6 +1,6 @@
 {
   "name": "qsv-json",
-  "version": "19.0.0",
+  "version": "19.1.0",
   "description": "Convert JSON array to CSV.",
   "category": "conversion",
   "command": {

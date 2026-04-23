@@ -1,6 +1,6 @@
 {
   "name": "qsv-pseudo",
-  "version": "19.0.0",
+  "version": "19.1.0",
   "description": "Pseudonymise the value of the given column by replacing them with an incremental identifier.",
   "category": "utility",
   "command": {

@@ -1,6 +1,6 @@
 {
   "name": "qsv-pragmastat",
-  "version": "19.0.0",
+  "version": "19.1.0",
   "description": "Compute pragmatic statistics using the Pragmastat library. Uses the stats cache to auto-filter non-numeric columns and support Date/DateTime columns.",
   "category": "aggregation",
   "command": {

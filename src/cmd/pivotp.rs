@@ -35,13 +35,14 @@ pivotp options:
     -i, --index <cols>      The column(s) to use as the index (row labels).
                             Specify multiple columns by separating them with a comma.
                             The output will have one row for each unique combination of the index's values.
-                            If None, all remaining columns not specified on --on and --values will be used.
-                            At least one of --index and --values must be specified.
+                            In pivot mode, if None, all remaining columns not specified on --on and --values
+                            will be used; at least one of --index and --values must be specified.
                             Required in group-by mode.
     -v, --values <cols>     The column(s) containing values to aggregate.
                             If an aggregation is specified, these are the values on which the aggregation
-                            will be computed. If None, all remaining columns not specified on --on and --index
-                            will be used. At least one of --index and --values must be specified.
+                            will be computed.
+                            In pivot mode, if None, all remaining columns not specified on --on and --index
+                            will be used; at least one of --index and --values must be specified.
                             In group-by mode, if omitted, a single "count" column is produced.
     -a, --agg <func>        The aggregation function to use:
                               first - First value encountered
@@ -125,6 +126,55 @@ fn cols_to_exprs(cols: &[String]) -> Vec<Expr> {
     cols.iter().map(col).collect()
 }
 
+/// Build the SchemaArgs used for stats/frequency lookups.
+/// Extracted to avoid duplicated construction at multiple call sites.
+fn build_schema_args(args: &Args) -> util::SchemaArgs {
+    util::SchemaArgs {
+        flag_enum_threshold:  0,
+        flag_ignore_case:     false,
+        flag_strict_dates:    false,
+        flag_strict_formats:  false,
+        flag_pattern_columns: crate::select::SelectColumns::parse("").unwrap(),
+        flag_dates_whitelist: String::new(),
+        flag_prefer_dmy:      false,
+        flag_force:           false,
+        flag_stdout:          false,
+        flag_jobs:            None,
+        flag_polars:          false,
+        flag_no_headers:      false,
+        flag_delimiter:       args.flag_delimiter,
+        arg_input:            args.arg_input.clone(),
+        flag_memcheck:        false,
+        flag_output:          None,
+    }
+}
+
+/// Populate STATS_RECORDS on first use. On error, logs once and caches an empty
+/// result so the command can still run (smart-agg and validation just become
+/// no-ops without stats).
+fn get_cached_stats(args: &Args) -> &'static (ByteRecord, Vec<StatsData>) {
+    // `quiet` is latched on the first call because STATS_RECORDS is a
+    // process-global OnceLock. In practice `Args` is constructed once per
+    // `run()` so every call site sees the same flag, but if this ever gets
+    // reused across multiple Args, only the first call's --quiet takes effect.
+    let quiet = args.flag_quiet;
+    STATS_RECORDS.get_or_init(|| {
+        let schema_args = build_schema_args(args);
+        match get_stats_records(&schema_args, StatsMode::FrequencyForceStats) {
+            Ok(pair) => pair,
+            Err(e) => {
+                if !quiet {
+                    eprintln!(
+                        "Warning: unable to load stats for pivotp (smart-agg and --validate will \
+                         be limited): {e}"
+                    );
+                }
+                (ByteRecord::new(), Vec::new())
+            },
+        }
+    })
+}
+
 #[derive(Deserialize)]
 struct Args {
     arg_on_cols:         Option<String>,
@@ -164,30 +214,7 @@ fn calculate_pivot_metadata(
     on_cols: &[String],
     value_cols: Option<&Vec<String>>,
 ) -> Option<PivotMetadata> {
-    // Get stats records
-    let schema_args = util::SchemaArgs {
-        flag_enum_threshold:  0,
-        flag_ignore_case:     false,
-        flag_strict_dates:    false,
-        flag_strict_formats:  false,
-        flag_pattern_columns: crate::select::SelectColumns::parse("").unwrap(),
-        flag_dates_whitelist: String::new(),
-        flag_prefer_dmy:      false,
-        flag_force:           false,
-        flag_stdout:          false,
-        flag_jobs:            None,
-        flag_polars:          false,
-        flag_no_headers:      false,
-        flag_delimiter:       args.flag_delimiter,
-        arg_input:            args.arg_input.clone(),
-        flag_memcheck:        false,
-        flag_output:          None,
-    };
-
-    let (csv_fields, csv_stats) = STATS_RECORDS.get_or_init(|| {
-        get_stats_records(&schema_args, StatsMode::FrequencyForceStats)
-            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new()))
-    });
+    let (csv_fields, csv_stats) = get_cached_stats(args);
 
     if csv_stats.is_empty() {
         return None;
@@ -283,8 +310,11 @@ fn build_total_row(
             let sum_series = col_ref.sum_reduce()?.into_column(name.into());
             columns.push(sum_series);
         } else {
-            // Non-numeric pivot columns get empty string
-            columns.push(Column::new(name.into(), &[""]));
+            // Non-numeric, non-index pivoted columns (e.g. a Date/Bool value
+            // column produced by `first`/`last`) get a typed NULL so the
+            // resulting total row retains the original schema and can be
+            // vstack'd onto the pivot result.
+            columns.push(Column::full_null(name.into(), 1, col_ref.dtype()));
         }
     }
 
@@ -294,53 +324,49 @@ fn build_total_row(
 /// Insert subtotal rows after each group in the first index column.
 /// Returns a new DataFrame with subtotal rows interleaved.
 /// The data is sorted by all index columns to ensure contiguous groups and deterministic ordering.
+///
+/// Precondition: the first index column must already be cast to `String`.
+/// The only caller (`run`) casts all index columns to `String` before invoking
+/// this, so we rely on that here rather than handling arbitrary dtypes.
 fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliResult<DataFrame> {
     // Sort by all index columns to ensure contiguous groups and
     // deterministic intra-group ordering, since pivot output order is not guaranteed.
     let df = df.sort(index_cols, SortMultipleOptions::default())?;
 
     let group_col = df.column(&index_cols[0])?;
-    let str_col = group_col.str().ok();
+    debug_assert!(
+        group_col.dtype() == &DataType::String,
+        "insert_subtotals: first index column must be String (caller should cast before calling), \
+         got {:?}",
+        group_col.dtype(),
+    );
+    let Ok(str_col) = group_col.str() else {
+        return fail_clierror!(
+            "insert_subtotals: first index column must be String (caller should cast before \
+             calling)"
+        );
+    };
     let mut frames: Vec<DataFrame> = Vec::new();
     let mut group_start = 0_usize;
 
     for i in 1..=df.height() {
         // Detect group boundary: end of data or value change in first index col
         let current_val = if i < df.height() {
-            if let Some(str_col) = &str_col {
-                str_col.get(i).map(String::from)
-            } else {
-                group_col.get(i).map(|v| v.to_string()).ok()
-            }
+            str_col.get(i)
         } else {
             None
         };
-        let start_val = if let Some(str_col) = &str_col {
-            str_col
-                .get(group_start)
-                .map(std::string::ToString::to_string)
-        } else {
-            group_col.get(group_start).map(|v| v.to_string()).ok()
-        };
-        let is_boundary = i == df.height() || current_val.as_deref() != start_val.as_deref();
+        let start_val = str_col.get(group_start);
+        let is_boundary = i == df.height() || current_val != start_val;
 
         if is_boundary {
             let group_len = i - group_start;
             let group_df = df.slice(group_start as i64, group_len);
 
-            // Get the group value for the first index column label
-            let group_value = if let Some(str_col) = &str_col {
-                str_col.get(group_start).unwrap_or_default().to_string()
-            } else {
-                group_col
-                    .get(group_start)
-                    .map(|v| v.to_string())
-                    .ok()
-                    .unwrap_or_default()
-            };
+            let group_value = start_val.unwrap_or_default();
 
             // Build subtotal row: first index col = group value, second = label
-            let subtotal_row = build_total_row(&group_df, index_cols, &group_value, label)?;
+            let subtotal_row = build_total_row(&group_df, index_cols, group_value, label)?;
 
             frames.push(group_df);
             frames.push(subtotal_row);
@@ -376,34 +402,15 @@ fn suggest_agg_function(
 
     let quiet = args.flag_quiet;
 
-    // Get stats for all columns with enhanced statistics
-    let schema_args = util::SchemaArgs {
-        flag_enum_threshold:  0,
-        flag_ignore_case:     false,
-        flag_strict_dates:    false,
-        flag_strict_formats:  false,
-        flag_pattern_columns: crate::select::SelectColumns::parse("").unwrap(),
-        flag_dates_whitelist: String::new(),
-        flag_prefer_dmy:      false,
-        flag_force:           false,
-        flag_stdout:          false,
-        flag_jobs:            None,
-        flag_polars:          false,
-        flag_no_headers:      false,
-        flag_delimiter:       args.flag_delimiter,
-        arg_input:            args.arg_input.clone(),
-        flag_memcheck:        false,
-        flag_output:          None,
-    };
+    let (csv_fields, csv_stats) = get_cached_stats(args);
 
-    let (csv_fields, csv_stats) = STATS_RECORDS.get_or_init(|| {
-        get_stats_records(&schema_args, StatsMode::FrequencyForceStats)
-            .unwrap_or_else(|_| (ByteRecord::new(), Vec::new()))
-    });
-
-    // Analyze pivot column characteristics
+    // Analyze pivot column characteristics.
+    // `ordered_pivot` means *all* pivot columns have stats and are sorted.
+    // We combine per-column flags with AND so multi-column order is only
+    // claimed when every column is ordered (previously the loop overwrote
+    // the flag, making the result depend on column order).
     let mut high_cardinality_pivot = false;
-    let mut ordered_pivot = false; // Track if pivot columns are ordered
+    let mut ordered_pivot = !on_cols.is_empty();
     for on_col in on_cols {
         if let Some(pos) = csv_fields
             .iter()
@@ -412,8 +419,6 @@ fn suggest_agg_function(
             let stats = &csv_stats[pos];
             let uniqueness_ratio = stats.uniqueness_ratio.unwrap_or(0.0);
 
-            // Check cardinality ratio
-
             if uniqueness_ratio > 0.5 {
                 high_cardinality_pivot = true;
                 if !quiet {
@@ -421,16 +426,17 @@ fn suggest_agg_function(
                 }
             }
 
-            // Check if column is unordered based on sort_order
-            if let Some(sort_order) = &stats.sort_order {
-                ordered_pivot = sort_order != "Unsorted";
-            }
+            // Unordered (or missing sort_order) → the whole pivot is unordered
+            ordered_pivot &= stats.sort_order.as_deref().is_some_and(|s| s != "Unsorted");
+        } else {
+            // Missing stats → we cannot prove this column is ordered
+            ordered_pivot = false;
         }
     }
 
-    // Analyze index column characteristics
+    // Analyze index column characteristics (same all-columns-ordered semantics)
     let mut high_cardinality_index = false;
-    let mut ordered_index = false;
+    let mut ordered_index = index_cols.is_some_and(|c| !c.is_empty());
     if let Some(idx_cols) = index_cols {
         for idx_col in idx_cols {
             if let Some(pos) = csv_fields
@@ -440,7 +446,6 @@ fn suggest_agg_function(
                 let stats = &csv_stats[pos];
                 let uniqueness_ratio = stats.uniqueness_ratio.unwrap_or(0.0);
 
-                // Check uniqueness ratio
                 if uniqueness_ratio > 0.5 {
                     high_cardinality_index = true;
                     if !quiet {
@@ -448,10 +453,9 @@ fn suggest_agg_function(
                     }
                 }
 
-                // Check if column is unordered
-                if let Some(sort_order) = &stats.sort_order {
-                    ordered_index = sort_order != "Unsorted";
-                }
+                ordered_index &= stats.sort_order.as_deref().is_some_and(|s| s != "Unsorted");
+            } else {
+                ordered_index = false;
             }
         }
     }
@@ -826,9 +830,26 @@ fn suggest_numeric_after_bimodality(
 /// Log message for the mixed-sign cancellation guard.
 fn log_mixed_sign(stats: &StatsData) {
     let (n_neg, n_pos) = (stats.n_negative.unwrap_or(0), stats.n_positive.unwrap_or(0));
-    let total = n_neg + stats.n_zero.unwrap_or(0) + n_pos;
-    let neg_pct = (n_neg.saturating_mul(100) + (total / 2)) / total;
-    let pos_pct = (n_pos.saturating_mul(100) + (total / 2)) / total;
+    // saturating_add for the total too, to match the end-to-end overflow-safe
+    // guarantee described below.
+    let total = n_neg
+        .saturating_add(stats.n_zero.unwrap_or(0))
+        .saturating_add(n_pos);
+    // Round to nearest percent via (x*100 + total/2) / total.
+    // Use saturating_mul/saturating_add end-to-end so pathological row counts
+    // (n > u64::MAX / 100 ≈ 1.8e17) saturate cleanly instead of panicking.
+    // checked_div handles the (defensively-impossible) total == 0 case —
+    // callers only invoke us after is_mixed_sign, which requires total > 0.
+    let neg_pct = n_neg
+        .saturating_mul(100)
+        .saturating_add(total / 2)
+        .checked_div(total)
+        .unwrap_or(0);
+    let pos_pct = n_pos
+        .saturating_mul(100)
+        .saturating_add(total / 2)
+        .checked_div(total)
+        .unwrap_or(0);
     eprintln!(
         "Info: Mixed-sign data ({neg_pct}% negative, {pos_pct}% positive), using Mean to avoid \
          Sum cancellation"
@@ -1107,6 +1128,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         "mean" => c.mean().alias(PlSmallStr::from_str(vc)),
                         "median" => c.median().alias(PlSmallStr::from_str(vc)),
                         "len" | "smart" => len().alias(PlSmallStr::from_str(vc)),
+                        // Unreachable because:
+                        //   - "none" and "item" are rejected in the group-by validation block in
+                        //     `run` (see the `is_groupby_mode` checks).
+                        //   - any other unknown name is rejected in the pivot `agg_expr` match
+                        //     above, where `agg_expr` is first constructed.
                         _ => unreachable!(
                             "Invalid agg_name '{agg_name}' should have been caught during \
                              validation"
@@ -1161,15 +1187,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let on_cols = on_cols.unwrap();
         let actual_value_cols = actual_value_cols.unwrap();
 
-        if args.flag_validate {
-            // Validate the operation - need to collect to get metadata
-            let df_for_validation = lf.clone().collect()?;
-            if let Some(metadata) =
+        if args.flag_validate
+            && let Some(metadata) =
                 calculate_pivot_metadata(&args, &on_cols, Some(&actual_value_cols))
-            {
-                validate_pivot_operation(&metadata)?;
-            }
-            drop(df_for_validation);
+        {
+            // Validation uses cached stats records, not the DataFrame itself,
+            // so we don't need to collect the LazyFrame here.
+            validate_pivot_operation(&metadata)?;
         }
 
         // Compute unique values for the pivot columns to create on_columns DataFrame

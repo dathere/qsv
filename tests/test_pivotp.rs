@@ -1502,6 +1502,82 @@ pivotp_test!(
     }
 );
 
+// Regression test for build_total_row: a non-numeric, non-index pivoted
+// column (here a Date from `--try-parsedates` pivoted via `--agg first`)
+// must be filled with a typed NULL in the grand-total row so the schema
+// matches on vstack. Previously we inserted an empty string, which
+// produced a String column that could not vstack onto the Date column.
+pivotp_test!(
+    pivotp_grand_total_non_numeric_value,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "product",
+            "--index",
+            "region",
+            "--values",
+            "date",
+            "--agg",
+            "first",
+            "--try-parsedates",
+            "--grand-total",
+            "sales.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        // Header: region plus one column per product (A, B)
+        assert_eq!(got[0], svec!["region", "A", "B"]);
+        // Grand-total row: label in first col, empty (null) for the
+        // Date-typed pivot columns.
+        let last = got.last().unwrap();
+        assert_eq!(last[0], "Grand Total");
+        assert_eq!(last[1], "");
+        assert_eq!(last[2], "");
+    }
+);
+
+// Same schema-preservation guarantee for --subtotal as the grand-total
+// variant above. To actually exercise build_total_row's non-numeric
+// pivoted-value path under --subtotal (not just the index-cast path),
+// pivot a Date-typed value column: `sales` as on-col (cardinality is
+// small enough for pivot), product+region as the two index columns,
+// and `date` + --try-parsedates as the Date value column.
+pivotp_test!(
+    pivotp_subtotal_non_numeric_value,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "sales",
+            "--index",
+            "product,region",
+            "--values",
+            "date",
+            "--agg",
+            "first",
+            "--try-parsedates",
+            "--subtotal",
+            "sales.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        // A subtotal row should appear, with "Total" in the second index
+        // column and empty (null-rendered) Date values in the pivoted
+        // columns — previously this would fail with a schema mismatch
+        // because we inserted an empty string into a Date column.
+        let subtotal_row = got
+            .iter()
+            .find(|row| row.get(1).map(String::as_str) == Some("Total"))
+            .expect("expected at least one subtotal row");
+        for cell in &subtotal_row[2..] {
+            assert_eq!(
+                cell, "",
+                "pivoted Date column should be empty in subtotal row"
+            );
+        }
+    }
+);
+
 // ==================== GROUP-BY MODE TESTS ====================
 
 macro_rules! pivotp_groupby_test {

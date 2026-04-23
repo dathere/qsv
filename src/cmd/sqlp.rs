@@ -52,7 +52,7 @@ Example queries:
 
   # Natural Joins are supported too! (https://www.w3resource.com/sql/joins/natural-join.php)
   $ qsv sqlp data1.csv data2.csv data3.csv \
-    "SELECT COLUMNS('^[^:]+$') FROM data1 NATURAL JOIN data2 NATURAL JOIN data3 ORDER BY COMPANY_ID",
+    "SELECT COLUMNS('^[^:]+$') FROM data1 NATURAL JOIN data2 NATURAL JOIN data3 ORDER BY COMPANY_ID"
 
   # Use a SQL script to run a long, complex SQL query or to run SEVERAL SQL queries.
   # When running several queries, each query needs to be separated by a semicolon,
@@ -245,9 +245,12 @@ sqlp options:
                               [default: <empty string>]
 
                               ARROW/AVRO/PARQUET OUTPUT FORMATS ONLY:
-    --compression <arg>       The compression codec to use when writing arrow or parquet files.
+    --compression <arg>       The compression codec to use when writing arrow, avro or parquet files.
+                              The 'zstd' default below applies to Arrow and Parquet. Avro does not
+                              support zstd, so when --compression is omitted Avro silently falls
+                              back to uncompressed unless you pass an Avro-supported codec.
                                 For Arrow, valid values are: zstd, lz4, uncompressed
-                                For Avro, valid values are: deflate, snappy, uncompressed (default)
+                                For Avro, valid values are: deflate, snappy, uncompressed
                                 For Parquet, valid values are: zstd, lz4raw, gzip, snappy, uncompressed
                               [default: zstd]
 
@@ -349,10 +352,10 @@ impl OutputMode {
         query: &str,
         ctx: &mut SQLContext,
         mut delim: u8,
-        args: Args,
+        args: &Args,
     ) -> CliResult<(usize, usize)> {
         let mut df = DataFrame::default();
-        let execute_inner = || {
+        let mut execute_inner = || -> CliResult<()> {
             df = ctx
                 .execute(query)
                 .and_then(polars::prelude::LazyFrame::collect)?;
@@ -367,9 +370,9 @@ impl OutputMode {
                 .and_then(|s| s.parse().ok())
                 .or(args.flag_float_precision);
 
-            let w = match args.flag_output {
+            let w = match args.flag_output.as_ref() {
                 Some(path) => {
-                    delim = tsvssv_delim(path.clone(), delim);
+                    delim = tsvssv_delim(path, delim);
                     Box::new(File::create(path)?) as Box<dyn Write>
                 },
                 None => Box::new(io::stdout()) as Box<dyn Write>,
@@ -379,11 +382,15 @@ impl OutputMode {
             let out_result = match self {
                 OutputMode::Csv => CsvWriter::new(&mut w)
                     .with_separator(delim)
-                    .with_datetime_format(args.flag_datetime_format.map(std::convert::Into::into))
-                    .with_date_format(args.flag_date_format.map(std::convert::Into::into))
-                    .with_time_format(args.flag_time_format.map(std::convert::Into::into))
+                    .with_datetime_format(
+                        args.flag_datetime_format
+                            .clone()
+                            .map(std::convert::Into::into),
+                    )
+                    .with_date_format(args.flag_date_format.clone().map(std::convert::Into::into))
+                    .with_time_format(args.flag_time_format.clone().map(std::convert::Into::into))
                     .with_float_precision(float_precision)
-                    .with_null_value(args.flag_wnull_value.into())
+                    .with_null_value(args.flag_wnull_value.clone().into())
                     .with_decimal_comma(args.flag_decimal_comma)
                     .include_bom(util::get_envvar_flag("QSV_OUTPUT_BOM"))
                     .finish(&mut df),
@@ -479,8 +486,11 @@ impl OutputMode {
                 OutputMode::None => Ok(()),
             };
 
+            // Check writer result first — its error is more informative than a downstream
+            // flush failure that may be a side-effect of the same underlying I/O issue.
+            out_result?;
             w.flush()?;
-            out_result
+            Ok(())
         };
 
         match execute_inner() {
@@ -580,7 +590,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let tmpdir = tempfile::tempdir()?;
 
     let mut skip_input = false;
-    args.arg_input = if args.arg_input == [PathBuf::from_str("SKIP_INPUT").unwrap()] {
+    args.arg_input = if args.arg_input == [PathBuf::from("SKIP_INPUT")] {
         skip_input = true;
         Vec::new()
     } else {
@@ -606,7 +616,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_wnull_value.clear();
     }
 
-    let output_mode: OutputMode = args.flag_format.parse().unwrap_or(OutputMode::Csv);
+    let output_mode: OutputMode = match args.flag_format.parse() {
+        Ok(mode) => mode,
+        Err(e) => return fail_clierror!("{e}"),
+    };
     let no_output: OutputMode = OutputMode::None;
 
     let delim = if let Some(delimiter) = args.flag_delimiter {
@@ -678,20 +691,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    // if there is only one input file, check if the pschema.json file exists and is newer or
-    // created at the same time as the table file, if so, we can enable the cache schema flag
-    if args.arg_input.len() == 1 {
-        let schema_file = PathBuf::from(format!(
-            "{}.pschema.json",
-            args.arg_input[0].canonicalize()?.display()
-        ));
-        if schema_file.exists()
-            && schema_file.metadata()?.modified()? >= args.arg_input[0].metadata()?.modified()?
-        {
-            args.flag_cache_schema = true;
-        }
-    }
-
     let mut ctx = SQLContext::new();
     let mut table_aliases = HashMap::with_capacity(args.arg_input.len());
     let mut lossy_table_name = Cow::default();
@@ -736,8 +735,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // we build the lazyframe, accounting for the --cache-schema flag
             let mut create_schema = cache_schemas;
 
-            let schema_file =
-                PathBuf::from(format!("{}.pschema.json", table.canonicalize()?.display()));
+            let canonical_table = table.canonicalize()?;
+            let schema_file = PathBuf::from(format!("{}.pschema.json", canonical_table.display()));
 
             // check if the pschema.json file exists and is newer or created at the same time
             // as the table file
@@ -882,8 +881,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // that simd_json::to_string_pretty doesn't serialize correctly
                 let schema_json = serde_json::to_string_pretty(&schema)?;
 
-                let schema_file =
-                    PathBuf::from(format!("{}.pschema.json", table.canonicalize()?.display()));
                 let mut file = BufWriter::new(File::create(&schema_file)?);
                 file.write_all(schema_json.as_bytes())?;
                 file.flush()?;
@@ -927,22 +924,33 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let num_queries = queries.len();
     let last_query: usize = num_queries.saturating_sub(1);
-    let mut is_last_query;
-    let mut current_query = String::new();
     let mut query_result_shape = (0_usize, 0_usize);
     let mut now = Instant::now();
 
-    for (idx, query) in queries.iter().enumerate() {
-        // check if this is the last query in the script
-        is_last_query = idx == last_query;
+    // build a reverse map (alias -> table_name) for word-boundary regex replacement,
+    // so e.g. `_t_1` won't match inside `_t_10`. Note: alias text appearing inside
+    // SQL string literals or column names *will* still be replaced — fully avoiding
+    // that requires SQL-aware parsing, which is out of scope here.
+    let alias_to_name: HashMap<&str, &str> = table_aliases
+        .iter()
+        .map(|(name, alias)| (alias.as_str(), name.as_str()))
+        .collect();
+    let alias_regex = Regex::new(r"\b_t_\d+\b")?;
 
-        // replace aliases in query
-        current_query.clone_from(query);
-        for (table_name, table_alias) in &table_aliases {
-            // we quote the table name to avoid issues with reserved keywords and
-            // other characters that are not allowed in identifiers
-            current_query = current_query.replace(table_alias, &(format!(r#""{table_name}""#)));
-        }
+    for (idx, query) in queries.iter().enumerate() {
+        let is_last_query = idx == last_query;
+
+        let current_query = alias_regex
+            .replace_all(query, |caps: &regex::Captures| {
+                if let Some(name) = alias_to_name.get(&caps[0]) {
+                    // we quote the table name to avoid issues with reserved keywords and
+                    // other characters that are not allowed in identifiers
+                    format!(r#""{name}""#)
+                } else {
+                    caps[0].to_string()
+                }
+            })
+            .into_owned();
 
         if debuglog_flag {
             log::debug!("Executing query {idx}: {current_query}");
@@ -950,10 +958,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         query_result_shape = if is_last_query {
             // if this is the last query, we use the output mode specified by the user
-            output_mode.execute_query(&current_query, &mut ctx, delim, args.clone())?
+            output_mode.execute_query(&current_query, &mut ctx, delim, &args)?
         } else {
             // this is not the last query, we only execute the query, but don't write the output
-            no_output.execute_query(&current_query, &mut ctx, delim, args.clone())?
+            no_output.execute_query(&current_query, &mut ctx, delim, &args)?
         };
         if debuglog_flag {
             log::debug!(

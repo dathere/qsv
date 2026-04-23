@@ -4629,3 +4629,61 @@ fn sqlp_datetime_pschema_override() {
     ];
     assert_eq!(got, expected);
 }
+
+#[test]
+fn sqlp_alias_no_substring_collision() {
+    // Regression: `_t_1` must not match the prefix of `_t_10`. Before the
+    // word-boundary regex fix, the naive `String::replace` would rewrite
+    // `_t_10` into `"d1"0`, producing a SQL parse error.
+    let wrk = Workdir::new("sqlp_alias_no_substring_collision");
+
+    // Create 10 input files so we have aliases _t_1 .. _t_10.
+    for i in 1..=10 {
+        wrk.create(
+            &format!("d{i}.csv"),
+            vec![vec!["v".to_string()], vec![format!("row_{i}")]],
+        );
+    }
+
+    let mut cmd = wrk.command("sqlp");
+    for i in 1..=10 {
+        cmd.arg(format!("d{i}.csv"));
+    }
+    cmd.arg("select v from _t_10");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["v"], svec!["row_10"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_alias_preserves_literal_with_alias_substring() {
+    // Regression: a string literal containing an alias-shaped token (e.g.
+    // `_t_10_note`) must survive the rewrite untouched, because `\d+` is
+    // greedy and the next char (`_`) does not form a word boundary with `0`.
+    // (Alias text inside literals delimited only by quotes is *not* protected
+    // — that is a documented limitation of the regex-based approach.)
+    let wrk = Workdir::new("sqlp_alias_preserves_literal_with_alias_substring");
+    wrk.create("d1.csv", vec![svec!["v"], svec!["one"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("d1.csv")
+        .arg("select '_t_10_note' as k, v from _t_1");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["k", "v"], svec!["_t_10_note", "one"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_invalid_format_errors() {
+    // Regression: an invalid --format value should fail loudly instead of
+    // silently falling back to CSV.
+    let wrk = Workdir::new("sqlp_invalid_format_errors");
+    wrk.create("d.csv", vec![svec!["v"], svec!["1"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["d.csv", "select * from d", "--format", "jsonn"]);
+
+    wrk.assert_err(&mut cmd);
+}

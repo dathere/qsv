@@ -3171,3 +3171,75 @@ fn test_joinp_cache_schema_datetime() {
     assert_eq!(got[0][0], "id");
     assert_eq!(got[0][1], "event_time");
 }
+
+#[test]
+fn joinp_decimal_comma_validation_preserves_output_file() {
+    // Regression: the --decimal-comma + comma-delim validation used to run AFTER
+    // File::create, which truncated any existing --output file before surfacing
+    // the flag error. The validation must now happen BEFORE the file is opened.
+    let wrk = Workdir::new("joinp_decimal_comma_validation_preserves_output_file");
+
+    wrk.create("left.csv", vec![svec!["id", "v"], svec!["1", "a"]]);
+    wrk.create("right.csv", vec![svec!["id", "w"], svec!["1", "b"]]);
+
+    // Pre-populate the output file with sentinel content
+    let output_path = wrk.path("out.csv");
+    std::fs::write(&output_path, b"SENTINEL\n").unwrap();
+
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["id", "left.csv", "id", "right.csv"])
+        .arg("--decimal-comma")
+        .args(["--output", "out.csv"]);
+
+    wrk.assert_err(&mut cmd);
+
+    let contents = std::fs::read_to_string(&output_path).unwrap();
+    assert_eq!(contents, "SENTINEL\n");
+}
+
+#[test]
+fn joinp_manytomany_validate_rejected() {
+    // Regression: `manytomany` used to be silently accepted as an alias for `none`.
+    // It was never documented and is now rejected outright.
+    let wrk = Workdir::new("joinp_manytomany_validate_rejected");
+    wrk.create("left.csv", vec![svec!["id"], svec!["1"]]);
+    wrk.create("right.csv", vec![svec!["id"], svec!["1"]]);
+
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["id", "left.csv", "id", "right.csv"])
+        .args(["--validate", "manytomany"]);
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    wrk.assert_err(&mut cmd);
+    assert!(stderr.contains("Invalid join validation"));
+}
+
+#[test]
+fn joinp_tsv_cache_schema_minus1() {
+    // Regression: --cache-schema -1/-2 used to read headers via the default comma
+    // delimiter regardless of the input extension, producing a single-column
+    // all-string schema for TSV inputs and then failing to find the join key.
+    let wrk = Workdir::new("joinp_tsv_cache_schema_minus1");
+
+    wrk.create_with_delim(
+        "left.tsv",
+        vec![svec!["id", "name"], svec!["1", "alice"], svec!["2", "bob"]],
+        b'\t',
+    );
+    wrk.create_with_delim(
+        "right.tsv",
+        vec![svec!["id", "city"], svec!["1", "NYC"], svec!["2", "LA"]],
+        b'\t',
+    );
+
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["id", "left.tsv", "id", "right.tsv"])
+        .args(["--cache-schema", "-1"]);
+
+    // `read_stdout` spawns the command once and captures stdout. If the regression
+    // returns (e.g. TSV headers parsed with the wrong delimiter), stdout will be
+    // empty or malformed and the length/column assertions below will fail clearly.
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 3); // header + 2 matched rows
+    assert_eq!(got[0], svec!["id", "name", "city"]);
+}

@@ -107,7 +107,7 @@ $ qsv sqlp tbl1.csv "SELECT x FROM tbl1 WHERE x IN (SELECT y FROM tbl1)"
 # Natural Joins are supported too! (<https://www.w3resource.com/sql/joins/natural-join.php>)
 ```console
 $ qsv sqlp data1.csv data2.csv data3.csv \
-"SELECT COLUMNS('^[^:]+$') FROM data1 NATURAL JOIN data2 NATURAL JOIN data3 ORDER BY COMPANY_ID",
+"SELECT COLUMNS('^[^:]+$') FROM data1 NATURAL JOIN data2 NATURAL JOIN data3 ORDER BY COMPANY_ID"
 ```
 
 
@@ -337,7 +337,7 @@ qsv sqlp --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑compression`&nbsp; | string | The compression codec to use when writing arrow or parquet files. For Arrow, valid values are: zstd, lz4, uncompressed For Avro, valid values are: deflate, snappy, uncompressed (default) For Parquet, valid values are: zstd, lz4raw, gzip, snappy, uncompressed | `zstd` |
+| &nbsp;`‑‑compression`&nbsp; | string | The compression codec to use when writing arrow, avro or parquet files. For Arrow, valid values are: zstd, lz4, uncompressed (default) For Avro, valid values are: deflate, snappy, uncompressed (default) For Parquet, valid values are: zstd (default), lz4raw, gzip, snappy, uncompressed (only applies to parquet; arrow/avro default to uncompressed) | `zstd` |
 
 <a name="parquet-output-format-only-options"></a>
 

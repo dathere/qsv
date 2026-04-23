@@ -7,7 +7,30 @@
 //! Usage variant, outside any `[...]` (optional) group, and outside any
 //! `(A | B)` alternative group.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::OnceLock,
+};
+
+use regex::Regex;
+
+/// `-k, --keys` (short-first option declaration, anchored to an indented line).
+fn short_first_pair_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?m)^\s+(-[A-Za-z])\s*,\s*(--[A-Za-z][\w-]*)").unwrap())
+}
+
+/// `--keys, -k` (long-first option declaration).
+fn long_first_pair_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?m)^\s+(--[A-Za-z][\w-]*)\s*,\s*(-[A-Za-z])").unwrap())
+}
+
+/// An option flag token appearing after a whitespace-or-start boundary.
+fn flag_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?:^|\s)(-{1,2}[A-Za-z][\w-]*)").unwrap())
+}
 
 /// Bidirectional short↔long alias map for option declarations.
 #[derive(Debug, Default, Clone)]
@@ -20,27 +43,27 @@ impl FlagPairs {
     /// Build the pair map by scanning the options-declaration portion of the
     /// USAGE string for lines like `-k, --keys <keys>` or `--keys, -k <keys>`.
     /// The `Usage:` block itself is deliberately skipped so a future
-    /// Usage-line formatting quirk can't introduce a bogus pair.
+    /// Usage-line formatting quirk can't introduce a bogus pair. If no options
+    /// section can be located (e.g. a minimal fixture), falls back to scanning
+    /// the entire text so callers still get usable pairings.
     pub fn from_usage(usage_text: &str) -> Self {
-        let options_text = skip_usage_block(usage_text);
-
-        // Short-first: `-k, --keys`
-        let short_first =
-            regex::Regex::new(r"(?m)^\s+(-[A-Za-z])\s*,\s*(--[A-Za-z][\w-]*)").unwrap();
-        // Long-first:  `--keys, -k`
-        let long_first =
-            regex::Regex::new(r"(?m)^\s+(--[A-Za-z][\w-]*)\s*,\s*(-[A-Za-z])").unwrap();
+        let narrowed = options_section(usage_text);
+        let scan = if narrowed.is_empty() {
+            usage_text
+        } else {
+            narrowed
+        };
 
         let mut short_to_long: HashMap<String, String> = HashMap::new();
         let mut long_to_short: HashMap<String, String> = HashMap::new();
 
-        for cap in short_first.captures_iter(options_text) {
+        for cap in short_first_pair_re().captures_iter(scan) {
             if let (Some(s), Some(l)) = (cap.get(1), cap.get(2)) {
                 short_to_long.insert(s.as_str().to_string(), l.as_str().to_string());
                 long_to_short.insert(l.as_str().to_string(), s.as_str().to_string());
             }
         }
-        for cap in long_first.captures_iter(options_text) {
+        for cap in long_first_pair_re().captures_iter(scan) {
             if let (Some(l), Some(s)) = (cap.get(1), cap.get(2)) {
                 short_to_long.insert(s.as_str().to_string(), l.as_str().to_string());
                 long_to_short.insert(l.as_str().to_string(), s.as_str().to_string());
@@ -62,32 +85,21 @@ impl FlagPairs {
     }
 }
 
-/// Walk past the `Usage:` block (up to the first blank line after the `Usage:`
-/// line) so the options-declaration regex only scans option definition lines.
-fn skip_usage_block(usage_text: &str) -> &str {
-    let Some(usage_idx) = usage_text.find("Usage:") else {
-        return usage_text;
-    };
-    let after_usage = &usage_text[usage_idx..];
-    // Find the first blank line (double newline) after the Usage: header.
-    after_usage
-        .find("\n\n")
-        .map_or("", |i| &after_usage[i + 2..])
+/// Return the slice of USAGE starting at the first `options:` / `Options:`
+/// header (case-insensitive, line-anchored) and ending at the end of the
+/// string. Returns `""` if no such header exists.
+fn options_section(usage_text: &str) -> &str {
+    // Line-anchored `options:` header, case-insensitive. Matches
+    // `options:`, `Options:`, `Common options:`, `map options:`, etc.
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"(?mi)^[\s\w-]*options:\s*$").unwrap());
+    re.find(usage_text).map_or("", |m| &usage_text[m.start()..])
 }
 
 /// The full global-required detection: intersect required-token sets across
 /// all Usage variants, skipping `--help` variants entirely.
 pub fn extract_required_options_from_usage(usage_text: &str) -> HashSet<String> {
-    let usage_lines: Vec<&str> = usage_text
-        .lines()
-        .skip_while(|l| !l.contains("Usage:"))
-        .skip(1)
-        .take_while(|l| {
-            let t = l.trim();
-            !t.is_empty() && (t.contains("qsv") || t.ends_with("--help"))
-        })
-        .filter(|l| !l.trim().ends_with("--help"))
-        .collect();
+    let usage_lines = collect_usage_lines(usage_text);
 
     let pairs = FlagPairs::from_usage(usage_text);
 
@@ -100,6 +112,44 @@ pub fn extract_required_options_from_usage(usage_text: &str) -> HashSet<String> 
     iter.next()
         .map(|first| iter.fold(first, |acc, s| acc.intersection(&s).cloned().collect()))
         .unwrap_or_default()
+}
+
+/// Collect the non-`--help` Usage variants from a docopt USAGE string.
+///
+/// The block is bounded by the `Usage:` header and the first blank line after
+/// it. Continuation lines — indented lines within the block that do not begin
+/// with the binary name — are appended to the previous variant so a wrapped
+/// Usage line doesn't become its own (misleading) variant. `--help` stub
+/// variants are filtered out.
+fn collect_usage_lines(usage_text: &str) -> Vec<String> {
+    let raw = usage_text
+        .lines()
+        .skip_while(|l| !l.contains("Usage:"))
+        .skip(1)
+        .take_while(|l| !l.trim().is_empty());
+
+    let mut variants: Vec<String> = Vec::new();
+    for line in raw {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with("qsv") || variants.is_empty() {
+            variants.push(line.to_string());
+        } else {
+            // Continuation line — append to the last variant with a single
+            // space so flag-boundary detection still works.
+            if let Some(last) = variants.last_mut() {
+                last.push(' ');
+                last.push_str(trimmed);
+            }
+        }
+    }
+
+    variants
+        .into_iter()
+        .filter(|l| !l.trim().ends_with("--help"))
+        .collect()
 }
 
 /// Return the set of option tokens required on a single USAGE line: tokens
@@ -162,9 +212,8 @@ pub fn required_tokens_in_usage_line(line: &str, pairs: &FlagPairs) -> HashSet<S
         }
     }
 
-    let flag_re = regex::Regex::new(r"(?:^|\s)(-{1,2}[A-Za-z][\w-]*)").unwrap();
     let mut out = HashSet::new();
-    for cap in flag_re.captures_iter(&proj) {
+    for cap in flag_re().captures_iter(&proj) {
         if let Some(m) = cap.get(1) {
             let tok = m.as_str().to_string();
             if let Some(partner) = pairs.partner(&tok) {
@@ -346,5 +395,64 @@ options:
         assert_eq!(pairs.partner("-k"), Some("--keys"));
         assert_eq!(pairs.partner("--keys"), Some("-k"));
         assert_eq!(pairs.partner("--extra"), None);
+    }
+
+    #[test]
+    fn continuation_line_does_not_truncate_usage_block() {
+        // A long Usage variant that wraps onto a continuation line without
+        // repeating the binary name must not cause later variants to be
+        // dropped. Previously the scan terminated on the first line not
+        // containing `qsv` or ending in `--help`, which would have silently
+        // truncated the intersection here.
+        let usage = r#"
+Usage:
+    qsv foo [options] <very-long-positional> <another-positional>
+        --bar <bar>
+    qsv foo [options] --bar <bar> <input>
+    qsv foo --help
+
+options:
+    --bar <bar>    A required option across variants.
+"#;
+        let got = extract_required_options_from_usage(usage);
+        assert!(got.contains("--bar"), "got {got:?}");
+    }
+
+    #[test]
+    fn pair_regex_scans_only_the_options_section_not_description() {
+        // A description paragraph between Usage and the options section must
+        // not be scanned for pairs — otherwise a wrapped sentence beginning
+        // with `-s, --long` could silently introduce a bogus pair.
+        let usage = r#"
+Usage:
+    qsv foo [options] <input>
+
+This is a description paragraph. On a fresh line, a quirky sentence:
+    -x, --bogus <unreal>   not actually an option; just prose.
+
+options:
+    -k, --keys <keys>    Key.
+"#;
+        let pairs = FlagPairs::from_usage(usage);
+        assert_eq!(pairs.partner("-k"), Some("--keys"));
+        // The bogus description line is *before* the `options:` header, so
+        // it must not contribute a pair.
+        assert_eq!(pairs.partner("-x"), None);
+        assert_eq!(pairs.partner("--bogus"), None);
+    }
+
+    #[test]
+    fn fallback_to_whole_text_when_no_options_section() {
+        // A minimal fixture without an `options:` header must still pair
+        // short/long declarations that happen to appear elsewhere, so tests
+        // and small USAGE strings keep working.
+        let usage = r#"
+Usage:
+    qsv foo [options] --keys <keys> <input>
+
+    -k, --keys <keys>    Key columns (no options: header).
+"#;
+        let got = extract_required_options_from_usage(usage);
+        assert_eq!(got, set(&["-k", "--keys"]));
     }
 }

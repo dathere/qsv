@@ -3209,8 +3209,8 @@ fn joinp_manytomany_validate_rejected() {
     cmd.args(["id", "left.csv", "id", "right.csv"])
         .args(["--validate", "manytomany"]);
 
-    wrk.assert_err(&mut cmd);
     let stderr = wrk.output_stderr(&mut cmd);
+    wrk.assert_err(&mut cmd);
     assert!(stderr.contains("Invalid join validation"));
 }
 

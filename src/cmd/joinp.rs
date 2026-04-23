@@ -632,18 +632,22 @@ impl JoinStruct {
                     transformed
                 };
 
-                // Apply transformations to one side: add a `_qsv-<name>-transformed` column
-                // to the lazyframe and return the list of expressions pointing at those
-                // temp columns so the join runs against them.
+                // Apply transformations to one side: add `_qsv-<name>-transformed` columns
+                // to the lazyframe in a single `with_columns` call (so we only clone the
+                // LazyFrame once per side rather than once per join key) and return the
+                // list of expressions pointing at those temp columns so the join runs
+                // against them.
                 let apply_side = |lf: &mut LazyFrame, names: &[&str]| -> Vec<Expr> {
+                    let mut temp_columns = Vec::with_capacity(names.len());
                     let mut temp_exprs = Vec::with_capacity(names.len());
                     for name in names {
                         let temp_col_name = format!("_qsv-{name}-transformed");
-                        *lf = lf.clone().with_column(
+                        temp_columns.push(
                             transform_col(polars::lazy::dsl::col(*name)).alias(&temp_col_name),
                         );
                         temp_exprs.push(polars::lazy::dsl::col(temp_col_name));
                     }
+                    *lf = lf.clone().with_columns(temp_columns);
                     temp_exprs
                 };
 
@@ -996,7 +1000,7 @@ impl Args {
             // First, check if the pschema.json file exists and is newer or created at the same time
             // as the table file. Canonicalize once and reuse for any later schema writeback.
             let canonical_path = input_path.canonicalize()?;
-            let schema_file = PathBuf::from(format!("{}.pschema.json", canonical_path.display()));
+            let schema_file = pschema_path(&canonical_path);
             let mut valid_schema_exists = schema_file.exists()
                 && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?;
 
@@ -1149,7 +1153,7 @@ impl Args {
         if create_left_schema {
             let schema = left_lf.collect_schema()?;
             let schema_json = serde_json::to_string_pretty(&schema)?;
-            let schema_file = PathBuf::from(format!("{}.pschema.json", left_canonical.display()));
+            let schema_file = pschema_path(&left_canonical);
             let mut file = BufWriter::new(File::create(&schema_file)?);
             file.write_all(schema_json.as_bytes())?;
             file.flush()?;
@@ -1183,7 +1187,7 @@ impl Args {
         if create_right_schema {
             let schema = right_lf.collect_schema()?;
             let schema_json = serde_json::to_string_pretty(&schema)?;
-            let schema_file = PathBuf::from(format!("{}.pschema.json", right_canonical.display()));
+            let schema_file = pschema_path(&right_canonical);
             let mut file = BufWriter::new(File::create(&schema_file)?);
             file.write_all(schema_json.as_bytes())?;
             file.flush()?;
@@ -1223,6 +1227,14 @@ impl Args {
             ignore_leading_zeros: self.flag_ignore_leading_zeros,
         })
     }
+}
+
+/// Build a `.pschema.json` sidecar path without going through UTF-8 string formatting,
+/// so paths that are not valid UTF-8 round-trip correctly.
+fn pschema_path(canonical_path: &Path) -> PathBuf {
+    let mut schema_path = canonical_path.as_os_str().to_os_string();
+    schema_path.push(".pschema.json");
+    PathBuf::from(schema_path)
 }
 
 /// if the file has a TSV/TAB or SSV extension, we automatically use

@@ -412,6 +412,7 @@ struct ParsedOption {
     flag:        String,
     short:       Option<String>,
     option_type: String,
+    required:    bool,
     description: String,
     default:     Option<String>,
 }
@@ -597,12 +598,22 @@ fn generate_command_markdown(
                 .default
                 .as_ref()
                 .map_or(String::new(), |d| format!("`{d}`"));
+            let description = if opt.required {
+                let desc = opt.description.trim_end();
+                if desc.is_empty() {
+                    "**(required)**".to_string()
+                } else {
+                    format!("{desc} **(required)**")
+                }
+            } else {
+                opt.description.clone()
+            };
             let _ = writeln!(
                 md,
                 "| {} | {} | {} | {} |",
                 option_display,
                 opt.option_type,
-                escape_table_cell(&linkify_bare_urls(&opt.description)),
+                escape_table_cell(&linkify_bare_urls(&description)),
                 default_str
             );
         }
@@ -1429,6 +1440,10 @@ fn parse_options_with_docopt(
     // Get manual descriptions
     let _manual_descriptions = extract_descriptions_from_text(usage_text);
 
+    // Detect which options are required (appear outside [options]/[...] in the
+    // Usage: section).
+    let required_options = extract_required_options_from_usage(usage_text);
+
     // Build a map of flag -> docopt info (type, default, short/long pairing)
     let mut docopt_map: HashMap<String, (String, Option<String>, Option<String>)> = HashMap::new();
     // (option_type, default, paired_short_or_long)
@@ -1550,7 +1565,7 @@ fn parse_options_with_docopt(
 
             // Option line starts with -
             if trimmed.starts_with('-')
-                && let Some(parsed) = parse_option_line(trimmed, &lines[i + 1..], &docopt_map)
+                && let Some(mut parsed) = parse_option_line(trimmed, &lines[i + 1..], &docopt_map)
             {
                 // Skip if we've already seen this flag (from docopt pairing)
                 let primary = parsed.flag.clone();
@@ -1559,6 +1574,11 @@ fn parse_options_with_docopt(
                         seen_flags.push(short.clone());
                     }
                     seen_flags.push(primary);
+                    parsed.required = required_options.contains(&parsed.flag)
+                        || parsed
+                            .short
+                            .as_deref()
+                            .is_some_and(|s| required_options.contains(s));
                     options.push(parsed);
                 }
 
@@ -1706,9 +1726,77 @@ fn parse_option_line(
         flag,
         short,
         option_type,
+        required: false,
         description: description.trim().to_string(),
         default,
     })
+}
+
+/// Extract the set of options that appear outside `[...]` brackets in the
+/// `Usage:` section (e.g. `qsv implode [options] -k <keys>`), meaning they are
+/// required when the command is invoked. Returns the literal flag tokens seen
+/// at bracket depth 0 (both short and long forms as they appear).
+fn extract_required_options_from_usage(usage_text: &str) -> std::collections::HashSet<String> {
+    let mut required = std::collections::HashSet::new();
+
+    let usage_lines: Vec<&str> = usage_text
+        .lines()
+        .skip_while(|l| !l.contains("Usage:"))
+        .skip(1)
+        .take_while(|l| {
+            let t = l.trim();
+            !t.is_empty() && (t.contains("qsv") || t.ends_with("--help"))
+        })
+        .filter(|l| !l.trim().ends_with("--help"))
+        .collect();
+
+    let flag_re = regex::Regex::new(r"(?:^|\s)(-{1,2}[A-Za-z][\w-]*)").unwrap();
+
+    for line in &usage_lines {
+        let mut depth = 0i32;
+        let mut depth0 = String::with_capacity(line.len());
+        for ch in line.chars() {
+            match ch {
+                '[' => {
+                    depth += 1;
+                    depth0.push(' ');
+                },
+                ']' => {
+                    depth = depth.saturating_sub(1);
+                    depth0.push(' ');
+                },
+                _ => depth0.push(if depth == 0 { ch } else { ' ' }),
+            }
+        }
+        for cap in flag_re.captures_iter(&depth0) {
+            if let Some(flag) = cap.get(1) {
+                required.insert(flag.as_str().to_string());
+            }
+        }
+    }
+
+    // Expand short↔long equivalents by scanning option declaration lines like
+    // `-k, --keys <keys>` in the options sections. docopt's pairing can miss
+    // these, so we do it ourselves.
+    let pair_re = regex::Regex::new(r"(?m)^\s+(-[A-Za-z])\s*,\s*(--[A-Za-z][\w-]*)").unwrap();
+    let pairs: Vec<(String, String)> = pair_re
+        .captures_iter(usage_text)
+        .filter_map(|c| {
+            Some((
+                c.get(1)?.as_str().to_string(),
+                c.get(2)?.as_str().to_string(),
+            ))
+        })
+        .collect();
+    for (short, long) in pairs {
+        if required.contains(&short) {
+            required.insert(long);
+        } else if required.contains(&long) {
+            required.insert(short);
+        }
+    }
+
+    required
 }
 
 /// Format option group title

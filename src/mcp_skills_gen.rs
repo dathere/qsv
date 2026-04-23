@@ -56,6 +56,8 @@ struct Option_ {
     short:       Option<String>,
     #[serde(rename = "type")]
     option_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    required:    Option<bool>,
     description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     default:     Option<String>,
@@ -258,6 +260,88 @@ impl UsageParser {
         optional_args
     }
 
+    /// Extract required options from USAGE lines. An option is required when it
+    /// appears in the `Usage:` section outside of any `[...]` bracket group
+    /// (e.g. `qsv implode [options] -k <keys> -v <value>` makes `-k`/`--keys`
+    /// and `-v`/`--value` required). Returns the set of flag tokens seen at
+    /// bracket depth 0, in their literal form (short or long).
+    fn extract_required_options_from_usage(&self) -> std::collections::HashSet<String> {
+        let mut required = std::collections::HashSet::new();
+
+        let usage_lines: Vec<&str> = self
+            .usage_text
+            .lines()
+            .skip_while(|l| !l.contains("Usage:"))
+            .skip(1)
+            .take_while(|l| {
+                let t = l.trim();
+                !t.is_empty() && (t.contains("qsv") || t.ends_with("--help"))
+            })
+            .filter(|l| !l.trim().ends_with("--help"))
+            .collect();
+
+        // Match an option flag at the start of a token: -x or --xxx, optionally
+        // followed by `=<arg>`. We only scan text at bracket depth 0.
+        let flag_re = regex::Regex::new(r"(?:^|\s)(-{1,2}[A-Za-z][\w-]*)").unwrap();
+
+        for line in &usage_lines {
+            // Build a depth-0-only projection of the line by replacing bracketed
+            // groups with spaces (preserves column offsets but hides optional
+            // content from the regex).
+            let mut depth = 0i32;
+            let mut depth0 = String::with_capacity(line.len());
+            for ch in line.chars() {
+                match ch {
+                    '[' => {
+                        depth += 1;
+                        depth0.push(' ');
+                    },
+                    ']' => {
+                        depth = depth.saturating_sub(1);
+                        depth0.push(' ');
+                    },
+                    _ => {
+                        if depth == 0 {
+                            depth0.push(ch);
+                        } else {
+                            depth0.push(' ');
+                        }
+                    },
+                }
+            }
+
+            for cap in flag_re.captures_iter(&depth0) {
+                if let Some(flag) = cap.get(1) {
+                    required.insert(flag.as_str().to_string());
+                }
+            }
+        }
+
+        // Expand short↔long equivalents by scanning the option description
+        // lines for pairings like `-k, --keys <keys>`. docopt's Parser may not
+        // emit Short atoms for these cases, so we can't rely on its pairing
+        // and must do our own.
+        let pair_re = regex::Regex::new(r"(?m)^\s+(-[A-Za-z])\s*,\s*(--[A-Za-z][\w-]*)").unwrap();
+        let pairs: Vec<(String, String)> = pair_re
+            .captures_iter(&self.usage_text)
+            .filter_map(|c| {
+                Some((
+                    c.get(1)?.as_str().to_string(),
+                    c.get(2)?.as_str().to_string(),
+                ))
+            })
+            .collect();
+        for (short, long) in pairs {
+            if required.contains(&short) {
+                required.insert(long);
+            } else if required.contains(&long) {
+                required.insert(short);
+            }
+        }
+
+        required
+    }
+
     /// Parse USAGE text using qsv-docopt Parser for robust parsing
     fn parse_with_docopt(&self) -> Result<(Vec<Argument>, Vec<Option_>), String> {
         // Parse USAGE text with docopt
@@ -270,6 +354,10 @@ impl UsageParser {
 
         // Detect which positional args are optional (wrapped in [] in USAGE text)
         let optional_args = self.extract_optional_args_from_usage();
+
+        // Detect which options are required (appear outside [options] / [...] in
+        // the Usage: section).
+        let required_options = self.extract_required_options_from_usage();
 
         // Also parse manually to get descriptions
         let manual_descriptions = self.extract_descriptions_from_text();
@@ -405,10 +493,18 @@ impl UsageParser {
                         description = Self::strip_default_from_description(&description);
                     }
 
+                    let required = if required_options.contains(&primary_flag)
+                        || required_options.contains(&flag_str)
+                    {
+                        Some(true)
+                    } else {
+                        None
+                    };
                     options.push(Option_ {
                         flag: primary_flag,
                         short: long_flag.and(Some(flag_str)),
                         option_type: option_type.to_string(),
+                        required,
                         description,
                         default,
                     });
@@ -497,10 +593,20 @@ impl UsageParser {
                         description = Self::strip_default_from_description(&description);
                     }
 
+                    let required = if required_options.contains(&flag_str)
+                        || short_flag
+                            .as_deref()
+                            .is_some_and(|s| required_options.contains(s))
+                    {
+                        Some(true)
+                    } else {
+                        None
+                    };
                     options.push(Option_ {
                         flag: flag_str,
                         short: short_flag,
                         option_type: option_type.to_string(),
+                        required,
                         description,
                         default,
                     });

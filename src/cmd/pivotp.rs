@@ -153,15 +153,18 @@ fn build_schema_args(args: &Args) -> util::SchemaArgs {
 /// result so the command can still run (smart-agg and validation just become
 /// no-ops without stats).
 fn get_cached_stats(args: &Args) -> &'static (ByteRecord, Vec<StatsData>) {
+    let quiet = args.flag_quiet;
     STATS_RECORDS.get_or_init(|| {
         let schema_args = build_schema_args(args);
         match get_stats_records(&schema_args, StatsMode::FrequencyForceStats) {
             Ok(pair) => pair,
             Err(e) => {
-                eprintln!(
-                    "Warning: unable to load stats for pivotp (smart-agg and --validate will be \
-                     limited): {e}"
-                );
+                if !quiet {
+                    eprintln!(
+                        "Warning: unable to load stats for pivotp (smart-agg and --validate will \
+                         be limited): {e}"
+                    );
+                }
                 (ByteRecord::new(), Vec::new())
             },
         }
@@ -327,6 +330,12 @@ fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliRe
     let df = df.sort(index_cols, SortMultipleOptions::default())?;
 
     let group_col = df.column(&index_cols[0])?;
+    debug_assert!(
+        group_col.dtype() == &DataType::String,
+        "insert_subtotals: first index column must be String (caller should cast before calling), \
+         got {:?}",
+        group_col.dtype(),
+    );
     let Ok(str_col) = group_col.str() else {
         return fail_clierror!(
             "insert_subtotals: first index column must be String (caller should cast before \
@@ -819,14 +828,18 @@ fn log_mixed_sign(stats: &StatsData) {
     let (n_neg, n_pos) = (stats.n_negative.unwrap_or(0), stats.n_positive.unwrap_or(0));
     let total = n_neg + stats.n_zero.unwrap_or(0) + n_pos;
     // Round to nearest percent via (x*100 + total/2) / total.
-    // saturating_mul guards against u64 overflow for pathological row counts
-    // (n > u64::MAX / 100 ≈ 1.8e17) rather than panicking.
+    // Use saturating_mul/saturating_add end-to-end so pathological row counts
+    // (n > u64::MAX / 100 ≈ 1.8e17) saturate cleanly instead of panicking.
     // checked_div handles the (defensively-impossible) total == 0 case —
     // callers only invoke us after is_mixed_sign, which requires total > 0.
-    let neg_pct = (n_neg.saturating_mul(100) + total / 2)
+    let neg_pct = n_neg
+        .saturating_mul(100)
+        .saturating_add(total / 2)
         .checked_div(total)
         .unwrap_or(0);
-    let pos_pct = (n_pos.saturating_mul(100) + total / 2)
+    let pos_pct = n_pos
+        .saturating_mul(100)
+        .saturating_add(total / 2)
         .checked_div(total)
         .unwrap_or(0);
     eprintln!(
@@ -1108,10 +1121,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         "median" => c.median().alias(PlSmallStr::from_str(vc)),
                         "len" | "smart" => len().alias(PlSmallStr::from_str(vc)),
                         // Unreachable because:
-                        //   - "none"  → rejected at the group-by mode check (line ~930)
-                        //   - "item"  → rejected at the group-by mode check (line ~910)
-                        //   - any other unknown name → rejected in the pivot agg_expr match above
-                        //     when agg_expr is first constructed.
+                        //   - "none" and "item" are rejected in the group-by validation block in
+                        //     `run` (see the `is_groupby_mode` checks).
+                        //   - any other unknown name is rejected in the pivot `agg_expr` match
+                        //     above, where `agg_expr` is first constructed.
                         _ => unreachable!(
                             "Invalid agg_name '{agg_name}' should have been caught during \
                              validation"

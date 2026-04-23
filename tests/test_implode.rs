@@ -69,13 +69,13 @@ fn implode_composite_key() {
     );
     let mut cmd = wrk.command("implode");
     cmd.args(["-k", "country,city", "-v", "visitor"])
-        .arg(",")
+        .arg("|")
         .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["country", "city", "visitor"],
-        svec!["US", "NYC", "Alice,Bob,Eve"],
+        svec!["US", "NYC", "Alice|Bob|Eve"],
         svec!["US", "LA", "Carol"],
         svec!["UK", "London", "Dan"],
     ];
@@ -326,7 +326,7 @@ fn implode_sorted_composite_key() {
     );
     let mut cmd = wrk.command("implode");
     cmd.args(["-k", "country,city", "-v", "visitor", "--sorted"])
-        .arg(",")
+        .arg("|")
         .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -334,7 +334,7 @@ fn implode_sorted_composite_key() {
         svec!["country", "city", "visitor"],
         svec!["UK", "London", "Dan"],
         svec!["US", "LA", "Carol"],
-        svec!["US", "NYC", "Alice,Bob,Eve"],
+        svec!["US", "NYC", "Alice|Bob|Eve"],
     ];
     assert_eq!(got, expected);
 }

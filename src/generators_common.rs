@@ -123,10 +123,16 @@ pub fn extract_required_options_from_usage(usage_text: &str) -> HashSet<String> 
 /// (`Usage: qsv foo ...`), that variant is retained.
 ///
 /// Continuation detection compares each line's leading whitespace against a
-/// *baseline indent* — the indent of the first non-blank line in the block.
+/// *baseline indent* — the minimum leading-whitespace across all non-blank
+/// lines in the block. Continuations in well-formed docopt are always
+/// indented deeper than the variant lines, so taking the minimum reliably
+/// picks the variant column even when the first line of the block is itself
+/// a wrapped continuation of an inline `Usage:` variant.
+///
 /// Lines strictly more indented than the baseline are merged into the
-/// previous variant (so a wrapped Usage line can't become its own bogus
-/// variant). Lines at the baseline start new variants.
+/// previous variant. Lines at or below the baseline indent start new
+/// variants (a less-indented line shouldn't happen in well-formed docopt,
+/// but is treated as a new variant as a fail-safe).
 ///
 /// `--help` stub variants are filtered out.
 fn collect_usage_lines(usage_text: &str) -> Vec<String> {
@@ -151,12 +157,15 @@ fn collect_usage_lines(usage_text: &str) -> Vec<String> {
         .map(str::to_string)
         .collect();
 
-    // Baseline indent: the leading-whitespace count of the first non-blank
-    // line in the block. Defaults to 0 if the block is empty.
+    // Baseline indent: the minimum leading-whitespace across non-blank lines
+    // in the block. Using min (instead of `raw[0]`) handles the case where
+    // the first line is itself a wrapped continuation of an inline
+    // `Usage:` variant — continuations are always deeper than variants in
+    // well-formed docopt, so min picks the variant column.
     let baseline_indent = raw
         .iter()
         .map(|l| l.len() - l.trim_start().len())
-        .next()
+        .min()
         .unwrap_or(0);
 
     let mut variants: Vec<String> = Vec::new();
@@ -171,9 +180,18 @@ fn collect_usage_lines(usage_text: &str) -> Vec<String> {
         let leading_ws = line.len() - line.trim_start().len();
         let is_continuation = leading_ws > baseline_indent;
 
-        if is_continuation && let Some(last) = variants.last_mut() {
-            last.push(' ');
-            last.push_str(line.trim());
+        if is_continuation {
+            if let Some(last) = variants.last_mut() {
+                last.push(' ');
+                last.push_str(line.trim());
+            } else {
+                // Unreachable in practice: baseline is derived from raw, so
+                // the first raw line's leading_ws cannot exceed it. If a
+                // future refactor changes the baseline derivation, trip the
+                // assertion instead of silently promoting a continuation.
+                debug_assert!(false, "continuation line encountered before any variant");
+                variants.push(line);
+            }
         } else {
             variants.push(line);
         }
@@ -556,6 +574,30 @@ options:
             extract_required_options_from_usage(usage),
             set(&["-k", "--keys"])
         );
+    }
+
+    #[test]
+    fn inline_usage_with_wrapped_continuation_and_second_variant() {
+        // Regression for the baseline-drift bug where `raw[0]` was a
+        // continuation of the inline variant but the baseline was computed
+        // from its leading_ws, causing the real second variant (at the
+        // standard column) to be misclassified. With `min` as baseline, the
+        // variant column is picked up correctly: the continuation merges
+        // into variant 1, and `qsv foo --baz` remains its own variant.
+        let usage = r#"
+Usage: qsv foo --bar
+             --extra <more>
+    qsv foo --baz
+
+options:
+    --bar              Only in variant 1.
+    --baz              Only in variant 2.
+    --extra <more>     Also only in variant 1.
+"#;
+        // `--bar` and `--extra` appear only in variant 1; `--baz` only in
+        // variant 2 — intersection is empty.
+        let got = extract_required_options_from_usage(usage);
+        assert!(got.is_empty(), "got {got:?}");
     }
 
     #[test]

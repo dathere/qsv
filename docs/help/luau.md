@@ -277,7 +277,7 @@ qsv luau --help
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
-| &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Automatically enables --colindex option. **(required)** |  |
+| &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Automatically enables --colindex option. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. Ignored in qsvdp. In SEQUENTIAL MODE, the progress bar will show the number of rows processed. In RANDOM ACCESS MODE, the progress bar will show the position of the current row being processed. Enabling this option will also suppress stderr output from the END script. |  |
 

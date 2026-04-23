@@ -179,7 +179,7 @@ qsv fetchpost --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑t,`<br>`‑‑payload‑tpl`&nbsp; | string | Instead of <column-list>, use a MiniJinja template file to render a JSON payload in the HTTP Post body. You can also use --payload-tpl to render a non-JSON payload, but --content-type will have to be set manually. If a rendered JSON is invalid, `fetchpost` will abort and return an error. **(required)** |  |
+| &nbsp;`‑t,`<br>`‑‑payload‑tpl`&nbsp; | string | Instead of <column-list>, use a MiniJinja template file to render a JSON payload in the HTTP Post body. You can also use --payload-tpl to render a non-JSON payload, but --content-type will have to be set manually. If a rendered JSON is invalid, `fetchpost` will abort and return an error. |  |
 | &nbsp;`‑‑content‑type`&nbsp; | string | Overrides automatic content types for `<column-list>` (`application/x-www-form-urlencoded`) and `--payload-tpl` (`application/json`). Typical alternative values are `multipart/form-data` and `text/plain`. It is the responsibility of the user to format the payload accordingly when using --payload-tpl. |  |
 | &nbsp;`‑j,`<br>`‑‑globals‑json`&nbsp; | string | A JSON file containing global variables. When posting as an HTML Form, this file is added to the Form data. When constructing a payload using a MiniJinja template, the JSON properties can be accessed in templates using the "qsv_g" namespace (e.g. {{qsv_g.api_key}}, {{qsv_g.base_url}}). |  |
 | &nbsp;`‑c,`<br>`‑‑new‑column`&nbsp; | string | Put the fetched values in a new column. Specifying this option results in a CSV. Otherwise, the output is in JSONL format. |  |

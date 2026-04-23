@@ -293,8 +293,8 @@ qsv describegpt --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑prepare‑context`&nbsp; | flag | Output the prompt context as JSON to stdout without calling the LLM. JSON includes system/user prompts, cache state, and analysis results for each inference phase. Useful for inspecting prompts or piping to custom LLM integrations. Used by the MCP server for sampling mode. **(required)** |  |
-| &nbsp;`‑‑process‑response`&nbsp; | flag | Process LLM responses provided as JSON via stdin. Takes the output format from --prepare-context with LLM responses filled in, and produces the final output (dictionary, description, tags, or prompt results). Used by the MCP server for sampling mode. **(required)** |  |
+| &nbsp;`‑‑prepare‑context`&nbsp; | flag | Output the prompt context as JSON to stdout without calling the LLM. JSON includes system/user prompts, cache state, and analysis results for each inference phase. Useful for inspecting prompts or piping to custom LLM integrations. Used by the MCP server for sampling mode. |  |
+| &nbsp;`‑‑process‑response`&nbsp; | flag | Process LLM responses provided as JSON via stdin. Takes the output format from --prepare-context with LLM responses filled in, and produces the final output (dictionary, description, tags, or prompt results). Used by the MCP server for sampling mode. |  |
 
 <a name="common-options"></a>
 

@@ -131,8 +131,8 @@ qsv split --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑s,`<br>`‑‑size`&nbsp; | string | The number of records to write into each chunk. | `500` |
-| &nbsp;`‑c,`<br>`‑‑chunks`&nbsp; | string | The number of chunks to split the data into. This option is mutually exclusive with --size. The number of rows in each chunk is determined by the number of records in the CSV data and the number of desired chunks. If the number of records is not evenly divisible by the number of chunks, the last chunk will have fewer records. **(required)** |  |
-| &nbsp;`‑k,`<br>`‑‑kb‑size`&nbsp; | string | The size of each chunk in kilobytes. The number of rows in each chunk may vary, but the size of each chunk will not exceed the desired size. This option is mutually exclusive with --size and --chunks. **(required)** |  |
+| &nbsp;`‑c,`<br>`‑‑chunks`&nbsp; | string | The number of chunks to split the data into. This option is mutually exclusive with --size. The number of rows in each chunk is determined by the number of records in the CSV data and the number of desired chunks. If the number of records is not evenly divisible by the number of chunks, the last chunk will have fewer records. |  |
+| &nbsp;`‑k,`<br>`‑‑kb‑size`&nbsp; | string | The size of each chunk in kilobytes. The number of rows in each chunk may vary, but the size of each chunk will not exceed the desired size. This option is mutually exclusive with --size and --chunks. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of splitting jobs to run in parallel. This only works when the given CSV data has an index already created. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | &nbsp;`‑‑filename`&nbsp; | string | A filename template to use when constructing the names of the output files.  The string '{}' will be replaced by the zero-based row number of the first row in the chunk. | `{}.csv` |
 | &nbsp;`‑‑pad`&nbsp; | string | The zero padding width that is used in the generated filename. | `0` |

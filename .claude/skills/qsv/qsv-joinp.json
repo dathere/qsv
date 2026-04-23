@@ -56,7 +56,6 @@
       {
         "flag": "--cross",
         "type": "flag",
-        "required": true,
         "description": "USE WITH CAUTION. This returns the cartesian product of the CSV data sets given. The number of rows return is equal to N * M, where N and M correspond to the number of rows in the given data sets, respectively. The columns1 and columns2 arguments are ignored."
       },
       {
@@ -164,7 +163,6 @@
       {
         "flag": "--non-equi",
         "type": "string",
-        "required": true,
         "description": "Do a non-equi join. The given expression is evaluated for each row in the left dataset and can refer to columns in the left and right dataset. If the expression evaluates to true, the row is joined with the corresponding row in the right dataset. The expression is a valid Polars SQL where clause, with each column name followed by \"_left\" or \"_right\" suffixes to indicate which data set the column belongs to. (e.g. \"salary_left >= min_salary_right AND \\ salary_left <= max_salary_right AND \\ experience_left >= min_exp_right\")"
       },
       {

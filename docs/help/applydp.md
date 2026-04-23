@@ -211,11 +211,11 @@ qsv applydp --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑c,`<br>`‑‑new‑column`&nbsp; | string | Put the transformed values in a new column instead. **(required)** |  |
+| &nbsp;`‑c,`<br>`‑‑new‑column`&nbsp; | string | Put the transformed values in a new column instead. |  |
 | &nbsp;`‑r,`<br>`‑‑rename`&nbsp; | string | New name for the transformed column. |  |
 | &nbsp;`‑C,`<br>`‑‑comparand=<string>`&nbsp; | string | The string to compare against for replace & similarity operations. |  |
-| &nbsp;`‑R,`<br>`‑‑replacement=<string>`&nbsp; | string | The string to use for the replace & emptyreplace operations. **(required)** |  |
-| &nbsp;`‑f,`<br>`‑‑formatstr=<string>`&nbsp; | string | This option is used by several subcommands: **(required)** |  |
+| &nbsp;`‑R,`<br>`‑‑replacement=<string>`&nbsp; | string | The string to use for the replace & emptyreplace operations. |  |
+| &nbsp;`‑f,`<br>`‑‑formatstr=<string>`&nbsp; | string | This option is used by several subcommands: |  |
 
 <a name="operations-options"></a>
 

@@ -1732,13 +1732,12 @@ fn parse_option_line(
     })
 }
 
-/// Extract the set of options that appear outside `[...]` brackets in the
-/// `Usage:` section (e.g. `qsv implode [options] -k <keys>`), meaning they are
-/// required when the command is invoked. Returns the literal flag tokens seen
-/// at bracket depth 0 (both short and long forms as they appear).
+/// Extract the set of options that are globally required per the `Usage:`
+/// section of USAGE. An option is required iff it appears in **every**
+/// non-`--help` Usage variant, and in each one it sits outside any `[...]`
+/// (optional) group and outside any `(A | B)` alternative group (where only
+/// one token must be chosen).
 fn extract_required_options_from_usage(usage_text: &str) -> std::collections::HashSet<String> {
-    let mut required = std::collections::HashSet::new();
-
     let usage_lines: Vec<&str> = usage_text
         .lines()
         .skip_while(|l| !l.contains("Usage:"))
@@ -1750,36 +1749,10 @@ fn extract_required_options_from_usage(usage_text: &str) -> std::collections::Ha
         .filter(|l| !l.trim().ends_with("--help"))
         .collect();
 
-    let flag_re = regex::Regex::new(r"(?:^|\s)(-{1,2}[A-Za-z][\w-]*)").unwrap();
-
-    for line in &usage_lines {
-        let mut depth = 0i32;
-        let mut depth0 = String::with_capacity(line.len());
-        for ch in line.chars() {
-            match ch {
-                '[' => {
-                    depth += 1;
-                    depth0.push(' ');
-                },
-                ']' => {
-                    depth = depth.saturating_sub(1);
-                    depth0.push(' ');
-                },
-                _ => depth0.push(if depth == 0 { ch } else { ' ' }),
-            }
-        }
-        for cap in flag_re.captures_iter(&depth0) {
-            if let Some(flag) = cap.get(1) {
-                required.insert(flag.as_str().to_string());
-            }
-        }
-    }
-
-    // Expand short↔long equivalents by scanning option declaration lines like
-    // `-k, --keys <keys>` in the options sections. docopt's pairing can miss
-    // these, so we do it ourselves.
+    // Short→long alias map, built from `-k, --keys <keys>` declarations in the
+    // options sections.
     let pair_re = regex::Regex::new(r"(?m)^\s+(-[A-Za-z])\s*,\s*(--[A-Za-z][\w-]*)").unwrap();
-    let pairs: Vec<(String, String)> = pair_re
+    let short_to_long: std::collections::HashMap<String, String> = pair_re
         .captures_iter(usage_text)
         .filter_map(|c| {
             Some((
@@ -1788,15 +1761,86 @@ fn extract_required_options_from_usage(usage_text: &str) -> std::collections::Ha
             ))
         })
         .collect();
-    for (short, long) in pairs {
-        if required.contains(&short) {
-            required.insert(long);
-        } else if required.contains(&long) {
-            required.insert(short);
+
+    let per_variant: Vec<std::collections::HashSet<String>> = usage_lines
+        .iter()
+        .map(|l| required_tokens_in_usage_line(l, &short_to_long))
+        .collect();
+
+    let mut iter = per_variant.into_iter();
+    iter.next()
+        .map(|first| iter.fold(first, |acc, s| acc.intersection(&s).cloned().collect()))
+        .unwrap_or_default()
+}
+
+/// Return the set of option tokens required on a single USAGE line: tokens
+/// outside any `[...]` (optional) group and outside any `(A | B)` alternative
+/// group. Expands short→long via `short_to_long` so both forms are present.
+fn required_tokens_in_usage_line(
+    line: &str,
+    short_to_long: &std::collections::HashMap<String, String>,
+) -> std::collections::HashSet<String> {
+    let chars: Vec<char> = line.chars().collect();
+    let n = chars.len();
+
+    let mut alt_mask = vec![false; n];
+    {
+        let mut stack: Vec<(usize, bool)> = Vec::new();
+        let mut bracket_depth = 0i32;
+        for (i, &ch) in chars.iter().enumerate() {
+            match ch {
+                '[' => bracket_depth += 1,
+                ']' => bracket_depth = bracket_depth.saturating_sub(1),
+                '(' if bracket_depth == 0 => stack.push((i, false)),
+                ')' if bracket_depth == 0 && !stack.is_empty() => {
+                    let (start, has_pipe) = stack.pop().unwrap();
+                    if has_pipe {
+                        for m in alt_mask.iter_mut().take(i + 1).skip(start) {
+                            *m = true;
+                        }
+                    }
+                },
+                '|' if bracket_depth == 0 => {
+                    if let Some(last) = stack.last_mut() {
+                        last.1 = true;
+                    }
+                },
+                _ => {},
+            }
         }
     }
 
-    required
+    let mut proj = String::with_capacity(n);
+    let mut bracket_depth = 0i32;
+    for (i, &ch) in chars.iter().enumerate() {
+        let is_bracket = ch == '[' || ch == ']';
+        if ch == '[' {
+            bracket_depth += 1;
+        }
+        let in_optional = bracket_depth > 0 || is_bracket;
+        let in_alt = alt_mask[i];
+        if in_optional || in_alt {
+            proj.push(' ');
+        } else {
+            proj.push(ch);
+        }
+        if ch == ']' {
+            bracket_depth = bracket_depth.saturating_sub(1);
+        }
+    }
+
+    let flag_re = regex::Regex::new(r"(?:^|\s)(-{1,2}[A-Za-z][\w-]*)").unwrap();
+    let mut out = std::collections::HashSet::new();
+    for cap in flag_re.captures_iter(&proj) {
+        if let Some(m) = cap.get(1) {
+            let tok = m.as_str().to_string();
+            out.insert(tok.clone());
+            if let Some(long) = short_to_long.get(&tok) {
+                out.insert(long.clone());
+            }
+        }
+    }
+    out
 }
 
 /// Format option group title

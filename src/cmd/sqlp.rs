@@ -246,12 +246,12 @@ sqlp options:
 
                               ARROW/AVRO/PARQUET OUTPUT FORMATS ONLY:
     --compression <arg>       The compression codec to use when writing arrow, avro or parquet files.
-                              The 'zstd' default below applies to Arrow and Parquet. Avro does not
-                              support zstd, so when --compression is omitted Avro silently falls
+                              The `zstd` default below applies to Arrow and Parquet. Avro does not
+                              support zstd, so when `--compression` is omitted Avro silently falls
                               back to uncompressed unless you pass an Avro-supported codec.
-                                For Arrow, valid values are: zstd, lz4, uncompressed
-                                For Avro, valid values are: deflate, snappy, uncompressed
-                                For Parquet, valid values are: zstd, lz4raw, gzip, snappy, uncompressed
+                                For Arrow, valid values are: `zstd`, `lz4`, `uncompressed`.
+                                For Avro, valid values are: `deflate`, `snappy`, `uncompressed`.
+                                For Parquet, valid values are: `zstd`, `lz4raw`, `gzip`, `snappy`, `uncompressed`.
                               [default: zstd]
 
                               PARQUET OUTPUT FORMAT ONLY:

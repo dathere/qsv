@@ -91,8 +91,10 @@ impl FlagPairs {
 fn options_section(usage_text: &str) -> &str {
     // Line-anchored `options:` header, case-insensitive. Matches
     // `options:`, `Options:`, `Common options:`, `map options:`, etc.
+    // Leading class is intentionally `[ \t\w-]` (not `\s`) so it cannot
+    // straddle a newline.
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r"(?mi)^[\s\w-]*options:\s*$").unwrap());
+    let re = RE.get_or_init(|| Regex::new(r"(?mi)^[ \t\w-]*options:[ \t]*$").unwrap());
     re.find(usage_text).map_or("", |m| &usage_text[m.start()..])
 }
 
@@ -117,32 +119,51 @@ pub fn extract_required_options_from_usage(usage_text: &str) -> HashSet<String> 
 /// Collect the non-`--help` Usage variants from a docopt USAGE string.
 ///
 /// The block is bounded by the `Usage:` header and the first blank line after
-/// it. Continuation lines — indented lines within the block that do not begin
-/// with the binary name — are appended to the previous variant so a wrapped
-/// Usage line doesn't become its own (misleading) variant. `--help` stub
+/// it. If the header line itself has an inline variant (`Usage: qsv foo ...`)
+/// that variant is retained. A line within the block is treated as a
+/// continuation of the previous variant when it is indented further than the
+/// parent variant, or when it doesn't start with the binary name `qsv` (the
+/// `qsv` prefix is used as a tiebreaker). Continuations are joined with a
+/// single space so flag-boundary detection still works. `--help` stub
 /// variants are filtered out.
 fn collect_usage_lines(usage_text: &str) -> Vec<String> {
-    let raw = usage_text
-        .lines()
-        .skip_while(|l| !l.contains("Usage:"))
-        .skip(1)
-        .take_while(|l| !l.trim().is_empty());
-
+    let mut lines = usage_text.lines();
     let mut variants: Vec<String> = Vec::new();
-    for line in raw {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if trimmed.starts_with("qsv") || variants.is_empty() {
-            variants.push(line.to_string());
-        } else {
-            // Continuation line — append to the last variant with a single
-            // space so flag-boundary detection still works.
-            if let Some(last) = variants.last_mut() {
-                last.push(' ');
-                last.push_str(trimmed);
+
+    // Locate the `Usage:` header line and, if it carries an inline variant
+    // (`Usage: qsv foo [options]`), seed `variants` with the post-prefix text.
+    for line in lines.by_ref() {
+        if let Some(after) = line.find("Usage:").map(|i| &line[i + "Usage:".len()..]) {
+            let inline = after.trim();
+            if !inline.is_empty() {
+                variants.push(inline.to_string());
             }
+            break;
+        }
+    }
+
+    // Walk the remaining block until the first blank line.
+    for line in lines.take_while(|l| !l.trim().is_empty()) {
+        let trimmed = line.trim();
+        let leading_ws = line.len() - line.trim_start().len();
+
+        let is_continuation = match variants.last() {
+            None => false,
+            Some(prev) => {
+                let prev_leading_ws = prev.len() - prev.trim_start().len();
+                // Stronger signal: indented further than the parent variant.
+                // Fallback: doesn't start with the binary name.
+                leading_ws > prev_leading_ws || !trimmed.starts_with("qsv")
+            },
+        };
+
+        if is_continuation {
+            // SAFETY: is_continuation can only be true when variants.last() is Some.
+            let last = variants.last_mut().unwrap();
+            last.push(' ');
+            last.push_str(trimmed);
+        } else {
+            variants.push(line.to_string());
         }
     }
 
@@ -439,6 +460,63 @@ options:
         // it must not contribute a pair.
         assert_eq!(pairs.partner("-x"), None);
         assert_eq!(pairs.partner("--bogus"), None);
+    }
+
+    #[test]
+    fn options_header_with_prefix_word_matches() {
+        // `Common options:` and `map options:` must both be recognised as an
+        // options-section header so the pair regex scans only those blocks.
+        let usage_common = r#"
+Usage:
+    qsv foo [options] --keys <keys> <input>
+
+Common options:
+    -k, --keys <keys>    Key.
+"#;
+        assert_eq!(
+            extract_required_options_from_usage(usage_common),
+            set(&["-k", "--keys"])
+        );
+
+        let usage_map = r#"
+Usage:
+    qsv foo map [options] --keys <keys> <input>
+
+map options:
+    -k, --keys <keys>    Key.
+"#;
+        assert_eq!(
+            extract_required_options_from_usage(usage_map),
+            set(&["-k", "--keys"])
+        );
+    }
+
+    #[test]
+    fn options_header_with_leading_tab_matches() {
+        // `\t options:` (tab-indented header) must still match the
+        // options-section regex.
+        let usage = "\nUsage:\n    qsv foo [options] --keys <keys>\n\n\toptions:\n    -k, --keys \
+                     <keys>    Key.\n";
+        assert_eq!(
+            extract_required_options_from_usage(usage),
+            set(&["-k", "--keys"])
+        );
+    }
+
+    #[test]
+    fn inline_usage_header_variant_is_retained() {
+        // `Usage: qsv foo [options] -k <keys>` — the variant on the same
+        // line as the `Usage:` header must be recognised.
+        let usage = r#"
+Usage: qsv foo [options] -k <keys> <input>
+
+options:
+    -k, --keys <keys>    Key.
+"#;
+        assert_eq!(
+            extract_required_options_from_usage(usage),
+            set(&["-k", "--keys"])
+        );
     }
 
     #[test]

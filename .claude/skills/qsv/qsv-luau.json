@@ -82,6 +82,7 @@
       {
         "flag": "--no-headers",
         "type": "flag",
+        "required": true,
         "description": "When set, the first row will not be interpreted as headers. Automatically enables --colindex option."
       },
       {

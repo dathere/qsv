@@ -23,6 +23,7 @@
       {
         "flag": "--chunks",
         "type": "string",
+        "required": true,
         "description": "The number of chunks to split the data into. This option is mutually exclusive with --size. The number of rows in each chunk is determined by the number of records in the CSV data and the number of desired chunks. If the number of records is not evenly divisible by the number of chunks, the last chunk will have fewer records."
       },
       {
@@ -54,6 +55,7 @@
       {
         "flag": "--kb-size",
         "type": "string",
+        "required": true,
         "description": "The size of each chunk in kilobytes. The number of rows in each chunk may vary, but the size of each chunk will not exceed the desired size. This option is mutually exclusive with --size and --chunks."
       },
       {

@@ -62,8 +62,10 @@ NOTE: LLMs are prone to inaccurate information being produced. Verify output res
 CACHING:
 As LLM inferencing takes time and can be expensive, describegpt caches the LLM inferencing results
 in a either a disk cache (default) or a Redis cache. It does so by calculating the BLAKE3 hash of the
-input file and using it as the primary cache key along with the prompt type, model and other parameters
-as required.
+input file and using it as the primary cache key along with the prompt type, model and every flag that
+influences the rendered prompt (including prompt-file, language, tag-vocab, num-tags, enum-threshold,
+sample-size, fewshot-examples, the QSV_DUCKDB_PATH toggle and the generated Data Dictionary), so
+changing any of them produces a fresh LLM call rather than stale cached output.
 
 The default disk cache is stored in the ~/.qsv-cache/describegpt directory with a default TTL of 28 days
 and cache hits NOT refreshing an existing cached value's TTL.
@@ -263,8 +265,8 @@ qsv describegpt --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑u,`<br>`‑‑base‑url`&nbsp; | string | The LLM API URL. Supports APIs & local LLMs compatible with the OpenAI API specification. Some common base URLs: OpenAI: <https://api.openai.com/v1> Gemini: <https://generativelanguage.googleapis.com/v1beta/openai> TogetherAI: <https://api.together.ai/v1> | `http://localhost:1234/v1` |
-| &nbsp;`‑m,`<br>`‑‑model`&nbsp; | string | The model to use for inferencing. If set, takes precedence over the QSV_LLM_MODEL environment variable. | `openai/gpt-oss-20b` |
-| &nbsp;`‑‑language`&nbsp; | string | The output language/dialect to use for the response. (e.g., "Spanish", "French", "Hindi", "Mandarin", "Italian", "Castilian", "Franglais", "Taglish", "Pig Latin", "Valley Girl", "Pirate", "Shakespearean English", "Chavacano", "Gen Z", "Yoda", etc.) |  |
+| &nbsp;`‑m,`<br>`‑‑model`&nbsp; | string | The model to use for inferencing. If set, takes precedence over the QSV_LLM_MODEL environment variable. Tested open weights models include OpenAI's gpt-oss-20b and gpt-oss-120b; Google's gemma-4 family of open models; and Mistral 3 reasoning models. | `openai/gpt-oss-20b` |
+| &nbsp;`‑‑language`&nbsp; | string | The output language/dialect/tone to use for the response. (e.g., "Spanish", "French", "Hindi", "Mandarin", "Italian", "Castilian", "Franglais", "Taglish", "Pig Latin", "Valley Girl", "Pirate", "Shakespearean English", "Chavacano", "Gen Z", "Yoda", etc.) |  |
 | &nbsp;`‑‑addl‑props`&nbsp; | string | Additional model properties to pass to the LLM chat/completion API. Various models support different properties beyond the standard ones. For instance, gpt-oss-20b supports the "reasoning_effort" property. e.g. to set the "reasoning_effort" property to "high" & "temperature" to 0.5, use '{"reasoning_effort": "high", "temperature": 0.5}' |  |
 | &nbsp;`‑k,`<br>`‑‑api‑key`&nbsp; | string | The API key to use. If set, takes precedence over the QSV_LLM_APIKEY envvar. Required when the base URL is not localhost. Set to NONE to suppress sending the API key. |  |
 | &nbsp;`‑t,`<br>`‑‑max‑tokens`&nbsp; | string | Limits the number of generated tokens in the output. Set to 0 to disable token limits. If the --base-url is localhost, indicating a local LLM, the default is automatically set to 0. | `10000` |

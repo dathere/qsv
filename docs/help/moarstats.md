@@ -233,6 +233,13 @@ that share common join keys. The joined dataset is saved as a temporary file tha
 automatically deleted after computing the bivariate statistics.
 The bivariate statistics are saved to `<FILESTEM>.stats.bivariate.joined.csv`.
 
+Non-finite numeric tokens ("NaN", "Infinity", "-Infinity", and their case variants) are
+excluded from moarstats computations — the parser in moarstats filters them out before they
+reach correlation, variance and mean calculations, preventing a single bad cell from silently
+poisoning the results. Note that the baseline `stats` command may still count these tokens
+as Float observations, so the `type`/`null_count` columns in `<FILESTEM>.stats.csv` are not
+affected by this filter.
+
 
 <a name="examples"></a>
 

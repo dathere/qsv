@@ -76,82 +76,6 @@ struct Example {
     command:     String,
 }
 
-/// Return the set of option tokens that are required on a single USAGE line —
-/// i.e. tokens that are not inside any `[...]` (optional) group and not inside
-/// any `(A | B)` alternative group. Expands short/long via `short_to_long`
-/// when the literal short form appears.
-fn required_tokens_in_usage_line(
-    line: &str,
-    short_to_long: &std::collections::HashMap<String, String>,
-) -> std::collections::HashSet<String> {
-    let chars: Vec<char> = line.chars().collect();
-    let n = chars.len();
-
-    // Find parenthesis groups that contain a `|` at the same paren depth —
-    // those are alternative groups whose members are not individually required.
-    let mut alt_mask = vec![false; n];
-    {
-        let mut stack: Vec<(usize, bool)> = Vec::new(); // (start_idx, has_pipe)
-        let mut bracket_depth = 0i32;
-        for (i, &ch) in chars.iter().enumerate() {
-            match ch {
-                '[' => bracket_depth += 1,
-                ']' => bracket_depth = bracket_depth.saturating_sub(1),
-                '(' if bracket_depth == 0 => stack.push((i, false)),
-                ')' if bracket_depth == 0 && !stack.is_empty() => {
-                    let (start, has_pipe) = stack.pop().unwrap();
-                    if has_pipe {
-                        for m in alt_mask.iter_mut().take(i + 1).skip(start) {
-                            *m = true;
-                        }
-                    }
-                },
-                '|' if bracket_depth == 0 => {
-                    if let Some(last) = stack.last_mut() {
-                        last.1 = true;
-                    }
-                },
-                _ => {},
-            }
-        }
-    }
-
-    // Build a projection where required positions keep their char and others
-    // become spaces. A position is required iff bracket_depth == 0 and it's
-    // not inside any alternative-paren group.
-    let mut proj = String::with_capacity(n);
-    let mut bracket_depth = 0i32;
-    for (i, &ch) in chars.iter().enumerate() {
-        let is_bracket = ch == '[' || ch == ']';
-        if ch == '[' {
-            bracket_depth += 1;
-        }
-        let in_optional = bracket_depth > 0 || is_bracket;
-        let in_alt = alt_mask[i];
-        if in_optional || in_alt {
-            proj.push(' ');
-        } else {
-            proj.push(ch);
-        }
-        if ch == ']' {
-            bracket_depth = bracket_depth.saturating_sub(1);
-        }
-    }
-
-    let flag_re = regex::Regex::new(r"(?:^|\s)(-{1,2}[A-Za-z][\w-]*)").unwrap();
-    let mut out = std::collections::HashSet::new();
-    for cap in flag_re.captures_iter(&proj) {
-        if let Some(m) = cap.get(1) {
-            let tok = m.as_str().to_string();
-            out.insert(tok.clone());
-            if let Some(long) = short_to_long.get(&tok) {
-                out.insert(long.clone());
-            }
-        }
-    }
-    out
-}
-
 struct UsageParser {
     usage_text:   String,
     command_name: String,
@@ -336,65 +260,10 @@ impl UsageParser {
         optional_args
     }
 
-    /// Extract required options from USAGE lines.
-    ///
-    /// An option is globally required only when it appears in the `Usage:`
-    /// section of **every** non-`--help` Usage variant, and in each one it sits
-    /// outside any `[...]` bracket group (optional) and outside any `(A | B)`
-    /// parenthesized alternative group (where only one of the alternatives
-    /// must be chosen, so no individual token is required).
-    ///
-    /// For example:
-    /// - `qsv implode [options] -k <keys> -v <value> <separator> [<input>]` — `-k` / `--keys` and
-    ///   `-v` / `--value` appear in the (only) Usage line outside `[...]` and outside any `(|)`
-    ///   group → required.
-    /// - `qsv split [options] (--size <a> | --chunks <a> | --kb-size <a>) ...` — all three are
-    ///   inside a `(|)` group → none individually required.
-    /// - joinp / apply / describegpt / luau / py have multiple Usage variants, and options that
-    ///   appear in some but not all variants → not required.
+    /// Global required-option set derived from the USAGE string. Delegates to
+    /// the shared helper so `help_markdown_gen` stays in sync.
     fn extract_required_options_from_usage(&self) -> std::collections::HashSet<String> {
-        let usage_lines: Vec<&str> = self
-            .usage_text
-            .lines()
-            .skip_while(|l| !l.contains("Usage:"))
-            .skip(1)
-            .take_while(|l| {
-                let t = l.trim();
-                !t.is_empty() && (t.contains("qsv") || t.ends_with("--help"))
-            })
-            .filter(|l| !l.trim().ends_with("--help"))
-            .collect();
-
-        let short_to_long = Self::short_to_long_pairs(&self.usage_text);
-
-        // Per-variant required sets.
-        let per_variant: Vec<std::collections::HashSet<String>> = usage_lines
-            .iter()
-            .map(|l| required_tokens_in_usage_line(l, &short_to_long))
-            .collect();
-
-        // Global required = intersection of all variants. If there are no
-        // Usage variants, there are no required options.
-        let mut iter = per_variant.into_iter();
-        iter.next()
-            .map(|first| iter.fold(first, |acc, s| acc.intersection(&s).cloned().collect()))
-            .unwrap_or_default()
-    }
-
-    /// Scan option declaration lines like `-k, --keys <keys>` in the USAGE to
-    /// build a short→long alias map. docopt's `Parser` does not reliably emit
-    /// `Atom::Short` for these pairings, so we do it ourselves.
-    fn short_to_long_pairs(usage_text: &str) -> std::collections::HashMap<String, String> {
-        let pair_re = regex::Regex::new(r"(?m)^\s+(-[A-Za-z])\s*,\s*(--[A-Za-z][\w-]*)").unwrap();
-        pair_re
-            .captures_iter(usage_text)
-            .filter_map(|c| {
-                Some((
-                    c.get(1)?.as_str().to_string(),
-                    c.get(2)?.as_str().to_string(),
-                ))
-            })
-            .collect()
+        crate::generators_common::extract_required_options_from_usage(&self.usage_text)
     }
 
     /// Parse USAGE text using qsv-docopt Parser for robust parsing

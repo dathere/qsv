@@ -119,51 +119,63 @@ pub fn extract_required_options_from_usage(usage_text: &str) -> HashSet<String> 
 /// Collect the non-`--help` Usage variants from a docopt USAGE string.
 ///
 /// The block is bounded by the `Usage:` header and the first blank line after
-/// it. If the header line itself has an inline variant (`Usage: qsv foo ...`)
-/// that variant is retained. A line within the block is treated as a
-/// continuation of the previous variant when it is indented further than the
-/// parent variant, or when it doesn't start with the binary name `qsv` (the
-/// `qsv` prefix is used as a tiebreaker). Continuations are joined with a
-/// single space so flag-boundary detection still works. `--help` stub
-/// variants are filtered out.
+/// it. If the header line itself carries an inline variant
+/// (`Usage: qsv foo ...`), that variant is retained.
+///
+/// Continuation detection compares each line's leading whitespace against a
+/// *baseline indent* — the indent of the first non-blank line in the block.
+/// Lines strictly more indented than the baseline are merged into the
+/// previous variant (so a wrapped Usage line can't become its own bogus
+/// variant). Lines at the baseline start new variants.
+///
+/// `--help` stub variants are filtered out.
 fn collect_usage_lines(usage_text: &str) -> Vec<String> {
     let mut lines = usage_text.lines();
-    let mut variants: Vec<String> = Vec::new();
 
-    // Locate the `Usage:` header line and, if it carries an inline variant
-    // (`Usage: qsv foo [options]`), seed `variants` with the post-prefix text.
+    // Locate the `Usage:` header and capture any inline variant on the same
+    // line (e.g. `Usage: qsv foo [options]`).
+    let mut inline_variant: Option<String> = None;
     for line in lines.by_ref() {
         if let Some(after) = line.find("Usage:").map(|i| &line[i + "Usage:".len()..]) {
             let inline = after.trim();
             if !inline.is_empty() {
-                variants.push(inline.to_string());
+                inline_variant = Some(inline.to_string());
             }
             break;
         }
     }
 
-    // Walk the remaining block until the first blank line.
-    for line in lines.take_while(|l| !l.trim().is_empty()) {
-        let trimmed = line.trim();
+    // Remaining block, up to the first blank line.
+    let raw: Vec<String> = lines
+        .take_while(|l| !l.trim().is_empty())
+        .map(str::to_string)
+        .collect();
+
+    // Baseline indent: the leading-whitespace count of the first non-blank
+    // line in the block. Defaults to 0 if the block is empty.
+    let baseline_indent = raw
+        .iter()
+        .map(|l| l.len() - l.trim_start().len())
+        .next()
+        .unwrap_or(0);
+
+    let mut variants: Vec<String> = Vec::new();
+
+    // Store the inline variant (if any) synthesized at the baseline indent
+    // so its indentation comparison matches the rest of the block.
+    if let Some(inline) = inline_variant {
+        variants.push(format!("{}{}", " ".repeat(baseline_indent), inline));
+    }
+
+    for line in raw {
         let leading_ws = line.len() - line.trim_start().len();
+        let is_continuation = leading_ws > baseline_indent;
 
-        let is_continuation = match variants.last() {
-            None => false,
-            Some(prev) => {
-                let prev_leading_ws = prev.len() - prev.trim_start().len();
-                // Stronger signal: indented further than the parent variant.
-                // Fallback: doesn't start with the binary name.
-                leading_ws > prev_leading_ws || !trimmed.starts_with("qsv")
-            },
-        };
-
-        if is_continuation {
-            // SAFETY: is_continuation can only be true when variants.last() is Some.
-            let last = variants.last_mut().unwrap();
+        if is_continuation && let Some(last) = variants.last_mut() {
             last.push(' ');
-            last.push_str(trimmed);
+            last.push_str(line.trim());
         } else {
-            variants.push(line.to_string());
+            variants.push(line);
         }
     }
 
@@ -500,6 +512,71 @@ map options:
         assert_eq!(
             extract_required_options_from_usage(usage),
             set(&["-k", "--keys"])
+        );
+    }
+
+    #[test]
+    fn indented_wrap_line_merges_into_parent_variant() {
+        // A wrapped Usage line at deeper-than-baseline indent must fold into
+        // the parent variant, not stand alone. Without this, the intersection
+        // would treat `<keys>` as its own variant with no options and wipe
+        // out any options required by the true variant.
+        let usage = r#"
+Usage:
+    qsv foo [options] -k <keys> -v <value>
+        <more-args>
+    qsv foo --help
+
+options:
+    -k, --keys <keys>    Key.
+    -v, --value <v>      Value.
+"#;
+        assert_eq!(
+            extract_required_options_from_usage(usage),
+            set(&["-k", "--keys", "-v", "--value"])
+        );
+    }
+
+    #[test]
+    fn continuation_starting_with_qsv_prefix_is_still_a_continuation() {
+        // Per the indentation-outranks-prefix rule, a continuation line whose
+        // first bareword begins with `qsv-` (e.g. the hypothetical
+        // `qsv-helper` operand) must still fold into its parent variant
+        // because it's indented past the baseline.
+        let usage = r#"
+Usage:
+    qsv foo [options] --keys <keys>
+        qsv-helper-arg
+    qsv foo --help
+
+options:
+    -k, --keys <keys>    Key.
+"#;
+        assert_eq!(
+            extract_required_options_from_usage(usage),
+            set(&["-k", "--keys"])
+        );
+    }
+
+    #[test]
+    fn inline_usage_plus_indented_second_variant_stays_separate() {
+        // Regression for the inline-vs-non-inline storage asymmetry: a
+        // `Usage: qsv foo --bar` header followed by a second variant at the
+        // standard column must be recognised as two variants (not merged as
+        // "continuation" because the stored inline variant had leading_ws=0).
+        // `--bar` appears only in the first variant → intersection is empty.
+        let usage = r#"
+Usage: qsv foo --bar
+       qsv foo --baz
+
+options:
+    --bar    Only in variant 1.
+    --baz    Only in variant 2.
+"#;
+        assert!(
+            extract_required_options_from_usage(usage).is_empty(),
+            "got {:?}",
+            extract_required_options_from_usage(usage)
         );
     }
 

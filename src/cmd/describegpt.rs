@@ -271,14 +271,16 @@ describegpt options:
                            [default: http://localhost:1234/v1]
     -m, --model <model>    The model to use for inferencing.
                            If set, takes precedence over the QSV_LLM_MODEL environment variable.
+                           Tested open weights models include OpenAI's gpt-oss-20b and gpt-oss-120b;
+                           Google's gemma-4 family of open models; and Mistral 3 reasoning models.
                            [default: openai/gpt-oss-20b]
-    --language <lang>      The output language/dialect to use for the response. (e.g., "Spanish", "French",
+    --language <lang>      The output language/dialect/tone to use for the response. (e.g., "Spanish", "French",
                            "Hindi", "Mandarin", "Italian", "Castilian", "Franglais", "Taglish", "Pig Latin",
                            "Valley Girl", "Pirate", "Shakespearean English", "Chavacano", "Gen Z", "Yoda", etc.)
     
                              CHAT MODE (--prompt) LANGUAGE DETECTION BEHAVIOR:
                              When --prompt is used and --language is not set, automatically detects
-                             the language of the prompt with an 80% confidence threshold.
+                             the language of the prompt with an 80% confidence threshold using whatlang.
                              If the threshold is met, it will specify the detected language in its response.
                              If set to a float (0.0 to 1.0), specifies the detection confidence threshold.
                              If set to a string, specifies the language/dialect to use for the response.

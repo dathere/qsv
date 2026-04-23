@@ -48,6 +48,8 @@ pub mod geocode;
 #[cfg(feature = "geocode")]
 pub mod geoconvert;
 pub mod headers;
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
+pub mod implode;
 pub mod index;
 pub mod input;
 pub mod join;

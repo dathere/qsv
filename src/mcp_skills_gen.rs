@@ -1211,6 +1211,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "frequency",
         "geocode",
         "headers",
+        "implode",
         "index",
         "input",
         "join",

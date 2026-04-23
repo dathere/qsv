@@ -88,6 +88,8 @@ mod test_geocode;
 #[cfg(feature = "geocode")]
 mod test_geoconvert;
 mod test_headers;
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
+mod test_implode;
 mod test_index;
 mod test_input;
 mod test_join;

@@ -1,6 +1,6 @@
 {
   "name": "qsv-blake3",
-  "version": "19.0.0",
+  "version": "19.1.0",
   "description": "Compute or check BLAKE3 hashes of files.",
   "category": "utility",
   "command": {

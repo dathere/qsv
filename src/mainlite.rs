@@ -43,6 +43,7 @@ static COMMAND_LIST: &str = r#"
     frequency   Show frequency tables
     headers     Show header names
     help        Show this usage message
+    implode     Implode rows by grouping on key(s) and joining a value column
     index       Create CSV index for faster access
     input       Read CSVs w/ special quoting, skipping, trimming & transcoding rules
     join        Join CSV files
@@ -252,6 +253,7 @@ enum Command {
     Frequency,
     Headers,
     Help,
+    Implode,
     Index,
     Input,
     Join,
@@ -324,6 +326,7 @@ impl Command {
                 util::qsv_check_for_update(true, false)?;
                 Ok(())
             },
+            Command::Implode => cmd::implode::run(argv),
             Command::Index => cmd::index::run(argv),
             Command::Input => cmd::input::run(argv),
             Command::Join => cmd::join::run(argv),

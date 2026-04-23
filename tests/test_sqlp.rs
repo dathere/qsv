@@ -4657,6 +4657,25 @@ fn sqlp_alias_no_substring_collision() {
 }
 
 #[test]
+fn sqlp_alias_preserves_literal_with_alias_substring() {
+    // Regression: a string literal containing an alias-shaped token (e.g.
+    // `_t_10_note`) must survive the rewrite untouched, because `\d+` is
+    // greedy and the next char (`_`) does not form a word boundary with `0`.
+    // (Alias text inside literals delimited only by quotes is *not* protected
+    // — that is a documented limitation of the regex-based approach.)
+    let wrk = Workdir::new("sqlp_alias_preserves_literal_with_alias_substring");
+    wrk.create("d1.csv", vec![svec!["v"], svec!["one"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("d1.csv")
+        .arg("select '_t_10_note' as k, v from _t_1");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["k", "v"], svec!["_t_10_note", "one"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn sqlp_invalid_format_errors() {
     // Regression: an invalid --format value should fail loudly instead of
     // silently falling back to CSV.

@@ -246,10 +246,13 @@ sqlp options:
 
                               ARROW/AVRO/PARQUET OUTPUT FORMATS ONLY:
     --compression <arg>       The compression codec to use when writing arrow, avro or parquet files.
-                                For Arrow, valid values are: zstd, lz4, uncompressed (default)
-                                For Avro, valid values are: deflate, snappy, uncompressed (default)
-                                For Parquet, valid values are: zstd (default), lz4raw, gzip, snappy, uncompressed
-                              [default: zstd]   (only applies to parquet; arrow/avro default to uncompressed)
+                              The 'zstd' default below applies to Arrow and Parquet. Avro does not
+                              support zstd, so when --compression is omitted Avro silently falls
+                              back to uncompressed unless you pass an Avro-supported codec.
+                                For Arrow, valid values are: zstd, lz4, uncompressed
+                                For Avro, valid values are: deflate, snappy, uncompressed
+                                For Parquet, valid values are: zstd, lz4raw, gzip, snappy, uncompressed
+                              [default: zstd]
 
                               PARQUET OUTPUT FORMAT ONLY:
     --compress-level <arg>    The compression level to use when using zstd or gzip compression.
@@ -921,14 +924,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let num_queries = queries.len();
     let last_query: usize = num_queries.saturating_sub(1);
-    let mut is_last_query;
-    let mut current_query;
     let mut query_result_shape = (0_usize, 0_usize);
     let mut now = Instant::now();
 
     // build a reverse map (alias -> table_name) for word-boundary regex replacement,
-    // so e.g. `_t_1` won't match inside `_t_10` or inside string literals/columns
-    // that contain the alias text as a substring.
+    // so e.g. `_t_1` won't match inside `_t_10`. Note: alias text appearing inside
+    // SQL string literals or column names *will* still be replaced — fully avoiding
+    // that requires SQL-aware parsing, which is out of scope here.
     let alias_to_name: HashMap<&str, &str> = table_aliases
         .iter()
         .map(|(name, alias)| (alias.as_str(), name.as_str()))
@@ -936,11 +938,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let alias_regex = Regex::new(r"\b_t_\d+\b")?;
 
     for (idx, query) in queries.iter().enumerate() {
-        // check if this is the last query in the script
-        is_last_query = idx == last_query;
+        let is_last_query = idx == last_query;
 
-        // replace aliases in query
-        current_query = alias_regex
+        let current_query = alias_regex
             .replace_all(query, |caps: &regex::Captures| {
                 if let Some(name) = alias_to_name.get(&caps[0]) {
                     // we quote the table name to avoid issues with reserved keywords and

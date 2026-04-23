@@ -830,7 +830,11 @@ fn suggest_numeric_after_bimodality(
 /// Log message for the mixed-sign cancellation guard.
 fn log_mixed_sign(stats: &StatsData) {
     let (n_neg, n_pos) = (stats.n_negative.unwrap_or(0), stats.n_positive.unwrap_or(0));
-    let total = n_neg + stats.n_zero.unwrap_or(0) + n_pos;
+    // saturating_add for the total too, to match the end-to-end overflow-safe
+    // guarantee described below.
+    let total = n_neg
+        .saturating_add(stats.n_zero.unwrap_or(0))
+        .saturating_add(n_pos);
     // Round to nearest percent via (x*100 + total/2) / total.
     // Use saturating_mul/saturating_add end-to-end so pathological row counts
     // (n > u64::MAX / 100 ≈ 1.8e17) saturate cleanly instead of panicking.

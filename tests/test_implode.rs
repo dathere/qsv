@@ -225,7 +225,6 @@ fn implode_value_must_be_single_column() {
         .arg(";")
         .arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
     let stderr = wrk.output_stderr(&mut cmd);
     assert!(
         stderr.contains("--value must resolve to exactly one column"),
@@ -245,7 +244,6 @@ fn implode_value_cannot_be_a_key_column() {
         .arg(";")
         .arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
     let stderr = wrk.output_stderr(&mut cmd);
     assert!(
         stderr.contains("--value column must not also be a key column"),

@@ -2,7 +2,7 @@
 
 > Implode rows by grouping on key column(s) and joining a value column with a given separator. The inverse of `explode`.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/implode.rs](https://github.com/dathere/qsv/blob/master/src/cmd/implode.rs)** | [👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/implode.rs](https://github.com/dathere/qsv/blob/master/src/cmd/implode.rs)** | [😣](TableOfContents.md#legend "uses additional memory proportional to the cardinality of the columns in the CSV.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Implode Options](#implode-options) | [Common Options](#common-options)

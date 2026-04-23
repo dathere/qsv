@@ -3236,11 +3236,10 @@ fn joinp_tsv_cache_schema_minus1() {
     cmd.args(["id", "left.tsv", "id", "right.tsv"])
         .args(["--cache-schema", "-1"]);
 
-    wrk.assert_success(&mut cmd);
+    // `read_stdout` spawns the command once and captures stdout. If the regression
+    // returns (e.g. TSV headers parsed with the wrong delimiter), stdout will be
+    // empty or malformed and the length/column assertions below will fail clearly.
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    // header + 2 matched rows; the fix ensures the TSV headers parse correctly
-    // under --cache-schema -1, which previously opened the file with a comma
-    // delimiter and returned a single mashed-together field.
-    assert_eq!(got.len(), 3);
+    assert_eq!(got.len(), 3); // header + 2 matched rows
     assert_eq!(got[0], svec!["id", "name", "city"]);
 }

@@ -1,0 +1,68 @@
+{
+  "name": "qsv-implode",
+  "version": "19.1.0",
+  "description": "Implode rows by grouping on key column(s) and joining a value column with a given separator. The inverse of `explode`.",
+  "category": "utility",
+  "command": {
+    "subcommand": "implode",
+    "args": [
+      {
+        "name": "separator",
+        "type": "string",
+        "required": true,
+        "description": ""
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--keys",
+        "type": "string",
+        "description": "Key column(s) to group by. Supports the usual selector syntax (e.g. \"name\", \"1\", \"1-3\", \"a,c\")."
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--rename",
+        "type": "string",
+        "description": "New name for the imploded value column."
+      },
+      {
+        "flag": "--skip-empty",
+        "type": "flag",
+        "description": "Skip empty values when joining. By default, empty values are included as empty tokens so that round-tripping with `explode` is lossless."
+      },
+      {
+        "flag": "--sorted",
+        "type": "flag",
+        "description": "Assume input is pre-sorted by the key column(s). Streams groups as they are seen (O(1) memory)."
+      },
+      {
+        "flag": "--value",
+        "type": "string",
+        "description": "The column whose values will be joined per group. Must resolve to exactly one column."
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  }
+}

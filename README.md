@@ -55,6 +55,7 @@
 | [geocode](docs/help/geocode.md)✨<br>📇🧠🌐🚀🔣👆🌎 | Geocodes a location against an updatable local copy of the [Geonames](https://www.geonames.org/) cities & the [Maxmind GeoLite2](https://www.maxmind.com/en/geolite-free-ip-geolocation-data) databases. With caching and multi-threading, it geocodes up to 360,000 records/sec! |
 | [geoconvert](docs/help/geoconvert.md)✨<br>🌎 | Convert between various spatial formats and CSV/SVG including GeoJSON, SHP, and more. |
 | [headers](docs/help/headers.md)<br>🗄️ | Show the headers of a CSV. Or show the intersection of all headers between many CSV files. |
+| [implode](docs/help/implode.md)<br>👆 | Implode rows by grouping on key column(s) and joining a value column with a given separator. The inverse of `explode`. |
 | [index](docs/help/index.md) | Create an index (📇) for a CSV. This is very quick (even the 15gb, 28m row NYC 311 dataset takes all of 14 seconds to index) & provides constant time indexing/random access into the CSV. With an index, `count`, `sample` & `slice` work instantaneously; random access mode is enabled in `luau`; and multithreading (🏎️) is enabled for the `frequency`, `split`, `stats` & `schema` commands. |
 | [input](docs/help/input.md) | Read CSV data with special commenting, quoting, trimming, line-skipping & non-UTF8 encoding handling rules. Typically used to "normalize" a CSV for further processing with other qsv commands. |
 | [join](docs/help/join.md)<br>📇😣👆 | Inner, outer, right, cross, anti & semi joins. Automatically creates a simple, in-memory hash index to make it fast.  |

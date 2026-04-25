@@ -8,9 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `describegpt`: widen cache key to cover all template-affecting flags (`--tag-vocab`, `--num-tags`, `--enum-threshold`, `--sample-size`, `--fewshot-examples`, the `QSV_DUCKDB_PATH` toggle, and the generated Data Dictionary). Previously, changing any of these between runs silently returned stale cached output. First run after upgrade will re-invoke the LLM once per phase as prior cache entries no longer match.
+- `luau`: fix stale per-column globals when a row has fewer fields than headers (in both sequential and random-access modes); fix `_LASTROW`/`_ROWCOUNT` math under `--no-headers` in random-access mode (was off-by-one); fix `_LASTROW` underflow on empty input; fix `qsv_loadcsv` swallowing CSV parse errors; bound `qsv_lag` / `qsv_diff` history with `VecDeque` to prevent unbounded memory growth on large CSVs; reject `lag`/`periods <= 0` with clear errors; short-circuit MAIN on empty random-access input so END can still run.
 
 ### Changed
 - `describegpt`: split `process_phase_output` into per-branch helpers (dictionary context-only, full dictionary, JSON, TSV, TOON, Markdown). No behavior change — same output, smaller functions.
+- `luau`: `qsv_coalesce` now stringifies non-string values (numbers and booleans render via `to_string`; nil / arrays / objects are skipped). Previously, numbers and booleans were silently treated as missing values via `as_str().unwrap_or_default()`. Scripts relying on `qsv_coalesce(some_bool, fallback)` to skip booleans will now return `"true"`/`"false"` for the boolean.
+- **BREAKING** `luau`: `qsv_loadcsv` now returns the headers table 1-indexed (per Lua convention). Scripts that accessed `headers[0]` or iterated `for i = 0, #headers - 1` must shift to `headers[1]` and `for i = 1, #headers` (or `ipairs(headers)`). Previously `headers[1]` returned the *second* header.
 
 ## [19.1.0] - 2026-04-12
 

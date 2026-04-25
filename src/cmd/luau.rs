@@ -752,6 +752,11 @@ fn sequential_mode(
     let mut computed_result;
     // headers may have been augmented with new map columns; only iterate the
     // original input columns when populating col/globals from the record.
+    debug_assert!(
+        new_column_count as usize <= headers.len(),
+        "new_column_count ({new_column_count}) exceeds headers.len() ({len}) — invariant violation",
+        len = headers.len(),
+    );
     let orig_headers_count = headers.len().saturating_sub(new_column_count as usize);
 
     // main loop
@@ -1065,8 +1070,13 @@ fn random_access_mode(
     } else {
         0_u64
     };
-    debug!("BEGIN current record: {curr_record}");
-    idx_file.seek(curr_record)?;
+    // skip seek/MAIN entirely on empty input — seek(0) on a 0-record index errors.
+    // END still runs so aggregations / messages can complete normally.
+    let skip_main = row_count == 0;
+    if !skip_main {
+        debug!("BEGIN current record: {curr_record}");
+        idx_file.seek(curr_record)?;
+    }
 
     let main_bytecode = if debug_enabled {
         Vec::new()
@@ -1121,6 +1131,11 @@ fn random_access_mode(
     let mut computed_result;
     // headers may have been augmented with new map columns; only iterate the
     // original input columns when populating col/globals from the record.
+    debug_assert!(
+        new_column_count as usize <= headers.len(),
+        "new_column_count ({new_column_count}) exceeds headers.len() ({len}) — invariant violation",
+        len = headers.len(),
+    );
     let orig_headers_count = headers.len().saturating_sub(new_column_count as usize);
 
     // check if qsv_break() was called in the MAIN script
@@ -1128,7 +1143,7 @@ fn random_access_mode(
 
     // main loop - here we use an indexed file reader to implement random access mode,
     // seeking to the next record to read by looking at _INDEX special var
-    'main: while idx_file.read_record(&mut record)? {
+    'main: while !skip_main && idx_file.read_record(&mut record)? {
         globals.raw_set(QSV_V_IDX, curr_record)?;
 
         #[cfg(any(feature = "feature_capable", feature = "lite"))]
@@ -1540,11 +1555,18 @@ fn setup_helpers(
     luau.globals().set("qsv_log", qsv_log)?;
 
     // this is a helper function that can be called from Luau scripts
-    // to coalesce - return the first non-null value in a list
+    // to coalesce - return the first "present" value in a list, stringified
     //
     //   qsv_coalesce(arg1, .., argN)
-    //      returns: first non-null value of the arguments
-    //               or an empty string if all arguments are null
+    //      returns: first non-empty value of the arguments, stringified, or
+    //               an empty string if all arguments are absent.
+    //
+    //   value handling:
+    //      - strings: returned as-is; empty strings are skipped
+    //      - numbers: stringified (e.g. 0 -> "0", 3.14 -> "3.14")
+    //      - booleans: stringified ("true" / "false" — both are non-empty, so qsv_coalesce(false,
+    //        fallback) returns "false")
+    //      - nil / arrays / objects: skipped
     //
     let qsv_coalesce = luau.create_function(|luau, mut args: mlua::MultiValue| {
         while let Some(val) = args.pop_front() {
@@ -1739,8 +1761,13 @@ fn setup_helpers(
     //        filepath: the path of the CSV file to load
     //      key_column: the name of the column to use as the key for the table.
     //                  If the column name is empty, the row number will be used as the key.
-    //         returns: Luau table of column/header names.
+    //         returns: Luau table of column/header names, indexed 1..N per Lua
+    //                  convention (i.e. headers[1] is the first header).
     //                  A Luau runtime error if the filepath is invalid.
+    //
+    //   BREAKING (since the 1-indexed fix): scripts written for older qsv that
+    //   accessed `headers[0]` or iterated `for i = 0, #headers - 1` must shift
+    //   to `headers[1]` and `for i = 1, #headers` (or `ipairs(headers)`).
     //
     let qsv_loadcsv = luau.create_function(
         move |luau, (table_name, filepath, key_column): (String, String, String)| {

@@ -3506,21 +3506,20 @@ fn luau_random_access_lastrow_no_headers() {
     idx_cmd.arg("data.csv");
     wrk.assert_success(&mut idx_cmd);
 
+    // Use map mode and put _LASTROW / _ROWCOUNT directly into the captured stdout
+    // via the new column. _INDEX = _LASTROW seeks to last row; setting _INDEX = -1
+    // exits after the single read. With the buggy +1, the asserted values would be
+    // 3 and 4 instead of 2 and 3.
     let mut cmd = wrk.command("luau");
-    // _INDEX = _LASTROW seeks to last row; then setting _INDEX = -1 exits the loop
-    // after the single read. END returns "ok" only when _LASTROW/_ROWCOUNT are correct
-    // (i.e. _LASTROW == 2 and _ROWCOUNT == 3, with the buggy +1 they would be 3 and 4).
-    cmd.arg("filter")
+    cmd.arg("map")
+        .arg("rowinfo")
         .arg("--no-headers")
         .arg(
-            r#"BEGIN { _INDEX = _LASTROW }! _INDEX = -1; return true
-END { return (_LASTROW == 2 and _ROWCOUNT == 3) and "ok" or "wrong" }!"#,
+            r#"BEGIN { _INDEX = _LASTROW }! _INDEX = -1; return tostring(_LASTROW) .. "/" .. tostring(_ROWCOUNT)"#,
         )
         .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // only the row at _LASTROW (index 2, value "3") is processed before _INDEX = -1
+    assert_eq!(got, vec![svec!["3", "2/3"]]);
     wrk.assert_success(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
-    assert!(
-        stderr.contains("ok") && !stderr.contains("wrong"),
-        "expected END to print 'ok', got: {stderr}",
-    );
 }

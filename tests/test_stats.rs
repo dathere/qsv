@@ -3290,6 +3290,167 @@ fn stats_infer_boolean_missing_false_pattern() {
 }
 
 #[test]
+fn stats_infer_boolean_bare_asterisk_rejected() {
+    // A bare "*" has an empty prefix, which would match every value.
+    let wrk = Workdir::new("stats_infer_boolean_bare_asterisk_rejected");
+    let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg("*:0")
+        .arg(&test_file);
+    wrk.assert_err(&mut cmd);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg("1:*")
+        .arg(&test_file);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn stats_infer_boolean_identical_patterns_rejected() {
+    let wrk = Workdir::new("stats_infer_boolean_identical_patterns_rejected");
+    let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg("y:y")
+        .arg(test_file);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn stats_infer_boolean_extra_colon_rejected() {
+    let wrk = Workdir::new("stats_infer_boolean_extra_colon_rejected");
+    let test_file = wrk.load_test_file("boston311-10-boolean-tf.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--boolean-patterns")
+        .arg("true:false:extra")
+        .arg(test_file);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn stats_cache_invalidates_on_percentile_list_change() {
+    // Regression: with --everything, the cache short-circuit must compare
+    // flag_percentile_list. Otherwise, switching --percentile-list returns
+    // stale percentiles from the cache.
+    let wrk = Workdir::new("stats_cache_invalidates_on_percentile_list_change");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["v"],
+            svec!["1"],
+            svec!["2"],
+            svec!["3"],
+            svec!["4"],
+            svec!["5"],
+            svec!["6"],
+            svec!["7"],
+            svec!["8"],
+            svec!["9"],
+            svec!["10"],
+        ],
+    );
+
+    // First run: cache --everything with default percentile list.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--percentiles")
+        .arg("--cache-threshold")
+        .arg("1")
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Second run: same cache file, but a different --percentile-list.
+    // Must NOT reuse the cached row.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("25,75")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // For values 1..=10 (nearest-rank): default list "5,10,40,60,90,95" yields
+    // "1|1|4|6|9|10"; the requested "25,75" yields "3|8". A stale cache would
+    // return the default list's value. Either way, the result must differ from
+    // the default and reflect the two requested percentiles (separator-split
+    // gives exactly 2 fields).
+    let header = &got[0];
+    let pct_idx = header
+        .iter()
+        .position(|h| h == "percentiles")
+        .expect("percentiles column present");
+    let pct_value = &got[1][pct_idx];
+    let parts: Vec<&str> = pct_value.split('|').collect();
+    assert_eq!(
+        parts.len(),
+        2,
+        "expected 2 percentiles for --percentile-list 25,75, got {pct_value:?}"
+    );
+}
+
+#[test]
+fn stats_cache_invalidates_on_weight_change() {
+    // Regression: --weight writes to <stem>.stats.weighted.csv regardless of which
+    // weight column is used. The --everything cache short-circuit must compare
+    // flag_weight or different weight columns will silently share a cache.
+    let wrk = Workdir::new("stats_cache_invalidates_on_weight_change");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["v", "w1", "w2"],
+            svec!["1", "1", "10"],
+            svec!["2", "1", "1"],
+            svec!["3", "1", "1"],
+            svec!["4", "1", "1"],
+            svec!["5", "1", "1"],
+        ],
+    );
+
+    // First run: cache with --weight w1 (uniform weights => weighted mean = 3).
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--weight")
+        .arg("w1")
+        .arg("--cache-threshold")
+        .arg("1")
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Second run: --weight w2. The first record dominates so the weighted mean
+    // must shift toward 1, not stay at the cached 3.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--weight")
+        .arg("w2")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    let header = &got[0];
+    let field_idx = header.iter().position(|h| h == "field").unwrap();
+    let mean_idx = header.iter().position(|h| h == "mean").unwrap();
+    let v_row = got
+        .iter()
+        .skip(1)
+        .find(|r| r[field_idx] == "v")
+        .expect("row for column v");
+    let mean: f64 = v_row[mean_idx].parse().expect("numeric mean");
+    // With weights [10,1,1,1,1] over values [1..=5], weighted mean = 24/14 ≈ 1.714.
+    assert!(
+        (mean - 24.0 / 14.0).abs() < 1e-3,
+        "weighted mean should reflect new weight column, got {mean}"
+    );
+}
+
+#[test]
 fn stats_issue_2668_semicolon_separator() {
     let wrk = Workdir::new("stats_issue_2668_semicolon_separator");
     wrk.create("data.csv", vec![svec!["h1;h2;h3;h4"], svec!["1;2;3;4"]]);

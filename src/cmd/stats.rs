@@ -710,6 +710,9 @@ static BOOLEAN_PATTERNS: OnceLock<Vec<BooleanPattern>> = OnceLock::new();
 struct BooleanPattern {
     true_pattern:  String,
     false_pattern: String,
+    /// True iff both patterns are ASCII-only. When set (and the value being
+    /// matched is also ASCII), `matches` uses an allocation-free comparison.
+    ascii_only:    bool,
 }
 
 impl BooleanPattern {
@@ -734,30 +737,57 @@ impl BooleanPattern {
     /// 1. **Exact match**: The value is compared directly to both patterns (case-insensitive)
     /// 2. **Prefix match**: If a pattern ends with `*`, the value is checked if it starts with the
     ///    prefix (excluding the `*` character)
-    /// 3. **Priority**: Exact matches are checked before prefix matches for better performance
+    /// 3. **Priority**: Exact matches are checked before prefix matches. This is also a correctness
+    ///    requirement when patterns overlap (e.g. `"t*"` true vs. `"t"` false: the exact false
+    ///    match must win for a value of `"t"`).
     fn matches(&self, value: &str) -> Option<bool> {
+        // Fast path: when both patterns and the value are ASCII, we can use
+        // `eq_ignore_ascii_case` and a byte-wise prefix compare without
+        // allocating a lowercased copy of `value`. Patterns are already
+        // lowercased at parse time, so case folding only needs to happen on
+        // `value`, and ASCII case folding is a single bit flip per byte.
+        if self.ascii_only && value.is_ascii() {
+            if value.eq_ignore_ascii_case(&self.true_pattern) {
+                return Some(true);
+            }
+            if value.eq_ignore_ascii_case(&self.false_pattern) {
+                return Some(false);
+            }
+            if let Some(prefix) = self.true_pattern.strip_suffix('*')
+                && value.len() >= prefix.len()
+                && value.as_bytes()[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
+            {
+                return Some(true);
+            }
+            if let Some(prefix) = self.false_pattern.strip_suffix('*')
+                && value.len() >= prefix.len()
+                && value.as_bytes()[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
+            {
+                return Some(false);
+            }
+            return None;
+        }
+
+        // Slow path: at least one of the patterns or the value contains
+        // non-ASCII characters, so fall back to Unicode-aware lowercasing.
         let value_lower = value.to_lowercase();
 
-        // Check for exact match first
         if value_lower == self.true_pattern {
             return Some(true);
         } else if value_lower == self.false_pattern {
             return Some(false);
         }
 
-        // Check for prefix match if pattern ends with "*"
-        if self.true_pattern.ends_with('*') {
-            let prefix = &self.true_pattern[..self.true_pattern.len() - 1];
-            if value_lower.starts_with(prefix) {
-                return Some(true);
-            }
+        if let Some(prefix) = self.true_pattern.strip_suffix('*')
+            && value_lower.starts_with(prefix)
+        {
+            return Some(true);
         }
 
-        if self.false_pattern.ends_with('*') {
-            let prefix = &self.false_pattern[..self.false_pattern.len() - 1];
-            if value_lower.starts_with(prefix) {
-                return Some(false);
-            }
+        if let Some(prefix) = self.false_pattern.strip_suffix('*')
+            && value_lower.starts_with(prefix)
+        {
+            return Some(false);
         }
 
         None
@@ -796,13 +826,38 @@ fn parse_boolean_patterns(boolean_patterns: &str) -> CliResult<Vec<BooleanPatter
         let true_pattern = parts.next().unwrap_or("").trim().to_lowercase();
         let false_pattern = parts.next().unwrap_or("").trim().to_lowercase();
 
+        // Reject more than two colon-separated parts (e.g. "a:b:c") so trailing
+        // tokens aren't silently dropped.
+        if parts.next().is_some() {
+            return fail_incorrectusage_clierror!(
+                "Invalid boolean pattern (expected `true:false`): {pair}"
+            );
+        }
+
         if true_pattern.is_empty() || false_pattern.is_empty() {
             return fail_incorrectusage_clierror!("Invalid boolean pattern: {pair}");
         }
 
+        // A bare "*" has an empty prefix, which would match every value.
+        if true_pattern == "*" || false_pattern == "*" {
+            return fail_incorrectusage_clierror!(
+                "Invalid boolean pattern (`*` alone matches everything): {pair}"
+            );
+        }
+
+        // Identical true/false patterns make the false branch unreachable
+        // (true is checked first), so reject as ambiguous.
+        if true_pattern == false_pattern {
+            return fail_incorrectusage_clierror!(
+                "Invalid boolean pattern (true and false patterns are identical): {pair}"
+            );
+        }
+
+        let ascii_only = true_pattern.is_ascii() && false_pattern.is_ascii();
         patterns.push(BooleanPattern {
             true_pattern,
             false_pattern,
+            ascii_only,
         });
     }
     if patterns.is_empty() {
@@ -1187,6 +1242,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             && existing_stats_args_json.flag_delimiter
                                 == current_stats_args.flag_delimiter
                             && existing_stats_args_json.flag_nulls == current_stats_args.flag_nulls
+                            && existing_stats_args_json.flag_weight
+                                == current_stats_args.flag_weight
+                            && existing_stats_args_json.flag_percentile_list
+                                == current_stats_args.flag_percentile_list
                             && existing_stats_args_json.qsv_version
                                 == current_stats_args.qsv_version)
                 {
@@ -2335,9 +2394,15 @@ fn calculate_memory_aware_chunk_size(
             }
         },
         Some(0) => {
-            // Dynamic sizing: sample records to estimate average size
-            // Note: caller already gates on needs_memory_aware_chunking, so we always
-            // use dynamic sizing here. The None arm has its own guard for direct callers.
+            // Dynamic sizing: sample records to estimate average size.
+            // Caller is expected to have gated on `needs_memory_aware_chunking`
+            // (see `parallel_stats`). The assertion locks that invariant in
+            // debug builds so a future caller can't silently bypass it.
+            debug_assert!(
+                needs_memory_aware_chunking,
+                "Some(0) arm requires non-streaming stats; caller must gate on \
+                 needs_memory_aware_chunking()"
+            );
             util::calculate_dynamic_chunk_size(idx_count, njobs, sample_records, |record| {
                 estimate_record_memory(record, which_stats)
             })

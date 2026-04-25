@@ -2278,27 +2278,20 @@ fn get_us_fips_codes(cityrecord: &CitiesRecord, nameslang: &NamesLang) -> serde_
     } else {
         ""
     };
-    let us_state_fips_code = lookup_us_state_fips_code(us_state_code).unwrap_or("null");
+    // emit JSON null when the US state lookup fails (non-US state or unrecognized code)
+    let us_state_fips_code = match lookup_us_state_fips_code(us_state_code) {
+        Some(code) => serde_json::Value::String(code.to_string()),
+        None => serde_json::Value::Null,
+    };
 
-    let us_county_code = match cityrecord.admin2_division.as_ref() {
-        Some(admin2) => {
-            if admin2.code.starts_with("US.") && admin2.code.len() == 9 {
-                // admin2 code is a US county code, the three-digit county code
-                // is the last three characters of the admin2 code
-                // start at index 7 to skip the US. prefix
-                // e.g. US.NY.061 -> 061
-                format!("{:0>3}", &admin2.code[7..])
-            } else {
-                // admin2 code is not a US county code
-                // set to empty string
-                String::new()
-            }
+    // emit JSON null when admin2 isn't a valid US county code (US.XX.NNN format)
+    let us_county_fips_code = match cityrecord.admin2_division.as_ref() {
+        Some(admin2) if admin2.code.starts_with("US.") && admin2.code.len() == 9 => {
+            // start at index 7 to skip the "US." prefix and 2-letter state code,
+            // e.g. US.NY.061 -> 061
+            serde_json::Value::String(format!("{:0>3}", &admin2.code[7..]))
         },
-        None => {
-            // no admin2 code
-            // set to empty string
-            String::new()
-        },
+        _ => serde_json::Value::Null,
     };
     json!(
     {
@@ -2306,7 +2299,7 @@ fn get_us_fips_codes(cityrecord: &CitiesRecord, nameslang: &NamesLang) -> serde_
         "us_state_name": nameslang.admin1name,
         "us_state_fips_code": us_state_fips_code,
         "us_county": nameslang.admin2name,
-        "us_county_fips_code": us_county_code,
+        "us_county_fips_code": us_county_fips_code,
     })
 }
 

@@ -696,19 +696,20 @@ static BOOLEAN_PATTERNS: OnceLock<Vec<BooleanPattern>> = OnceLock::new();
 /// It supports both exact matches and prefix matching with wildcards for flexible boolean
 /// detection during CSV statistics computation.
 ///
-/// # Fields
-///
-/// * `true_pattern` - The pattern that identifies `true` values (case-insensitive)
-/// * `false_pattern` - The pattern that identifies `false` values (case-insensitive)
-///
 /// # Pattern Matching
 ///
 /// Patterns support two types of matching:
 /// * **Exact match**: The value must exactly match the pattern (case-insensitive)
 /// * **Prefix match**: If the pattern ends with `*`, it matches any value that starts with the
 ///   prefix (e.g., `"yes*"` matches `"yes"`, `"yes please"`, `"YES"`, etc.)
+///
+/// See the field-level docs below for details on each field.
 struct BooleanPattern {
+    /// The pattern that identifies `true` values (case-insensitive). Stored
+    /// already-lowercased; may end with `*` for prefix matching.
     true_pattern:  String,
+    /// The pattern that identifies `false` values (case-insensitive). Stored
+    /// already-lowercased; may end with `*` for prefix matching.
     false_pattern: String,
     /// True iff both patterns are ASCII-only. When set (and the value being
     /// matched is also ASCII), `matches` uses an allocation-free comparison.

@@ -753,9 +753,8 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     let geocode_cache_dir = if let Ok(cache_dir) = std::env::var("QSV_CACHE_DIR") {
         // if QSV_CACHE_DIR env var is set, check if it exists. If it doesn't, create it.
         if cache_dir.starts_with('~') {
-            // QSV_CACHE_DIR starts with ~, expand it
-            // safety: we know it starts with ~, so it should be safe to unwrap
-            expand_tilde(&cache_dir).unwrap()
+            // QSV_CACHE_DIR starts with ~, expand it; fall back to literal path if HOME unset
+            expand_tilde(&cache_dir).unwrap_or_else(|| PathBuf::from(&cache_dir))
         } else {
             PathBuf::from(cache_dir)
         }
@@ -763,8 +762,8 @@ async fn geocode_main(args: Args) -> CliResult<()> {
         // QSV_CACHE_DIR env var is not set, use args.flag_cache_dir
         // first check if it starts with ~, expand it
         if args.flag_cache_dir.starts_with('~') {
-            // safety: we know it starts with ~, so it should be safe to unwrap
-            expand_tilde(&args.flag_cache_dir).unwrap()
+            expand_tilde(&args.flag_cache_dir)
+                .unwrap_or_else(|| PathBuf::from(&args.flag_cache_dir))
         } else {
             PathBuf::from(&args.flag_cache_dir)
         }
@@ -832,7 +831,7 @@ async fn geocode_main(args: Args) -> CliResult<()> {
             .flag_cities_url
             .split('/')
             .next_back()
-            .unwrap()
+            .unwrap_or("cities15000.zip")
             .replace(".zip", ".txt");
 
         // setup languages
@@ -881,28 +880,25 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                                 "detail": e.to_string()
                             }]
                         });
-                        format!("{json_error}")
+                        json_error.to_string()
                     },
                 };
 
-                let created_at =
-                    util::format_systemtime(metadata.as_ref().unwrap().created_at, "%+");
-                eprintln!("Created at: {created_at}");
-
                 match metadata {
-                    Some(m)
+                    Some(m) => {
+                        let created_at = util::format_systemtime(m.created_at, "%+");
+                        eprintln!("Created at: {created_at}");
                         if updater.has_updates(&m).await.map_err(|_| {
                             CliError::Network("Geonames update check failed.".to_string())
-                        })? =>
-                    {
-                        winfo!(
-                            "Updates available at Geonames.org. Use `qsv geocode index-update` to \
-                             update/rebuild the index.\nPlease use this judiciously as Geonames \
-                             is a free service.\n"
-                        );
-                    },
-                    Some(_) => {
-                        winfo!("Geonames index up-to-date.\n");
+                        })? {
+                            winfo!(
+                                "Updates available at Geonames.org. Use `qsv geocode \
+                                 index-update` to update/rebuild the index.\nPlease use this \
+                                 judiciously as Geonames is a free service.\n"
+                            );
+                        } else {
+                            winfo!("Geonames index up-to-date.\n");
+                        }
                     },
                     None => return fail_incorrectusage_clierror!("Invalid Geonames index file."),
                 }
@@ -929,7 +925,10 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                         .read_metadata(geocode_index_file.clone())
                         .map_err(|e| format!("index-update error: {e}"))?;
 
-                    if updater.has_updates(&metadata.unwrap()).await.map_err(|_| {
+                    let Some(m) = metadata else {
+                        return fail_incorrectusage_clierror!("Invalid Geonames index file.");
+                    };
+                    if updater.has_updates(&m).await.map_err(|_| {
                         CliError::Network("Geonames update check failed.".to_string())
                     })? {
                         winfo!("Updates available at Geonames.org.");
@@ -1414,9 +1413,8 @@ async fn load_engine_data(
     // if it is, for convenience, we download the desired index file from the qsv GitHub repo
     let geocode_index_file_stem = geocode_index_file
         .file_stem()
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
 
     let download_url = format!(
         "https://github.com/dathere/qsv/releases/download/{QSV_VERSION}/{DEFAULT_GEOCODE_INDEX_FILENAME}.cities"
@@ -1474,7 +1472,10 @@ async fn load_engine_data(
 
     // check if the geocode_index_file is snappy compressed
     // if it is, decompress it
-    let geocode_index_file = if geocode_index_file.extension().unwrap() == "sz" {
+    let geocode_index_file = if geocode_index_file
+        .extension()
+        .is_some_and(|ext| ext == "sz")
+    {
         let decompressed_geocode_index_file = geocode_index_file.with_extension(".rkyv");
         progressbar.println(format!(
             "Decompressing {} to {}",
@@ -1609,7 +1610,7 @@ fn search_index(
             }
         };
 
-        let country = &cityrecord.country.as_ref().unwrap().code;
+        let country = cityrecord.country.as_ref()?.code.as_str();
 
         let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
 
@@ -1674,7 +1675,7 @@ fn search_index(
             return Some(format!("{ip_addr}"));
         };
         let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
-        let country = &cityrecord.country.as_ref().unwrap().code;
+        let country = cityrecord.country.as_ref()?.code.as_str();
         let capital = engine
             .capital(country)
             .map(|cr| cr.name.as_str())
@@ -1730,8 +1731,7 @@ fn search_index(
 
             let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
 
-            // safety: we know country is Some because we got a cityrecord
-            let country = &cityrecord.country.as_ref().unwrap().code;
+            let country = cityrecord.country.as_ref()?.code.as_str();
 
             if formatstr == "%+" {
                 // default for reverse is city, admin1 country - e.g. "Brooklyn, New York US"
@@ -1923,10 +1923,9 @@ fn format_result(
             "%admin1record" => format!("{:?}", cityrecord.admin_division),
             "%admin2record" => format!("{:?}", cityrecord.admin2_division),
             "%json" => {
-                // safety: it is safe to unwrap as we will always have a country record at this
-                // stage as the calling search_index function returns early if we
-                // don't have a country record
-                let countryrecord = engine.country_info(country).unwrap();
+                let Some(countryrecord) = engine.country_info(country) else {
+                    return INVALID_COUNTRY_CODE.to_string();
+                };
                 let cr_json =
                     simd_json::to_string(cityrecord).unwrap_or_else(|_| "null".to_string());
                 let country_json =
@@ -1938,8 +1937,9 @@ fn format_result(
                 )
             },
             "%pretty-json" => {
-                // safety: see safety note above for "%json"
-                let countryrecord = engine.country_info(country).unwrap();
+                let Some(countryrecord) = engine.country_info(country) else {
+                    return INVALID_COUNTRY_CODE.to_string();
+                };
                 let cr_json =
                     simd_json::to_string_pretty(cityrecord).unwrap_or_else(|_| "null".to_string());
                 let country_json = simd_json::to_string_pretty(countryrecord)

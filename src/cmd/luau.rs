@@ -647,7 +647,7 @@ fn sequential_mode(
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
     let mut headers = rdr.headers()?.to_owned();
     let mut remap_headers = csv::StringRecord::new();
-    let mut new_column_count = 0_u8;
+    let mut new_column_count = 0_usize;
     let mut headers_count = headers.len();
     let debug_enabled = log_enabled!(log::Level::Debug);
 
@@ -753,11 +753,11 @@ fn sequential_mode(
     // headers may have been augmented with new map columns; only iterate the
     // original input columns when populating col/globals from the record.
     debug_assert!(
-        new_column_count as usize <= headers.len(),
+        new_column_count <= headers.len(),
         "new_column_count ({new_column_count}) exceeds headers.len() ({len}) — invariant violation",
         len = headers.len(),
     );
-    let orig_headers_count = headers.len().saturating_sub(new_column_count as usize);
+    let orig_headers_count = headers.len().saturating_sub(new_column_count);
 
     // main loop
     // without an index, we stream the CSV in sequential order
@@ -1002,7 +1002,7 @@ fn random_access_mode(
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
     let mut headers = idx_file.headers()?.to_owned();
     let mut remap_headers = csv::StringRecord::new();
-    let mut new_column_count = 0_u8;
+    let mut new_column_count = 0_usize;
     let mut headers_count = headers.len();
     let debug_enabled = log_enabled!(log::Level::Debug);
 
@@ -1078,7 +1078,8 @@ fn random_access_mode(
         idx_file.seek(curr_record)?;
     }
 
-    let main_bytecode = if debug_enabled {
+    // skip MAIN bytecode compilation when MAIN won't run (empty input)
+    let main_bytecode = if debug_enabled || skip_main {
         Vec::new()
     } else {
         luau_compiler.compile(main_script)?
@@ -1091,8 +1092,9 @@ fn random_access_mode(
     let show_progress = false;
 
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
-    let show_progress =
-        (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR")) && !rconfig.is_stdin();
+    let show_progress = !skip_main
+        && (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR"))
+        && !rconfig.is_stdin();
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
     let progress = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(5));
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
@@ -1112,10 +1114,15 @@ fn random_access_mode(
         progress.set_draw_target(ProgressDrawTarget::hidden());
     }
 
-    Stage::Main.set_current();
-    info!(
-        "Executing MAIN script. _INDEX: {curr_record} _ROWCOUNT: {row_count} _LASTROW: {last_row}"
-    );
+    if skip_main {
+        info!("Skipping MAIN script: input has 0 records.");
+    } else {
+        Stage::Main.set_current();
+        info!(
+            "Executing MAIN script. _INDEX: {curr_record} _ROWCOUNT: {row_count} _LASTROW: \
+             {last_row}"
+        );
+    }
 
     let mut computed_value;
     let mut must_keep_row;
@@ -1132,11 +1139,11 @@ fn random_access_mode(
     // headers may have been augmented with new map columns; only iterate the
     // original input columns when populating col/globals from the record.
     debug_assert!(
-        new_column_count as usize <= headers.len(),
+        new_column_count <= headers.len(),
         "new_column_count ({new_column_count}) exceeds headers.len() ({len}) — invariant violation",
         len = headers.len(),
     );
-    let orig_headers_count = headers.len().saturating_sub(new_column_count as usize);
+    let orig_headers_count = headers.len().saturating_sub(new_column_count);
 
     // check if qsv_break() was called in the MAIN script
     let qsv_break_used = main_script.contains("qsv_break(");
@@ -1330,7 +1337,7 @@ fn map_computedvalue(
     computed_value: &Value,
     record: &mut csv::StringRecord,
     flag_remap: bool,
-    new_column_count: u8,
+    new_column_count: usize,
 ) -> Result<(), CliError> {
     match computed_value {
         Value::String(string) => match simdutf8::basic::from_utf8(&string.as_bytes()) {
@@ -1359,7 +1366,7 @@ fn map_computedvalue(
                 // and only write the new columns to output
                 record.clear();
             }
-            let mut columns_inserted = 0_u8;
+            let mut columns_inserted = 0_usize;
             table.for_each::<String, Value>(|_k, v| {
                 if new_column_count > 0 && columns_inserted >= new_column_count {
                     // we ignore table values more than the number of
@@ -1821,7 +1828,8 @@ fn setup_helpers(
                     Err(e) => {
                         return helper_err!(
                             "qsv_loadcsv",
-                            "error reading row {row_idx} of CSV: {e}"
+                            "error reading data row {} of CSV (1-based, excluding header): {e}",
+                            row_idx + 1
                         );
                     },
                 };

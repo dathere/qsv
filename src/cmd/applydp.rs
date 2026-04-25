@@ -150,7 +150,8 @@ apply arguments:
 applydp options:
     -c, --new-column <name>     Put the transformed values in a new column instead.
     -r, --rename <name>         New name for the transformed column.
-    -C, --comparand=<string>    The string to compare against for replace & strip operations.
+    -C, --comparand=<string>    The string to compare against for replace, strip,
+                                match-trim (mtrim/mltrim/mrtrim) & regex_replace operations.
     -R, --replacement=<string>  The string to use for the replace & emptyreplace operations.
     -f, --formatstr=<string>    This option is used by several subcommands:
 
@@ -268,14 +269,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
     // --new-column (-c) appends a single field per row, so it would produce
     // malformed CSV (one header, N data fields) when combined with multi-column
-    // operations or emptyreplace. Use --rename (-r) for multi-column transforms.
+    // operations or emptyreplace. For multi-column transforms, omit --new-column
+    // to update the selected columns in place; --rename (-r) is optional and only
+    // changes the column names.
     if args.flag_new_column.is_some()
         && (args.cmd_operations || args.cmd_emptyreplace)
         && sel.len() > 1
     {
         return fail_incorrectusage_clierror!(
-            "--new-column (-c) requires a single input column. Use --rename (-r) for \
-             multi-column transformations."
+            "--new-column (-c) requires a single input column. For multi-column \
+             operations/emptyreplace, omit --new-column to transform columns in place; \
+             optionally use --rename (-r) to rename the transformed columns."
         );
     }
     // safety: we just checked that sel is not empty above

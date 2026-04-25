@@ -470,14 +470,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
     // --new-column (-c) appends a single field per row, so it would produce
     // malformed CSV (one header, N data fields) when combined with multi-column
-    // operations or emptyreplace. Use --rename (-r) for multi-column transforms.
+    // operations or emptyreplace. For multi-column transforms, omit --new-column
+    // to update the selected columns in place; --rename (-r) is optional and only
+    // changes the column names.
     if args.flag_new_column.is_some()
         && (args.cmd_operations || args.cmd_emptyreplace)
         && sel.len() > 1
     {
         return fail_incorrectusage_clierror!(
-            "--new-column (-c) requires a single input column. Use --rename (-r) for \
-             multi-column transformations."
+            "--new-column (-c) requires a single input column. For multi-column \
+             operations/emptyreplace, omit --new-column to transform columns in place; \
+             optionally use --rename (-r) to rename the transformed columns."
         );
     }
     // safety: we just checked that sel is not empty above
@@ -680,12 +683,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             Err(_) => record[column_index].to_owned(),
                         };
 
-                        let (cell_for_eval, append_unit) =
-                            if let Some(stripped) = formatted.strip_suffix("<UNIT>") {
-                                (stripped, true)
-                            } else {
-                                (formatted.as_str(), false)
-                            };
+                        let (cell_for_eval, append_unit) = if formatted.ends_with("<UNIT>") {
+                            // strip ALL trailing <UNIT> occurrences (matches the original
+                            // trim_end_matches behavior — strip_suffix would only remove one)
+                            (formatted.trim_end_matches("<UNIT>"), true)
+                        } else {
+                            (formatted.as_str(), false)
+                        };
                         let result = if cell_for_eval.trim().is_empty() {
                             String::new()
                         } else {

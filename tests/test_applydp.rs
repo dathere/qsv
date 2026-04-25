@@ -668,8 +668,9 @@ fn applydp_ops_multi_column_new_column_rejected() {
     let got = wrk.output_stderr(&mut cmd);
     assert_eq!(
         got,
-        "usage error: --new-column (-c) requires a single input column. Use --rename (-r) \
-         for multi-column transformations.\n"
+        "usage error: --new-column (-c) requires a single input column. For multi-column \
+         operations/emptyreplace, omit --new-column to transform columns in place; \
+         optionally use --rename (-r) to rename the transformed columns.\n"
     );
     wrk.assert_err(&mut cmd);
 }

@@ -182,11 +182,15 @@ impl From<minijinja::Error> for CliError {
     }
 }
 
-// An efficient structure for lookups using three levels of nested HashMaps:
-// First HashMap: Maps lookup table names to their indices
-// Second HashMap: Maps key column values to a HashMap of field name -> field value
-// Third HashMap: Maps field name to field value
-type LookupMap = HashMap<String, HashMap<String, HashMap<String, String>>>;
+// An efficient structure for lookups.
+// `rows`: maps the (normalized) key column value -> field name -> field value.
+// `lowercased_keys`: maps lowercased key -> original key, populated at registration
+// time so case-insensitive lookups stay O(1) instead of O(N) per call.
+struct LookupTable {
+    rows:            HashMap<String, HashMap<String, String>>,
+    lowercased_keys: HashMap<String, String>,
+}
+type LookupMap = HashMap<String, LookupTable>;
 
 static LOOKUP_MAP: OnceLock<RwLock<LookupMap>> = OnceLock::new();
 
@@ -389,7 +393,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Scan template for any lookup registrations and register them before batch processing
     if template_content.contains("register_lookup(") {
-        // Create regex to extract register_lookup calls
+        // NOTE: this regex is a deliberately-loose textual scan, not a parser.
+        // It does not understand nested parens, string literals, or {# #} comments.
+        // The cost of a false-positive match is a clearer startup-time error;
+        // a false-negative just means the registration is deferred to the first
+        // row's render. So perfect parsing isn't required.
         let re = regex::Regex::new(r"register_lookup\([^)]+\)")?;
 
         // Extract all register_lookup statements into a temporary template
@@ -488,9 +496,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     for (i, field) in curr_record.iter().enumerate() {
                         if i == headers_len - 1 {
                             // set the last field to QSV_ROWNO
-                            // safety: we set row_no earlier in the batch loop
-                            row_number =
-                                atoi_simd::parse::<u64, false, false>(field.as_bytes()).unwrap();
+                            // The QSV_ROWNO field was just appended to the record by the
+                            // producer above using itoa, so it is always a valid u64.
+                            row_number = atoi_simd::parse::<u64, false, false>(field.as_bytes())
+                                .expect("QSV_ROWNO is set by the batch producer");
                             context.insert(
                                 std::borrow::Cow::Borrowed(QSV_ROWNO),
                                 BorrowedValue::String(std::borrow::Cow::Borrowed(field)),
@@ -511,9 +520,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         );
                         // when headers are defined, the last one is QSV_ROWNO
                         if header == QSV_ROWNO {
-                            // safety: we set row_no earlier in the batch loop
-                            row_number =
-                                atoi_simd::parse::<u64, false, false>(field.as_bytes()).unwrap();
+                            // The QSV_ROWNO field was just appended to the record by the
+                            // producer above using itoa, so it is always a valid u64.
+                            row_number = atoi_simd::parse::<u64, false, false>(field.as_bytes())
+                                .expect("QSV_ROWNO is set by the batch producer");
                         }
                     }
                 }
@@ -575,14 +585,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                 outpath.push(result_record.0.as_deref().unwrap());
 
-                // if output_to_dir is true, we'll be writing a LOT of files (one for each row)
-                // and this hot loop will be I/O bound
-                // we optimize the size of the BufWriter buffer here
-                // so that it's only one I/O syscall per row
-                let mut row_writer =
-                    BufWriter::with_capacity(result_record.1.len(), fs::File::create(&outpath)?);
-                row_writer.write_all(result_record.1.as_bytes())?;
-                row_writer.flush()?;
+                // One file per row in the hot loop. fs::write is a single create+
+                // write+close syscall sequence with no intermediate buffering, which
+                // matches what the previous BufWriter-sized-to-payload was doing.
+                fs::write(&outpath, result_record.1.as_bytes())?;
 
                 outpath.clear();
             } else if let Some(ref mut w) = bulk_wtr {
@@ -617,6 +623,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 /// Returns a substring of the input string from start index to end index (exclusive).
 /// If end is not provided, returns substring from start to end of string.
 /// Returns --customfilter-error (default: <FILTER_ERROR>) if indices are invalid.
+///
+/// NOTE: indices are byte offsets, not character offsets. For ASCII input this is
+/// equivalent. For non-ASCII (UTF-8) input, an index that lands inside a multi-byte
+/// codepoint is invalid and the filter will return --customfilter-error.
 fn substr(value: &str, start: u32, end: Option<u32>) -> String {
     let end = end.unwrap_or(value.len() as _);
     if let Some(s) = value.get(start as usize..end as usize) {
@@ -736,18 +746,12 @@ fn to_bool(value: &Value) -> bool {
         );
         if truthy {
             true
+        } else if let Ok(num) = s.parse::<i64>() {
+            num != 0
+        } else if let Ok(num) = s.parse::<f64>() {
+            num.abs() > f64::EPSILON
         } else {
-            let int_num: i64;
-            let float_num: f64;
-            if let Ok(num) = s.parse::<i64>() {
-                int_num = num;
-                int_num != 0
-            } else if let Ok(num) = s.parse::<f64>() {
-                float_num = num;
-                float_num.abs() > f64::EPSILON
-            } else {
-                false
-            }
+            false
         }
     } else {
         value.is_true()
@@ -864,6 +868,8 @@ fn register_lookup(
     // Create nested HashMaps for efficient lookups
     let mut lookup_data: HashMap<String, HashMap<String, String>> =
         HashMap::with_capacity(lookup_table.rowcount);
+    let mut lowercased_keys: HashMap<String, String> =
+        HashMap::with_capacity(lookup_table.rowcount);
 
     let row_len = lookup_table.headers.len();
     for record in rdr.records().flatten() {
@@ -885,6 +891,12 @@ fn register_lookup(
             } else {
                 key_trim.to_owned()
             };
+            // Pre-build the lowercased -> original key index so case-insensitive
+            // lookups can be O(1). On collision (e.g. "Foo" and "foo" are both keys)
+            // the first-seen original wins, mirroring HashMap insert semantics.
+            lowercased_keys
+                .entry(key.to_lowercase())
+                .or_insert_with(|| key.clone());
             lookup_data.insert(key, row_data);
         }
     }
@@ -900,7 +912,13 @@ fn register_lookup(
     // Safely get write access to the map
     match LOOKUP_MAP.get().unwrap().write() {
         Ok(mut map) => {
-            map.insert(lookup_name.to_string(), lookup_data);
+            map.insert(
+                lookup_name.to_string(),
+                LookupTable {
+                    rows: lookup_data,
+                    lowercased_keys,
+                },
+            );
             Ok(true)
         },
         Err(_) => Err(minijinja::Error::new(
@@ -982,39 +1000,24 @@ fn lookup_filter(
         _ => value.as_str().unwrap_or_default(),
     };
 
-    // Avoid allocating if case-sensitive
-    let value_compare = if case_sensitive {
-        value
-    } else {
-        // Only allocate for lowercase when needed
-        &value.to_lowercase()
-    };
-
     // safety: FILTER_ERROR was initialized in run section
     let filter_error = FILTER_ERROR.get().unwrap();
-
-    // Reuse buffer for case-insensitive comparisons
-    let mut lowercase_buffer = String::with_capacity(32); // Pre-allocate reasonable size
 
     Ok(LOOKUP_MAP
         .get()
         .and_then(|lock| lock.read().ok())
         .and_then(|map| {
             let table = map.get(lookup_name)?;
-            // Find the matching row
-            if case_sensitive {
-                table
-                    .get(value)
-                    .and_then(|row| row.get(field).map(String::from))
+            // Find the matching row. Both branches are O(1): the case-insensitive
+            // index is pre-built at register_lookup time.
+            let row = if case_sensitive {
+                table.rows.get(value)?
             } else {
-                table
-                    .iter()
-                    .find(|(k, _)| {
-                        util::to_lowercase_into(k, &mut lowercase_buffer);
-                        lowercase_buffer == value_compare
-                    })
-                    .and_then(|(_, row)| row.get(field).map(String::from))
-            }
+                let lowered = value.to_lowercase();
+                let original = table.lowercased_keys.get(&lowered)?;
+                table.rows.get(original)?
+            };
+            row.get(field).map(String::from)
         })
         .unwrap_or_else(|| {
             if filter_error.is_empty() {

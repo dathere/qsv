@@ -549,7 +549,7 @@ clipboard, color, lens, prompt
 | **Testing** | Strong | 71 test modules (feature-gated), integration tests, property-based testing |
 | **I/O Abstraction** | Clean | Config-driven CSV handling, format detection, compression |
 | **Documentation** | Excellent | Auto-generated help markdown, MCP guidance hints |
-| **MCP Integration** | Production-Ready | 55 auto-generated skills, ~29 source files, streaming executor, resource limits |
+| **MCP Integration** | Production-Ready | 55 auto-generated skills, 30 .ts source files (incl. 2 .d.ts), streaming executor, resource limits |
 
 ---
 

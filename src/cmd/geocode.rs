@@ -422,7 +422,6 @@ use std::{
 
 use cached::{SizedCache, proc_macro::cached};
 use dynfmt2::Format;
-use foldhash::fast::RandomState;
 use geosuggest_core::{
     Engine, EngineData,
     index::{ArchivedCitiesRecord as CitiesRecord, ArchivedCountryRecord as CountryRecord},
@@ -1558,56 +1557,45 @@ fn search_index(
             );
 
             // first, get the first result and store that in cityrecord
-            let Some(cr) = search_result.clone().into_iter().next() else {
+            let Some(first_result) = search_result.first().copied() else {
                 // no results, so return early with None
                 return None;
             };
-            let first_result = cr;
 
             // then iterate through search results and find the first one that matches admin1
             // the search results are already sorted by score, so we just need to find the first
-            if let Some(admin1_filter_list) = admin1_filter_list {
-                // we have an admin1 filter, so we need to find the first admin1 result that matches
-                let mut admin1_filter_map: HashMap<String, bool, RandomState> = HashMap::default();
-                for admin1_filter in admin1_filter_list {
-                    admin1_filter_map
-                        .insert(admin1_filter.clone().admin1_string, admin1_filter.is_code);
-                }
-                let mut matched_record: Option<&CitiesRecord> = None;
-                'outer: for cr in &search_result {
-                    if let Some(admin_division) = cr.admin_division.as_ref() {
-                        for (admin1_filter, is_code) in &admin1_filter_map {
-                            if *is_code {
-                                // admin1 is a code, so we search for admin1 code
-                                if admin_division.code.starts_with(admin1_filter) {
-                                    matched_record = Some(cr);
-                                    break 'outer;
-                                }
-                            } else {
-                                // admin1 is a name, so we search for admin1 name, case-insensitive
-                                if admin_division
-                                    .name
-                                    .to_lowercase()
-                                    .starts_with(admin1_filter)
-                                {
-                                    matched_record = Some(cr);
-                                    break 'outer;
-                                }
+            // safety: outer match guaranteed admin1_filter_list is Some
+            let admin1_filter_list = admin1_filter_list.unwrap();
+            let mut matched_record: Option<&CitiesRecord> = None;
+            'outer: for cr in &search_result {
+                if let Some(admin_division) = cr.admin_division.as_ref() {
+                    // lowercase the admin1 name once per candidate, only when needed
+                    let mut admin1_name_lower: Option<String> = None;
+                    for admin1_filter in admin1_filter_list {
+                        if admin1_filter.is_code {
+                            // admin1 is a code, so we search for admin1 code
+                            if admin_division
+                                .code
+                                .starts_with(&admin1_filter.admin1_string)
+                            {
+                                matched_record = Some(cr);
+                                break 'outer;
+                            }
+                        } else {
+                            // admin1 is a name, case-insensitive starts_with
+                            let lower = admin1_name_lower
+                                .get_or_insert_with(|| admin_division.name.to_lowercase());
+                            if lower.starts_with(&admin1_filter.admin1_string) {
+                                matched_record = Some(cr);
+                                break 'outer;
                             }
                         }
                     }
                 }
-
-                if let Some(cr) = matched_record {
-                    cr
-                } else {
-                    // no admin1 match, so we return the first result
-                    first_result
-                }
-            } else {
-                // no admin1 filter, so we return the first result
-                first_result
             }
+
+            // no admin1 match, so we return the first result
+            matched_record.unwrap_or(first_result)
         };
 
         let country = cityrecord.country.as_ref()?.code.as_str();
@@ -1657,7 +1645,7 @@ fn search_index(
         ));
     } else if mode == GeocodeSubCmd::Iplookup || mode == GeocodeSubCmd::IplookupNow {
         // check if the cell is an IP address
-        let ip_addr = if let Ok(ip_addr) = cell.to_string().parse::<IpAddr>() {
+        let ip_addr = if let Ok(ip_addr) = cell.parse::<IpAddr>() {
             ip_addr
         } else {
             // not an IP address, check if it's a URL and lookup the IP address
@@ -1672,7 +1660,7 @@ fn search_index(
         let search_result = engine.geoip2_lookup(ip_addr);
         let Some(cityrecord) = search_result else {
             // if no cityrecord is found, return the IP address
-            return Some(format!("{ip_addr}"));
+            return Some(ip_addr.to_string());
         };
         let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
         let country = cityrecord.country.as_ref()?.code.as_str();

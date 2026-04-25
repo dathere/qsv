@@ -555,7 +555,10 @@ fn validate_dynenum_with_invalid_column() {
     // Check error output
     let got = wrk.output_stderr(&mut cmd);
     #[cfg(feature = "lite")]
-    assert_eq!(got, "1 out of 1 records invalid.\n");
+    assert!(got.ends_with(
+        "Cannot compile JSONschema. error: dynamicEnum column 'nonexistent_column' not found in \
+         headers\nTry running `qsv validate schema schema.json` to check the JSON Schema file.\n"
+    ));
     #[cfg(not(feature = "lite"))]
     assert!(got.ends_with(
         "Cannot compile JSONschema. error: Column 'nonexistent_column' not found in lookup \

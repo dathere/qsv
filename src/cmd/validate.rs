@@ -441,13 +441,14 @@ impl Keyword for DynEnumValidator {
         &self,
         instance: &'instance Value,
     ) -> Result<(), ValidationError<'instance>> {
-        if self.dynenum_set.contains(instance.as_str().unwrap()) {
-            Ok(())
-        } else {
-            let error =
-                ValidationError::custom(format!("{instance} is not a valid dynamicEnum value"));
-            Err(error)
+        if let Value::String(s) = instance
+            && self.dynenum_set.contains(s)
+        {
+            return Ok(());
         }
+        Err(ValidationError::custom(format!(
+            "{instance} is not a valid dynamicEnum value"
+        )))
     }
 
     #[inline]
@@ -1030,8 +1031,17 @@ fn dyn_enum_validator_factory<'a>(
             } else {
                 // Try finding column by name
                 match rdr.headers() {
-                    Ok(headers) => headers.iter().position(|h| h == col_name).unwrap_or(0),
-                    Err(_) => 0,
+                    Ok(headers) => match headers.iter().position(|h| h == col_name) {
+                        Some(i) => i,
+                        None => {
+                            return fail_validation_error!(
+                                "dynamicEnum column '{col_name}' not found in headers"
+                            );
+                        },
+                    },
+                    Err(e) => {
+                        return fail_validation_error!("Error reading dynamicEnum headers: {e}");
+                    },
                 }
             }
         } else {
@@ -1380,12 +1390,10 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
                     Ok(obj) => obj,
                     Err(e) => {
                         std::hint::cold_path();
-                        // Only convert to string when we have an error
-                        // safety: row number was added as last column. We can do index access, not
-                        // use get(), and unwrap_unchecked safely since we know its there
-                        let row_number_string = unsafe {
-                            simdutf8::basic::from_utf8(&record[header_len]).unwrap_unchecked()
-                        };
+                        // safety: row number was appended as the last field via itoa, so it is
+                        // always valid ASCII; the unwrap can never fire in practice.
+                        let row_number_string =
+                            simdutf8::basic::from_utf8(&record[header_len]).unwrap();
                         return Some(format!("{row_number_string}\t<RECORD>\t{e}"));
                     },
                 };
@@ -1409,11 +1417,10 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
                     None
                 } else {
                     std::hint::cold_path();
-                    // Only convert to string when we have validation errors
-                    // safety: see safety comment above
-                    let row_number_string = unsafe {
-                        simdutf8::basic::from_utf8(&record[header_len]).unwrap_unchecked()
-                    };
+                    // safety: row number was appended as the last field via itoa, so it is
+                    // always valid ASCII; the unwrap can never fire in practice.
+                    let row_number_string =
+                        simdutf8::basic::from_utf8(&record[header_len]).unwrap();
 
                     // Collect errors into a vector
                     let errors: Vec<_> = evaluation.iter_errors().collect();
@@ -1895,7 +1902,7 @@ fn split_invalid_records(
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         // length of valid_flags is max number of rows we can split
-        if split_row_num > valid_flags_len {
+        if split_row_num >= valid_flags_len {
             break;
         }
 
@@ -1966,8 +1973,16 @@ fn to_json_instance(
                 }
             },
             JSONtypes::Number => {
-                if let Ok(float) = fast_float2::parse(value) {
-                    Value::Number(Number::from_f64(float).unwrap_or_else(|| Number::from(0)))
+                if let Ok(float) = fast_float2::parse::<f64, _>(value) {
+                    match Number::from_f64(float) {
+                        Some(n) => Value::Number(n),
+                        None => {
+                            return fail_clierror!(
+                                "Non-finite Number. key: {key}, value: {}",
+                                String::from_utf8_lossy(value)
+                            );
+                        },
+                    }
                 } else {
                     return fail_clierror!(
                         "Can't cast to Number. key: {key}, value: {}",

@@ -124,7 +124,7 @@ use std::{
     path::PathBuf,
     sync::{
         OnceLock, RwLock,
-        atomic::{AtomicBool, AtomicU16, Ordering},
+        atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering},
     },
 };
 
@@ -175,6 +175,11 @@ struct Args {
 
 static FILTER_ERROR: OnceLock<String> = OnceLock::new();
 static EMPTY_FILTER_ERROR: AtomicBool = AtomicBool::new(false);
+// Counts per-row template render failures across the parallel batch loop.
+// We still write the error string into each failing row's output so users can
+// grep it; this counter exists so the command can surface a single summary
+// to stderr at the end instead of failing silently.
+static RENDER_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
 
 impl From<minijinja::Error> for CliError {
     fn from(err: minijinja::Error) -> CliError {
@@ -530,7 +535,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                 let rendered = match template.render(&context) {
                     Ok(s) => s,
-                    Err(e) => format!("RENDERING ERROR ({row_number}): {e}\n"),
+                    Err(e) => {
+                        RENDER_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+                        format!("RENDERING ERROR ({row_number}): {e}\n")
+                    },
                 };
 
                 if output_to_dir {
@@ -613,7 +621,47 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         w.flush()?;
     }
 
+    // If any rows failed to render, the per-row error message was already written
+    // into the output (file or stdout) so the user can grep for it. Surface a
+    // single summary line on stderr so the failure isn't invisible to a CI job
+    // or cron task that only inspects the exit code (still 0) or the stderr tail.
+    let render_errors = RENDER_ERROR_COUNT.load(Ordering::Relaxed);
+    if render_errors > 0 {
+        eprintln!(
+            "qsv template: {render_errors} row(s) failed to render; see \"RENDERING ERROR \
+             (rowno): ...\" entries in the output."
+        );
+    }
+
     Ok(())
+}
+
+// Normalize a string into the canonical key form used by both register_lookup
+// and the lookup filter, so the two sides always agree on equality.
+//
+// The CSV-side key is trimmed and, if numeric, re-emitted via itoa (i64) or
+// zmij (f64) so that "42", " 42 ", and "42.0" all collapse to the same key.
+// The filter-side input goes through this same function so a template author
+// can pass `" 42 "`, `"42"`, or the integer `42` and hit the same row.
+fn normalize_lookup_key(s: &str) -> String {
+    let trimmed = s.trim();
+    if let Ok(num) = trimmed.parse::<i64>() {
+        itoa::Buffer::new().format(num).to_owned()
+    } else if let Ok(num) = trimmed.parse::<f64>() {
+        // Collapse whole-number floats into the i64 form so "42" and "42.0"
+        // (and the integer 42 from a template) all hash to the same key.
+        // zmij would otherwise preserve "42.0".
+        if num.is_finite()
+            && num.fract() == 0.0
+            && (i64::MIN as f64..=i64::MAX as f64).contains(&num)
+        {
+            itoa::Buffer::new().format(num as i64).to_owned()
+        } else {
+            zmij::Buffer::new().format(num).to_owned()
+        }
+    } else {
+        trimmed.to_owned()
+    }
 }
 
 // CUSTOM MINIJINJA FILTERS =========================================
@@ -883,14 +931,7 @@ fn register_lookup(
 
         // Use the first column as the key by default
         if let Some(key_value) = record.get(0) {
-            let key_trim = key_value.trim();
-            let key = if let Ok(num) = key_trim.parse::<i64>() {
-                itoa::Buffer::new().format(num).to_owned()
-            } else if let Ok(num) = key_trim.parse::<f64>() {
-                zmij::Buffer::new().format(num).to_owned()
-            } else {
-                key_trim.to_owned()
-            };
+            let key = normalize_lookup_key(key_value);
             // Pre-build the lowercased -> original key index so case-insensitive
             // lookups can be O(1). On collision (e.g. "Foo" and "foo" are both keys)
             // the first-seen original wins, mirroring HashMap insert semantics.
@@ -977,28 +1018,27 @@ fn lookup_filter(
 
     let case_sensitive = case_sensitive.unwrap_or(true);
 
-    let mut itoa_buf = itoa::Buffer::new();
-    let mut zmij_buf = zmij::Buffer::new();
-    let value = match value.kind() {
-        ValueKind::String => value.as_str().unwrap(),
+    // Stringify the filter input. Numbers go through the same itoa/zmij canonical
+    // form as keys, so e.g. integer 42 and float 42.0 both stringify to "42".
+    let raw_str: String = match value.kind() {
+        ValueKind::String => value.as_str().unwrap().to_owned(),
         ValueKind::Number => {
             if value.is_integer() {
-                itoa_buf.format(value.as_i64().unwrap())
+                itoa::Buffer::new()
+                    .format(value.as_i64().unwrap())
+                    .to_owned()
             } else {
-                let float_num: f64;
-                match value.clone().try_into() {
-                    Ok(num) => {
-                        float_num = num;
-                        zmij_buf.format(float_num)
-                    },
-                    _ => {
-                        unreachable!("Kind::Number should be integer or float")
-                    },
-                }
+                let n: f64 = value
+                    .clone()
+                    .try_into()
+                    .expect("Kind::Number should be integer or float");
+                zmij::Buffer::new().format(n).to_owned()
             }
         },
-        _ => value.as_str().unwrap_or_default(),
+        _ => value.as_str().unwrap_or_default().to_owned(),
     };
+    // Normalize so both sides of the lookup agree (trim + numeric canonicalization).
+    let normalized = normalize_lookup_key(&raw_str);
 
     // safety: FILTER_ERROR was initialized in run section
     let filter_error = FILTER_ERROR.get().unwrap();
@@ -1011,9 +1051,9 @@ fn lookup_filter(
             // Find the matching row. Both branches are O(1): the case-insensitive
             // index is pre-built at register_lookup time.
             let row = if case_sensitive {
-                table.rows.get(value)?
+                table.rows.get(&normalized)?
             } else {
-                let lowered = value.to_lowercase();
+                let lowered = normalized.to_lowercase();
                 let original = table.lowercased_keys.get(&lowered)?;
                 table.rows.get(original)?
             };
@@ -1024,7 +1064,7 @@ fn lookup_filter(
                 String::new()
             } else {
                 format!(
-                    r#"{filter_error} - lookup: "{lookup_name}-{field}" not found for: "{value}""#
+                    r#"{filter_error} - lookup: "{lookup_name}-{field}" not found for: "{normalized}""#
                 )
             }
         }))

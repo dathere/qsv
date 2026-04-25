@@ -1096,6 +1096,80 @@ fn template_lookup_case_sensitivity() {
 }
 
 #[test]
+fn template_lookup_key_normalization() {
+    // Regression test for the register_lookup vs. lookup_filter key normalization
+    // mismatch. The CSV stores keys with whitespace and floating-point variants;
+    // the template should still find them when passing the canonical numeric form.
+    let wrk = Workdir::new("template_lookup_normalize");
+
+    wrk.create(
+        "lookup.csv",
+        vec![
+            svec!["id", "label"],
+            svec![" 42 ", "answer"],   // leading/trailing whitespace
+            svec!["100.0", "century"], // float that collapses to int form
+            svec!["bob", "person"],    // non-numeric should still match by trim
+        ],
+    );
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["key"],
+            svec!["42"],   // canonical int -> should match " 42 " row
+            svec!["100"],  // canonical int -> should match "100.0" row
+            svec!["bob "], // trailing space -> should match "bob" row
+        ],
+    );
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg(concat!(
+            "{% if register_lookup('t', 'lookup.csv') %}",
+            "{{key|lookup('t', 'label')}}\n",
+            "{% endif %}"
+        ))
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "answer\ncentury\nperson");
+}
+
+#[test]
+fn template_render_error_summary() {
+    // Regression test: per-row render failures used to be silently swallowed
+    // (written into the output, but with no aggregate signal). The command
+    // must now print a single "N row(s) failed to render" line on stderr.
+    let wrk = Workdir::new("template_render_error_summary");
+
+    wrk.create(
+        "data.csv",
+        vec![svec!["a"], svec!["1"], svec!["2"], svec!["3"]],
+    );
+    // `bogus_filter` doesn't exist; every row fails to render.
+    wrk.create_from_string("template.txt", "{{ a|bogus_filter }}\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template-file")
+        .arg("template.txt")
+        .arg("data.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("3 row(s) failed to render"),
+        "expected render-failure summary on stderr, got: {stderr:?}"
+    );
+
+    // The per-row error message should still be in stdout (existing behavior).
+    let got: String = wrk.stdout(&mut cmd);
+    assert!(
+        got.contains("RENDERING ERROR (1)"),
+        "expected per-row error in stdout, got: {got:?}"
+    );
+}
+
+#[test]
 fn template_humanfloat_filter() {
     let wrk = Workdir::new("template_humanfloat");
     wrk.create(

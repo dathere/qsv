@@ -1734,10 +1734,10 @@ fn search_index(
         let long = loccaps[2].to_string().parse::<f32>().unwrap_or_default();
         if (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&long) {
             let search_result = engine.reverse((lat, long), 1, k, country_filter_list);
-            let cityrecord = (match search_result {
-                Some(search_result) => search_result.into_iter().next().map(|ri| ri.city),
-                None => return None,
-            })?;
+            let cityrecord = {
+                let search_result = search_result?;
+                search_result.into_iter().next().map(|ri| ri.city)
+            }?;
 
             let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
 

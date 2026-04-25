@@ -1762,9 +1762,8 @@ fn path_fingerprint(path: &str) -> String {
     {
         return String::new();
     }
-    let meta = match fs::metadata(path) {
-        Ok(m) => m,
-        Err(_) => return String::new(),
+    let Ok(meta) = fs::metadata(path) else {
+        return String::new();
     };
     let mtime_nanos = meta
         .modified()
@@ -2560,9 +2559,7 @@ fn process_phase_output(
             Ok(())
         },
         (OutputFormat::Markdown, _)
-        | (OutputFormat::Json, true)
-        | (OutputFormat::Tsv, true)
-        | (OutputFormat::Toon, true) => {
+        | (OutputFormat::Json | OutputFormat::Tsv | OutputFormat::Toon, true) => {
             format_phase_markdown(kind, args, completion_response, is_sql_response)
         },
     }

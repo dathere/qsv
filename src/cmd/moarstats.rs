@@ -1160,7 +1160,8 @@ fn detect_gregorian_date_type(
                 if val_str.is_empty() {
                     continue; // Skip empty values
                 }
-                if let Some(pattern_type) = check_value(val_str) {
+                {
+                    let pattern_type = check_value(val_str)?;
                     match matched_type {
                         None => matched_type = Some(pattern_type),
                         Some(existing_type) if existing_type == pattern_type => {
@@ -1171,9 +1172,6 @@ fn detect_gregorian_date_type(
                             return None;
                         },
                     }
-                } else {
-                    // Value doesn't match any pattern
-                    return None;
                 }
             }
 
@@ -2390,7 +2388,7 @@ where
 /// reads from `chunk_stats` — it does not mutate frequency maps.
 fn finalize_bivariate_pair_stats(
     pair_key: (u16, u16),
-    chunk_stats: BivariateChunkStats,
+    chunk_stats: &BivariateChunkStats,
     field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
     field_names: &[String],
     cardinality_threshold: Option<u64>,
@@ -2736,7 +2734,7 @@ fn compute_all_bivariatestats(
                 }
                 finalize_bivariate_pair_stats(
                     pair_key,
-                    chunk_stats,
+                    &chunk_stats,
                     &field_pairs_arc,
                     field_names,
                     cardinality_threshold,
@@ -2830,7 +2828,7 @@ fn compute_all_bivariatestats_sequential(
         .map(|(pair_key, chunk_stats)| {
             finalize_bivariate_pair_stats(
                 pair_key,
-                chunk_stats,
+                &chunk_stats,
                 field_pairs,
                 field_names,
                 cardinality_threshold,

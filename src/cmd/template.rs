@@ -324,6 +324,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Set up output handling
     let output_to_dir = args.arg_outdir.is_some();
+
+    // Reject --outsubdir-size 0 up front. The bucket index calculation downstream
+    // is `(global_row - 1) / outsubdir_numfiles`, which would otherwise panic on
+    // divide-by-zero the first time we try to place a file in a subdirectory.
+    if output_to_dir && args.flag_outsubdir_size == 0 {
+        return fail_incorrectusage_clierror!("--outsubdir-size must be greater than 0");
+    }
     let mut row_no = 0_u64;
 
     let use_rowno_filename = args.flag_outfilename == QSV_ROWNO;
@@ -401,7 +408,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         })
         .unwrap();
 
-    // Scan template for any lookup registrations and register them before batch processing
+    // Scan template for any lookup registrations and register them before batch processing.
+    //
+    // Trade-off: this pre-scan runs every register_lookup() call we can find,
+    // even if the call is wrapped in a conditional like `{% if cond %}{% set _ =
+    // register_lookup(...) %}{% endif %}` that the per-row render would skip.
+    // We accept that — registering an unused lookup is wasted work (and a
+    // possible CSV/HTTP/CKAN fetch), but doing it up front means a malformed
+    // URL or unreachable host fails the command at startup instead of on the
+    // first row that triggers the conditional.
     if template_content.contains("register_lookup(") {
         // NOTE: this regex is a deliberately-loose textual scan, not a parser.
         // It does not understand nested parens, string literals, or {# #} comments.

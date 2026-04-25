@@ -389,6 +389,33 @@ fn template_output_directory_multibatch() {
 }
 
 #[test]
+fn template_outsubdir_size_zero_rejected() {
+    // Regression test: --outsubdir-size 0 used to panic via integer
+    // divide-by-zero inside the bucket calculation. We now reject it up front
+    // with a clear "incorrect usage" error.
+    let wrk = Workdir::new("template_outsubdir_zero");
+    wrk.create(
+        "data.csv",
+        vec![svec!["name"], svec!["alice"], svec!["bob"]],
+    );
+    wrk.create_from_string("template.txt", "{{name}}\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template-file")
+        .arg("template.txt")
+        .arg("--outsubdir-size")
+        .arg("0")
+        .arg("data.csv")
+        .arg("out");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--outsubdir-size must be greater than 0"),
+        "expected usage error on stderr, got: {stderr:?}"
+    );
+}
+
+#[test]
 fn template_custom_filters() {
     let wrk = Workdir::new("template_custom_filters");
     wrk.create(

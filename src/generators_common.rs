@@ -105,12 +105,10 @@ pub fn extract_required_options_from_usage(usage_text: &str) -> HashSet<String> 
 
     let pairs = FlagPairs::from_usage(usage_text);
 
-    let per_variant: Vec<HashSet<String>> = usage_lines
+    let mut iter = usage_lines
         .iter()
-        .map(|l| required_tokens_in_usage_line(l, &pairs))
-        .collect();
+        .map(|l| required_tokens_in_usage_line(l, &pairs));
 
-    let mut iter = per_variant.into_iter();
     iter.next()
         .map(|first| iter.fold(first, |acc, s| acc.intersection(&s).cloned().collect()))
         .unwrap_or_default()

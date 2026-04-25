@@ -269,7 +269,7 @@ pub(super) fn save_session(session_path: &Path, state: &SessionState) -> CliResu
     }
 
     // Atomic write via tempfile-then-persist in the destination directory.
-    let tmp_dir = parent_dir.unwrap_or(Path::new("."));
+    let tmp_dir = parent_dir.unwrap_or_else(|| Path::new("."));
     let mut tmp = tempfile::Builder::new()
         .prefix(".describegpt-session-")
         .suffix(".tmp")

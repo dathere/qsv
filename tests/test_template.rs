@@ -337,6 +337,58 @@ fn template_output_directory_no_headers() {
 }
 
 #[test]
+fn template_output_directory_multibatch() {
+    // Regression test: subdir numbering must be global, not per-batch.
+    // Reproduces the case where multiple batches collapsed all rows into
+    // the first few subdirectories instead of distributing them evenly.
+    let wrk = Workdir::new("template_output_dir_multibatch");
+
+    // Build an input large enough to span multiple batches given --batch 50000
+    // and --jobs 4 (optimal_batch_size yields num_rows/num_jobs = 15000).
+    let mut csv = String::from("n\n");
+    let total_rows: usize = 60_000;
+    for i in 1..=total_rows {
+        use std::fmt::Write as _;
+        writeln!(csv, "{i}").unwrap();
+    }
+    wrk.create_from_string("data.csv", &csv);
+    wrk.create_from_string("template.txt", "r{{n}}");
+
+    let outdir = "multibatch_out";
+    let outsubdir_size: usize = 5_000;
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template-file")
+        .arg("template.txt")
+        .arg("--batch")
+        .arg("50000")
+        .arg("--jobs")
+        .arg("4")
+        .arg("--outsubdir-size")
+        .arg(outsubdir_size.to_string())
+        .arg("data.csv")
+        .arg(outdir);
+
+    wrk.assert_success(&mut cmd);
+
+    let expected_subdirs = total_rows / outsubdir_size;
+    let width = total_rows.to_string().len();
+    for s in 0..expected_subdirs {
+        let subdir = format!("{outdir}/{s:0width$}");
+        // Spot-check first and last file in each subdir match the expected row range.
+        let first_row = s * outsubdir_size + 1;
+        let last_row = (s + 1) * outsubdir_size;
+        let first = wrk
+            .read_to_string(&format!("{subdir}/{first_row:0width$}.txt"))
+            .unwrap_or_else(|_| panic!("missing {subdir}/{first_row:0width$}.txt"));
+        let last = wrk
+            .read_to_string(&format!("{subdir}/{last_row:0width$}.txt"))
+            .unwrap_or_else(|_| panic!("missing {subdir}/{last_row:0width$}.txt"));
+        assert_eq!(first, format!("r{first_row}"));
+        assert_eq!(last, format!("r{last_row}"));
+    }
+}
+
+#[test]
 fn template_custom_filters() {
     let wrk = Workdir::new("template_custom_filters");
     wrk.create(

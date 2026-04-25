@@ -74,7 +74,7 @@ template arguments:
 template options:
     --template <str>            MiniJinja template string to use (alternative to --template-file)
     -t, --template-file <file>  MiniJinja template file to use
-    -j, --globals-json <file>   A JSON file containing global variables to make available in templates.
+    --globals-json <file>       A JSON file containing global variables to make available in templates.
                                 The JSON properties can be accessed in templates using the "qsv_g"
                                 namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}).
                                 This allows sharing common values across all template renders.
@@ -112,7 +112,7 @@ Common options:
     -o, --output <file>         Write output to <file> instead of stdout
     -n, --no-headers            When set, the first row will not be interpreted
                                 as headers. Templates must use numeric 1-based indices
-                                with the "_c" prefix.(e.g. col1: {{_c1}} col2: {{_c2}})
+                                with the "_c" prefix. (e.g. col1: {{_c1}} col2: {{_c2}})
     --delimiter <sep>           Field separator for reading CSV [default: ,]
     -p, --progressbar           Show progress bars. Not valid for stdin.
 "#;
@@ -427,6 +427,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // - Second tuple element is the rendered template content
     let mut batch_results: Vec<(Option<String>, String)> = Vec::with_capacity(batchsize);
 
+    // Track current subdirectory across batches so we don't recreate it at every
+    // batch boundary; subdir numbering is global (based on row number), not batch-local.
+    let mut outpath = std::path::PathBuf::new();
+    let mut current_subdir: Option<usize> = None;
+    let outsubdir_numfiles = args.flag_outsubdir_size as usize;
+
     let no_headers = args.flag_no_headers;
 
     // main loop to read CSV and construct batches for parallel processing.
@@ -538,9 +544,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             })
             .collect_into_vec(&mut batch_results);
 
-        let mut outpath = std::path::PathBuf::new();
-        let mut current_subdir = None;
-        let outsubdir_numfiles = args.flag_outsubdir_size as usize;
+        // First row number in this batch (1-based). Subdir numbering is computed from
+        // this global row number so subdirs stay correct across batch boundaries.
+        let batch_start_row = row_no - batch.len() as u64 + 1;
 
         for (idx, result_record) in batch_results.iter().enumerate() {
             if output_to_dir {
@@ -551,18 +557,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // Create subdirectory for every outsubdir_size files
                 // to make it easier to handle & navigate generated files
                 // particularly, if we're using a large input CSV
-                let subdir_num = idx / outsubdir_numfiles;
+                let global_row = batch_start_row + idx as u64;
+                let subdir_num = ((global_row - 1) / outsubdir_numfiles as u64) as usize;
 
                 if current_subdir == Some(subdir_num) {
                     outpath.push(format!("{subdir_num:0width$}"));
                 } else {
-                    // Only create new subdir when needed
+                    // Only create new subdir when the bucket changes
                     let subdir_name = format!("{subdir_num:0width$}");
                     outpath.push(&subdir_name);
 
-                    if !outpath.exists() {
-                        fs::create_dir(&outpath)?;
-                    }
+                    // create_dir_all is idempotent and tolerates the dir already
+                    // existing (e.g. from a prior batch that ended mid-bucket).
+                    fs::create_dir_all(&outpath)?;
                     current_subdir = Some(subdir_num);
                 }
 

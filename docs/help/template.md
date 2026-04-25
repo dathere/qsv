@@ -96,7 +96,7 @@ qsv template --help
 |--------|------|-------------|--------|
 | &nbsp;`‑‑template`&nbsp; | string | MiniJinja template string to use (alternative to --template-file) |  |
 | &nbsp;`‑t,`<br>`‑‑template‑file`&nbsp; | string | MiniJinja template file to use |  |
-| &nbsp;`‑j,`<br>`‑‑globals‑json`&nbsp; | string | A JSON file containing global variables to make available in templates. The JSON properties can be accessed in templates using the "qsv_g" namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}). This allows sharing common values across all template renders. |  |
+| &nbsp;`‑‑globals‑json`&nbsp; | string | A JSON file containing global variables to make available in templates. The JSON properties can be accessed in templates using the "qsv_g" namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}). This allows sharing common values across all template renders. |  |
 | &nbsp;`‑‑outfilename`&nbsp; | string | MiniJinja template string to use to create the filename of the output files to write to <outdir>. If set to just QSV_ROWNO, the filestem is set to the current rowno of the record, padded with leading zeroes, with the ".txt" extension (e.g. 001.txt, 002.txt, etc.) Note that all the fields, including QSV_ROWNO, are available when defining the filename template. | `QSV_ROWNO` |
 | &nbsp;`‑‑outsubdir‑size`&nbsp; | string | The number of files per subdirectory in <outdir>. | `1000` |
 | &nbsp;`‑‑customfilter‑error`&nbsp; | string | The value to return when a custom filter returns an error. Use "<empty string>" to return an empty string. | `<FILTER_ERROR>` |
@@ -115,7 +115,7 @@ qsv template --help
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout |  |
-| &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Templates must use numeric 1-based indices with the "_c" prefix.(e.g. col1: {{_c1}} col2: {{_c2}}) |  |
+| &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Templates must use numeric 1-based indices with the "_c" prefix. (e.g. col1: {{_c1}} col2: {{_c2}}) |  |
 | &nbsp;`‑‑delimiter`&nbsp; | string | Field separator for reading CSV | `,` |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |
 

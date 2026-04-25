@@ -259,27 +259,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let globals_ctx_borrowed: simd_json::BorrowedValue = globals_ctx.into();
 
-    // Set up minijinja environment
-    let mut env = Environment::new();
-
-    // Add minijinja_contrib functions/filters
+    // Set up minijinja environment with qsv's custom functions/filters
     // see https://docs.rs/minijinja-contrib/latest/minijinja_contrib/
-    minijinja_contrib::add_to_environment(&mut env);
-    env.set_unknown_method_callback(unknown_method_callback);
-
-    // add custom function
-    env.add_function("register_lookup", register_lookup);
-
-    // add our own custom filters
-    env.add_filter("substr", substr);
-    env.add_filter("format_float", format_float);
-    env.add_filter("human_count", human_count);
-    env.add_filter("human_float_count", human_float_count);
-    env.add_filter("round_banker", round_banker);
-    env.add_filter("to_bool", to_bool);
-    env.add_filter("lookup", lookup_filter);
-
-    // Set up template
+    let mut env = Environment::new();
+    register_qsv_extensions(&mut env);
     env.add_template("template", &template_content)?;
     let template = env.get_template("template")?;
 
@@ -354,20 +337,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         fs::create_dir_all(args.arg_outdir.as_ref().unwrap())?;
         None
     } else {
-        // we use a bigger BufWriter buffer here than the default 8k as ALL the output
-        // is going to one destination and we want to minimize I/O syscalls
-        // we optimize the size of the BufWriter buffer here
-        // so that it's only one I/O syscall per row
-        Some(match args.flag_output {
-            Some(file) => Box::new(BufWriter::with_capacity(
-                DEFAULT_WTR_BUFFER_CAPACITY,
-                fs::File::create(file)?,
-            )) as Box<dyn Write>,
-            None => Box::new(BufWriter::with_capacity(
-                DEFAULT_WTR_BUFFER_CAPACITY,
-                std::io::stdout(),
-            )) as Box<dyn Write>,
-        })
+        Some(open_bulk_writer(args.flag_output.as_deref())?)
     };
 
     let num_jobs = util::njobs(args.flag_jobs);
@@ -386,70 +356,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         progress.set_draw_target(ProgressDrawTarget::hidden());
     }
 
-    // safety: flag_delimiter has a default docopt
-    DELIMITER.set(args.flag_delimiter).unwrap();
+    init_lookup_globals(
+        args.flag_delimiter,
+        &args.flag_cache_dir,
+        &args.flag_ckan_api,
+        args.flag_ckan_token.as_deref(),
+    )?;
 
-    let qsv_cache_dir = lookup::set_qsv_cache_dir(&args.flag_cache_dir)?;
-    QSV_CACHE_DIR.set(qsv_cache_dir)?;
-
-    // check the QSV_CKAN_API environment variable
-    CKAN_API.set(if let Ok(api) = std::env::var("QSV_CKAN_API") {
-        api
-    } else {
-        args.flag_ckan_api.clone()
-    })?;
-
-    // check the QSV_CKAN_TOKEN environment variable
-    CKAN_TOKEN
-        .set(if let Ok(token) = std::env::var("QSV_CKAN_TOKEN") {
-            Some(token)
-        } else {
-            args.flag_ckan_token.clone()
-        })
-        .unwrap();
-
-    // Scan template for any lookup registrations and register them before batch processing.
-    //
-    // Trade-off: this pre-scan runs every register_lookup() call we can find,
-    // even if the call is wrapped in a conditional like `{% if cond %}{% set _ =
-    // register_lookup(...) %}{% endif %}` that the per-row render would skip.
-    // We accept that — registering an unused lookup is wasted work (and a
-    // possible CSV/HTTP/CKAN fetch), but doing it up front means a malformed
-    // URL or unreachable host fails the command at startup instead of on the
-    // first row that triggers the conditional.
-    if template_content.contains("register_lookup(") {
-        // NOTE: this regex is a deliberately-loose textual scan, not a parser.
-        // It does not understand nested parens, string literals, or {# #} comments.
-        // The cost of a false-positive match is a clearer startup-time error;
-        // a false-negative just means the registration is deferred to the first
-        // row's render. So perfect parsing isn't required.
-        let re = regex::Regex::new(r"register_lookup\([^)]+\)")?;
-
-        // Extract all register_lookup statements into a temporary template
-        // safety: safe to unwrap for write! as we're just using it to append to a String
-        let temp_template = re.find_iter(&template_content)
-            .fold(String::new(), |mut acc, cap| {
-                write!(
-                    acc,
-                    r#"{{% if not {cap_str} %}}LOOKUP REGISTRATION ERROR: "{cap_str}"\n{{% endif %}}"#,
-                    cap_str = cap.as_str(),
-                ).unwrap();
-                acc
-            });
-
-        // Create a temporary environment just for parsing
-        let temp_env = env.clone();
-
-        // Try to render just the register_lookup statements with empty context
-        match temp_env.render_str(&temp_template, minijinja::context! {}) {
-            Ok(s) => {
-                if !s.is_empty() {
-                    return fail_incorrectusage_clierror!("{s}");
-                }
-            },
-            Err(e) => return fail_incorrectusage_clierror!("{e}"),
-        }
-    }
+    pre_register_lookups(&env, &template_content)?;
 
     // reuse batch buffers
     #[allow(unused_assignments)]
@@ -675,6 +589,123 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 // zmij (f64) so that "42", " 42 ", and "42.0" all collapse to the same key.
 // The filter-side input goes through this same function so a template author
 // can pass `" 42 "`, `"42"`, or the integer `42` and hit the same row.
+// Initialize the file-static OnceLocks that the lookup machinery reads from
+// inside the parallel render closure (DELIMITER, QSV_CACHE_DIR, CKAN_API,
+// CKAN_TOKEN). The CKAN_* env vars take precedence over the corresponding
+// CLI flags. Note: these statics are process-global and only safe to set once
+// per process — see RENDER_ERROR_COUNT in run() for the related re-entry caveat.
+fn init_lookup_globals(
+    flag_delimiter: Option<Delimiter>,
+    flag_cache_dir: &str,
+    flag_ckan_api: &str,
+    flag_ckan_token: Option<&str>,
+) -> CliResult<()> {
+    // safety: flag_delimiter has a docopt default
+    DELIMITER.set(flag_delimiter).unwrap();
+
+    let qsv_cache_dir = lookup::set_qsv_cache_dir(flag_cache_dir)?;
+    QSV_CACHE_DIR.set(qsv_cache_dir)?;
+
+    CKAN_API.set(std::env::var("QSV_CKAN_API").unwrap_or_else(|_| flag_ckan_api.to_owned()))?;
+
+    CKAN_TOKEN
+        .set(
+            std::env::var("QSV_CKAN_TOKEN")
+                .ok()
+                .or_else(|| flag_ckan_token.map(str::to_owned)),
+        )
+        .unwrap();
+
+    Ok(())
+}
+
+// Pre-register every register_lookup() call we can find in the template body
+// before the batch loop starts.
+//
+// Trade-off: this pre-scan runs every register_lookup() call we can find, even
+// if the call is wrapped in a conditional like `{% if cond %}{% set _ =
+// register_lookup(...) %}{% endif %}` that the per-row render would skip.
+// We accept that — registering an unused lookup is wasted work (and a possible
+// CSV/HTTP/CKAN fetch), but doing it up front means a malformed URL or
+// unreachable host fails the command at startup instead of on the first row
+// that triggers the conditional.
+fn pre_register_lookups(env: &Environment, template_content: &str) -> CliResult<()> {
+    if !template_content.contains("register_lookup(") {
+        return Ok(());
+    }
+
+    // NOTE: this regex is a deliberately-loose textual scan, not a parser.
+    // It does not understand nested parens, string literals, or {# #} comments.
+    // The cost of a false-positive match is a clearer startup-time error;
+    // a false-negative just means the registration is deferred to the first
+    // row's render. So perfect parsing isn't required.
+    let re = regex::Regex::new(r"register_lookup\([^)]+\)")?;
+
+    // Wrap each call in a conditional that emits a single-line error if the
+    // call returns false / is missing.
+    // safety: write! into a String never fails.
+    let temp_template = re
+        .find_iter(template_content)
+        .fold(String::new(), |mut acc, cap| {
+            write!(
+                acc,
+                r#"{{% if not {cap_str} %}}LOOKUP REGISTRATION ERROR: "{cap_str}"\n{{% endif %}}"#,
+                cap_str = cap.as_str(),
+            )
+            .unwrap();
+            acc
+        });
+
+    // Render with an empty context against a clone of the real env so the
+    // registered functions/filters are visible.
+    let temp_env = env.clone();
+    match temp_env.render_str(&temp_template, minijinja::context! {}) {
+        Ok(s) => {
+            if !s.is_empty() {
+                return fail_incorrectusage_clierror!("{s}");
+            }
+            Ok(())
+        },
+        Err(e) => fail_incorrectusage_clierror!("{e}"),
+    }
+}
+
+// Open the bulk writer used when output is NOT going to a per-row directory.
+// One destination, lots of small writes — use a fat BufWriter so we minimize
+// the number of write() syscalls.
+fn open_bulk_writer(output_path: Option<&str>) -> CliResult<Box<dyn Write>> {
+    Ok(match output_path {
+        Some(file) => Box::new(BufWriter::with_capacity(
+            DEFAULT_WTR_BUFFER_CAPACITY,
+            fs::File::create(file)?,
+        )),
+        None => Box::new(BufWriter::with_capacity(
+            DEFAULT_WTR_BUFFER_CAPACITY,
+            std::io::stdout(),
+        )),
+    })
+}
+
+// Configure a MiniJinja environment with the minijinja_contrib batteries
+// plus all qsv-specific functions and filters used by `qsv template`. The
+// filename-template environment intentionally does NOT call this — filename
+// templates are limited to the minijinja_contrib filter set so that a typo
+// like `|lookup` in --outfilename surfaces as an "unknown filter" error.
+fn register_qsv_extensions(env: &mut Environment) {
+    minijinja_contrib::add_to_environment(env);
+    env.set_unknown_method_callback(unknown_method_callback);
+
+    env.add_function("register_lookup", register_lookup);
+
+    env.add_filter("substr", substr);
+    env.add_filter("format_float", format_float);
+    env.add_filter("human_count", human_count);
+    env.add_filter("human_float_count", human_float_count);
+    env.add_filter("round_banker", round_banker);
+    env.add_filter("to_bool", to_bool);
+    env.add_filter("lookup", lookup_filter);
+}
+
 fn normalize_lookup_key(s: &str) -> std::borrow::Cow<'_, str> {
     use std::borrow::Cow;
     let trimmed = s.trim();

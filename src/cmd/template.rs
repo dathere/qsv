@@ -74,7 +74,7 @@ template arguments:
 template options:
     --template <str>            MiniJinja template string to use (alternative to --template-file)
     -t, --template-file <file>  MiniJinja template file to use
-    -j, --globals-json <file>   A JSON file containing global variables to make available in templates.
+    -J, --globals-json <file>   A JSON file containing global variables to make available in templates.
                                 The JSON properties can be accessed in templates using the "qsv_g"
                                 namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}).
                                 This allows sharing common values across all template renders.
@@ -112,7 +112,7 @@ Common options:
     -o, --output <file>         Write output to <file> instead of stdout
     -n, --no-headers            When set, the first row will not be interpreted
                                 as headers. Templates must use numeric 1-based indices
-                                with the "_c" prefix.(e.g. col1: {{_c1}} col2: {{_c2}})
+                                with the "_c" prefix. (e.g. col1: {{_c1}} col2: {{_c2}})
     --delimiter <sep>           Field separator for reading CSV [default: ,]
     -p, --progressbar           Show progress bars. Not valid for stdin.
 "#;
@@ -124,7 +124,7 @@ use std::{
     path::PathBuf,
     sync::{
         OnceLock, RwLock,
-        atomic::{AtomicBool, AtomicU16, Ordering},
+        atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering},
     },
 };
 
@@ -175,6 +175,11 @@ struct Args {
 
 static FILTER_ERROR: OnceLock<String> = OnceLock::new();
 static EMPTY_FILTER_ERROR: AtomicBool = AtomicBool::new(false);
+// Counts per-row template render failures across the parallel batch loop.
+// We still write the error string into each failing row's output so users can
+// grep it; this counter exists so the command can surface a single summary
+// to stderr at the end instead of failing silently.
+static RENDER_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
 
 impl From<minijinja::Error> for CliError {
     fn from(err: minijinja::Error) -> CliError {
@@ -182,11 +187,15 @@ impl From<minijinja::Error> for CliError {
     }
 }
 
-// An efficient structure for lookups using three levels of nested HashMaps:
-// First HashMap: Maps lookup table names to their indices
-// Second HashMap: Maps key column values to a HashMap of field name -> field value
-// Third HashMap: Maps field name to field value
-type LookupMap = HashMap<String, HashMap<String, HashMap<String, String>>>;
+// An efficient structure for lookups.
+// `rows`: maps the (normalized) key column value -> field name -> field value.
+// `lowercased_keys`: maps lowercased key -> original key, populated at registration
+// time so case-insensitive lookups stay O(1) instead of O(N) per call.
+struct LookupTable {
+    rows:            HashMap<String, HashMap<String, String>>,
+    lowercased_keys: HashMap<String, String>,
+}
+type LookupMap = HashMap<String, LookupTable>;
 
 static LOOKUP_MAP: OnceLock<RwLock<LookupMap>> = OnceLock::new();
 
@@ -198,6 +207,11 @@ static DELIMITER: OnceLock<Option<Delimiter>> = OnceLock::new();
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
+
+    // Reset the process-wide render-error counter so a second invocation in the
+    // same process (tests, embedding, future REPL/MCP path) doesn't carry the
+    // previous run's count into the end-of-run summary.
+    RENDER_ERROR_COUNT.store(0, Ordering::Relaxed);
 
     // Get template content
     let template_content = match (args.flag_template_file, args.flag_template) {
@@ -245,27 +259,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let globals_ctx_borrowed: simd_json::BorrowedValue = globals_ctx.into();
 
-    // Set up minijinja environment
-    let mut env = Environment::new();
-
-    // Add minijinja_contrib functions/filters
+    // Set up minijinja environment with qsv's custom functions/filters
     // see https://docs.rs/minijinja-contrib/latest/minijinja_contrib/
-    minijinja_contrib::add_to_environment(&mut env);
-    env.set_unknown_method_callback(unknown_method_callback);
-
-    // add custom function
-    env.add_function("register_lookup", register_lookup);
-
-    // add our own custom filters
-    env.add_filter("substr", substr);
-    env.add_filter("format_float", format_float);
-    env.add_filter("human_count", human_count);
-    env.add_filter("human_float_count", human_float_count);
-    env.add_filter("round_banker", round_banker);
-    env.add_filter("to_bool", to_bool);
-    env.add_filter("lookup", lookup_filter);
-
-    // Set up template
+    let mut env = Environment::new();
+    register_qsv_extensions(&mut env);
     env.add_template("template", &template_content)?;
     let template = env.get_template("template")?;
 
@@ -310,6 +307,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Set up output handling
     let output_to_dir = args.arg_outdir.is_some();
+
+    // Reject --outsubdir-size 0 up front. The bucket index calculation downstream
+    // is `(global_row - 1) / outsubdir_numfiles`, which would otherwise panic on
+    // divide-by-zero the first time we try to place a file in a subdirectory.
+    if output_to_dir && args.flag_outsubdir_size == 0 {
+        return fail_incorrectusage_clierror!("--outsubdir-size must be greater than 0");
+    }
     let mut row_no = 0_u64;
 
     let use_rowno_filename = args.flag_outfilename == QSV_ROWNO;
@@ -333,20 +337,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         fs::create_dir_all(args.arg_outdir.as_ref().unwrap())?;
         None
     } else {
-        // we use a bigger BufWriter buffer here than the default 8k as ALL the output
-        // is going to one destination and we want to minimize I/O syscalls
-        // we optimize the size of the BufWriter buffer here
-        // so that it's only one I/O syscall per row
-        Some(match args.flag_output {
-            Some(file) => Box::new(BufWriter::with_capacity(
-                DEFAULT_WTR_BUFFER_CAPACITY,
-                fs::File::create(file)?,
-            )) as Box<dyn Write>,
-            None => Box::new(BufWriter::with_capacity(
-                DEFAULT_WTR_BUFFER_CAPACITY,
-                std::io::stdout(),
-            )) as Box<dyn Write>,
-        })
+        Some(open_bulk_writer(args.flag_output.as_deref())?)
     };
 
     let num_jobs = util::njobs(args.flag_jobs);
@@ -365,58 +356,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         progress.set_draw_target(ProgressDrawTarget::hidden());
     }
 
-    // safety: flag_delimiter has a default docopt
-    DELIMITER.set(args.flag_delimiter).unwrap();
+    init_lookup_globals(
+        args.flag_delimiter,
+        &args.flag_cache_dir,
+        &args.flag_ckan_api,
+        args.flag_ckan_token.as_deref(),
+    )?;
 
-    let qsv_cache_dir = lookup::set_qsv_cache_dir(&args.flag_cache_dir)?;
-    QSV_CACHE_DIR.set(qsv_cache_dir)?;
-
-    // check the QSV_CKAN_API environment variable
-    CKAN_API.set(if let Ok(api) = std::env::var("QSV_CKAN_API") {
-        api
-    } else {
-        args.flag_ckan_api.clone()
-    })?;
-
-    // check the QSV_CKAN_TOKEN environment variable
-    CKAN_TOKEN
-        .set(if let Ok(token) = std::env::var("QSV_CKAN_TOKEN") {
-            Some(token)
-        } else {
-            args.flag_ckan_token.clone()
-        })
-        .unwrap();
-
-    // Scan template for any lookup registrations and register them before batch processing
-    if template_content.contains("register_lookup(") {
-        // Create regex to extract register_lookup calls
-        let re = regex::Regex::new(r"register_lookup\([^)]+\)")?;
-
-        // Extract all register_lookup statements into a temporary template
-        // safety: safe to unwrap for write! as we're just using it to append to a String
-        let temp_template = re.find_iter(&template_content)
-            .fold(String::new(), |mut acc, cap| {
-                write!(
-                    acc,
-                    r#"{{% if not {cap_str} %}}LOOKUP REGISTRATION ERROR: "{cap_str}"\n{{% endif %}}"#,
-                    cap_str = cap.as_str(),
-                ).unwrap();
-                acc
-            });
-
-        // Create a temporary environment just for parsing
-        let temp_env = env.clone();
-
-        // Try to render just the register_lookup statements with empty context
-        match temp_env.render_str(&temp_template, minijinja::context! {}) {
-            Ok(s) => {
-                if !s.is_empty() {
-                    return fail_incorrectusage_clierror!("{s}");
-                }
-            },
-            Err(e) => return fail_incorrectusage_clierror!("{e}"),
-        }
-    }
+    pre_register_lookups(&env, &template_content)?;
 
     // reuse batch buffers
     #[allow(unused_assignments)]
@@ -426,6 +373,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // - First tuple element is the optional output filename (when writing to directory)
     // - Second tuple element is the rendered template content
     let mut batch_results: Vec<(Option<String>, String)> = Vec::with_capacity(batchsize);
+
+    // Track current subdirectory across batches so we don't recreate it at every
+    // batch boundary; subdir numbering is global (based on row number), not batch-local.
+    let mut outpath = std::path::PathBuf::new();
+    let mut current_subdir: Option<usize> = None;
+    let outsubdir_numfiles = args.flag_outsubdir_size as usize;
+
+    // Pad subdir names to the width of the highest subdir we'll produce, not to
+    // the width of the highest row number — otherwise a 60k-row run with
+    // --outsubdir-size 5000 would name subdirs "00000".."00011" (5 digits)
+    // when "00".."11" suffices. For stdin we don't know rowcount, so fall back
+    // to the rowcount-derived width as before. Guarded by `output_to_dir` so
+    // that `--outsubdir-size 0` without an `<outdir>` (where the flag is
+    // irrelevant) doesn't trip a divide-by-zero — the validator above only
+    // rejects 0 when output_to_dir is true.
+    let subdir_width = if output_to_dir && rowcount > 0 {
+        let max_subdir = (rowcount - 1) / outsubdir_numfiles as u64;
+        max_subdir.to_string().len().max(1)
+    } else {
+        width
+    };
 
     let no_headers = args.flag_no_headers;
 
@@ -482,9 +450,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     for (i, field) in curr_record.iter().enumerate() {
                         if i == headers_len - 1 {
                             // set the last field to QSV_ROWNO
-                            // safety: we set row_no earlier in the batch loop
-                            row_number =
-                                atoi_simd::parse::<u64, false, false>(field.as_bytes()).unwrap();
+                            // The QSV_ROWNO field was just appended to the record by the
+                            // producer above using itoa, so it is always a valid u64.
+                            row_number = atoi_simd::parse::<u64, false, false>(field.as_bytes())
+                                .expect("QSV_ROWNO is set by the batch producer");
                             context.insert(
                                 std::borrow::Cow::Borrowed(QSV_ROWNO),
                                 BorrowedValue::String(std::borrow::Cow::Borrowed(field)),
@@ -505,16 +474,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         );
                         // when headers are defined, the last one is QSV_ROWNO
                         if header == QSV_ROWNO {
-                            // safety: we set row_no earlier in the batch loop
-                            row_number =
-                                atoi_simd::parse::<u64, false, false>(field.as_bytes()).unwrap();
+                            // The QSV_ROWNO field was just appended to the record by the
+                            // producer above using itoa, so it is always a valid u64.
+                            row_number = atoi_simd::parse::<u64, false, false>(field.as_bytes())
+                                .expect("QSV_ROWNO is set by the batch producer");
                         }
                     }
                 }
 
                 let rendered = match template.render(&context) {
                     Ok(s) => s,
-                    Err(e) => format!("RENDERING ERROR ({row_number}): {e}\n"),
+                    Err(e) => {
+                        RENDER_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+                        format!("RENDERING ERROR ({row_number}): {e}\n")
+                    },
                 };
 
                 if output_to_dir {
@@ -538,9 +511,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             })
             .collect_into_vec(&mut batch_results);
 
-        let mut outpath = std::path::PathBuf::new();
-        let mut current_subdir = None;
-        let outsubdir_numfiles = args.flag_outsubdir_size as usize;
+        // First row number in this batch (1-based). Subdir numbering is computed from
+        // this global row number so subdirs stay correct across batch boundaries.
+        let batch_start_row = row_no - batch.len() as u64 + 1;
 
         for (idx, result_record) in batch_results.iter().enumerate() {
             if output_to_dir {
@@ -551,31 +524,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // Create subdirectory for every outsubdir_size files
                 // to make it easier to handle & navigate generated files
                 // particularly, if we're using a large input CSV
-                let subdir_num = idx / outsubdir_numfiles;
+                let global_row = batch_start_row + idx as u64;
+                let subdir_num = ((global_row - 1) / outsubdir_numfiles as u64) as usize;
 
                 if current_subdir == Some(subdir_num) {
-                    outpath.push(format!("{subdir_num:0width$}"));
+                    outpath.push(format!("{subdir_num:0subdir_width$}"));
                 } else {
-                    // Only create new subdir when needed
-                    let subdir_name = format!("{subdir_num:0width$}");
+                    // Only create new subdir when the bucket changes
+                    let subdir_name = format!("{subdir_num:0subdir_width$}");
                     outpath.push(&subdir_name);
 
-                    if !outpath.exists() {
-                        fs::create_dir(&outpath)?;
-                    }
+                    // create_dir_all is idempotent and tolerates the dir already
+                    // existing (e.g. from a prior batch that ended mid-bucket).
+                    fs::create_dir_all(&outpath)?;
                     current_subdir = Some(subdir_num);
                 }
 
                 outpath.push(result_record.0.as_deref().unwrap());
 
-                // if output_to_dir is true, we'll be writing a LOT of files (one for each row)
-                // and this hot loop will be I/O bound
-                // we optimize the size of the BufWriter buffer here
-                // so that it's only one I/O syscall per row
-                let mut row_writer =
-                    BufWriter::with_capacity(result_record.1.len(), fs::File::create(&outpath)?);
-                row_writer.write_all(result_record.1.as_bytes())?;
-                row_writer.flush()?;
+                // One file per row in the hot loop. fs::write is a single create+
+                // write+close syscall sequence with no intermediate buffering, which
+                // matches what the previous BufWriter-sized-to-payload was doing.
+                fs::write(&outpath, result_record.1.as_bytes())?;
 
                 outpath.clear();
             } else if let Some(ref mut w) = bulk_wtr {
@@ -600,7 +570,171 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         w.flush()?;
     }
 
+    // If any rows failed to render, the per-row error message was already written
+    // into the output (file or stdout) so the user can grep for it. Surface a
+    // single summary line on stderr so the failure isn't invisible to a CI job
+    // or cron task that only inspects the exit code (still 0) or the stderr tail.
+    let render_errors = RENDER_ERROR_COUNT.load(Ordering::Relaxed);
+    if render_errors > 0 {
+        eprintln!(
+            "qsv template: {render_errors} row(s) failed to render; see \"RENDERING ERROR \
+             (rowno): ...\" entries in the output."
+        );
+    }
+
     Ok(())
+}
+
+// Initialize the file-static OnceLocks that the lookup machinery reads from
+// inside the parallel render closure (DELIMITER, QSV_CACHE_DIR, CKAN_API,
+// CKAN_TOKEN). The CKAN_* env vars take precedence over the corresponding
+// CLI flags. Note: these statics are process-global and only safe to set once
+// per process — see RENDER_ERROR_COUNT in run() for the related re-entry caveat.
+fn init_lookup_globals(
+    flag_delimiter: Option<Delimiter>,
+    flag_cache_dir: &str,
+    flag_ckan_api: &str,
+    flag_ckan_token: Option<&str>,
+) -> CliResult<()> {
+    // safety: flag_delimiter has a docopt default
+    DELIMITER.set(flag_delimiter).unwrap();
+
+    let qsv_cache_dir = lookup::set_qsv_cache_dir(flag_cache_dir)?;
+    QSV_CACHE_DIR.set(qsv_cache_dir)?;
+
+    CKAN_API.set(std::env::var("QSV_CKAN_API").unwrap_or_else(|_| flag_ckan_api.to_owned()))?;
+
+    CKAN_TOKEN
+        .set(
+            std::env::var("QSV_CKAN_TOKEN")
+                .ok()
+                .or_else(|| flag_ckan_token.map(str::to_owned)),
+        )
+        .unwrap();
+
+    Ok(())
+}
+
+// Pre-register every register_lookup() call we can find in the template body
+// before the batch loop starts.
+//
+// Trade-off: this pre-scan runs every register_lookup() call we can find, even
+// if the call is wrapped in a conditional like `{% if cond %}{% set _ =
+// register_lookup(...) %}{% endif %}` that the per-row render would skip.
+// We accept that — registering an unused lookup is wasted work (and a possible
+// CSV/HTTP/CKAN fetch), but doing it up front means a malformed URL or
+// unreachable host fails the command at startup instead of on the first row
+// that triggers the conditional.
+fn pre_register_lookups(env: &Environment, template_content: &str) -> CliResult<()> {
+    if !template_content.contains("register_lookup(") {
+        return Ok(());
+    }
+
+    // NOTE: this regex is a deliberately-loose textual scan, not a parser.
+    // It does not understand nested parens, string literals, or {# #} comments.
+    // The cost of a false-positive match is a clearer startup-time error;
+    // a false-negative just means the registration is deferred to the first
+    // row's render. So perfect parsing isn't required.
+    let re = regex::Regex::new(r"register_lookup\([^)]+\)")?;
+
+    // Wrap each call in a conditional that emits a single-line error if the
+    // call returns false / is missing.
+    // safety: write! into a String never fails.
+    let temp_template = re
+        .find_iter(template_content)
+        .fold(String::new(), |mut acc, cap| {
+            write!(
+                acc,
+                r#"{{% if not {cap_str} %}}LOOKUP REGISTRATION ERROR: "{cap_str}"\n{{% endif %}}"#,
+                cap_str = cap.as_str(),
+            )
+            .unwrap();
+            acc
+        });
+
+    // Render with an empty context against a clone of the real env so the
+    // registered functions/filters are visible.
+    let temp_env = env.clone();
+    match temp_env.render_str(&temp_template, minijinja::context! {}) {
+        Ok(s) => {
+            if !s.is_empty() {
+                return fail_incorrectusage_clierror!("{s}");
+            }
+            Ok(())
+        },
+        Err(e) => fail_incorrectusage_clierror!("{e}"),
+    }
+}
+
+// Open the bulk writer used when output is NOT going to a per-row directory.
+// One destination, lots of small writes — use a fat BufWriter so we minimize
+// the number of write() syscalls.
+fn open_bulk_writer(output_path: Option<&str>) -> CliResult<Box<dyn Write>> {
+    Ok(match output_path {
+        Some(file) => Box::new(BufWriter::with_capacity(
+            DEFAULT_WTR_BUFFER_CAPACITY,
+            fs::File::create(file)?,
+        )),
+        None => Box::new(BufWriter::with_capacity(
+            DEFAULT_WTR_BUFFER_CAPACITY,
+            std::io::stdout(),
+        )),
+    })
+}
+
+// Configure a MiniJinja environment with the minijinja_contrib batteries
+// plus all qsv-specific functions and filters used by `qsv template`. The
+// filename-template environment intentionally does NOT call this — filename
+// templates are limited to the minijinja_contrib filter set so that a typo
+// like `|lookup` in --outfilename surfaces as an "unknown filter" error.
+fn register_qsv_extensions(env: &mut Environment) {
+    minijinja_contrib::add_to_environment(env);
+    env.set_unknown_method_callback(unknown_method_callback);
+
+    env.add_function("register_lookup", register_lookup);
+
+    env.add_filter("substr", substr);
+    env.add_filter("format_float", format_float);
+    env.add_filter("human_count", human_count);
+    env.add_filter("human_float_count", human_float_count);
+    env.add_filter("round_banker", round_banker);
+    env.add_filter("to_bool", to_bool);
+    env.add_filter("lookup", lookup_filter);
+}
+
+// Normalize a string into the canonical key form used by both register_lookup
+// and the lookup filter, so the two sides always agree on equality.
+//
+// The CSV-side key is trimmed and, if numeric, re-emitted via itoa (i64) or
+// zmij (f64) so that "42", " 42 ", and "42.0" all collapse to the same key.
+// The filter-side input goes through this same function so a template author
+// can pass `" 42 "`, `"42"`, or the integer `42` and hit the same row.
+fn normalize_lookup_key(s: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    let trimmed = s.trim();
+    if let Ok(num) = trimmed.parse::<i64>() {
+        Cow::Owned(itoa::Buffer::new().format(num).to_owned())
+    } else if let Ok(num) = trimmed.parse::<f64>() {
+        // Collapse whole-number floats into the i64 form so "42" and "42.0"
+        // (and the integer 42 from a template) all hash to the same key.
+        // zmij would otherwise preserve "42.0".
+        //
+        // Use an exclusive upper bound: i64::MAX (2^63-1) is not exactly
+        // representable as f64; the cast rounds up to 2^63, which then
+        // saturates back to i64::MAX when re-cast. Excluding the boundary
+        // sends 2^63 through zmij instead of producing a misleading key.
+        #[allow(clippy::cast_precision_loss)]
+        if num.is_finite() && num.fract() == 0.0 && num >= i64::MIN as f64 && num < i64::MAX as f64
+        {
+            Cow::Owned(itoa::Buffer::new().format(num as i64).to_owned())
+        } else {
+            Cow::Owned(zmij::Buffer::new().format(num).to_owned())
+        }
+    } else {
+        // Non-numeric: borrow the trimmed slice directly so already-canonical
+        // string keys (the common hot-path case) don't allocate.
+        Cow::Borrowed(trimmed)
+    }
 }
 
 // CUSTOM MINIJINJA FILTERS =========================================
@@ -610,6 +744,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 /// Returns a substring of the input string from start index to end index (exclusive).
 /// If end is not provided, returns substring from start to end of string.
 /// Returns --customfilter-error (default: <FILTER_ERROR>) if indices are invalid.
+///
+/// NOTE: indices are byte offsets, not character offsets. For ASCII input this is
+/// equivalent. For non-ASCII (UTF-8) input, an index that lands inside a multi-byte
+/// codepoint is invalid and the filter will return --customfilter-error.
 fn substr(value: &str, start: u32, end: Option<u32>) -> String {
     let end = end.unwrap_or(value.len() as _);
     if let Some(s) = value.get(start as usize..end as usize) {
@@ -729,18 +867,12 @@ fn to_bool(value: &Value) -> bool {
         );
         if truthy {
             true
+        } else if let Ok(num) = s.parse::<i64>() {
+            num != 0
+        } else if let Ok(num) = s.parse::<f64>() {
+            num.abs() > f64::EPSILON
         } else {
-            let int_num: i64;
-            let float_num: f64;
-            if let Ok(num) = s.parse::<i64>() {
-                int_num = num;
-                int_num != 0
-            } else if let Ok(num) = s.parse::<f64>() {
-                float_num = num;
-                float_num.abs() > f64::EPSILON
-            } else {
-                false
-            }
+            false
         }
     } else {
         value.is_true()
@@ -857,6 +989,8 @@ fn register_lookup(
     // Create nested HashMaps for efficient lookups
     let mut lookup_data: HashMap<String, HashMap<String, String>> =
         HashMap::with_capacity(lookup_table.rowcount);
+    let mut lowercased_keys: HashMap<String, String> =
+        HashMap::with_capacity(lookup_table.rowcount);
 
     let row_len = lookup_table.headers.len();
     for record in rdr.records().flatten() {
@@ -870,14 +1004,13 @@ fn register_lookup(
 
         // Use the first column as the key by default
         if let Some(key_value) = record.get(0) {
-            let key_trim = key_value.trim();
-            let key = if let Ok(num) = key_trim.parse::<i64>() {
-                itoa::Buffer::new().format(num).to_owned()
-            } else if let Ok(num) = key_trim.parse::<f64>() {
-                zmij::Buffer::new().format(num).to_owned()
-            } else {
-                key_trim.to_owned()
-            };
+            let key = normalize_lookup_key(key_value).into_owned();
+            // Pre-build the lowercased -> original key index so case-insensitive
+            // lookups can be O(1). On collision (e.g. "Foo" and "foo" are both keys)
+            // the first-seen original wins, mirroring HashMap insert semantics.
+            lowercased_keys
+                .entry(key.to_lowercase())
+                .or_insert_with(|| key.clone());
             lookup_data.insert(key, row_data);
         }
     }
@@ -893,7 +1026,13 @@ fn register_lookup(
     // Safely get write access to the map
     match LOOKUP_MAP.get().unwrap().write() {
         Ok(mut map) => {
-            map.insert(lookup_name.to_string(), lookup_data);
+            map.insert(
+                lookup_name.to_string(),
+                LookupTable {
+                    rows: lookup_data,
+                    lowercased_keys,
+                },
+            );
             Ok(true)
         },
         Err(_) => Err(minijinja::Error::new(
@@ -952,69 +1091,58 @@ fn lookup_filter(
 
     let case_sensitive = case_sensitive.unwrap_or(true);
 
+    // Stringify the filter input as a borrow against stack-resident itoa/zmij
+    // buffers when possible, so no String is allocated for the common
+    // already-canonical case. Numbers go through the same itoa/zmij form as
+    // keys, so e.g. integer 42 and float 42.0 both stringify to "42".
     let mut itoa_buf = itoa::Buffer::new();
     let mut zmij_buf = zmij::Buffer::new();
-    let value = match value.kind() {
+    let raw: &str = match value.kind() {
         ValueKind::String => value.as_str().unwrap(),
         ValueKind::Number => {
             if value.is_integer() {
                 itoa_buf.format(value.as_i64().unwrap())
             } else {
-                let float_num: f64;
-                match value.clone().try_into() {
-                    Ok(num) => {
-                        float_num = num;
-                        zmij_buf.format(float_num)
-                    },
-                    _ => {
-                        unreachable!("Kind::Number should be integer or float")
-                    },
-                }
+                let n: f64 = value
+                    .clone()
+                    .try_into()
+                    .expect("Kind::Number should be integer or float");
+                zmij_buf.format(n)
             }
         },
         _ => value.as_str().unwrap_or_default(),
     };
-
-    // Avoid allocating if case-sensitive
-    let value_compare = if case_sensitive {
-        value
-    } else {
-        // Only allocate for lowercase when needed
-        &value.to_lowercase()
-    };
+    // Normalize so both sides of the lookup agree (trim + numeric canonicalization).
+    // Returns Cow::Borrowed for non-numeric inputs that are already trimmed.
+    let normalized = normalize_lookup_key(raw);
 
     // safety: FILTER_ERROR was initialized in run section
     let filter_error = FILTER_ERROR.get().unwrap();
-
-    // Reuse buffer for case-insensitive comparisons
-    let mut lowercase_buffer = String::with_capacity(32); // Pre-allocate reasonable size
 
     Ok(LOOKUP_MAP
         .get()
         .and_then(|lock| lock.read().ok())
         .and_then(|map| {
             let table = map.get(lookup_name)?;
-            // Find the matching row
-            if case_sensitive {
-                table
-                    .get(value)
-                    .and_then(|row| row.get(field).map(String::from))
+            // Find the matching row. Both branches are O(1): the case-insensitive
+            // index is pre-built at register_lookup time.
+            let row = if case_sensitive {
+                table.rows.get(normalized.as_ref())?
             } else {
-                table
-                    .iter()
-                    .find(|(k, _)| {
-                        util::to_lowercase_into(k, &mut lowercase_buffer);
-                        lowercase_buffer == value_compare
-                    })
-                    .and_then(|(_, row)| row.get(field).map(String::from))
-            }
+                let lowered = normalized.to_lowercase();
+                let original = table.lowercased_keys.get(&lowered)?;
+                table.rows.get(original)?
+            };
+            row.get(field).map(String::from)
         })
         .unwrap_or_else(|| {
             if filter_error.is_empty() {
                 String::new()
             } else {
+                // Report the user-supplied input (pre-normalization) so the
+                // diagnostic matches what the template author wrote.
                 format!(
-                    r#"{filter_error} - lookup: "{lookup_name}-{field}" not found for: "{value}""#
+                    r#"{filter_error} - lookup: "{lookup_name}-{field}" not found for: "{raw}""#
                 )
             }
         }))

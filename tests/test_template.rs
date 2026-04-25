@@ -337,6 +337,88 @@ fn template_output_directory_no_headers() {
 }
 
 #[test]
+fn template_output_directory_multibatch() {
+    // Regression test: subdir numbering must be global, not per-batch.
+    // Reproduces the case where multiple batches collapsed all rows into
+    // the first few subdirectories instead of distributing them evenly.
+    let wrk = Workdir::new("template_output_dir_multibatch");
+
+    // Build an input large enough to span multiple batches given --batch 50000
+    // and --jobs 4 (optimal_batch_size yields num_rows/num_jobs = 15000).
+    let mut csv = String::from("n\n");
+    let total_rows: usize = 60_000;
+    for i in 1..=total_rows {
+        use std::fmt::Write as _;
+        writeln!(csv, "{i}").unwrap();
+    }
+    wrk.create_from_string("data.csv", &csv);
+    wrk.create_from_string("template.txt", "r{{n}}");
+
+    let outdir = "multibatch_out";
+    let outsubdir_size: usize = 5_000;
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template-file")
+        .arg("template.txt")
+        .arg("--batch")
+        .arg("50000")
+        .arg("--jobs")
+        .arg("4")
+        .arg("--outsubdir-size")
+        .arg(outsubdir_size.to_string())
+        .arg("data.csv")
+        .arg(outdir);
+
+    wrk.assert_success(&mut cmd);
+
+    let expected_subdirs = total_rows / outsubdir_size;
+    // File names pad to rowcount width; subdir names pad to (max-subdir) width
+    // — these are now decoupled (max subdir = expected_subdirs - 1).
+    let width = total_rows.to_string().len();
+    let subdir_width = (expected_subdirs - 1).to_string().len().max(1);
+    for s in 0..expected_subdirs {
+        let subdir = format!("{outdir}/{s:0subdir_width$}");
+        // Spot-check first and last file in each subdir match the expected row range.
+        let first_row = s * outsubdir_size + 1;
+        let last_row = (s + 1) * outsubdir_size;
+        let first = wrk
+            .read_to_string(&format!("{subdir}/{first_row:0width$}.txt"))
+            .unwrap_or_else(|_| panic!("missing {subdir}/{first_row:0width$}.txt"));
+        let last = wrk
+            .read_to_string(&format!("{subdir}/{last_row:0width$}.txt"))
+            .unwrap_or_else(|_| panic!("missing {subdir}/{last_row:0width$}.txt"));
+        assert_eq!(first, format!("r{first_row}"));
+        assert_eq!(last, format!("r{last_row}"));
+    }
+}
+
+#[test]
+fn template_outsubdir_size_zero_rejected() {
+    // Regression test: --outsubdir-size 0 used to panic via integer
+    // divide-by-zero inside the bucket calculation. We now reject it up front
+    // with a clear "incorrect usage" error.
+    let wrk = Workdir::new("template_outsubdir_zero");
+    wrk.create(
+        "data.csv",
+        vec![svec!["name"], svec!["alice"], svec!["bob"]],
+    );
+    wrk.create_from_string("template.txt", "{{name}}\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template-file")
+        .arg("template.txt")
+        .arg("--outsubdir-size")
+        .arg("0")
+        .arg("data.csv")
+        .arg("out");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("--outsubdir-size must be greater than 0"),
+        "expected usage error on stderr, got: {stderr:?}"
+    );
+}
+
+#[test]
 fn template_custom_filters() {
     let wrk = Workdir::new("template_custom_filters");
     wrk.create(
@@ -1041,6 +1123,80 @@ fn template_lookup_case_sensitivity() {
 
     let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "first\nsecond\nthird");
+}
+
+#[test]
+fn template_lookup_key_normalization() {
+    // Regression test for the register_lookup vs. lookup_filter key normalization
+    // mismatch. The CSV stores keys with whitespace and floating-point variants;
+    // the template should still find them when passing the canonical numeric form.
+    let wrk = Workdir::new("template_lookup_normalize");
+
+    wrk.create(
+        "lookup.csv",
+        vec![
+            svec!["id", "label"],
+            svec![" 42 ", "answer"],   // leading/trailing whitespace
+            svec!["100.0", "century"], // float that collapses to int form
+            svec!["bob", "person"],    // non-numeric should still match by trim
+        ],
+    );
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["key"],
+            svec!["42"],   // canonical int -> should match " 42 " row
+            svec!["100"],  // canonical int -> should match "100.0" row
+            svec!["bob "], // trailing space -> should match "bob" row
+        ],
+    );
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg(concat!(
+            "{% if register_lookup('t', 'lookup.csv') %}",
+            "{{key|lookup('t', 'label')}}\n",
+            "{% endif %}"
+        ))
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "answer\ncentury\nperson");
+}
+
+#[test]
+fn template_render_error_summary() {
+    // Regression test: per-row render failures used to be silently swallowed
+    // (written into the output, but with no aggregate signal). The command
+    // must now print a single "N row(s) failed to render" line on stderr.
+    let wrk = Workdir::new("template_render_error_summary");
+
+    wrk.create(
+        "data.csv",
+        vec![svec!["a"], svec!["1"], svec!["2"], svec!["3"]],
+    );
+    // `bogus_filter` doesn't exist; every row fails to render.
+    wrk.create_from_string("template.txt", "{{ a|bogus_filter }}\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template-file")
+        .arg("template.txt")
+        .arg("data.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("3 row(s) failed to render"),
+        "expected render-failure summary on stderr, got: {stderr:?}"
+    );
+
+    // The per-row error message should still be in stdout (existing behavior).
+    let got: String = wrk.stdout(&mut cmd);
+    assert!(
+        got.contains("RENDERING ERROR (1)"),
+        "expected per-row error in stdout, got: {got:?}"
+    );
 }
 
 #[test]

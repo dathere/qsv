@@ -582,13 +582,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(())
 }
 
-// Normalize a string into the canonical key form used by both register_lookup
-// and the lookup filter, so the two sides always agree on equality.
-//
-// The CSV-side key is trimmed and, if numeric, re-emitted via itoa (i64) or
-// zmij (f64) so that "42", " 42 ", and "42.0" all collapse to the same key.
-// The filter-side input goes through this same function so a template author
-// can pass `" 42 "`, `"42"`, or the integer `42` and hit the same row.
 // Initialize the file-static OnceLocks that the lookup machinery reads from
 // inside the parallel render closure (DELIMITER, QSV_CACHE_DIR, CKAN_API,
 // CKAN_TOKEN). The CKAN_* env vars take precedence over the corresponding
@@ -706,6 +699,13 @@ fn register_qsv_extensions(env: &mut Environment) {
     env.add_filter("lookup", lookup_filter);
 }
 
+// Normalize a string into the canonical key form used by both register_lookup
+// and the lookup filter, so the two sides always agree on equality.
+//
+// The CSV-side key is trimmed and, if numeric, re-emitted via itoa (i64) or
+// zmij (f64) so that "42", " 42 ", and "42.0" all collapse to the same key.
+// The filter-side input goes through this same function so a template author
+// can pass `" 42 "`, `"42"`, or the integer `42` and hit the same row.
 fn normalize_lookup_key(s: &str) -> std::borrow::Cow<'_, str> {
     use std::borrow::Cow;
     let trimmed = s.trim();

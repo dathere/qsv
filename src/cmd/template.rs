@@ -720,6 +720,7 @@ fn normalize_lookup_key(s: &str) -> std::borrow::Cow<'_, str> {
         // representable as f64; the cast rounds up to 2^63, which then
         // saturates back to i64::MAX when re-cast. Excluding the boundary
         // sends 2^63 through zmij instead of producing a misleading key.
+        #[allow(clippy::cast_precision_loss)]
         if num.is_finite() && num.fract() == 0.0 && num >= i64::MIN as f64 && num < i64::MAX as f64
         {
             Cow::Owned(itoa::Buffer::new().format(num as i64).to_owned())

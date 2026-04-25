@@ -196,7 +196,7 @@ Examples:
   qsv apply calcconv --formatstr '{col1} % 3' --new-column remainder file.csv
 
   # Convert from one unit to another:
-  qsv apply calcconv --formatstr '{col1} Fahrenheit in Celsius" -c metric_temperature file.csv
+  qsv apply calcconv --formatstr '{col1} Fahrenheit in Celsius' -c metric_temperature file.csv
 
   # Mix units and conversions are automatically done for you:
   qsv apply calcconv --formatstr '{col1}km + {col2}mi in meters' -c meters file.csv
@@ -244,7 +244,7 @@ apply arguments:
                                     See DYNFMT example above for more details.
         --new-column=<name>         Put the generated values in a new column.
 
-    CALCONV subcommand:
+    CALCCONV subcommand:
         --formatstr=<string>        The calculation/conversion expression to use.
         --new-column=<name>         Put the calculated/converted values in a new column.
 
@@ -302,11 +302,9 @@ Common options:
 
 use std::{str::FromStr, sync::OnceLock};
 
-use base62;
 use base64_simd::STANDARD as BASE64;
 use censor::{Censor, Sex, Zealous};
 use cpc::eval;
-use crc32fast;
 use dynfmt2::Format;
 use eudex::Hash;
 use gender_guesser::Gender;
@@ -410,7 +408,6 @@ struct Args {
 }
 
 static CENSOR: OnceLock<Censor> = OnceLock::new();
-static CRC32: OnceLock<crc32fast::Hasher> = OnceLock::new();
 static EUDEX_COMPARAND_HASH: OnceLock<eudex::Hash> = OnceLock::new();
 static REGEX_REPLACE: OnceLock<Regex> = OnceLock::new();
 static SENTIMENT_ANALYZER: OnceLock<SentimentIntensityAnalyzer> = OnceLock::new();
@@ -433,6 +430,12 @@ static INDIANCOMMA_POLICY: SeparatorPolicy = SeparatorPolicy {
     groups:    &[3, 2],
     digits:    thousands::digits::ASCII_DECIMAL,
 };
+
+// shared regex for 3-decimal-place workaround used by currencytonum & numtocurrency
+fn fract_3digits_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\.\d\d\d$").unwrap())
+}
 
 // valid subcommands
 #[derive(PartialEq)]
@@ -464,6 +467,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let sel = rconfig.selection(&headers)?;
     if sel.is_empty() {
         return fail_incorrectusage_clierror!("No columns selected. Column selection is empty.");
+    }
+    // --new-column (-c) appends a single field per row, so it would produce
+    // malformed CSV (one header, N data fields) when combined with multi-column
+    // operations or emptyreplace. For multi-column transforms, omit --new-column
+    // to update the selected columns in place; --rename (-r) is optional and only
+    // changes the column names.
+    if args.flag_new_column.is_some()
+        && (args.cmd_operations || args.cmd_emptyreplace)
+        && sel.len() > 1
+    {
+        return fail_incorrectusage_clierror!(
+            "--new-column (-c) requires a single input column. For multi-column \
+             operations/emptyreplace, omit --new-column to transform columns in place; optionally \
+             use --rename (-r) to rename the transformed columns."
+        );
     }
     // safety: we just checked that sel is not empty above
     let column_index = *sel.iter().next().unwrap();
@@ -547,11 +565,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         wtr.write_record(&headers)?;
     }
 
-    // if there is a regex_replace operation and replacement is <NULL> case-insensitive,
-    // we set it to empty string
+    // <NULL> (case-insensitive) is recognized as "delete matches" when regex_replace is in
+    // the operation chain. Note this clears flag_replacement for ALL ops in the chain, so
+    // a chained `regex_replace,replace` with --replacement <NULL> deletes matches in both.
     let flag_replacement = if apply_cmd == ApplySubCmd::Operations
         && ops_vec.contains(&Operations::Regex_Replace)
-        && args.flag_replacement.to_ascii_lowercase() == NULL_VALUE
+        && args.flag_replacement.eq_ignore_ascii_case(NULL_VALUE)
     {
         String::new()
     } else {
@@ -642,18 +661,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         }
                     },
                     ApplySubCmd::DynFmt => {
-                        let mut cell = record[column_index].to_owned();
-                        if !cell.is_empty() {
-                            let mut record_vec: Vec<String> = Vec::with_capacity(record.len());
-                            for field in &record {
-                                record_vec.push(field.to_string());
-                            }
-                            if let Ok(formatted) =
-                                dynfmt2::SimpleCurlyFormat.format(&dynfmt_template, record_vec)
-                            {
-                                cell = formatted.to_string();
-                            }
-                        }
+                        let record_vec: Vec<&str> = record.iter().collect();
+                        let cell = match dynfmt2::SimpleCurlyFormat
+                            .format(&dynfmt_template, &*record_vec)
+                        {
+                            Ok(formatted) => formatted.into_owned(),
+                            Err(_) => record[column_index].to_owned(),
+                        };
                         if flag_new_column.is_some() {
                             record.push_field(&cell);
                         } else {
@@ -661,27 +675,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         }
                     },
                     ApplySubCmd::CalcConv => {
-                        let result = if record[column_index].is_empty() {
+                        let record_vec: Vec<&str> = record.iter().collect();
+                        let formatted = match dynfmt2::SimpleCurlyFormat
+                            .format(&dynfmt_template, &*record_vec)
+                        {
+                            Ok(formatted) => formatted.into_owned(),
+                            Err(_) => record[column_index].to_owned(),
+                        };
+
+                        let (cell_for_eval, append_unit) = if formatted.ends_with("<UNIT>") {
+                            // strip ALL trailing <UNIT> occurrences (matches the original
+                            // trim_end_matches behavior — strip_suffix would only remove one)
+                            (formatted.trim_end_matches("<UNIT>"), true)
+                        } else {
+                            (formatted.as_str(), false)
+                        };
+                        let result = if cell_for_eval.trim().is_empty() {
                             String::new()
                         } else {
-                            let mut cell = record[column_index].to_owned();
-                            let mut record_vec: Vec<String> = Vec::with_capacity(record.len());
-                            for field in &record {
-                                record_vec.push(field.to_string());
-                            }
-                            if let Ok(formatted) =
-                                dynfmt2::SimpleCurlyFormat.format(&dynfmt_template, record_vec)
-                            {
-                                cell = formatted.to_string();
-                            }
-
-                            let mut append_unit = false;
-                            let cell_for_eval = if cell.ends_with("<UNIT>") {
-                                append_unit = true;
-                                cell.trim_end_matches("<UNIT>")
-                            } else {
-                                &cell
-                            };
                             match eval(cell_for_eval, true, false) {
                                 Ok(answer) => {
                                     if append_unit {
@@ -690,9 +701,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                         answer.value.to_string()
                                     }
                                 },
-                                Err(e) => {
-                                    format!("ERROR: {e}")
-                                },
+                                Err(e) => format!("ERROR: {e}"),
                             }
                         };
 
@@ -755,7 +764,7 @@ fn validate_operations(
             Operations::Censor | Operations::Censor_Check | Operations::Censor_Count => {
                 if flag_new_column.is_none() {
                     return fail_incorrectusage_clierror!(
-                        "--new_column (-c) is required for censor operations."
+                        "--new-column (-c) is required for censor operations."
                     );
                 }
                 if censor_invokes == 0
@@ -776,7 +785,7 @@ fn validate_operations(
             Operations::Copy => {
                 if flag_new_column.is_none() {
                     return fail_incorrectusage_clierror!(
-                        "--new_column (-c) is required for copy operation."
+                        "--new-column (-c) is required for copy operation."
                     );
                 }
                 copy_invokes = copy_invokes.saturating_add(1);
@@ -784,7 +793,7 @@ fn validate_operations(
             Operations::Eudex => {
                 if flag_comparand.is_empty() || flag_new_column.is_none() {
                     return fail_incorrectusage_clierror!(
-                        "--comparand (-C) and --new_column (-c) is required for eudex."
+                        "--comparand (-C) and --new-column (-c) are required for eudex."
                     );
                 }
                 if eudex_invokes == 0
@@ -834,7 +843,7 @@ fn validate_operations(
             Operations::Sentiment => {
                 if flag_new_column.is_none() {
                     return fail_incorrectusage_clierror!(
-                        "--new_column (-c) is required for sentiment operation."
+                        "--new-column (-c) is required for sentiment operation."
                     );
                 }
                 if sentiment_invokes == 0
@@ -855,7 +864,7 @@ fn validate_operations(
             | Operations::Simod => {
                 if flag_comparand.is_empty() || flag_new_column.is_none() {
                     return fail_incorrectusage_clierror!(
-                        "--comparand (-C) and --new_column (-c) is required for similarity \
+                        "--comparand (-C) and --new-column (-c) are required for similarity \
                          operations."
                     );
                 }
@@ -868,36 +877,27 @@ fn validate_operations(
                 strip_invokes = strip_invokes.saturating_add(1);
             },
             Operations::Thousands => {
-                let separator_policy = match flag_formatstr {
+                THOUSANDS_POLICY.get_or_init(|| match flag_formatstr {
                     "dot" => policies::DOT_SEPARATOR,
                     "space" => policies::SPACE_SEPARATOR,
                     "underscore" => policies::UNDERSCORE_SEPARATOR,
                     "hexfour" => policies::HEX_FOUR,
                     "indiancomma" => INDIANCOMMA_POLICY,
                     _ => policies::COMMA_SEPARATOR,
-                };
-                if THOUSANDS_POLICY.set(separator_policy).is_err() {
-                    return fail!("Cannot initialize Thousands policy.");
-                }
+                });
             },
-            Operations::Round
-                if ROUND_PLACES
-                    .set(
-                        flag_formatstr
-                            .parse::<u32>()
-                            .unwrap_or(DEFAULT_ROUND_PLACES),
-                    )
-                    .is_err() =>
-            {
-                return fail!("Cannot initialize Round precision.");
+            Operations::Round => {
+                ROUND_PLACES.get_or_init(|| {
+                    flag_formatstr
+                        .parse::<u32>()
+                        .unwrap_or(DEFAULT_ROUND_PLACES)
+                });
             },
-            Operations::Crc32 if CRC32.set(crc32fast::Hasher::new()).is_err() => {
-                return fail!("Cannot initialize CRC32 Hasher.");
-            },
+            Operations::Crc32 => {},
             Operations::Whatlang => {
                 if flag_new_column.is_none() {
                     return fail_incorrectusage_clierror!(
-                        "--new_column (-c) is required for whatlang language detection."
+                        "--new-column (-c) is required for whatlang language detection."
                     );
                 }
 
@@ -940,12 +940,10 @@ fn validate_operations(
             Operations::Gender_Guess => {
                 if flag_new_column.is_none() {
                     return fail_incorrectusage_clierror!(
-                        "--new_column (-c) is required for Gender_Guess"
+                        "--new-column (-c) is required for gender_guess."
                     );
                 }
-                if GENDER_GUESSER.set(gender_guesser::Detector::new()).is_err() {
-                    return fail!("Cannot initialize Gender Detector.");
-                }
+                GENDER_GUESSER.get_or_init(gender_guesser::Detector::new);
             },
             _ => {},
         }
@@ -1043,13 +1041,7 @@ fn apply_operations(
                 };
             },
             Operations::Crc32 => {
-                // safety: we set CRC32 in validate_operations()
-                // this approach is still better than using the simple hash() function
-                // despite the use of clone(), because it allows us to use the
-                // same hasher for multiple columns.
-                // OTOH, the simple hash() function keeps creating a new hasher for every call,
-                // including selection of the best algorithm repeatedly at runtime
-                let mut crc32_hasher = CRC32.get().unwrap().clone();
+                let mut crc32_hasher = crc32fast::Hasher::new();
                 crc32_hasher.update(cell.as_bytes());
                 itoa::Buffer::new()
                     .format(crc32_hasher.finalize())
@@ -1147,7 +1139,7 @@ fn apply_operations(
                 // This is a workaround around current limitation of qsv-currency
                 // and also of upstream currency-rs, that it cannot
                 // handle currency amounts properly with three decimal places
-                let fract_3digits: &'static Regex = regex_oncelock!(r"\.\d\d\d$");
+                let fract_3digits = fract_3digits_regex();
                 let cell_val = if fract_3digits.is_match(cell) {
                     format!("{cell}0")
                 } else {
@@ -1211,8 +1203,8 @@ fn apply_operations(
             },
             Operations::Numtocurrency => {
                 // same 3 decimal place workaround as currencytonum
-                let fract_3digits2: &'static Regex = regex_oncelock!(r"\.\d\d\d$");
-                let cell_val = if fract_3digits2.is_match(cell) {
+                let fract_3digits = fract_3digits_regex();
+                let cell_val = if fract_3digits.is_match(cell) {
                     format!("{cell}0")
                 } else {
                     cell.clone()

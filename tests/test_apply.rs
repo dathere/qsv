@@ -1367,8 +1367,35 @@ fn apply_ops_chain_validation_error_missing_comparand() {
     let got = wrk.output_stderr(&mut cmd);
     assert_eq!(
         got,
-        "usage error: --comparand (-C) and --new_column (-c) is required for similarity \
+        "usage error: --comparand (-C) and --new-column (-c) are required for similarity \
          operations.\n"
+    );
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn apply_ops_multi_column_new_column_rejected() {
+    // --new-column with multiple selected columns would produce malformed CSV
+    // (one header field, N data fields per row). Should be rejected at validation.
+    let wrk = Workdir::new("apply_ops_multi_column_new_column_rejected");
+    wrk.create(
+        "data.csv",
+        vec![svec!["a", "b"], svec!["foo", "bar"], svec!["baz", "qux"]],
+    );
+    let mut cmd = wrk.command("apply");
+    cmd.arg("operations")
+        .arg("upper")
+        .arg("a,b")
+        .arg("-c")
+        .arg("new")
+        .arg("data.csv");
+
+    let got = wrk.output_stderr(&mut cmd);
+    assert_eq!(
+        got,
+        "usage error: --new-column (-c) requires a single input column. For multi-column \
+         operations/emptyreplace, omit --new-column to transform columns in place; optionally use \
+         --rename (-r) to rename the transformed columns.\n"
     );
     wrk.assert_err(&mut cmd);
 }

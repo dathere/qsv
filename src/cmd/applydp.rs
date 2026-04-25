@@ -278,8 +278,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     {
         return fail_incorrectusage_clierror!(
             "--new-column (-c) requires a single input column. For multi-column \
-             operations/emptyreplace, omit --new-column to transform columns in place; \
-             optionally use --rename (-r) to rename the transformed columns."
+             operations/emptyreplace, omit --new-column to transform columns in place; optionally \
+             use --rename (-r) to rename the transformed columns."
         );
     }
     // safety: we just checked that sel is not empty above

@@ -358,7 +358,7 @@ geocode options:
 
                                 will add three columns to the output CSV named city_col, state_col & county_col.
 
-                                Note that using "%dyncols:" will cause the the command to geocode EACH row without
+                                Note that using "%dyncols:" will cause the command to geocode EACH row without
                                 using the cache, so it will be slower than predefined or dynamic formatting.
                                 Also, countryinfo and countryinfonow subcommands currently do not support "%dyncols:".
                                 [default: %+]
@@ -1079,7 +1079,14 @@ async fn geocode_main(args: Args) -> CliResult<()> {
         for column in column_names {
             headers.push_field(column);
         }
-        column_values.len() as u8
+        // dyncols_len is u8 (0..=255); reject excessive column counts to avoid silent truncation
+        let Ok(len) = u8::try_from(column_values.len()) else {
+            return fail_incorrectusage_clierror!(
+                "Too many %dyncols columns: {} (max 255).",
+                column_values.len()
+            );
+        };
+        len
     } else {
         0_u8
     };
@@ -1176,7 +1183,6 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     log::debug!("admin1_filter_list: {admin1_filter_list:?}");
 
     // amortize memory allocation by reusing record
-    #[allow(unused_assignments)]
     let mut batch_record = csv::StringRecord::new();
 
     // reuse batch buffers
@@ -1255,8 +1261,8 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                         &args.flag_language,
                         min_score,
                         k_weight,
-                        country_filter_list.as_ref(),
-                        admin1_filter_list.as_ref(),
+                        country_filter_list.as_deref(),
+                        admin1_filter_list.as_deref(),
                         &column_values,
                         &mut record,
                     );
@@ -1288,8 +1294,8 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                         &args.flag_language,
                         min_score,
                         k_weight,
-                        country_filter_list.as_ref(),
-                        admin1_filter_list.as_ref(),
+                        country_filter_list.as_deref(),
+                        admin1_filter_list.as_deref(),
                         &column_values,
                         &mut record,
                     );
@@ -1306,7 +1312,6 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                         }
                     }
                 }
-                // }
                 if args.flag_new_column.is_some() {
                     record.push_field(&cell);
                 } else {
@@ -1532,16 +1537,16 @@ fn search_index(
     lang_lookup: &str,
     min_score: Option<f32>,
     k: Option<f32>,
-    country_filter_list: Option<&Vec<String>>,
-    admin1_filter_list: Option<&Vec<Admin1Filter>>,
-    column_values: &[&str], //&Vec<&str>,
+    country_filter_list: Option<&[String]>,
+    admin1_filter_list: Option<&[Admin1Filter]>,
+    column_values: &[&str],
     record: &mut csv::StringRecord,
 ) -> Option<String> {
     if mode == GeocodeSubCmd::Suggest || mode == GeocodeSubCmd::SuggestNow {
         let search_result: Vec<&CitiesRecord>;
         let cityrecord = if admin1_filter_list.is_none() {
             // no admin1 filter, run a search for 1 result (top match)
-            search_result = engine.suggest(cell, 1, min_score, country_filter_list.map(|v| &**v));
+            search_result = engine.suggest(cell, 1, min_score, country_filter_list);
             let Some(cr) = search_result.into_iter().next() else {
                 // no results, so return early with None
                 return None;
@@ -1549,12 +1554,8 @@ fn search_index(
             cr
         } else {
             // we have an admin1 filter, run a search for top SUGGEST_ADMIN1_LIMIT results
-            search_result = engine.suggest(
-                cell,
-                SUGGEST_ADMIN1_LIMIT,
-                min_score,
-                country_filter_list.map(|v| &**v),
-            );
+            search_result =
+                engine.suggest(cell, SUGGEST_ADMIN1_LIMIT, min_score, country_filter_list);
 
             // first, get the first result and store that in cityrecord
             let Some(first_result) = search_result.first().copied() else {
@@ -1710,8 +1711,7 @@ fn search_index(
         let lat = loccaps[1].to_string().parse::<f32>().unwrap_or_default();
         let long = loccaps[2].to_string().parse::<f32>().unwrap_or_default();
         if (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&long) {
-            let search_result =
-                engine.reverse((lat, long), 1, k, country_filter_list.map(|v| &**v));
+            let search_result = engine.reverse((lat, long), 1, k, country_filter_list);
             let cityrecord = (match search_result {
                 Some(search_result) => search_result.into_iter().next().map(|ri| ri.city),
                 None => return None,
@@ -2219,7 +2219,10 @@ fn get_countryinfo(
 /// Note that the index file needs to be built with the desired languages for this to work.
 /// Use the "index-update" subcommand with the --languages option to rebuild the index
 /// with the desired languages. Otherwise, all names will be in English (en)
-#[cached(key = "String", convert = r#"{ format!("{}", cityrecord.id) }"#)]
+#[cached(
+    key = "String",
+    convert = r#"{ format!("{}-{lang_lookup}", cityrecord.id) }"#
+)]
 fn get_cityrecord_name_in_lang(cityrecord: &CitiesRecord, lang_lookup: &str) -> NamesLang {
     let cityname = cityrecord
         .names

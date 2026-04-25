@@ -643,8 +643,6 @@ fn sequential_mode(
     end_script: &str,
     max_errors: usize,
 ) -> Result<(), CliError> {
-    globals.raw_set("cols", "{}")?;
-
     let mut rdr = rconfig.reader()?;
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
     let mut headers = rdr.headers()?.to_owned();
@@ -752,6 +750,9 @@ fn sequential_mode(
     let cmd_map = args.cmd_map;
     let mut err_msg: String;
     let mut computed_result;
+    // headers may have been augmented with new map columns; only iterate the
+    // original input columns when populating col/globals from the record.
+    let orig_headers_count = headers.len().saturating_sub(new_column_count as usize);
 
     // main loop
     // without an index, we stream the CSV in sequential order
@@ -775,16 +776,19 @@ fn sequential_mode(
             }
         }
         if !no_headers {
-            for (h, v) in headers.iter().zip(record.iter()) {
-                col.raw_set(h, v)?;
+            // iterate by header so missing trailing fields become "" rather than
+            // retaining a stale binding from a prior, longer row.
+            // Only original columns; appended map output columns aren't in the input.
+            for (i, h) in headers.iter().take(orig_headers_count).enumerate() {
+                col.raw_set(h, record.get(i).unwrap_or_default())?;
             }
         }
         globals.raw_set("col", &col)?;
 
         // Updating global
         if !flag_no_globals && !no_headers {
-            for (h, v) in headers.iter().zip(record.iter()) {
-                globals.raw_set(h, v)?;
+            for (i, h) in headers.iter().take(orig_headers_count).enumerate() {
+                globals.raw_set(h, record.get(i).unwrap_or_default())?;
             }
         }
 
@@ -816,8 +820,7 @@ fn sequential_mode(
                 err_msg = format!("<ERROR> _IDX: {idx} error({error_count}): {e:?}");
                 log::error!("{err_msg}");
 
-                mlua::IntoLua::into_lua(err_msg, luau)
-                    .map_err(|e| format!("Failed to convert error message to Lua: {e}"))?
+                mlua::Value::String(luau.create_string(&err_msg)?)
             },
         };
 
@@ -915,8 +918,7 @@ fn sequential_mode(
                 log::error!("{err_msg}");
                 log::error!("END globals: {globals:?}");
 
-                mlua::IntoLua::into_lua(err_msg, luau)
-                    .map_err(|e| format!("Failed to convert error message to Lua: {e}"))?
+                mlua::Value::String(luau.create_string(&err_msg)?)
             },
         };
 
@@ -987,13 +989,10 @@ fn random_access_mode(
         );
     };
 
-    globals.raw_set("cols", "{}")?;
-
-    // with an index, we can fetch the row_count in advance
-    let mut row_count = util::count_rows(rconfig).unwrap_or_default();
-    if args.flag_no_headers {
-        row_count += 1;
-    }
+    // with an index, we can fetch the row_count in advance.
+    // count_rows() returns data row count regardless of headers (Indexed::count
+    // strips the header row when has_headers is true), so no adjustment needed.
+    let row_count = util::count_rows(rconfig).unwrap_or_default();
 
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
     let mut headers = idx_file.headers()?.to_owned();
@@ -1026,17 +1025,16 @@ fn random_access_mode(
         }
     }
 
-    // unlike sequential_mode, we actually know the row_count at the BEGINning
+    // unlike sequential_mode, we actually know the row_count at the BEGINning.
+    // saturating_sub guards against underflow when the input CSV is empty.
+    let last_row = row_count.saturating_sub(1);
     globals.raw_set(QSV_V_IDX, 0)?;
     globals.raw_set(QSV_V_INDEX, 0)?;
     globals.raw_set(QSV_V_ROWCOUNT, row_count)?;
-    globals.raw_set(QSV_V_LASTROW, row_count - 1)?;
+    globals.raw_set(QSV_V_LASTROW, last_row)?;
 
     if !begin_script.is_empty() {
-        info!(
-            "Compiling and executing BEGIN script. _ROWCOUNT: {row_count} _LASTROW: {}",
-            row_count - 1
-        );
+        info!("Compiling and executing BEGIN script. _ROWCOUNT: {row_count} _LASTROW: {last_row}");
         Stage::Begin.set_current();
 
         if let Err(e) = luau.load(begin_script).exec() {
@@ -1106,13 +1104,13 @@ fn random_access_mode(
 
     Stage::Main.set_current();
     info!(
-        "Executing MAIN script. _INDEX: {curr_record} _ROWCOUNT: {row_count} _LASTROW: {}",
-        row_count - 1
+        "Executing MAIN script. _INDEX: {curr_record} _ROWCOUNT: {row_count} _LASTROW: {last_row}"
     );
 
     let mut computed_value;
     let mut must_keep_row;
     let col = luau.create_table_with_capacity(headers_count, 1)?;
+    col.set_safeenv(true);
 
     let flag_no_globals = args.flag_no_globals;
     let flag_remap = args.flag_remap;
@@ -1121,6 +1119,9 @@ fn random_access_mode(
     let cmd_map = args.cmd_map;
     let mut err_msg: String;
     let mut computed_result;
+    // headers may have been augmented with new map columns; only iterate the
+    // original input columns when populating col/globals from the record.
+    let orig_headers_count = headers.len().saturating_sub(new_column_count as usize);
 
     // check if qsv_break() was called in the MAIN script
     let qsv_break_used = main_script.contains("qsv_break(");
@@ -1145,16 +1146,19 @@ fn random_access_mode(
             }
         }
         if !no_headers {
-            for (h, v) in headers.iter().zip(record.iter()) {
-                col.raw_set(h, v)?;
+            // iterate by header so missing trailing fields become "" rather than
+            // retaining a stale binding from a prior, longer row.
+            // Only original columns; appended map output columns aren't in the input.
+            for (i, h) in headers.iter().take(orig_headers_count).enumerate() {
+                col.raw_set(h, record.get(i).unwrap_or_default())?;
             }
         }
         globals.raw_set("col", &col)?;
 
         // Updating global
         if !flag_no_globals && !no_headers {
-            for (h, v) in headers.iter().zip(record.iter()) {
-                globals.raw_set(h, v)?;
+            for (i, h) in headers.iter().take(orig_headers_count).enumerate() {
+                globals.raw_set(h, record.get(i).unwrap_or_default())?;
             }
         }
 
@@ -1171,8 +1175,7 @@ fn random_access_mode(
                 err_msg = format!("<ERROR> _IDX: {curr_record} error({error_count}): {e:?}");
                 log::error!("{err_msg}");
 
-                mlua::IntoLua::into_lua(err_msg, luau)
-                    .map_err(|e| format!("Failed to convert error message to Lua: {e}"))?
+                mlua::Value::String(luau.create_string(&err_msg)?)
             },
         };
 
@@ -1265,8 +1268,7 @@ fn random_access_mode(
                 log::error!("{err_msg}");
                 log::error!("END globals: {globals:?}");
 
-                mlua::IntoLua::into_lua(err_msg, luau)
-                    .map_err(|e| format!("Failed to convert error message to Lua: {e}"))?
+                mlua::Value::String(luau.create_string(&err_msg)?)
             },
         };
 
@@ -1547,9 +1549,16 @@ fn setup_helpers(
     let qsv_coalesce = luau.create_function(|luau, mut args: mlua::MultiValue| {
         while let Some(val) = args.pop_front() {
             let val = luau.from_value::<serde_json::Value>(val)?;
-            let val_str = val.as_str().unwrap_or_default();
+            let val_str = match val {
+                serde_json::Value::Null => String::new(),
+                serde_json::Value::String(s) => s,
+                serde_json::Value::Bool(b) => b.to_string(),
+                serde_json::Value::Number(n) => n.to_string(),
+                // arrays and objects: skip (treat as "no value present")
+                _ => String::new(),
+            };
             if !val_str.is_empty() {
-                return Ok(val_str.to_string());
+                return Ok(val_str);
             }
         }
         Ok(String::new())
@@ -1780,7 +1789,15 @@ fn setup_helpers(
             };
 
             for (row_idx, result) in rdr.records().enumerate() {
-                record = result.unwrap_or_default();
+                record = match result {
+                    Ok(r) => r,
+                    Err(e) => {
+                        return helper_err!(
+                            "qsv_loadcsv",
+                            "error reading row {row_idx} of CSV: {e}"
+                        );
+                    },
+                };
 
                 let key = if key_idx == usize::MAX {
                     itoa::Buffer::new().format(row_idx).to_owned()
@@ -1798,10 +1815,11 @@ fn setup_helpers(
             luau.globals().raw_set(table_name, csv_table)?;
 
             // now that we've successfully loaded the CSV, we return the headers
-            // as a table so the user can use them to access the values
+            // as a 1-indexed table so the user can use them to access the values
+            // (Lua tables are 1-indexed by convention)
             let headers_table = luau.create_table()?;
             for (i, header) in headers.iter().enumerate() {
-                headers_table.raw_set(i, header)?;
+                headers_table.raw_set(i + 1, header)?;
             }
 
             info!("{filepath} successfully loaded CSV.");
@@ -2059,7 +2077,7 @@ fn setup_helpers(
     })?;
     luau.globals().set("qsv_insertrecord", qsv_insertrecord)?;
 
-    // this is a helper function to imvoke other qsv commands from Luau scripts.
+    // this is a helper function to invoke other qsv commands from Luau scripts.
     //
     //   qsv_cmd(qsv_args: String)
     //      qsv_args: the arguments to pass to qsv. Note that the qsv binary will be
@@ -2110,13 +2128,16 @@ fn setup_helpers(
     })?;
     luau.globals().set("qsv_cmd", qsv_cmd)?;
 
-    // this is a helper function to imvoke shell commands from Luau scripts.
+    // this is a helper function to invoke shell commands from Luau scripts.
     //
     //   qsv_shellcmd(shellcmd: String, args: String)
     //      shellcmd: the shell command to execute. For safety, only the following
     //                commands are allowed: awk, cat, cp, cut, df, echo, rg, grep, head, ls,
     //                mkdir, mv, nl, pwd, sed, sort, tail, touch, tr, uname, uniq, wc, whoami
     //         args: the arguments to pass to the command. stdin is not supported.
+    //                NOTE: args are split on whitespace; quoting is not supported.
+    //                Arguments containing spaces (e.g. file paths) cannot be passed as a
+    //                single argument via this helper.
     //      returns: a table with stdout and stderr output of the shell command.
     //               A Luau runtime error if the command cannot be executed.
     //
@@ -2400,6 +2421,9 @@ fn setup_helpers(
         } else {
             1
         };
+        if lag <= 0 {
+            return helper_err!("qsv_lag", "lag must be > 0 (got {lag})");
+        }
         let default = if args.len() > 2 {
             args[2].clone()
         } else {
@@ -2412,7 +2436,8 @@ fn setup_helpers(
         };
 
         thread_local! {
-            static LAGS: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
+            static LAGS: RefCell<HashMap<String, std::collections::VecDeque<String>>> =
+                RefCell::new(HashMap::new());
         }
 
         let key = format!("_qsv_lag_{name}_{lag}");
@@ -2427,18 +2452,22 @@ fn setup_helpers(
             _ => value.to_string().unwrap_or_default(),
         };
 
+        let lag_usize = lag as usize;
         LAGS.with(|l| {
             let mut lags = l.borrow_mut();
             let values = lags.entry(key).or_default();
-            values.push(value_str);
+            values.push_back(value_str);
+            // bound memory: only the last `lag + 1` entries are ever read
+            while values.len() > lag_usize + 1 {
+                values.pop_front();
+            }
 
-            if values.len() as i64 <= lag {
+            if values.len() <= lag_usize {
                 // Return the default value when not enough history
                 Ok(default)
             } else {
-                let lagged_value = values
-                    .get(values.len().saturating_sub(1 + lag as usize))
-                    .ok_or_else(|| mlua::Error::runtime("Invalid lag index"))?;
+                // values[0] is the lagged entry once buffer is full
+                let lagged_value = &values[0];
                 Ok(mlua::Value::String(luau.create_string(lagged_value)?))
             }
         })
@@ -2606,10 +2635,14 @@ fn setup_helpers(
     let qsv_diff = luau.create_function(
         |_, (value, periods, name): (mlua::Value, Option<i64>, Option<String>)| {
             thread_local! {
-                static DIFFS: RefCell<HashMap<String, Vec<f64>>> = RefCell::new(HashMap::new());
+                static DIFFS: RefCell<HashMap<String, std::collections::VecDeque<f64>>> =
+                    RefCell::new(HashMap::new());
             }
 
             let periods = periods.unwrap_or(1);
+            if periods <= 0 {
+                return helper_err!("qsv_diff", "periods must be > 0 (got {periods})");
+            }
             // Create a unique key that includes both periods and name
             let key = if let Some(name) = name {
                 format!("_qsv_diff_{periods}_{name}")
@@ -2625,18 +2658,21 @@ fn setup_helpers(
                 _ => 0.0,
             };
 
+            let periods_usize = periods as usize;
             DIFFS.with(|d| {
                 let mut diffs = d.borrow_mut();
                 let values = diffs.entry(key).or_default();
-                values.push(num);
+                values.push_back(num);
+                // bound memory: only the last `periods + 1` entries are ever read
+                while values.len() > periods_usize + 1 {
+                    values.pop_front();
+                }
 
-                if values.len() as i64 <= periods {
+                if values.len() <= periods_usize {
                     Ok(0.0) // Return 0 when not enough history
                 } else {
-                    let prev_value = values
-                        .get(values.len().saturating_sub(1 + periods as usize))
-                        .ok_or_else(|| mlua::Error::runtime("Invalid periods value"))?;
-                    Ok(num - prev_value)
+                    // values[0] is the entry `periods` rows back once buffer is full
+                    Ok(num - values[0])
                 }
             })
         },

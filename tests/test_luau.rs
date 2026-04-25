@@ -3448,3 +3448,79 @@ fn luau_string_find_issue_3089() {
     let got2: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_2);
     assert_eq!(got2, expected);
 }
+
+#[test]
+fn luau_map_remap_does_not_overwrite_input_globals() {
+    // regression: in --remap, headers gets new column names appended.
+    // The MAIN script must still see input column globals (`a`) populated,
+    // not overwritten with empty strings via the appended header iteration.
+    let wrk = Workdir::new("luau_remap_globals");
+    wrk.create("data.csv", vec![svec!["a", "b"], svec!["1", "2"]]);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("a,doubled")
+        .arg("--remap")
+        .arg("{a, tonumber(b) * 2}")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["a", "doubled"], svec!["1", "4"]];
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn luau_qsv_loadcsv_headers_table_one_indexed() {
+    // regression: qsv_loadcsv returns headers as a 1-indexed table per Lua convention.
+    let wrk = Workdir::new("luau_loadcsv_oneindex");
+    wrk.create("data.csv", vec![svec!["k"], svec!["x"]]);
+    wrk.create(
+        "lookup.csv",
+        vec![svec!["k", "v1", "v2"], svec!["x", "1", "2"]],
+    );
+    wrk.create_from_string(
+        "test.LUAU",
+        r#"
+BEGIN {
+    headers = qsv_loadcsv("t", "lookup.csv", "k");
+}!
+
+return headers[1] .. "/" .. headers[2] .. "/" .. headers[3];
+"#,
+    );
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map").arg("h").arg("test.LUAU").arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, vec![svec!["k", "h"], svec!["x", "k/v1/v2"]]);
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn luau_random_access_lastrow_no_headers() {
+    // regression: in random-access mode with --no-headers, _LASTROW had a stray
+    // +1 adjustment that made it 1 too high. _LASTROW should equal _ROWCOUNT - 1.
+    let wrk = Workdir::new("luau_lastrow_noheaders");
+    wrk.create_from_string("data.csv", "1\n2\n3\n");
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg("data.csv");
+    wrk.assert_success(&mut idx_cmd);
+
+    let mut cmd = wrk.command("luau");
+    // _INDEX = _LASTROW seeks to last row; then setting _INDEX = -1 exits the loop
+    // after the single read. END returns "ok" only when _LASTROW/_ROWCOUNT are correct
+    // (i.e. _LASTROW == 2 and _ROWCOUNT == 3, with the buggy +1 they would be 3 and 4).
+    cmd.arg("filter")
+        .arg("--no-headers")
+        .arg(
+            r#"BEGIN { _INDEX = _LASTROW }! _INDEX = -1; return true
+END { return (_LASTROW == 2 and _ROWCOUNT == 3) and "ok" or "wrong" }!"#,
+        )
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("ok") && !stderr.contains("wrong"),
+        "expected END to print 'ok', got: {stderr}",
+    );
+}

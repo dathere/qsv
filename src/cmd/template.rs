@@ -384,8 +384,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // the width of the highest row number — otherwise a 60k-row run with
     // --outsubdir-size 5000 would name subdirs "00000".."00011" (5 digits)
     // when "00".."11" suffices. For stdin we don't know rowcount, so fall back
-    // to the rowcount-derived width as before.
-    let subdir_width = if rowcount > 0 {
+    // to the rowcount-derived width as before. Guarded by `output_to_dir` so
+    // that `--outsubdir-size 0` without an `<outdir>` (where the flag is
+    // irrelevant) doesn't trip a divide-by-zero — the validator above only
+    // rejects 0 when output_to_dir is true.
+    let subdir_width = if output_to_dir && rowcount > 0 {
         let max_subdir = (rowcount - 1) / outsubdir_numfiles as u64;
         max_subdir.to_string().len().max(1)
     } else {

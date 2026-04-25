@@ -74,7 +74,7 @@ template arguments:
 template options:
     --template <str>            MiniJinja template string to use (alternative to --template-file)
     -t, --template-file <file>  MiniJinja template file to use
-    --globals-json <file>       A JSON file containing global variables to make available in templates.
+    -J, --globals-json <file>   A JSON file containing global variables to make available in templates.
                                 The JSON properties can be accessed in templates using the "qsv_g"
                                 namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}).
                                 This allows sharing common values across all template renders.

@@ -118,7 +118,7 @@
 📚: has lookup table support, enabling runtime "lookups" against local or remote reference CSVs.  
 🌎: has geospatial capabilities.  
 ⛩️: uses [Mini Jinja](https://docs.rs/minijinja/latest/minijinja/) template engine.  
-![Luau](docs/images/luau.png) : uses [Luau](https://luau.org/) [0.709](https://github.com/Roblox/luau/releases/tag/0.709) as an embedded scripting [DSL](https://en.wikipedia.org/wiki/Domain-specific_language).  
+![Luau](docs/images/luau.png) : uses [Luau](https://luau.org/) [0.716](https://github.com/Roblox/luau/releases/tag/0.716) as an embedded scripting [DSL](https://en.wikipedia.org/wiki/Domain-specific_language).  
 🖥️: part of the User Interface (UI) feature group
 
 [^1]: see [`validate_index` benchmark](https://qsv.dathere.com/benchmarks)

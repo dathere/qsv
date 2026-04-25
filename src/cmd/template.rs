@@ -466,6 +466,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut current_subdir: Option<usize> = None;
     let outsubdir_numfiles = args.flag_outsubdir_size as usize;
 
+    // Pad subdir names to the width of the highest subdir we'll produce, not to
+    // the width of the highest row number — otherwise a 60k-row run with
+    // --outsubdir-size 5000 would name subdirs "00000".."00011" (5 digits)
+    // when "00".."11" suffices. For stdin we don't know rowcount, so fall back
+    // to the rowcount-derived width as before.
+    let subdir_width = if rowcount > 0 {
+        let max_subdir = (rowcount - 1) / outsubdir_numfiles as u64;
+        max_subdir.to_string().len().max(1)
+    } else {
+        width
+    };
+
     let no_headers = args.flag_no_headers;
 
     // main loop to read CSV and construct batches for parallel processing.
@@ -599,10 +611,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 let subdir_num = ((global_row - 1) / outsubdir_numfiles as u64) as usize;
 
                 if current_subdir == Some(subdir_num) {
-                    outpath.push(format!("{subdir_num:0width$}"));
+                    outpath.push(format!("{subdir_num:0subdir_width$}"));
                 } else {
                     // Only create new subdir when the bucket changes
-                    let subdir_name = format!("{subdir_num:0width$}");
+                    let subdir_name = format!("{subdir_num:0subdir_width$}");
                     outpath.push(&subdir_name);
 
                     // create_dir_all is idempotent and tolerates the dir already

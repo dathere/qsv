@@ -371,9 +371,12 @@ fn template_output_directory_multibatch() {
     wrk.assert_success(&mut cmd);
 
     let expected_subdirs = total_rows / outsubdir_size;
+    // File names pad to rowcount width; subdir names pad to (max-subdir) width
+    // — these are now decoupled (max subdir = expected_subdirs - 1).
     let width = total_rows.to_string().len();
+    let subdir_width = (expected_subdirs - 1).to_string().len().max(1);
     for s in 0..expected_subdirs {
-        let subdir = format!("{outdir}/{s:0width$}");
+        let subdir = format!("{outdir}/{s:0subdir_width$}");
         // Spot-check first and last file in each subdir match the expected row range.
         let first_row = s * outsubdir_size + 1;
         let last_row = (s + 1) * outsubdir_size;

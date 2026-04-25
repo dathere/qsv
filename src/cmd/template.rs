@@ -208,6 +208,11 @@ static DELIMITER: OnceLock<Option<Delimiter>> = OnceLock::new();
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
+    // Reset the process-wide render-error counter so a second invocation in the
+    // same process (tests, embedding, future REPL/MCP path) doesn't carry the
+    // previous run's count into the end-of-run summary.
+    RENDER_ERROR_COUNT.store(0, Ordering::Relaxed);
+
     // Get template content
     let template_content = match (args.flag_template_file, args.flag_template) {
         (Some(path), None) => fs::read_to_string(path)?,
@@ -643,24 +648,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 // zmij (f64) so that "42", " 42 ", and "42.0" all collapse to the same key.
 // The filter-side input goes through this same function so a template author
 // can pass `" 42 "`, `"42"`, or the integer `42` and hit the same row.
-fn normalize_lookup_key(s: &str) -> String {
+fn normalize_lookup_key(s: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
     let trimmed = s.trim();
     if let Ok(num) = trimmed.parse::<i64>() {
-        itoa::Buffer::new().format(num).to_owned()
+        Cow::Owned(itoa::Buffer::new().format(num).to_owned())
     } else if let Ok(num) = trimmed.parse::<f64>() {
         // Collapse whole-number floats into the i64 form so "42" and "42.0"
         // (and the integer 42 from a template) all hash to the same key.
         // zmij would otherwise preserve "42.0".
-        if num.is_finite()
-            && num.fract() == 0.0
-            && (i64::MIN as f64..=i64::MAX as f64).contains(&num)
+        //
+        // Use an exclusive upper bound: i64::MAX (2^63-1) is not exactly
+        // representable as f64; the cast rounds up to 2^63, which then
+        // saturates back to i64::MAX when re-cast. Excluding the boundary
+        // sends 2^63 through zmij instead of producing a misleading key.
+        if num.is_finite() && num.fract() == 0.0 && num >= i64::MIN as f64 && num < i64::MAX as f64
         {
-            itoa::Buffer::new().format(num as i64).to_owned()
+            Cow::Owned(itoa::Buffer::new().format(num as i64).to_owned())
         } else {
-            zmij::Buffer::new().format(num).to_owned()
+            Cow::Owned(zmij::Buffer::new().format(num).to_owned())
         }
     } else {
-        trimmed.to_owned()
+        // Non-numeric: borrow the trimmed slice directly so already-canonical
+        // string keys (the common hot-path case) don't allocate.
+        Cow::Borrowed(trimmed)
     }
 }
 
@@ -931,7 +942,7 @@ fn register_lookup(
 
         // Use the first column as the key by default
         if let Some(key_value) = record.get(0) {
-            let key = normalize_lookup_key(key_value);
+            let key = normalize_lookup_key(key_value).into_owned();
             // Pre-build the lowercased -> original key index so case-insensitive
             // lookups can be O(1). On collision (e.g. "Foo" and "foo" are both keys)
             // the first-seen original wins, mirroring HashMap insert semantics.
@@ -1018,27 +1029,30 @@ fn lookup_filter(
 
     let case_sensitive = case_sensitive.unwrap_or(true);
 
-    // Stringify the filter input. Numbers go through the same itoa/zmij canonical
-    // form as keys, so e.g. integer 42 and float 42.0 both stringify to "42".
-    let raw_str: String = match value.kind() {
-        ValueKind::String => value.as_str().unwrap().to_owned(),
+    // Stringify the filter input as a borrow against stack-resident itoa/zmij
+    // buffers when possible, so no String is allocated for the common
+    // already-canonical case. Numbers go through the same itoa/zmij form as
+    // keys, so e.g. integer 42 and float 42.0 both stringify to "42".
+    let mut itoa_buf = itoa::Buffer::new();
+    let mut zmij_buf = zmij::Buffer::new();
+    let raw: &str = match value.kind() {
+        ValueKind::String => value.as_str().unwrap(),
         ValueKind::Number => {
             if value.is_integer() {
-                itoa::Buffer::new()
-                    .format(value.as_i64().unwrap())
-                    .to_owned()
+                itoa_buf.format(value.as_i64().unwrap())
             } else {
                 let n: f64 = value
                     .clone()
                     .try_into()
                     .expect("Kind::Number should be integer or float");
-                zmij::Buffer::new().format(n).to_owned()
+                zmij_buf.format(n)
             }
         },
-        _ => value.as_str().unwrap_or_default().to_owned(),
+        _ => value.as_str().unwrap_or_default(),
     };
     // Normalize so both sides of the lookup agree (trim + numeric canonicalization).
-    let normalized = normalize_lookup_key(&raw_str);
+    // Returns Cow::Borrowed for non-numeric inputs that are already trimmed.
+    let normalized = normalize_lookup_key(raw);
 
     // safety: FILTER_ERROR was initialized in run section
     let filter_error = FILTER_ERROR.get().unwrap();
@@ -1051,7 +1065,7 @@ fn lookup_filter(
             // Find the matching row. Both branches are O(1): the case-insensitive
             // index is pre-built at register_lookup time.
             let row = if case_sensitive {
-                table.rows.get(&normalized)?
+                table.rows.get(normalized.as_ref())?
             } else {
                 let lowered = normalized.to_lowercase();
                 let original = table.lowercased_keys.get(&lowered)?;
@@ -1063,8 +1077,10 @@ fn lookup_filter(
             if filter_error.is_empty() {
                 String::new()
             } else {
+                // Report the user-supplied input (pre-normalization) so the
+                // diagnostic matches what the template author wrote.
                 format!(
-                    r#"{filter_error} - lookup: "{lookup_name}-{field}" not found for: "{normalized}""#
+                    r#"{filter_error} - lookup: "{lookup_name}-{field}" not found for: "{raw}""#
                 )
             }
         }))

@@ -1,7 +1,7 @@
 # QSV Codebase Architecture and Testing Quality Analysis
 
 ## Executive Summary
-qsv is a high-performance CSV data-wrangling toolkit in Rust (version 18.0, MSRV 1.94, Edition 2024). It features:
+qsv is a high-performance CSV data-wrangling toolkit in Rust (version 19.1.0, MSRV 1.95, Edition 2024). It features:
 - 71 commands with conditional compilation via feature flags
 - 4 binary variants (qsv, qsvmcp, qsvlite, qsvdp) with different feature sets
 - Broad automated test coverage across 71 test modules (many feature-gated); test modules do not map one-to-one with commands
@@ -34,8 +34,8 @@ qsv is a high-performance CSV data-wrangling toolkit in Rust (version 18.0, MSRV
 | Binary | Source | Required Features | Use Case |
 |--------|--------|-------------------|----------|
 | `qsv` | `src/main.rs` | `feature_capable` | Full-featured CLI |
-| `qsvmcp` | `src/main.rs` | `qsvmcp` (subset) | MCP server for Claude |
-| `qsvlite` | `src/mainlite.rs` | `lite` (minimal) | Lightweight version (38 commands) |
+| `qsvmcp` | `src/main.rs` | `qsvmcp` (subset) | MCP server for Claude (62 commands) |
+| `qsvlite` | `src/mainlite.rs` | `lite` (minimal) | Lightweight version (50 commands) |
 | `qsvdp` | `src/maindp.rs` | `datapusher_plus` | Data pusher variant with geocode |
 
 ---
@@ -116,7 +116,7 @@ Key performance tuning in forked `csv` crate (`dathere/rust-csv` fork):
 ```
 
 **Tool Generation**:
-- 51 auto-generated skill JSON files in `qsv/` directory
+- 55 auto-generated skill JSON files in `qsv/` directory
 - Generated from qsv USAGE text via Rust generator (`src/mcp_skills_gen.rs`)
 - MCP tools added via guidance hints (whenToUse, commonPattern, etc.)
 
@@ -513,7 +513,7 @@ if util::load_dotenv().is_err() {
 |--------|-----|--------|---------|-------|
 | **Source** | main.rs | main.rs | mainlite.rs | maindp.rs |
 | **Feature Set** | feature_capable | qsvmcp preset | lite (minimal) | datapusher_plus |
-| **Commands** | 71 (full) | 51 (MCP-exposed) | 38 (lite) | ~50 (geo-enabled) |
+| **Commands** | 71 (full) | 62 (MCP-exposed) | 50 (lite) | 40 (geo-enabled) |
 | **Key Features** | All | MCP + Polars | Core only | Geocode + LLM |
 | **Polars** | ✓ | ✓ | ✗ | ✗ |
 | **LLM** (apply, describe) | ✓ | ✓ | ✗ | ✓ |
@@ -549,8 +549,8 @@ clipboard, color, lens, prompt
 | **Testing** | Strong | 71 test modules (feature-gated), integration tests, property-based testing |
 | **I/O Abstraction** | Clean | Config-driven CSV handling, format detection, compression |
 | **Documentation** | Excellent | Auto-generated help markdown, MCP guidance hints |
-| **MCP Integration** | Production-Ready | 51 auto-generated skills, 21 source files, streaming executor, resource limits |
+| **MCP Integration** | Production-Ready | 55 auto-generated skills, ~29 source files, streaming executor, resource limits |
 
 ---
 
-**Last Updated**: April 4, 2026 | **Analysis Depth**: Comprehensive (45+ files examined)
+**Last Updated**: April 25, 2026 | **Analysis Depth**: Comprehensive (45+ files examined; counts refreshed against current tree)

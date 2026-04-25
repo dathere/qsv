@@ -6,7 +6,7 @@ src/
   main.rs          — Entry point for qsv + qsvmcp
   mainlite.rs      — Entry point for qsvlite
   maindp.rs        — Entry point for qsvdp
-  cmd/             — 71 command modules (one .rs per command)
+  cmd/             — command modules (one .rs per command); see project_overview for per-binary counts
   util.rs          — Shared utility functions
   config.rs        — CSV reader/writer configuration
   select.rs        — Column selection DSL
@@ -45,7 +45,7 @@ tests/             — test_<command>.rs files
     wink-bm25-text-search.d.ts — Type definitions
     wink-nlp-utils.d.ts     — Type definitions
   tests/                    — <module>.test.ts files
-  qsv/                     — 51 auto-generated skill JSON files
+  qsv/                     — 55 auto-generated skill JSON files
   scripts/                 — Build/deployment scripts
   agents/                  — 3 subagents (data-analyst, data-wrangler, policy-analyst)
   skills/                  — 15 domain knowledge skills

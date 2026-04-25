@@ -15,7 +15,7 @@
 - Stage specific files (avoid `git add -A`)
 - Never commit `.env`, credentials, or large binaries
 - Commit message: conventional commits style (feat/fix/refactor/docs)
-- End with `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`
+- End with `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`
 - Use HEREDOC for commit messages
 
 ## Hooks (configured in .claude/settings.json)

@@ -2264,21 +2264,28 @@ fn lookup_us_state_fips_code(state: &str) -> Option<&'static str> {
 }
 
 fn get_us_fips_codes(cityrecord: &CitiesRecord, nameslang: &NamesLang) -> serde_json::Value {
-    let us_state_code = if let Some(admin1) = cityrecord.admin_division.as_ref() {
-        admin1.code.strip_prefix("US.").unwrap_or_default()
-    } else {
-        ""
-    };
-    // emit JSON null when the US state lookup fails (non-US state or unrecognized code)
-    let us_state_fips_code = match lookup_us_state_fips_code(us_state_code) {
-        Some(code) => serde_json::Value::String(code.to_string()),
-        None => serde_json::Value::Null,
-    };
+    // None when admin1 is not a US state code; the 2-letter state code otherwise
+    let us_state_code: Option<&str> = cityrecord
+        .admin_division
+        .as_ref()
+        .and_then(|admin1| admin1.code.strip_prefix("US."));
 
-    // emit JSON null when admin2 isn't a valid US county code (US.XX.NNN format)
+    // emit JSON null when the admin1 isn't a US state or the code is unrecognized
+    let us_state_fips_code = us_state_code
+        .and_then(lookup_us_state_fips_code)
+        .map_or(serde_json::Value::Null, |code| {
+            serde_json::Value::String(code.to_string())
+        });
+
+    // emit JSON null when admin2 isn't a valid US county code (US.XX.NNN format).
+    // require ASCII so the byte-index slice at 7 lands on a char boundary
     let us_county_fips_code = match cityrecord.admin2_division.as_ref() {
-        Some(admin2) if admin2.code.starts_with("US.") && admin2.code.len() == 9 => {
-            // start at index 7 to skip the "US." prefix and 2-letter state code,
+        Some(admin2)
+            if admin2.code.is_ascii()
+                && admin2.code.len() == 9
+                && admin2.code.starts_with("US.") =>
+        {
+            // skip the "US." prefix and 2-letter state code (7 ASCII bytes),
             // e.g. US.NY.061 -> 061
             serde_json::Value::String(format!("{:0>3}", &admin2.code[7..]))
         },

@@ -649,6 +649,32 @@ fn applydp_ops_chain_validation_error_missing_comparand() {
 }
 
 #[test]
+fn applydp_ops_multi_column_new_column_rejected() {
+    // --new-column with multiple selected columns would produce malformed CSV
+    // (one header field, N data fields per row). Should be rejected at validation.
+    let wrk = Workdir::new("applydp_ops_multi_column_new_column_rejected");
+    wrk.create(
+        "data.csv",
+        vec![svec!["a", "b"], svec!["foo", "bar"], svec!["baz", "qux"]],
+    );
+    let mut cmd = wrk.command("applydp");
+    cmd.arg("operations")
+        .arg("upper")
+        .arg("a,b")
+        .arg("-c")
+        .arg("new")
+        .arg("data.csv");
+
+    let got = wrk.output_stderr(&mut cmd);
+    assert_eq!(
+        got,
+        "usage error: --new-column (-c) requires a single input column. Use --rename (-r) \
+         for multi-column transformations.\n"
+    );
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
 fn applydp_ops_chain_squeeze0() {
     let wrk = Workdir::new("applydp");
     wrk.create(

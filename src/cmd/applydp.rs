@@ -77,7 +77,7 @@ Examples:
   qsv applydp operations trim,upper surname -c uppercase_clean_surname file.csv
 
   # Trim, squeeze, then transform to uppercase in place ALL fields that end with "_name"
-  qsv applydp operations trim,squeeze,upper \_name$\ file.csv
+  qsv applydp operations trim,squeeze,upper '/_name$/' file.csv
 
   # Trim, then transform to uppercase the firstname and surname fields and
   # rename the columns ufirstname and usurname.
@@ -87,7 +87,7 @@ Examples:
   qsv applydp operations mtrim description --comparand '()<>' file.csv
 
   # Replace ' and ' with ' & ' in the description field.
-  qsv applydp replace description --comparand ' and ' --replacement ' & ' file.csv
+  qsv applydp operations replace description --comparand ' and ' --replacement ' & ' file.csv
 
   # You can also use this subcommand command to make a copy of a column:
   qsv applydp operations copy col_to_copy -c col_copy file.csv
@@ -137,7 +137,7 @@ apply arguments:
         <column>                The column/s to apply the operations to.
 
     EMPTYREPLACE subcommand:
-        --replacement=<string>  The string to to use to replace empty values.
+        --replacement=<string>  The string to use to replace empty values.
         <column>                The column/s to check for emptiness.
 
     DYNFMT subcommand:
@@ -150,7 +150,7 @@ apply arguments:
 applydp options:
     -c, --new-column <name>     Put the transformed values in a new column instead.
     -r, --rename <name>         New name for the transformed column.
-    -C, --comparand=<string>    The string to compare against for replace & similarity operations.
+    -C, --comparand=<string>    The string to compare against for replace & strip operations.
     -R, --replacement=<string>  The string to use for the replace & emptyreplace operations.
     -f, --formatstr=<string>    This option is used by several subcommands:
 
@@ -266,6 +266,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if sel.is_empty() {
         return fail_incorrectusage_clierror!("No columns selected. Column selection is empty.");
     }
+    // --new-column (-c) appends a single field per row, so it would produce
+    // malformed CSV (one header, N data fields) when combined with multi-column
+    // operations or emptyreplace. Use --rename (-r) for multi-column transforms.
+    if args.flag_new_column.is_some()
+        && (args.cmd_operations || args.cmd_emptyreplace)
+        && sel.len() > 1
+    {
+        return fail_incorrectusage_clierror!(
+            "--new-column (-c) requires a single input column. Use --rename (-r) for \
+             multi-column transformations."
+        );
+    }
     // safety: we just checked that sel is not empty above
     let column_index = *sel.iter().next().unwrap();
 
@@ -290,7 +302,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // so SimpleCurlyFormat is performant
     let dynfmt_template = if args.cmd_dynfmt {
         if args.flag_no_headers {
-            return fail_incorrectusage_clierror!("dynfmt/calcconv subcommand requires headers.");
+            return fail_incorrectusage_clierror!("dynfmt subcommand requires headers.");
         }
 
         let mut dynfmt_template_wrk = args.flag_formatstr.clone();
@@ -330,23 +342,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut ops_vec = SmallVec::<[Operations; 4]>::new();
 
     let applydp_cmd = if args.cmd_operations {
-        match validate_operations(
+        ops_vec = validate_operations(
             &args.arg_operations.split(',').collect(),
             &args.flag_comparand,
             &args.flag_replacement,
-            &args.flag_new_column,
+            args.flag_new_column.as_ref(),
             &args.flag_formatstr,
-        ) {
-            Ok(operations_vec) => ops_vec = operations_vec,
-            Err(e) => return Err(e),
-        }
+        )?;
         ApplydpSubCmd::Operations
     } else if args.cmd_dynfmt {
         ApplydpSubCmd::DynFmt
     } else if args.cmd_emptyreplace {
         ApplydpSubCmd::EmptyReplace
     } else {
-        return fail!("Unknown applydp subcommand.");
+        return fail_incorrectusage_clierror!("Unknown applydp subcommand.");
     };
 
     if !rconfig.no_headers {
@@ -356,11 +365,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         wtr.write_record(&headers)?;
     }
 
-    // if there is a regex_replace operation and replacement is <NULL> case-insensitive,
-    // we set it to empty string
+    // <NULL> (case-insensitive) is recognized as "delete matches" when regex_replace is in
+    // the operation chain. Note this clears flag_replacement for ALL ops in the chain, so
+    // a chained `regex_replace,replace` with --replacement <NULL> deletes matches in both.
     let flag_replacement = if applydp_cmd == ApplydpSubCmd::Operations
         && ops_vec.contains(&Operations::Regex_Replace)
-        && args.flag_replacement.to_ascii_lowercase() == NULL_VALUE
+        && args.flag_replacement.eq_ignore_ascii_case(NULL_VALUE)
     {
         String::new()
     } else {
@@ -448,18 +458,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         }
                     },
                     ApplydpSubCmd::DynFmt => {
-                        let mut cell = record[column_index].to_owned();
-                        if !cell.is_empty() {
-                            let mut record_vec: Vec<String> = Vec::with_capacity(record.len());
-                            for field in &record {
-                                record_vec.push(field.to_string());
-                            }
-                            if let Ok(formatted) =
-                                dynfmt2::SimpleCurlyFormat.format(&dynfmt_template, record_vec)
-                            {
-                                cell = formatted.to_string();
-                            }
-                        }
+                        let record_vec: Vec<&str> = record.iter().collect();
+                        let cell = match dynfmt2::SimpleCurlyFormat
+                            .format(&dynfmt_template, &*record_vec)
+                        {
+                            Ok(formatted) => formatted.into_owned(),
+                            Err(_) => record[column_index].to_owned(),
+                        };
                         if flag_new_column.is_some() {
                             record.push_field(&cell);
                         } else {
@@ -489,7 +494,7 @@ fn validate_operations(
     operations: &Vec<&str>,
     flag_comparand: &str,
     flag_replacement: &str,
-    flag_new_column: &Option<String>,
+    flag_new_column: Option<&String>,
     flag_formatstr: &str,
 ) -> Result<SmallVec<[Operations; 4]>, CliError> {
     let mut copy_invokes = 0_u8;
@@ -507,17 +512,17 @@ fn validate_operations(
             Operations::Copy => {
                 if flag_new_column.is_none() {
                     return fail_incorrectusage_clierror!(
-                        "--new_column (-c) is required for copy operation."
+                        "--new-column (-c) is required for copy operation."
                     );
                 }
                 copy_invokes = copy_invokes.saturating_add(1);
             },
-            Operations::Mtrim | Operations::Mltrim | Operations::Mrtrim => {
-                if flag_comparand.is_empty() {
-                    return fail_incorrectusage_clierror!(
-                        "--comparand (-C) is required for match trim operations."
-                    );
-                }
+            Operations::Mtrim | Operations::Mltrim | Operations::Mrtrim
+                if flag_comparand.is_empty() =>
+            {
+                return fail_incorrectusage_clierror!(
+                    "--comparand (-C) is required for match trim operations."
+                );
             },
             Operations::Regex_Replace => {
                 if flag_comparand.is_empty() || flag_replacement.is_empty() {
@@ -555,16 +560,11 @@ fn validate_operations(
                 strip_invokes = strip_invokes.saturating_add(1);
             },
             Operations::Round => {
-                if ROUND_PLACES
-                    .set(
-                        flag_formatstr
-                            .parse::<u32>()
-                            .unwrap_or(DEFAULT_ROUND_PLACES),
-                    )
-                    .is_err()
-                {
-                    return fail!("Cannot initialize Round precision.");
-                };
+                ROUND_PLACES.get_or_init(|| {
+                    flag_formatstr
+                        .parse::<u32>()
+                        .unwrap_or(DEFAULT_ROUND_PLACES)
+                });
             },
             _ => {},
         }

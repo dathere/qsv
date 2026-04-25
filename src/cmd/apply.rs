@@ -522,16 +522,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut ops_vec = SmallVec::<[Operations; 4]>::new();
 
     let apply_cmd = if args.cmd_operations {
-        {
-            let operations_vec = validate_operations(
-                &args.arg_operations.split(',').collect(),
-                &args.flag_comparand,
-                &args.flag_replacement,
-                args.flag_new_column.as_ref(),
-                &args.flag_formatstr,
-            )?;
-            ops_vec = operations_vec
-        }
+        ops_vec = validate_operations(
+            &args.arg_operations.split(',').collect(),
+            &args.flag_comparand,
+            &args.flag_replacement,
+            args.flag_new_column.as_ref(),
+            &args.flag_formatstr,
+        )?;
         ApplySubCmd::Operations
     } else if args.cmd_dynfmt {
         ApplySubCmd::DynFmt

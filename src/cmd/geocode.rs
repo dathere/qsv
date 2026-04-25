@@ -358,7 +358,7 @@ geocode options:
 
                                 will add three columns to the output CSV named city_col, state_col & county_col.
 
-                                Note that using "%dyncols:" will cause the the command to geocode EACH row without
+                                Note that using "%dyncols:" will cause the command to geocode EACH row without
                                 using the cache, so it will be slower than predefined or dynamic formatting.
                                 Also, countryinfo and countryinfonow subcommands currently do not support "%dyncols:".
                                 [default: %+]
@@ -422,7 +422,6 @@ use std::{
 
 use cached::{SizedCache, proc_macro::cached};
 use dynfmt2::Format;
-use foldhash::fast::RandomState;
 use geosuggest_core::{
     Engine, EngineData,
     index::{ArchivedCitiesRecord as CitiesRecord, ArchivedCountryRecord as CountryRecord},
@@ -753,9 +752,8 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     let geocode_cache_dir = if let Ok(cache_dir) = std::env::var("QSV_CACHE_DIR") {
         // if QSV_CACHE_DIR env var is set, check if it exists. If it doesn't, create it.
         if cache_dir.starts_with('~') {
-            // QSV_CACHE_DIR starts with ~, expand it
-            // safety: we know it starts with ~, so it should be safe to unwrap
-            expand_tilde(&cache_dir).unwrap()
+            // QSV_CACHE_DIR starts with ~, expand it; fall back to literal path if HOME unset
+            expand_tilde(&cache_dir).unwrap_or_else(|| PathBuf::from(&cache_dir))
         } else {
             PathBuf::from(cache_dir)
         }
@@ -763,8 +761,8 @@ async fn geocode_main(args: Args) -> CliResult<()> {
         // QSV_CACHE_DIR env var is not set, use args.flag_cache_dir
         // first check if it starts with ~, expand it
         if args.flag_cache_dir.starts_with('~') {
-            // safety: we know it starts with ~, so it should be safe to unwrap
-            expand_tilde(&args.flag_cache_dir).unwrap()
+            expand_tilde(&args.flag_cache_dir)
+                .unwrap_or_else(|| PathBuf::from(&args.flag_cache_dir))
         } else {
             PathBuf::from(&args.flag_cache_dir)
         }
@@ -832,7 +830,7 @@ async fn geocode_main(args: Args) -> CliResult<()> {
             .flag_cities_url
             .split('/')
             .next_back()
-            .unwrap()
+            .unwrap_or("cities15000.zip")
             .replace(".zip", ".txt");
 
         // setup languages
@@ -881,28 +879,25 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                                 "detail": e.to_string()
                             }]
                         });
-                        format!("{json_error}")
+                        json_error.to_string()
                     },
                 };
 
-                let created_at =
-                    util::format_systemtime(metadata.as_ref().unwrap().created_at, "%+");
-                eprintln!("Created at: {created_at}");
-
                 match metadata {
-                    Some(m)
+                    Some(m) => {
+                        let created_at = util::format_systemtime(m.created_at, "%+");
+                        eprintln!("Created at: {created_at}");
                         if updater.has_updates(&m).await.map_err(|_| {
                             CliError::Network("Geonames update check failed.".to_string())
-                        })? =>
-                    {
-                        winfo!(
-                            "Updates available at Geonames.org. Use `qsv geocode index-update` to \
-                             update/rebuild the index.\nPlease use this judiciously as Geonames \
-                             is a free service.\n"
-                        );
-                    },
-                    Some(_) => {
-                        winfo!("Geonames index up-to-date.\n");
+                        })? {
+                            winfo!(
+                                "Updates available at Geonames.org. Use `qsv geocode \
+                                 index-update` to update/rebuild the index.\nPlease use this \
+                                 judiciously as Geonames is a free service.\n"
+                            );
+                        } else {
+                            winfo!("Geonames index up-to-date.\n");
+                        }
                     },
                     None => return fail_incorrectusage_clierror!("Invalid Geonames index file."),
                 }
@@ -929,7 +924,10 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                         .read_metadata(geocode_index_file.clone())
                         .map_err(|e| format!("index-update error: {e}"))?;
 
-                    if updater.has_updates(&metadata.unwrap()).await.map_err(|_| {
+                    let Some(m) = metadata else {
+                        return fail_incorrectusage_clierror!("Invalid Geonames index file.");
+                    };
+                    if updater.has_updates(&m).await.map_err(|_| {
                         CliError::Network("Geonames update check failed.".to_string())
                     })? {
                         winfo!("Updates available at Geonames.org.");
@@ -1081,7 +1079,14 @@ async fn geocode_main(args: Args) -> CliResult<()> {
         for column in column_names {
             headers.push_field(column);
         }
-        column_values.len() as u8
+        // dyncols_len is u8 (0..=255); reject excessive column counts to avoid silent truncation
+        let Ok(len) = u8::try_from(column_values.len()) else {
+            return fail_incorrectusage_clierror!(
+                "Too many %dyncols columns: {} (max 255).",
+                column_values.len()
+            );
+        };
+        len
     } else {
         0_u8
     };
@@ -1178,7 +1183,6 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     log::debug!("admin1_filter_list: {admin1_filter_list:?}");
 
     // amortize memory allocation by reusing record
-    #[allow(unused_assignments)]
     let mut batch_record = csv::StringRecord::new();
 
     // reuse batch buffers
@@ -1257,8 +1261,8 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                         &args.flag_language,
                         min_score,
                         k_weight,
-                        country_filter_list.as_ref(),
-                        admin1_filter_list.as_ref(),
+                        country_filter_list.as_deref(),
+                        admin1_filter_list.as_deref(),
                         &column_values,
                         &mut record,
                     );
@@ -1290,8 +1294,8 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                         &args.flag_language,
                         min_score,
                         k_weight,
-                        country_filter_list.as_ref(),
-                        admin1_filter_list.as_ref(),
+                        country_filter_list.as_deref(),
+                        admin1_filter_list.as_deref(),
                         &column_values,
                         &mut record,
                     );
@@ -1308,7 +1312,6 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                         }
                     }
                 }
-                // }
                 if args.flag_new_column.is_some() {
                     record.push_field(&cell);
                 } else {
@@ -1414,9 +1417,8 @@ async fn load_engine_data(
     // if it is, for convenience, we download the desired index file from the qsv GitHub repo
     let geocode_index_file_stem = geocode_index_file
         .file_stem()
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
 
     let download_url = format!(
         "https://github.com/dathere/qsv/releases/download/{QSV_VERSION}/{DEFAULT_GEOCODE_INDEX_FILENAME}.cities"
@@ -1472,10 +1474,35 @@ async fn load_engine_data(
         .await?;
     }
 
-    // check if the geocode_index_file is snappy compressed
-    // if it is, decompress it
-    let geocode_index_file = if geocode_index_file.extension().unwrap() == "sz" {
-        let decompressed_geocode_index_file = geocode_index_file.with_extension(".rkyv");
+    // check if the geocode_index_file is snappy compressed; decompress it if so.
+    // detect by extension (case-insensitive) OR by snappy framed-format magic header,
+    // since the numeric-shortcut download saves a .sz payload to a path without an
+    // extension (e.g. "500"), and a user-supplied path may also lose the suffix.
+    let has_snappy_extension = geocode_index_file
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("sz"));
+    let is_snappy_framed_file = {
+        let mut header = [0_u8; 10];
+        fs::File::open(&geocode_index_file)
+            .and_then(|mut file| std::io::Read::read_exact(&mut file, &mut header))
+            .is_ok_and(|()| header == *b"\xff\x06\x00\x00sNaPpY")
+    };
+    let geocode_index_file = if has_snappy_extension || is_snappy_framed_file {
+        // if the file is `foo.rkyv.sz`, drop only the `.sz` suffix to get `foo.rkyv`;
+        // otherwise replace/add the extension with `.rkyv`. Note: `with_extension(".rkyv")`
+        // would yield `foo..rkyv` because the leading dot is treated as part of the
+        // raw extension argument.
+        let decompressed_geocode_index_file =
+            if geocode_index_file.file_stem().is_some_and(|stem| {
+                std::path::Path::new(stem)
+                    .extension()
+                    .is_some_and(|ext| ext == "rkyv")
+            }) {
+                geocode_index_file.with_extension("")
+            } else {
+                geocode_index_file.with_extension("rkyv")
+            };
         progressbar.println(format!(
             "Decompressing {} to {}",
             geocode_index_file.display(),
@@ -1532,16 +1559,16 @@ fn search_index(
     lang_lookup: &str,
     min_score: Option<f32>,
     k: Option<f32>,
-    country_filter_list: Option<&Vec<String>>,
-    admin1_filter_list: Option<&Vec<Admin1Filter>>,
-    column_values: &[&str], //&Vec<&str>,
+    country_filter_list: Option<&[String]>,
+    admin1_filter_list: Option<&[Admin1Filter]>,
+    column_values: &[&str],
     record: &mut csv::StringRecord,
 ) -> Option<String> {
     if mode == GeocodeSubCmd::Suggest || mode == GeocodeSubCmd::SuggestNow {
         let search_result: Vec<&CitiesRecord>;
         let cityrecord = if admin1_filter_list.is_none() {
             // no admin1 filter, run a search for 1 result (top match)
-            search_result = engine.suggest(cell, 1, min_score, country_filter_list.map(|v| &**v));
+            search_result = engine.suggest(cell, 1, min_score, country_filter_list);
             let Some(cr) = search_result.into_iter().next() else {
                 // no results, so return early with None
                 return None;
@@ -1549,67 +1576,52 @@ fn search_index(
             cr
         } else {
             // we have an admin1 filter, run a search for top SUGGEST_ADMIN1_LIMIT results
-            search_result = engine.suggest(
-                cell,
-                SUGGEST_ADMIN1_LIMIT,
-                min_score,
-                country_filter_list.map(|v| &**v),
-            );
+            search_result =
+                engine.suggest(cell, SUGGEST_ADMIN1_LIMIT, min_score, country_filter_list);
 
             // first, get the first result and store that in cityrecord
-            let Some(cr) = search_result.clone().into_iter().next() else {
+            let Some(first_result) = search_result.first().copied() else {
                 // no results, so return early with None
                 return None;
             };
-            let first_result = cr;
 
             // then iterate through search results and find the first one that matches admin1
             // the search results are already sorted by score, so we just need to find the first
-            if let Some(admin1_filter_list) = admin1_filter_list {
-                // we have an admin1 filter, so we need to find the first admin1 result that matches
-                let mut admin1_filter_map: HashMap<String, bool, RandomState> = HashMap::default();
-                for admin1_filter in admin1_filter_list {
-                    admin1_filter_map
-                        .insert(admin1_filter.clone().admin1_string, admin1_filter.is_code);
-                }
-                let mut matched_record: Option<&CitiesRecord> = None;
-                'outer: for cr in &search_result {
-                    if let Some(admin_division) = cr.admin_division.as_ref() {
-                        for (admin1_filter, is_code) in &admin1_filter_map {
-                            if *is_code {
-                                // admin1 is a code, so we search for admin1 code
-                                if admin_division.code.starts_with(admin1_filter) {
-                                    matched_record = Some(cr);
-                                    break 'outer;
-                                }
-                            } else {
-                                // admin1 is a name, so we search for admin1 name, case-insensitive
-                                if admin_division
-                                    .name
-                                    .to_lowercase()
-                                    .starts_with(admin1_filter)
-                                {
-                                    matched_record = Some(cr);
-                                    break 'outer;
-                                }
+            // safety: outer match guaranteed admin1_filter_list is Some
+            let admin1_filter_list = admin1_filter_list.unwrap();
+            let mut matched_record: Option<&CitiesRecord> = None;
+            'outer: for cr in &search_result {
+                if let Some(admin_division) = cr.admin_division.as_ref() {
+                    // lowercase the admin1 name once per candidate, only when needed
+                    let mut admin1_name_lower: Option<String> = None;
+                    for admin1_filter in admin1_filter_list {
+                        if admin1_filter.is_code {
+                            // admin1 is a code, so we search for admin1 code
+                            if admin_division
+                                .code
+                                .starts_with(&admin1_filter.admin1_string)
+                            {
+                                matched_record = Some(cr);
+                                break 'outer;
+                            }
+                        } else {
+                            // admin1 is a name, case-insensitive starts_with
+                            let lower = admin1_name_lower
+                                .get_or_insert_with(|| admin_division.name.to_lowercase());
+                            if lower.starts_with(&admin1_filter.admin1_string) {
+                                matched_record = Some(cr);
+                                break 'outer;
                             }
                         }
                     }
                 }
-
-                if let Some(cr) = matched_record {
-                    cr
-                } else {
-                    // no admin1 match, so we return the first result
-                    first_result
-                }
-            } else {
-                // no admin1 filter, so we return the first result
-                first_result
             }
+
+            // no admin1 match, so we return the first result
+            matched_record.unwrap_or(first_result)
         };
 
-        let country = &cityrecord.country.as_ref().unwrap().code;
+        let country = cityrecord.country.as_ref()?.code.as_str();
 
         let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
 
@@ -1656,7 +1668,7 @@ fn search_index(
         ));
     } else if mode == GeocodeSubCmd::Iplookup || mode == GeocodeSubCmd::IplookupNow {
         // check if the cell is an IP address
-        let ip_addr = if let Ok(ip_addr) = cell.to_string().parse::<IpAddr>() {
+        let ip_addr = if let Ok(ip_addr) = cell.parse::<IpAddr>() {
             ip_addr
         } else {
             // not an IP address, check if it's a URL and lookup the IP address
@@ -1671,10 +1683,10 @@ fn search_index(
         let search_result = engine.geoip2_lookup(ip_addr);
         let Some(cityrecord) = search_result else {
             // if no cityrecord is found, return the IP address
-            return Some(format!("{ip_addr}"));
+            return Some(ip_addr.to_string());
         };
         let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
-        let country = &cityrecord.country.as_ref().unwrap().code;
+        let country = cityrecord.country.as_ref()?.code.as_str();
         let capital = engine
             .capital(country)
             .map(|cr| cr.name.as_str())
@@ -1721,8 +1733,7 @@ fn search_index(
         let lat = loccaps[1].to_string().parse::<f32>().unwrap_or_default();
         let long = loccaps[2].to_string().parse::<f32>().unwrap_or_default();
         if (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&long) {
-            let search_result =
-                engine.reverse((lat, long), 1, k, country_filter_list.map(|v| &**v));
+            let search_result = engine.reverse((lat, long), 1, k, country_filter_list);
             let cityrecord = (match search_result {
                 Some(search_result) => search_result.into_iter().next().map(|ri| ri.city),
                 None => return None,
@@ -1730,8 +1741,7 @@ fn search_index(
 
             let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
 
-            // safety: we know country is Some because we got a cityrecord
-            let country = &cityrecord.country.as_ref().unwrap().code;
+            let country = cityrecord.country.as_ref()?.code.as_str();
 
             if formatstr == "%+" {
                 // default for reverse is city, admin1 country - e.g. "Brooklyn, New York US"
@@ -1923,23 +1933,23 @@ fn format_result(
             "%admin1record" => format!("{:?}", cityrecord.admin_division),
             "%admin2record" => format!("{:?}", cityrecord.admin2_division),
             "%json" => {
-                // safety: it is safe to unwrap as we will always have a country record at this
-                // stage as the calling search_index function returns early if we
-                // don't have a country record
-                let countryrecord = engine.country_info(country).unwrap();
+                let Some(countryrecord) = engine.country_info(country) else {
+                    return INVALID_COUNTRY_CODE.to_string();
+                };
                 let cr_json =
                     simd_json::to_string(cityrecord).unwrap_or_else(|_| "null".to_string());
                 let country_json =
                     simd_json::to_string(countryrecord).unwrap_or_else(|_| "null".to_string());
                 let us_fips_codes_json = get_us_fips_codes(cityrecord, nameslang);
                 format!(
-                    "{{\"cityrecord\":{cr_json}, \"countryrecord\":{country_json} \
+                    "{{\"cityrecord\":{cr_json}, \"countryrecord\":{country_json}, \
                      \"us_fips_codes\":{us_fips_codes_json}}}",
                 )
             },
             "%pretty-json" => {
-                // safety: see safety note above for "%json"
-                let countryrecord = engine.country_info(country).unwrap();
+                let Some(countryrecord) = engine.country_info(country) else {
+                    return INVALID_COUNTRY_CODE.to_string();
+                };
                 let cr_json =
                     simd_json::to_string_pretty(cityrecord).unwrap_or_else(|_| "null".to_string());
                 let country_json = simd_json::to_string_pretty(countryrecord)
@@ -1948,7 +1958,7 @@ fn format_result(
                 let us_fips_codes_json = simd_json::to_string_pretty(&us_fips_codes)
                     .unwrap_or_else(|_| "null".to_string());
                 format!(
-                    "{{\n  \"cityrecord\":{cr_json},\n  \"countryrecord\":{country_json}\n \
+                    "{{\n  \"cityrecord\":{cr_json},\n  \"countryrecord\":{country_json},\n  \
                      \"us_fips_codes\":{us_fips_codes_json}\n}}",
                 )
             },
@@ -2231,7 +2241,10 @@ fn get_countryinfo(
 /// Note that the index file needs to be built with the desired languages for this to work.
 /// Use the "index-update" subcommand with the --languages option to rebuild the index
 /// with the desired languages. Otherwise, all names will be in English (en)
-#[cached(key = "String", convert = r#"{ format!("{}", cityrecord.id) }"#)]
+#[cached(
+    key = "String",
+    convert = r#"{ format!("{}-{lang_lookup}", cityrecord.id) }"#
+)]
 fn get_cityrecord_name_in_lang(cityrecord: &CitiesRecord, lang_lookup: &str) -> NamesLang {
     let cityname = cityrecord
         .names
@@ -2273,32 +2286,32 @@ fn lookup_us_state_fips_code(state: &str) -> Option<&'static str> {
 }
 
 fn get_us_fips_codes(cityrecord: &CitiesRecord, nameslang: &NamesLang) -> serde_json::Value {
-    let us_state_code = if let Some(admin1) = cityrecord.admin_division.as_ref() {
-        admin1.code.strip_prefix("US.").unwrap_or_default()
-    } else {
-        ""
-    };
-    let us_state_fips_code = lookup_us_state_fips_code(us_state_code).unwrap_or("null");
+    // None when admin1 is not a US state code; the 2-letter state code otherwise
+    let us_state_code: Option<&str> = cityrecord
+        .admin_division
+        .as_ref()
+        .and_then(|admin1| admin1.code.strip_prefix("US."));
 
-    let us_county_code = match cityrecord.admin2_division.as_ref() {
-        Some(admin2) => {
-            if admin2.code.starts_with("US.") && admin2.code.len() == 9 {
-                // admin2 code is a US county code, the three-digit county code
-                // is the last three characters of the admin2 code
-                // start at index 7 to skip the US. prefix
-                // e.g. US.NY.061 -> 061
-                format!("{:0>3}", &admin2.code[7..])
-            } else {
-                // admin2 code is not a US county code
-                // set to empty string
-                String::new()
-            }
+    // emit JSON null when the admin1 isn't a US state or the code is unrecognized
+    let us_state_fips_code = us_state_code
+        .and_then(lookup_us_state_fips_code)
+        .map_or(serde_json::Value::Null, |code| {
+            serde_json::Value::String(code.to_string())
+        });
+
+    // emit JSON null when admin2 isn't a valid US county code (US.XX.NNN format).
+    // require ASCII so the byte-index slice at 7 lands on a char boundary
+    let us_county_fips_code = match cityrecord.admin2_division.as_ref() {
+        Some(admin2)
+            if admin2.code.is_ascii()
+                && admin2.code.len() == 9
+                && admin2.code.starts_with("US.") =>
+        {
+            // skip the "US." prefix and 2-letter state code (7 ASCII bytes),
+            // e.g. US.NY.061 -> 061
+            serde_json::Value::String(format!("{:0>3}", &admin2.code[7..]))
         },
-        None => {
-            // no admin2 code
-            // set to empty string
-            String::new()
-        },
+        _ => serde_json::Value::Null,
     };
     json!(
     {
@@ -2306,7 +2319,7 @@ fn get_us_fips_codes(cityrecord: &CitiesRecord, nameslang: &NamesLang) -> serde_
         "us_state_name": nameslang.admin1name,
         "us_state_fips_code": us_state_fips_code,
         "us_county": nameslang.admin2name,
-        "us_county_fips_code": us_county_code,
+        "us_county_fips_code": us_county_fips_code,
     })
 }
 

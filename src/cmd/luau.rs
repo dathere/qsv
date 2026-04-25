@@ -1579,11 +1579,11 @@ fn setup_helpers(
         while let Some(val) = args.pop_front() {
             let val = luau.from_value::<serde_json::Value>(val)?;
             let val_str = match val {
-                serde_json::Value::Null => String::new(),
                 serde_json::Value::String(s) => s,
                 serde_json::Value::Bool(b) => b.to_string(),
                 serde_json::Value::Number(n) => n.to_string(),
-                // arrays and objects: skip (treat as "no value present")
+                // serde_json::Value::Null and arrays and objects
+                // skip (treat as "no value present")
                 _ => String::new(),
             };
             if !val_str.is_empty() {

@@ -893,7 +893,6 @@ fn validate_operations(
                         .unwrap_or(DEFAULT_ROUND_PLACES)
                 });
             },
-            Operations::Crc32 => {},
             Operations::Whatlang => {
                 if flag_new_column.is_none() {
                     return fail_incorrectusage_clierror!(

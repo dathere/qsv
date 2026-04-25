@@ -1474,13 +1474,35 @@ async fn load_engine_data(
         .await?;
     }
 
-    // check if the geocode_index_file is snappy compressed
-    // if it is, decompress it
-    let geocode_index_file = if geocode_index_file
+    // check if the geocode_index_file is snappy compressed; decompress it if so.
+    // detect by extension (case-insensitive) OR by snappy framed-format magic header,
+    // since the numeric-shortcut download saves a .sz payload to a path without an
+    // extension (e.g. "500"), and a user-supplied path may also lose the suffix.
+    let has_snappy_extension = geocode_index_file
         .extension()
-        .is_some_and(|ext| ext == "sz")
-    {
-        let decompressed_geocode_index_file = geocode_index_file.with_extension(".rkyv");
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("sz"));
+    let is_snappy_framed_file = {
+        let mut header = [0_u8; 10];
+        fs::File::open(&geocode_index_file)
+            .and_then(|mut file| std::io::Read::read_exact(&mut file, &mut header))
+            .is_ok_and(|()| header == *b"\xff\x06\x00\x00sNaPpY")
+    };
+    let geocode_index_file = if has_snappy_extension || is_snappy_framed_file {
+        // if the file is `foo.rkyv.sz`, drop only the `.sz` suffix to get `foo.rkyv`;
+        // otherwise replace/add the extension with `.rkyv`. Note: `with_extension(".rkyv")`
+        // would yield `foo..rkyv` because the leading dot is treated as part of the
+        // raw extension argument.
+        let decompressed_geocode_index_file =
+            if geocode_index_file.file_stem().is_some_and(|stem| {
+                std::path::Path::new(stem)
+                    .extension()
+                    .is_some_and(|ext| ext == "rkyv")
+            }) {
+                geocode_index_file.with_extension("")
+            } else {
+                geocode_index_file.with_extension("rkyv")
+            };
         progressbar.println(format!(
             "Decompressing {} to {}",
             geocode_index_file.display(),
@@ -1920,7 +1942,7 @@ fn format_result(
                     simd_json::to_string(countryrecord).unwrap_or_else(|_| "null".to_string());
                 let us_fips_codes_json = get_us_fips_codes(cityrecord, nameslang);
                 format!(
-                    "{{\"cityrecord\":{cr_json}, \"countryrecord\":{country_json} \
+                    "{{\"cityrecord\":{cr_json}, \"countryrecord\":{country_json}, \
                      \"us_fips_codes\":{us_fips_codes_json}}}",
                 )
             },
@@ -1936,7 +1958,7 @@ fn format_result(
                 let us_fips_codes_json = simd_json::to_string_pretty(&us_fips_codes)
                     .unwrap_or_else(|_| "null".to_string());
                 format!(
-                    "{{\n  \"cityrecord\":{cr_json},\n  \"countryrecord\":{country_json}\n \
+                    "{{\n  \"cityrecord\":{cr_json},\n  \"countryrecord\":{country_json},\n  \
                      \"us_fips_codes\":{us_fips_codes_json}\n}}",
                 )
             },

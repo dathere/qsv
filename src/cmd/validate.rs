@@ -1390,8 +1390,8 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
                     Ok(obj) => obj,
                     Err(e) => {
                         std::hint::cold_path();
-                        // row number was appended as the last field via itoa, so it is always
-                        // valid ASCII; the unwrap can never fire in practice.
+                        // safety: row number was appended as the last field via itoa, so it is
+                        // always valid ASCII; the unwrap can never fire in practice.
                         let row_number_string =
                             simdutf8::basic::from_utf8(&record[header_len]).unwrap();
                         return Some(format!("{row_number_string}\t<RECORD>\t{e}"));
@@ -1417,6 +1417,8 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
                     None
                 } else {
                     std::hint::cold_path();
+                    // safety: row number was appended as the last field via itoa, so it is
+                    // always valid ASCII; the unwrap can never fire in practice.
                     let row_number_string =
                         simdutf8::basic::from_utf8(&record[header_len]).unwrap();
 

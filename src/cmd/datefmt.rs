@@ -72,8 +72,10 @@ datefmt options:
     --output-tz=<string>        The timezone to use for the output date.
                                 The timezone must be a valid IANA timezone name or the string "local".
                                 [default: UTC]
-    --default-tz=<string>       The timezone to use for BOTH input and output dates when they do not have a timezone.
-                                Shortcut for --input-tz and --output-tz set to the same timezone.
+    --default-tz=<string>       Fallback timezone consulted only when --input-tz or --output-tz
+                                is set to "local" but local-timezone detection fails. Defaults
+                                to UTC. Does NOT override the --input-tz / --output-tz defaults —
+                                use --utc to force both input and output to UTC.
                                 The timezone must be a valid IANA timezone name or the string "local".
     --utc                       Shortcut for --input-tz and --output-tz set to UTC.
     --zulu                      Shortcut for --output-tz set to UTC and --formatstr set to "%Y-%m-%dT%H:%M:%SZ".
@@ -165,6 +167,11 @@ impl FromStr for TimestampResolution {
         }
     }
 }
+
+// Default value for --formatstr. Must stay in sync with the `[default: %+]` literal
+// in the USAGE string above; the --zulu conflict check at the bottom of `run()` uses
+// this constant to detect "no explicit --formatstr passed".
+const DEFAULT_FORMATSTR: &str = "%+";
 
 #[inline]
 fn unix_timestamp(input: &str, resolution: TimestampResolution) -> Option<DateTime<Utc>> {
@@ -363,7 +370,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 args.flag_output_tz
             );
         }
-        if flag_formatstr != "%+" {
+        if flag_formatstr != DEFAULT_FORMATSTR {
             return fail_incorrectusage_clierror!(
                 "--zulu cannot be combined with --formatstr={flag_formatstr}; --zulu forces the \
                  output format.",

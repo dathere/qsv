@@ -289,7 +289,6 @@ fn datefmt_invalid_tz() {
     wrk.assert_err(&mut cmd);
 }
 
-
 #[test]
 fn datefmt_invalid_input_tz() {
     let wrk = Workdir::new("datefmt_invalid_input_tz");
@@ -322,6 +321,44 @@ fn datefmt_utc_conflicts_with_input_tz() {
     cmd.arg("Created Date")
         .arg("--utc")
         .args(["--input-tz", "America/New_York"])
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn datefmt_utc_conflicts_with_output_tz() {
+    let wrk = Workdir::new("datefmt_utc_conflicts_with_output_tz");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Created Date"],
+            svec!["September 17, 2012 10:09am EST"],
+        ],
+    );
+    let mut cmd = wrk.command("datefmt");
+    cmd.arg("Created Date")
+        .arg("--utc")
+        .args(["--output-tz", "America/New_York"])
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn datefmt_utc_conflicts_with_default_tz() {
+    let wrk = Workdir::new("datefmt_utc_conflicts_with_default_tz");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Created Date"],
+            svec!["September 17, 2012 10:09am EST"],
+        ],
+    );
+    let mut cmd = wrk.command("datefmt");
+    cmd.arg("Created Date")
+        .arg("--utc")
+        .args(["--default-tz", "America/New_York"])
         .arg("data.csv");
 
     wrk.assert_err(&mut cmd);

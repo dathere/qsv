@@ -773,6 +773,38 @@ fn cat_rowskey_no_headers_widerfirst() {
     assert_eq!(got, expected);
 }
 
+// Mirror of the wider-first case: narrower file first, wider file second.
+// Used to "work by accident" in the old code because the last file's
+// synthetic header happened to be the widest. Pinning the behavior so a
+// future refactor cannot regress only this direction.
+#[test]
+fn cat_rowskey_no_headers_narrowerfirst() {
+    let wrk = Workdir::new("cat_rowskey_no_headers_narrowerfirst");
+    wrk.create("in1.csv", vec![svec!["x", "y", "z"], svec!["6", "7", "8"]]);
+    wrk.create(
+        "in2.csv",
+        vec![
+            svec!["a", "b", "c", "d", "e"],
+            svec!["1", "2", "3", "4", "5"],
+        ],
+    );
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rowskey")
+        .arg("--no-headers")
+        .arg("in1.csv")
+        .arg("in2.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["x", "y", "z", "", ""],
+        svec!["6", "7", "8", "", ""],
+        svec!["a", "b", "c", "d", "e"],
+        svec!["1", "2", "3", "4", "5"],
+    ];
+    assert_eq!(got, expected);
+}
+
 // Regression test: a column whose header collides with --group-name should
 // still produce valid output (the file's value wins for its own rows) and
 // emit a warning to stderr so the user notices.

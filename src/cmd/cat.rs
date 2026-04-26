@@ -242,6 +242,7 @@ impl Args {
         };
 
         // First pass: collect the global column set in insertion order.
+        let group_name_bytes = self.flag_group_name.as_bytes();
         for conf in &configs {
             let mut rdr = conf.reader()?;
 
@@ -255,13 +256,21 @@ impl Args {
                 }
                 for field in &th {
                     columns_global.insert(field.to_vec().into_boxed_slice());
+                    if group_flag && field == group_name_bytes {
+                        wwarn!(
+                            "Synthetic column `{}` in file `{:?}` collides with --group-name; the \
+                             file's value will override the grouping value for its rows.",
+                            self.flag_group_name,
+                            conf.path,
+                        );
+                    }
                 }
                 synthetic_headers.push(th);
             } else {
                 let header = rdr.byte_headers()?;
                 for field in header {
                     columns_global.insert(field.to_vec().into_boxed_slice());
-                    if group_flag && field == self.flag_group_name.as_bytes() {
+                    if group_flag && field == group_name_bytes {
                         wwarn!(
                             "Column `{}` in file `{:?}` collides with --group-name; the file's \
                              value will override the grouping value for its rows.",

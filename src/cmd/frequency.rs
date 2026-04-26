@@ -379,6 +379,18 @@ struct FrequencyCacheMetadata {
     column_count:             usize,
     date_generated:           String,
     qsv_version:              String,
+    /// Selection signature: a unit-separator-joined string of the selected
+    /// header bytes (in selection order). Lets us refuse cache reuse when
+    /// the user runs frequency with a different `--select` (or different
+    /// column ordering) than the one that produced the cache. Especially
+    /// important in `--no-headers` mode, where cache entries are keyed by
+    /// position-within-selection (`"1"`, `"2"`, ...) and would otherwise
+    /// silently match a differently-ordered selection.
+    /// `#[serde(default)]` keeps caches written before this field was added
+    /// readable; an empty signature triggers a one-time fallback in
+    /// `try_output_from_cache`.
+    #[serde(default)]
+    selection_signature:      String,
 }
 
 // FrequencyEntry, FrequencyField and FrequencyOutput are
@@ -1355,6 +1367,27 @@ impl Args {
         base.with_extension("freq.csv.data.jsonl")
     }
 
+    /// Compute a stable signature for the selected headers (in selection
+    /// order). Used to detect when a cache was generated with a different
+    /// `--select` (different columns OR different ordering) than the current
+    /// invocation. Especially important in `--no-headers` mode where cache
+    /// entries are keyed by position-within-selection.
+    ///
+    /// The chosen separator (`\x1f`, ASCII Unit Separator) is highly unlikely
+    /// to appear in real CSV column names or first-row data, so it
+    /// unambiguously delimits fields without escaping.
+    fn selection_signature(headers: &Headers) -> String {
+        let cap: usize = headers.iter().map(|h| h.len() + 1).sum();
+        let mut s = String::with_capacity(cap);
+        for (i, field) in headers.iter().enumerate() {
+            if i > 0 {
+                s.push('\x1f');
+            }
+            s.push_str(&String::from_utf8_lossy(field));
+        }
+        s
+    }
+
     /// Write the complete frequency distribution as a JSON cache file
     /// (`.freq.csv.data.json`). The cache combines metadata (args,
     /// thresholds) and per-column data in a single JSON object.
@@ -1483,6 +1516,7 @@ impl Args {
             column_count:             headers.len(),
             date_generated:           chrono::Utc::now().to_rfc3339(),
             qsv_version:              env!("CARGO_PKG_VERSION").to_string(),
+            selection_signature:      Self::selection_signature(headers),
         };
         let num_cache_columns = entries.len();
 
@@ -1512,7 +1546,13 @@ impl Args {
 
     /// Read and validate the frequency JSONL cache file.
     /// Returns None if cache doesn't exist, is stale, or is incompatible.
-    fn read_frequency_cache(&self, rconfig: &Config) -> Option<Vec<FrequencyCacheEntry>> {
+    /// On success, returns both the metadata (for selection-signature
+    /// validation against the current invocation's selected headers) and the
+    /// per-column entries.
+    fn read_frequency_cache(
+        &self,
+        rconfig: &Config,
+    ) -> Option<(FrequencyCacheMetadata, Vec<FrequencyCacheEntry>)> {
         use filetime::FileTime;
 
         let path = rconfig.path.as_ref()?;
@@ -1627,7 +1667,7 @@ impl Args {
             return None;
         }
 
-        Some(entries)
+        Some((metadata, entries))
     }
 
     /// Try to produce output directly from the frequency cache.
@@ -1646,7 +1686,7 @@ impl Args {
     #[allow(clippy::cast_precision_loss)]
     fn try_output_from_cache(&self, rconfig: &Config, is_json: bool) -> CliResult<bool> {
         // Read and validate the cache
-        let Some(cache_entries) = self.read_frequency_cache(rconfig) else {
+        let Some((cache_metadata, cache_entries)) = self.read_frequency_cache(rconfig) else {
             return Ok(false);
         };
 
@@ -1664,6 +1704,26 @@ impl Args {
         }
         let sel = self.rconfig().selection(&full_headers)?;
         let selected_headers: csv::ByteRecord = sel.select(&full_headers).collect();
+
+        // Selection-signature validation. With --no-headers the cache keys
+        // are positional (1..k within the current selection), so a cache
+        // built with `--select 1,2` would silently match a `--select 2,1`
+        // run and return the wrong columns. Compare the signature of the
+        // current selected headers against the cache's recorded signature.
+        // An empty recorded signature means the cache predates this field —
+        // refuse it once and let it be regenerated.
+        let current_sig = Self::selection_signature(&selected_headers);
+        if cache_metadata.selection_signature.is_empty() {
+            log::info!(
+                "Frequency cache predates selection-signature validation. Recomputing (regenerate \
+                 with --frequency-jsonl to refresh)."
+            );
+            return Ok(false);
+        }
+        if cache_metadata.selection_signature != current_sig {
+            log::info!("Frequency cache incompatible: --select differs from cache. Recomputing.");
+            return Ok(false);
+        }
 
         let selected_col_names: Vec<String> = selected_headers
             .iter()
@@ -1893,7 +1953,7 @@ impl Args {
         // Replaces an earlier O(n²) Vec::remove loop that was hot for high-cardinality
         // columns with multiple NULL entries.
         let null_entries: Vec<_> = counts
-            .extract_if(.., |entry| entry.0 == *null_val)
+            .extract_if(.., |entry| entry.0.as_slice() == null_val.as_slice())
             .collect();
         counts.extend(null_entries);
     }
@@ -3625,8 +3685,13 @@ fn evaluate_stats_filter(
 
     // Set all StatsData fields as Luau globals. mlua's `Table::set` accepts
     // any `IntoLua` value, including `Option<T>` (mapped to Nil for None) and
-    // `&str` (mapped to a Lua string), so a single helper covers every field
-    // shape.
+    // `&str` (mapped to a Lua string).
+    //
+    // Two macros so String / Option<String> fields can be passed by borrow
+    // (`&str` / `Option<&str>`) — `IntoLua for &str` lets Lua copy directly
+    // without an intermediate Rust-side `String::clone`. The `bind!` form is
+    // for `Copy` field types (numeric, bool, Option<numeric>) where the value
+    // is moved out of `*stats_data` for free.
     let globals = lua.globals();
     let set = |name: &str, value: Value| -> Result<(), String> {
         globals
@@ -3639,7 +3704,30 @@ fn evaluate_stats_filter(
                 stringify!($name),
                 stats_data
                     .$name
-                    .clone()
+                    .into_lua(lua)
+                    .map_err(|e| format!("Failed to convert {}: {e}", stringify!($name)))?,
+            )?
+        };
+    }
+    macro_rules! bind_str {
+        ($name:ident) => {
+            set(
+                stringify!($name),
+                stats_data
+                    .$name
+                    .as_str()
+                    .into_lua(lua)
+                    .map_err(|e| format!("Failed to convert {}: {e}", stringify!($name)))?,
+            )?
+        };
+    }
+    macro_rules! bind_opt_str {
+        ($name:ident) => {
+            set(
+                stringify!($name),
+                stats_data
+                    .$name
+                    .as_deref()
                     .into_lua(lua)
                     .map_err(|e| format!("Failed to convert {}: {e}", stringify!($name)))?,
             )?
@@ -3647,7 +3735,7 @@ fn evaluate_stats_filter(
     }
 
     // Basic fields
-    bind!(field);
+    bind_str!(field);
     // 'type' is a reserved keyword in Rust, so we use r#type
     set(
         "type",
@@ -3663,12 +3751,12 @@ fn evaluate_stats_filter(
     bind!(cardinality);
     bind!(nullcount);
 
-    // Optional numeric/string fields
+    // Optional numeric / string fields
     bind!(sum);
-    bind!(min);
-    bind!(max);
+    bind_opt_str!(min);
+    bind_opt_str!(max);
     bind!(range);
-    bind!(sort_order);
+    bind_opt_str!(sort_order);
 
     // String length stats
     bind!(min_length);
@@ -3710,11 +3798,11 @@ fn evaluate_stats_filter(
     bind!(upper_outer_fence);
     bind!(skewness);
 
-    // Mode/Antimode
-    bind!(mode);
+    // Mode / Antimode
+    bind_opt_str!(mode);
     bind!(mode_count);
     bind!(mode_occurrences);
-    bind!(antimode);
+    bind_opt_str!(antimode);
     bind!(antimode_count);
     bind!(antimode_occurrences);
 

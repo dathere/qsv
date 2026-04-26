@@ -736,6 +736,10 @@ fn count_rows_with_best_method(conf: &Config) -> Option<u64> {
 }
 
 fn count_with_csv_reader(conf: &Config) -> Option<u64> {
+    let path_display = conf
+        .path
+        .as_deref()
+        .map_or_else(|| "<stdin>".to_string(), |p| p.display().to_string());
     conf.clone()
         .skip_format_check(true)
         .reader()
@@ -743,41 +747,36 @@ fn count_with_csv_reader(conf: &Config) -> Option<u64> {
         .map(|mut rdr| {
             let mut count = 0_u64;
             let mut record = csv::ByteRecord::new();
-            while rdr.read_byte_record(&mut record).unwrap_or_default() {
-                count += 1;
+            loop {
+                match rdr.read_byte_record(&mut record) {
+                    Ok(true) => count += 1,
+                    Ok(false) => break,
+                    Err(e) => {
+                        log::warn!(
+                            "CSV read error during row count of {path_display} after {count} \
+                             rows; returning partial count: {e}"
+                        );
+                        break;
+                    },
+                }
             }
             count
         })
 }
 
-/// Count rows using "regular" CSV reader
-/// we don't use polars mem-mapped reader here
-/// even if it's available
+/// Count rows using the "regular" CSV reader, never the polars mem-mapped
+/// reader. The result is cached in ROW_COUNT so subsequent calls are free.
 #[inline]
 pub fn count_rows_regular(conf: &Config) -> Result<u64, CliError> {
     if let Some(idx) = conf.indexed().unwrap_or(None) {
-        Ok(idx.count())
-    } else {
-        // index does not exist or is stale,
-        let count_opt =
-            ROW_COUNT.get_or_init(|| match conf.clone().skip_format_check(true).reader() {
-                Ok(mut rdr) => {
-                    let mut count = 0_u64;
-                    let mut _record = csv::ByteRecord::new();
-                    #[allow(clippy::used_underscore_binding)]
-                    while rdr.read_byte_record(&mut _record).unwrap_or_default() {
-                        count += 1;
-                    }
-                    Some(count)
-                },
-                _ => None,
-            });
-
-        match *count_opt {
-            Some(count) => Ok(count),
-            None => Err(CliError::Other("Unable to get row count".to_string())),
-        }
+        return Ok(idx.count());
     }
+    // No index (or stale): defer to the shared CSV-reader helper so the
+    // counting loop and warn-with-path logic live in one place. Cached in
+    // ROW_COUNT so a later count_rows call hits the same value.
+    ROW_COUNT
+        .get_or_init(|| count_with_csv_reader(conf))
+        .ok_or_else(|| CliError::Other("Unable to get row count".to_string()))
 }
 
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
@@ -1033,30 +1032,26 @@ pub fn mem_file_check(
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 #[inline]
 pub fn condense(val: Cow<[u8]>, n: Option<usize>) -> Cow<[u8]> {
-    match n {
-        None => val,
-        Some(n) => {
-            let mut is_short_utf8 = false;
-            if let Ok(s) = simdutf8::basic::from_utf8(&val) {
-                if n >= s.chars().count() {
-                    is_short_utf8 = true;
-                } else {
-                    let mut s = s.chars().take(n).collect::<String>();
-                    s.push_str("...");
-                    return Cow::Owned(s.into_bytes());
-                }
-            }
-            if is_short_utf8 || n >= (*val).len() {
-                // already short enough
-                val
-            } else {
-                // This is a non-Unicode string, so we just trim on bytes.
-                let mut s = val[0..n].to_vec();
-                s.extend(b"...".iter().copied());
-                Cow::Owned(s)
-            }
-        },
+    let Some(n) = n else { return val };
+
+    if let Ok(s) = simdutf8::basic::from_utf8(&val) {
+        // Valid UTF-8: count by chars, not bytes, so multi-byte codepoints
+        // count once. Truncating by bytes here would risk splitting a char.
+        if s.chars().count() <= n {
+            return val;
+        }
+        let mut out: String = s.chars().take(n).collect();
+        out.push_str("...");
+        return Cow::Owned(out.into_bytes());
     }
+
+    // Not valid UTF-8: truncate by bytes.
+    if val.len() <= n {
+        return val;
+    }
+    let mut out = val[..n].to_vec();
+    out.extend_from_slice(b"...");
+    Cow::Owned(out)
 }
 
 pub fn idx_path(csv_path: &Path) -> PathBuf {
@@ -1396,7 +1391,10 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
             return fail!(format!("{GITHUB_RATELIMIT_MSG}: {e}"));
         },
     };
-    let latest_release = &releases[0].version;
+    let Some(first_release) = releases.first() else {
+        return fail!("No releases found on GitHub.");
+    };
+    let latest_release = &first_release.version;
 
     log::info!("Current version: {curr_version} Latest Release: {latest_release}");
 
@@ -1612,14 +1610,20 @@ pub fn safe_header_names(
         safe_name = if conditional && is_safe_name(header_name) && !reserved_found {
             header_name.to_string()
         } else {
-            safename_always = if header_name.is_empty() {
+            // Trim first so whitespace-only headers are treated as empty —
+            // the regex replace below would otherwise yield "" and the
+            // as_bytes()[0] access would panic.
+            safename_always = if header_name.trim().is_empty() {
                 prefix.to_string()
             } else {
                 safename_regex
                     .replace_all(header_name.trim(), "_")
                     .to_string()
             };
-            if check_first_char && safename_always.as_bytes()[0].is_ascii_digit() {
+            if check_first_char
+                && !safename_always.is_empty()
+                && safename_always.as_bytes()[0].is_ascii_digit()
+            {
                 safename_always = format!("{prefix}{safename_always}");
             }
 
@@ -1704,20 +1708,42 @@ pub fn log_end(mut qsv_args: String, now: std::time::Instant) {
     }
 }
 
-/// Truncates a UTF-8 encoded string to a maximum byte length while preserving valid UTF-8 encoding.
+/// Truncates a UTF-8 encoded string to fewer than `maxsize` bytes, preserving
+/// valid UTF-8.
 ///
-/// This function ensures that the truncation happens at valid UTF-8 character boundaries to avoid
-/// splitting multi-byte characters. It modifies the input string in place.
+/// The result is at most `maxsize - 1` bytes (or 0 if `maxsize == 0`). The
+/// "off-by-one" is intentional: stats `*PREVIEW*` snapshots are calibrated to
+/// it. Don't change the offset without re-blessing those tests.
+///
+/// # Caller convention
+///
+/// To produce a string of at most `N` bytes (e.g., before appending an
+/// ellipsis), callers should:
+///
+/// ```ignore
+/// if input.len() > N {
+///     util::utf8_truncate(&mut input, N + 1);  // +1 cancels the internal -1
+///     input.push_str("...");
+/// }
+/// ```
+///
+/// The outer length guard avoids touching strings that already fit; the
+/// `N + 1` argument compensates for the internal `maxsize - 1` so the result
+/// is exactly `N` bytes before the suffix is appended. See the call site in
+/// `src/cmd/stats.rs` (`antimodes` truncation).
 ///
 /// # Arguments
 ///
 /// * `input` - A mutable reference to the String to truncate
-/// * `maxsize` - The maximum desired length in bytes
+/// * `maxsize` - One past the maximum byte length the result may occupy
 ///
-/// Uses Rust 1.91.0's str::floor_char_boundary for efficient UTF-8 boundary detection.
+/// Uses `str::floor_char_boundary` so multi-byte characters are never split.
 pub fn utf8_truncate(input: &mut String, maxsize: usize) {
     if input.len() > maxsize {
-        // Find the largest char boundary strictly less than maxsize
+        // Find the largest char boundary strictly less than maxsize.
+        // We deliberately use maxsize - 1 (not maxsize) because callers and
+        // snapshot tests rely on truncation cutting one byte short of the
+        // requested maximum (used by stats *PREVIEW* truncation).
         input.truncate(if maxsize > 0 {
             input.floor_char_boundary(maxsize - 1)
         } else {
@@ -1969,16 +1995,36 @@ pub fn load_dotenv() -> CliResult<()> {
 
 #[inline]
 pub fn get_envvar_flag(key: &str) -> bool {
-    if let Ok(tf_val) = std::env::var(key) {
-        let tf_val = tf_val.to_lowercase();
-        match tf_val {
-            s if s == "true" || s == "t" || s == "1" || s == "yes" || s == "y" => true,
-            s if s == "false" || s == "f" || s == "0" || s == "no" || s == "n" => false,
-            _ => false,
+    use std::{
+        collections::HashSet,
+        sync::{Mutex, OnceLock},
+    };
+
+    static UNRECOGNIZED_WARNED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+    let Ok(raw) = std::env::var(key) else {
+        return false;
+    };
+    // Trim whitespace so values like " true" are recognized as truthy.
+    let v = raw.trim().to_ascii_lowercase();
+    let truthy = matches!(v.as_str(), "true" | "t" | "1" | "yes" | "y" | "on");
+    let falsy = matches!(v.as_str(), "" | "false" | "f" | "0" | "no" | "n" | "off");
+    if !truthy && !falsy {
+        // Warn at most once per (key, value) pair across the process so callers
+        // in hot loops don't spam the log with the same misconfiguration notice.
+        // Decide whether to warn while holding the lock, then drop the guard
+        // before calling into the logger — log::warn! can take its own locks
+        // (flexi_logger), so we don't want to bridge them here.
+        let warned = UNRECOGNIZED_WARNED.get_or_init(|| Mutex::new(HashSet::new()));
+        let should_warn = match warned.lock() {
+            Ok(mut set) => set.insert(format!("{key}={raw}")),
+            Err(_) => false,
+        };
+        if should_warn {
+            log::warn!("{key}={raw} is not a recognized boolean; treating as false");
         }
-    } else {
-        false
     }
+    truthy
 }
 
 /// Validates if a file is actually a Snappy-compressed file before attempting decompression
@@ -2108,8 +2154,10 @@ pub fn decompress_snappy_file(
 /// downloads a file from a url and saves it to a path
 /// if show_progress is true, a progress bar will be shown
 /// if custom_user_agent is Some, it will be used as the user agent
-/// if download_timeout is Some, it will be used as the timeout in seconds. If 0, no timeout is
-/// used. If sample_size is Some, it will be used as the number of bytes to download.
+/// if download_timeout is Some, it will be used as the timeout in seconds. The
+/// value is validated by `timeout_secs` and must be in the range 1..=3600;
+/// values of 0 or > 3600 cause this function to return an error. If
+/// sample_size is Some, it will be used as the number of bytes to download.
 pub async fn download_file(
     url: &str,
     path: PathBuf,
@@ -2120,16 +2168,18 @@ pub async fn download_file(
 ) -> CliResult<()> {
     use futures_util::StreamExt;
 
-    let user_agent = set_user_agent(custom_user_agent)?;
-
     let download_timeout = match download_timeout {
-        Some(t) => std::time::Duration::from_secs(timeout_secs(t).unwrap_or(30)),
+        Some(t) => std::time::Duration::from_secs(
+            timeout_secs(t)
+                .map_err(|e| CliError::Other(format!("Invalid download timeout: {e}")))?,
+        ),
         None => std::time::Duration::from_secs(30),
     };
 
-    // setup the reqwest client
+    // setup the reqwest client. create_reqwest_async_client calls
+    // set_user_agent internally, so pass custom_user_agent through.
     let client = create_reqwest_async_client(
-        Some(user_agent),
+        custom_user_agent,
         download_timeout.as_secs() as u16,
         Some(url.to_string()),
     )?;
@@ -2406,8 +2456,15 @@ pub fn process_input(
                     continue;
                 }
 
+                // Reject path-traversal entries (zip-slip). enclosed_name() returns
+                // None if the entry name would escape the extraction root.
+                let Some(safe_name) = zip_entry.enclosed_name() else {
+                    log::warn!("  Skipping zip entry with unsafe path (zip-slip): {entry_path}");
+                    continue;
+                };
+
                 // Create the full path for the extracted file
-                let file_path = zip_extract_dir.join(&entry_path);
+                let file_path = zip_extract_dir.join(safe_name);
 
                 // Create parent directories if they don't exist
                 if let Some(parent) = file_path.parent() {
@@ -2462,14 +2519,12 @@ pub fn replace_column_value(
 /// format a SystemTime from a file's metadata to a string using the format specifier
 #[inline]
 pub fn format_systemtime(time: SystemTime, format_specifier: &str) -> String {
-    // safety: we know the duration since UNIX EPOCH is always positive
-    // as we're using this helper to format file metadata SystemTime
-    // So if the duration is negative, then a file was created before UNIX EPOCH
-    // which is impossible as the UNIX EPOCH is the start of time for file systems
-    // we use expect here as we want it to panic if the file was created before UNIX EPOCH
+    // Default to UNIX_EPOCH for pre-1970 timestamps. They do occur in the wild —
+    // Windows files can carry the FILETIME epoch (1601-01-01), and archived /
+    // restored files or corrupted FS metadata sometimes report pre-1970 mtimes.
     let timestamp = time
         .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("SystemTime before UNIX EPOCH")
+        .unwrap_or_default()
         .as_secs();
 
     let datetime = chrono::DateTime::from_timestamp(timestamp as i64, 0).unwrap_or_default();
@@ -2544,7 +2599,6 @@ pub fn write_json(
     write!(json_wtr, "[")?;
     let mut is_first = true;
 
-    let rec_len = header_vec.len().saturating_sub(1);
     let mut temp_val;
     let null_val = "null".to_string();
     let mut json_string_val: serde_json::Value;
@@ -2558,7 +2612,15 @@ pub fn write_json(
             write!(json_wtr, ",")?;
         }
         write!(json_wtr, "{{")?;
+        // Emit field separators using a leading-comma join: write a comma
+        // *before* each non-first field. This keeps the output valid for
+        // both flexible-CSV cases — records longer than headers (skip
+        // extras) and records shorter than headers (no trailing comma).
+        let mut first_field = true;
         for (idx, b) in record.iter().enumerate() {
+            let Some(key) = header_vec.get(idx) else {
+                break;
+            };
             temp_val = if let Ok(val) = simdutf8::basic::from_utf8(b) {
                 val.to_owned()
             } else {
@@ -2572,28 +2634,12 @@ pub fn write_json(
                 json_string_val = serde_json::Value::String(temp_val);
                 temp_val = json_string_val.to_string();
             }
-            // safety: idx is always in bounds
-            // so we can get_unchecked here
-            if idx < rec_len {
-                unsafe {
-                    write!(
-                        &mut json_wtr,
-                        r#""{key}":{value},"#,
-                        key = header_vec.get_unchecked(idx),
-                        value = temp_val
-                    )?;
-                }
+            if first_field {
+                first_field = false;
             } else {
-                // last column in the JSON record, no comma
-                unsafe {
-                    write!(
-                        &mut json_wtr,
-                        r#""{key}":{value}"#,
-                        key = header_vec.get_unchecked(idx),
-                        value = temp_val
-                    )?;
-                }
+                write!(&mut json_wtr, ",")?;
             }
+            write!(&mut json_wtr, r#""{key}":{value}"#, value = temp_val)?;
         }
         write!(json_wtr, "}}")?;
     }
@@ -3043,8 +3089,11 @@ pub fn csv_to_jsonl(
         json_object.clear();
 
         for (i, val) in record.iter().enumerate() {
-            let key = unsafe { key_vec.get_unchecked(i) };
-            let data_type = csv_types.get(key).unwrap_or(&JsonTypes::String);
+            // Skip extra fields when a record has more columns than headers.
+            let Some(key) = key_vec.get(i) else {
+                break;
+            };
+            let data_type = csv_types.get(key.as_str()).unwrap_or(&JsonTypes::String);
             let value = if val.is_empty() {
                 continue;
             } else {
@@ -3115,8 +3164,11 @@ pub fn optimal_batch_size(rconfig: &Config, batch_size: usize, num_jobs: usize) 
     }
 
     let num_rows = match ROW_COUNT.get() {
-        Some(count) => count.unwrap() as usize,
-        None => match rconfig.indexed() {
+        // ROW_COUNT is OnceLock<Option<u64>>; the inner Option is None when
+        // count_rows_with_best_method failed (both polars and the CSV reader).
+        // Fall through to the indexed path in that case rather than panicking.
+        Some(Some(count)) => *count as usize,
+        _ => match rconfig.indexed() {
             Ok(Some(idx)) => idx.count() as usize,
             _ => {
                 return DEFAULT_BATCH_SIZE;
@@ -3662,7 +3714,7 @@ pub fn is_executable(path: &str) -> std::io::Result<bool> {
 pub fn is_executable(path: &str) -> std::io::Result<bool> {
     use std::path::Path;
     let p = Path::new(path);
-    Ok(p.extension().and_then(|e| e.to_str()).map_or(false, |ext| {
+    Ok(p.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
         matches!(
             ext.to_ascii_lowercase().as_str(),
             "exe" | "bat" | "cmd" | "com"
@@ -3715,7 +3767,10 @@ pub fn run_qsv_cmd(
     let qsv_path = QSV_PATH.get_or_init(|| current_exe().unwrap().to_string_lossy().to_string());
     let mut cmd = Command::new(qsv_path);
 
-    // special case for sample command, as the args are passed as the first argument
+    // sample takes a positional <sample-size> argument *before* the input path
+    // (e.g. `qsv sample 1000 input.csv`), so for sample we order args before
+    // input. Every other command in qsv accepts the input as the first
+    // positional, so input goes before flags/args.
     if command == "sample" {
         cmd.arg(command).args(args).arg(input_path);
     } else {

@@ -1515,6 +1515,26 @@ impl Args {
             .select(self.flag_select.clone())
     }
 
+    /// Compute the cache path for a given input file, canonicalizing where
+    /// possible so that `data.csv` and `./data.csv` (or symlinks) resolve to
+    /// the same cache file. Falls back to the input path verbatim if
+    /// canonicalization fails (e.g. permissions, exotic filesystems) — this
+    /// preserves prior behavior and is logged at debug level.
+    fn cache_path_for(path: &std::path::Path) -> std::path::PathBuf {
+        let base = match fs::canonicalize(path) {
+            Ok(p) => p,
+            Err(e) => {
+                log::debug!(
+                    "Could not canonicalize input path {} for cache lookup: {e}. Falling back to \
+                     uncanonicalized path.",
+                    path.display()
+                );
+                path.to_path_buf()
+            },
+        };
+        base.with_extension("freq.csv.data.jsonl")
+    }
+
     /// Write the complete frequency distribution as a JSON cache file
     /// (`.freq.csv.data.json`). The cache combines metadata (args,
     /// thresholds) and per-column data in a single JSON object.
@@ -1655,7 +1675,7 @@ impl Args {
             jsonl.push('\n');
         }
 
-        let cache_path = path.with_extension("freq.csv.data.jsonl");
+        let cache_path = Self::cache_path_for(path);
         let cache_len = jsonl.len();
         fs::write(&cache_path, jsonl)?;
 
@@ -1676,7 +1696,7 @@ impl Args {
         use filetime::FileTime;
 
         let path = rconfig.path.as_ref()?;
-        let cache_path = path.with_extension("freq.csv.data.jsonl");
+        let cache_path = Self::cache_path_for(path);
 
         if !cache_path.exists() {
             log::info!("Frequency cache not found: {}", cache_path.display());

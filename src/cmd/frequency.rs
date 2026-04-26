@@ -43,7 +43,8 @@ is dynamically calculated based on available memory and record sampling.
 
 You can override this behavior by setting the QSV_FREQ_CHUNK_MEMORY_MB environment variable.
 (set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk,
-or -1 for CPU-based chunking (1 chunk = num records/number of CPUs)), or by setting the --jobs option.
+or any non-u64 value (e.g. -1 or "auto") for CPU-based chunking (1 chunk = num records/number of
+CPUs)), or by setting the --jobs option.
 
 NOTE: "Complete" Frequency Tables:
 
@@ -90,6 +91,7 @@ frequency options:
     -u, --unq-limit <arg>   If a column has all unique values, limit the
                             frequency table to a sample of N unique items.
                             Set to '0' to disable a unique_limit.
+                            Only applies in unweighted mode; ignored when --weight is set.
                             [default: 10]
     --lmt-threshold <arg>   The threshold for which --limit and --unq-limit
                             will be applied. If the number of unique items
@@ -118,8 +120,9 @@ frequency options:
                             end of the frequency table for a field. If this is enabled, the
                             "Other" category will be sorted with the rest of the
                             values by count.
-    --other-text <arg>      The text to use for the "Other" category. If set to "<NONE>",
-                            the "Other" category will not be included in the frequency table.
+    --other-text <arg>      The text to use for the "Other" category. If set to the
+                            literal string "<NONE>" (case-sensitive, exact match), the
+                            "Other" category will not be included in the frequency table.
                             [default: Other]
     --no-other              Don't include the "Other" category in the frequency table.
                             This is equivalent to --other-text "<NONE>".
@@ -133,8 +136,9 @@ frequency options:
                             have a rank of 1.
     --no-trim               Don't trim whitespace from values when computing frequencies.
                             The default is to trim leading and trailing whitespaces.
-    --null-text <arg>       The text to use for NULL values. If set to "<NONE>",
-                            NULLs will not be included in the frequency table
+    --null-text <arg>       The text to use for NULL values. If set to the literal
+                            string "<NONE>" (case-sensitive, exact match), NULLs
+                            will not be included in the frequency table
                             (equivalent to --no-nulls).
                             [default: (NULL)]
     --no-nulls              Don't include NULLs in the frequency table.
@@ -202,9 +206,9 @@ frequency options:
                             (env var takes precedence when CLI value equals the default).
                             Only used with --frequency-jsonl.
                             [default: 90]
-    --force                 Force recomputation and cache regeneration even when a
-                            valid frequency cache exists. Use with --frequency-jsonl
-                            to regenerate the cache.
+    --force                 Force recomputation even when a valid frequency cache
+                            exists, bypassing the auto-reuse path. Also regenerates
+                            the cache when combined with --frequency-jsonl.
 
                             JSON OUTPUT OPTIONS:
     --json                  Output frequency table as nested JSON instead of CSV.
@@ -397,6 +401,7 @@ struct FrequencyField {
     nullcount:        u64,
     sparsity:         f64,
     uniqueness_ratio: f64,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     stats:            Vec<FieldStats>,
     frequencies:      Vec<FrequencyEntry>,
 }
@@ -960,9 +965,13 @@ type FTables = Vec<Frequencies<Vec<u8>>>;
 // Weighted frequency tables: HashMap for each column storing value -> weighted count
 type WeightedFTables = Vec<HashMap<Vec<u8>, f64>>;
 
+// Below `MERGE_PARALLEL_THRESHOLD` columns, the rayon overhead exceeds the
+// per-column merge cost, so we fall back to a sequential zip.
+const MERGE_PARALLEL_THRESHOLD: usize = 8;
+
 // Pairwise merge of two FTables. Empty acts as identity so this composes with
 // rayon `reduce(Vec::new, ...)`. Per-column Frequencies merges run in parallel
-// across the rayon pool.
+// across the rayon pool when there are enough columns to amortize the overhead.
 fn merge_ftables(mut a: FTables, b: FTables) -> FTables {
     if a.is_empty() {
         return b;
@@ -979,13 +988,20 @@ fn merge_ftables(mut a: FTables, b: FTables) -> FTables {
         b.len(),
         "all chunks share the same column selection"
     );
-    a.par_iter_mut()
-        .zip(b.into_par_iter())
-        .for_each(|(left, right)| left.merge(right));
+    if a.len() < MERGE_PARALLEL_THRESHOLD {
+        for (left, right) in a.iter_mut().zip(b) {
+            left.merge(right);
+        }
+    } else {
+        a.par_iter_mut()
+            .zip(b.into_par_iter())
+            .for_each(|(left, right)| left.merge(right));
+    }
     a
 }
 
-// Pairwise merge of two WeightedFTables — per-column HashMap fold, parallel over columns.
+// Pairwise merge of two WeightedFTables — per-column HashMap fold, parallel over columns
+// once column count clears `MERGE_PARALLEL_THRESHOLD`.
 fn merge_weighted_ftables(mut a: WeightedFTables, b: WeightedFTables) -> WeightedFTables {
     if a.is_empty() {
         return b;
@@ -999,14 +1015,21 @@ fn merge_weighted_ftables(mut a: WeightedFTables, b: WeightedFTables) -> Weighte
         b.len(),
         "all chunks share the same column selection"
     );
-    a.par_iter_mut()
-        .zip(b.into_par_iter())
-        .for_each(|(left, right)| {
-            left.reserve(right.len());
-            for (k, v) in right {
-                *left.entry(k).or_insert(0.0) += v;
-            }
-        });
+    let merge_pair = |left: &mut HashMap<Vec<u8>, f64>, right: HashMap<Vec<u8>, f64>| {
+        left.reserve(right.len());
+        for (k, v) in right {
+            *left.entry(k).or_insert(0.0) += v;
+        }
+    };
+    if a.len() < MERGE_PARALLEL_THRESHOLD {
+        for (left, right) in a.iter_mut().zip(b) {
+            merge_pair(left, right);
+        }
+    } else {
+        a.par_iter_mut()
+            .zip(b.into_par_iter())
+            .for_each(|(left, right)| merge_pair(left, right));
+    }
     a
 }
 
@@ -1132,15 +1155,18 @@ fn apply_ranking_strategy_unweighted(
                             let pct = count as f64 * pct_factor;
                             pct_sum += pct;
                             counts_final.push((null_val.to_vec(), count, pct, current_rank));
+                            current_rank += 1.0;
                         } else {
+                            // sentinel-suppressed null: don't consume a rank slot,
+                            // matching the other strategies
                             counts_final.push((null_val.to_vec(), count, -1.0, -1.0));
                         }
                     } else {
                         let pct = count as f64 * pct_factor;
                         pct_sum += pct;
                         counts_final.push((byte_string, count, pct, current_rank));
+                        current_rank += 1.0;
                     }
-                    current_rank += 1.0;
                 }
             }
         },
@@ -1308,15 +1334,18 @@ fn apply_ranking_strategy_weighted(
                             let pct = weight * pct_factor;
                             pct_sum += pct;
                             counts_final.push((null_val.to_vec(), weight, pct, current_rank));
+                            current_rank += 1.0;
                         } else {
+                            // sentinel-suppressed null: don't consume a rank slot,
+                            // matching the other strategies
                             counts_final.push((null_val.to_vec(), weight, -1.0, -1.0));
                         }
                     } else {
                         let pct = weight * pct_factor;
                         pct_sum += pct;
                         counts_final.push((byte_string, weight, pct, current_rank));
+                        current_rank += 1.0;
                     }
-                    current_rank += 1.0;
                 }
             }
         },
@@ -1425,13 +1454,12 @@ fn apply_limits_unweighted(
 /// byte-strings that share the same `count`.
 fn group_by_count(counts: Vec<(Vec<u8>, u64)>) -> Vec<(u64, Vec<Vec<u8>>)> {
     let mut count_groups: Vec<(u64, Vec<Vec<u8>>)> = Vec::new();
-    let mut current_count = None;
+    let mut current_count: Option<u64> = None;
     let mut current_group = Vec::new();
 
     for (byte_string, count) in counts {
         if let Some(prev_count) = current_count
             && count != prev_count
-            && !current_group.is_empty()
         {
             count_groups.push((prev_count, std::mem::take(&mut current_group)));
         }
@@ -1439,9 +1467,8 @@ fn group_by_count(counts: Vec<(Vec<u8>, u64)>) -> Vec<(u64, Vec<Vec<u8>>)> {
         current_count = Some(count);
         current_group.push(byte_string);
     }
-    if !current_group.is_empty() {
-        // safety: we know that current_count is Some
-        count_groups.push((current_count.unwrap(), current_group));
+    if let Some(prev_count) = current_count {
+        count_groups.push((prev_count, current_group));
     }
 
     count_groups
@@ -1464,7 +1491,6 @@ fn group_by_weight(counts: Vec<(Vec<u8>, f64)>, tolerance: f64) -> Vec<(f64, Vec
     for (byte_string, weight) in counts {
         if let Some(prev_weight) = current_weight
             && (prev_weight - weight).abs() > tolerance
-            && !current_group.is_empty()
         {
             weight_groups.push((prev_weight, std::mem::take(&mut current_group)));
         }
@@ -1472,9 +1498,8 @@ fn group_by_weight(counts: Vec<(Vec<u8>, f64)>, tolerance: f64) -> Vec<(f64, Vec
         current_weight = Some(weight);
         current_group.push(byte_string);
     }
-    if !current_group.is_empty() {
-        // safety: we know that current_weight is Some
-        weight_groups.push((current_weight.unwrap(), current_group));
+    if let Some(prev_weight) = current_weight {
+        weight_groups.push((prev_weight, current_group));
     }
 
     weight_groups
@@ -1816,6 +1841,18 @@ impl Args {
             .iter()
             .map(|e| (e.field.as_str(), e))
             .collect();
+        // CSVs may have duplicate header names. The cache_map keeps only the last
+        // entry per name, so duplicates would silently shadow. Warn — the behavior
+        // is still well-defined (last-wins) but the user should know.
+        if cache_map.len() != cache_entries.len() {
+            log::warn!(
+                "Frequency cache contains duplicate column names ({} entries, {} unique). Falling \
+                 back to recomputation to avoid ambiguous lookups.",
+                cache_entries.len(),
+                cache_map.len()
+            );
+            return Ok(false);
+        }
 
         // Filter cache entries to selected columns, preserving selection order
         let mut selected_entries: Vec<&FrequencyCacheEntry> =
@@ -2056,17 +2093,14 @@ impl Args {
         }
         // safety: NULL_VAL is set in run()
         let null_val = NULL_VAL.get().unwrap();
-        // Collect all NULL entries
-        let mut null_entries = Vec::new();
-        let mut i = 0;
-        while i < counts.len() {
-            if counts[i].0 == *null_val {
-                null_entries.push(counts.remove(i));
-            } else {
-                i += 1;
-            }
-        }
-        // Append all NULL entries at the end
+
+        // Single-pass stable extraction: keeps non-NULL entries in their existing
+        // (already sorted) order, collects NULL entries, and appends them at the end.
+        // Replaces an earlier O(n²) Vec::remove loop that was hot for high-cardinality
+        // columns with multiple NULL entries.
+        let null_entries: Vec<_> = counts
+            .extract_if(.., |entry| entry.0 == *null_val)
+            .collect();
         counts.extend(null_entries);
     }
 
@@ -2091,6 +2125,10 @@ impl Args {
             if !total_weight.is_finite() {
                 return;
             }
+            // u64::MAX as f64 rounds up past u64::MAX, but Rust's saturating
+            // f64-to-int cast (since 1.45) clamps down on conversion, so the
+            // result is never UB. The explicit clamp also pins NaN to 0.0
+            // (which the earlier is_finite check already rejects).
             #[allow(clippy::cast_precision_loss)]
             let count = total_weight.clamp(0.0, u64::MAX as f64).round() as u64;
             processed_frequencies.push(ProcessedFrequency {
@@ -2484,15 +2522,19 @@ impl Args {
             (total_count - count_sum, unique_counts_len)
         };
 
-        if adjusted_other_count > 0 && self.flag_other_text != "<NONE>" {
-            // When NULL was extracted and re-added, don't count it as a "shown" entry
-            // because it's separate from the top-k values
-            let shown_count = if null_count > 0 {
-                counts_final.len().saturating_sub(1)
-            } else {
-                counts_final.len()
-            };
-            let other_unique_count = adjusted_unique_len.saturating_sub(shown_count);
+        // When NULL was extracted and re-added, don't count it as a "shown" entry
+        // because it's separate from the top-k values
+        let shown_count = if null_count > 0 {
+            counts_final.len().saturating_sub(1)
+        } else {
+            counts_final.len()
+        };
+        let other_unique_count = adjusted_unique_len.saturating_sub(shown_count);
+        // Only emit Other when there are remaining unique values AND remaining count.
+        // The other_unique_count > 0 guard prevents misleading "Other (0)" rows
+        // (e.g., with --limit 0 when all values are already shown), matching the
+        // weighted path.
+        if adjusted_other_count > 0 && other_unique_count > 0 && self.flag_other_text != "<NONE>" {
             counts_final.push((
                 format!(
                     "{} ({})",
@@ -2540,9 +2582,7 @@ impl Args {
 
         let njobs = util::njobs(self.flag_jobs);
 
-        // Read memory limit from environment variable
-
-        // Read memory limit from environment variable
+        // Read memory limit from environment variable.
         // If QSV_FREQ_CHUNK_MEMORY_MB is set & valid, set max chunk memory
         // If QSV_FREQ_CHUNK_MEMORY_MB is not set, use 0 (dynamic sizing)
         // If QSV_FREQ_CHUNK_MEMORY_MB is set to a value that cannot be parsed as u64 (e.g., -1 or
@@ -3439,25 +3479,10 @@ impl Args {
         };
 
         if self.flag_toon {
-            // TOON output - encode the JSON structure to TOON format
-            // First serialize to JSON Value, then remove empty stats, then encode to TOON
-            let mut json_value = serde_json::to_value(&output)?;
-
-            // Remove empty stats arrays from each field (same as JSON output)
-            if let Some(fields) = json_value.get_mut("fields").and_then(|f| f.as_array_mut()) {
-                for field in fields {
-                    if let Some(field_obj) = field.as_object_mut() {
-                        // Remove empty stats
-                        if let Some(stats) = field_obj.get("stats")
-                            && let Some(stats_array) = stats.as_array()
-                            && stats_array.is_empty()
-                        {
-                            field_obj.remove("stats");
-                        }
-                    }
-                }
-            }
-
+            // TOON output - encode the JSON structure to TOON format.
+            // Empty `stats` arrays are skipped by serde (#[serde(skip_serializing_if)]),
+            // so no manual post-processing is needed.
+            let json_value = serde_json::to_value(&output)?;
             let opts = EncodeOptions::new();
             let toon_output = encode(&json_value, &opts)
                 .map_err(|e| crate::CliError::Other(format!("Failed to encode to TOON: {e}")))?;
@@ -3467,19 +3492,15 @@ impl Args {
                 println!("{toon_output}");
             }
         } else {
-            // JSON output
-            let mut json_output = if self.flag_pretty_json {
+            // JSON output. Empty `stats` arrays are skipped by serde, so no
+            // post-processing is needed.
+            let json_output = if self.flag_pretty_json {
                 // pretty, with more whitespace
                 serde_json::to_string_pretty(&output)?
             } else {
                 // still pretty, but more compact and faster
                 simd_json::to_string_pretty(&output)?
             };
-
-            // remove all empty stats properties from the JSON output using regex
-            // safety: regex pattern is a valid static string
-            let re = regex::Regex::new(r#""stats": \[\],\n\s*"#).unwrap();
-            json_output = re.replace_all(&json_output, "").to_string();
 
             if let Some(output_path) = &self.flag_output {
                 std::fs::write(output_path, json_output)?;
@@ -3543,9 +3564,7 @@ impl Args {
                 )));
             }
 
-            // safety: We know Selection is a tuple struct with a Vec<usize> field
-            // This is safe because we're creating it with valid indices
-            let modified_sel = unsafe { std::mem::transmute::<Vec<usize>, Selection>(sel_vec) };
+            let modified_sel = Selection::from_indices(sel_vec);
 
             // Get selected headers (excluding weight column)
             let selected_headers: csv::ByteRecord = modified_sel.select(full_headers).collect();
@@ -3593,8 +3612,7 @@ impl Args {
                         ));
                     }
 
-                    // safety: We know Selection is a tuple struct with a Vec<usize> field
-                    sel = unsafe { std::mem::transmute::<Vec<usize>, Selection>(sel_vec) };
+                    sel = Selection::from_indices(sel_vec);
                     let headers: csv::ByteRecord = sel.select(&full_headers).collect();
                     (sel, headers)
                 }
@@ -3635,8 +3653,7 @@ impl Args {
                         ));
                     }
 
-                    // safety: We know Selection is a tuple struct with a Vec<usize> field
-                    let new_sel = unsafe { std::mem::transmute::<Vec<usize>, Selection>(sel_vec) };
+                    let new_sel = Selection::from_indices(sel_vec);
                     let headers: csv::ByteRecord = new_sel.select(&full_headers).collect();
                     (new_sel, headers)
                 }
@@ -3672,7 +3689,10 @@ impl Args {
 }
 
 /// Helper function to add a field to field_stats if it exists
-/// Automatically converts any type to appropriate JSON value
+/// Automatically converts any type to appropriate JSON value.
+/// NaN and infinity are emitted as JSON null (rather than silently coerced
+/// to 0) since JSON cannot represent them and downstream consumers should
+/// distinguish "no value" from "zero".
 fn add_stat<T: ToString>(field_stats: &mut Vec<FieldStats>, name: &str, value: Option<T>) {
     if let Some(val) = value {
         let val_string = val.to_string();
@@ -3682,10 +3702,7 @@ fn add_stat<T: ToString>(field_stats: &mut Vec<FieldStats>, name: &str, value: O
             if let Ok(int_val) = atoi_simd::parse::<i64, false, false>(val_string.as_bytes()) {
                 JsonValue::Number(int_val.into())
             } else if let Ok(float_val) = fast_float2::parse(&val_string) {
-                JsonValue::Number(
-                    serde_json::Number::from_f64(float_val)
-                        .unwrap_or_else(|| serde_json::Number::from(0)),
-                )
+                serde_json::Number::from_f64(float_val).map_or(JsonValue::Null, JsonValue::Number)
             } else {
                 // Fall back to string
                 JsonValue::String(val_string)
@@ -3737,173 +3754,102 @@ fn evaluate_stats_filter(
     stats_data: &StatsData,
     filter_expression: &str,
 ) -> Result<bool, String> {
-    use mlua::Value;
+    use mlua::{IntoLua, Value};
 
-    // Set all StatsData fields as globals
+    // Set all StatsData fields as Luau globals. mlua's `Table::set` accepts
+    // any `IntoLua` value, including `Option<T>` (mapped to Nil for None) and
+    // `&str` (mapped to a Lua string), so a single helper covers every field
+    // shape.
     let globals = lua.globals();
-
-    // Helper macros to reduce boilerplate
-    macro_rules! set_string {
+    let set = |name: &str, value: Value| -> Result<(), String> {
+        globals
+            .set(name, value)
+            .map_err(|e| format!("Failed to set {name}: {e}"))
+    };
+    macro_rules! bind {
         ($name:ident) => {
-            globals
-                .set(stringify!($name), stats_data.$name.as_str())
-                .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
+            set(
+                stringify!($name),
+                stats_data
+                    .$name
+                    .clone()
+                    .into_lua(lua)
+                    .map_err(|e| format!("Failed to convert {}: {e}", stringify!($name)))?,
+            )?
         };
     }
 
-    macro_rules! set_u64 {
-        ($name:ident) => {
-            globals
-                .set(stringify!($name), stats_data.$name)
-                .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
-        };
-    }
-
-    macro_rules! set_bool {
-        ($name:ident) => {
-            globals
-                .set(stringify!($name), stats_data.$name)
-                .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
-        };
-    }
-
-    macro_rules! set_optional_f64 {
-        ($name:ident) => {
-            if let Some(val) = stats_data.$name {
-                globals
-                    .set(stringify!($name), val)
-                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
-            } else {
-                globals
-                    .set(stringify!($name), Value::Nil)
-                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
-            }
-        };
-    }
-
-    macro_rules! set_optional_u64 {
-        ($name:ident) => {
-            if let Some(val) = stats_data.$name {
-                globals
-                    .set(stringify!($name), val)
-                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
-            } else {
-                globals
-                    .set(stringify!($name), Value::Nil)
-                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
-            }
-        };
-    }
-
-    macro_rules! set_optional_usize {
-        ($name:ident) => {
-            if let Some(val) = stats_data.$name {
-                globals
-                    .set(stringify!($name), val)
-                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
-            } else {
-                globals
-                    .set(stringify!($name), Value::Nil)
-                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
-            }
-        };
-    }
-
-    macro_rules! set_optional_u32 {
-        ($name:ident) => {
-            if let Some(val) = stats_data.$name {
-                globals
-                    .set(stringify!($name), val)
-                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
-            } else {
-                globals
-                    .set(stringify!($name), Value::Nil)
-                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
-            }
-        };
-    }
-
-    macro_rules! set_optional_string {
-        ($name:ident) => {
-            if let Some(ref val) = stats_data.$name {
-                globals
-                    .set(stringify!($name), val.as_str())
-                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
-            } else {
-                globals
-                    .set(stringify!($name), Value::Nil)
-                    .map_err(|e| format!("Failed to set {}: {e}", stringify!($name)))?;
-            }
-        };
-    }
-
-    // Set all fields from StatsData
     // Basic fields
-    set_string!(field);
+    bind!(field);
     // 'type' is a reserved keyword in Rust, so we use r#type
-    globals
-        .set("type", stats_data.r#type.as_str())
-        .map_err(|e| format!("Failed to set type: {e}"))?;
-    set_bool!(is_ascii);
+    set(
+        "type",
+        stats_data
+            .r#type
+            .as_str()
+            .into_lua(lua)
+            .map_err(|e| format!("Failed to convert type: {e}"))?,
+    )?;
+    bind!(is_ascii);
 
     // Counts (non-optional)
-    set_u64!(cardinality);
-    set_u64!(nullcount);
+    bind!(cardinality);
+    bind!(nullcount);
 
-    // Optional numeric fields
-    set_optional_f64!(sum);
-    set_optional_string!(min);
-    set_optional_string!(max);
-    set_optional_f64!(range);
-    set_optional_string!(sort_order);
+    // Optional numeric/string fields
+    bind!(sum);
+    bind!(min);
+    bind!(max);
+    bind!(range);
+    bind!(sort_order);
 
     // String length stats
-    set_optional_usize!(min_length);
-    set_optional_usize!(max_length);
-    set_optional_usize!(sum_length);
-    set_optional_f64!(avg_length);
-    set_optional_f64!(stddev_length);
-    set_optional_f64!(variance_length);
-    set_optional_f64!(cv_length);
+    bind!(min_length);
+    bind!(max_length);
+    bind!(sum_length);
+    bind!(avg_length);
+    bind!(stddev_length);
+    bind!(variance_length);
+    bind!(cv_length);
 
     // Numeric stats
-    set_optional_f64!(mean);
-    set_optional_f64!(sem);
-    set_optional_f64!(stddev);
-    set_optional_f64!(variance);
-    set_optional_f64!(cv);
+    bind!(mean);
+    bind!(sem);
+    bind!(stddev);
+    bind!(variance);
+    bind!(cv);
 
     // Sign counts
-    set_optional_u64!(n_negative);
-    set_optional_u64!(n_zero);
-    set_optional_u64!(n_positive);
+    bind!(n_negative);
+    bind!(n_zero);
+    bind!(n_positive);
 
     // Precision
-    set_optional_u32!(max_precision);
+    bind!(max_precision);
 
     // Ratios
-    set_optional_f64!(sparsity);
-    set_optional_f64!(uniqueness_ratio);
+    bind!(sparsity);
+    bind!(uniqueness_ratio);
 
     // Distribution stats
-    set_optional_f64!(mad);
-    set_optional_f64!(lower_outer_fence);
-    set_optional_f64!(lower_inner_fence);
-    set_optional_f64!(q1);
-    set_optional_f64!(q2_median);
-    set_optional_f64!(q3);
-    set_optional_f64!(iqr);
-    set_optional_f64!(upper_inner_fence);
-    set_optional_f64!(upper_outer_fence);
-    set_optional_f64!(skewness);
+    bind!(mad);
+    bind!(lower_outer_fence);
+    bind!(lower_inner_fence);
+    bind!(q1);
+    bind!(q2_median);
+    bind!(q3);
+    bind!(iqr);
+    bind!(upper_inner_fence);
+    bind!(upper_outer_fence);
+    bind!(skewness);
 
     // Mode/Antimode
-    set_optional_string!(mode);
-    set_optional_u64!(mode_count);
-    set_optional_u64!(mode_occurrences);
-    set_optional_string!(antimode);
-    set_optional_u64!(antimode_count);
-    set_optional_u64!(antimode_occurrences);
+    bind!(mode);
+    bind!(mode_count);
+    bind!(mode_occurrences);
+    bind!(antimode);
+    bind!(antimode_count);
+    bind!(antimode_occurrences);
 
     // Wrap the expression in a return statement to get the result
     let wrapped_expr = format!("return {filter_expression}");

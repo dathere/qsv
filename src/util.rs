@@ -1060,30 +1060,26 @@ pub fn mem_file_check(
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 #[inline]
 pub fn condense(val: Cow<[u8]>, n: Option<usize>) -> Cow<[u8]> {
-    match n {
-        None => val,
-        Some(n) => {
-            let mut is_short_utf8 = false;
-            if let Ok(s) = simdutf8::basic::from_utf8(&val) {
-                if n >= s.chars().count() {
-                    is_short_utf8 = true;
-                } else {
-                    let mut s = s.chars().take(n).collect::<String>();
-                    s.push_str("...");
-                    return Cow::Owned(s.into_bytes());
-                }
-            }
-            if is_short_utf8 || n >= (*val).len() {
-                // already short enough
-                val
-            } else {
-                // This is a non-Unicode string, so we just trim on bytes.
-                let mut s = val[0..n].to_vec();
-                s.extend(b"...".iter().copied());
-                Cow::Owned(s)
-            }
-        },
+    let Some(n) = n else { return val };
+
+    if let Ok(s) = simdutf8::basic::from_utf8(&val) {
+        // Valid UTF-8: count by chars, not bytes, so multi-byte codepoints
+        // count once. Truncating by bytes here would risk splitting a char.
+        if s.chars().count() <= n {
+            return val;
+        }
+        let mut out: String = s.chars().take(n).collect();
+        out.push_str("...");
+        return Cow::Owned(out.into_bytes());
     }
+
+    // Not valid UTF-8: truncate by bytes.
+    if val.len() <= n {
+        return val;
+    }
+    let mut out = val[..n].to_vec();
+    out.extend_from_slice(b"...");
+    Cow::Owned(out)
 }
 
 pub fn idx_path(csv_path: &Path) -> PathBuf {

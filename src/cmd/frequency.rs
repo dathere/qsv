@@ -1033,23 +1033,6 @@ fn merge_weighted_ftables(mut a: WeightedFTables, b: WeightedFTables) -> Weighte
     a
 }
 
-/// Apply ranking strategy to grouped unweighted frequency values (u64 counts)
-///
-/// # Arguments
-/// * `groups` - A list of `(count, values)` pairs, where each `values` vector contains all distinct
-///   values that share the same unweighted count.
-/// * `strategy` - The ranking strategy to apply when assigning ranks to counts (for example, min,
-///   max, dense, ordinal, or average).
-/// * `pct_factor` - Multiplier used to convert counts into percentage values (typically derived
-///   from the total row count).
-/// * `null_val` - Byte representation used to identify or label null or missing values.
-///
-/// # Returns
-/// A tuple `(counts_final, count_sum, pct_sum)` where:
-/// * `counts_final` - The flattened list of `(value, count, percentage, rank)` tuples for each
-///   grouped value after ranking.
-/// * `count_sum` - The sum of all counts in `counts_final`.
-/// * `pct_sum` - The sum of all percentage values in `counts_final`.
 #[allow(clippy::cast_precision_loss)]
 fn apply_ranking_strategy_unweighted(
     groups: Vec<(u64, Vec<Vec<u8>>)>,
@@ -1064,174 +1047,96 @@ fn apply_ranking_strategy_unweighted(
     let mut count_sum = 0_u64;
     let mut pct_sum = 0.0_f64;
 
-    match strategy {
-        RankStrategy::Dense => {
-            // Dense ranking (1223)
-            for (count, mut group) in groups {
-                group.sort_unstable();
-                for byte_string in group {
-                    count_sum += count;
-
-                    if byte_string.is_empty() {
-                        if pct_nulls {
-                            // Original behavior: include NULL in percentage
-                            let pct = count as f64 * pct_factor;
-                            pct_sum += pct;
-                            counts_final.push((null_val.to_vec(), count, pct, current_rank));
-                        } else {
-                            // New behavior: exclude NULL from percentage/rank
-                            // Use -1.0 as sentinel values for empty percentage and rank
-                            counts_final.push((null_val.to_vec(), count, -1.0, -1.0));
-                        }
-                    } else {
-                        let pct = count as f64 * pct_factor;
-                        pct_sum += pct;
-                        counts_final.push((byte_string, count, pct, current_rank));
-                    }
+    // Per-row emit shared by all five strategies. Returns true when the row
+    // was a sentinel-suppressed null (pct_nulls=false + empty value), so
+    // Ordinal can skip rank advancement to match Dense/Min/Max/Average
+    // semantics for nulls.
+    {
+        let mut emit = |byte_string: Vec<u8>, count: u64, rank: f64| -> bool {
+            count_sum += count;
+            if byte_string.is_empty() {
+                if pct_nulls {
+                    let pct = count as f64 * pct_factor;
+                    pct_sum += pct;
+                    counts_final.push((null_val.to_vec(), count, pct, rank));
+                    false
+                } else {
+                    counts_final.push((null_val.to_vec(), count, -1.0, -1.0));
+                    true
                 }
-                current_rank += 1.0;
+            } else {
+                let pct = count as f64 * pct_factor;
+                pct_sum += pct;
+                counts_final.push((byte_string, count, pct, rank));
+                false
             }
-        },
-        RankStrategy::Min => {
-            // Standard competition ranking (1224)
-            for (count, mut group) in groups {
-                group.sort_unstable();
-                let group_len = group.len();
-                for byte_string in group {
-                    count_sum += count;
+        };
 
-                    if byte_string.is_empty() {
-                        if pct_nulls {
-                            let pct = count as f64 * pct_factor;
-                            pct_sum += pct;
-                            counts_final.push((null_val.to_vec(), count, pct, current_rank));
-                        } else {
-                            counts_final.push((null_val.to_vec(), count, -1.0, -1.0));
-                        }
-                    } else {
-                        let pct = count as f64 * pct_factor;
-                        pct_sum += pct;
-                        counts_final.push((byte_string, count, pct, current_rank));
+        match strategy {
+            RankStrategy::Dense => {
+                // Dense ranking (1223)
+                for (count, mut group) in groups {
+                    group.sort_unstable();
+                    for byte_string in group {
+                        emit(byte_string, count, current_rank);
                     }
+                    current_rank += 1.0;
                 }
-                current_rank += group_len as f64;
-            }
-        },
-        RankStrategy::Max => {
-            // Modified competition ranking (1334)
-            for (count, mut group) in groups {
-                group.sort_unstable();
-                let group_len = group.len();
-                let max_rank = current_rank + group_len as f64 - 1.0;
-                for byte_string in group {
-                    count_sum += count;
-
-                    if byte_string.is_empty() {
-                        if pct_nulls {
-                            let pct = count as f64 * pct_factor;
-                            pct_sum += pct;
-                            counts_final.push((null_val.to_vec(), count, pct, max_rank));
-                        } else {
-                            counts_final.push((null_val.to_vec(), count, -1.0, -1.0));
-                        }
-                    } else {
-                        let pct = count as f64 * pct_factor;
-                        pct_sum += pct;
-                        counts_final.push((byte_string, count, pct, max_rank));
+            },
+            RankStrategy::Min => {
+                // Standard competition ranking (1224)
+                for (count, mut group) in groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
+                    for byte_string in group {
+                        emit(byte_string, count, current_rank);
                     }
+                    current_rank += group_len as f64;
                 }
-                current_rank += group_len as f64;
-            }
-        },
-        RankStrategy::Ordinal => {
-            // Ordinal ranking (1234)
-            for (count, mut group) in groups {
-                group.sort_unstable();
-                for byte_string in group {
-                    count_sum += count;
-
-                    if byte_string.is_empty() {
-                        if pct_nulls {
-                            let pct = count as f64 * pct_factor;
-                            pct_sum += pct;
-                            counts_final.push((null_val.to_vec(), count, pct, current_rank));
+            },
+            RankStrategy::Max => {
+                // Modified competition ranking (1334)
+                for (count, mut group) in groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
+                    let max_rank = current_rank + group_len as f64 - 1.0;
+                    for byte_string in group {
+                        emit(byte_string, count, max_rank);
+                    }
+                    current_rank += group_len as f64;
+                }
+            },
+            RankStrategy::Ordinal => {
+                // Ordinal ranking (1234). Sentinel-suppressed nulls do NOT
+                // consume a rank slot, matching the other strategies.
+                for (count, mut group) in groups {
+                    group.sort_unstable();
+                    for byte_string in group {
+                        let suppressed = emit(byte_string, count, current_rank);
+                        if !suppressed {
                             current_rank += 1.0;
-                        } else {
-                            // sentinel-suppressed null: don't consume a rank slot,
-                            // matching the other strategies
-                            counts_final.push((null_val.to_vec(), count, -1.0, -1.0));
                         }
-                    } else {
-                        let pct = count as f64 * pct_factor;
-                        pct_sum += pct;
-                        counts_final.push((byte_string, count, pct, current_rank));
-                        current_rank += 1.0;
                     }
                 }
-            }
-        },
-        RankStrategy::Average => {
-            // Fractional ranking (1 2.5 2.5 4)
-            for (count, mut group) in groups {
-                group.sort_unstable();
-                let group_len = group.len();
-                let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
-                for byte_string in group {
-                    count_sum += count;
-
-                    if byte_string.is_empty() {
-                        if pct_nulls {
-                            let pct = count as f64 * pct_factor;
-                            pct_sum += pct;
-                            counts_final.push((null_val.to_vec(), count, pct, avg_rank));
-                        } else {
-                            counts_final.push((null_val.to_vec(), count, -1.0, -1.0));
-                        }
-                    } else {
-                        let pct = count as f64 * pct_factor;
-                        pct_sum += pct;
-                        counts_final.push((byte_string, count, pct, avg_rank));
+            },
+            RankStrategy::Average => {
+                // Fractional ranking (1 2.5 2.5 4)
+                for (count, mut group) in groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
+                    let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
+                    for byte_string in group {
+                        emit(byte_string, count, avg_rank);
                     }
+                    current_rank += group_len as f64;
                 }
-                current_rank += group_len as f64;
-            }
-        },
+            },
+        }
     }
 
     (counts_final, count_sum, pct_sum)
 }
 
-/// Apply a ranking strategy to grouped weighted frequency values.
-///
-/// This function takes pre-aggregated weighted frequency groups and flattens them into a list
-/// of individual values with their associated weight, percentage, and rank. The rank assigned
-/// to each value depends on the provided `strategy`, and percentages are computed using
-/// `pct_factor`. The `null_val` is treated specially as the null/other bucket when present.
-///
-/// # Arguments
-///
-/// * `groups` - A vector of tuples where each tuple contains:
-///   * the total weight for the group of values (`f64`), and
-///   * a vector of the grouped values (`Vec<u8>` for each value) that share that weight. Typically,
-///     these groups represent distinct values with their aggregated weights after applying any
-///     limiting or bucketing logic.
-/// * `strategy` - The ranking strategy (`RankStrategy`) used to assign ranks to values based on
-///   their weights. This controls how ties are handled (e.g., minimum, maximum, dense, ordinal, or
-///   average ranks).
-/// * `pct_factor` - A scaling factor used to convert weights into percentage values. For example,
-///   this is often the reciprocal of the total weight so that the resulting percentages sum to
-///   approximately 100.
-/// * `null_val` - The byte representation of the value that should be treated as the null/other
-///   bucket. This is used to identify and correctly label null/other values in the output.
-///
-/// # Returns
-///
-/// A tuple `(counts_final, count_sum, pct_sum)` where:
-///
-/// * `counts_final` - The flattened list of `(value, weight, percentage, rank)` tuples for each
-///   grouped value after ranking has been applied.
-/// * `count_sum` - The sum of all weights in `counts_final`.
-/// * `pct_sum` - The sum of all percentage values in `counts_final`.
 #[allow(clippy::cast_precision_loss)]
 fn apply_ranking_strategy_weighted(
     groups: Vec<(f64, Vec<Vec<u8>>)>,
@@ -1246,135 +1151,91 @@ fn apply_ranking_strategy_weighted(
     let mut count_sum = 0.0_f64;
     let mut pct_sum = 0.0_f64;
 
-    match strategy {
-        RankStrategy::Dense => {
-            // Dense ranking (1223)
-            for (weight, mut group) in groups {
-                group.sort_unstable();
-                for byte_string in group {
-                    count_sum += weight;
-
-                    if byte_string.is_empty() {
-                        if pct_nulls {
-                            let pct = weight * pct_factor;
-                            pct_sum += pct;
-                            counts_final.push((null_val.to_vec(), weight, pct, current_rank));
-                        } else {
-                            counts_final.push((null_val.to_vec(), weight, -1.0, -1.0));
-                        }
-                    } else {
-                        let pct = weight * pct_factor;
-                        pct_sum += pct;
-                        counts_final.push((byte_string, weight, pct, current_rank));
-                    }
+    // Per-row emit shared by all five strategies. Returns true when the row
+    // was a sentinel-suppressed null (pct_nulls=false + empty value), so
+    // Ordinal can skip rank advancement to match Dense/Min/Max/Average
+    // semantics for nulls.
+    {
+        let mut emit = |byte_string: Vec<u8>, weight: f64, rank: f64| -> bool {
+            count_sum += weight;
+            if byte_string.is_empty() {
+                if pct_nulls {
+                    let pct = weight * pct_factor;
+                    pct_sum += pct;
+                    counts_final.push((null_val.to_vec(), weight, pct, rank));
+                    false
+                } else {
+                    counts_final.push((null_val.to_vec(), weight, -1.0, -1.0));
+                    true
                 }
-                current_rank += 1.0;
+            } else {
+                let pct = weight * pct_factor;
+                pct_sum += pct;
+                counts_final.push((byte_string, weight, pct, rank));
+                false
             }
-        },
-        RankStrategy::Min => {
-            // Standard competition ranking (1224)
-            for (weight, mut group) in groups {
-                group.sort_unstable();
-                let group_len = group.len();
-                for byte_string in group {
-                    count_sum += weight;
+        };
 
-                    if byte_string.is_empty() {
-                        if pct_nulls {
-                            let pct = weight * pct_factor;
-                            pct_sum += pct;
-                            counts_final.push((null_val.to_vec(), weight, pct, current_rank));
-                        } else {
-                            counts_final.push((null_val.to_vec(), weight, -1.0, -1.0));
-                        }
-                    } else {
-                        let pct = weight * pct_factor;
-                        pct_sum += pct;
-                        counts_final.push((byte_string, weight, pct, current_rank));
+        match strategy {
+            RankStrategy::Dense => {
+                // Dense ranking (1223)
+                for (weight, mut group) in groups {
+                    group.sort_unstable();
+                    for byte_string in group {
+                        emit(byte_string, weight, current_rank);
                     }
+                    current_rank += 1.0;
                 }
-                current_rank += group_len as f64;
-            }
-        },
-        RankStrategy::Max => {
-            // Modified competition ranking (1334)
-            for (weight, mut group) in groups {
-                group.sort_unstable();
-                let group_len = group.len();
-                let max_rank = current_rank + group_len as f64 - 1.0;
-                for byte_string in group {
-                    count_sum += weight;
-
-                    if byte_string.is_empty() {
-                        if pct_nulls {
-                            let pct = weight * pct_factor;
-                            pct_sum += pct;
-                            counts_final.push((null_val.to_vec(), weight, pct, max_rank));
-                        } else {
-                            counts_final.push((null_val.to_vec(), weight, -1.0, -1.0));
-                        }
-                    } else {
-                        let pct = weight * pct_factor;
-                        pct_sum += pct;
-                        counts_final.push((byte_string, weight, pct, max_rank));
+            },
+            RankStrategy::Min => {
+                // Standard competition ranking (1224)
+                for (weight, mut group) in groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
+                    for byte_string in group {
+                        emit(byte_string, weight, current_rank);
                     }
+                    current_rank += group_len as f64;
                 }
-                current_rank += group_len as f64;
-            }
-        },
-        RankStrategy::Ordinal => {
-            // Ordinal ranking (1234)
-            for (weight, mut group) in groups {
-                group.sort_unstable();
-                for byte_string in group {
-                    count_sum += weight;
-
-                    if byte_string.is_empty() {
-                        if pct_nulls {
-                            let pct = weight * pct_factor;
-                            pct_sum += pct;
-                            counts_final.push((null_val.to_vec(), weight, pct, current_rank));
+            },
+            RankStrategy::Max => {
+                // Modified competition ranking (1334)
+                for (weight, mut group) in groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
+                    let max_rank = current_rank + group_len as f64 - 1.0;
+                    for byte_string in group {
+                        emit(byte_string, weight, max_rank);
+                    }
+                    current_rank += group_len as f64;
+                }
+            },
+            RankStrategy::Ordinal => {
+                // Ordinal ranking (1234). Sentinel-suppressed nulls do NOT
+                // consume a rank slot, matching the other strategies.
+                for (weight, mut group) in groups {
+                    group.sort_unstable();
+                    for byte_string in group {
+                        let suppressed = emit(byte_string, weight, current_rank);
+                        if !suppressed {
                             current_rank += 1.0;
-                        } else {
-                            // sentinel-suppressed null: don't consume a rank slot,
-                            // matching the other strategies
-                            counts_final.push((null_val.to_vec(), weight, -1.0, -1.0));
                         }
-                    } else {
-                        let pct = weight * pct_factor;
-                        pct_sum += pct;
-                        counts_final.push((byte_string, weight, pct, current_rank));
-                        current_rank += 1.0;
                     }
                 }
-            }
-        },
-        RankStrategy::Average => {
-            // Fractional ranking (1 2.5 2.5 4)
-            for (weight, mut group) in groups {
-                group.sort_unstable();
-                let group_len = group.len();
-                let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
-                for byte_string in group {
-                    count_sum += weight;
-
-                    if byte_string.is_empty() {
-                        if pct_nulls {
-                            let pct = weight * pct_factor;
-                            pct_sum += pct;
-                            counts_final.push((null_val.to_vec(), weight, pct, avg_rank));
-                        } else {
-                            counts_final.push((null_val.to_vec(), weight, -1.0, -1.0));
-                        }
-                    } else {
-                        let pct = weight * pct_factor;
-                        pct_sum += pct;
-                        counts_final.push((byte_string, weight, pct, avg_rank));
+            },
+            RankStrategy::Average => {
+                // Fractional ranking (1 2.5 2.5 4)
+                for (weight, mut group) in groups {
+                    group.sort_unstable();
+                    let group_len = group.len();
+                    let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
+                    for byte_string in group {
+                        emit(byte_string, weight, avg_rank);
                     }
+                    current_rank += group_len as f64;
                 }
-                current_rank += group_len as f64;
-            }
-        },
+            },
+        }
     }
 
     (counts_final, count_sum, pct_sum)

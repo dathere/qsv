@@ -142,21 +142,21 @@ impl Args {
     fn no_index(&self) -> CliResult<()> {
         let mut rdr = self.rconfig().reader()?;
 
-        let (start, end) = self.range()?;
+        let (start, end) = self.range(None)?;
         if self.flag_json {
             let headers = rdr.byte_headers()?.clone();
-            // collect into a Result so CSV parse errors propagate instead of panicking
+            // stream records straight to write_json — parse errors propagate
+            // via the Result item type without buffering the whole slice
             let records = rdr
                 .byte_records()
                 .enumerate()
                 .filter(|(i, _)| self.flag_invert == (*i < start || *i >= end))
-                .map(|(_, r)| r)
-                .collect::<Result<Vec<_>, _>>()?;
+                .map(|(_, r)| r);
             util::write_json(
                 self.flag_output.as_ref(),
                 self.flag_no_headers,
                 &headers,
-                records.into_iter(),
+                records,
             )
         } else {
             let mut wtr = self.wconfig().writer()?;
@@ -173,7 +173,8 @@ impl Args {
 
     fn with_index(&self, mut indexed_file: Indexed<fs::File, fs::File>) -> CliResult<()> {
         let total_rows = util::count_rows(&self.rconfig())? as usize;
-        let (start_raw, end_raw) = self.range()?;
+        // reuse the precomputed total — avoids a second count_rows call inside range()
+        let (start_raw, end_raw) = self.range(Some(total_rows))?;
         // clamp to row count so arithmetic on `total_rows - end` cannot underflow
         // and `Indexed::seek` is never called past EOF
         let start = start_raw.min(total_rows);
@@ -187,7 +188,7 @@ impl Args {
                     self.flag_output.as_ref(),
                     self.flag_no_headers,
                     &headers,
-                    std::iter::empty(),
+                    std::iter::empty::<csv::Result<csv::ByteRecord>>(),
                 );
             }
             let mut wtr = self.wconfig().writer()?;
@@ -198,37 +199,38 @@ impl Args {
 
         if self.flag_json {
             let headers = indexed_file.byte_headers()?.clone();
-            let records: Vec<csv::ByteRecord> = if self.flag_invert {
-                let mut records: Vec<csv::ByteRecord> =
+            if self.flag_invert {
+                // invert needs two non-contiguous reads (before start, after end)
+                // and we can only hold one borrow on indexed_file at a time, so
+                // we materialize each segment before seeking to the next.
+                let mut records: Vec<csv::Result<csv::ByteRecord>> =
                     Vec::with_capacity(start + (total_rows - end));
-                // Get records before start
                 if start > 0 {
                     indexed_file.seek(0)?;
-                    for r in indexed_file.byte_records().take(start) {
-                        records.push(r?);
-                    }
+                    records.extend(indexed_file.byte_records().take(start));
                 }
-                // Get records after end (skip when end == total_rows; seek(total_rows) errors)
+                // skip seek(total_rows) — it would error past EOF
                 if end < total_rows {
                     indexed_file.seek(end as u64)?;
-                    for r in indexed_file.byte_records().take(total_rows - end) {
-                        records.push(r?);
-                    }
+                    records.extend(indexed_file.byte_records().take(total_rows - end));
                 }
-                records
+                util::write_json(
+                    self.flag_output.as_ref(),
+                    self.flag_no_headers,
+                    &headers,
+                    records.into_iter(),
+                )
             } else {
+                // contiguous read — stream straight through
                 indexed_file.seek(start as u64)?;
-                indexed_file
-                    .byte_records()
-                    .take(end - start)
-                    .collect::<Result<Vec<_>, _>>()?
-            };
-            util::write_json(
-                self.flag_output.as_ref(),
-                self.flag_no_headers,
-                &headers,
-                records.into_iter(),
-            )
+                let records = indexed_file.byte_records().take(end - start);
+                util::write_json(
+                    self.flag_output.as_ref(),
+                    self.flag_no_headers,
+                    &headers,
+                    records,
+                )
+            }
         } else {
             let mut wtr = self.wconfig().writer()?;
             self.rconfig().write_headers(&mut *indexed_file, &mut wtr)?;
@@ -256,14 +258,18 @@ impl Args {
         }
     }
 
-    fn range(&self) -> CliResult<(usize, usize)> {
+    fn range(&self, precomputed_total: Option<usize>) -> CliResult<(usize, usize)> {
         // util::range rejects mixing --index with --start/--end/--len, but we
         // still resolve both independently here. count_rows is only needed for
-        // negative offsets — fetch it at most once.
+        // negative offsets — fetch it at most once, or accept a precomputed
+        // value from with_index() so the indexed path doesn't double-count.
         let needs_count = matches!(self.flag_start, Some(s) if s < 0)
             || matches!(self.flag_index, Some(i) if i < 0);
         let total = if needs_count {
-            Some(util::count_rows(&self.rconfig())? as usize)
+            match precomputed_total {
+                Some(t) => Some(t),
+                None => Some(util::count_rows(&self.rconfig())? as usize),
+            }
         } else {
             None
         };

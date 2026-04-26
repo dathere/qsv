@@ -1715,6 +1715,23 @@ pub fn log_end(mut qsv_args: String, now: std::time::Instant) {
 /// "off-by-one" is intentional: stats `*PREVIEW*` snapshots are calibrated to
 /// it. Don't change the offset without re-blessing those tests.
 ///
+/// # Caller convention
+///
+/// To produce a string of at most `N` bytes (e.g., before appending an
+/// ellipsis), callers should:
+///
+/// ```ignore
+/// if input.len() > N {
+///     util::utf8_truncate(&mut input, N + 1);  // +1 cancels the internal -1
+///     input.push_str("...");
+/// }
+/// ```
+///
+/// The outer length guard avoids touching strings that already fit; the
+/// `N + 1` argument compensates for the internal `maxsize - 1` so the result
+/// is exactly `N` bytes before the suffix is appended. See the call site in
+/// `src/cmd/stats.rs` (`antimodes` truncation).
+///
 /// # Arguments
 ///
 /// * `input` - A mutable reference to the String to truncate

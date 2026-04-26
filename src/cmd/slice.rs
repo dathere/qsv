@@ -143,16 +143,6 @@ impl Args {
         let mut rdr = self.rconfig().reader()?;
 
         let (start, end) = self.range()?;
-        // empty slice with no inversion: nothing to do
-        if end == start && !self.flag_invert {
-            if !self.flag_json {
-                let mut wtr = self.wconfig().writer()?;
-                self.rconfig().write_headers(&mut rdr, &mut wtr)?;
-                wtr.flush()?;
-            }
-            return Ok(());
-        }
-
         if self.flag_json {
             let headers = rdr.byte_headers()?.clone();
             // collect into a Result so CSV parse errors propagate instead of panicking
@@ -188,7 +178,21 @@ impl Args {
         // and `Indexed::seek` is never called past EOF
         let start = start_raw.min(total_rows);
         let end = end_raw.min(total_rows);
+        // empty slice with no inversion: emit just headers ([] for JSON) so
+        // downstream parsers always see a well-formed document
         if end == start && !self.flag_invert {
+            if self.flag_json {
+                let headers = indexed_file.byte_headers()?.clone();
+                return util::write_json(
+                    self.flag_output.as_ref(),
+                    self.flag_no_headers,
+                    &headers,
+                    std::iter::empty(),
+                );
+            }
+            let mut wtr = self.wconfig().writer()?;
+            self.rconfig().write_headers(&mut *indexed_file, &mut wtr)?;
+            wtr.flush()?;
             return Ok(());
         }
 
@@ -253,19 +257,25 @@ impl Args {
     }
 
     fn range(&self) -> CliResult<(usize, usize)> {
+        // util::range rejects mixing --index with --start/--end/--len, but we
+        // still resolve both independently here. count_rows is only needed for
+        // negative offsets — fetch it at most once.
+        let needs_count = matches!(self.flag_start, Some(s) if s < 0)
+            || matches!(self.flag_index, Some(i) if i < 0);
+        let total = if needs_count {
+            Some(util::count_rows(&self.rconfig())? as usize)
+        } else {
+            None
+        };
+        // saturating_sub so |negative offset| > row count clamps to 0
+        // (i.e. "from the start") rather than past the end of the file
         let start = match self.flag_start {
-            // saturating_sub so |negative offset| > row count clamps to 0
-            // (i.e. "from the start") rather than past the end of the file
-            Some(s) if s < 0 => {
-                Some((util::count_rows(&self.rconfig())? as usize).saturating_sub(s.unsigned_abs()))
-            },
+            Some(s) if s < 0 => Some(total.unwrap().saturating_sub(s.unsigned_abs())),
             Some(s) => Some(s as usize),
             None => None,
         };
         let index = match self.flag_index {
-            Some(i) if i < 0 => {
-                Some((util::count_rows(&self.rconfig())? as usize).saturating_sub(i.unsigned_abs()))
-            },
+            Some(i) if i < 0 => Some(total.unwrap().saturating_sub(i.unsigned_abs())),
             Some(i) => Some(i as usize),
             None => None,
         };

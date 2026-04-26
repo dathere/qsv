@@ -583,6 +583,36 @@ fn slice_negative_start_clamps_to_zero() {
     );
 }
 
+// Empty non-invert JSON slice must still emit `[]` so downstream parsers
+// see a well-formed document, both with and without an index.
+#[test]
+fn slice_empty_json_no_index() {
+    test_slice(
+        "slice_empty_json_no_index",
+        Some(5),
+        Some(5),
+        &[],
+        true,
+        false,
+        false,
+        true,
+    );
+}
+
+#[test]
+fn slice_empty_json_with_index() {
+    test_slice(
+        "slice_empty_json_with_index",
+        Some(5),
+        Some(5),
+        &[],
+        true,
+        true,
+        false,
+        true,
+    );
+}
+
 // Same clamping behavior for negative --index.
 #[test]
 fn slice_neg_index_clamps_to_zero() {

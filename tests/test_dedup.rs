@@ -245,6 +245,20 @@ fn dedup_alreadysorted_nocase() {
 }
 
 #[test]
+fn dedup_sorted_empty() {
+    // Regression: --sorted on empty input must not emit a stray empty row.
+    let wrk = Workdir::new("dedup_sorted_empty");
+    wrk.create("in.csv", vec![svec!["N", "S"]]);
+
+    let mut cmd = wrk.command("dedup");
+    cmd.arg("--sorted").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["N", "S"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn dedup_not_sorted() {
     let wrk = Workdir::new("dedup__not_sorted");
     wrk.create(

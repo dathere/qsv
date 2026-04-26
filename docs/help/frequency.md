@@ -54,7 +54,8 @@ is dynamically calculated based on available memory and record sampling.
 
 You can override this behavior by setting the QSV_FREQ_CHUNK_MEMORY_MB environment variable.
 (set to 0 for dynamic sizing, or a positive number for a fixed memory limit per chunk,
-or -1 for CPU-based chunking (1 chunk = num records/number of CPUs)), or by setting the --jobs option.
+or any non-u64 value (e.g. -1 or "auto") for CPU-based chunking (1 chunk = num records/number of
+CPUs)), or by setting the --jobs option.
 
 NOTE: "Complete" Frequency Tables:
 
@@ -99,17 +100,17 @@ qsv frequency --help
 |--------|------|-------------|--------|
 | &nbsp;`‑s,`<br>`‑‑select`&nbsp; | string | Select a subset of columns to compute frequencies for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv frequency' will disable the use of indexing. |  |
 | &nbsp;`‑l,`<br>`‑‑limit`&nbsp; | string | Limit the frequency table to the N most common items. Set to '0' to disable a limit. If negative, only return values with an occurrence count >= absolute value of the negative limit. e.g. --limit -2 will only return values with an occurrence count >= 2. | `10` |
-| &nbsp;`‑u,`<br>`‑‑unq‑limit`&nbsp; | string | If a column has all unique values, limit the frequency table to a sample of N unique items. Set to '0' to disable a unique_limit. | `10` |
+| &nbsp;`‑u,`<br>`‑‑unq‑limit`&nbsp; | string | If a column has all unique values, limit the frequency table to a sample of N unique items. Set to '0' to disable a unique_limit. Only applies in unweighted mode; ignored when --weight is set. | `10` |
 | &nbsp;`‑‑lmt‑threshold`&nbsp; | string | The threshold for which --limit and --unq-limit will be applied. If the number of unique items in a column >= threshold, the limits will be applied. Set to '0' to disable the threshold and always apply limits. | `0` |
 | &nbsp;`‑r,`<br>`‑‑rank‑strategy`&nbsp; | string | The strategy to use when there are count-tied values in the frequency table. See <https://en.wikipedia.org/wiki/Ranking> for more info. | `dense` |
 | &nbsp;`‑‑pct‑dec‑places`&nbsp; | string | The number of decimal places to round the percentage to. If negative, the number of decimal places will be set automatically to the minimum number of decimal places needed to represent the percentage accurately, up to the absolute value of the negative number. | `-5` |
 | &nbsp;`‑‑other‑sorted`&nbsp; | flag | By default, the "Other" category is placed at the end of the frequency table for a field. If this is enabled, the "Other" category will be sorted with the rest of the values by count. |  |
-| &nbsp;`‑‑other‑text`&nbsp; | string | The text to use for the "Other" category. If set to "<NONE>", the "Other" category will not be included in the frequency table. | `Other` |
+| &nbsp;`‑‑other‑text`&nbsp; | string | The text to use for the "Other" category. If set to the literal string "<NONE>" (case-sensitive, exact match), the "Other" category will not be included in the frequency table. | `Other` |
 | &nbsp;`‑‑no‑other`&nbsp; | flag | Don't include the "Other" category in the frequency table. This is equivalent to --other-text "<NONE>". |  |
 | &nbsp;`‑‑null‑sorted`&nbsp; | flag | By default, the NULL category (controlled by --null-text) is placed at the end of the frequency table for a field, after "Other" if present. If this is enabled, the NULL category will be sorted with the rest of the values by count. |  |
 | &nbsp;`‑a,`<br>`‑‑asc`&nbsp; | flag | Sort the frequency tables in ascending order by count. The default is descending order. Note that this option will also reverse ranking - i.e. the LEAST frequent values will have a rank of 1. |  |
 | &nbsp;`‑‑no‑trim`&nbsp; | flag | Don't trim whitespace from values when computing frequencies. The default is to trim leading and trailing whitespaces. |  |
-| &nbsp;`‑‑null‑text`&nbsp; | string | The text to use for NULL values. If set to "<NONE>", NULLs will not be included in the frequency table (equivalent to --no-nulls). | `(NULL)` |
+| &nbsp;`‑‑null‑text`&nbsp; | string | The text to use for NULL values. If set to the literal string "<NONE>" (case-sensitive, exact match), NULLs will not be included in the frequency table (equivalent to --no-nulls). | `(NULL)` |
 | &nbsp;`‑‑no‑nulls`&nbsp; | flag | Don't include NULLs in the frequency table. This is equivalent to --null-text "<NONE>". |  |
 | &nbsp;`‑‑pct‑nulls`&nbsp; | flag | Include NULL values in percentage and rank calculations. When disabled (default), percentages are "valid percentages" calculated with NULLs excluded from the denominator, and NULL entries display empty percentage and rank values. When enabled, NULLs are included in the denominator (original behavior). Has no effect when --no-nulls is set. |  |
 | &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | Ignore case when computing frequencies. |  |
@@ -128,7 +129,7 @@ qsv frequency --help
 | &nbsp;`‑‑frequency‑jsonl`&nbsp; | flag | Write the complete frequency distribution as a JSONL cache file (FILESTEM.freq.csv.data.jsonl). Requires a non-stdin input file. The cache contains metadata and per-column frequency data. ALL_UNIQUE columns (rowcount == cardinality) get a single ALL_UNIQUE sentinel. HIGH_CARDINALITY columns (cardinality exceeds the smaller of --high-card-threshold/--high-card-pct of rowcount) get a single HIGH_CARDINALITY sentinel. When a valid (fresh) cache already exists, frequency will automatically reuse it instead of recomputing from the CSV. Use --force to regenerate the cache even when it is valid. Cache is NOT used when --ignore-case, --no-trim, or --weight are active, as these change how values are computed. |  |
 | &nbsp;`‑‑high‑card‑threshold`&nbsp; | string | Absolute cardinality threshold for HIGH_CARDINALITY classification in the frequency cache. Can also be set with QSV_FREQ_HIGH_CARD_THRESHOLD env var (env var takes precedence when CLI value equals the default). Only used with --frequency-jsonl. | `100` |
 | &nbsp;`‑‑high‑card‑pct`&nbsp; | string | Percentage of rowcount threshold for HIGH_CARDINALITY classification in the frequency cache. Must be between 1 and 100. Can also be set with QSV_FREQ_HIGH_CARD_PCT env var (env var takes precedence when CLI value equals the default). Only used with --frequency-jsonl. | `90` |
-| &nbsp;`‑‑force`&nbsp; | flag | Force recomputation and cache regeneration even when a valid frequency cache exists. Use with --frequency-jsonl to regenerate the cache. |  |
+| &nbsp;`‑‑force`&nbsp; | flag | Force recomputation even when a valid frequency cache exists, bypassing the auto-reuse path. Also regenerates the cache when combined with --frequency-jsonl. |  |
 
 <a name="json-output-options"></a>
 

@@ -275,7 +275,7 @@ qsv apply calcconv --formatstr '{col1} % 3' --new-column remainder file.csv
 > Convert from one unit to another:
 
 ```console
-qsv apply calcconv --formatstr '{col1} Fahrenheit in Celsius" -c metric_temperature file.csv
+qsv apply calcconv --formatstr '{col1} Fahrenheit in Celsius' -c metric_temperature file.csv
 ```
 
 > Mix units and conversions are automatically done for you:

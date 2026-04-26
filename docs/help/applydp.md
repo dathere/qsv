@@ -104,7 +104,7 @@ qsv applydp operations trim,upper surname -c uppercase_clean_surname file.csv
 > Trim, squeeze, then transform to uppercase in place ALL fields that end with "_name"
 
 ```console
-qsv applydp operations trim,squeeze,upper \_name$\ file.csv
+qsv applydp operations trim,squeeze,upper '/_name$/' file.csv
 ```
 
 > Trim, then transform to uppercase the firstname and surname fields and
@@ -123,7 +123,7 @@ qsv applydp operations mtrim description --comparand '()<>' file.csv
 > Replace ' and ' with ' & ' in the description field.
 
 ```console
-qsv applydp replace description --comparand ' and ' --replacement ' & ' file.csv
+qsv applydp operations replace description --comparand ' and ' --replacement ' & ' file.csv
 ```
 
 > You can also use this subcommand command to make a copy of a column:
@@ -213,7 +213,7 @@ qsv applydp --help
 |--------|------|-------------|--------|
 | &nbsp;`‑c,`<br>`‑‑new‑column`&nbsp; | string | Put the transformed values in a new column instead. |  |
 | &nbsp;`‑r,`<br>`‑‑rename`&nbsp; | string | New name for the transformed column. |  |
-| &nbsp;`‑C,`<br>`‑‑comparand=<string>`&nbsp; | string | The string to compare against for replace & similarity operations. |  |
+| &nbsp;`‑C,`<br>`‑‑comparand=<string>`&nbsp; | string | The string to compare against for replace, strip, match-trim (mtrim/mltrim/mrtrim) & regex_replace operations. |  |
 | &nbsp;`‑R,`<br>`‑‑replacement=<string>`&nbsp; | string | The string to use for the replace & emptyreplace operations. |  |
 | &nbsp;`‑f,`<br>`‑‑formatstr=<string>`&nbsp; | string | This option is used by several subcommands: |  |
 

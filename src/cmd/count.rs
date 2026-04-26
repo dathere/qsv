@@ -134,17 +134,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let conf = Config::new(args.arg_input.as_ref())
         .no_headers_flag(args.flag_no_headers)
         // we also want to count the quotes when computing width
-        .quoting(!args.flag_width || !args.flag_width_no_delims)
+        .quoting(!(args.flag_width || args.flag_width_no_delims))
         // and ignore differing column counts as well
         .flexible(args.flag_flexible)
         .delimiter(args.flag_delimiter);
-
-    // this comment left here for Logging.md example
-    // log::debug!(
-    //     "input: {:?}, no_header: {}",
-    //     (args.arg_input).clone().unwrap(),
-    //     &args.flag_no_headers,
-    // );
 
     let count_delims_mode = if args.flag_width_no_delims {
         CountDelimsMode::ExcludeDelims
@@ -477,128 +470,138 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
         conf.path.as_ref().unwrap().clone()
     };
 
-    let mut comment_char = String::new();
-    let comment_prefix = if let Some(c) = conf.comment {
-        comment_char.push(c as char);
-        Some(PlSmallStr::from_str(comment_char.as_str()))
-    } else {
-        None
-    };
-
-    let mut ctx = SQLContext::new();
-    let lazy_df: LazyFrame;
-    let delimiter = conf.get_delimiter();
-
-    {
-        // First, try to read the first row to check if the file is empty
-        // do it in a block so schema_df is dropped early
-        // Use ignore_errors to handle schema inference issues (e.g., columns that start
-        // with boolean values but contain integers later)
-        let schema_df = match LazyCsvReader::new(PlRefPath::new(&*filepath.to_string_lossy()))
-            .with_separator(delimiter)
-            .with_comment_prefix(comment_prefix.clone())
-            .with_n_rows(Some(1))
-            .with_ignore_errors(true)
-            .finish()
-        {
-            Ok(df) => df.collect(),
-            Err(e) => {
-                log::warn!("polars error loading CSV: {e}");
-                let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
-                return Ok(count_regular);
-            },
+    let result = (|| -> CliResult<u64> {
+        let mut comment_char = String::new();
+        let comment_prefix = if let Some(c) = conf.comment {
+            comment_char.push(c as char);
+            Some(PlSmallStr::from_str(comment_char.as_str()))
+        } else {
+            None
         };
 
-        // If we can't read the schema or the DataFrame is empty, return 0
-        if schema_df.is_err() || schema_df.unwrap().height() == 0 {
-            return Ok(0);
+        let mut ctx = SQLContext::new();
+        let lazy_df: LazyFrame;
+        let delimiter = conf.get_delimiter();
+
+        {
+            // First, try to read the first row to check if the file is empty
+            // do it in a block so schema_df is dropped early
+            // Use ignore_errors to handle schema inference issues (e.g., columns that start
+            // with boolean values but contain integers later)
+            let schema_df = match LazyCsvReader::new(PlRefPath::new(&*filepath.to_string_lossy()))
+                .with_separator(delimiter)
+                .with_comment_prefix(comment_prefix.clone())
+                .with_n_rows(Some(1))
+                .with_ignore_errors(true)
+                .finish()
+            {
+                Ok(df) => df.collect(),
+                Err(e) => {
+                    log::warn!("polars error loading CSV: {e}");
+                    let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
+                    return Ok(count_regular);
+                },
+            };
+
+            match schema_df {
+                Err(e) => {
+                    // schema collection failed; fall back to the regular CSV reader
+                    // rather than silently returning 0
+                    log::warn!("polars error collecting schema: {e}");
+                    let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
+                    return Ok(count_regular);
+                },
+                Ok(df) if df.height() == 0 => return Ok(0),
+                Ok(_) => {},
+            }
         }
-    }
 
-    // if its a "regular" CSV, use polars' read_csv() SQL table function
-    // which is much faster than the LazyCsvReader
-    let count_query = if comment_prefix.is_none() && delimiter == b',' && !low_memory {
-        format!(
-            "SELECT COUNT(*) FROM read_csv('{}')",
-            filepath.to_string_lossy(),
-        )
-    } else {
-        // otherwise, read the file into a Polars LazyFrame
-        // using the LazyCsvReader builder to set CSV read options
-        // Use ignore_errors to handle schema inference issues (e.g., columns that start
-        // with boolean values but contain integers later)
-        lazy_df = match LazyCsvReader::new(PlRefPath::new(&*filepath.to_string_lossy()))
-            .with_separator(delimiter)
-            .with_comment_prefix(comment_prefix)
-            .with_low_memory(low_memory)
-            .with_ignore_errors(true)
-            .finish()
-        {
-            Ok(lazy_df) => lazy_df,
+        // if its a "regular" CSV, use polars' read_csv() SQL table function
+        // which is much faster than the LazyCsvReader
+        let count_query = if comment_prefix.is_none() && delimiter == b',' && !low_memory {
+            format!(
+                "SELECT COUNT(*) FROM read_csv('{}')",
+                filepath.to_string_lossy(),
+            )
+        } else {
+            // otherwise, read the file into a Polars LazyFrame
+            // using the LazyCsvReader builder to set CSV read options
+            // Use ignore_errors to handle schema inference issues (e.g., columns that start
+            // with boolean values but contain integers later)
+            lazy_df = match LazyCsvReader::new(PlRefPath::new(&*filepath.to_string_lossy()))
+                .with_separator(delimiter)
+                .with_comment_prefix(comment_prefix)
+                .with_low_memory(low_memory)
+                .with_ignore_errors(true)
+                .finish()
+            {
+                Ok(lazy_df) => lazy_df,
+                Err(e) => {
+                    log::warn!("polars error loading CSV: {e}");
+                    let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
+                    return Ok(count_regular);
+                },
+            };
+            let optflags = OptFlags::from_bits_truncate(0)
+                | OptFlags::PROJECTION_PUSHDOWN
+                | OptFlags::PREDICATE_PUSHDOWN
+                | OptFlags::CLUSTER_WITH_COLUMNS
+                | OptFlags::TYPE_COERCION
+                | OptFlags::SIMPLIFY_EXPR
+                | OptFlags::SLICE_PUSHDOWN
+                | OptFlags::COMM_SUBPLAN_ELIM
+                | OptFlags::COMM_SUBEXPR_ELIM
+                | OptFlags::FAST_PROJECTION
+                | OptFlags::NEW_STREAMING;
+            ctx.register("sql_lf", lazy_df.with_optimizations(optflags));
+            "SELECT COUNT(*) FROM sql_lf".to_string()
+        };
+
+        // now leverage the magic of Polars SQL with its lazy evaluation, to count the records
+        // in an optimized manner with its blazing fast multithreaded, mem-mapped CSV reader!
+        let sqlresult_lf = match ctx.execute(&count_query) {
+            Ok(sqlresult_lf) => sqlresult_lf,
             Err(e) => {
-                log::warn!("polars error loading CSV: {e}");
+                // there was a Polars error, so we fall back to the regular CSV reader
+                log::warn!("polars error executing count query: {e}");
                 let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
                 return Ok(count_regular);
             },
         };
-        let optflags = OptFlags::from_bits_truncate(0)
-            | OptFlags::PROJECTION_PUSHDOWN
-            | OptFlags::PREDICATE_PUSHDOWN
-            | OptFlags::CLUSTER_WITH_COLUMNS
-            | OptFlags::TYPE_COERCION
-            | OptFlags::SIMPLIFY_EXPR
-            | OptFlags::SLICE_PUSHDOWN
-            | OptFlags::COMM_SUBPLAN_ELIM
-            | OptFlags::COMM_SUBEXPR_ELIM
-            | OptFlags::FAST_PROJECTION
-            | OptFlags::NEW_STREAMING;
-        ctx.register("sql_lf", lazy_df.with_optimizations(optflags));
-        "SELECT COUNT(*) FROM sql_lf".to_string()
-    };
 
-    // now leverage the magic of Polars SQL with its lazy evaluation, to count the records
-    // in an optimized manner with its blazing fast multithreaded, mem-mapped CSV reader!
-    let sqlresult_lf = match ctx.execute(&count_query) {
-        Ok(sqlresult_lf) => sqlresult_lf,
-        Err(e) => {
-            // there was a Polars error, so we fall back to the regular CSV reader
-            log::warn!("polars error executing count query: {e}");
-            let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
-            return Ok(count_regular);
-        },
-    };
-
-    let mut count = match sqlresult_lf.collect()?["len"].u32() {
-        Ok(cnt) => {
-            if let Some(count) = cnt.get(0) {
-                count as u64
-            } else {
-                // Empty result, fall back to regular CSV reader
-                log::warn!("empty polars result, falling back to regular reader");
+        let mut count = match sqlresult_lf.collect()?["len"].u32() {
+            Ok(cnt) => {
+                if let Some(count) = cnt.get(0) {
+                    count as u64
+                } else {
+                    // Empty result, fall back to regular CSV reader
+                    log::warn!("empty polars result, falling back to regular reader");
+                    let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
+                    count_regular
+                }
+            },
+            Err(e) => {
+                // Polars error, fall back to regular CSV reader
+                log::warn!("polars error, falling back to regular reader: {e}");
                 let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
                 count_regular
-            }
-        },
-        Err(e) => {
-            // Polars error, fall back to regular CSV reader
-            log::warn!("polars error, falling back to regular reader: {e}");
-            let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
-            count_regular
-        },
-    };
+            },
+        };
 
-    // remove the temporary file we created to read from stdin
-    // we use the keep() method to prevent the file from being deleted
-    // when the tempfile went out of scope, so we need to manually delete it
+        // Polars SQL requires headers, so it made the first row the header row
+        // regardless of the --no-headers flag. That's why we need to add 1 to the count
+        if conf.no_headers {
+            count += 1;
+        }
+
+        Ok(count)
+    })();
+
+    // we use keep() above to prevent automatic deletion when the NamedTempFile is
+    // dropped, so we must clean up manually here on every return path
     if is_stdin {
-        std::fs::remove_file(filepath)?;
+        let _ = std::fs::remove_file(&filepath);
     }
 
-    // Polars SQL requires headers, so it made the first row the header row
-    // regardless of the --no-headers flag. That's why we need to add 1 to the count
-    if conf.no_headers {
-        count += 1;
-    }
-
-    Ok(count)
+    result
 }

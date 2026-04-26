@@ -706,7 +706,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         };
     }
 
-    // prepare report - match on first byte to avoid two lowercase allocations
+    // prepare report - match on first byte to avoid two lowercase allocations.
+    // ASCII-only by design: documented values are "detailed" / "short" / "none".
     let report = match args.flag_report.as_bytes().first() {
         Some(b'd' | b'D') => ReportKind::Detailed,
         Some(b's' | b'S') => ReportKind::Short,
@@ -868,14 +869,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         // log::debug!("Disk cache hit for {url} hit: {disk_cache_hits}");
                     }
                     if !args.flag_cache_error && final_response.status_code != 200 {
-                        // key must match get_diskcache_response's convert macro
-                        let key = format!(
-                            "{}{:?}{}{}{}",
-                            url,
-                            jaq_selector,
+                        let key = cross_session_cache_key(
+                            &url,
+                            jaq_selector.as_ref(),
                             args.flag_store_error,
                             args.flag_pretty,
-                            include_existing_columns
+                            include_existing_columns,
                         );
                         let _ = GET_DISKCACHE_RESPONSE.cache_remove(&key);
                         // log::debug!("Removed Disk cache for {url}");
@@ -906,13 +905,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         },
                     };
                     if !args.flag_cache_error && final_response.status_code != 200 {
-                        let key = format!(
-                            "{}{:?}{}{}{}",
-                            url,
-                            jaq_selector,
+                        let key = cross_session_cache_key(
+                            &url,
+                            jaq_selector.as_ref(),
                             args.flag_store_error,
                             args.flag_pretty,
-                            include_existing_columns
+                            include_existing_columns,
                         );
 
                         if GET_REDIS_RESPONSE.cache_remove(&key).is_err() && log_enabled!(Warn) {
@@ -1093,6 +1091,24 @@ fn get_cached_response(
     ))
 }
 
+// Cross-session cache key used by both the disk and redis caches.
+// Defined once and called from each `convert` macro and each `cache_remove`
+// call site so the format cannot drift (the original cache-eviction bug came
+// from a divergence between these).
+#[inline]
+fn cross_session_cache_key(
+    url: &str,
+    flag_jaq: Option<&String>,
+    flag_store_error: bool,
+    flag_pretty: bool,
+    include_existing_columns: bool,
+) -> String {
+    format!(
+        "{}{:?}{}{}{}",
+        url, flag_jaq, flag_store_error, flag_pretty, include_existing_columns
+    )
+}
+
 // this is a disk cache that can be used across qsv sessions
 // so we need to include the values of flag_jaq, flag_store_error, flag_pretty and
 // include_existing_columns in the cache key
@@ -1101,7 +1117,7 @@ fn get_cached_response(
     ty = "cached::DiskCache<String, FetchResponse>",
     cache_prefix_block = r##"{ "dc_" }"##,
     key = "String",
-    convert = r##"{ format!("{}{:?}{}{}{}", url, flag_jaq, flag_store_error, flag_pretty, include_existing_columns) }"##,
+    convert = r##"{ cross_session_cache_key(url, flag_jaq, flag_store_error, flag_pretty, include_existing_columns) }"##,
     create = r##"{
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
@@ -1149,7 +1165,7 @@ fn get_diskcache_response(
 #[io_cached(
     ty = "cached::RedisCache<String, String>",
     key = "String",
-    convert = r##"{ format!("{}{:?}{}{}{}", url, flag_jaq, flag_store_error, flag_pretty, include_existing_columns) }"##,
+    convert = r##"{ cross_session_cache_key(url, flag_jaq, flag_store_error, flag_pretty, include_existing_columns) }"##,
     create = r##" {
         let redis_config = REDISCONFIG.get().unwrap();
         let rediscache = RedisCache::new("f", redis_config.ttl_secs)

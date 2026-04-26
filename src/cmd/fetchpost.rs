@@ -725,7 +725,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         };
     }
 
-    // prepare report - match on first byte to avoid two lowercase allocations
+    // prepare report - match on first byte to avoid two lowercase allocations.
+    // ASCII-only by design: documented values are "detailed" / "short" / "none".
     let report = match args.flag_report.as_bytes().first() {
         Some(b'd' | b'D') => ReportKind::Detailed,
         Some(b's' | b'S') => ReportKind::Short,
@@ -917,7 +918,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     final_response = intermediate_value.value;
                     was_cached = intermediate_value.was_cached;
                     if !args.flag_cache_error && final_response.status_code != 200 {
-                        // key must match get_cached_response's convert macro
+                        // key matches get_cached_response's convert macro
+                        // (body-only — see NOTE above the cached fn).
                         let key = format!("{form_body_jsonmap:?}");
                         let mut cache = GET_CACHED_RESPONSE.lock();
                         cache.cache_remove(&key);
@@ -944,17 +946,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         // log::debug!("Disk cache hit for {url} hit: {disk_cache_hits}");
                     }
                     if !args.flag_cache_error && final_response.status_code != 200 {
-                        // key must match get_diskcache_response's convert macro
-                        let key = format!(
-                            "{}{:?}{}{:?}{}{}{}{}",
-                            url,
-                            form_body_jsonmap,
+                        let key = cross_session_cache_key(
+                            &url,
+                            &form_body_jsonmap,
                             payload_content_type,
-                            jaq_selector,
+                            jaq_selector.as_ref(),
                             args.flag_store_error,
                             args.flag_pretty,
                             args.flag_compress,
-                            include_existing_columns
+                            include_existing_columns,
                         );
                         let _ = GET_DISKCACHE_RESPONSE.cache_remove(&key);
                         // log::debug!("Removed Disk cache for {url}");
@@ -988,17 +988,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         },
                     };
                     if !args.flag_cache_error && final_response.status_code != 200 {
-                        // key must match get_redis_response's convert macro
-                        let key = format!(
-                            "{}{:?}{}{:?}{}{}{}{}",
-                            url,
-                            form_body_jsonmap,
+                        let key = cross_session_cache_key(
+                            &url,
+                            &form_body_jsonmap,
                             payload_content_type,
-                            jaq_selector,
+                            jaq_selector.as_ref(),
                             args.flag_store_error,
                             args.flag_pretty,
                             args.flag_compress,
-                            include_existing_columns
+                            include_existing_columns,
                         );
 
                         if GET_REDIS_RESPONSE.cache_remove(&key).is_err() && log_enabled!(Warn) {
@@ -1147,8 +1145,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(wtr.flush()?)
 }
 
-// we only need url in the cache key
-// as this is an in-memory cache that is only used for one qsv session
+// NOTE: keyed only by form_body_jsonmap (not URL/flags) — within a single
+// qsv session the flags are constant and the URL is typically a single
+// endpoint with the body varying per row, so the body alone discriminates.
+// If you call fetchpost with a CSV that varies BOTH URL and body, two rows
+// sharing a body but using different URLs will collide on the same in-memory
+// entry. The disk and redis caches use the wider cross_session_cache_key.
 #[cached(
     ty = "SizedCache<String, Return<FetchResponse>>",
     create = r##"{
@@ -1189,6 +1191,34 @@ fn get_cached_response(
     ))
 }
 
+// Cross-session cache key used by both the disk and redis caches.
+// Defined once and called from each `convert` macro and each `cache_remove`
+// call site so the format cannot drift (the original cache-eviction bug came
+// from a divergence between these).
+#[inline]
+fn cross_session_cache_key(
+    url: &str,
+    form_body_jsonmap: &serde_json::Map<String, Value>,
+    payload_content_type: ContentType,
+    flag_jaq: Option<&String>,
+    flag_store_error: bool,
+    flag_pretty: bool,
+    flag_compress: bool,
+    include_existing_columns: bool,
+) -> String {
+    format!(
+        "{}{:?}{}{:?}{}{}{}{}",
+        url,
+        form_body_jsonmap,
+        payload_content_type,
+        flag_jaq,
+        flag_store_error,
+        flag_pretty,
+        flag_compress,
+        include_existing_columns
+    )
+}
+
 // this is a disk cache that can be used across qsv sessions
 // so we need to include the values of flag_jaq, flag_store_error, flag_pretty and
 // include_existing_columns in the cache key
@@ -1197,7 +1227,7 @@ fn get_cached_response(
     ty = "cached::DiskCache<String, FetchResponse>",
     cache_prefix_block = r##"{ "dc_" }"##,
     key = "String",
-    convert = r#"{ format!("{}{:?}{}{:?}{}{}{}{}", url, form_body_jsonmap, payload_content_type, flag_jaq, flag_store_error, flag_pretty, flag_compress, include_existing_columns) }"#,
+    convert = r#"{ cross_session_cache_key(url, form_body_jsonmap, payload_content_type, flag_jaq, flag_store_error, flag_pretty, flag_compress, include_existing_columns) }"#,
     create = r##"{
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
@@ -1251,7 +1281,7 @@ fn get_diskcache_response(
 #[io_cached(
     ty = "cached::RedisCache<String, String>",
     key = "String",
-    convert = r#"{ format!("{}{:?}{}{:?}{}{}{}{}", url, form_body_jsonmap, payload_content_type, flag_jaq, flag_store_error, flag_pretty, flag_compress, include_existing_columns) }"#,
+    convert = r#"{ cross_session_cache_key(url, form_body_jsonmap, payload_content_type, flag_jaq, flag_store_error, flag_pretty, flag_compress, include_existing_columns) }"#,
     create = r##" {
         let redis_config = REDISCONFIG.get().unwrap();
         let rediscache = RedisCache::new("fp", redis_config.ttl_secs)

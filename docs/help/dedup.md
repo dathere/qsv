@@ -102,7 +102,7 @@ qsv dedup --help
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. That is, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not print duplicate count to stderr. |  |
-| &nbsp;`‑‑memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. |  |
+| &nbsp;`‑‑memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. Has no effect when --sorted is set, as that path streams the input and never loads it into memory. |  |
 
 ---
 **Source:** [`src/cmd/dedup.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/dedup.rs)

@@ -21,13 +21,21 @@ sort options:
                             "data1.txt", "data10.txt", "data2.txt" when sorting
                             lexicographically)
                             https://en.wikipedia.org/wiki/Natural_sort_order
+                            When combined with --numeric, --natural takes precedence.
     -R, --reverse           Reverse order
-    -i, --ignore-case       Compare strings disregarding case
+    -i, --ignore-case       Compare strings disregarding case.
+                            Has no effect under --numeric (numbers are case-less).
     -u, --unique            When set, identical consecutive lines will be dropped
-                            to keep only one line per sorted value.
+                            to keep only one line per sorted value. The same
+                            comparison mode used to sort the input is also used
+                            here, so unique-equality always agrees with the sort.
 
                             RANDOM SORTING OPTIONS:
-    --random                Randomize (scramble) the data by row
+    --random                Randomize (scramble) the data by row.
+                            When set, the comparison flags (numeric,
+                            natural, reverse, ignore-case) are ignored
+                            for the shuffle itself, but still apply to
+                            unique-filtering if --unique is also set.
     --seed <number>         Random Number Generator (RNG) seed to use if --random is set
     --rng <kind>            The RNG algorithm to use if --random is set.
                             Three RNGs are supported:
@@ -39,7 +47,7 @@ sort options:
                               Recommended by eSTREAM (https://www.ecrypt.eu.org/stream/).
                               2.1 GB/s throughput though slow initialization.
                             [default: standard]
-    
+
 
     -j, --jobs <arg>        The number of jobs to run in parallel.
                             When not set, the number of jobs is set to the
@@ -49,7 +57,7 @@ sort options:
                             (i.e. the order of identical values is not guaranteed
                             to be preserved). It has the added side benefit that the
                             sort will also be in-place (i.e. does not allocate),
-                            which is useful for sorting large files that will 
+                            which is useful for sorting large files that will
                             otherwise NOT fit in memory using the default allocating
                             stable sort.
 
@@ -67,10 +75,9 @@ Common options:
                             Ignored if --random or --faster is set.
 "#;
 
-use std::{cmp, str::FromStr};
+use std::{cmp::Ordering, str::FromStr};
 
-// use fastrand; //DevSkim: ignore DS148264
-use rand::{RngExt, SeedableRng, rngs::StdRng, seq::SliceRandom};
+use rand::{SeedableRng, rngs::StdRng, seq::SliceRandom};
 use rand_hc::Hc128Rng;
 use rand_xoshiro::Xoshiro256Plus;
 use rayon::slice::ParallelSliceMut;
@@ -81,7 +88,6 @@ use strum_macros::EnumString;
 use self::Number::{Float, Int};
 use crate::{
     CliResult,
-    cmd::dedup::iter_cmp_ignore_case,
     config::{Config, Delimiter},
     select::SelectColumns,
     util,
@@ -115,6 +121,19 @@ enum RngKind {
     Cryptosecure,
 }
 
+/// Selected once at startup based on the comparison flags. Drives both the
+/// sort dispatch and the `--unique` filter so they always agree on equality.
+/// Precedence: `--natural` > `--numeric` > `--ignore-case` > lex.
+/// `--ignore-case` only applies under lex and natural; numeric ignores it.
+#[derive(Clone, Copy)]
+enum SortMode {
+    Lex,
+    LexIgnoreCase,
+    Natural,
+    NaturalIgnoreCase,
+    Numeric,
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     let numeric = args.flag_numeric;
@@ -122,6 +141,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let reverse = args.flag_reverse;
     let random = args.flag_random;
     let faster = args.flag_faster;
+    let ignore_case = args.flag_ignore_case;
+    let seed = args.flag_seed;
+
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers)
@@ -134,265 +156,136 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     };
 
-    // we're loading the entire file into memory, we need to check avail memory
-    if let Some(path) = rconfig.path.clone() {
-        // we only check if we're doing a stable sort and its not --random
-        // coz with --faster option, the sort algorithm sorts in-place (non-allocating)
-        if !faster && !random {
-            util::mem_file_check(&path, false, args.flag_memcheck)?;
-        }
+    // we're loading the entire file into memory, we need to check avail memory.
+    // we only check if we're doing a stable sort and its not --random,
+    // because --faster sorts in-place (non-allocating) and --random shuffles.
+    if let Some(path) = rconfig.path.clone()
+        && !faster
+        && !random
+    {
+        util::mem_file_check(&path, false, args.flag_memcheck)?;
     }
 
     let mut rdr = rconfig.reader()?;
-
     let headers = rdr.byte_headers()?.clone();
     let sel = rconfig.selection(&headers)?;
 
     util::njobs(args.flag_jobs);
 
-    // Seeding RNG
-    let seed = args.flag_seed;
-
-    let ignore_case = args.flag_ignore_case;
-
     let mut all = rdr.byte_records().collect::<Result<Vec<_>, _>>()?;
-    // Tuple ordering and boolean flag meanings:
-    // numeric: Sort numerically
-    // natural: Sort in natural order https://en.wikipedia.org/wiki/Natural_sort_order
-    // reverse: Sort in reverse order
-    // random: Sort randomly
-    // faster: Use faster parallel "unstable" sorting algorithm by using
-    //   non-allocating, par_sort_unstable_by
-    //   https://docs.rs/rayon/latest/rayon/slice/trait.ParallelSliceMut.html#method.par_sort_unstable_by
-    // if all flags are false (the default), then we do a stable parallel, lexicographical sort
-    match (numeric, natural, reverse, random, faster) {
-        // --random sort
-        (_, _, _, true, _) => {
-            match rng_kind {
-                RngKind::Standard => {
-                    if let Some(val) = seed {
-                        let mut rng = StdRng::seed_from_u64(val); //DevSkim: ignore DS148264
-                        all.shuffle(&mut rng); //DevSkim: ignore DS148264
+
+    // Pick the comparison mode once. The same mode drives the sort and the
+    // --unique filter, so unique-equality always agrees with what the sort
+    // grouped (previously --unique used its own if/else chain that silently
+    // disagreed with the sort under e.g. --numeric --natural).
+    let mode = if natural {
+        if ignore_case {
+            SortMode::NaturalIgnoreCase
+        } else {
+            SortMode::Natural
+        }
+    } else if numeric {
+        SortMode::Numeric
+    } else if ignore_case {
+        SortMode::LexIgnoreCase
+    } else {
+        SortMode::Lex
+    };
+
+    if random {
+        match rng_kind {
+            RngKind::Standard => {
+                if let Some(val) = seed {
+                    let mut rng = StdRng::seed_from_u64(val); //DevSkim: ignore DS148264
+                    all.shuffle(&mut rng); //DevSkim: ignore DS148264
+                } else {
+                    let mut rng = ::rand::rng();
+                    all.shuffle(&mut rng); //DevSkim: ignore DS148264
+                }
+            },
+            RngKind::Faster => {
+                let mut rng = match seed {
+                    None => rand::make_rng::<Xoshiro256Plus>(),
+                    Some(sd) => Xoshiro256Plus::seed_from_u64(sd), // DevSkim: ignore DS148264
+                };
+                SliceRandom::shuffle(&mut *all, &mut rng); //DevSkim: ignore DS148264
+            },
+            RngKind::Cryptosecure => {
+                // Build seed_32 only when --seed is provided. The previous
+                // implementation pre-generated a 32-byte buffer from the
+                // process RNG and then threw it away on the unseeded path,
+                // wasting entropy and a syscall on every random sort.
+                let mut rng: Hc128Rng = match seed {
+                    None => rand::make_rng::<Hc128Rng>(),
+                    Some(sd) => {
+                        let mut seed_32 = [0u8; 32];
+                        seed_32[..8].copy_from_slice(&sd.to_le_bytes());
+                        Hc128Rng::from_seed(seed_32)
+                    },
+                };
+                SliceRandom::shuffle(&mut *all, &mut rng);
+            },
+        }
+    } else {
+        // Hoist comparison dispatch out of the closure: each branch
+        // monomorphizes with a single comparison function known at compile
+        // time. This collapses the previous 16-arm tuple match (which
+        // re-evaluated `if ignore_case` per row) into one macro plus a
+        // 5-arm `match mode`.
+        macro_rules! do_sort {
+            ($cmp:expr) => {{
+                if reverse {
+                    if faster {
+                        all.par_sort_unstable_by(|r1, r2| $cmp(sel.select(r2), sel.select(r1)));
                     } else {
-                        let mut rng = ::rand::rng();
-                        all.shuffle(&mut rng); //DevSkim: ignore DS148264
+                        all.par_sort_by(|r1, r2| $cmp(sel.select(r2), sel.select(r1)));
                     }
-                },
-                RngKind::Faster => {
-                    let mut rng = match args.flag_seed {
-                        None => rand::make_rng::<Xoshiro256Plus>(),
-                        Some(sd) => Xoshiro256Plus::seed_from_u64(sd), // DevSkim: ignore DS148264
-                    };
-                    SliceRandom::shuffle(&mut *all, &mut rng); //DevSkim: ignore DS148264
-                },
-                RngKind::Cryptosecure => {
-                    let seed_32 = match args.flag_seed {
-                        None => rand::rng().random::<[u8; 32]>(),
-                        Some(seed) => {
-                            let seed_u8 = seed.to_le_bytes();
-                            let mut seed_32 = [0u8; 32];
-                            seed_32[..8].copy_from_slice(&seed_u8);
-                            seed_32
-                        },
-                    };
-                    let mut rng: Hc128Rng = match args.flag_seed {
-                        None => rand::make_rng::<Hc128Rng>(),
-                        Some(_) => Hc128Rng::from_seed(seed_32),
-                    };
-                    SliceRandom::shuffle(&mut *all, &mut rng);
-                },
-            }
-        },
-
-        // default stable parallel sort
-        (false, false, false, false, false) => all.par_sort_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            if ignore_case {
-                iter_cmp_ignore_case(a, b)
-            } else {
-                iter_cmp(a, b)
-            }
-        }),
-        // default --faster unstable, non-allocating parallel sort
-        (false, false, false, false, true) => all.par_sort_unstable_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            if ignore_case {
-                iter_cmp_ignore_case(a, b)
-            } else {
-                iter_cmp(a, b)
-            }
-        }),
-
-        // --natural stable parallel natural sort
-        (false, true, false, false, false) => all.par_sort_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            if ignore_case {
-                iter_cmp_natural_ignore_case(a, b)
-            } else {
-                iter_cmp_natural(a, b)
-            }
-        }),
-        // --natural --faster unstable, non-allocating parallel natural sort
-        (false, true, false, false, true) => all.par_sort_unstable_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            if ignore_case {
-                iter_cmp_natural_ignore_case(a, b)
-            } else {
-                iter_cmp_natural(a, b)
-            }
-        }),
-
-        // --numeric stable parallel numeric sort
-        (true, false, false, false, false) => all.par_sort_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            iter_cmp_num(a, b)
-        }),
-        // --numeric --faster unstable, non-allocating, parallel numeric sort
-        (true, false, false, false, true) => all.par_sort_unstable_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            iter_cmp_num(a, b)
-        }),
-
-        // --reverse stable parallel sort
-        (false, false, true, false, false) => all.par_sort_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            if ignore_case {
-                iter_cmp_ignore_case(b, a)
-            } else {
-                iter_cmp(b, a)
-            }
-        }),
-        // --reverse --faster unstable parallel sort
-        (false, false, true, false, true) => all.par_sort_unstable_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            if ignore_case {
-                iter_cmp_ignore_case(b, a)
-            } else {
-                iter_cmp(b, a)
-            }
-        }),
-
-        // --natural --reverse stable parallel natural sort
-        (false, true, true, false, false) => all.par_sort_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            if ignore_case {
-                iter_cmp_natural_ignore_case(b, a)
-            } else {
-                iter_cmp_natural(b, a)
-            }
-        }),
-        // --natural --reverse --faster unstable parallel natural sort
-        (false, true, true, false, true) => all.par_sort_unstable_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            if ignore_case {
-                iter_cmp_natural_ignore_case(b, a)
-            } else {
-                iter_cmp_natural(b, a)
-            }
-        }),
-
-        // --numeric --reverse stable sort
-        (true, false, true, false, false) => all.par_sort_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            iter_cmp_num(b, a)
-        }),
-        // --numeric --reverse --faster unstable sort
-        (true, false, true, false, true) => all.par_sort_unstable_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            iter_cmp_num(b, a)
-        }),
-
-        // --numeric --natural stable sort (natural takes precedence over numeric)
-        (true, true, false, false, false) => all.par_sort_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            if ignore_case {
-                iter_cmp_natural_ignore_case(a, b)
-            } else {
-                iter_cmp_natural(a, b)
-            }
-        }),
-        // --numeric --natural --faster unstable sort
-        (true, true, false, false, true) => all.par_sort_unstable_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            if ignore_case {
-                iter_cmp_natural_ignore_case(a, b)
-            } else {
-                iter_cmp_natural(a, b)
-            }
-        }),
-
-        // --numeric --natural --reverse stable sort
-        (true, true, true, false, false) => all.par_sort_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            if ignore_case {
-                iter_cmp_natural_ignore_case(b, a)
-            } else {
-                iter_cmp_natural(b, a)
-            }
-        }),
-        // --numeric --natural --reverse --faster unstable sort
-        (true, true, true, false, true) => all.par_sort_unstable_by(|r1, r2| {
-            let a = sel.select(r1);
-            let b = sel.select(r2);
-            if ignore_case {
-                iter_cmp_natural_ignore_case(b, a)
-            } else {
-                iter_cmp_natural(b, a)
-            }
-        }),
+                } else if faster {
+                    all.par_sort_unstable_by(|r1, r2| $cmp(sel.select(r1), sel.select(r2)));
+                } else {
+                    all.par_sort_by(|r1, r2| $cmp(sel.select(r1), sel.select(r2)));
+                }
+            }};
+        }
+        match mode {
+            SortMode::Lex => do_sort!(iter_cmp),
+            SortMode::LexIgnoreCase => do_sort!(iter_cmp_ignore_case),
+            SortMode::Natural => do_sort!(iter_cmp_natural),
+            SortMode::NaturalIgnoreCase => do_sort!(iter_cmp_natural_ignore_case),
+            SortMode::Numeric => do_sort!(iter_cmp_num),
+        }
     }
 
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
-    let mut prev: Option<csv::ByteRecord> = None;
     rconfig.write_headers(&mut rdr, &mut wtr)?;
     if args.flag_unique {
-        for r in all {
-            match prev {
-                Some(other_r) => {
-                    let comparison = if numeric {
-                        iter_cmp_num(sel.select(&r), sel.select(&other_r))
-                    } else if natural {
-                        if ignore_case {
-                            iter_cmp_natural_ignore_case(sel.select(&r), sel.select(&other_r))
-                        } else {
-                            iter_cmp_natural(sel.select(&r), sel.select(&other_r))
+        // Use the same `mode` as the sort so unique-equality always matches
+        // what the sort grouped as adjacent.
+        macro_rules! unique_filter {
+            ($cmp:expr) => {{
+                let mut iter = all.iter();
+                if let Some(first) = iter.next() {
+                    wtr.write_byte_record(first)?;
+                    let mut prev = first;
+                    for current in iter {
+                        if $cmp(sel.select(prev), sel.select(current)) != Ordering::Equal {
+                            wtr.write_byte_record(current)?;
                         }
-                    } else if ignore_case {
-                        iter_cmp_ignore_case(sel.select(&r), sel.select(&other_r))
-                    } else {
-                        iter_cmp(sel.select(&r), sel.select(&other_r))
-                    };
-                    match comparison {
-                        cmp::Ordering::Equal => (),
-                        _ => {
-                            wtr.write_byte_record(&r)?;
-                        },
+                        prev = current;
                     }
-                },
-                None => {
-                    wtr.write_byte_record(&r)?;
-                },
-            }
-            prev = Some(r);
+                }
+            }};
+        }
+        match mode {
+            SortMode::Lex => unique_filter!(iter_cmp),
+            SortMode::LexIgnoreCase => unique_filter!(iter_cmp_ignore_case),
+            SortMode::Natural => unique_filter!(iter_cmp_natural),
+            SortMode::NaturalIgnoreCase => unique_filter!(iter_cmp_natural_ignore_case),
+            SortMode::Numeric => unique_filter!(iter_cmp_num),
         }
     } else {
-        for r in all {
-            wtr.write_byte_record(&r)?;
+        for r in &all {
+            wtr.write_byte_record(r)?;
         }
     }
     Ok(wtr.flush()?)
@@ -400,7 +293,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
 /// Order `a` and `b` lexicographically using `Ord`
 #[inline]
-pub fn iter_cmp<A, L, R>(mut a: L, mut b: R) -> cmp::Ordering
+pub fn iter_cmp<A, L, R>(mut a: L, mut b: R) -> Ordering
 where
     A: Ord,
     L: Iterator<Item = A>,
@@ -408,11 +301,11 @@ where
 {
     loop {
         match (a.next(), b.next()) {
-            (None, None) => return cmp::Ordering::Equal,
-            (None, _) => return cmp::Ordering::Less,
-            (_, None) => return cmp::Ordering::Greater,
+            (None, None) => return Ordering::Equal,
+            (None, _) => return Ordering::Less,
+            (_, None) => return Ordering::Greater,
             (Some(x), Some(y)) => match x.cmp(&y) {
-                cmp::Ordering::Equal => (),
+                Ordering::Equal => (),
                 non_eq => return non_eq,
             },
         }
@@ -421,42 +314,81 @@ where
 
 /// Try parsing `a` and `b` as numbers when ordering
 #[inline]
-pub fn iter_cmp_num<'a, L, R>(mut a: L, mut b: R) -> cmp::Ordering
+pub fn iter_cmp_num<'a, L, R>(mut a: L, mut b: R) -> Ordering
 where
     L: Iterator<Item = &'a [u8]>,
     R: Iterator<Item = &'a [u8]>,
 {
     loop {
         match (next_num(&mut a), next_num(&mut b)) {
-            (None, None) => return cmp::Ordering::Equal,
-            (None, _) => return cmp::Ordering::Less,
-            (_, None) => return cmp::Ordering::Greater,
+            (None, None) => return Ordering::Equal,
+            (None, _) => return Ordering::Less,
+            (_, None) => return Ordering::Greater,
             (Some(x), Some(y)) => match compare_num(x, y) {
-                cmp::Ordering::Equal => (),
+                Ordering::Equal => (),
                 non_eq => return non_eq,
             },
         }
     }
 }
 
-/// Order `a` and `b` using natural sort order
+/// Compare two cell-iterators ignoring case.
+///
+/// Cells that are pure ASCII compare via a zero-allocation byte-wise lowercase
+/// fold (the common case). Non-ASCII cells fall back to allocating a
+/// lowercased `String`. Cells that are not valid UTF-8 fall back to a raw
+/// byte comparison so a deterministic order is still produced.
 #[inline]
-pub fn iter_cmp_natural<'a, L, R>(mut a: L, mut b: R) -> cmp::Ordering
+pub fn iter_cmp_ignore_case<'a, L, R>(mut a: L, mut b: R) -> Ordering
 where
     L: Iterator<Item = &'a [u8]>,
     R: Iterator<Item = &'a [u8]>,
 {
     loop {
         match (a.next(), b.next()) {
-            (None, None) => return cmp::Ordering::Equal,
-            (None, _) => return cmp::Ordering::Less,
-            (_, None) => return cmp::Ordering::Greater,
-            (Some(x), Some(y)) => {
-                let comparison = compare_natural_strings(x, y);
-                match comparison {
-                    cmp::Ordering::Equal => (),
-                    non_eq => return non_eq,
-                }
+            (None, None) => return Ordering::Equal,
+            (None, _) => return Ordering::Less,
+            (_, None) => return Ordering::Greater,
+            (Some(x), Some(y)) => match cmp_ignore_case(x, y) {
+                Ordering::Equal => (),
+                non_eq => return non_eq,
+            },
+        }
+    }
+}
+
+#[inline]
+fn cmp_ignore_case(a: &[u8], b: &[u8]) -> Ordering {
+    // ASCII fast path: zero-allocation byte-wise lowercase compare.
+    if a.is_ascii() && b.is_ascii() {
+        return a
+            .iter()
+            .map(u8::to_ascii_lowercase)
+            .cmp(b.iter().map(u8::to_ascii_lowercase));
+    }
+    // Unicode slow path: allocate lowercased Strings.
+    match (from_utf8(a).ok(), from_utf8(b).ok()) {
+        (Some(sa), Some(sb)) => sa.to_lowercase().cmp(&sb.to_lowercase()),
+        // Invalid UTF-8 on either side: fall back to raw byte comparison.
+        _ => a.cmp(b),
+    }
+}
+
+/// Order `a` and `b` using natural sort order
+#[inline]
+pub fn iter_cmp_natural<'a, L, R>(mut a: L, mut b: R) -> Ordering
+where
+    L: Iterator<Item = &'a [u8]>,
+    R: Iterator<Item = &'a [u8]>,
+{
+    loop {
+        match (a.next(), b.next()) {
+            (None, None) => return Ordering::Equal,
+            (None, _) => return Ordering::Less,
+            (_, None) => return Ordering::Greater,
+            (Some(x), Some(y)) => match compare_natural_bytes(x, y, false) {
+                Ordering::Equal => (),
+                non_eq => return non_eq,
             },
         }
     }
@@ -464,22 +396,19 @@ where
 
 /// Order `a` and `b` using natural sort order, ignoring case
 #[inline]
-pub fn iter_cmp_natural_ignore_case<'a, L, R>(mut a: L, mut b: R) -> cmp::Ordering
+pub fn iter_cmp_natural_ignore_case<'a, L, R>(mut a: L, mut b: R) -> Ordering
 where
     L: Iterator<Item = &'a [u8]>,
     R: Iterator<Item = &'a [u8]>,
 {
     loop {
         match (a.next(), b.next()) {
-            (None, None) => return cmp::Ordering::Equal,
-            (None, _) => return cmp::Ordering::Less,
-            (_, None) => return cmp::Ordering::Greater,
-            (Some(x), Some(y)) => {
-                let comparison = compare_natural_strings_ignore_case(x, y);
-                match comparison {
-                    cmp::Ordering::Equal => (),
-                    non_eq => return non_eq,
-                }
+            (None, None) => return Ordering::Equal,
+            (None, _) => return Ordering::Less,
+            (_, None) => return Ordering::Greater,
+            (Some(x), Some(y)) => match compare_natural_bytes(x, y, true) {
+                Ordering::Equal => (),
+                non_eq => return non_eq,
             },
         }
     }
@@ -492,7 +421,7 @@ enum Number {
 }
 
 #[inline]
-fn compare_num(n1: Number, n2: Number) -> cmp::Ordering {
+fn compare_num(n1: Number, n2: Number) -> Ordering {
     match (n1, n2) {
         (Int(i1), Int(i2)) => i1.cmp(&i2),
         #[allow(clippy::cast_precision_loss)]
@@ -507,8 +436,8 @@ fn compare_num(n1: Number, n2: Number) -> cmp::Ordering {
 // This function is part of a performance-critical hot path. Inlining it
 // avoids the overhead of a function call, improving performance.
 #[inline(always)]
-fn compare_float(f1: f64, f2: f64) -> cmp::Ordering {
-    f1.partial_cmp(&f2).unwrap_or(cmp::Ordering::Equal)
+fn compare_float(f1: f64, f2: f64) -> Ordering {
+    f1.partial_cmp(&f2).unwrap_or(Ordering::Equal)
 }
 
 #[inline]
@@ -533,17 +462,7 @@ where
 }
 
 #[inline]
-fn compare_natural_strings(a: &[u8], b: &[u8]) -> cmp::Ordering {
-    compare_natural_bytes(a, b, false)
-}
-
-#[inline]
-fn compare_natural_strings_ignore_case(a: &[u8], b: &[u8]) -> cmp::Ordering {
-    compare_natural_bytes(a, b, true)
-}
-
-#[inline]
-fn compare_natural_bytes(a: &[u8], b: &[u8], ignore_case: bool) -> cmp::Ordering {
+fn compare_natural_bytes(a: &[u8], b: &[u8], ignore_case: bool) -> Ordering {
     let mut a_pos = 0;
     let mut b_pos = 0;
 
@@ -571,7 +490,7 @@ fn compare_natural_bytes(a: &[u8], b: &[u8], ignore_case: bool) -> cmp::Ordering
             (b_num, b_end) = collect_number_from_bytes(b, b_pos);
 
             num_comparison = a_num.cmp(&b_num);
-            if num_comparison != cmp::Ordering::Equal {
+            if num_comparison != Ordering::Equal {
                 return num_comparison;
             }
 
@@ -579,10 +498,10 @@ fn compare_natural_bytes(a: &[u8], b: &[u8], ignore_case: bool) -> cmp::Ordering
             b_pos = b_end;
         } else if a_byte.is_ascii_digit() {
             // Digits come before non-digits
-            return cmp::Ordering::Less;
+            return Ordering::Less;
         } else if b_byte.is_ascii_digit() {
             // Digits come before non-digits
-            return cmp::Ordering::Greater;
+            return Ordering::Greater;
         } else {
             // Both are non-digits, compare normally
             a_char = if ignore_case {
@@ -597,7 +516,7 @@ fn compare_natural_bytes(a: &[u8], b: &[u8], ignore_case: bool) -> cmp::Ordering
             };
 
             char_comparison = a_char.cmp(&b_char);
-            if char_comparison != cmp::Ordering::Equal {
+            if char_comparison != Ordering::Equal {
                 return char_comparison;
             }
             a_pos += 1;

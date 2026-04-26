@@ -25,6 +25,8 @@ separating them with a comma. Specify a range of columns with `-`. Both
 columns1 and columns2 must specify exactly the same number of columns.
 (See 'qsv select --help' for the full syntax.)
 
+Either <input1> or <input2> can be set to `-` to read from stdin, but not both.
+
 
 <a name="examples"></a>
 
@@ -75,6 +77,12 @@ qsv exclude -v id records.csv id previously-processed.csv -o intersection.csv
 qsv exclude --ignore-case id records.csv id previously-processed.csv
 ```
 
+> Read records.csv from stdin
+
+```console
+cat records.csv | qsv exclude id - id previously-processed.csv
+```
+
 > Chain exclude with sort to create a new sorted records file without previously processed records
 
 ```console
@@ -108,7 +116,7 @@ qsv exclude --help
 | &nbsp;Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input1>`&nbsp; | is the file from which data will be removed. |
-| &nbsp;`<input2>`&nbsp; | is the file containing the data to be removed from <input1> e.g. 'qsv exclude id records.csv id previously-processed.csv' |
+| &nbsp;`<input2>`&nbsp; | is the file containing the data to be removed from <input1> e.g. 'qsv exclude id records.csv id previously-processed.csv' Either input may be set to `-` to read from stdin, but not both. |
 
 <a name="exclude-options"></a>
 
@@ -129,6 +137,7 @@ qsv exclude --help
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
+| &nbsp;`‑‑memcheck`&nbsp; | flag | Check if there is enough memory to load <input2> into memory using CONSERVATIVE heuristics. |  |
 
 ---
 **Source:** [`src/cmd/exclude.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/exclude.rs)

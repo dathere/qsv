@@ -162,6 +162,124 @@ fn exclude_utf8_issue778_positions_aliases() {
 }
 
 #[test]
+fn exclude_column_range() {
+    let wrk = Workdir::new("exclude_column_range");
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["a", "b", "c", "d"],
+            svec!["1", "2", "3", "alpha"],
+            svec!["4", "5", "6", "beta"],
+            svec!["7", "8", "9", "gamma"],
+        ],
+    );
+
+    wrk.create(
+        "skip.csv",
+        vec![
+            svec!["a", "b", "c", "d"],
+            svec!["1", "2", "3", "z"],
+            svec!["7", "8", "9", "z"],
+        ],
+    );
+
+    let mut cmd = wrk.command("exclude");
+    cmd.arg("a-c").arg("data.csv").arg("a-c").arg("skip.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = "a,b,c,d\n4,5,6,beta";
+
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn exclude_delimiter_tab() {
+    let wrk = Workdir::new("exclude_delimiter_tab");
+
+    wrk.create_with_delim(
+        "data.tsv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "alice"],
+            svec!["2", "bob"],
+            svec!["3", "carol"],
+        ],
+        b'\t',
+    );
+
+    wrk.create_with_delim(
+        "skip.tsv",
+        vec![svec!["id", "name"], svec!["2", "bob"]],
+        b'\t',
+    );
+
+    let mut cmd = wrk.command("exclude");
+    cmd.args(&["-d", "\\t"])
+        .arg("id")
+        .arg("data.tsv")
+        .arg("id")
+        .arg("skip.tsv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = "id,name\n1,alice\n3,carol";
+
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn exclude_stdin_input1() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("exclude_stdin_input1");
+
+    wrk.create("skip.csv", vec![svec!["id"], svec!["2"], svec!["4"]]);
+
+    let stdin_data = "id\n1\n2\n3\n4\n5\n";
+
+    let mut cmd = wrk.command("exclude");
+    cmd.arg("id").arg("-").arg("id").arg("skip.csv");
+    cmd.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    std::thread::spawn(move || {
+        stdin.write_all(stdin_data.as_bytes()).unwrap();
+    });
+
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+
+    let got = String::from_utf8_lossy(&output.stdout);
+    let expected = "id\n1\n3\n5\n";
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn exclude_both_stdin_errors() {
+    let wrk = Workdir::new("exclude_both_stdin_errors");
+
+    let mut cmd = wrk.command("exclude");
+    cmd.arg("id").arg("-").arg("id").arg("-");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn exclude_mismatched_columns_errors() {
+    let wrk = Workdir::new("exclude_mismatched_columns_errors");
+
+    wrk.create("data.csv", vec![svec!["a", "b"], svec!["1", "2"]]);
+    wrk.create("skip.csv", vec![svec!["a", "b"], svec!["1", "2"]]);
+
+    let mut cmd = wrk.command("exclude");
+    cmd.arg("a,b").arg("data.csv").arg("a").arg("skip.csv");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
 fn exclude_1497_empty_fields() {
     let wrk = Workdir::new("exclude_1497_empty_fields");
 

@@ -764,47 +764,19 @@ fn count_with_csv_reader(conf: &Config) -> Option<u64> {
         })
 }
 
-/// Count rows using "regular" CSV reader
-/// we don't use polars mem-mapped reader here
-/// even if it's available
+/// Count rows using the "regular" CSV reader, never the polars mem-mapped
+/// reader. The result is cached in ROW_COUNT so subsequent calls are free.
 #[inline]
 pub fn count_rows_regular(conf: &Config) -> Result<u64, CliError> {
     if let Some(idx) = conf.indexed().unwrap_or(None) {
-        Ok(idx.count())
-    } else {
-        // index does not exist or is stale,
-        let path_display = conf
-            .path
-            .as_deref()
-            .map_or_else(|| "<stdin>".to_string(), |p| p.display().to_string());
-        let count_opt =
-            ROW_COUNT.get_or_init(|| match conf.clone().skip_format_check(true).reader() {
-                Ok(mut rdr) => {
-                    let mut count = 0_u64;
-                    let mut record = csv::ByteRecord::new();
-                    loop {
-                        match rdr.read_byte_record(&mut record) {
-                            Ok(true) => count += 1,
-                            Ok(false) => break,
-                            Err(e) => {
-                                log::warn!(
-                                    "CSV read error during row count of {path_display} after \
-                                     {count} rows; returning partial count: {e}"
-                                );
-                                break;
-                            },
-                        }
-                    }
-                    Some(count)
-                },
-                _ => None,
-            });
-
-        match *count_opt {
-            Some(count) => Ok(count),
-            None => Err(CliError::Other("Unable to get row count".to_string())),
-        }
+        return Ok(idx.count());
     }
+    // No index (or stale): defer to the shared CSV-reader helper so the
+    // counting loop and warn-with-path logic live in one place. Cached in
+    // ROW_COUNT so a later count_rows call hits the same value.
+    ROW_COUNT
+        .get_or_init(|| count_with_csv_reader(conf))
+        .ok_or_else(|| CliError::Other("Unable to get row count".to_string()))
 }
 
 #[cfg(any(feature = "feature_capable", feature = "lite"))]

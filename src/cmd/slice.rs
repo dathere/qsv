@@ -203,22 +203,29 @@ impl Args {
                 // invert needs two non-contiguous reads (before start, after end)
                 // and we can only hold one borrow on indexed_file at a time, so
                 // we materialize each segment before seeking to the next.
-                let mut records: Vec<csv::Result<csv::ByteRecord>> =
+                // Use `push(r?)` (not `extend`) so a parse error in segment 1
+                // aborts before segment 2 is read, preserving the all-or-nothing
+                // failure semantics this path had before the streaming refactor.
+                let mut records: Vec<csv::ByteRecord> =
                     Vec::with_capacity(start + (total_rows - end));
                 if start > 0 {
                     indexed_file.seek(0)?;
-                    records.extend(indexed_file.byte_records().take(start));
+                    for r in indexed_file.byte_records().take(start) {
+                        records.push(r?);
+                    }
                 }
                 // skip seek(total_rows) — it would error past EOF
                 if end < total_rows {
                     indexed_file.seek(end as u64)?;
-                    records.extend(indexed_file.byte_records().take(total_rows - end));
+                    for r in indexed_file.byte_records().take(total_rows - end) {
+                        records.push(r?);
+                    }
                 }
                 util::write_json(
                     self.flag_output.as_ref(),
                     self.flag_no_headers,
                     &headers,
-                    records.into_iter(),
+                    records.into_iter().map(Ok),
                 )
             } else {
                 // contiguous read — stream straight through
@@ -266,10 +273,10 @@ impl Args {
         let needs_count = matches!(self.flag_start, Some(s) if s < 0)
             || matches!(self.flag_index, Some(i) if i < 0);
         let total = if needs_count {
-            match precomputed_total {
-                Some(t) => Some(t),
-                None => Some(util::count_rows(&self.rconfig())? as usize),
-            }
+            Some(match precomputed_total {
+                Some(t) => t,
+                None => util::count_rows(&self.rconfig())? as usize,
+            })
         } else {
             None
         };

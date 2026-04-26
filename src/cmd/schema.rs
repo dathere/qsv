@@ -331,8 +331,6 @@ pub fn infer_schema_from_stats(
     let mut enum_list: Vec<Value> = Vec::with_capacity(args.flag_enum_threshold as usize);
     let mut const_value: Value;
     let mut header_string;
-    let mut stats_record;
-    let mut col_type;
     let mut col_null_count;
     let empty_string = String::new();
 
@@ -341,11 +339,11 @@ pub fn infer_schema_from_stats(
         // convert csv header to string
         header_string = convert_to_string(csv_field)?;
 
-        // grab stats record for current column
-        stats_record = csv_stats[i].clone();
+        // borrow stats record for current column (avoid full StatsData clone)
+        let stats_record = &csv_stats[i];
 
         // get Type from stats record
-        col_type = stats_record.r#type.clone();
+        let col_type = stats_record.r#type.as_str();
 
         // get NullCount
         col_null_count = stats_record.nullcount;
@@ -365,7 +363,7 @@ pub fn infer_schema_from_stats(
         enum_list.clear();
         const_value = Value::Null;
 
-        match col_type.as_str() {
+        match col_type {
             "String" => {
                 type_list.push(Value::String("string".to_string()));
 
@@ -417,48 +415,45 @@ pub fn infer_schema_from_stats(
             "Integer" => {
                 type_list.push(Value::String("integer".to_string()));
 
-                if let Some(min) = stats_record.min {
-                    field_map.insert(
-                        "minimum".to_string(),
-                        Value::Number(Number::from(
-                            atoi_simd::parse::<i64, false, false>(min.as_bytes()).unwrap(),
-                        )),
-                    );
+                if let Some(min) = stats_record.min.as_deref()
+                    && let Ok(min_i) = atoi_simd::parse::<i64, false, false>(min.as_bytes())
+                {
+                    field_map.insert("minimum".to_string(), Value::Number(Number::from(min_i)));
                 }
 
-                if let Some(max) = stats_record.max {
-                    field_map.insert(
-                        "maximum".to_string(),
-                        Value::Number(Number::from(
-                            atoi_simd::parse::<i64, false, false>(max.as_bytes()).unwrap(),
-                        )),
-                    );
+                if let Some(max) = stats_record.max.as_deref()
+                    && let Ok(max_i) = atoi_simd::parse::<i64, false, false>(max.as_bytes())
+                {
+                    field_map.insert("maximum".to_string(), Value::Number(Number::from(max_i)));
                 }
 
-                // enum constraint
+                // enum constraint — silently skip values that don't parse so
+                // a single malformed value doesn't sink the whole enum list
                 if let Some(values) = unique_values_map.get(&header_string) {
                     for value in values {
-                        let int_value =
-                            atoi_simd::parse::<i64, false, false>(value.as_bytes()).unwrap();
-                        enum_list.push(Value::Number(Number::from(int_value)));
+                        if let Ok(int_value) =
+                            atoi_simd::parse::<i64, false, false>(value.as_bytes())
+                        {
+                            enum_list.push(Value::Number(Number::from(int_value)));
+                        }
                     }
                 }
             },
             "Float" => {
                 type_list.push(Value::String("number".to_string()));
 
-                if let Some(min) = stats_record.min {
-                    field_map.insert(
-                        "minimum".to_string(),
-                        Value::Number(Number::from_f64(min.parse::<f64>().unwrap()).unwrap()),
-                    );
+                if let Some(min) = stats_record.min.as_deref()
+                    && let Ok(min_f) = min.parse::<f64>()
+                    && let Some(num) = Number::from_f64(min_f)
+                {
+                    field_map.insert("minimum".to_string(), Value::Number(num));
                 }
 
-                if let Some(max) = stats_record.max {
-                    field_map.insert(
-                        "maximum".to_string(),
-                        Value::Number(Number::from_f64(max.parse::<f64>().unwrap()).unwrap()),
-                    );
+                if let Some(max) = stats_record.max.as_deref()
+                    && let Ok(max_f) = max.parse::<f64>()
+                    && let Some(num) = Number::from_f64(max_f)
+                {
+                    field_map.insert("maximum".to_string(), Value::Number(num));
                 }
             },
             "NULL" => {
@@ -518,11 +513,21 @@ pub fn infer_schema_from_stats(
                     (Value::Null, _) => std::cmp::Ordering::Less,
                     (_, Value::Null) => std::cmp::Ordering::Greater,
                     (Value::String(a_str), Value::String(b_str)) => a_str.cmp(b_str),
-                    (Value::Number(a_num), Value::Number(b_num)) => a_num
-                        .as_f64()
-                        .unwrap_or_default()
-                        .partial_cmp(&b_num.as_f64().unwrap_or_default())
-                        .unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Number(a_num), Value::Number(b_num)) => {
+                        // Compare as integers when possible to preserve full
+                        // i64/u64 precision; only fall back to f64 for true floats.
+                        if let (Some(ai), Some(bi)) = (a_num.as_i64(), b_num.as_i64()) {
+                            ai.cmp(&bi)
+                        } else if let (Some(au), Some(bu)) = (a_num.as_u64(), b_num.as_u64()) {
+                            au.cmp(&bu)
+                        } else {
+                            a_num
+                                .as_f64()
+                                .unwrap_or_default()
+                                .partial_cmp(&b_num.as_f64().unwrap_or_default())
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        }
+                    },
                     // Compare types by their "priority"
                     _ => {
                         let type_priority = |v: &Value| match v {
@@ -586,12 +591,49 @@ fn build_low_cardinality_column_selector_arg(
     column_select_arg
 }
 
+/// RAII guard that temporarily sets an env var and restores the previous
+/// value (or removes the var if it was previously unset) on drop.
+/// Panic-safe: ensures the var is restored even if the wrapped call errors.
+struct EnvVarGuard {
+    key:  &'static str,
+    prev: Option<String>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let prev = std::env::var(key).ok();
+        // safety: schema.rs runs in single-threaded code; no qsv command spawns
+        // Rust threads before reaching infer_schema_from_stats.
+        unsafe { std::env::set_var(key, value) };
+        Self { key, prev }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        // safety: same as EnvVarGuard::set
+        unsafe {
+            match self.prev.take() {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+}
+
 /// get frequency tables from `cmd::frequency`
 /// returns map of unique values keyed by header
 fn get_unique_values(
     args: &util::SchemaArgs,
     column_select_arg: &str,
 ) -> CliResult<HashMap<String, Vec<String>>> {
+    // Note: an empty `column_select_arg` is intentionally allowed to fall
+    // through here. SelectColumns::parse("") expands to "select all columns",
+    // which lets frequency build a unique-values map for every column —
+    // including those whose cardinality exceeds `--enum-threshold`. That is
+    // load-bearing: enum constraints are emitted from this map regardless of
+    // whether the column was in `low_cardinality_column_indices`.
+
     // prepare arg for invoking cmd::frequency
     let freq_args = crate::cmd::frequency::Args {
         arg_input: args.arg_input.clone(),
@@ -632,17 +674,13 @@ fn get_unique_values(
         flag_weight: None,
     };
 
-    let curr_mode = std::env::var("QSV_STATSCACHE_MODE");
-    // safety: we are in single-threaded code.
-    unsafe { std::env::set_var("QSV_STATSCACHE_MODE", "none") };
+    // Bypass the stats cache while running our nested frequency pass.
+    // The guard restores the prior value (or unsets it) even if `?` below errors.
+    let _statscache_guard = EnvVarGuard::set("QSV_STATSCACHE_MODE", "none");
     let (headers, ftables, _) = match freq_args.rconfig().indexed()? {
         Some(idx) => freq_args.parallel_ftables(&idx),
         _ => freq_args.sequential_ftables(),
     }?;
-    if let Ok(orig_mode) = curr_mode {
-        // safety: we are in single-threaded code.
-        unsafe { std::env::set_var("QSV_STATSCACHE_MODE", orig_mode) };
-    }
 
     let unique_values_map = construct_map_of_unique_values(&headers, &ftables)?;
     Ok(unique_values_map)
@@ -875,7 +913,9 @@ fn generate_string_patterns(
 
 // only emit "pattern" constraint for String fields without enum constraint
 fn should_emit_pattern_constraint(field_def: &Value) -> bool {
-    let type_list = field_def[&"type"].as_array().unwrap();
+    let Some(type_list) = field_def.get("type").and_then(Value::as_array) else {
+        return false;
+    };
     let has_enum = field_def.get("enum").is_some();
 
     type_list.contains(&Value::String("string".to_string())) && !has_enum

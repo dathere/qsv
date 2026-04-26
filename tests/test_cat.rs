@@ -741,6 +741,117 @@ fn cat_rowskey_insertion_order_noheader() {
     assert_eq!(got, expected);
 }
 
+// Regression test: --no-headers second pass used to reuse only the LAST file's
+// synthetic header for ALL files, so a wider file appearing BEFORE a narrower
+// one would silently lose its trailing columns. With wider-first ordering, the
+// expected behavior is that every input cell survives in the right slot.
+#[test]
+fn cat_rowskey_no_headers_widerfirst() {
+    let wrk = Workdir::new("cat_rowskey_no_headers_widerfirst");
+    wrk.create(
+        "in1.csv",
+        vec![
+            svec!["a", "b", "c", "d", "e"],
+            svec!["1", "2", "3", "4", "5"],
+        ],
+    );
+    wrk.create("in2.csv", vec![svec!["x", "y", "z"], svec!["6", "7", "8"]]);
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rowskey")
+        .arg("--no-headers")
+        .arg("in1.csv")
+        .arg("in2.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["a", "b", "c", "d", "e"],
+        svec!["1", "2", "3", "4", "5"],
+        svec!["x", "y", "z", "", ""],
+        svec!["6", "7", "8", "", ""],
+    ];
+    assert_eq!(got, expected);
+}
+
+// Mirror of the wider-first case: narrower file first, wider file second.
+// Used to "work by accident" in the old code because the last file's
+// synthetic header happened to be the widest. Pinning the behavior so a
+// future refactor cannot regress only this direction.
+#[test]
+fn cat_rowskey_no_headers_narrowerfirst() {
+    let wrk = Workdir::new("cat_rowskey_no_headers_narrowerfirst");
+    wrk.create("in1.csv", vec![svec!["x", "y", "z"], svec!["6", "7", "8"]]);
+    wrk.create(
+        "in2.csv",
+        vec![
+            svec!["a", "b", "c", "d", "e"],
+            svec!["1", "2", "3", "4", "5"],
+        ],
+    );
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rowskey")
+        .arg("--no-headers")
+        .arg("in1.csv")
+        .arg("in2.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["x", "y", "z", "", ""],
+        svec!["6", "7", "8", "", ""],
+        svec!["a", "b", "c", "d", "e"],
+        svec!["1", "2", "3", "4", "5"],
+    ];
+    assert_eq!(got, expected);
+}
+
+// Regression test: a column whose header collides with --group-name should
+// still produce valid output (the file's value wins for its own rows) and
+// emit a warning to stderr so the user notices.
+#[test]
+fn cat_rowskey_group_name_collision() {
+    let wrk = Workdir::new("cat_rowskey_group_name_collision");
+    wrk.create(
+        "in1.csv",
+        vec![svec!["file", "value"], svec!["preset", "42"]],
+    );
+    wrk.create("in2.csv", vec![svec!["value"], svec!["99"]]);
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rowskey")
+        .arg("--group")
+        .arg("fname")
+        .arg("in1.csv")
+        .arg("in2.csv");
+
+    // single execution: stderr and stdout must come from the same run.
+    let output = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("collides with --group-name"),
+        "expected collision warning in stderr, got: {stderr}",
+    );
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(output.stdout.as_slice());
+    let got: Vec<Vec<String>> = rdr
+        .records()
+        .map(|record| {
+            let record = record.unwrap();
+            record.iter().map(ToOwned::to_owned).collect()
+        })
+        .collect();
+    let expected = vec![
+        svec!["file", "value"],
+        // in1 has its own `file` column, so its value wins (documented behavior)
+        svec!["preset", "42"],
+        // in2 has no `file` column, so the grouping value (filename) is used
+        svec!["in2.csv", "99"],
+    ];
+    assert_eq!(got, expected);
+}
+
 #[test]
 #[serial]
 fn prop_cat_cols() {

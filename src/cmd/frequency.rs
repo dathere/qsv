@@ -832,23 +832,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    // amortize allocations
-    #[allow(unused_assignments)]
-    let mut header_vec: Vec<u8> = Vec::with_capacity(tables.len());
-    let mut itoa_buffer = itoa::Buffer::new();
-    let mut zmij_buffer = zmij::Buffer::new();
-    let mut rank_buffer = String::with_capacity(20);
-    let mut row: Vec<&[u8]>;
-
-    let head_ftables = headers.iter().zip(tables);
     let row_count = *FREQ_ROW_COUNT.get().unwrap_or(&0);
     let abs_dec_places = args.flag_pct_dec_places.unsigned_abs() as u32;
-
-    #[allow(unused_assignments)]
-    let mut processed_frequencies: Vec<ProcessedFrequency> = Vec::with_capacity(head_ftables.len());
-    #[allow(unused_assignments)]
-    let mut value_str = String::with_capacity(100);
-    let vis_whitespace = args.flag_vis_whitespace;
 
     // safety: we know that UNIQUE_COLUMNS has been previously set
     // when compiling frequencies by sel_headers fn in either sequential or parallel mode
@@ -860,7 +845,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Handle weighted vs unweighted frequencies
     if let Some(ref weighted) = weighted_tables {
-        // Process weighted frequencies
+        // Process weighted frequencies — the inline loop differs from the
+        // unweighted helper because process_frequencies_weighted takes the
+        // weighted column map by reference, not the FTable.
+        let mut header_vec: Vec<u8>;
+        let mut itoa_buffer = itoa::Buffer::new();
+        let mut zmij_buffer = zmij::Buffer::new();
+        let mut rank_buffer = String::with_capacity(20);
+        #[allow(unused_assignments)]
+        let mut value_str = String::with_capacity(100);
+        let mut processed_frequencies: Vec<ProcessedFrequency> = Vec::with_capacity(headers.len());
+        let vis_whitespace = args.flag_vis_whitespace;
+
         for (i, header) in headers.iter().enumerate() {
             header_vec = if rconfig.no_headers {
                 (i + 1).to_string().into_bytes()
@@ -890,71 +886,34 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     }
                 }
 
-                row = vec![
+                let value_bytes: &[u8] = if vis_whitespace {
+                    value_str =
+                        util::visualize_whitespace(&String::from_utf8_lossy(&processed_freq.value));
+                    value_str.as_bytes()
+                } else {
+                    &processed_freq.value
+                };
+
+                wtr.write_record([
                     &*header_vec,
-                    if vis_whitespace {
-                        value_str = util::visualize_whitespace(&String::from_utf8_lossy(
-                            &processed_freq.value,
-                        ));
-                        value_str.as_bytes()
-                    } else {
-                        &processed_freq.value
-                    },
+                    value_bytes,
                     itoa_buffer.format(processed_freq.count).as_bytes(),
                     processed_freq.formatted_percentage.as_bytes(),
                     rank_buffer.as_bytes(),
-                ];
-                wtr.write_record(row)?;
+                ])?;
             }
             processed_frequencies.clear();
         }
     } else {
-        // Process unweighted frequencies (original code)
-        for (i, (header, ftab)) in head_ftables.enumerate() {
-            header_vec = if rconfig.no_headers {
-                (i + 1).to_string().into_bytes()
-            } else {
-                header.to_vec()
-            };
-
-            args.process_frequencies(
-                unique_headers_vec.contains(&i),
-                abs_dec_places,
-                row_count,
-                &ftab,
-                &mut processed_frequencies,
-            );
-
-            for processed_freq in &processed_frequencies {
-                // Format rank: show as integer if whole number, otherwise with decimals
-                // Sentinel value -1.0 indicates NULL entry with --pct-nulls=false (empty rank)
-                rank_buffer.clear();
-                if processed_freq.rank >= 0.0 {
-                    if processed_freq.rank.fract() == 0.0 {
-                        rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
-                    } else {
-                        rank_buffer.push_str(zmij_buffer.format(processed_freq.rank));
-                    }
-                }
-
-                row = vec![
-                    &*header_vec,
-                    if vis_whitespace {
-                        value_str = util::visualize_whitespace(&String::from_utf8_lossy(
-                            &processed_freq.value,
-                        ));
-                        value_str.as_bytes()
-                    } else {
-                        &processed_freq.value
-                    },
-                    itoa_buffer.format(processed_freq.count).as_bytes(),
-                    processed_freq.formatted_percentage.as_bytes(),
-                    rank_buffer.as_bytes(),
-                ];
-                wtr.write_record(row)?;
-            }
-            processed_frequencies.clear();
-        }
+        args.emit_unweighted_csv_rows(
+            &mut wtr,
+            &headers,
+            tables,
+            unique_headers_vec,
+            abs_dec_places,
+            row_count,
+            rconfig.no_headers,
+        )?;
     }
     Ok(wtr.flush()?)
 }
@@ -1880,7 +1839,7 @@ impl Args {
         // can_use_freq_cache already guards !is_json, so this is unreachable
         debug_assert!(!is_json, "try_output_from_cache called with JSON mode");
 
-        // CSV output mode — reuse the existing output loop
+        // CSV output mode — reuse the shared unweighted emit helper.
         let abs_dec_places = self.flag_pct_dec_places.unsigned_abs() as u32;
         // safety: we just set UNIQUE_COLUMNS_VEC above
         let unique_headers_vec = UNIQUE_COLUMNS_VEC.get().unwrap();
@@ -1888,61 +1847,15 @@ impl Args {
         let mut wtr = Config::new(self.flag_output.as_ref()).writer()?;
         wtr.write_record(vec!["field", "value", "count", "percentage", "rank"])?;
 
-        let mut header_vec: Vec<u8>;
-        let mut itoa_buffer = itoa::Buffer::new();
-        let mut zmij_buffer = zmij::Buffer::new();
-        let mut rank_buffer = String::with_capacity(20);
-        let mut row: Vec<&[u8]>;
-        let mut processed_frequencies: Vec<ProcessedFrequency> =
-            Vec::with_capacity(selected_entries.len());
-        #[allow(unused_assignments)]
-        let mut value_str = String::with_capacity(100);
-        let vis_whitespace = self.flag_vis_whitespace;
-
-        let head_ftables = selected_headers.iter().zip(tables);
-        for (i, (header, ftab)) in head_ftables.enumerate() {
-            header_vec = if rconfig.no_headers {
-                (i + 1).to_string().into_bytes()
-            } else {
-                header.to_vec()
-            };
-
-            self.process_frequencies(
-                unique_headers_vec.contains(&i),
-                abs_dec_places,
-                row_count,
-                &ftab,
-                &mut processed_frequencies,
-            );
-
-            for processed_freq in &processed_frequencies {
-                rank_buffer.clear();
-                if processed_freq.rank >= 0.0 {
-                    if processed_freq.rank.fract() == 0.0 {
-                        rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
-                    } else {
-                        rank_buffer.push_str(zmij_buffer.format(processed_freq.rank));
-                    }
-                }
-
-                row = vec![
-                    &*header_vec,
-                    if vis_whitespace {
-                        value_str = util::visualize_whitespace(&String::from_utf8_lossy(
-                            &processed_freq.value,
-                        ));
-                        value_str.as_bytes()
-                    } else {
-                        &processed_freq.value
-                    },
-                    itoa_buffer.format(processed_freq.count).as_bytes(),
-                    processed_freq.formatted_percentage.as_bytes(),
-                    rank_buffer.as_bytes(),
-                ];
-                wtr.write_record(row)?;
-            }
-            processed_frequencies.clear();
-        }
+        self.emit_unweighted_csv_rows(
+            &mut wtr,
+            &selected_headers,
+            tables,
+            unique_headers_vec,
+            abs_dec_places,
+            row_count,
+            rconfig.no_headers,
+        )?;
         wtr.flush()?;
 
         winfo!("Frequency cache hit: output produced from cache.");
@@ -2081,6 +1994,79 @@ impl Args {
                 });
             }
         }
+    }
+
+    /// Emit the unweighted CSV body for one column-set: writes one row per
+    /// processed frequency for every (header, ftable) pair.
+    ///
+    /// Shared between `run()` (post-computation) and `try_output_from_cache()`
+    /// (full cache hit). Caller is responsible for writing the column-header
+    /// record before this and flushing afterward.
+    fn emit_unweighted_csv_rows<W: io::Write>(
+        &self,
+        wtr: &mut csv::Writer<W>,
+        headers: &Headers,
+        tables: FTables,
+        unique_headers_vec: &[usize],
+        abs_dec_places: u32,
+        row_count: u64,
+        no_headers: bool,
+    ) -> CliResult<()> {
+        let vis_whitespace = self.flag_vis_whitespace;
+        let mut header_vec: Vec<u8>;
+        let mut itoa_buffer = itoa::Buffer::new();
+        let mut zmij_buffer = zmij::Buffer::new();
+        let mut rank_buffer = String::with_capacity(20);
+        #[allow(unused_assignments)]
+        let mut value_str = String::with_capacity(100);
+        let mut processed_frequencies: Vec<ProcessedFrequency> = Vec::with_capacity(headers.len());
+
+        for (i, (header, ftab)) in headers.iter().zip(tables).enumerate() {
+            header_vec = if no_headers {
+                (i + 1).to_string().into_bytes()
+            } else {
+                header.to_vec()
+            };
+
+            self.process_frequencies(
+                unique_headers_vec.contains(&i),
+                abs_dec_places,
+                row_count,
+                &ftab,
+                &mut processed_frequencies,
+            );
+
+            for processed_freq in &processed_frequencies {
+                // Format rank: show as integer if whole number, otherwise with decimals.
+                // Sentinel value -1.0 indicates NULL entry with --pct-nulls=false (empty rank).
+                rank_buffer.clear();
+                if processed_freq.rank >= 0.0 {
+                    if processed_freq.rank.fract() == 0.0 {
+                        rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
+                    } else {
+                        rank_buffer.push_str(zmij_buffer.format(processed_freq.rank));
+                    }
+                }
+
+                let value_bytes: &[u8] = if vis_whitespace {
+                    value_str =
+                        util::visualize_whitespace(&String::from_utf8_lossy(&processed_freq.value));
+                    value_str.as_bytes()
+                } else {
+                    &processed_freq.value
+                };
+
+                wtr.write_record([
+                    &*header_vec,
+                    value_bytes,
+                    itoa_buffer.format(processed_freq.count).as_bytes(),
+                    processed_freq.formatted_percentage.as_bytes(),
+                    rank_buffer.as_bytes(),
+                ])?;
+            }
+            processed_frequencies.clear();
+        }
+        Ok(())
     }
 
     /// Format percentage with proper decimal places

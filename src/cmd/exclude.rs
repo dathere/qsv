@@ -13,6 +13,8 @@ separating them with a comma. Specify a range of columns with `-`. Both
 columns1 and columns2 must specify exactly the same number of columns.
 (See 'qsv select --help' for the full syntax.)
 
+Either <input1> or <input2> can be set to `-` to read from stdin, but not both.
+
 Examples:
 
   # Remove all records in previously-processed.csv from records.csv
@@ -39,6 +41,9 @@ Examples:
   # Do a case insensitive exclusion on the id column
   qsv exclude --ignore-case id records.csv id previously-processed.csv
 
+  # Read records.csv from stdin
+  cat records.csv | qsv exclude id - id previously-processed.csv
+
   # Chain exclude with sort to create a new sorted records file without previously processed records
   qsv exclude id records.csv id previously-processed.csv | \
       qsv sort > new-sorted-records.csv
@@ -57,10 +62,11 @@ input arguments:
     <input1> is the file from which data will be removed.
     <input2> is the file containing the data to be removed from <input1>
      e.g. 'qsv exclude id records.csv id previously-processed.csv'
+    Either input may be set to `-` to read from stdin, but not both.
 
 exclude options:
     -i, --ignore-case      When set, matching is done case insensitively.
-    -v, --invert     When set, matching rows will be the only ones included,
+    -v, --invert           When set, matching rows will be the only ones included,
                            forming set intersection, instead of the ones discarded.
 
 Common options:
@@ -71,22 +77,24 @@ Common options:
                            sliced, etc.)
     -d, --delimiter <arg>  The field delimiter for reading CSV data.
                            Must be a single character. (default: ,)
+    --memcheck             Check if there is enough memory to load <input2>
+                           into memory using CONSERVATIVE heuristics.
 "#;
 
-use std::{collections::hash_map::Entry, fs, io, str};
+use std::{io, path::Path};
 
-use byteorder::{BigEndian, WriteBytesExt};
-use foldhash::{HashMap, HashMapExt};
+use foldhash::{HashSet, HashSetExt};
 use serde::Deserialize;
 
 use crate::{
     CliResult,
-    config::{Config, Delimiter},
-    index::Indexed,
+    config::{Config, Delimiter, SeekRead},
     select::{SelectColumns, Selection},
     util,
     util::ByteString,
 };
+
+const VALUE_SET_INITIAL_CAPACITY: usize = 10_000;
 
 #[derive(Deserialize)]
 struct Args {
@@ -99,16 +107,23 @@ struct Args {
     flag_no_headers:  bool,
     flag_ignore_case: bool,
     flag_delimiter:   Option<Delimiter>,
+    flag_memcheck:    bool,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
+    if args.arg_input1 == "-" && args.arg_input2 == "-" {
+        return fail_incorrectusage_clierror!(
+            "Only one of <input1> or <input2> may be set to `-` to read from stdin."
+        );
+    }
+
     let mut state = args.new_io_state()?;
     state.write_headers()?;
     state.exclude(args.flag_invert)
 }
 
-struct IoState<R, W: io::Write> {
+struct IoState<R: io::Read, W: io::Write> {
     wtr:        csv::Writer<W>,
     rdr1:       csv::Reader<R>,
     sel1:       Selection,
@@ -118,7 +133,7 @@ struct IoState<R, W: io::Write> {
     casei:      bool,
 }
 
-impl<R: io::Read + io::Seek, W: io::Write> IoState<R, W> {
+impl<R: io::Read, W: io::Write> IoState<R, W> {
     fn write_headers(&mut self) -> CliResult<()> {
         if !self.no_headers {
             let headers = self.rdr1.byte_headers()?.clone();
@@ -128,25 +143,13 @@ impl<R: io::Read + io::Seek, W: io::Write> IoState<R, W> {
     }
 
     fn exclude(mut self, invert: bool) -> CliResult<()> {
-        // amortize allocations
-        #[allow(unused_assignments)]
-        let mut curr_row = csv::ByteRecord::new();
-
-        let validx = ValueIndex::new(self.rdr2, &self.sel2, self.casei)?;
-        for row in self.rdr1.byte_records() {
-            curr_row = row?;
-            let key = get_row_key(&self.sel1, &curr_row, self.casei);
-            match validx.values.get(&key) {
-                Some(_rows) => {
-                    if invert {
-                        self.wtr.write_record(curr_row.iter())?;
-                    }
-                },
-                _ => {
-                    if !invert {
-                        self.wtr.write_record(curr_row.iter())?;
-                    }
-                },
+        let values = build_value_set(self.rdr2, &self.sel2, self.casei)?;
+        let mut row = csv::ByteRecord::new();
+        while self.rdr1.read_byte_record(&mut row)? {
+            let key = get_row_key(&self.sel1, &row, self.casei);
+            let matched = values.contains(&key);
+            if matched == invert {
+                self.wtr.write_record(row.iter())?;
             }
         }
         Ok(())
@@ -154,7 +157,9 @@ impl<R: io::Read + io::Seek, W: io::Write> IoState<R, W> {
 }
 
 impl Args {
-    fn new_io_state(&self) -> CliResult<IoState<fs::File, Box<dyn io::Write + 'static>>> {
+    fn new_io_state(
+        &self,
+    ) -> CliResult<IoState<Box<dyn SeekRead + 'static>, Box<dyn io::Write + 'static>>> {
         let rconf1 = Config::new(Some(self.arg_input1.clone()).as_ref())
             .delimiter(self.flag_delimiter)
             .no_headers_flag(self.flag_no_headers)
@@ -164,8 +169,13 @@ impl Args {
             .no_headers_flag(self.flag_no_headers)
             .select(self.arg_columns2.clone());
 
-        let mut rdr1 = rconf1.reader_file()?;
-        let mut rdr2 = rconf2.reader_file()?;
+        // input2 is fully loaded into memory; guard against OOM.
+        if let Some(path) = rconf2.path.as_ref() {
+            util::mem_file_check(Path::new(path), false, self.flag_memcheck)?;
+        }
+
+        let mut rdr1 = rconf1.reader_file_stdin()?;
+        let mut rdr2 = rconf2.reader_file_stdin()?;
         let (sel1, sel2) = self.get_selections(&rconf1, &mut rdr1, &rconf2, &mut rdr2)?;
         Ok(IoState {
             wtr: Config::new(self.flag_output.as_ref()).writer()?,
@@ -202,89 +212,17 @@ impl Args {
     }
 }
 
-#[allow(dead_code)]
-struct ValueIndex<R> {
-    // This maps tuples of values to corresponding rows.
-    values:   HashMap<Vec<ByteString>, Vec<usize>>,
-    idx:      Indexed<R, io::Cursor<Vec<u8>>>,
-    num_rows: usize,
-}
-
-impl<R: io::Read + io::Seek> ValueIndex<R> {
-    fn new(mut rdr: csv::Reader<R>, sel: &Selection, casei: bool) -> CliResult<ValueIndex<R>> {
-        let mut val_idx = HashMap::with_capacity(10000);
-        let mut row_idx = io::Cursor::new(Vec::with_capacity(8 * 10000));
-        let (mut rowi, mut count) = (0_usize, 0_usize);
-
-        // This logic is kind of tricky. Basically, we want to include
-        // the header row in the line index (because that's what csv::index
-        // does), but we don't want to include header values in the ValueIndex.
-        if rdr.has_headers() {
-            // ... so if there are headers, we make sure that we've parsed
-            // them, and write the offset of the header row to the index.
-            rdr.byte_headers()?;
-            row_idx.write_u64::<BigEndian>(0)?;
-            count += 1;
-        } else {
-            // ... and if there are no headers, we seek to the beginning and
-            // index everything.
-            let mut pos = csv::Position::new();
-            pos.set_byte(0);
-            rdr.seek(pos)?;
-        }
-
-        let mut row = csv::ByteRecord::new();
-        while rdr.read_byte_record(&mut row)? {
-            // This is a bit hokey. We're doing this manually instead of using
-            // the `csv-index` crate directly so that we can create both
-            // indexes in one pass.
-            row_idx.write_u64::<BigEndian>(row.position().unwrap().byte())?;
-
-            let fields: Vec<_> = sel
-                .select(&row)
-                .map(|v| util::transform(v, casei))
-                .collect();
-            match val_idx.entry(fields) {
-                Entry::Vacant(v) => {
-                    let mut rows = Vec::with_capacity(4);
-                    rows.push(rowi);
-                    v.insert(rows);
-                },
-                Entry::Occupied(mut v) => {
-                    v.get_mut().push(rowi);
-                },
-            }
-            rowi += 1;
-            count += 1;
-        }
-
-        row_idx.write_u64::<BigEndian>(count as u64)?;
-        let idx = Indexed::open(rdr, io::Cursor::new(row_idx.into_inner()))?;
-        Ok(ValueIndex {
-            values: val_idx,
-            idx,
-            num_rows: rowi,
-        })
+fn build_value_set<R: io::Read>(
+    mut rdr: csv::Reader<R>,
+    sel: &Selection,
+    casei: bool,
+) -> CliResult<HashSet<Vec<ByteString>>> {
+    let mut values: HashSet<Vec<ByteString>> = HashSet::with_capacity(VALUE_SET_INITIAL_CAPACITY);
+    let mut row = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut row)? {
+        values.insert(get_row_key(sel, &row, casei));
     }
-}
-
-use std::fmt;
-
-impl<R> fmt::Debug for ValueIndex<R> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Sort the values by order of first appearance.
-        let mut kvs = self.values.iter().collect::<Vec<_>>();
-        kvs.sort_by(|&(_, v1), &(_, v2)| v1[0].cmp(&v2[0]));
-        for (keys, rows) in kvs {
-            // This is just for debugging, so assume Unicode for now.
-            let keys = keys
-                .iter()
-                .map(|k| String::from_utf8(k.clone()).unwrap())
-                .collect::<Vec<_>>();
-            writeln!(f, "({}) => {rows:?}", keys.join(", "))?;
-        }
-        Ok(())
-    }
+    Ok(values)
 }
 
 #[inline]

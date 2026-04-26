@@ -99,7 +99,7 @@ use strum_macros::EnumString;
 
 use crate::{
     CliResult,
-    config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
+    config::{Config, Delimiter},
     util,
 };
 
@@ -220,66 +220,68 @@ impl Args {
                 self.flag_group
             );
         };
+        let group_flag = group_kind != GroupKind::None;
 
-        // Pre-allocate with estimated capacity for better performance
+        // stdin is already materialized to a real file by util::process_input()
+        // before we get here, so all configs have a Some(path).
+
         let mut columns_global: FhashIndexSet<Box<[u8]>> = FhashIndexSet::default();
-        columns_global.reserve(100);
 
-        if group_kind != GroupKind::None {
+        if group_flag {
             columns_global.insert(self.flag_group_name.as_bytes().to_vec().into_boxed_slice());
         }
 
-        // we're creating a temp_dir in case we have stdin input, as we need to save it to a
-        // file named "stdin" under the temp_dir. This is required as we need to scan
-        // the files twice. temp_dir will be automatically deleted when it goes out of scope.
-        let temp_dir = tempfile::tempdir()?;
-        let mut stdin_tempfilename = std::path::PathBuf::new();
+        // synthetic headers per file when --no-headers is set; we keep a Vec
+        // so the second pass can re-use the exact widths discovered in the
+        // first pass (re-scanning the file is O(rows) and we already scanned).
+        let configs = self.configs()?;
+        let mut synthetic_headers: Vec<csv::ByteRecord> = if self.flag_no_headers {
+            Vec::with_capacity(configs.len())
+        } else {
+            Vec::new()
+        };
 
-        // we need to create a temporary header in case --no-headers is set
-        let mut temp_header = csv::ByteRecord::new();
-
-        // First pass, add all column headers to an IndexSet
-        for conf in &self.configs()? {
-            if conf.is_stdin() {
-                stdin_tempfilename = temp_dir.path().join("stdin");
-                let tmp_file = std::fs::File::create(&stdin_tempfilename)?;
-                let mut tmp_file =
-                    std::io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, tmp_file);
-                std::io::copy(&mut std::io::stdin(), &mut tmp_file)?;
-            }
+        // First pass: collect the global column set in insertion order.
+        for conf in &configs {
             let mut rdr = conf.reader()?;
 
-            // if self.flag_no_headers is set, we create temporary headers
-            // to use as keys, using the convention "_c_1", "_c_2", "_c_3", etc.
-            let header = if self.flag_no_headers {
-                let mut header = csv::ByteRecord::new();
-                rdr.read_byte_record(&mut header)?;
-                temp_header.clear();
-                for (n, _) in header.iter().enumerate() {
-                    temp_header.push_field(format!("_c_{}", n + 1).as_bytes());
+            if self.flag_no_headers {
+                // synthesize "_c_1", "_c_2", ... from the width of this file's first row.
+                let mut first = csv::ByteRecord::new();
+                rdr.read_byte_record(&mut first)?;
+                let mut th = csv::ByteRecord::with_capacity(64, first.len());
+                for n in 0..first.len() {
+                    th.push_field(format!("_c_{}", n + 1).as_bytes());
                 }
-                &temp_header
+                for field in &th {
+                    columns_global.insert(field.to_vec().into_boxed_slice());
+                }
+                synthetic_headers.push(th);
             } else {
-                rdr.byte_headers()?
-            };
-
-            for field in header {
-                let fi = field.to_vec().into_boxed_slice();
-                columns_global.insert(fi);
+                let header = rdr.byte_headers()?;
+                for field in header {
+                    columns_global.insert(field.to_vec().into_boxed_slice());
+                    if group_flag && field == self.flag_group_name.as_bytes() {
+                        wwarn!(
+                            "Column `{}` in file `{:?}` collides with --group-name; the file's \
+                             value will override the grouping value for its rows.",
+                            self.flag_group_name,
+                            conf.path,
+                        );
+                    }
+                }
             }
         }
         let num_columns_global = columns_global.len();
 
-        // Second pass, write all columns to a new file
-        // set flexible to true for faster writes
-        // as we know that all columns are already in columns_global and we don't need to
-        // validate that the number of columns are the same every time we write a row
+        // Second pass: write rows, projecting each file's columns onto the global schema.
+        // The writer is flexible: we already know every column appears in columns_global,
+        // so we can skip the per-row column-count validation.
         let mut wtr = Config::new(self.flag_output.as_ref())
             .flexible(true)
             .writer()?;
-        let mut new_row = csv::ByteRecord::with_capacity(500, num_columns_global);
+        let mut new_row = csv::ByteRecord::with_capacity(4096, num_columns_global);
 
-        // write the header
         if !self.flag_no_headers {
             for c in &columns_global {
                 new_row.push_field(c);
@@ -287,59 +289,59 @@ impl Args {
             wtr.write_byte_record(&new_row)?;
         }
 
-        // amortize allocations
+        // amortize allocations across files
         let mut grouping_value = String::new();
-        let mut conf_path;
-        let mut rdr;
-        let mut header: &csv::ByteRecord;
-        // Pre-allocate with the known capacity for better performance
         let mut columns_of_this_file: FhashIndexMap<Box<[u8]>, usize> = FhashIndexMap::default();
         columns_of_this_file.reserve(num_columns_global);
-        let mut row: csv::ByteRecord = csv::ByteRecord::with_capacity(500, num_columns_global);
+        let mut col_map: Vec<Option<usize>> = Vec::with_capacity(num_columns_global);
+        let mut row = csv::ByteRecord::with_capacity(4096, num_columns_global);
 
-        for conf in self.configs()? {
-            if conf.is_stdin() {
-                rdr = Config::new(Some(stdin_tempfilename.to_string_lossy().to_string()).as_ref())
-                    .reader()?;
-                conf_path = Some(stdin_tempfilename.clone());
-            } else {
-                rdr = conf.reader()?;
-                conf_path = conf.path.clone();
-            }
+        for (file_idx, conf) in configs.into_iter().enumerate() {
+            let conf_pathbuf = conf.path.clone().ok_or_else(|| {
+                crate::CliError::Other("cat rowskey: input is missing a file path".to_string())
+            })?;
+            let mut rdr = conf.reader()?;
 
-            header = if self.flag_no_headers {
-                &temp_header
-            } else {
-                rdr.byte_headers()?
-            };
-
+            // Build columns_of_this_file from either the synthesized header
+            // (no-headers) or the file's actual header.
             columns_of_this_file.clear();
-
-            for (n, field) in header.iter().enumerate() {
-                let fi = field.to_vec().into_boxed_slice();
-                // Use entry API for more efficient insertion when we need to check for duplicates
-                if let indexmap::map::Entry::Vacant(entry) = columns_of_this_file.entry(fi) {
-                    entry.insert(n);
-                } else {
-                    wwarn!(
-                        "Duplicate column `{}` name in file `{:?}`.",
-                        String::from_utf8_lossy(field),
-                        conf.path,
-                    );
+            if self.flag_no_headers {
+                // safety: built in the first pass, one entry per file in order.
+                let th = &synthetic_headers[file_idx];
+                for (n, field) in th.iter().enumerate() {
+                    columns_of_this_file.insert(field.to_vec().into_boxed_slice(), n);
+                }
+            } else {
+                let header = rdr.byte_headers()?;
+                for (n, field) in header.iter().enumerate() {
+                    let fi = field.to_vec().into_boxed_slice();
+                    if let indexmap::map::Entry::Vacant(entry) = columns_of_this_file.entry(fi) {
+                        entry.insert(n);
+                    } else {
+                        wwarn!(
+                            "Duplicate column `{}` name in file `{:?}`.",
+                            String::from_utf8_lossy(field),
+                            conf.path,
+                        );
+                    }
                 }
             }
 
-            // safety: we know that this is a valid file path
-            let conf_pathbuf = conf_path.unwrap();
+            // Precompute the global -> file column index mapping once per file.
+            // Hot loop below is then a flat Vec walk: no per-cell hashmap probes.
+            col_map.clear();
+            col_map.extend(
+                columns_global
+                    .iter()
+                    .map(|c| columns_of_this_file.get(c).copied()),
+            );
 
             // set grouping_value
-            // safety: we know that this is a valid file path and if the file path
-            // is not utf8, we convert it to lossy utf8
+            // canonicalize() can fail (broken symlink, perms); propagate instead of panic.
             match group_kind {
                 GroupKind::FullPath => {
                     grouping_value.clear();
-                    grouping_value
-                        .push_str(&conf_pathbuf.canonicalize().unwrap().to_string_lossy());
+                    grouping_value.push_str(&conf_pathbuf.canonicalize()?.to_string_lossy());
                 },
                 GroupKind::ParentDirFName => {
                     grouping_value = get_parentdir_and_file(&conf_pathbuf, false);
@@ -349,45 +351,37 @@ impl Args {
                 },
                 GroupKind::FName => {
                     grouping_value.clear();
-                    grouping_value.push_str(&conf_pathbuf.file_name().unwrap().to_string_lossy());
+                    if let Some(name) = conf_pathbuf.file_name() {
+                        grouping_value.push_str(&name.to_string_lossy());
+                    }
                 },
                 GroupKind::FStem => {
                     grouping_value.clear();
-                    grouping_value.push_str(&conf_pathbuf.file_stem().unwrap().to_string_lossy());
+                    if let Some(stem) = conf_pathbuf.file_stem() {
+                        grouping_value.push_str(&stem.to_string_lossy());
+                    }
                 },
                 GroupKind::None => {},
             }
-
-            let group_flag = group_kind != GroupKind::None;
             let grouping_value_bytes = grouping_value.as_bytes();
 
             while rdr.read_byte_record(&mut row)? {
                 new_row.clear();
-                for (col_idx, c) in columns_global.iter().enumerate() {
-                    match columns_of_this_file.get(c) {
-                        Some(idx) => {
-                            if let Some(d) = row.get(*idx) {
-                                new_row.push_field(d);
-                            } else {
-                                new_row.push_field(b"");
-                            }
+                for (col_idx, slot) in col_map.iter().enumerate() {
+                    match slot {
+                        Some(idx) => new_row.push_field(row.get(*idx).unwrap_or(b"")),
+                        None if group_flag && col_idx == 0 => {
+                            new_row.push_field(grouping_value_bytes);
                         },
-                        _ => {
-                            if group_flag && col_idx == 0 {
-                                // we are in the first column, and --group is set
-                                // so we write the grouping value
-                                new_row.push_field(grouping_value_bytes);
-                            } else {
-                                new_row.push_field(b"");
-                            }
-                        },
+                        None => new_row.push_field(b""),
                     }
                 }
                 wtr.write_byte_record(&new_row)?;
             }
         }
 
-        Ok(wtr.flush()?)
+        wtr.flush()?;
+        Ok(())
     }
 
     fn cat_columns(&self) -> CliResult<()> {

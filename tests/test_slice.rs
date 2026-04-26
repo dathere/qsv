@@ -613,6 +613,23 @@ fn slice_empty_json_with_index() {
     );
 }
 
+// Empty JSON slice with --no-headers + --json on the indexed path: confirms
+// the empty-slice short-circuit forwards flag_no_headers to write_json
+// the same way the non-empty path does.
+#[test]
+fn slice_empty_json_no_headers_with_index() {
+    test_slice(
+        "slice_empty_json_no_headers_with_index",
+        Some(5),
+        Some(5),
+        &[],
+        false,
+        true,
+        false,
+        true,
+    );
+}
+
 // Same clamping behavior for negative --index.
 #[test]
 fn slice_neg_index_clamps_to_zero() {

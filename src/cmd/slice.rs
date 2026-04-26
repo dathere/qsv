@@ -268,14 +268,18 @@ impl Args {
             None
         };
         // saturating_sub so |negative offset| > row count clamps to 0
-        // (i.e. "from the start") rather than past the end of the file
+        // (i.e. "from the start") rather than past the end of the file.
+        // unwrap_or(0) keeps this panic-free even if the predicate above
+        // and the negative arms ever drift apart — non-negative offsets
+        // don't read the count.
+        let total = total.unwrap_or(0);
         let start = match self.flag_start {
-            Some(s) if s < 0 => Some(total.unwrap().saturating_sub(s.unsigned_abs())),
+            Some(s) if s < 0 => Some(total.saturating_sub(s.unsigned_abs())),
             Some(s) => Some(s as usize),
             None => None,
         };
         let index = match self.flag_index {
-            Some(i) if i < 0 => Some(total.unwrap().saturating_sub(i.unsigned_abs())),
+            Some(i) if i < 0 => Some(total.saturating_sub(i.unsigned_abs())),
             Some(i) => Some(i as usize),
             None => None,
         };

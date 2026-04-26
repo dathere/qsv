@@ -84,13 +84,13 @@ qsv slice --index 1 data.csv
 qsv slice -s 1 --len 2 data.csv
 ```
 
-> Slice records 10 to 20 as JSON
+> Slice records 10 to 19 as JSON (--end is exclusive)
 
 ```console
 qsv slice --start 9 --end 19 --json data.csv
 ```
 
-> Slice records 1 to 9 and 21 to the end as JSON
+> Slice records 1 to 9 and 20 to the end as JSON
 
 ```console
 qsv slice --start 9 --len 10 --invert --json data.csv

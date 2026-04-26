@@ -96,13 +96,13 @@ qsv datefmt --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑c,`<br>`‑‑new‑column`&nbsp; | string | Put the transformed values in a new column instead. |  |
+| &nbsp;`‑c,`<br>`‑‑new‑column`&nbsp; | string | Put the transformed values in new column(s) instead of replacing the source column(s). When the selection has multiple columns, pass a comma-separated list of new column names that match the selection count (e.g. --new-column 'open_iso,close_iso' for 'OpenDate,CloseDate'). To rename in place instead, use --rename. |  |
 | &nbsp;`‑r,`<br>`‑‑rename`&nbsp; | string | New name for the transformed column. |  |
 | &nbsp;`‑‑prefer‑dmy`&nbsp; | flag | Prefer to parse dates in dmy format. Otherwise, use mdy format. |  |
 | &nbsp;`‑‑keep‑zero‑time`&nbsp; | flag | If a formatted date ends with "T00:00:00+00:00", keep the time instead of removing it. |  |
 | &nbsp;`‑‑input‑tz=<string>`&nbsp; | string | The timezone to use for the input date if the date does not have timezone specified. The timezone must be a valid IANA timezone name or the string "local" for the local timezone. See <https://en.wikipedia.org/wiki/List_of_tz_database_time_zones> for a list of valid timezone names. | `UTC` |
 | &nbsp;`‑‑output‑tz=<string>`&nbsp; | string | The timezone to use for the output date. The timezone must be a valid IANA timezone name or the string "local". | `UTC` |
-| &nbsp;`‑‑default‑tz=<string>`&nbsp; | string | The timezone to use for BOTH input and output dates when they do have timezone. Shortcut for --input-tz and --output-tz set to the same timezone. The timezone must be a valid IANA timezone name or the string "local". |  |
+| &nbsp;`‑‑default‑tz=<string>`&nbsp; | string | Fallback timezone consulted only when --input-tz or --output-tz is set to "local" but local-timezone detection fails. Defaults to UTC. Does NOT override the --input-tz / --output-tz defaults — use --utc to force both input and output to UTC. The timezone must be a valid IANA timezone name or the string "local". |  |
 | &nbsp;`‑‑utc`&nbsp; | flag | Shortcut for --input-tz and --output-tz set to UTC. |  |
 | &nbsp;`‑‑zulu`&nbsp; | flag | Shortcut for --output-tz set to UTC and --formatstr set to "%Y-%m-%dT%H:%M:%SZ". |  |
 | &nbsp;`‑R,`<br>`‑‑ts‑resolution`&nbsp; | string | The resolution to use when parsing Unix timestamps. Valid values are "sec", "milli", "micro", "nano". | `sec` |

@@ -128,9 +128,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let mut rdr = rconfig.reader()?;
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
+    // Use rconfig.write_headers so the dupes writer correctly skips header
+    // emission under --no-headers (where byte_headers() returns the first
+    // data row) and avoids writing an empty record when there are no headers.
     let mut dupewtr = if args.flag_dupes_output.is_some() {
         let mut w = Config::new(args.flag_dupes_output.as_ref()).writer()?;
-        w.write_byte_record(rdr.byte_headers()?)?;
+        rconfig.write_headers(&mut rdr, &mut w)?;
         Some(w)
     } else {
         None
@@ -166,8 +169,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 match comparison {
                     Ordering::Equal => {
                         dupe_count += 1;
+                        // Write the row being DROPPED to dupes (next_record),
+                        // not the survivor (record). The streaming path keeps
+                        // the first occurrence of a run, so for runs longer
+                        // than 2 the dropped rows are next_record on each
+                        // iteration. Writing &record here instead would emit
+                        // the survivor N-1 times — and with --select, miss
+                        // the actual dropped rows entirely.
                         if let Some(ref mut w) = dupewtr {
-                            w.write_byte_record(&record)?;
+                            w.write_byte_record(&next_record)?;
                         }
                     },
                     Ordering::Less => {

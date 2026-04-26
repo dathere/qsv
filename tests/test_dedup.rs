@@ -248,21 +248,25 @@ fn dedup_alreadysorted_nocase() {
 fn dedup_sorted_empty() {
     // Regression: --sorted on empty input must not emit a stray empty row,
     // and must still print the duplicate count to stderr (parity with the
-    // in-memory path).
+    // in-memory path). Capture stdout and stderr from a single invocation
+    // so the assertions describe one run of the command.
     let wrk = Workdir::new("dedup_sorted_empty");
     wrk.create("in.csv", vec![svec!["N", "S"]]);
 
     let mut cmd = wrk.command("dedup");
     cmd.arg("--sorted").arg("in.csv");
+    let output = wrk.output(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    let expected = vec![svec!["N", "S"]];
-    assert_eq!(got, expected);
+    // safety: test output is expected to be valid UTF-8 CSV data.
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let expected_stdout = "N,S\n";
+    assert_eq!(stdout.replace("\r\n", "\n"), expected_stdout);
 
     // dedup emits only the dupe count to stderr (just the number, no prose),
     // so assert exact equality on the trimmed output to actually catch a
     // regression that drops or reformats the line.
-    let stderr = wrk.output_stderr(&mut cmd);
+    // safety: test stderr is expected to be valid UTF-8 text output.
+    let stderr = String::from_utf8(output.stderr).unwrap();
     assert_eq!(stderr.trim(), "0", "got stderr: {stderr:?}");
 }
 
@@ -282,6 +286,69 @@ fn dedup_sorted_empty_dupes_output() {
     let dupes: String = wrk.from_str(&wrk.path("dupes.csv"));
     let expected_header = "N,S\n";
     assert_eq!(dupes.replace("\r\n", "\n"), expected_header);
+}
+
+
+#[test]
+fn dedup_sorted_select_dupes_output_run_of_three() {
+    // Regression for Copilot review on PR 3754: with --sorted + --select +
+    // --dupes-output, a run of three rows that are equal-on-selection but
+    // differ on non-selected columns must write the actual dropped rows
+    // to the dupes file (next_record on each Equal step), not the survivor
+    // row repeated. Previously the streaming Equal branch wrote &record
+    // (the survivor) every iteration, so a 3-row run produced two copies
+    // of the survivor and dropped the actually-removed rows from view.
+    let wrk = Workdir::new("dedup_sorted_select_dupes_output_run_of_three");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["key", "val"],
+            svec!["1", "a"],
+            svec!["1", "b"],
+            svec!["1", "c"],
+            svec!["2", "d"],
+        ],
+    );
+
+    let mut cmd = wrk.command("dedup");
+    cmd.arg("--sorted")
+        .args(["--select", "key"])
+        .args(["--dupes-output", "dupes.csv"])
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["key", "val"], svec!["1", "a"], svec!["2", "d"]];
+    assert_eq!(got, expected);
+
+    let dupes: String = wrk.from_str(&wrk.path("dupes.csv"));
+    let expected_dupes = "key,val\n1,b\n1,c\n";
+    assert_eq!(dupes.replace("\r\n", "\n"), expected_dupes);
+}
+
+#[test]
+fn dedup_no_headers_dupes_output() {
+    // Regression for Copilot review on PR 3754: with --no-headers, the
+    // dupes file must not contain a phantom "header" line — previously
+    // the dupes writer was seeded with rdr.byte_headers() unconditionally,
+    // which under --no-headers returns the first DATA row, producing a
+    // dupes file that started with that row even though it wasn't a
+    // duplicate. Use rconfig.write_headers, which already respects the
+    // no-headers flag.
+    let wrk = Workdir::new("dedup_no_headers_dupes_output");
+    wrk.create(
+        "in.csv",
+        vec![svec!["10"], svec!["20"], svec!["20"], svec!["30"]],
+    );
+
+    let mut cmd = wrk.command("dedup");
+    cmd.arg("--no-headers")
+        .args(["--dupes-output", "dupes.csv"])
+        .arg("in.csv");
+    wrk.output(&mut cmd);
+
+    let dupes: String = wrk.from_str(&wrk.path("dupes.csv"));
+    let expected_dupes = "20\n";
+    assert_eq!(dupes.replace("\r\n", "\n"), expected_dupes);
 }
 
 #[test]

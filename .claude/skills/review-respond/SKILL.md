@@ -37,17 +37,27 @@ gh api graphql -f query='{ repository(owner:"{owner}", name:"{repo}") { pullRequ
 
 For each unresolved human review comment:
 
-1. Read the referenced file and the specific lines
-2. Understand what the reviewer is asking for
-3. Apply the fix
+1. **Locate the code with Serena, not bare Read**:
+   - `mcp__serena__get_symbols_overview` on the referenced file to see what's there.
+   - `mcp__serena__find_symbol` (with `include_body=true` only when you need the body) to jump straight to the function/method/struct the comment is about. Use `name_path_pattern` like `Args/cat_rowskey` rather than scanning the whole file.
+   - `mcp__serena__find_referencing_symbols` before changing any signature, return type, or removing a symbol — confirms the blast radius across the codebase.
+   - Only fall back to `Read` when the comment is about plain text (docs, comments, USAGE strings) that has no symbolic structure, or when Serena returns empty.
+
+2. **Verify library/API claims with Context7 before agreeing or disagreeing**:
+   - If the reviewer asserts behavior of a third-party crate/library/SDK (e.g., "the csv crate's `byte_headers()` consumes the row", "tokio's `spawn_blocking` returns `JoinHandle`"), call `mcp__context7__resolve-library-id` then `mcp__context7__query-docs` to confirm before acting. Reviewer claims are not always correct; library behavior can change between versions.
+   - Skip Context7 only when the comment is purely about local code (project-internal logic, naming, project conventions).
+
+3. Apply the fix using `Edit` (preferred) or `mcp__serena__replace_symbol_body` for whole-symbol rewrites.
 
 ## Step 5: Verification gate
 
 **Before committing**, verify accuracy of all changes:
 
 - If any change touches documentation that references counts (tool counts, command counts, feature lists): **explicitly list each item by name, then count the list**. Never state a number without showing the enumeration.
-- If any change references file paths, grep to confirm they exist.
+- If any change references file paths, confirm they exist (`Bash` with `ls`/`test -f`).
+- If any change references a symbol (function, struct, method, constant), use `mcp__serena__find_symbol` to confirm it exists at the path you wrote — not Grep. A grep hit on the name is not proof the symbol resolves there.
 - If any change references CLI flags or options, verify they exist in the source or `--help` output.
+- If any change relies on third-party library behavior, the relevant Context7 query from Step 4 must already be in this conversation. If you're verifying after the fact, run it now — do not commit on unverified library assumptions.
 
 ## Step 6: Run tests
 

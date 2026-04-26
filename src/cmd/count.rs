@@ -470,6 +470,19 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
         conf.path.as_ref().unwrap().clone()
     };
 
+    // For stdin, the original `conf` has `path = None` and stdin has already been
+    // consumed into the temp file. The regular-reader fallback must therefore read
+    // from the temp file; otherwise it would re-read EOF stdin and return 0.
+    // Disable autoindex on the temp file path.
+    let fallback_conf = if is_stdin {
+        let mut c = conf.clone();
+        c.path = Some(filepath.clone());
+        c.autoindex_size = 0;
+        c
+    } else {
+        conf.clone()
+    };
+
     let result = (|| -> CliResult<u64> {
         let mut comment_char = String::new();
         let comment_prefix = if let Some(c) = conf.comment {
@@ -498,7 +511,8 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
                 Ok(df) => df.collect(),
                 Err(e) => {
                     log::warn!("polars error loading CSV: {e}");
-                    let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
+                    let (count_regular, _) =
+                        count_input(&fallback_conf, CountDelimsMode::NotRequired)?;
                     return Ok(count_regular);
                 },
             };
@@ -508,7 +522,8 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
                     // schema collection failed; fall back to the regular CSV reader
                     // rather than silently returning 0
                     log::warn!("polars error collecting schema: {e}");
-                    let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
+                    let (count_regular, _) =
+                        count_input(&fallback_conf, CountDelimsMode::NotRequired)?;
                     return Ok(count_regular);
                 },
                 Ok(df) if df.height() == 0 => return Ok(0),
@@ -519,10 +534,10 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
         // if its a "regular" CSV, use polars' read_csv() SQL table function
         // which is much faster than the LazyCsvReader
         let count_query = if comment_prefix.is_none() && delimiter == b',' && !low_memory {
-            format!(
-                "SELECT COUNT(*) FROM read_csv('{}')",
-                filepath.to_string_lossy(),
-            )
+            // escape single quotes in the path so a `'` in the filename can't break
+            // the SQL string. Same convention as src/cmd/scoresql.rs.
+            let escaped_filepath = filepath.to_string_lossy().replace('\'', "''");
+            format!("SELECT COUNT(*) FROM read_csv('{escaped_filepath}')")
         } else {
             // otherwise, read the file into a Polars LazyFrame
             // using the LazyCsvReader builder to set CSV read options
@@ -538,7 +553,8 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
                 Ok(lazy_df) => lazy_df,
                 Err(e) => {
                     log::warn!("polars error loading CSV: {e}");
-                    let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
+                    let (count_regular, _) =
+                        count_input(&fallback_conf, CountDelimsMode::NotRequired)?;
                     return Ok(count_regular);
                 },
             };
@@ -564,7 +580,7 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
             Err(e) => {
                 // there was a Polars error, so we fall back to the regular CSV reader
                 log::warn!("polars error executing count query: {e}");
-                let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
+                let (count_regular, _) = count_input(&fallback_conf, CountDelimsMode::NotRequired)?;
                 return Ok(count_regular);
             },
         };
@@ -576,14 +592,15 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
                 } else {
                     // Empty result, fall back to regular CSV reader
                     log::warn!("empty polars result, falling back to regular reader");
-                    let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
+                    let (count_regular, _) =
+                        count_input(&fallback_conf, CountDelimsMode::NotRequired)?;
                     count_regular
                 }
             },
             Err(e) => {
                 // Polars error, fall back to regular CSV reader
                 log::warn!("polars error, falling back to regular reader: {e}");
-                let (count_regular, _) = count_input(conf, CountDelimsMode::NotRequired)?;
+                let (count_regular, _) = count_input(&fallback_conf, CountDelimsMode::NotRequired)?;
                 count_regular
             },
         };

@@ -42,10 +42,10 @@ Examples:
   # Slice from the second record, two records
   qsv slice -s 1 --len 2 data.csv
 
-  # Slice records 10 to 20 as JSON
+  # Slice records 10 to 19 as JSON (--end is exclusive)
   qsv slice --start 9 --end 19 --json data.csv
 
-  # Slice records 1 to 9 and 21 to the end as JSON
+  # Slice records 1 to 9 and 20 to the end as JSON
   qsv slice --start 9 --len 10 --invert --json data.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_slice.rs.
@@ -123,7 +123,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .canonicalize()?
         .into_os_string()
         .into_string()
-        .unwrap();
+        .map_err(|os| {
+            crate::CliError::Other(format!(
+                "input path is not valid UTF-8: {}",
+                os.to_string_lossy()
+            ))
+        })?;
 
     args.arg_input = Some(input_filename);
 
@@ -138,25 +143,30 @@ impl Args {
         let mut rdr = self.rconfig().reader()?;
 
         let (start, end) = self.range()?;
+        // empty slice with no inversion: nothing to do
+        if end == start && !self.flag_invert {
+            if !self.flag_json {
+                let mut wtr = self.wconfig().writer()?;
+                self.rconfig().write_headers(&mut rdr, &mut wtr)?;
+                wtr.flush()?;
+            }
+            return Ok(());
+        }
+
         if self.flag_json {
             let headers = rdr.byte_headers()?.clone();
-            let records = rdr.byte_records().enumerate().filter_map(move |(i, r)| {
-                let should_include = if self.flag_invert {
-                    i < start || i >= end
-                } else {
-                    i >= start && i < end
-                };
-                if should_include {
-                    Some(r.unwrap())
-                } else {
-                    None
-                }
-            });
+            // collect into a Result so CSV parse errors propagate instead of panicking
+            let records = rdr
+                .byte_records()
+                .enumerate()
+                .filter(|(i, _)| self.flag_invert == (*i < start || *i >= end))
+                .map(|(_, r)| r)
+                .collect::<Result<Vec<_>, _>>()?;
             util::write_json(
                 self.flag_output.as_ref(),
                 self.flag_no_headers,
                 &headers,
-                records,
+                records.into_iter(),
             )
         } else {
             let mut wtr = self.wconfig().writer()?;
@@ -172,27 +182,34 @@ impl Args {
     }
 
     fn with_index(&self, mut indexed_file: Indexed<fs::File, fs::File>) -> CliResult<()> {
-        let (start, end) = self.range()?;
-        if end - start == 0 && !self.flag_invert {
+        let total_rows = util::count_rows(&self.rconfig())? as usize;
+        let (start_raw, end_raw) = self.range()?;
+        // clamp to row count so arithmetic on `total_rows - end` cannot underflow
+        // and `Indexed::seek` is never called past EOF
+        let start = start_raw.min(total_rows);
+        let end = end_raw.min(total_rows);
+        if end == start && !self.flag_invert {
             return Ok(());
         }
 
         if self.flag_json {
             let headers = indexed_file.byte_headers()?.clone();
-            let total_rows = util::count_rows(&self.rconfig())?;
-            let records = if self.flag_invert {
+            let records: Vec<csv::ByteRecord> = if self.flag_invert {
                 let mut records: Vec<csv::ByteRecord> =
-                    Vec::with_capacity(start + (total_rows as usize - end));
+                    Vec::with_capacity(start + (total_rows - end));
                 // Get records before start
-                indexed_file.seek(0)?;
-                for r in indexed_file.byte_records().take(start) {
-                    records.push(r.unwrap());
+                if start > 0 {
+                    indexed_file.seek(0)?;
+                    for r in indexed_file.byte_records().take(start) {
+                        records.push(r?);
+                    }
                 }
-
-                // Get records after end
-                indexed_file.seek(end as u64)?;
-                for r in indexed_file.byte_records().take(total_rows as usize - end) {
-                    records.push(r.unwrap());
+                // Get records after end (skip when end == total_rows; seek(total_rows) errors)
+                if end < total_rows {
+                    indexed_file.seek(end as u64)?;
+                    for r in indexed_file.byte_records().take(total_rows - end) {
+                        records.push(r?);
+                    }
                 }
                 records
             } else {
@@ -200,8 +217,7 @@ impl Args {
                 indexed_file
                     .byte_records()
                     .take(end - start)
-                    .map(|r| r.unwrap())
-                    .collect::<Vec<_>>()
+                    .collect::<Result<Vec<_>, _>>()?
             };
             util::write_json(
                 self.flag_output.as_ref(),
@@ -213,18 +229,18 @@ impl Args {
             let mut wtr = self.wconfig().writer()?;
             self.rconfig().write_headers(&mut *indexed_file, &mut wtr)?;
 
-            let total_rows = util::count_rows(&self.rconfig())? as usize;
             if self.flag_invert {
-                // Get records before start
-                indexed_file.seek(0)?;
-                for r in indexed_file.byte_records().take(start) {
-                    wtr.write_byte_record(&r?)?;
+                if start > 0 {
+                    indexed_file.seek(0)?;
+                    for r in indexed_file.byte_records().take(start) {
+                        wtr.write_byte_record(&r?)?;
+                    }
                 }
-
-                // Get records after end
-                indexed_file.seek(end as u64)?;
-                for r in indexed_file.byte_records().take(total_rows - end) {
-                    wtr.write_byte_record(&r?)?;
+                if end < total_rows {
+                    indexed_file.seek(end as u64)?;
+                    for r in indexed_file.byte_records().take(total_rows - end) {
+                        wtr.write_byte_record(&r?)?;
+                    }
                 }
             } else {
                 indexed_file.seek(start as u64)?;
@@ -237,27 +253,21 @@ impl Args {
     }
 
     fn range(&self) -> CliResult<(usize, usize)> {
-        let mut start = None;
-        if let Some(start_arg) = self.flag_start {
-            if start_arg < 0 {
-                start = Some(
-                    (util::count_rows(&self.rconfig())? as usize)
-                        .abs_diff(start_arg.unsigned_abs()),
-                );
-            } else {
-                start = Some(start_arg as usize);
-            }
-        }
-        let index = if let Some(flag_index) = self.flag_index {
-            if flag_index < 0 {
-                let index = (util::count_rows(&self.rconfig())? as usize)
-                    .abs_diff(flag_index.unsigned_abs());
-                Some(index)
-            } else {
-                Some(flag_index as usize)
-            }
-        } else {
-            None
+        let start = match self.flag_start {
+            // saturating_sub so |negative offset| > row count clamps to 0
+            // (i.e. "from the start") rather than past the end of the file
+            Some(s) if s < 0 => {
+                Some((util::count_rows(&self.rconfig())? as usize).saturating_sub(s.unsigned_abs()))
+            },
+            Some(s) => Some(s as usize),
+            None => None,
+        };
+        let index = match self.flag_index {
+            Some(i) if i < 0 => {
+                Some((util::count_rows(&self.rconfig())? as usize).saturating_sub(i.unsigned_abs()))
+            },
+            Some(i) => Some(i as usize),
+            None => None,
         };
         Ok(util::range(start, self.flag_end, self.flag_len, index)?)
     }

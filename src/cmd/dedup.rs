@@ -146,47 +146,44 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut record = ByteRecord::new();
         let mut next_record = ByteRecord::new();
 
-        if !rdr.read_byte_record(&mut record)? {
-            // empty input — nothing to dedup, header (if any) was already written above
-            wtr.flush()?;
-            if let Some(mut w) = dupewtr {
-                w.flush()?;
-            }
-            return Ok(());
-        }
-        loop {
-            let more_records = rdr.read_byte_record(&mut next_record)?;
-            if !more_records {
-                wtr.write_byte_record(&record)?;
-                break;
-            }
-            let a = sel.select(&record);
-            let b = sel.select(&next_record);
-            let comparison = match compare_mode {
-                ComparisonMode::Normal => iter_cmp(a, b),
-                ComparisonMode::Numeric => iter_cmp_num(a, b),
-                ComparisonMode::IgnoreCase => iter_cmp_ignore_case(a, b),
-            };
-            match comparison {
-                Ordering::Equal => {
-                    dupe_count += 1;
-                    if let Some(ref mut w) = dupewtr {
-                        w.write_byte_record(&record)?;
-                    }
-                },
-                Ordering::Less => {
+        // Only enter the streaming loop if there is at least one data row;
+        // otherwise fall through to the flush + duplicate-count print block
+        // so empty input behaves identically to the in-memory path.
+        if rdr.read_byte_record(&mut record)? {
+            loop {
+                let more_records = rdr.read_byte_record(&mut next_record)?;
+                if !more_records {
                     wtr.write_byte_record(&record)?;
-                    std::mem::swap(&mut record, &mut next_record);
-                },
-                Ordering::Greater => {
-                    return fail_clierror!(
-                        r#"Aborting! Input not sorted! Current record is greater than Next record.
+                    break;
+                }
+                let a = sel.select(&record);
+                let b = sel.select(&next_record);
+                let comparison = match compare_mode {
+                    ComparisonMode::Normal => iter_cmp(a, b),
+                    ComparisonMode::Numeric => iter_cmp_num(a, b),
+                    ComparisonMode::IgnoreCase => iter_cmp_ignore_case(a, b),
+                };
+                match comparison {
+                    Ordering::Equal => {
+                        dupe_count += 1;
+                        if let Some(ref mut w) = dupewtr {
+                            w.write_byte_record(&record)?;
+                        }
+                    },
+                    Ordering::Less => {
+                        wtr.write_byte_record(&record)?;
+                        std::mem::swap(&mut record, &mut next_record);
+                    },
+                    Ordering::Greater => {
+                        return fail_clierror!(
+                            r#"Aborting! Input not sorted! Current record is greater than Next record.
   Compare mode: {compare_mode:?};  Select columns index/es (0-based): {sel:?}
   Current: {record:?}
      Next: {next_record:?}
 "#
-                    );
-                },
+                        );
+                    },
+                }
             }
         }
     } else {

@@ -259,11 +259,11 @@ fn dedup_sorted_empty() {
     let expected = vec![svec!["N", "S"]];
     assert_eq!(got, expected);
 
+    // dedup emits only the dupe count to stderr (just the number, no prose),
+    // so assert exact equality on the trimmed output to actually catch a
+    // regression that drops or reformats the line.
     let stderr = wrk.output_stderr(&mut cmd);
-    assert!(
-        stderr.contains("0"),
-        "expected duplicate count of 0 on stderr, got: {stderr:?}"
-    );
+    assert_eq!(stderr.trim(), "0", "got stderr: {stderr:?}");
 }
 
 #[test]

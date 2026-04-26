@@ -54,7 +54,11 @@ datefmt arguments:
     <input>                     The input file to read from. If not specified, reads from stdin.
 
 datefmt options:
-    -c, --new-column <name>     Put the transformed values in a new column instead.
+    -c, --new-column <name>     Put the transformed values in new column(s) instead of replacing
+                                the source column(s). When the selection has multiple columns,
+                                pass a comma-separated list of new column names that match the
+                                selection count (e.g. --new-column 'open_iso,close_iso' for
+                                'OpenDate,CloseDate'). To rename in place instead, use --rename.
     -r, --rename <name>         New name for the transformed column.
     --prefer-dmy                Prefer to parse dates in dmy format. Otherwise, use mdy format.
     --keep-zero-time            If a formatted date ends with "T00:00:00+00:00", keep the time
@@ -68,8 +72,10 @@ datefmt options:
     --output-tz=<string>        The timezone to use for the output date.
                                 The timezone must be a valid IANA timezone name or the string "local".
                                 [default: UTC]
-    --default-tz=<string>       The timezone to use for BOTH input and output dates when they do have timezone.
-                                Shortcut for --input-tz and --output-tz set to the same timezone.
+    --default-tz=<string>       Fallback timezone consulted only when --input-tz or --output-tz
+                                is set to "local" but local-timezone detection fails. Defaults
+                                to UTC. Does NOT override the --input-tz / --output-tz defaults —
+                                use --utc to force both input and output to UTC.
                                 The timezone must be a valid IANA timezone name or the string "local".
     --utc                       Shortcut for --input-tz and --output-tz set to UTC.
     --zulu                      Shortcut for --output-tz set to UTC and --formatstr set to "%Y-%m-%dT%H:%M:%SZ".
@@ -162,29 +168,28 @@ impl FromStr for TimestampResolution {
     }
 }
 
+// Default value for --formatstr. Must stay in sync with the `[default: %+]` literal
+// in the USAGE string above; the --zulu conflict check at the bottom of `run()` uses
+// this constant to detect "no explicit --formatstr passed".
+const DEFAULT_FORMATSTR: &str = "%+";
+
 #[inline]
 fn unix_timestamp(input: &str, resolution: TimestampResolution) -> Option<DateTime<Utc>> {
+    // atoi_simd::parse::<i64, NEG=false, CHK=false>: rejects negative integers, skips overflow
+    // checks. We intentionally reject negatives in the fast path so columns of arbitrary
+    // signed integers aren't unconditionally interpreted as pre-1970 unix timestamps.
+    // Negative timestamps are still recognized at the call site by qsv-dateparser's
+    // numeric-string handling, so legitimate pre-1970 inputs (e.g. "-770172300") still parse.
     let Ok(ts_input_val) = atoi_simd::parse::<i64, false, false>(input.as_bytes()) else {
         return None;
     };
 
+    // these constructors already return DateTime<Utc>, so no with_timezone(&Utc) is needed.
     match resolution {
-        TimestampResolution::Second => Utc
-            .timestamp_opt(ts_input_val, 0)
-            .single()
-            .map(|result| result.with_timezone(&Utc)),
-        TimestampResolution::Millisecond => Utc
-            .timestamp_millis_opt(ts_input_val)
-            .single()
-            .map(|result| result.with_timezone(&Utc)),
-        TimestampResolution::Microsecond => Utc
-            .timestamp_micros(ts_input_val)
-            .single()
-            .map(|result| result.with_timezone(&Utc)),
-        TimestampResolution::Nanosecond => {
-            let result = Utc.timestamp_nanos(ts_input_val).with_timezone(&Utc);
-            Some(result)
-        },
+        TimestampResolution::Second => Utc.timestamp_opt(ts_input_val, 0).single(),
+        TimestampResolution::Millisecond => Utc.timestamp_millis_opt(ts_input_val).single(),
+        TimestampResolution::Microsecond => Utc.timestamp_micros(ts_input_val).single(),
+        TimestampResolution::Nanosecond => Some(Utc.timestamp_nanos(ts_input_val)),
     }
 }
 
@@ -217,9 +222,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
+    // Parse --new-column up-front so its name count is validated against the selection
+    // even when --no-headers is set. ColumnNameParser supports quoted/comma-separated
+    // names just like --rename.
+    let new_col_names: Option<Vec<String>> = if let Some(new_column) = &args.flag_new_column {
+        let names = util::ColumnNameParser::new(new_column).parse()?;
+        if names.len() != sel.len() {
+            return fail_incorrectusage_clierror!(
+                "Number of --new-column names ({}) does not match the selected column count ({}). \
+                 Pass a comma-separated list of names that matches the selection (use --rename to \
+                 rename in place).",
+                names.len(),
+                sel.len()
+            );
+        }
+        Some(names)
+    } else {
+        None
+    };
+
     if !rconfig.no_headers {
-        if let Some(new_column) = &args.flag_new_column {
-            headers.push_field(new_column);
+        if let Some(ref names) = new_col_names {
+            for name in names {
+                headers.push_field(name);
+            }
         }
         wtr.write_record(&headers)?;
     }
@@ -274,48 +300,88 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         None => chrono_tz::UTC,
     };
 
-    let mut input_tz = match args.flag_input_tz.parse::<Tz>() {
-        Ok(tz) => tz,
-        _ => {
-            if args.flag_input_tz.eq_ignore_ascii_case("local") {
-                if let Ok(tz) = iana_time_zone::get_timezone() {
-                    log::info!("input-tz local timezone: {tz}");
-                    tz.parse::<Tz>()?
-                } else {
-                    default_tz
-                }
-            } else {
-                default_tz
-            }
-        },
+    let mut input_tz = if args.flag_input_tz.eq_ignore_ascii_case("local") {
+        if let Ok(tz) = iana_time_zone::get_timezone() {
+            log::info!("input-tz local timezone: {tz}");
+            tz.parse::<Tz>()?
+        } else {
+            log::warn!("input-tz local timezone not found. Falling back to default-tz.");
+            default_tz
+        }
+    } else {
+        args.flag_input_tz.parse::<Tz>().map_err(|_| {
+            format!(
+                "Invalid --input-tz: {}. Must be a valid IANA timezone name or \"local\".",
+                args.flag_input_tz
+            )
+        })?
     };
     #[allow(clippy::useless_let_if_seq)] // more readable this way
-    let mut output_tz = match args.flag_output_tz.parse::<Tz>() {
-        Ok(tz) => tz,
-        _ => {
-            if args.flag_output_tz.eq_ignore_ascii_case("local") {
-                if let Ok(tz) = iana_time_zone::get_timezone() {
-                    log::info!("output-tz local timezone: {tz}");
-                    tz.parse::<Tz>()?
-                } else {
-                    default_tz
-                }
-            } else {
-                default_tz
-            }
-        },
+    let mut output_tz = if args.flag_output_tz.eq_ignore_ascii_case("local") {
+        if let Ok(tz) = iana_time_zone::get_timezone() {
+            log::info!("output-tz local timezone: {tz}");
+            tz.parse::<Tz>()?
+        } else {
+            log::warn!("output-tz local timezone not found. Falling back to default-tz.");
+            default_tz
+        }
+    } else {
+        args.flag_output_tz.parse::<Tz>().map_err(|_| {
+            format!(
+                "Invalid --output-tz: {}. Must be a valid IANA timezone name or \"local\".",
+                args.flag_output_tz
+            )
+        })?
     };
 
+    // --utc / --zulu are shortcuts that force specific tz/format values, so reject
+    // explicit overrides that would silently lose. Defaults are "UTC" for the tz flags
+    // and "%+" for --formatstr (set in USAGE above).
     if args.flag_utc {
+        if !args.flag_input_tz.eq_ignore_ascii_case("UTC") {
+            return fail_incorrectusage_clierror!(
+                "--utc cannot be combined with --input-tz={}; --utc forces input timezone to UTC.",
+                args.flag_input_tz
+            );
+        }
+        if !args.flag_output_tz.eq_ignore_ascii_case("UTC") {
+            return fail_incorrectusage_clierror!(
+                "--utc cannot be combined with --output-tz={}; --utc forces output timezone to \
+                 UTC.",
+                args.flag_output_tz
+            );
+        }
+        if let Some(ref dtz) = args.flag_default_tz
+            && !dtz.eq_ignore_ascii_case("UTC")
+        {
+            return fail_incorrectusage_clierror!(
+                "--utc cannot be combined with --default-tz={dtz}; --utc forces both input and \
+                 output timezones to UTC.",
+            );
+        }
         input_tz = chrono_tz::UTC;
         output_tz = chrono_tz::UTC;
     }
     if args.flag_zulu {
+        if !args.flag_output_tz.eq_ignore_ascii_case("UTC") {
+            return fail_incorrectusage_clierror!(
+                "--zulu cannot be combined with --output-tz={}; --zulu forces output timezone to \
+                 UTC.",
+                args.flag_output_tz
+            );
+        }
+        if flag_formatstr != DEFAULT_FORMATSTR {
+            return fail_incorrectusage_clierror!(
+                "--zulu cannot be combined with --formatstr={flag_formatstr}; --zulu forces the \
+                 output format.",
+            );
+        }
         output_tz = chrono_tz::UTC;
         flag_formatstr = "%Y-%m-%dT%H:%M:%SZ".to_string();
     }
 
     let is_output_utc = output_tz == chrono_tz::UTC;
+    let new_column = flag_new_column.is_some();
 
     // main loop to read CSV and construct batches for parallel processing.
     // each batch is processed via Rayon parallel iterator.
@@ -336,49 +402,72 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             break 'batch_loop;
         }
 
-        // do actual datefmt via Rayon parallel iterator
+        // do actual datefmt via Rayon parallel iterator.
+        //
+        // For each row we:
+        //   1. transform each selected cell into a Vec<Option<String>> indexed by column,
+        //   2. emit the output StringRecord in a single pass — replace mode rebuilds the record
+        //      once (instead of k times via replace_column_value), and new-column mode appends the
+        //      transformed values after cloning the original record.
         batch
             .par_iter()
             .map(|record_item| {
-                let mut record = record_item.clone();
-
                 let mut cell = String::new();
-                #[allow(unused_assignments)]
-                let mut formatted_date = String::new();
-                let mut format_date_with_tz: DateTime<Tz>;
-                let mut parsed_date;
-                let new_column = flag_new_column.is_some();
+                let mut transformed: Vec<Option<String>> = vec![None; record_item.len()];
+
                 for col_index in &*sel {
-                    record[*col_index].clone_into(&mut cell);
+                    record_item[*col_index].clone_into(&mut cell);
                     if !cell.is_empty() {
-                        parsed_date = if let Some(ts) = unix_timestamp(&cell, tsres) {
+                        let parsed_date = if let Some(ts) = unix_timestamp(&cell, tsres) {
                             Ok(ts)
                         } else {
                             parse_with_preference_and_timezone(&cell, prefer_dmy, &input_tz)
                         };
                         if let Ok(format_date) = parsed_date {
-                            // don't need to call with_timezone() if output_tz is UTC
+                            // skip with_timezone() if output_tz is already UTC,
                             // as format_date is already in UTC
-                            formatted_date = if is_output_utc {
+                            let formatted_date = if is_output_utc {
                                 format_date.format(&flag_formatstr).to_string()
                             } else {
-                                format_date_with_tz = format_date.with_timezone(&output_tz);
-                                format_date_with_tz.format(&flag_formatstr).to_string()
+                                format_date
+                                    .with_timezone(&output_tz)
+                                    .format(&flag_formatstr)
+                                    .to_string()
                             };
-                            if !keep_zero_time && formatted_date.ends_with("T00:00:00+00:00") {
+                            // Strip the time component when the formatted output is exactly
+                            // midnight UTC. Both "+00:00" (default ISO format) and "Z"
+                            // (--zulu) render midnight as a no-op time, so collapse to the
+                            // YYYY-MM-DD date portion. --keep-zero-time disables this.
+                            if !keep_zero_time
+                                && (formatted_date.ends_with("T00:00:00+00:00")
+                                    || formatted_date.ends_with("T00:00:00Z"))
+                            {
                                 formatted_date[..10].clone_into(&mut cell);
                             } else {
                                 formatted_date.clone_into(&mut cell);
                             }
                         }
                     }
-                    if new_column {
-                        record.push_field(&cell);
-                    } else {
-                        record = replace_column_value(&record, *col_index, &cell);
-                    }
+                    transformed[*col_index] = Some(std::mem::take(&mut cell));
                 }
-                record
+
+                if new_column {
+                    let mut out = record_item.clone();
+                    for col_index in &*sel {
+                        let v = transformed[*col_index].as_deref().unwrap_or("");
+                        out.push_field(v);
+                    }
+                    out
+                } else {
+                    let mut out = csv::StringRecord::new();
+                    for (i, field) in record_item.iter().enumerate() {
+                        match transformed[i].as_deref() {
+                            Some(v) => out.push_field(v),
+                            None => out.push_field(field),
+                        }
+                    }
+                    out
+                }
             })
             .collect_into_vec(&mut batch_results);
 

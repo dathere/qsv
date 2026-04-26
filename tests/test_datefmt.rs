@@ -222,7 +222,8 @@ fn datefmt_zulu() {
         svec!["2012-09-17T15:09:00Z"],
         svec!["2021-06-02T06:31:39Z"],
         svec!["2009-01-20T10:00:00Z"],
-        svec!["2005-07-04T00:00:00Z"],
+        // midnight UTC collapses to date-only with --zulu, same as the default ISO formatter
+        svec!["2005-07-04"],
         svec!["2021-05-01T01:17:02Z"],
         svec!["This is not a date and it will not be reformatted"],
         svec!["2017-11-25T22:22:26Z"],
@@ -283,6 +284,100 @@ fn datefmt_invalid_tz() {
     let mut cmd = wrk.command("datefmt");
     cmd.arg("Created Date")
         .args(["--default-tz", "Swatch Time"])
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn datefmt_invalid_input_tz() {
+    let wrk = Workdir::new("datefmt_invalid_input_tz");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Created Date"],
+            svec!["September 17, 2012 10:09am EST"],
+        ],
+    );
+    let mut cmd = wrk.command("datefmt");
+    cmd.arg("Created Date")
+        .args(["--input-tz", "Amerca/New_York"])
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn datefmt_utc_conflicts_with_input_tz() {
+    let wrk = Workdir::new("datefmt_utc_conflicts_with_input_tz");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Created Date"],
+            svec!["September 17, 2012 10:09am EST"],
+        ],
+    );
+    let mut cmd = wrk.command("datefmt");
+    cmd.arg("Created Date")
+        .arg("--utc")
+        .args(["--input-tz", "America/New_York"])
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn datefmt_utc_conflicts_with_output_tz() {
+    let wrk = Workdir::new("datefmt_utc_conflicts_with_output_tz");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Created Date"],
+            svec!["September 17, 2012 10:09am EST"],
+        ],
+    );
+    let mut cmd = wrk.command("datefmt");
+    cmd.arg("Created Date")
+        .arg("--utc")
+        .args(["--output-tz", "America/New_York"])
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn datefmt_utc_conflicts_with_default_tz() {
+    let wrk = Workdir::new("datefmt_utc_conflicts_with_default_tz");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Created Date"],
+            svec!["September 17, 2012 10:09am EST"],
+        ],
+    );
+    let mut cmd = wrk.command("datefmt");
+    cmd.arg("Created Date")
+        .arg("--utc")
+        .args(["--default-tz", "America/New_York"])
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn datefmt_zulu_conflicts_with_formatstr() {
+    let wrk = Workdir::new("datefmt_zulu_conflicts_with_formatstr");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Created Date"],
+            svec!["September 17, 2012 10:09am EST"],
+        ],
+    );
+    let mut cmd = wrk.command("datefmt");
+    cmd.arg("Created Date")
+        .arg("--zulu")
+        .args(["--formatstr", "%Y-%m-%d"])
         .arg("data.csv");
 
     wrk.assert_err(&mut cmd);
@@ -547,6 +642,61 @@ fn datefmt_multiple_cols_rename() {
         ],
     ];
     assert_eq!(got, expected);
+}
+
+#[test]
+fn datefmt_multiple_cols_new_column() {
+    let wrk = Workdir::new("datefmt_multiple_cols_new_column");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Created Date", "End Date"],
+            svec![
+                "September 17, 2012 10:09am EST",
+                "September 18, 2012 10:09am EST"
+            ],
+            svec!["July 4, 2005", "July 5, 2005"],
+        ],
+    );
+    let mut cmd = wrk.command("datefmt");
+    cmd.arg("Created Date,End Date")
+        .arg("--formatstr")
+        .arg("%u")
+        .arg("--new-column")
+        .arg("Created Weekday,End Weekday")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["Created Date", "End Date", "Created Weekday", "End Weekday"],
+        svec![
+            "September 17, 2012 10:09am EST",
+            "September 18, 2012 10:09am EST",
+            "1",
+            "2"
+        ],
+        svec!["July 4, 2005", "July 5, 2005", "1", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn datefmt_new_column_count_mismatch() {
+    let wrk = Workdir::new("datefmt_new_column_count_mismatch");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Created Date", "End Date"],
+            svec!["July 4, 2005", "July 5, 2005"],
+        ],
+    );
+    let mut cmd = wrk.command("datefmt");
+    cmd.arg("Created Date,End Date")
+        .arg("--new-column")
+        .arg("Only One")
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
 }
 
 #[test]

@@ -2505,12 +2505,24 @@ pub fn create_json_writer(
     Ok(writer)
 }
 
-/// iterate over the CSV ByteRecords and write them to the JSON file
+/// iterate over the CSV ByteRecords and write them to the JSON file.
+///
+/// Records are taken as `csv::Result<ByteRecord>` so callers can pass the
+/// raw `byte_records()` iterator and have parse errors propagate with `?`
+/// without buffering the entire slice in memory first.
+///
+/// **Failure semantics:** because records stream straight to the writer,
+/// a CSV parse error mid-stream means the opening `[` and any prior records
+/// will already have been written before the error propagates. The closing
+/// `]` is only written after the loop completes cleanly, so the output
+/// (stdout or `output` file) may be a truncated, syntactically invalid
+/// JSON document on error. Callers that need all-or-nothing semantics must
+/// validate / collect records before invoking this.
 pub fn write_json(
     output: Option<&String>,
     no_headers: bool,
     headers: &csv::ByteRecord,
-    records: impl Iterator<Item = csv::ByteRecord>,
+    records: impl Iterator<Item = csv::Result<csv::ByteRecord>>,
 ) -> CliResult<()> {
     let mut json_wtr = create_json_writer(output, config::DEFAULT_WTR_BUFFER_CAPACITY * 4)?;
 
@@ -2538,6 +2550,7 @@ pub fn write_json(
     let mut json_string_val: serde_json::Value;
 
     for record in records {
+        let record = record?;
         if is_first {
             is_first = false;
         } else {

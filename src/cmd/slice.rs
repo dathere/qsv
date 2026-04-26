@@ -42,10 +42,10 @@ Examples:
   # Slice from the second record, two records
   qsv slice -s 1 --len 2 data.csv
 
-  # Slice records 10 to 20 as JSON
+  # Slice records 10 to 19 as JSON (--end is exclusive)
   qsv slice --start 9 --end 19 --json data.csv
 
-  # Slice records 1 to 9 and 21 to the end as JSON
+  # Slice records 1 to 9 and 20 to the end as JSON
   qsv slice --start 9 --len 10 --invert --json data.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_slice.rs.
@@ -123,7 +123,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .canonicalize()?
         .into_os_string()
         .into_string()
-        .unwrap();
+        .map_err(|os| {
+            crate::CliError::Other(format!(
+                "input path is not valid UTF-8: {}",
+                os.to_string_lossy()
+            ))
+        })?;
 
     args.arg_input = Some(input_filename);
 
@@ -137,21 +142,16 @@ impl Args {
     fn no_index(&self) -> CliResult<()> {
         let mut rdr = self.rconfig().reader()?;
 
-        let (start, end) = self.range()?;
+        let (start, end) = self.range(None)?;
         if self.flag_json {
             let headers = rdr.byte_headers()?.clone();
-            let records = rdr.byte_records().enumerate().filter_map(move |(i, r)| {
-                let should_include = if self.flag_invert {
-                    i < start || i >= end
-                } else {
-                    i >= start && i < end
-                };
-                if should_include {
-                    Some(r.unwrap())
-                } else {
-                    None
-                }
-            });
+            // stream records straight to write_json — parse errors propagate
+            // via the Result item type without buffering the whole slice
+            let records = rdr
+                .byte_records()
+                .enumerate()
+                .filter(|(i, _)| self.flag_invert == (*i < start || *i >= end))
+                .map(|(_, r)| r);
             util::write_json(
                 self.flag_output.as_ref(),
                 self.flag_no_headers,
@@ -172,59 +172,90 @@ impl Args {
     }
 
     fn with_index(&self, mut indexed_file: Indexed<fs::File, fs::File>) -> CliResult<()> {
-        let (start, end) = self.range()?;
-        if end - start == 0 && !self.flag_invert {
+        // read the row count straight off the already-loaded index instead of
+        // going through util::count_rows, which would reopen the CSV/index
+        let total_rows = indexed_file.count() as usize;
+        // reuse the precomputed total — avoids a second count_rows call inside range()
+        let (start_raw, end_raw) = self.range(Some(total_rows))?;
+        // clamp to row count so arithmetic on `total_rows - end` cannot underflow
+        // and `Indexed::seek` is never called past EOF
+        let start = start_raw.min(total_rows);
+        let end = end_raw.min(total_rows);
+        // empty slice with no inversion: emit just headers ([] for JSON) so
+        // downstream parsers always see a well-formed document
+        if end == start && !self.flag_invert {
+            if self.flag_json {
+                let headers = indexed_file.byte_headers()?.clone();
+                return util::write_json(
+                    self.flag_output.as_ref(),
+                    self.flag_no_headers,
+                    &headers,
+                    std::iter::empty::<csv::Result<csv::ByteRecord>>(),
+                );
+            }
+            let mut wtr = self.wconfig().writer()?;
+            self.rconfig().write_headers(&mut *indexed_file, &mut wtr)?;
+            wtr.flush()?;
             return Ok(());
         }
 
         if self.flag_json {
             let headers = indexed_file.byte_headers()?.clone();
-            let total_rows = util::count_rows(&self.rconfig())?;
-            let records = if self.flag_invert {
+            if self.flag_invert {
+                // invert needs two non-contiguous reads (before start, after end)
+                // and we can only hold one borrow on indexed_file at a time, so
+                // we materialize each segment before seeking to the next.
+                // Use `push(r?)` (not `extend`) so a parse error in segment 1
+                // aborts before segment 2 is read, preserving the all-or-nothing
+                // failure semantics this path had before the streaming refactor.
                 let mut records: Vec<csv::ByteRecord> =
-                    Vec::with_capacity(start + (total_rows as usize - end));
-                // Get records before start
-                indexed_file.seek(0)?;
-                for r in indexed_file.byte_records().take(start) {
-                    records.push(r.unwrap());
+                    Vec::with_capacity(start + (total_rows - end));
+                if start > 0 {
+                    indexed_file.seek(0)?;
+                    for r in indexed_file.byte_records().take(start) {
+                        records.push(r?);
+                    }
                 }
-
-                // Get records after end
-                indexed_file.seek(end as u64)?;
-                for r in indexed_file.byte_records().take(total_rows as usize - end) {
-                    records.push(r.unwrap());
+                // skip seek(total_rows) — it would error past EOF
+                if end < total_rows {
+                    indexed_file.seek(end as u64)?;
+                    for r in indexed_file.byte_records().take(total_rows - end) {
+                        records.push(r?);
+                    }
                 }
-                records
+                util::write_json(
+                    self.flag_output.as_ref(),
+                    self.flag_no_headers,
+                    &headers,
+                    records.into_iter().map(Ok),
+                )
             } else {
+                // contiguous read — stream straight through
                 indexed_file.seek(start as u64)?;
-                indexed_file
-                    .byte_records()
-                    .take(end - start)
-                    .map(|r| r.unwrap())
-                    .collect::<Vec<_>>()
-            };
-            util::write_json(
-                self.flag_output.as_ref(),
-                self.flag_no_headers,
-                &headers,
-                records.into_iter(),
-            )
+                let records = indexed_file.byte_records().take(end - start);
+                util::write_json(
+                    self.flag_output.as_ref(),
+                    self.flag_no_headers,
+                    &headers,
+                    records,
+                )
+            }
         } else {
             let mut wtr = self.wconfig().writer()?;
             self.rconfig().write_headers(&mut *indexed_file, &mut wtr)?;
 
-            let total_rows = util::count_rows(&self.rconfig())? as usize;
             if self.flag_invert {
-                // Get records before start
-                indexed_file.seek(0)?;
-                for r in indexed_file.byte_records().take(start) {
-                    wtr.write_byte_record(&r?)?;
+                if start > 0 {
+                    indexed_file.seek(0)?;
+                    for r in indexed_file.byte_records().take(start) {
+                        wtr.write_byte_record(&r?)?;
+                    }
                 }
-
-                // Get records after end
-                indexed_file.seek(end as u64)?;
-                for r in indexed_file.byte_records().take(total_rows - end) {
-                    wtr.write_byte_record(&r?)?;
+                if end < total_rows {
+                    indexed_file.seek(end as u64)?;
+                    for r in indexed_file.byte_records().take(total_rows - end) {
+                        wtr.write_byte_record(&r?)?;
+                    }
                 }
             } else {
                 indexed_file.seek(start as u64)?;
@@ -236,28 +267,36 @@ impl Args {
         }
     }
 
-    fn range(&self) -> CliResult<(usize, usize)> {
-        let mut start = None;
-        if let Some(start_arg) = self.flag_start {
-            if start_arg < 0 {
-                start = Some(
-                    (util::count_rows(&self.rconfig())? as usize)
-                        .abs_diff(start_arg.unsigned_abs()),
-                );
-            } else {
-                start = Some(start_arg as usize);
-            }
-        }
-        let index = if let Some(flag_index) = self.flag_index {
-            if flag_index < 0 {
-                let index = (util::count_rows(&self.rconfig())? as usize)
-                    .abs_diff(flag_index.unsigned_abs());
-                Some(index)
-            } else {
-                Some(flag_index as usize)
-            }
+    fn range(&self, precomputed_total: Option<usize>) -> CliResult<(usize, usize)> {
+        // util::range rejects mixing --index with --start/--end/--len, but we
+        // still resolve both independently here. count_rows is only needed for
+        // negative offsets — fetch it at most once, or accept a precomputed
+        // value from with_index() so the indexed path doesn't double-count.
+        let needs_count = matches!(self.flag_start, Some(s) if s < 0)
+            || matches!(self.flag_index, Some(i) if i < 0);
+        let total = if needs_count {
+            Some(match precomputed_total {
+                Some(t) => t,
+                None => util::count_rows(&self.rconfig())? as usize,
+            })
         } else {
             None
+        };
+        // saturating_sub so |negative offset| > row count clamps to 0
+        // (i.e. "from the start") rather than past the end of the file.
+        // unwrap_or(0) keeps this panic-free even if the predicate above
+        // and the negative arms ever drift apart — non-negative offsets
+        // don't read the count.
+        let total = total.unwrap_or(0);
+        let start = match self.flag_start {
+            Some(s) if s < 0 => Some(total.saturating_sub(s.unsigned_abs())),
+            Some(s) => Some(s as usize),
+            None => None,
+        };
+        let index = match self.flag_index {
+            Some(i) if i < 0 => Some(total.saturating_sub(i.unsigned_abs())),
+            Some(i) => Some(i as usize),
+            None => None,
         };
         Ok(util::range(start, self.flag_end, self.flag_len, index)?)
     }

@@ -462,6 +462,187 @@ fn slice_invert_with_len() {
     );
 }
 
+// negative --start with no --end, indexed: previously errored at seek(usize::MAX)
+#[test]
+fn slice_invert_negative_with_index() {
+    test_slice_invert(
+        "slice_invert_negative_with_index",
+        Some(-2),
+        None,
+        &["a", "b", "c"],
+        true,
+        true,
+        false,
+        false,
+    );
+}
+
+// --start equals row count, indexed: previously underflowed total_rows-end and
+// errored at seek(usize::MAX). Slice 5..end on a 5-row file is empty, so invert
+// is the entire file.
+#[test]
+fn slice_invert_start_at_eof_with_index() {
+    test_slice_invert(
+        "slice_invert_start_at_eof_with_index",
+        Some(5),
+        None,
+        &["a", "b", "c", "d", "e"],
+        true,
+        true,
+        false,
+        false,
+    );
+}
+
+// --start past EOF, indexed: previously underflowed / errored.
+#[test]
+fn slice_invert_start_past_eof_with_index() {
+    test_slice_invert(
+        "slice_invert_start_past_eof_with_index",
+        Some(100),
+        None,
+        &["a", "b", "c", "d", "e"],
+        true,
+        true,
+        false,
+        false,
+    );
+}
+
+// --end past EOF, --invert, indexed: previously panicked on
+// `total_rows - end` subtract overflow in the "after end" loop. Slice covers
+// the whole file, so invert is empty.
+#[test]
+fn slice_invert_end_past_eof_with_index() {
+    test_slice_invert(
+        "slice_invert_end_past_eof_with_index",
+        Some(0),
+        Some(1000),
+        &[],
+        true,
+        true,
+        false,
+        false,
+    );
+}
+
+// JSON variant of the above (no-index): exercises the JSON record collector.
+#[test]
+fn slice_invert_end_past_eof_json() {
+    test_slice_invert(
+        "slice_invert_end_past_eof_json",
+        Some(0),
+        Some(1000),
+        &[],
+        true,
+        false,
+        false,
+        true,
+    );
+}
+
+// --end past EOF on the non-invert indexed path: should return all rows
+// up to EOF rather than erroring at seek().
+#[test]
+fn slice_end_past_eof_with_index() {
+    test_slice(
+        "slice_end_past_eof_with_index",
+        Some(0),
+        Some(1000),
+        &["a", "b", "c", "d", "e"],
+        true,
+        true,
+        false,
+        false,
+    );
+}
+
+// |negative --start| larger than row count must clamp to 0
+// (saturating_sub), not wrap to a position past the end of the file.
+#[test]
+fn slice_negative_start_clamps_to_zero() {
+    test_slice(
+        "slice_negative_start_clamps_to_zero",
+        Some(-100),
+        None,
+        &["a", "b", "c", "d", "e"],
+        true,
+        false,
+        false,
+        false,
+    );
+    test_slice(
+        "slice_negative_start_clamps_to_zero_with_index",
+        Some(-100),
+        None,
+        &["a", "b", "c", "d", "e"],
+        true,
+        true,
+        false,
+        false,
+    );
+}
+
+// Empty non-invert JSON slice must still emit `[]` so downstream parsers
+// see a well-formed document, both with and without an index.
+#[test]
+fn slice_empty_json_no_index() {
+    test_slice(
+        "slice_empty_json_no_index",
+        Some(5),
+        Some(5),
+        &[],
+        true,
+        false,
+        false,
+        true,
+    );
+}
+
+#[test]
+fn slice_empty_json_with_index() {
+    test_slice(
+        "slice_empty_json_with_index",
+        Some(5),
+        Some(5),
+        &[],
+        true,
+        true,
+        false,
+        true,
+    );
+}
+
+// Empty JSON slice with --no-headers + --json on the indexed path: confirms
+// the empty-slice short-circuit forwards flag_no_headers to write_json
+// the same way the non-empty path does.
+#[test]
+fn slice_empty_json_no_headers_with_index() {
+    test_slice(
+        "slice_empty_json_no_headers_with_index",
+        Some(5),
+        Some(5),
+        &[],
+        false,
+        true,
+        false,
+        true,
+    );
+}
+
+// Same clamping behavior for negative --index.
+#[test]
+fn slice_neg_index_clamps_to_zero() {
+    test_index("slice_neg_index_clamps_to_zero", -100, "a", true, false);
+    test_index(
+        "slice_neg_index_clamps_to_zero_with_index",
+        -100,
+        "a",
+        true,
+        true,
+    );
+}
+
 #[test]
 #[cfg(feature = "polars")]
 fn slice_from_parquet() {

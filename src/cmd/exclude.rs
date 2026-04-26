@@ -81,7 +81,7 @@ Common options:
                            into memory using CONSERVATIVE heuristics.
 "#;
 
-use std::{io, path::Path, str};
+use std::{io, path::Path};
 
 use foldhash::{HashSet, HashSetExt};
 use serde::Deserialize;

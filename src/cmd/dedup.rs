@@ -69,9 +69,11 @@ Common options:
     -q, --quiet                Do not print duplicate count to stderr.
     --memcheck                 Check if there is enough memory to load the entire
                                CSV into memory using CONSERVATIVE heuristics.
+                               Has no effect when --sorted is set, as that path
+                               streams the input and never loads it into memory.
 "#;
 
-use std::cmp;
+use std::cmp::Ordering;
 
 use csv::ByteRecord;
 use rayon::slice::ParallelSliceMut;
@@ -126,13 +128,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let mut rdr = rconfig.reader()?;
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
-    let dupes_output = args.flag_dupes_output.is_some();
-    let mut dupewtr = Config::new(args.flag_dupes_output.as_ref()).writer()?;
+    // Use rconfig.write_headers so the dupes writer correctly skips header
+    // emission under --no-headers (where byte_headers() returns the first
+    // data row) and avoids writing an empty record when there are no headers.
+    let mut dupewtr = if args.flag_dupes_output.is_some() {
+        let mut w = Config::new(args.flag_dupes_output.as_ref()).writer()?;
+        rconfig.write_headers(&mut rdr, &mut w)?;
+        Some(w)
+    } else {
+        None
+    };
 
     let headers = rdr.byte_headers()?;
-    if dupes_output {
-        dupewtr.write_byte_record(headers)?;
-    }
     let sel = rconfig.selection(headers)?;
 
     rconfig.write_headers(&mut rdr, &mut wtr)?;
@@ -142,40 +149,51 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut record = ByteRecord::new();
         let mut next_record = ByteRecord::new();
 
-        rdr.read_byte_record(&mut record)?;
-        loop {
-            let more_records = rdr.read_byte_record(&mut next_record)?;
-            if !more_records {
-                wtr.write_byte_record(&record)?;
-                break;
-            }
-            let a = sel.select(&record);
-            let b = sel.select(&next_record);
-            let comparison = match compare_mode {
-                ComparisonMode::Normal => iter_cmp(a, b),
-                ComparisonMode::Numeric => iter_cmp_num(a, b),
-                ComparisonMode::IgnoreCase => iter_cmp_ignore_case(a, b),
-            };
-            match comparison {
-                cmp::Ordering::Equal => {
-                    dupe_count += 1;
-                    if dupes_output {
-                        dupewtr.write_byte_record(&record)?;
-                    }
-                },
-                cmp::Ordering::Less => {
+        // Only enter the streaming loop if there is at least one data row;
+        // otherwise fall through to the flush + duplicate-count print block
+        // so empty input behaves identically to the in-memory path.
+        if rdr.read_byte_record(&mut record)? {
+            loop {
+                let more_records = rdr.read_byte_record(&mut next_record)?;
+                if !more_records {
                     wtr.write_byte_record(&record)?;
-                    record.clone_from(&next_record);
-                },
-                cmp::Ordering::Greater => {
-                    return fail_clierror!(
-                        r#"Aborting! Input not sorted! Current record is greater than Next record.
+                    break;
+                }
+                let a = sel.select(&record);
+                let b = sel.select(&next_record);
+                let comparison = match compare_mode {
+                    ComparisonMode::Normal => iter_cmp(a, b),
+                    ComparisonMode::Numeric => iter_cmp_num(a, b),
+                    ComparisonMode::IgnoreCase => iter_cmp_ignore_case(a, b),
+                };
+                match comparison {
+                    Ordering::Equal => {
+                        dupe_count += 1;
+                        // Write the row being DROPPED to dupes (next_record),
+                        // not the survivor (record). The streaming path keeps
+                        // the first occurrence of a run, so for runs longer
+                        // than 2 the dropped rows are next_record on each
+                        // iteration. Writing &record here instead would emit
+                        // the survivor N-1 times — and with --select, miss
+                        // the actual dropped rows entirely.
+                        if let Some(ref mut w) = dupewtr {
+                            w.write_byte_record(&next_record)?;
+                        }
+                    },
+                    Ordering::Less => {
+                        wtr.write_byte_record(&record)?;
+                        std::mem::swap(&mut record, &mut next_record);
+                    },
+                    Ordering::Greater => {
+                        return fail_clierror!(
+                            r#"Aborting! Input not sorted! Current record is greater than Next record.
   Compare mode: {compare_mode:?};  Select columns index/es (0-based): {sel:?}
   Current: {record:?}
      Next: {next_record:?}
 "#
-                    );
-                },
+                        );
+                    },
+                }
             }
         }
     } else {
@@ -211,49 +229,37 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             },
         }
 
-        for (current, current_record) in all.iter().enumerate() {
-            let a = sel.select(current_record);
-            if let Some(next_record) = all.get(current + 1) {
-                let b = sel.select(next_record);
-                match compare_mode {
-                    ComparisonMode::Normal => {
-                        if iter_cmp(a, b) == cmp::Ordering::Equal {
+        // Hoist comparison dispatch out of the row loop: pick the cmp once,
+        // then run a single tight loop. Each branch monomorphizes the body.
+        macro_rules! scan_dedup {
+            ($cmp:expr) => {{
+                let mut iter = all.iter();
+                if let Some(mut prev) = iter.next() {
+                    for current in iter {
+                        if $cmp(sel.select(prev), sel.select(current)) == Ordering::Equal {
                             dupe_count += 1;
-                            if dupes_output {
-                                dupewtr.write_byte_record(current_record)?;
+                            if let Some(ref mut w) = dupewtr {
+                                w.write_byte_record(prev)?;
                             }
                         } else {
-                            wtr.write_byte_record(current_record)?;
+                            wtr.write_byte_record(prev)?;
                         }
-                    },
-                    ComparisonMode::Numeric => {
-                        if iter_cmp_num(a, b) == cmp::Ordering::Equal {
-                            dupe_count += 1;
-                            if dupes_output {
-                                dupewtr.write_byte_record(current_record)?;
-                            }
-                        } else {
-                            wtr.write_byte_record(current_record)?;
-                        }
-                    },
-                    ComparisonMode::IgnoreCase => {
-                        if iter_cmp_ignore_case(a, b) == cmp::Ordering::Equal {
-                            dupe_count += 1;
-                            if dupes_output {
-                                dupewtr.write_byte_record(current_record)?;
-                            }
-                        } else {
-                            wtr.write_byte_record(current_record)?;
-                        }
-                    },
+                        prev = current;
+                    }
+                    wtr.write_byte_record(prev)?;
                 }
-            } else {
-                wtr.write_byte_record(current_record)?;
-            }
+            }};
+        }
+        match compare_mode {
+            ComparisonMode::Normal => scan_dedup!(iter_cmp),
+            ComparisonMode::Numeric => scan_dedup!(iter_cmp_num),
+            ComparisonMode::IgnoreCase => scan_dedup!(iter_cmp_ignore_case),
         }
     }
 
-    dupewtr.flush()?;
+    if let Some(mut w) = dupewtr {
+        w.flush()?;
+    }
     wtr.flush()?;
 
     if args.flag_quiet {
@@ -271,20 +277,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(())
 }
 
-/// Try comparing `a` and `b` ignoring the case
+/// Try comparing `a` and `b` ignoring the case.
+///
+/// Cells that are pure ASCII compare via a zero-allocation byte-wise lowercase
+/// fold (the common case). Non-ASCII cells fall back to allocating a
+/// lowercased `String`. Cells that are not valid UTF-8 fall back to a raw
+/// byte comparison so a deterministic order is still produced.
 #[inline]
-pub fn iter_cmp_ignore_case<'a, L, R>(mut a: L, mut b: R) -> cmp::Ordering
+pub fn iter_cmp_ignore_case<'a, L, R>(mut a: L, mut b: R) -> Ordering
 where
     L: Iterator<Item = &'a [u8]>,
     R: Iterator<Item = &'a [u8]>,
 {
     loop {
-        match (next_no_case(&mut a), next_no_case(&mut b)) {
-            (None, None) => return cmp::Ordering::Equal,
-            (None, _) => return cmp::Ordering::Less,
-            (_, None) => return cmp::Ordering::Greater,
-            (Some(x), Some(y)) => match x.cmp(&y) {
-                cmp::Ordering::Equal => (),
+        match (a.next(), b.next()) {
+            (None, None) => return Ordering::Equal,
+            (None, _) => return Ordering::Less,
+            (_, None) => return Ordering::Greater,
+            (Some(x), Some(y)) => match cmp_ignore_case(x, y) {
+                Ordering::Equal => (),
                 non_eq => return non_eq,
             },
         }
@@ -292,11 +303,21 @@ where
 }
 
 #[inline]
-fn next_no_case<'a, X>(xs: &mut X) -> Option<String>
-where
-    X: Iterator<Item = &'a [u8]>,
-{
-    xs.next()
-        .and_then(|bytes| simdutf8::basic::from_utf8(bytes).ok())
-        .map(str::to_lowercase)
+fn cmp_ignore_case(a: &[u8], b: &[u8]) -> Ordering {
+    // ASCII fast path: zero-allocation byte-wise lowercase compare.
+    if a.is_ascii() && b.is_ascii() {
+        return a
+            .iter()
+            .map(u8::to_ascii_lowercase)
+            .cmp(b.iter().map(u8::to_ascii_lowercase));
+    }
+    // Unicode slow path: allocate lowercased Strings.
+    match (
+        simdutf8::basic::from_utf8(a).ok(),
+        simdutf8::basic::from_utf8(b).ok(),
+    ) {
+        (Some(sa), Some(sb)) => sa.to_lowercase().cmp(&sb.to_lowercase()),
+        // Invalid UTF-8 on either side: fall back to raw byte comparison.
+        _ => a.cmp(b),
+    }
 }

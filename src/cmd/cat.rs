@@ -244,6 +244,10 @@ impl Args {
         // First pass: collect the global column set in insertion order.
         let group_name_bytes = self.flag_group_name.as_bytes();
         for conf in &configs {
+            let path_display = conf
+                .path
+                .as_deref()
+                .map_or_else(|| "<stdin>".to_string(), |p| p.display().to_string());
             let mut rdr = conf.reader()?;
 
             if self.flag_no_headers {
@@ -258,10 +262,10 @@ impl Args {
                     columns_global.insert(field.to_vec().into_boxed_slice());
                     if group_flag && field == group_name_bytes {
                         wwarn!(
-                            "Synthetic column `{}` in file `{:?}` collides with --group-name; the \
+                            "Synthetic column `{}` in file `{}` collides with --group-name; the \
                              file's value will override the grouping value for its rows.",
                             self.flag_group_name,
-                            conf.path,
+                            path_display,
                         );
                     }
                 }
@@ -272,10 +276,10 @@ impl Args {
                     columns_global.insert(field.to_vec().into_boxed_slice());
                     if group_flag && field == group_name_bytes {
                         wwarn!(
-                            "Column `{}` in file `{:?}` collides with --group-name; the file's \
+                            "Column `{}` in file `{}` collides with --group-name; the file's \
                              value will override the grouping value for its rows.",
                             self.flag_group_name,
-                            conf.path,
+                            path_display,
                         );
                     }
                 }
@@ -328,9 +332,9 @@ impl Args {
                         entry.insert(n);
                     } else {
                         wwarn!(
-                            "Duplicate column `{}` name in file `{:?}`.",
+                            "Duplicate column `{}` name in file `{}`.",
                             String::from_utf8_lossy(field),
-                            conf.path,
+                            conf_pathbuf.display(),
                         );
                     }
                 }

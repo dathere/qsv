@@ -824,13 +824,24 @@ fn cat_rowskey_group_name_collision() {
         .arg("in1.csv")
         .arg("in2.csv");
 
-    let stderr = wrk.output_stderr(&mut cmd);
+    // single execution: stderr and stdout must come from the same run.
+    let output = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("collides with --group-name"),
         "expected collision warning in stderr, got: {stderr}",
     );
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(output.stdout.as_slice());
+    let got: Vec<Vec<String>> = rdr
+        .records()
+        .map(|record| {
+            let record = record.unwrap();
+            record.iter().map(ToOwned::to_owned).collect()
+        })
+        .collect();
     let expected = vec![
         svec!["file", "value"],
         // in1 has its own `file` column, so its value wins (documented behavior)

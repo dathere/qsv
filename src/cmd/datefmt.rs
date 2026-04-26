@@ -56,7 +56,7 @@ datefmt arguments:
 datefmt options:
     -c, --new-column <name>     Put the transformed values in new column(s) instead of replacing
                                 the source column(s). When the selection has multiple columns,
-                                pass a comma-separated list of new column names that matches the
+                                pass a comma-separated list of new column names that match the
                                 selection count (e.g. --new-column 'open_iso,close_iso' for
                                 'OpenDate,CloseDate'). To rename in place instead, use --rename.
     -r, --rename <name>         New name for the transformed column.

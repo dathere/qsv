@@ -1995,10 +1995,15 @@ pub fn get_envvar_flag(key: &str) -> bool {
     if !truthy && !falsy {
         // Warn at most once per (key, value) pair across the process so callers
         // in hot loops don't spam the log with the same misconfiguration notice.
+        // Decide whether to warn while holding the lock, then drop the guard
+        // before calling into the logger — log::warn! can take its own locks
+        // (flexi_logger), so we don't want to bridge them here.
         let warned = UNRECOGNIZED_WARNED.get_or_init(|| Mutex::new(HashSet::new()));
-        if let Ok(mut set) = warned.lock()
-            && set.insert(format!("{key}={raw}"))
-        {
+        let should_warn = match warned.lock() {
+            Ok(mut set) => set.insert(format!("{key}={raw}")),
+            Err(_) => false,
+        };
+        if should_warn {
             log::warn!("{key}={raw} is not a recognized boolean; treating as false");
         }
     }
@@ -2132,8 +2137,10 @@ pub fn decompress_snappy_file(
 /// downloads a file from a url and saves it to a path
 /// if show_progress is true, a progress bar will be shown
 /// if custom_user_agent is Some, it will be used as the user agent
-/// if download_timeout is Some, it will be used as the timeout in seconds. If 0, no timeout is
-/// used. If sample_size is Some, it will be used as the number of bytes to download.
+/// if download_timeout is Some, it will be used as the timeout in seconds. The
+/// value is validated by `timeout_secs` and must be in the range 1..=3600;
+/// values of 0 or > 3600 cause this function to return an error. If
+/// sample_size is Some, it will be used as the number of bytes to download.
 pub async fn download_file(
     url: &str,
     path: PathBuf,

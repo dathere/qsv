@@ -288,7 +288,6 @@ fn dedup_sorted_empty_dupes_output() {
     assert_eq!(dupes.replace("\r\n", "\n"), expected_header);
 }
 
-
 #[test]
 fn dedup_sorted_select_dupes_output_run_of_three() {
     // Regression for Copilot review on PR 3754: with --sorted + --select +

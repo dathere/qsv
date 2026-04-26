@@ -591,27 +591,50 @@ fn build_low_cardinality_column_selector_arg(
     column_select_arg
 }
 
+/// Process-wide lock that serializes EnvVarGuard's `set_var` / `remove_var`
+/// calls against each other. It does NOT protect against env reads/writes
+/// from code paths that don't go through this guard — see safety notes below.
+static ENV_VAR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// RAII guard that temporarily sets an env var and restores the previous
 /// value (or removes the var if it was previously unset) on drop.
 /// Panic-safe: ensures the var is restored even if the wrapped call errors.
+///
+/// The previous value is captured as `OsString` (via `var_os`) so non-UTF8
+/// values round-trip correctly on platforms that allow them.
 struct EnvVarGuard {
-    key:  &'static str,
-    prev: Option<String>,
+    key:   &'static str,
+    prev:  Option<std::ffi::OsString>,
+    _lock: std::sync::MutexGuard<'static, ()>,
 }
 
 impl EnvVarGuard {
     fn set(key: &'static str, value: &str) -> Self {
-        let prev = std::env::var(key).ok();
-        // safety: schema.rs runs in single-threaded code; no qsv command spawns
-        // Rust threads before reaching infer_schema_from_stats.
+        let lock = ENV_VAR_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let prev = std::env::var_os(key);
+        // safety: ENV_VAR_LOCK is held for the entire lifetime of this guard,
+        // serializing the set/restore against any other EnvVarGuard user.
+        // Rayon worker threads (e.g. from `parallel_ftables` or `par_sort_unstable`
+        // inside this function) do not exist at the point this is called and
+        // are joined before Drop runs, so no Rayon thread reads env vars while
+        // the mutation is in flight.
         unsafe { std::env::set_var(key, value) };
-        Self { key, prev }
+        Self {
+            key,
+            prev,
+            _lock: lock,
+        }
     }
 }
 
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
-        // safety: same as EnvVarGuard::set
+        // safety: same as EnvVarGuard::set — ENV_VAR_LOCK is still held via
+        // self._lock, so restoring/removing the env var is serialized against
+        // other EnvVarGuard users; Rayon workers spawned in get_unique_values
+        // have already joined by the time this runs.
         unsafe {
             match self.prev.take() {
                 Some(v) => std::env::set_var(self.key, v),

@@ -361,14 +361,17 @@ fn fetch_simple_diskcache() {
 
     let fetchreport_noelapsed = wrk.stdout::<String>(&mut cmd3);
     // read the output file and compare it with the expected output
+    // Note: error rows (404 and invalid URL) show cache_hit=0 because non-200
+    // responses are evicted from the disk cache when --cache-error is not set.
+    // Successful (200) rows are cached and show cache_hit=1.
     assert_eq!(
         fetchreport_noelapsed,
         r#"url,status,cache_hit,retries,response
-https://api.zippopotam.us/us/99999,404,1,5,"{""errors"":[{""title"":""HTTP ERROR"",""detail"":""HTTP ERROR 404 - Not Found""}]}"
+https://api.zippopotam.us/us/99999,404,0,5,"{""errors"":[{""title"":""HTTP ERROR"",""detail"":""HTTP ERROR 404 - Not Found""}]}"
 https://api.zippopotam.us/us/90210,200,1,0,"{""country"":""United States"",""country abbreviation"":""US"",""post code"":""90210"",""places"":[{""place name"":""Beverly Hills"",""longitude"":""-118.4065"",""latitude"":""34.0901"",""state"":""California"",""state abbreviation"":""CA""}]}"
 https://api.zippopotam.us/us/94105,200,1,0,"{""country"":""United States"",""country abbreviation"":""US"",""post code"":""94105"",""places"":[{""place name"":""San Francisco"",""longitude"":""-122.3892"",""latitude"":""37.7864"",""state"":""California"",""state abbreviation"":""CA""}]}"
 https://api.zippopotam.us/us/92802,200,1,0,"{""country"":""United States"",""country abbreviation"":""US"",""post code"":""92802"",""places"":[{""place name"":""Anaheim"",""longitude"":""-117.9228"",""latitude"":""33.8085"",""state"":""California"",""state abbreviation"":""CA""}]}"
-thisisnotaurl,404,1,0,"{""errors"":[{""title"":""Invalid URL"",""detail"":""relative URL without a base""}]}""#
+thisisnotaurl,404,0,0,"{""errors"":[{""title"":""Invalid URL"",""detail"":""relative URL without a base""}]}""#
     );
 }
 

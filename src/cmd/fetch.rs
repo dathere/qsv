@@ -61,6 +61,18 @@ URL OPTIONS:
 <url-column> needs to be a fully qualified URL path. Alternatively, you can dynamically
 construct URLs for each CSV record with the --url-template option (see Examples below).
 
+JSON RESPONSE HANDLING:
+When --jaq is not used, fetch parses each successful response with serde_json and
+writes it back out (compact by default, or re-indented with --pretty). Object key
+order is preserved (qsv enables serde_json's preserve_order feature), but the body
+is otherwise normalized: all insignificant whitespace is removed (compact) or
+re-indented (--pretty); number representations are canonicalized (e.g. 1e2 -> 100,
+leading zeros stripped, exponent form normalized); duplicate keys within a JSON
+object are collapsed (last value wins); and responses that are not valid JSON are
+written as an empty cell (or the parse error if --store-error is set). If you need
+byte-exact server output, post-process the response yourself or use --jaq to
+extract specific fields.
+
 EXAMPLES USING THE URL-COLUMN ARGUMENT:
 
 data.csv
@@ -418,14 +430,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // connect to Redis at localhost, using database 1 by default when --redis-cache is enabled
     // fetch uses database 1 by default, as opposed to the database 2 with fetchpost
+    // safety: OnceLocks are set exactly once at startup
     DEFAULT_REDIS_CONN_STRING
         .set("redis://127.0.0.1:6379/1".to_string())
         .unwrap();
 
     // set memcache size
+    // safety: OnceLock set exactly once at startup
     MEM_CACHE_SIZE.set(args.flag_mem_cache_size).unwrap();
 
     // set timeout
+    // safety: OnceLock set exactly once at startup
     TIMEOUT_SECS
         .set(util::timeout_secs(args.flag_timeout)?)
         .unwrap();
@@ -434,9 +449,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let diskcache_dir = match &args.flag_disk_cache_dir {
         Some(dir) => {
             if dir.starts_with('~') {
-                // expand the tilde
-                let expanded_dir = expand_tilde(dir).unwrap();
-                expanded_dir.to_string_lossy().to_string()
+                // expand the tilde - returns None only if no home directory can be resolved
+                match expand_tilde(dir) {
+                    Some(expanded_dir) => expanded_dir.to_string_lossy().to_string(),
+                    None => {
+                        return fail_clierror!(r#"Cannot expand "{dir}": no home directory found"#);
+                    },
+                }
             } else {
                 dir.to_string()
             }
@@ -463,12 +482,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         {
             return fail_clierror!(r#"Cannot create cache directory "{diskcache_dir}": {e:?}"#);
         }
+        // safety: OnceLocks are set exactly once on the disk-cache path
         DISKCACHE_DIR.set(diskcache_dir).unwrap();
         // initialize DiskCache Config
         DISKCACHECONFIG.set(DiskCacheConfig::new()).unwrap();
         CacheType::Disk
     } else if args.flag_redis_cache {
         // initialize Redis Config
+        // safety: OnceLock set exactly once on the redis-cache path
         REDISCONFIG.set(RedisConfig::new()).unwrap();
 
         // check if redis connection is valid
@@ -542,10 +563,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_url_template.is_none() {
         rconfig = rconfig.select(args.arg_url_column);
         let sel = rconfig.selection(&headers)?;
-        column_index = *sel.iter().next().unwrap();
         if sel.len() != 1 {
             return fail!("Only a single URL column may be selected.");
         }
+        // safety: sel.len() == 1 verified above
+        column_index = *sel.iter().next().unwrap();
     }
 
     let mut dynfmt_url_template = String::new();
@@ -578,7 +600,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     let rate_limit = match args.flag_rate_limit {
+        // safety: u32::MAX is non-zero
         0 => NonZeroU32::new(u32::MAX).unwrap(),
+        // safety: matched arm guarantees value is in 1..=1000
         1..=1000 => NonZeroU32::new(args.flag_rate_limit).unwrap(),
         _ => {
             return fail_incorrectusage_clierror!(
@@ -620,6 +644,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         map.append(
             reqwest::header::ACCEPT_ENCODING,
+            // safety: DEFAULT_ACCEPT_ENCODING is a static valid header value
             HeaderValue::from_str(DEFAULT_ACCEPT_ENCODING).unwrap(),
         );
         map
@@ -643,6 +668,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // set rate limiter with allow_burst set to 1 - see https://github.com/antifuchs/governor/issues/39
     let limiter =
+        // safety: 1 is non-zero
         RateLimiter::direct(Quota::per_second(rate_limit).allow_burst(NonZeroU32::new(1).unwrap()));
 
     // prep progress bars
@@ -692,15 +718,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         };
     }
 
-    // prepare report
-    let report = if args.flag_report.to_lowercase().starts_with('d') {
-        // if it starts with d, its a detailed report
-        ReportKind::Detailed
-    } else if args.flag_report.to_lowercase().starts_with('s') {
-        // if it starts with s, its a short report
-        ReportKind::Short
-    } else {
-        ReportKind::None
+    // prepare report - match on first byte to avoid two lowercase allocations.
+    // ASCII-only by design: documented values are "detailed" / "short" / "none".
+    let report = match args.flag_report.as_bytes().first() {
+        Some(b'd' | b'D') => ReportKind::Detailed,
+        Some(b's' | b'S') => ReportKind::Short,
+        _ => ReportKind::None,
     };
 
     let mut report_wtr;
@@ -858,7 +881,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         // log::debug!("Disk cache hit for {url} hit: {disk_cache_hits}");
                     }
                     if !args.flag_cache_error && final_response.status_code != 200 {
-                        let _ = GET_DISKCACHE_RESPONSE.cache_remove(&url);
+                        let key = cross_session_cache_key(
+                            &url,
+                            jaq_selector.as_ref(),
+                            args.flag_store_error,
+                            args.flag_pretty,
+                            include_existing_columns,
+                        );
+                        let _ = GET_DISKCACHE_RESPONSE.cache_remove(&key);
                         // log::debug!("Removed Disk cache for {url}");
                     }
                 },
@@ -887,13 +917,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         },
                     };
                     if !args.flag_cache_error && final_response.status_code != 200 {
-                        let key = format!(
-                            "{}{:?}{}{}{}",
-                            url,
-                            jaq_selector,
+                        let key = cross_session_cache_key(
+                            &url,
+                            jaq_selector.as_ref(),
                             args.flag_store_error,
                             args.flag_pretty,
-                            include_existing_columns
+                            include_existing_columns,
                         );
 
                         if GET_REDIS_RESPONSE.cache_remove(&key).is_err() && log_enabled!(Warn) {
@@ -985,8 +1014,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             error_progress.finish_and_clear();
         } else if running_error_count >= args.flag_max_errors {
             error_progress.finish();
-            // sleep so we can dependably write eprintln without messing up progress bars
-            thread::sleep(time::Duration::from_nanos(10));
+            // sleep so we can dependably write eprintln without messing up progress bars.
+            // 100 ms covers a single 5Hz draw cycle of the multi-progress redraw thread.
+            thread::sleep(time::Duration::from_millis(100));
             let abort_msg = format!(
                 "{} max errors. Fetch aborted.",
                 HumanCount(args.flag_max_errors)
@@ -1010,6 +1040,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if report != ReportKind::None {
         use std::fmt::Write;
 
+        // safety: write! to a String is infallible
         write!(
             &mut end_msg,
             " {} report created: \"{}{FETCH_REPORT_SUFFIX}\"",
@@ -1072,6 +1103,24 @@ fn get_cached_response(
     ))
 }
 
+// Cross-session cache key used by both the disk and redis caches.
+// Defined once and called from each `convert` macro and each `cache_remove`
+// call site so the format cannot drift (the original cache-eviction bug came
+// from a divergence between these).
+#[inline]
+fn cross_session_cache_key(
+    url: &str,
+    flag_jaq: Option<&String>,
+    flag_store_error: bool,
+    flag_pretty: bool,
+    include_existing_columns: bool,
+) -> String {
+    format!(
+        "{}{:?}{}{}{}",
+        url, flag_jaq, flag_store_error, flag_pretty, include_existing_columns
+    )
+}
+
 // this is a disk cache that can be used across qsv sessions
 // so we need to include the values of flag_jaq, flag_store_error, flag_pretty and
 // include_existing_columns in the cache key
@@ -1080,7 +1129,7 @@ fn get_cached_response(
     ty = "cached::DiskCache<String, FetchResponse>",
     cache_prefix_block = r##"{ "dc_" }"##,
     key = "String",
-    convert = r##"{ format!("{}{:?}{}{}{}", url, flag_jaq, flag_store_error, flag_pretty, include_existing_columns) }"##,
+    convert = r##"{ cross_session_cache_key(url, flag_jaq, flag_store_error, flag_pretty, include_existing_columns) }"##,
     create = r##"{
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
@@ -1128,7 +1177,7 @@ fn get_diskcache_response(
 #[io_cached(
     ty = "cached::RedisCache<String, String>",
     key = "String",
-    convert = r##"{ format!("{}{:?}{}{}{}", url, flag_jaq, flag_store_error, flag_pretty, include_existing_columns) }"##,
+    convert = r##"{ cross_session_cache_key(url, flag_jaq, flag_store_error, flag_pretty, include_existing_columns) }"##,
     create = r##" {
         let redis_config = REDISCONFIG.get().unwrap();
         let rediscache = RedisCache::new("f", redis_config.ttl_secs)
@@ -1159,6 +1208,7 @@ fn get_redis_response(
     flag_max_retries: u8,
 ) -> Result<cached::Return<String>, CliError> {
     Ok(Return::new({
+        // safety: FetchResponse only has String/u16/u8 fields - serialization is infallible
         simd_json::to_string(&get_response(
             url,
             client,
@@ -1190,7 +1240,8 @@ pub fn get_ratelimit_header_value<'a>(
 /// return 1 if the value is 0
 pub fn parse_ratelimit_header_value(value: Option<&HeaderValue>, sentinel_value: u64) -> u64 {
     value.map_or(sentinel_value, |v| {
-        atoi_simd::parse_pos::<u64, false>(v.to_str().unwrap().as_bytes()).unwrap_or(1)
+        // non-ASCII header bytes -> empty str -> parse fails -> fall through to 1
+        atoi_simd::parse_pos::<u64, false>(v.to_str().unwrap_or("").as_bytes()).unwrap_or(1)
     })
 }
 
@@ -1404,7 +1455,7 @@ fn get_response(
                 // wait before retrying, which is a valid value
                 // however, we don't want to do date-parsing here, so we just
                 // wait timeout_secs seconds before retrying
-                atoi_simd::parse_pos::<u64, false>(retry_after.to_str().unwrap().as_bytes())
+                atoi_simd::parse_pos::<u64, false>(retry_after.to_str().unwrap_or("").as_bytes())
                     .unwrap_or(timeout_secs)
             } else {
                 parse_ratelimit_header_value(ratelimit_reset.or(ratelimit_reset_sec), 0)

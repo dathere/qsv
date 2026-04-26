@@ -95,6 +95,18 @@ URL OPTIONS:
 <url-column> needs to be a fully qualified URL path. It can be specified as a column name
 from which the URL value will be retrieved for each record, or as the URL literal itself.
 
+JSON RESPONSE HANDLING:
+When --jaq is not used, fetchpost parses each successful response with serde_json and
+writes it back out (compact by default, or re-indented with --pretty). Object key
+order is preserved (qsv enables serde_json's preserve_order feature), but the body
+is otherwise normalized: all insignificant whitespace is removed (compact) or
+re-indented (--pretty); number representations are canonicalized (e.g. 1e2 -> 100,
+leading zeros stripped, exponent form normalized); duplicate keys within a JSON
+object are collapsed (last value wins); and responses that are not valid JSON are
+written as an empty cell (or the parse error if --store-error is set). If you need
+byte-exact server output, post-process the response yourself or use --jaq to
+extract specific fields.
+
 EXAMPLES:
 
 data.csv

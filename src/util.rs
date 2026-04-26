@@ -2512,12 +2512,12 @@ pub fn create_json_writer(
 /// without buffering the entire slice in memory first.
 ///
 /// **Failure semantics:** because records stream straight to the writer,
-/// a CSV parse error mid-stream means the opening `[`, any prior records,
-/// and the trailing comma will already have been written before the error
-/// propagates — so the output (stdout or `output` file) may be a truncated,
-/// syntactically invalid JSON document. The closing `]` is only written
-/// after the loop completes cleanly. Callers that need all-or-nothing
-/// semantics must validate / collect records before invoking this.
+/// a CSV parse error mid-stream means the opening `[` and any prior records
+/// will already have been written before the error propagates. The closing
+/// `]` is only written after the loop completes cleanly, so the output
+/// (stdout or `output` file) may be a truncated, syntactically invalid
+/// JSON document on error. Callers that need all-or-nothing semantics must
+/// validate / collect records before invoking this.
 pub fn write_json(
     output: Option<&String>,
     no_headers: bool,

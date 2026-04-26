@@ -172,7 +172,9 @@ impl Args {
     }
 
     fn with_index(&self, mut indexed_file: Indexed<fs::File, fs::File>) -> CliResult<()> {
-        let total_rows = util::count_rows(&self.rconfig())? as usize;
+        // read the row count straight off the already-loaded index instead of
+        // going through util::count_rows, which would reopen the CSV/index
+        let total_rows = indexed_file.count() as usize;
         // reuse the precomputed total — avoids a second count_rows call inside range()
         let (start_raw, end_raw) = self.range(Some(total_rows))?;
         // clamp to row count so arithmetic on `total_rows - end` cannot underflow

@@ -736,6 +736,10 @@ fn count_rows_with_best_method(conf: &Config) -> Option<u64> {
 }
 
 fn count_with_csv_reader(conf: &Config) -> Option<u64> {
+    let path_display = conf
+        .path
+        .as_deref()
+        .map_or_else(|| "<stdin>".to_string(), |p| p.display().to_string());
     conf.clone()
         .skip_format_check(true)
         .reader()
@@ -749,8 +753,8 @@ fn count_with_csv_reader(conf: &Config) -> Option<u64> {
                     Ok(false) => break,
                     Err(e) => {
                         log::warn!(
-                            "CSV read error during row count after {count} rows; returning \
-                             partial count: {e}"
+                            "CSV read error during row count of {path_display} after {count} \
+                             rows; returning partial count: {e}"
                         );
                         break;
                     },
@@ -769,6 +773,10 @@ pub fn count_rows_regular(conf: &Config) -> Result<u64, CliError> {
         Ok(idx.count())
     } else {
         // index does not exist or is stale,
+        let path_display = conf
+            .path
+            .as_deref()
+            .map_or_else(|| "<stdin>".to_string(), |p| p.display().to_string());
         let count_opt =
             ROW_COUNT.get_or_init(|| match conf.clone().skip_format_check(true).reader() {
                 Ok(mut rdr) => {
@@ -780,8 +788,8 @@ pub fn count_rows_regular(conf: &Config) -> Result<u64, CliError> {
                             Ok(false) => break,
                             Err(e) => {
                                 log::warn!(
-                                    "CSV read error during row count after {count} rows; \
-                                     returning partial count: {e}"
+                                    "CSV read error during row count of {path_display} after \
+                                     {count} rows; returning partial count: {e}"
                                 );
                                 break;
                             },
@@ -2002,14 +2010,29 @@ pub fn load_dotenv() -> CliResult<()> {
 
 #[inline]
 pub fn get_envvar_flag(key: &str) -> bool {
+    use std::{
+        collections::HashSet,
+        sync::{Mutex, OnceLock},
+    };
+
+    static UNRECOGNIZED_WARNED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
     let Ok(raw) = std::env::var(key) else {
         return false;
     };
-    let v = raw.to_ascii_lowercase();
-    let truthy = matches!(v.as_str(), "true" | "t" | "1" | "yes" | "y");
-    let falsy = matches!(v.as_str(), "" | "false" | "f" | "0" | "no" | "n");
+    // Trim whitespace so values like " true" are recognized as truthy.
+    let v = raw.trim().to_ascii_lowercase();
+    let truthy = matches!(v.as_str(), "true" | "t" | "1" | "yes" | "y" | "on");
+    let falsy = matches!(v.as_str(), "" | "false" | "f" | "0" | "no" | "n" | "off");
     if !truthy && !falsy {
-        log::warn!("{key}={raw} is not a recognized boolean; treating as false");
+        // Warn at most once per (key, value) pair across the process so callers
+        // in hot loops don't spam the log with the same misconfiguration notice.
+        let warned = UNRECOGNIZED_WARNED.get_or_init(|| Mutex::new(HashSet::new()));
+        if let Ok(mut set) = warned.lock()
+            && set.insert(format!("{key}={raw}"))
+        {
+            log::warn!("{key}={raw} is not a recognized boolean; treating as false");
+        }
     }
     truthy
 }
@@ -2584,7 +2607,6 @@ pub fn write_json(
     write!(json_wtr, "[")?;
     let mut is_first = true;
 
-    let rec_len = header_vec.len().saturating_sub(1);
     let mut temp_val;
     let null_val = "null".to_string();
     let mut json_string_val: serde_json::Value;
@@ -2598,10 +2620,12 @@ pub fn write_json(
             write!(json_wtr, ",")?;
         }
         write!(json_wtr, "{{")?;
+        // Emit field separators using a leading-comma join: write a comma
+        // *before* each non-first field. This keeps the output valid for
+        // both flexible-CSV cases — records longer than headers (skip
+        // extras) and records shorter than headers (no trailing comma).
+        let mut first_field = true;
         for (idx, b) in record.iter().enumerate() {
-            // Skip extra fields when a record has more columns than headers
-            // (possible with flexible CSV). Without this, the previous
-            // unsafe { get_unchecked(idx) } was UB on over-long rows.
             let Some(key) = header_vec.get(idx) else {
                 break;
             };
@@ -2618,12 +2642,12 @@ pub fn write_json(
                 json_string_val = serde_json::Value::String(temp_val);
                 temp_val = json_string_val.to_string();
             }
-            if idx < rec_len {
-                write!(&mut json_wtr, r#""{key}":{value},"#, value = temp_val)?;
+            if first_field {
+                first_field = false;
             } else {
-                // last column in the JSON record, no comma
-                write!(&mut json_wtr, r#""{key}":{value}"#, value = temp_val)?;
+                write!(&mut json_wtr, ",")?;
             }
+            write!(&mut json_wtr, r#""{key}":{value}"#, value = temp_val)?;
         }
         write!(json_wtr, "}}")?;
     }

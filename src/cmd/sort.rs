@@ -24,7 +24,8 @@ sort options:
                             When combined with --numeric, --natural takes precedence.
     -R, --reverse           Reverse order
     -i, --ignore-case       Compare strings disregarding case.
-                            Has no effect under --numeric (numbers are case-less).
+                            Has no effect when numeric comparison is selected
+                            (i.e. when --numeric is used without --natural).
     -u, --unique            When set, identical consecutive lines will be dropped
                             to keep only one line per sorted value. The same
                             comparison mode used to sort the input is also used

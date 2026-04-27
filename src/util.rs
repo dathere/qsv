@@ -1655,24 +1655,23 @@ pub fn safe_header_names(
         let mut sequence_suffix = 2_u16;
         let mut candidate_name = safe_name.clone();
         while name_vec.contains(&candidate_name) {
-            // Trim the base so that base + "_<n>" stays within the 60-char
+            // Trim the base so that base + "_<n>" stays within the 60-byte
             // limit; otherwise the pre-truncated `safe_name` plus suffix could
-            // overflow (e.g. safe_name=60 chars + "_2" → 62 chars).
+            // overflow (e.g. safe_name=60 bytes + "_2" → 62 bytes), pushing
+            // past Postgres' default NAMEDATALEN of 63 bytes and out of sync
+            // with `is_safe_name`'s byte-based length check. We measure in
+            // bytes (not chars) and snap to a UTF-8 char boundary so non-ASCII
+            // headers can't smuggle in a 240-byte name behind a 60-char count.
             // Note: when two distinct long source headers share the same
-            // first `base_max` chars, they'll share the suffix counter — i.e.
+            // first `base_max` bytes, they'll share the suffix counter — i.e.
             // the second header's first occurrence may be `_3` rather than
             // `_2`. This is intentional: the trimmed prefix is the actual
             // identifier downstream consumers see, so collisions in that
             // namespace must be disambiguated, not the original header's.
             let suffix = format!("_{sequence_suffix}");
-            let suffix_chars = suffix.chars().count();
-            let base_max = 60_usize.saturating_sub(suffix_chars);
-            let base = if safe_name.chars().count() > base_max {
-                let cut = safe_name
-                    .char_indices()
-                    .nth(base_max)
-                    .map_or(safe_name.len(), |(i, _)| i);
-                &safe_name[..cut]
+            let base_max = 60_usize.saturating_sub(suffix.len());
+            let base = if safe_name.len() > base_max {
+                &safe_name[..safe_name.floor_char_boundary(base_max)]
             } else {
                 safe_name.as_str()
             };

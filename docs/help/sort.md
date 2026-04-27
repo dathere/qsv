@@ -39,7 +39,7 @@ qsv sort --help
 | &nbsp;`‑N,`<br>`‑‑numeric`&nbsp; | flag | Compare according to string numerical value |  |
 | &nbsp;`‑‑natural`&nbsp; | flag | Compare strings using natural sort order (treats numbers within strings as actual numbers, e.g. "data1.txt", "data2.txt", "data10.txt", as opposed to "data1.txt", "data10.txt", "data2.txt" when sorting lexicographically) <https://en.wikipedia.org/wiki/Natural_sort_order> When combined with --numeric, --natural takes precedence. |  |
 | &nbsp;`‑R,`<br>`‑‑reverse`&nbsp; | flag | Reverse order |  |
-| &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | Compare strings disregarding case. Has no effect under --numeric (numbers are case-less). |  |
+| &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | Compare strings disregarding case. Has no effect when numeric comparison is used (numbers are case-less). |  |
 | &nbsp;`‑u,`<br>`‑‑unique`&nbsp; | flag | When set, identical consecutive lines will be dropped to keep only one line per sorted value. The same comparison mode used to sort the input is also used here, so unique-equality always agrees with the sort. |  |
 
 <a name="random-sorting-options"></a>

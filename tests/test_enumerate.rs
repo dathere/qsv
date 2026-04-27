@@ -103,11 +103,11 @@ fn enumerate_hash() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["letter", "number", "random_text", "hash"],
-        svec!["a", "13", "this is a test", "4649922201779202190"],
-        svec!["b", "24", "the quick brown fox", "10788366602312130446"],
-        svec!["c", "72", "jumps over the lazy dog", "6378567261782451553"],
-        svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
-        svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
+        svec!["a", "13", "this is a test", "16647336487524601331"],
+        svec!["b", "24", "the quick brown fox", "16002172227596323886"],
+        svec!["c", "72", "jumps over the lazy dog", "10342577706231926068"],
+        svec!["d", "7", "I think, therefore I am", "9529353684586443901"],
+        svec!["d", "7", "I think, therefore I am", "9529353684586443901"],
     ];
     assert_eq!(got, expected);
 }
@@ -133,12 +133,12 @@ fn enumerate_hash_intl() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["letter", "number", "random_text", "hash"],
-        svec!["a", "13", "これはテストです", "3824660653605227303"],
-        svec!["b", "24", "el rápido zorro marrón", "1851770582521928574"],
-        svec!["c", "72", "跳过懒狗", "7916590694040213670"],
-        svec!["c", "72", "howdy", "10903434754618017012"],
-        svec!["d", "7", "I thiñk, therefore I am", "7671262618974725285"],
-        svec!["d", "7", "I thiñk, therefore I am", "7671262618974725285"],
+        svec!["a", "13", "これはテストです", "8639687352294778884"],
+        svec!["b", "24", "el rápido zorro marrón", "13003362524220562232"],
+        svec!["c", "72", "跳过懒狗", "5528893140454782773"],
+        svec!["c", "72", "howdy", "2885904032770952417"],
+        svec!["d", "7", "I thiñk, therefore I am", "17415763469255125069"],
+        svec!["d", "7", "I thiñk, therefore I am", "17415763469255125069"],
     ];
     assert_eq!(got, expected);
 }
@@ -163,11 +163,11 @@ fn enumerate_hash_replace_old_hash() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["letter", "number", "random_text", "hash"],
-        svec!["a", "13", "this is a test", "4649922201779202190"],
-        svec!["b", "24", "the quick brown fox", "10788366602312130446"],
-        svec!["c", "72", "jumps over the lazy dog", "6378567261782451553"],
-        svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
-        svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
+        svec!["a", "13", "this is a test", "16647336487524601331"],
+        svec!["b", "24", "the quick brown fox", "16002172227596323886"],
+        svec!["c", "72", "jumps over the lazy dog", "10342577706231926068"],
+        svec!["d", "7", "I think, therefore I am", "9529353684586443901"],
+        svec!["d", "7", "I think, therefore I am", "9529353684586443901"],
     ];
     assert_eq!(got, expected);
 }
@@ -192,11 +192,11 @@ fn enumerate_hash_replace_old_hash2() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["letter", "number", "random_text", "hash"],
-        svec!["a", "13", "this is a test", "4649922201779202190"],
-        svec!["b", "24", "the quick brown fox", "10788366602312130446"],
-        svec!["c", "72", "jumps over the lazy dog", "6378567261782451553"],
-        svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
-        svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
+        svec!["a", "13", "this is a test", "16647336487524601331"],
+        svec!["b", "24", "the quick brown fox", "16002172227596323886"],
+        svec!["c", "72", "jumps over the lazy dog", "10342577706231926068"],
+        svec!["d", "7", "I think, therefore I am", "9529353684586443901"],
+        svec!["d", "7", "I think, therefore I am", "9529353684586443901"],
     ];
     assert_eq!(got, expected);
 }
@@ -222,11 +222,11 @@ fn enumerate_hash_regex() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["letter", "number", "random_text", "hash"],
-        svec!["a", "13", "this is a test", "4649922201779202190"],
-        svec!["b", "24", "the quick brown fox", "10788366602312130446"],
-        svec!["c", "72", "jumps over the lazy dog", "6378567261782451553"],
-        svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
-        svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
+        svec!["a", "13", "this is a test", "16647336487524601331"],
+        svec!["b", "24", "the quick brown fox", "16002172227596323886"],
+        svec!["c", "72", "jumps over the lazy dog", "10342577706231926068"],
+        svec!["d", "7", "I think, therefore I am", "9529353684586443901"],
+        svec!["d", "7", "I think, therefore I am", "9529353684586443901"],
     ];
     assert_eq!(got, expected);
 }
@@ -251,11 +251,11 @@ fn enumerate_hash_subset() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["letter", "number", "random_text", "hash"],
-        svec!["a", "13", "this is a test", "12940414675143957480"],
-        svec!["b", "24", "the quick brown fox", "13207582625528234781"],
-        svec!["c", "72", "jumps over the lazy dog", "17804052095358758578"],
-        svec!["d", "7", "I think, therefore I am", "3273771710137887128"],
-        svec!["d", "7", "I think, therefore I am", "3273771710137887128"],
+        svec!["a", "13", "this is a test", "5068084879712623948"],
+        svec!["b", "24", "the quick brown fox", "16864506042503095386"],
+        svec!["c", "72", "jumps over the lazy dog", "10806014713536340838"],
+        svec!["d", "7", "I think, therefore I am", "9766316219039859984"],
+        svec!["d", "7", "I think, therefore I am", "9766316219039859984"],
     ];
     assert_eq!(got, expected);
 }
@@ -280,11 +280,11 @@ fn enumerate_hash_reverse() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["letter", "number", "random_text", "hash"],
-        svec!["a", "13", "this is a test", "5686912879674292587"],
-        svec!["b", "24", "the quick brown fox", "10008819158968270026"],
-        svec!["c", "72", "jumps over the lazy dog", "6003217755542851957"],
-        svec!["d", "7", "I think, therefore I am", "17754472455904896405"],
-        svec!["d", "7", "I think, therefore I am", "17754472455904896405"],
+        svec!["a", "13", "this is a test", "4028571812167573426"],
+        svec!["b", "24", "the quick brown fox", "8754606222277392071"],
+        svec!["c", "72", "jumps over the lazy dog", "15114562622771216744"],
+        svec!["d", "7", "I think, therefore I am", "15631341528458705790"],
+        svec!["d", "7", "I think, therefore I am", "15631341528458705790"],
     ];
     assert_eq!(got, expected);
 }
@@ -309,11 +309,11 @@ fn enumerate_hash_regex_not() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["letter", "number", "random_text", "hash"],
-        svec!["a", "13", "this is a test", "4649922201779202190"],
-        svec!["b", "24", "the quick brown fox", "10788366602312130446"],
-        svec!["c", "72", "jumps over the lazy dog", "6378567261782451553"],
-        svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
-        svec!["d", "7", "I think, therefore I am", "14437068658547852882"],
+        svec!["a", "13", "this is a test", "16647336487524601331"],
+        svec!["b", "24", "the quick brown fox", "16002172227596323886"],
+        svec!["c", "72", "jumps over the lazy dog", "10342577706231926068"],
+        svec!["d", "7", "I think, therefore I am", "9529353684586443901"],
+        svec!["d", "7", "I think, therefore I am", "9529353684586443901"],
     ];
     assert_eq!(got, expected);
 }
@@ -581,9 +581,9 @@ fn enumerate_hash_issue_2172_new_column() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["name", "id"],
-        svec!["Fred", "7744023578077004230"],
-        svec!["Joe", "1162351066380295090"],
-        svec!["Mary", "13526984025446498287"],
+        svec!["Fred", "14076493413524835199"],
+        svec!["Joe", "17835011426701871598"],
+        svec!["Mary", "11375317742157426807"],
     ];
     assert_eq!(got, expected);
 }
@@ -608,9 +608,30 @@ fn enumerate_hash_issue_2172() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["name", "some_other_column", "id"],
-        svec!["Fred", "0", "7744023578077004230"],
-        svec!["Joe", "1", "1162351066380295090"],
-        svec!["Mary", "2", "13526984025446498287"],
+        svec!["Fred", "0", "14076493413524835199"],
+        svec!["Joe", "1", "17835011426701871598"],
+        svec!["Mary", "2", "11375317742157426807"],
     ];
     assert_eq!(got, expected);
+}
+
+#[test]
+fn enumerate_hash_no_concat_collision() {
+    // Regression test: distinct multi-column rows must not collide in the hash
+    // simply because their concatenated bytes are identical
+    // (e.g. ["ab","c"] vs ["a","bc"] both flatten to "abc").
+    let wrk = Workdir::new("enumerate_hash_no_concat_collision");
+    wrk.create(
+        "data.csv",
+        vec![svec!["x", "y"], svec!["ab", "c"], svec!["a", "bc"]],
+    );
+    let mut cmd = wrk.command("enum");
+    cmd.args(["--hash", "1-"]).arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 3);
+    assert_ne!(
+        got[1][2], got[2][2],
+        "rows ['ab','c'] and ['a','bc'] must hash differently"
+    );
 }

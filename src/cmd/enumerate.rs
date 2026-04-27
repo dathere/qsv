@@ -3,7 +3,7 @@ Add a new column enumerating the lines of a CSV file. This can be useful to keep
 track of a specific line order, give a unique identifier to each line or even
 make a copy of the contents of a column.
 
-The enum function has four modes of operation:
+The enum function has six modes of operation:
 
   1. INCREMENT. Add an incremental identifier to each of the lines:
     $ qsv enum file.csv
@@ -14,13 +14,13 @@ The enum function has four modes of operation:
   3. UUID7. Add a uuid v7 to each of the lines:
     $ qsv enum --uuid7 file.csv
 
-  3. CONSTANT. Create a new column filled with a given value:
+  4. CONSTANT. Create a new column filled with a given value:
     $ qsv enum --constant 0
 
-  4. COPY. Copy the contents of a column to a new one:
+  5. COPY. Copy the contents of a column to a new one:
     $ qsv enum --copy names
 
-  5. HASH. Create a new column with the deterministic hash of the given column/s.
+  6. HASH. Create a new column with the deterministic hash of the given column/s.
      The hash uses the xxHash algorithm and is platform-agnostic.
      (see https://github.com/DoumanAsh/xxhash-rust for more information):
     $ qsv enum --hash 1- // hash all columns, auto-ignores existing "hash" column
@@ -130,7 +130,7 @@ Common options:
 
 use serde::Deserialize;
 use uuid::Uuid;
-use xxhash_rust::xxh3::xxh3_64;
+use xxhash_rust::xxh3::Xxh3;
 
 use crate::{
     CliResult,
@@ -190,34 +190,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     let hash_sel = if let Some(hash_columns) = &args.flag_hash {
-        // get the index of the column named "hash", if it exists
         hash_index = headers.iter().position(|col| col == b"hash");
 
-        // get the original selection
-        rconfig = rconfig.select(hash_columns.clone());
         let original_selection = rconfig
             .clone()
             .select(hash_columns.clone())
             .selection(&headers)?;
 
-        // Filter out the "hash" column from the original selection, if it exists
-        let filtered_selection = original_selection
+        let filtered_indices: Vec<usize> = original_selection
             .iter()
-            .filter(|&&index| index != hash_index.unwrap_or(usize::MAX))
-            .collect::<Vec<_>>();
+            .copied()
+            .filter(|&i| Some(i) != hash_index)
+            .collect();
 
-        // Construct selection string without "hash" column
-        let selection_string = filtered_selection
+        let selection_string = filtered_indices
             .iter()
-            .map(|&&index| (index + 1).to_string())
-            .collect::<Vec<String>>()
+            .map(|&i| (i + 1).to_string())
+            .collect::<Vec<_>>()
             .join(",");
 
-        // Parse the new selection without "hash" column
-        let no_hash_column_selection = SelectColumns::parse(&selection_string)?;
-
-        // Update the configuration with the new selection
-        rconfig = rconfig.select(no_hash_column_selection);
+        rconfig = rconfig.select(SelectColumns::parse(&selection_string)?);
         Some(rconfig.selection(&headers)?)
     } else {
         None
@@ -244,17 +236,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     if !rconfig.no_headers {
-        if enum_operation == EnumOperation::Hash {
-            // Remove an existing "hash" column from the header, if it exists
-            headers = if let Some(hash_index) = hash_index {
-                headers
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(i, field)| if i == hash_index { None } else { Some(field) })
-                    .collect()
-            } else {
-                headers
-            };
+        if enum_operation == EnumOperation::Hash
+            && let Some(hash_idx) = hash_index
+        {
+            headers = headers
+                .into_iter()
+                .enumerate()
+                .filter_map(|(i, field)| if i == hash_idx { None } else { Some(field) })
+                .collect();
         }
         let column_name = match args.flag_new_column {
             Some(new_column_name) => new_column_name,
@@ -280,11 +269,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // amortize allocations
     let mut record = csv::ByteRecord::new();
     let mut counter: u64 = args.flag_start;
-    #[allow(unused_assignments)]
-    let mut colcopy: Vec<u8> = Vec::with_capacity(20);
+    let mut colcopy: Vec<u8> = Vec::new();
     let increment = args.flag_increment.unwrap_or(1);
-    let mut hash_string = String::new();
-    let mut hash;
+    let mut hasher = Xxh3::new();
+    let mut filtered_record = csv::ByteRecord::new();
     let uuid7_ctxt = uuid::ContextV7::new();
     let mut uuid;
 
@@ -314,32 +302,34 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 record.push_field(constant_value);
             },
             EnumOperation::Copy => {
-                colcopy = record[copy_index].to_vec();
+                colcopy.clear();
+                colcopy.extend_from_slice(&record[copy_index]);
                 record.push_field(&colcopy);
             },
             EnumOperation::Hash => {
-                hash_string.clear();
-
-                // build the hash string from the filtered selection
+                // Hash raw bytes, length-prefixing each field so distinct row
+                // contents cannot collide via concatenation
+                // (e.g. ["ab","c"] vs ["a","bc"]).
+                hasher.reset();
                 if let Some(ref sel) = hash_sel {
-                    sel.iter().for_each(|i| {
-                        hash_string
-                            .push_str(simdutf8::basic::from_utf8(&record[*i]).unwrap_or_default());
-                    });
+                    for &i in sel.iter() {
+                        let field = &record[i];
+                        hasher.update(&(field.len() as u64).to_le_bytes());
+                        hasher.update(field);
+                    }
                 }
-                hash = xxh3_64(hash_string.as_bytes());
+                let hash = hasher.digest();
 
-                // Optionally remove the "hash" column if it already exists from the output
-                record = if let Some(hash_index) = hash_index {
-                    record
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(i, field)| if i == hash_index { None } else { Some(field) })
-                        .collect()
-                } else {
-                    record
-                };
-                record.push_field(hash.to_string().as_bytes());
+                if let Some(hash_idx) = hash_index {
+                    filtered_record.clear();
+                    for (i, field) in record.iter().enumerate() {
+                        if i != hash_idx {
+                            filtered_record.push_field(field);
+                        }
+                    }
+                    std::mem::swap(&mut record, &mut filtered_record);
+                }
+                record.push_field(itoa::Buffer::new().format(hash).as_bytes());
             },
         }
 

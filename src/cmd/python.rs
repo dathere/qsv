@@ -128,7 +128,7 @@ use indicatif::{ProgressBar, ProgressDrawTarget};
 use pyo3::{
     PyErr, PyResult, Python, intern,
     prelude::*,
-    types::{PyDict, PyModule},
+    types::{PyDict, PyList, PyModule},
 };
 use serde::Deserialize;
 
@@ -210,25 +210,36 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     {
         match fs::read_to_string(expression_filepath) {
             Ok(file_contents) => file_contents,
-            Err(e) => return fail_clierror!("Cannot load Python expression from file: {e}"),
+            Err(e) => {
+                return fail_clierror!(
+                    "Cannot read Python expression file '{expression_filepath}': {e}"
+                );
+            },
         }
     } else if std::path::Path::new(&args.arg_expression)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("py"))
     {
-        match fs::read_to_string(args.arg_expression.clone()) {
+        match fs::read_to_string(&args.arg_expression) {
             Ok(file_contents) => file_contents,
-            Err(e) => return fail_clierror!("Cannot load .py file: {e}"),
+            Err(e) => {
+                return fail_clierror!(
+                    "Cannot read Python expression file '{}': {e}",
+                    args.arg_expression
+                );
+            },
         }
     } else {
         args.arg_expression.clone()
     };
 
     let mut helper_text = String::new();
-    if let Some(helper_file) = args.flag_helper {
+    if let Some(helper_file) = &args.flag_helper {
         helper_text = match fs::read_to_string(helper_file) {
-            Ok(helper_file) => helper_file,
-            Err(e) => return fail_clierror!("Cannot load Python file: {e}"),
+            Ok(contents) => contents,
+            Err(e) => {
+                return fail_clierror!("Cannot read Python helper file '{helper_file}': {e}");
+            },
         }
     }
 
@@ -267,7 +278,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let (header_vec, _) = util::safe_header_names(&headers, true, false, None, "_", false);
 
     // amortize memory allocation by reusing record
-    #[allow(unused_assignments)]
     let mut batch_record = csv::StringRecord::new();
     let mut error_count = 0_usize;
 
@@ -294,7 +304,46 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .map_err(|e| format!("Failed to create CString from expression: {e}"))?;
 
     let mut row_number = 0_u64;
-    let debug_flag = log::log_enabled!(log::Level::Debug);
+
+    // Build modules and the QSVRow instance ONCE up front. They don't change
+    // across batches, so re-creating them each batch was wasted work.
+    // We hold them as Py<...> across Python::attach calls and re-bind per batch.
+    let (
+        helpers_pymod,
+        user_helpers_pymod,
+        builtins_pymod,
+        math_pymod,
+        random_pymod,
+        datetime_pymod,
+        py_row_obj,
+    ) = Python::attach(|py| -> PyResult<_> {
+        let helpers =
+            PyModule::from_code(py, &helpers_code, &helpers_filename, &helpers_module_name)?;
+        let user_helpers = PyModule::from_code(
+            py,
+            &user_helpers_code,
+            &user_helpers_filename,
+            &user_helpers_module_name,
+        )?;
+        let builtins = PyModule::import(py, "builtins")?;
+        let math_module = PyModule::import(py, "math")?;
+        let random_module = PyModule::import(py, "random")?;
+        let datetime_module = PyModule::import(py, "datetime")?;
+
+        let py_row = helpers
+            .getattr("QSVRow")?
+            .call1((headers.iter().collect::<Vec<&str>>(),))?;
+
+        Ok((
+            helpers.unbind(),
+            user_helpers.unbind(),
+            builtins.unbind(),
+            math_module.unbind(),
+            random_module.unbind(),
+            datetime_module.unbind(),
+            py_row.unbind(),
+        ))
+    })?;
 
     // main loop to read CSV and construct batches.
     // we batch Python operations so that the GILPool does not get very large
@@ -323,63 +372,44 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
 
         Python::attach(|py| -> PyResult<()> {
-            let batch_ref = &mut batch;
-            let helpers =
-                PyModule::from_code(py, &helpers_code, &helpers_filename, &helpers_module_name)?;
+            let helpers = helpers_pymod.bind(py);
+            let user_helpers = user_helpers_pymod.bind(py);
+            let builtins = builtins_pymod.bind(py);
+            let math_module = math_pymod.bind(py);
+            let random_module = random_pymod.bind(py);
+            let datetime_module = datetime_pymod.bind(py);
+            let py_row = py_row_obj.bind(py);
+
             let batch_globals = PyDict::new(py);
             let batch_locals = PyDict::new(py);
-            let user_helpers = PyModule::from_code(
-                py,
-                &user_helpers_code,
-                &user_helpers_filename,
-                &user_helpers_module_name,
-            )?;
+
             batch_globals.set_item(intern!(py, "qsv_uh"), user_helpers)?;
+            batch_globals.set_item(intern!(py, "__builtins__"), builtins)?;
+            batch_globals.set_item(intern!(py, "math"), math_module)?;
+            batch_globals.set_item(intern!(py, "random"), random_module)?;
+            batch_globals.set_item(intern!(py, "datetime"), datetime_module)?;
 
-            // Global imports
-            let builtins = PyModule::import(py, "builtins")?;
-            let math_module = PyModule::import(py, "math")?;
-            let random_module = PyModule::import(py, "random")?;
-            let datetime_module = PyModule::import(py, "datetime")?;
-
-            batch_globals.set_item("__builtins__", builtins)?;
-            batch_globals.set_item("math", math_module)?;
-            batch_globals.set_item("random", random_module)?;
-            batch_globals.set_item("datetime", datetime_module)?;
-
-            let py_row = helpers
-                .getattr("QSVRow")?
-                .call1((headers.iter().collect::<Vec<&str>>(),))?;
-
-            batch_locals.set_item("col", &py_row)?;
+            batch_locals.set_item(intern!(py, "col"), py_row)?;
 
             let error_result = intern!(py, "<ERROR>");
 
-            for record in batch_ref.iter_mut() {
+            for record in batch.iter_mut() {
                 row_number += 1;
 
-                // Initializing locals
-                let mut row_data: Vec<&str> = Vec::with_capacity(headers_len);
+                // Tolerate jagged rows: short records yield "" via unwrap_or_default,
+                // and any cells beyond headers_len are ignored by .take().
+                for (i, key) in header_vec.iter().enumerate().take(headers_len) {
+                    let cell_value = record.get(i).unwrap_or_default();
+                    batch_locals.set_item(key, cell_value)?;
+                }
 
-                // assert so the record.get() below skips bounds check
-                assert!(record.len() == headers_len);
-                header_vec
-                    .iter()
-                    .enumerate()
-                    .take(headers_len)
-                    .for_each(|(i, key)| {
-                        let cell_value = record.get(i).unwrap_or_default();
-                        let _ = batch_locals.set_item(key, cell_value).map_err(|e| {
-                            error_count += 1;
-                            if debug_flag {
-                                log::error!(
-                                    "Failed to set item in batch_locals: {row_number}-{e:?}"
-                                );
-                            }
-                        });
-                        row_data.push(cell_value);
-                    });
-
+                // Build the row's argument list directly into a PyList (one Python
+                // allocation, no intermediate Rust Vec) so the &str borrows on
+                // `record` are released before push_field/write_record below.
+                let row_data = PyList::new(
+                    py,
+                    (0..headers_len).map(|i| record.get(i).unwrap_or_default()),
+                )?;
                 py_row.call_method1(intern!(py, "_update_underlying_data"), (row_data,))?;
 
                 let result =
@@ -414,7 +444,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     let result = helpers
                         .getattr(intern!(py, "cast_as_bool"))?
                         .call1((result,))?;
-                    let include_record: bool = result.extract().unwrap_or(false);
+                    let include_record: bool = result.extract()?;
 
                     if include_record && let Err(e) = wtr.write_record(&*record) {
                         return Err(pyo3::PyErr::new::<pyo3::exceptions::PyIOError, _>(format!(

@@ -64,7 +64,7 @@ fn safenames_always() {
             svec![
                 "col1",
                 // not valid in postgres
-                "This is a column with invalid chars!# and leading & trailing spaces",
+                " This is a column with invalid chars!# and leading & trailing spaces ",
                 "",
                 // postgres allows for embedded spaces
                 "this is already a Postgres Safe Column",

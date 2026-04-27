@@ -63,10 +63,12 @@ Usage:
     qsv safenames --help
 
 safenames options:
-    --mode <mode>          Rename header names to "safe" names — i.e. guaranteed
-                           "database-ready" names. The mode is selected by the
-                           FIRST character of the value, and case matters:
-
+    --mode <mode>          Rename header names to "safe" names — guaranteed
+                           "database-ready" names. Mode is selected by the FIRST
+                           character: c/C conditional, a/A always, v verify,
+                           V Verbose, j JSON, J pretty JSON (case matters for
+                           v vs V and j vs J; --mode verbose maps to 'v', NOT V).
+                           Mode details:
                              c, C  - conditional. Check first before renaming;
                                      preserves "quoted identifiers" (mixed case
                                      with embedded spaces).
@@ -76,9 +78,6 @@ safenames options:
                                      count, duplicates, unsafe & safe headers.
                              j     - JSON. Verbose data as minified JSON to stdout.
                              J     - Pretty JSON. Verbose data as pretty-printed JSON.
-
-                           Note: --mode verbose maps to first-char 'v' (Verify),
-                           NOT Verbose — pass the literal 'V' to get Verbose.
                            Quoted identifiers are only treated as safe in
                            conditional mode; verify, Verbose, and the JSON modes
                            flag them as unsafe.
@@ -211,6 +210,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         for (i, header_name) in noquote_headers.iter().enumerate() {
             *counts.entry(header_name.to_string()).or_insert(0) += 1;
             if safe_headers[i] == header_name {
+                // safe_headers is deduped by name (we only display each safe
+                // name once) while unsafe_headers below records every offending
+                // position so the count matches always-mode's changed_count —
+                // hence a duplicated header (e.g. 5x "col1") shows up once in
+                // safe and four times in unsafe.
                 if seen_safe.insert(header_name.to_string()) {
                     safenames_vec.push(header_name.to_string());
                 }

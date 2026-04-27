@@ -1658,6 +1658,12 @@ pub fn safe_header_names(
             // Trim the base so that base + "_<n>" stays within the 60-char
             // limit; otherwise the pre-truncated `safe_name` plus suffix could
             // overflow (e.g. safe_name=60 chars + "_2" → 62 chars).
+            // Note: when two distinct long source headers share the same
+            // first `base_max` chars, they'll share the suffix counter — i.e.
+            // the second header's first occurrence may be `_3` rather than
+            // `_2`. This is intentional: the trimmed prefix is the actual
+            // identifier downstream consumers see, so collisions in that
+            // namespace must be disambiguated, not the original header's.
             let suffix = format!("_{sequence_suffix}");
             let suffix_chars = suffix.chars().count();
             let base_max = 60_usize.saturating_sub(suffix_chars);

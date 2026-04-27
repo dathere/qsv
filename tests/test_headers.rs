@@ -156,6 +156,25 @@ fn headers_trim() {
 }
 
 #[test]
+fn headers_trim_tabs() {
+    let wrk = Workdir::new("headers_trim_tabs");
+
+    // headers with leading/trailing tabs and spaces (unquoted to avoid
+    // post-quote whitespace-handling quirks in CSV parsers)
+    wrk.create_from_string("data.csv", "\ta\t, b ,\tc \nx,y,z\n");
+
+    let mut cmd = wrk.command("headers");
+    cmd.arg("--trim").arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = "\
+1   a
+2   b
+3   c";
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn headers_multiple() {
     let (wrk, mut cmd) = setup("headers_multiple");
     cmd.arg("in2.csv");
@@ -183,6 +202,19 @@ fn headers_multiple_just_count() {
 fn headers_intersect() {
     let (wrk, mut cmd) = setup("headers_intersect");
     cmd.arg("in2.csv").arg("--intersect");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = "\
+h1
+h2
+h3";
+    assert_eq!(got, expected.to_string());
+}
+
+#[test]
+fn headers_union() {
+    let (wrk, mut cmd) = setup("headers_union");
+    cmd.arg("in2.csv").arg("--union");
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "\

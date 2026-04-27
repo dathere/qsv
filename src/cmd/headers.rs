@@ -5,7 +5,7 @@ These names can be used in commands like 'select' to refer to columns in the
 CSV data.
 
 Note that multiple CSV files may be given to this command. This is useful with
-the --intersect flag.
+the --union (a.k.a. --intersect) flag.
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_headers.rs.
 
@@ -27,11 +27,14 @@ headers options:
                            This is automatically enabled if more than one
                            input is given.
     -J, --just-count       Only show the number of headers.
-    --intersect            Shows the union of headers across all inputs
-                           (deduplicated). The flag is named --intersect
-                           for historical reasons; it does not compute a
-                           true set intersection.
-    --trim                 Trim space & quote characters from header name.
+    --union                Shows the union of headers across all inputs
+                           (deduplicated).
+    --intersect            Alias for --union, kept for backward compatibility.
+                           Despite its name, it does not compute a true set
+                           intersection; it is the original (misnamed) form
+                           of --union.
+    --trim                 Trim leading/trailing space, tab, and quote
+                           characters from header name.
 
 Common options:
     -h, --help             Display this message
@@ -52,6 +55,7 @@ struct Args {
     flag_just_names: bool,
     flag_just_count: bool,
     flag_intersect:  bool,
+    flag_union:      bool,
     flag_trim:       bool,
     flag_delimiter:  Option<Delimiter>,
 }
@@ -72,11 +76,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if num_inputs > 1 {
         args.flag_just_names = true;
     }
+    let dedup = args.flag_union || args.flag_intersect;
     let mut headers: Vec<Vec<u8>> = vec![];
     for conf in configs {
         let mut rdr = conf.reader()?;
         for header in rdr.byte_headers()? {
-            if !args.flag_intersect || !headers.iter().any(|h| h.as_slice() == header) {
+            if !dedup || !headers.iter().any(|h| h.as_slice() == header) {
                 headers.push(header.to_vec());
             }
         }
@@ -96,10 +101,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
             if args.flag_trim {
                 let mut h: &[u8] = header;
-                while matches!(h.first(), Some(b'"' | b' ')) {
+                while matches!(h.first(), Some(b'"' | b' ' | b'\t')) {
                     h = &h[1..];
                 }
-                while matches!(h.last(), Some(b'"' | b' ')) {
+                while matches!(h.last(), Some(b'"' | b' ' | b'\t')) {
                     h = &h[..h.len() - 1];
                 }
                 wtr.write_all(h)?;

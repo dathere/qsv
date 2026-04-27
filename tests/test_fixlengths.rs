@@ -338,6 +338,90 @@ fn fixlengths_remove_empty_all_empty_columns() {
 }
 
 #[test]
+fn fixlengths_remove_empty_first_row_narrow() {
+    // Regression: prior to fix, col_is_empty_vec was sized from the first
+    // record only, so a wider later record caused an index out of bounds
+    // panic (debug) or undefined behavior (release).
+    let rows = vec![
+        svec!["a", "b"],
+        svec!["c", "d", "", "", "e"],
+        svec!["f", "g", "", "", "h"],
+    ];
+
+    let wrk = Workdir::new("fixlengths_remove_empty_first_row_narrow").flexible(true);
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("fixlengths");
+    cmd.arg("in.csv").args(["-r"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["a", "b", ""],
+            svec!["c", "d", "e"],
+            svec!["f", "g", "h"],
+        ]
+    );
+}
+
+#[test]
+fn fixlengths_remove_empty_jagged_no_universal_empty() {
+    // Mixed-width input with no universally-empty column: the filter is a
+    // no-op and the auto-detected length is the widest record.
+    let rows = vec![
+        svec!["a", "b"],
+        svec!["c", "", "d"],
+        svec!["e", "f", "g", "h", "i"],
+    ];
+
+    let wrk = Workdir::new("fixlengths_remove_empty_jagged_no_universal_empty").flexible(true);
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("fixlengths");
+    cmd.arg("in.csv").args(["-r"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["a", "b", "", "", ""],
+            svec!["c", "", "d", "", ""],
+            svec!["e", "f", "g", "h", "i"],
+        ]
+    );
+}
+
+#[test]
+fn prop_fixlengths_remove_empty() {
+    // Quickcheck variant of prop_fixlengths_all_maxlen exercising flexible
+    // input with --remove-empty. Verifies no panic and that all output rows
+    // share the same width.
+    fn p(rows: Vec<CsvRecord>) -> TestResult {
+        if rows.is_empty() {
+            return TestResult::discard();
+        }
+
+        let wrk = Workdir::new("fixlengths_remove_empty_prop").flexible(true);
+        wrk.create("in.csv", rows);
+
+        let mut cmd = wrk.command("fixlengths");
+        cmd.arg("in.csv").args(["-r"]);
+
+        let got: Vec<CsvRecord> = wrk.read_stdout(&mut cmd);
+        if got.is_empty() {
+            return TestResult::discard();
+        }
+        let got_len = got.iter().map(|r| r.len()).max().unwrap();
+        for r in &got {
+            assert_eq!(r.len(), got_len);
+        }
+        TestResult::passed()
+    }
+    qcheck(p as fn(Vec<CsvRecord>) -> TestResult);
+}
+
+#[test]
 fn fixlengths_remove_empty_with_negative_insert() {
     let rows = vec![
         svec!["a", "", "c", "", "e"],

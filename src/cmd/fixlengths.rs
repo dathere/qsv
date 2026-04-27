@@ -80,18 +80,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // First determine if we need to identify existing empty columns
     let col_is_empty_vec_opt = if args.flag_remove_empty {
-        // First pass: identify existing empty columns
+        // First pass: identify universally-empty columns. The vector grows
+        // with the widest record seen, since the reader is flexible and
+        // records may have varying widths.
         let mut rdr = config.reader()?;
         let mut record = csv::ByteRecord::new();
         let mut col_is_empty_vec: Vec<bool> = Vec::new();
-        let mut first = true;
 
         while rdr.read_byte_record(&mut record)? {
-            if first {
-                col_is_empty_vec = vec![true; record.len()];
-                first = false;
+            if record.len() > col_is_empty_vec.len() {
+                col_is_empty_vec.resize(record.len(), true);
             }
-
             for (i, field) in record.iter().enumerate() {
                 if !field.is_empty() {
                     col_is_empty_vec[i] = false;
@@ -120,25 +119,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut rdr = config.reader()?;
         let mut record = csv::ByteRecord::new();
         let mut maxlen = 0_usize;
-        // Get reference to vector indicating which columns are empty
         let col_is_empty_vec = col_is_empty_vec_opt.as_ref().unwrap();
 
         while rdr.read_byte_record(&mut record)? {
-            // For each record, count how many fields would remain after filtering
-            // out the empty columns. We use get_unchecked since we know i is in bounds.
+            // col_is_empty_vec covers the widest record observed in pass 1, so
+            // every i < record.len() is in bounds — no need for get_unchecked.
             let filtered_len = record
                 .iter()
                 .enumerate()
-                .filter(|(i, _)| unsafe { !*col_is_empty_vec.get_unchecked(*i) })
+                .filter(|(i, _)| !col_is_empty_vec[*i])
                 .count();
-            // Keep track of maximum filtered length seen so far
             maxlen = cmp::max(maxlen, filtered_len);
         }
         maxlen
     } else {
         if config.is_stdin() {
             return fail_incorrectusage_clierror!(
-                "<stdin> cannot be used with if --length is not set. Please specify a file path."
+                "<stdin> cannot be used when --length is not set. Please specify a file path."
             );
         }
         let mut maxlen = 0_usize;
@@ -161,64 +158,55 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut record = csv::ByteRecord::new();
     let mut record_work = csv::ByteRecord::new();
     let mut filtered_record = csv::ByteRecord::new();
-    let mut field_idx: i16;
 
-    let flag_insert = args.flag_insert;
-
-    let insert_pos = if flag_insert < 0 {
-        length as i16 + flag_insert
+    // Widen to isize so `length + flag_insert` doesn't silently truncate when
+    // the auto-detected length exceeds i16::MAX (e.g. very wide CSVs).
+    let flag_insert = args.flag_insert as isize;
+    let insert_pos: isize = if flag_insert < 0 {
+        length as isize + flag_insert
     } else {
         flag_insert
     };
 
-    let mut current_len: usize;
     while rdr.read_byte_record(&mut record)? {
-        // First remove existing empty columns if needed
+        // First remove existing empty columns if needed.
         if let Some(ref is_empty) = col_is_empty_vec_opt {
             filtered_record.clear();
             for (i, field) in record.iter().enumerate() {
-                if i < is_empty.len() && !is_empty[i] {
+                // is_empty covers the widest record seen in pass 1.
+                if !is_empty[i] {
                     filtered_record.push_field(field);
                 }
             }
-            record.clone_from(&filtered_record);
+            std::mem::swap(&mut record, &mut filtered_record);
         }
 
-        // Then handle length adjustments by comparing target length with current record length
-        current_len = record.len();
-        match length.cmp(&current_len) {
-            std::cmp::Ordering::Greater => {
-                // Record is too short - need to add empty fields
-                if flag_insert == 0 {
-                    // No insert position specified - append empty fields at end
-                    record.extend((0..length - current_len).map(|_| b""));
-                } else {
-                    // Insert empty fields at specified position
-                    record_work.clear();
-                    field_idx = 1_i16;
-                    for field in &record {
-                        if field_idx == insert_pos {
-                            // When we reach insert position, add all needed empty fields
-                            record_work.extend((0..length - current_len).map(|_| b""));
-                        }
-                        record_work.push_field(field);
-                        field_idx += 1;
+        // Then handle length adjustments by comparing target length with current record length.
+        let current_len = record.len();
+        if length > current_len {
+            // Record is too short - need to add empty fields.
+            if flag_insert == 0 {
+                // No insert position specified - append empty fields at end.
+                record.extend((0..length - current_len).map(|_| b""));
+            } else {
+                // Insert empty fields at specified position.
+                record_work.clear();
+                for (field_idx, field) in (1_isize..).zip(&record) {
+                    if field_idx == insert_pos {
+                        // When we reach insert position, add all needed empty fields.
+                        record_work.extend((0..length - current_len).map(|_| b""));
                     }
-                    if record_work.len() < length {
-                        // If we never hit insert position (it was past end of record),
-                        // append remaining empty fields at the end
-                        record_work.extend((0..length - record_work.len()).map(|_| b""));
-                    }
-                    record.clone_from(&record_work);
+                    record_work.push_field(field);
                 }
-            },
-            std::cmp::Ordering::Less => {
-                // Record is too long - truncate to target length
-                record.truncate(length);
-            },
-            std::cmp::Ordering::Equal => {
-                // Record is already correct length - no changes needed
-            },
+                if record_work.len() < length {
+                    // Insert position was past end of record - pad at the end.
+                    record_work.extend((0..length - record_work.len()).map(|_| b""));
+                }
+                std::mem::swap(&mut record, &mut record_work);
+            }
+        } else if length < current_len {
+            // Record is too long - truncate to target length.
+            record.truncate(length);
         }
         wtr.write_byte_record(&record)?;
     }

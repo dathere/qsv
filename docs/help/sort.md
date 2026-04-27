@@ -39,7 +39,7 @@ qsv sort --help
 | &nbsp;`‑N,`<br>`‑‑numeric`&nbsp; | flag | Compare according to string numerical value |  |
 | &nbsp;`‑‑natural`&nbsp; | flag | Compare strings using natural sort order (treats numbers within strings as actual numbers, e.g. "data1.txt", "data2.txt", "data10.txt", as opposed to "data1.txt", "data10.txt", "data2.txt" when sorting lexicographically) <https://en.wikipedia.org/wiki/Natural_sort_order> When combined with --numeric, --natural takes precedence. |  |
 | &nbsp;`‑R,`<br>`‑‑reverse`&nbsp; | flag | Reverse order |  |
-| &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | Compare strings disregarding case. Has no effect when numeric comparison is used (numbers are case-less). |  |
+| &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | Compare strings disregarding case. Has no effect when numeric comparison is selected (i.e. when --numeric is used without --natural). |  |
 | &nbsp;`‑u,`<br>`‑‑unique`&nbsp; | flag | When set, identical consecutive lines will be dropped to keep only one line per sorted value. The same comparison mode used to sort the input is also used here, so unique-equality always agrees with the sort. |  |
 
 <a name="random-sorting-options"></a>
@@ -48,7 +48,7 @@ qsv sort --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑random`&nbsp; | flag | Randomize (scramble) the data by row. When set, the comparison flags (numeric, natural, reverse, ignore-case) are ignored for the shuffle itself, but still apply to unique-filtering if --unique is also set. |  |
+| &nbsp;`‑‑random`&nbsp; | flag | Randomize (scramble) the data by row. When set, the numeric, natural, and ignore-case comparison flags still apply to unique-filtering (if --unique is also set). The reverse flag has no effect on unique-filter equality and is ignored for the shuffle itself. |  |
 | &nbsp;`‑‑seed`&nbsp; | string | Random Number Generator (RNG) seed to use if --random is set |  |
 | &nbsp;`‑‑rng`&nbsp; | string | The RNG algorithm to use if --random is set. | `standard` |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |

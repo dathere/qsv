@@ -33,10 +33,12 @@ sort options:
 
                             RANDOM SORTING OPTIONS:
     --random                Randomize (scramble) the data by row.
-                            When set, the comparison flags (numeric,
-                            natural, reverse, ignore-case) are ignored
-                            for the shuffle itself, but still apply to
-                            unique-filtering if --unique is also set.
+                            When set, the numeric, natural, and
+                            ignore-case comparison flags still apply
+                            to unique-filtering (if --unique is also
+                            set). The reverse flag has no effect on
+                            unique-filter equality and is ignored for
+                            the shuffle itself.
     --seed <number>         Random Number Generator (RNG) seed to use if --random is set
     --rng <kind>            The RNG algorithm to use if --random is set.
                             Three RNGs are supported:

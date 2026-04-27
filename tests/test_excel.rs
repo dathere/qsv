@@ -457,8 +457,9 @@ fn excel_invalid_sheet_neg_index() {
     cmd.arg("--sheet").arg("-100").arg(xls_file);
 
     let got = wrk.output_stderr(&mut cmd);
-    let expected = "5 2-column rows exported from \"Last\" sheet\n".to_string();
+    let expected = "usage error: negative sheet index -100 is out of range for 8 sheets\n";
     assert_eq!(got, expected);
+    wrk.assert_err(&mut cmd);
 }
 
 #[test]
@@ -552,9 +553,9 @@ fn excel_metadata() {
         svec![
             "0",
             "First",
-            "[\"URL\", \"City\"]",
             "WorkSheet",
             "Visible",
+            "[\"URL\", \"City\"]",
             "2",
             "4",
             "[\"URL\", \"City\"]",
@@ -566,9 +567,9 @@ fn excel_metadata() {
         svec![
             "1",
             "Flexibility Test",
-            "[\"URL\", \"City\", \"\"]",
             "WorkSheet",
             "Visible",
+            "[\"URL\", \"City\", \"\"]",
             "3",
             "6",
             "[\"URL\", \"City\"]",
@@ -580,9 +581,9 @@ fn excel_metadata() {
         svec![
             "2",
             "Middle",
-            "[\"Middle sheet col1\", \"Middle-2\"]",
             "WorkSheet",
             "Visible",
+            "[\"Middle sheet col1\", \"Middle-2\"]",
             "2",
             "6",
             "[\"Middle sheet col1\", \"Middle-2\"]",
@@ -594,9 +595,9 @@ fn excel_metadata() {
         svec![
             "3",
             "Sheet1",
-            "[]",
             "WorkSheet",
             "Visible",
+            "[]",
             "0",
             "0",
             "[]",
@@ -608,9 +609,9 @@ fn excel_metadata() {
         svec![
             "4",
             "trim test",
-            "[\"col1\", \"   col2\", \"col3\"]",
             "WorkSheet",
             "Visible",
+            "[\"col1\", \"   col2\", \"col3\"]",
             "3",
             "6",
             "[\"col1\", \"col3\"]",
@@ -622,9 +623,9 @@ fn excel_metadata() {
         svec![
             "5",
             "date test",
-            "[\"date_col\", \"num_col\", \"col_Petsa\", \"just another col\"]",
             "WorkSheet",
             "Visible",
+            "[\"date_col\", \"num_col\", \"col_Petsa\", \"just another col\"]",
             "4",
             "6",
             "[\"date_col\", \"num_col\", \"col_Petsa\", \"just another col\"]",
@@ -636,9 +637,9 @@ fn excel_metadata() {
         svec![
             "6",
             "NoData",
-            "[\"col1\", \"col2\", \"col3\", \"col4\"]",
             "WorkSheet",
             "Visible",
+            "[\"col1\", \"col2\", \"col3\", \"col4\"]",
             "4",
             "1",
             "[\"col1\", \"col2\", \"col3\", \"col4\"]",
@@ -650,9 +651,9 @@ fn excel_metadata() {
         svec![
             "7",
             "Last",
-            "[\"Last sheet col1\", \"Last-2\"]",
             "WorkSheet",
             "Visible",
+            "[\"Last sheet col1\", \"Last-2\"]",
             "2",
             "6",
             "[\"Last sheet col1\", \"Last-2\"]",
@@ -965,9 +966,9 @@ fn ods_metadata() {
         svec![
             "0",
             "Sheet1",
-            "[\"URL\", \"City\"]",
             "WorkSheet",
             "Visible",
+            "[\"URL\", \"City\"]",
             "2",
             "4",
             "[\"URL\", \"City\"]",
@@ -1056,9 +1057,9 @@ fn excel_metadata_sheet_types() {
         svec![
             "0",
             "Visible",
-            "[\"1\", \"2\"]",
             "WorkSheet",
             "Visible",
+            "[\"1\", \"2\"]",
             "2",
             "5",
             "[]",
@@ -1070,9 +1071,9 @@ fn excel_metadata_sheet_types() {
         svec![
             "1",
             "Hidden",
-            "[\"1\", \"2\"]",
             "WorkSheet",
             "Hidden",
+            "[\"1\", \"2\"]",
             "2",
             "3",
             "[]",
@@ -1084,9 +1085,9 @@ fn excel_metadata_sheet_types() {
         svec![
             "2",
             "VeryHidden",
-            "[]",
             "WorkSheet",
             "VeryHidden",
+            "[]",
             "0",
             "0",
             "[]",
@@ -1098,9 +1099,9 @@ fn excel_metadata_sheet_types() {
         svec![
             "3",
             "Chart",
-            "[\"1\", \"2\"]",
             "ChartSheet",
             "Visible",
+            "[\"1\", \"2\"]",
             "2",
             "3",
             "[]",
@@ -1142,9 +1143,9 @@ fn excel_metadata_sheet_types_xlsx() {
         svec![
             "0",
             "Visible",
-            "[\"1\", \"2\"]",
             "WorkSheet",
             "Visible",
+            "[\"1\", \"2\"]",
             "2",
             "5",
             "[]",
@@ -1156,9 +1157,9 @@ fn excel_metadata_sheet_types_xlsx() {
         svec![
             "1",
             "Hidden",
-            "[]",
             "WorkSheet",
             "Hidden",
+            "[]",
             "0",
             "0",
             "[]",
@@ -1170,9 +1171,9 @@ fn excel_metadata_sheet_types_xlsx() {
         svec![
             "2",
             "VeryHidden",
-            "[]",
             "WorkSheet",
             "VeryHidden",
+            "[]",
             "0",
             "0",
             "[]",
@@ -1185,9 +1186,9 @@ fn excel_metadata_sheet_types_xlsx() {
         svec![
             "3",
             "Chart",
-            "[]",
             "ChartSheet",
             "Visible",
+            "[]",
             "0",
             "0",
             "[]",
@@ -1244,9 +1245,9 @@ fn excel_metadata_sheet_types_xlsb() {
         svec![
             "0",
             "Visible",
-            "[\"1\", \"2\"]",
             "WorkSheet",
             "Visible",
+            "[\"1\", \"2\"]",
             "2",
             "5",
             "[]",
@@ -1258,9 +1259,9 @@ fn excel_metadata_sheet_types_xlsb() {
         svec![
             "1",
             "Hidden",
-            "[]",
             "WorkSheet",
             "Hidden",
+            "[]",
             "0",
             "0",
             "[]",
@@ -1272,9 +1273,9 @@ fn excel_metadata_sheet_types_xlsb() {
         svec![
             "2",
             "VeryHidden",
-            "[]",
             "WorkSheet",
             "VeryHidden",
+            "[]",
             "0",
             "0",
             "[]",
@@ -1287,9 +1288,9 @@ fn excel_metadata_sheet_types_xlsb() {
         svec![
             "3",
             "Chart",
-            "[]",
             "ChartSheet",
             "Visible",
+            "[]",
             "0",
             "0",
             "[]",
@@ -1331,9 +1332,9 @@ fn excel_metadata_sheet_types_ods() {
         svec![
             "0",
             "Visible",
-            "[\"1\", \"2\"]",
             "WorkSheet",
             "Visible",
+            "[\"1\", \"2\"]",
             "2",
             "5",
             "[]",
@@ -1345,9 +1346,9 @@ fn excel_metadata_sheet_types_ods() {
         svec![
             "1",
             "Hidden",
-            "[]",
             "WorkSheet",
             "Hidden",
+            "[]",
             "0",
             "0",
             "[]",
@@ -1359,9 +1360,9 @@ fn excel_metadata_sheet_types_ods() {
         svec![
             "2",
             "VeryHidden",
-            "[]",
             "WorkSheet",
             "Hidden",
+            "[]",
             "0",
             "0",
             "[]",
@@ -1373,9 +1374,9 @@ fn excel_metadata_sheet_types_ods() {
         svec![
             "3",
             "Chart",
-            "[]",
             "WorkSheet",
             "Visible",
+            "[]",
             "0",
             "0",
             "[]",
@@ -1638,7 +1639,7 @@ fn excel_range_empty_sheet() {
 
     assert!(
         wrk.output_stderr(&mut cmd)
-            .matches("larger than sheet")
+            .matches("sheet is empty")
             .min()
             .is_some()
     );

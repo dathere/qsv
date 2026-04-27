@@ -17,10 +17,10 @@ qsv excel input.xlsx -d ";" > output.csv
 qsv excel --sheet "Sheet 3" input.xlsx
 
 # Export a sheet by index:
-# this exports the 3nd sheet (0-based index)
+# this exports the 3rd sheet (0-based index)
 qsv excel -s 2 input.xlsx
 
-# Export the last sheet (negative index)):
+# Export the last sheet (negative index):
 qsv excel -s -1 input.xlsx
 
 # Export the second to last sheet:
@@ -84,7 +84,7 @@ Excel options:
                                [default: 0]
     --header-row <row>         The header row. Set if other than the first non-empty row of the sheet.
     --metadata <c|s|j|J|S>     Outputs workbook metadata in CSV or JSON format:
-                                 index, sheet_name, headers, type, visible, column_count, row_count,
+                                 index, sheet_name, type, visible, headers, column_count, row_count,
                                  safe_headers, safe_headers_count, unsafe_headers, unsafe_headers_count
                                  and duplicate_headers_count, names, name_count, tables, table_count.
                                headers is a list of the first row which is presumed to be the header row.
@@ -157,7 +157,7 @@ Common options:
     -q, --quiet                Do not display export summary message.
 "#;
 
-use std::{cmp, fmt::Write, io::Read, path::PathBuf};
+use std::{fmt::Write, io::Read, path::PathBuf};
 
 use calamine::{
     Data, Error, HeaderRow, Range, Reader, SheetType, Sheets, open_workbook, open_workbook_auto,
@@ -250,7 +250,6 @@ impl From<calamine::Error> for CliError {
 }
 
 #[derive(Serialize, Deserialize)]
-
 struct NamesMetadata {
     name:    String,
     formula: String,
@@ -376,19 +375,24 @@ fn get_requested_range(
         return fail_clierror!("Invalid range format. Expected format: 'SheetName!Range'.");
     }
 
-    let sheet_name = split_range[0].to_lowercase();
-    sheet.clone_from(&sheet_name);
+    let sheet_name_lower = split_range[0].to_lowercase();
     let range_string = split_range[1].to_string();
 
-    // Find the sheet index
-    let sheet_index = sheet_names
+    // Find the sheet index (case-insensitive lookup)
+    let Some(sheet_index) = sheet_names
         .iter()
-        .position(|s| s.to_lowercase() == sheet_name)
-        .unwrap_or(usize::MAX);
+        .position(|s| s.to_lowercase() == sheet_name_lower)
+    else {
+        return fail_clierror!(
+            "Sheet \"{}\" not found in available sheets: {sheet_names:?}.",
+            split_range[0]
+        );
+    };
 
-    if sheet_index == usize::MAX {
-        return fail_clierror!("Sheet \"{sheet}\" not found in available sheets: {sheet_names:?}.");
-    }
+    // preserve the canonical (case-sensitive) sheet name from the workbook -
+    // calamine APIs like worksheet_formula are case-sensitive, and the success
+    // message should show the workbook's actual sheet name
+    sheet.clone_from(&sheet_names[sheet_index]);
 
     // Get the worksheet range
     *sheet_range = if let Some(result) = sheets.worksheet_range_at(sheet_index) {
@@ -658,12 +662,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 wtr.write_record(&metadata_record)?;
 
                 for sheetmetadata in excelmetadata_struct.sheet {
+                    // values must match the header order above:
+                    // index, sheet_name, type, visible, headers, column_count, row_count,
+                    // safe_headers, safe_headers_count, unsafe_headers, unsafe_headers_count,
+                    // duplicate_headers_count
                     let metadata_values = vec![
                         sheetmetadata.index.to_string(),
                         sheetmetadata.name,
-                        format!("{:?}", sheetmetadata.headers),
                         sheetmetadata.typ,
                         sheetmetadata.visible,
+                        format!("{:?}", sheetmetadata.headers),
                         sheetmetadata.column_count.to_string(),
                         sheetmetadata.row_count.to_string(),
                         format!("{:?}", sheetmetadata.safe_headers),
@@ -749,9 +757,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let mut xlsx_wb: calamine::Xlsx<_> = open_workbook(path).map_err(Error::Xlsx)?;
             xlsx_wb.load_tables().map_err(Error::Xlsx)?;
             let table_names = xlsx_wb.table_names();
+            let requested_lower = requested_table.to_lowercase();
             let mut found_table = String::new();
             for table_name in &table_names {
-                if table_name.to_lowercase() == requested_table.to_lowercase() {
+                if table_name.to_lowercase() == requested_lower {
                     found_table = (*table_name).to_string();
                     break;
                 }
@@ -792,14 +801,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             } else {
                 // if its a negative number, start from the end
                 // i.e -1 is the last sheet; -2 = 2nd to last sheet
-                sheet_names[cmp::max(
-                    0,
-                    cmp::min(
-                        sheet_count - 1,
-                        sheet_count.abs_diff(sheet_index.unsigned_abs() as usize),
-                    ),
-                )]
-                .to_string()
+                let abs_index = sheet_index.unsigned_abs() as usize;
+                if abs_index == 0 || abs_index > sheet_count {
+                    return fail_incorrectusage_clierror!(
+                        "negative sheet index {sheet_index} is out of range for {sheet_count} \
+                         sheet{}",
+                        if sheet_count == 1 { "" } else { "s" }
+                    );
+                }
+                sheet_names[sheet_count - abs_index].to_string()
             }
         } else {
             // failing all else, get the first sheet
@@ -880,9 +890,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // if there is no colon, we treat it as a named range
                 let wb = open_workbook_auto(path)?;
                 let named_ranges = wb.defined_names();
+                let requested_lower = requested_range.to_lowercase();
                 let mut found_range = String::new();
                 for named_range in named_ranges {
-                    if named_range.0.to_lowercase() == requested_range.to_lowercase() {
+                    if named_range.0.to_lowercase() == requested_lower {
                         found_range = named_range.1.to_string();
                         break;
                     }
@@ -903,14 +914,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 RequestedRange::from_string(&range_str, sheet_range.get_size())?
             };
             info!("parsed_range: {parsed_range:?}");
-            let range_result = if parsed_range.start < sheet_range.start().unwrap_or((0, 0))
-                || parsed_range.end > sheet_range.end().unwrap_or((0, 0))
-            {
-                return fail_clierror!(
-                    "Cannot retrieve range \"{requested_range}\": larger than sheet"
-                );
-            } else {
-                sheet_range.range(parsed_range.start, parsed_range.end)
+            let range_result = match (sheet_range.start(), sheet_range.end()) {
+                (Some(start), Some(end)) => {
+                    if parsed_range.start < start || parsed_range.end > end {
+                        return fail_clierror!(
+                            "Cannot retrieve range \"{requested_range}\": larger than sheet"
+                        );
+                    }
+                    sheet_range.range(parsed_range.start, parsed_range.end)
+                },
+                _ => {
+                    return fail_clierror!(
+                        "Cannot retrieve range \"{requested_range}\" from sheet \"{sheet}\": \
+                         sheet is empty"
+                    );
+                },
             };
             if range_result.is_empty() {
                 return fail_clierror!(
@@ -1041,19 +1059,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         Data::String(s) => record.push_field(s),
                         Data::Int(i) => record.push_field(itoa_buf.format(*i)),
                         Data::Float(float_val) => {
-                            // push the zmij-formatted float value if its
-                            // not an integer or the candidate
-                            // integer is too big or too small to be an i64
-                            #[allow(clippy::cast_precision_loss)]
-                            if float_val.fract().abs() > f64::EPSILON
-                                || *float_val > i64::MAX as f64
-                                || *float_val < i64::MIN as f64
+                            // Emit as integer only when the value is finite, integer-valued,
+                            // and strictly inside i64 bounds. Note: `i64::MAX as f64` rounds *up*
+                            // past i64::MAX, so a strict `<` against it correctly excludes 2^63.
+                            // `i64::MIN as f64` is exactly representable, so `>=` is correct.
+                            #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+                            if float_val.is_finite()
+                                && *float_val >= (i64::MIN as f64)
+                                && *float_val < (i64::MAX as f64)
+                                && float_val.fract() == 0.0
                             {
-                                record.push_field(zmij_buf.format_finite(*float_val));
-                            } else {
                                 // its an i64 integer. We can't use zmij to format it, because it
                                 // will be formatted as a float (have a ".0"). So we use itoa.
                                 record.push_field(itoa_buf.format(*float_val as i64));
+                            } else if float_val.is_finite() {
+                                record.push_field(zmij_buf.format_finite(*float_val));
+                            } else {
+                                // NaN / +Inf / -Inf: zmij::format_finite would be UB, so fall back
+                                // to the standard Display impl.
+                                record.push_field(&float_val.to_string());
                             }
                         },
                         Data::DateTime(edt) => {

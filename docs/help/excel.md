@@ -44,13 +44,13 @@ qsv excel --sheet "Sheet 3" input.xlsx
 ```
 
 > Export a sheet by index:
-> this exports the 3nd sheet (0-based index)
+> this exports the 3rd sheet (0-based index)
 
 ```console
 qsv excel -s 2 input.xlsx
 ```
 
-> Export the last sheet (negative index)):
+> Export the last sheet (negative index):
 
 ```console
 qsv excel -s -1 input.xlsx
@@ -167,7 +167,7 @@ qsv excel --help
 |--------|------|-------------|--------|
 | &nbsp;`‑s,`<br>`‑‑sheet`&nbsp; | string | Name (case-insensitive) or zero-based index of sheet to export. Negative indices start from the end (-1 = last sheet). If the sheet cannot be found, qsv will read the first sheet. | `0` |
 | &nbsp;`‑‑header‑row`&nbsp; | string | The header row. Set if other than the first non-empty row of the sheet. |  |
-| &nbsp;`‑‑metadata`&nbsp; | string | Outputs workbook metadata in CSV or JSON format: index, sheet_name, headers, type, visible, column_count, row_count, safe_headers, safe_headers_count, unsafe_headers, unsafe_headers_count and duplicate_headers_count, names, name_count, tables, table_count. headers is a list of the first row which is presumed to be the header row. type is the sheet type (WorkSheet, DialogSheet, MacroSheet, ChartSheet, Vba). visible is the sheet visibility (Visible, Hidden, VeryHidden). row_count includes all rows, including the first row. safe_headers is a list of headers with "safe"(PostgreSQL-ready) names. unsafe_headers is a list of headers with "unsafe" names. duplicate_headers_count is a count of duplicate header names. names is a list of defined names in the workbook, with the associated formula. name_count is the number of defined names in the workbook. tables is a list of tables in the workbook, along with the sheet where the table is found, the columns and the column_count.  (XLSX only) table_count is the number of tables in the workbook.  (XLSX only) | `none` |
+| &nbsp;`‑‑metadata`&nbsp; | string | Outputs workbook metadata in CSV or JSON format: index, sheet_name, type, visible, headers, column_count, row_count, safe_headers, safe_headers_count, unsafe_headers, unsafe_headers_count and duplicate_headers_count, names, name_count, tables, table_count. headers is a list of the first row which is presumed to be the header row. type is the sheet type (WorkSheet, DialogSheet, MacroSheet, ChartSheet, Vba). visible is the sheet visibility (Visible, Hidden, VeryHidden). row_count includes all rows, including the first row. safe_headers is a list of headers with "safe"(PostgreSQL-ready) names. unsafe_headers is a list of headers with "unsafe" names. duplicate_headers_count is a count of duplicate header names. names is a list of defined names in the workbook, with the associated formula. name_count is the number of defined names in the workbook. tables is a list of tables in the workbook, along with the sheet where the table is found, the columns and the column_count.  (XLSX only) table_count is the number of tables in the workbook.  (XLSX only) | `none` |
 | &nbsp;`‑‑table`&nbsp; | string | An Excel table (case-insensitive) to extract to a CSV. Only valid for XLSX files. The --sheet option is ignored as a table could be in any sheet. Overrides --range option. |  |
 | &nbsp;`‑‑range`&nbsp; | string | An Excel format range - like RangeName, C:T, C3:T25 or 'Sheet1!C3:T25' to extract to the CSV. If the specified range contains the required sheet, the --sheet option is ignored. If the range is not found, qsv will exit with an error. |  |
 | &nbsp;`‑‑cell`&nbsp; | string | A single cell reference - like C3 or 'Sheet1!C3' to extract. This is a convenience option equivalent to --range C3:C3. If both --cell and --range are specified, --cell takes precedence. |  |

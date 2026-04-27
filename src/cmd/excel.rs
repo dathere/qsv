@@ -339,6 +339,27 @@ impl RequestedRange {
     }
 }
 
+/// If `value` is a finite, integer-valued f64 that fits exactly in i64, return it as i64.
+/// Otherwise (non-finite, non-integer, or out-of-range), return None.
+///
+/// Note: `i64::MAX as f64` rounds *up* past `i64::MAX` (the next f64 below 2^63 is
+/// `2^63 - 2^11 = 9_223_372_036_854_774_784`), so the upper bound must be a strict `<`
+/// to exclude 2^63 — a saturating `as i64` cast would silently emit `i64::MAX` for that
+/// value. `i64::MIN` is exactly representable as f64, so `>=` is correct on the lower end.
+#[inline]
+fn float_to_i64_safe(value: f64) -> Option<i64> {
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+    if value.is_finite()
+        && value >= (i64::MIN as f64)
+        && value < (i64::MAX as f64)
+        && value.fract() == 0.0
+    {
+        Some(value as i64)
+    } else {
+        None
+    }
+}
+
 /// Parses and validates the requested range for a specific sheet in an Excel workbook.
 ///
 /// # Arguments
@@ -800,9 +821,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
             } else {
                 // if its a negative number, start from the end
-                // i.e -1 is the last sheet; -2 = 2nd to last sheet
+                // i.e -1 is the last sheet; -2 = 2nd to last sheet.
+                // sheet_index is < 0 here, so unsigned_abs() is always >= 1.
                 let abs_index = sheet_index.unsigned_abs() as usize;
-                if abs_index == 0 || abs_index > sheet_count {
+                if abs_index > sheet_count {
                     return fail_incorrectusage_clierror!(
                         "negative sheet index {sheet_index} is out of range for {sheet_count} \
                          sheet{}",
@@ -1059,19 +1081,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         Data::String(s) => record.push_field(s),
                         Data::Int(i) => record.push_field(itoa_buf.format(*i)),
                         Data::Float(float_val) => {
-                            // Emit as integer only when the value is finite, integer-valued,
-                            // and strictly inside i64 bounds. Note: `i64::MAX as f64` rounds *up*
-                            // past i64::MAX, so a strict `<` against it correctly excludes 2^63.
-                            // `i64::MIN as f64` is exactly representable, so `>=` is correct.
-                            #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
-                            if float_val.is_finite()
-                                && *float_val >= (i64::MIN as f64)
-                                && *float_val < (i64::MAX as f64)
-                                && float_val.fract() == 0.0
-                            {
+                            if let Some(as_i64) = float_to_i64_safe(*float_val) {
                                 // its an i64 integer. We can't use zmij to format it, because it
                                 // will be formatted as a float (have a ".0"). So we use itoa.
-                                record.push_field(itoa_buf.format(*float_val as i64));
+                                record.push_field(itoa_buf.format(as_i64));
                             } else if float_val.is_finite() {
                                 record.push_field(zmij_buf.format_finite(*float_val));
                             } else {
@@ -1203,4 +1216,65 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::float_to_i64_safe;
+
+    #[test]
+    fn float_to_i64_safe_integer_values() {
+        assert_eq!(float_to_i64_safe(0.0), Some(0));
+        assert_eq!(float_to_i64_safe(-0.0), Some(0));
+        assert_eq!(float_to_i64_safe(1.0), Some(1));
+        assert_eq!(float_to_i64_safe(-1.0), Some(-1));
+        assert_eq!(float_to_i64_safe(42.0), Some(42));
+        assert_eq!(float_to_i64_safe(-42.0), Some(-42));
+    }
+
+    #[test]
+    fn float_to_i64_safe_min_boundary() {
+        // i64::MIN is exactly representable as f64, so it must round-trip
+        assert_eq!(float_to_i64_safe(i64::MIN as f64), Some(i64::MIN));
+    }
+
+    #[test]
+    fn float_to_i64_safe_max_boundary_off_by_rounding() {
+        // 2^63 == i64::MAX as f64 (rounds *up* past i64::MAX).
+        // The OLD `*float_val > i64::MAX as f64` check missed this, then the
+        // saturating cast silently emitted i64::MAX. Must be rejected.
+        assert_eq!(float_to_i64_safe(i64::MAX as f64), None);
+        assert_eq!(float_to_i64_safe(9_223_372_036_854_775_808.0), None);
+
+        // The largest f64 strictly less than 2^63 (= 2^63 - 2^11) should round-trip.
+        let just_under = 9_223_372_036_854_774_784.0_f64;
+        assert_eq!(
+            float_to_i64_safe(just_under),
+            Some(9_223_372_036_854_774_784)
+        );
+    }
+
+    #[test]
+    fn float_to_i64_safe_out_of_range() {
+        assert_eq!(float_to_i64_safe(1.0e30), None);
+        assert_eq!(float_to_i64_safe(-1.0e30), None);
+        // just past i64::MIN
+        assert_eq!(float_to_i64_safe((i64::MIN as f64) - 2048.0), None);
+    }
+
+    #[test]
+    fn float_to_i64_safe_non_integer() {
+        assert_eq!(float_to_i64_safe(3.14), None);
+        assert_eq!(float_to_i64_safe(0.5), None);
+        assert_eq!(float_to_i64_safe(-0.001), None);
+    }
+
+    #[test]
+    fn float_to_i64_safe_non_finite() {
+        // The CSV writer must NOT call zmij::format_finite on these (UB);
+        // None routes them to the Display fallback.
+        assert_eq!(float_to_i64_safe(f64::NAN), None);
+        assert_eq!(float_to_i64_safe(f64::INFINITY), None);
+        assert_eq!(float_to_i64_safe(f64::NEG_INFINITY), None);
+    }
 }

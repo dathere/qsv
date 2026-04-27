@@ -87,7 +87,7 @@ use std::{
 
 #[cfg(feature = "feature_capable")]
 use indicatif::{ProgressBar, ProgressDrawTarget};
-use regex::bytes::Regex;
+use regex::bytes::{NoExpand, Regex};
 use serde::Deserialize;
 
 use crate::{
@@ -108,6 +108,19 @@ struct Args {
     flag_no_headers:  bool,
     flag_delimiter:   Option<Delimiter>,
     flag_progressbar: bool,
+}
+
+/// Strip outer matching quotes if present. The splitter regex guarantees that
+/// quoted tokens have the same opening and closing quote character, so a
+/// one-byte check on each end is enough — no second regex pass.
+fn strip_outer_quotes(bytes: &[u8]) -> &[u8] {
+    if bytes.len() >= 2 {
+        let first = bytes[0];
+        if matches!(first, b'"' | b'\'' | b'`') && bytes[bytes.len() - 1] == first {
+            return &bytes[1..bytes.len() - 1];
+        }
+    }
+    bytes
 }
 
 enum DryRun {
@@ -217,8 +230,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // replace_all returns a Cow<[u8]> that lives only for this iteration —
         // no per-row allocation when there are no `{}` markers, and otherwise a
         // single owned buffer that's dropped at end of iteration.
+        // NoExpand makes the replacement byte-for-byte literal — without it,
+        // a CSV value containing `$1`, `$$`, etc. would be interpreted as a
+        // capture-group reference and mangled.
         let templated_command =
-            template_pattern.replace_all(args.arg_command.as_bytes(), current_value);
+            template_pattern.replace_all(args.arg_command.as_bytes(), NoExpand(current_value));
 
         let mut command_pieces = splitter_pattern.find_iter(&templated_command);
 
@@ -231,34 +247,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             continue;
         };
 
+        let prog_bytes = strip_outer_quotes(prog_match.as_bytes());
         #[cfg(target_family = "unix")]
-        let prog = OsStr::from_bytes(prog_match.as_bytes());
+        let prog = OsStr::from_bytes(prog_bytes);
         #[cfg(target_family = "windows")]
-        let prog = match simdutf8::basic::from_utf8(prog_match.as_bytes()) {
+        let prog = match simdutf8::basic::from_utf8(prog_bytes) {
             Ok(s) => OsString::from(s),
             Err(_) => {
                 return fail_clierror!("foreach: program path contains invalid UTF-8");
             },
         };
 
-        // Strip outer matching quotes from each subsequent token. The splitter
-        // already guarantees that quoted tokens have the same opening and
-        // closing quote character, so a one-byte check on each end is enough —
-        // no second regex pass needed.
         let cmd_args: Vec<String> = command_pieces
             .map(|piece| {
-                let bytes = piece.as_bytes();
-                let stripped = if bytes.len() >= 2 {
-                    let first = bytes[0];
-                    if matches!(first, b'"' | b'\'' | b'`') && bytes[bytes.len() - 1] == first {
-                        &bytes[1..bytes.len() - 1]
-                    } else {
-                        bytes
-                    }
-                } else {
-                    bytes
-                };
-                simdutf8::basic::from_utf8(stripped)
+                simdutf8::basic::from_utf8(strip_outer_quotes(piece.as_bytes()))
                     .unwrap_or_default()
                     .to_string()
             })

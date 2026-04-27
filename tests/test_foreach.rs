@@ -258,8 +258,13 @@ fn foreach_empty_command_errors() {
     wrk.create("data.csv", vec![svec!["name"], svec!["John"]]);
     let mut cmd = wrk.command("foreach");
     cmd.arg("name").arg("   ").arg("data.csv");
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit, got: {:?}",
+        output.status
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("cannot be empty"),
         "expected 'cannot be empty' in stderr, got: {stderr}"
@@ -274,8 +279,13 @@ fn foreach_multi_column_errors() {
     wrk.create("data.csv", vec![svec!["a", "b"], svec!["1", "2"]]);
     let mut cmd = wrk.command("foreach");
     cmd.arg("a,b").arg("echo {}").arg("data.csv");
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit, got: {:?}",
+        output.status
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("single column"),
         "expected 'single column' in stderr, got: {stderr}"
@@ -412,4 +422,48 @@ echo "ran" > '{marker_str}'
         contents.contains("ran"),
         "expected marker contents, got: {contents}"
     );
+}
+
+#[test]
+#[cfg(target_family = "unix")]
+fn foreach_dollar_value_not_expanded() {
+    // Regression for Copilot finding on PR #3757: replace_all with a raw
+    // &[u8] replacer interprets `$1`, `$$`, `$name`, etc. as capture-group
+    // references. Wrapping the value in NoExpand keeps the substitution
+    // byte-for-byte literal.
+    //
+    // For a value of "price-$1" the observable difference is:
+    //   - WITHOUT NoExpand: `$1` expands to "" (no capture group 1), so replace_all produces "echo
+    //     price-" → echo prints "price-".
+    //   - WITH NoExpand: replace_all produces "echo price-$1", which the splitter then tokenises as
+    //     [echo, price-, 1] (because `$` is not in the splitter's character class), so echo prints
+    //     "price- 1".
+    // Asserting on the second result detects the regression.
+    let wrk = Workdir::new("foreach_dollar_value_not_expanded");
+    wrk.create("data.csv", vec![svec!["v"], svec!["price-$1"]]);
+    let mut cmd = wrk.command("foreach");
+    cmd.arg("v")
+        .arg("echo {}")
+        .arg("data.csv")
+        .args(["--dry-run", "false"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["price- 1"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn foreach_dry_run_quoted_program_token() {
+    // Regression for Copilot finding on PR #3757: the splitter regex allows
+    // a quoted program token (e.g. `"echo"`). Strip outer quotes from the
+    // program token the same way args are stripped, so the dry-run output
+    // shows the bare program name and a real spawn would not look up a
+    // path that still contains quote characters.
+    let wrk = Workdir::new("foreach_dry_run_quoted_program_token");
+    wrk.create("data.csv", vec![svec!["v"], svec!["alice"]]);
+    let mut cmd = wrk.command("foreach");
+    cmd.arg("v").arg(r#""echo" {}"#).arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "echo alice");
 }

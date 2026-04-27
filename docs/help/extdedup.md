@@ -47,8 +47,8 @@ qsv extdedup --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑s,`<br>`‑‑select`&nbsp; | string | Select a subset of columns to dedup. Note that the outputs will remain at the full width of the CSV. If --select is NOT set, extdedup will work in LINE MODE, deduping the input as a text file on a line-by-line basis. |  |
-| &nbsp;`‑‑no‑output`&nbsp; | flag | Do not write deduplicated output to <output>. Use this if you only want to know the duplicate count. |  |
-| &nbsp;`‑D,`<br>`‑‑dupes‑output`&nbsp; | string | Write duplicates to <file>. Note that the file will NOT be a valid CSV. It is a list of duplicate lines, with the row number of the duplicate separated by a tab from the duplicate line itself. |  |
+| &nbsp;`‑‑no‑output`&nbsp; | flag | Do not write deduplicated output to <output>. Use this if you only want to know the duplicate count. Applies to both CSV MODE and LINE MODE. |  |
+| &nbsp;`‑D,`<br>`‑‑dupes‑output`&nbsp; | string | Write duplicates to <file>. In CSV MODE, <file> is a valid CSV with the same columns as the input plus a leading "dupe_rowno" column (1-based data row number). In LINE MODE, <file> is NOT a valid CSV — each duplicate line is prefixed by its 0-based file line index and a tab character. |  |
 | &nbsp;`‑H,`<br>`‑‑human‑readable`&nbsp; | flag | Comma separate duplicate count. |  |
 | &nbsp;`‑‑memory‑limit`&nbsp; | string | The maximum amount of memory to buffer the on-disk hash table. If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory. | `10` |
 | &nbsp;`‑‑temp‑dir`&nbsp; | string | Directory to store temporary hash table file. If not specified, defaults to operating system temp directory. |  |

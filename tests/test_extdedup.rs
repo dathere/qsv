@@ -200,6 +200,58 @@ fn extdedup_large_memory_test() {
     assert!(!deduped_output.contains("duplicate"));
 }
 
+// Regression: previously, selected fields were concatenated into the dedup
+// key with no delimiter, so rows ("ab","cd") and ("a","bcd") both produced
+// the key "abcd" and the second row was silently dropped. With the US
+// (\x1F) separator the keys are distinct and both rows survive.
+#[test]
+fn extdedup_csvmode_key_collision() {
+    let wrk = Workdir::new("extdedup_csvmode_key_collision");
+    wrk.create(
+        "in.csv",
+        vec![svec!["a", "b"], svec!["ab", "cd"], svec!["a", "bcd"]],
+    );
+
+    let mut cmd = wrk.command("extdedup");
+    cmd.arg("in.csv").args(["--select", "a,b"]);
+    let output = wrk.output(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["a", "b"], svec!["ab", "cd"], svec!["a", "bcd"]];
+    assert_eq!(got, expected);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(stderr.trim(), "0");
+}
+
+// --no-output is honored in CSV mode (previously silently ignored). The
+// stdout output is empty (no headers, no data) but the duplicate count
+// is still reported on stderr.
+#[test]
+fn extdedup_csvmode_no_output() {
+    let wrk = Workdir::new("extdedup_csvmode_no_output");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["a", "b"],
+            svec!["1", "x"],
+            svec!["1", "x"],
+            svec!["2", "y"],
+        ],
+    );
+
+    let mut cmd = wrk.command("extdedup");
+    cmd.arg("in.csv").args(["--select", "a,b", "--no-output"]);
+    let output = wrk.output(&mut cmd);
+
+    assert!(
+        output.stdout.is_empty(),
+        "stdout should be empty under --no-output, got: {:?}",
+        output.stdout
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(stderr.trim(), "1");
+}
+
 fn generate_large_csv_with_duplicates(total_rows: usize) -> String {
     use std::{
         fs::File,

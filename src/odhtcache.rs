@@ -171,7 +171,13 @@ impl ExtDedupCache {
 
     /// Check if an item exists in the cache (memory or disk).
     /// Returns true if the item is found, false otherwise.
+    ///
+    /// `extdedup` itself uses [`Self::insert`]'s return value to fold the
+    /// contains-then-insert pattern into a single hash-table touch, so this
+    /// method is currently unused by the bin targets but kept as part of the
+    /// cache's public API for callers that need a read-only check.
     #[inline]
+    #[allow(dead_code)]
     pub fn contains(&self, item: &str) -> bool {
         if self.memo.contains(item) {
             return true;

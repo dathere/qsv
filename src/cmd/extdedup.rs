@@ -29,10 +29,12 @@ extdedup options:
                                the input as a text file on a line-by-line basis.
     --no-output                Do not write deduplicated output to <output>.
                                Use this if you only want to know the duplicate count.
+                               Applies to both CSV MODE and LINE MODE.
     -D, --dupes-output <file>  Write duplicates to <file>.
-                               Note that the file will NOT be a valid CSV.
-                               It is a list of duplicate lines, with the row number of the
-                               duplicate separated by a tab from the duplicate line itself.
+                               In CSV MODE, <file> is a valid CSV with the same columns as the
+                               input plus a leading "dupe_rowno" column (1-based data row number).
+                               In LINE MODE, <file> is NOT a valid CSV — each duplicate line is
+                               prefixed by its 0-based file line index and a tab character.
     -H, --human-readable       Comma separate duplicate count.
     --memory-limit <arg>       The maximum amount of memory to buffer the on-disk hash table.
                                If less than 50, this is a percentage of total memory.
@@ -124,65 +126,88 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 }
 
 fn dedup_csv(args: Args, mem_limited_buffer: u64) -> Result<u64, crate::clitypes::CliError> {
+    // run() only routes here when flag_select is Some; this destructure
+    // documents that invariant without an unwrap.
+    let Some(select) = args.flag_select else {
+        unreachable!("dedup_csv called without --select");
+    };
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers)
-        .select(args.flag_select.unwrap());
+        .select(select);
 
     let mut rdr = rconfig.reader()?;
     let mut wtr = Config::new(args.arg_output.as_ref()).writer()?;
-    let dupes_output = args.flag_dupes_output.is_some();
-    let mut dupewtr = Config::new(args.flag_dupes_output.as_ref()).writer()?;
 
     let headers = rdr.byte_headers()?.clone();
-    if dupes_output {
+
+    // Only construct the dupes writer when an output path was given;
+    // Config::new(None).writer() would otherwise target stdout and contend
+    // with `wtr` on flush.
+    let mut dupewtr = if args.flag_dupes_output.is_some() {
+        let mut w = Config::new(args.flag_dupes_output.as_ref()).writer()?;
         let mut dupe_headers = csv::ByteRecord::new();
         dupe_headers.push_field(b"dupe_rowno");
         dupe_headers.extend(headers.iter());
-        dupewtr.write_byte_record(&dupe_headers)?;
-    }
+        w.write_byte_record(&dupe_headers)?;
+        Some(w)
+    } else {
+        None
+    };
 
     let temp_dir = args.flag_temp_dir.map(PathBuf::from);
     let mut dedup_cache = odhtcache::ExtDedupCache::new(mem_limited_buffer, temp_dir);
     let mut dupes_count = 0_u64;
     let sel = rconfig.selection(&headers)?;
 
-    rconfig.write_headers(&mut rdr, &mut wtr)?;
+    let no_output = args.flag_no_output;
+    if !no_output {
+        rconfig.write_headers(&mut rdr, &mut wtr)?;
+    }
 
-    // Pre-allocate and reuse buffers
-    let mut key = String::with_capacity(20);
-    let mut utf8_string = String::with_capacity(20);
+    // Pre-allocate and reuse the key buffer. A US (Unit Separator, \x1F)
+    // byte separates selected fields so rows ("a","bc") and ("ab","c")
+    // produce distinct keys ("a\x1Fbc" vs "ab\x1Fc"); without it both rows
+    // collapse to "abc" and the second is silently treated as a duplicate.
+    let mut key = String::with_capacity(256);
     let mut dupe_row = csv::ByteRecord::new();
-    let mut curr_row = csv::ByteRecord::new();
 
     for (row_idx, row) in rdr.byte_records().enumerate() {
-        curr_row.clone_from(&row?);
+        let curr_row = row?;
         key.clear();
+        let mut first = true;
         for field in sel.select(&curr_row) {
-            if let Ok(s_utf8) = simdutf8::basic::from_utf8(field) {
-                key.push_str(s_utf8);
+            if first {
+                first = false;
             } else {
-                utf8_string.clear();
-                utf8_string.push_str(&String::from_utf8_lossy(field));
-                key.push_str(&utf8_string);
+                key.push('\x1F');
+            }
+            match simdutf8::basic::from_utf8(field) {
+                Ok(s) => key.push_str(s),
+                Err(_) => key.push_str(&String::from_utf8_lossy(field)),
             }
         }
 
-        if dedup_cache.contains(&key) {
-            dupes_count += 1;
-            if dupes_output {
-                dupe_row.clear();
-                dupe_row.push_field(itoa::Buffer::new().format(row_idx + 1).as_bytes());
-                dupe_row.extend(curr_row.iter());
-                dupewtr.write_byte_record(&dupe_row)?;
+        // Single hash-table touch: insert returns true when the key is new.
+        if dedup_cache.insert(&key) {
+            if !no_output {
+                wtr.write_byte_record(&curr_row)?;
             }
         } else {
-            dedup_cache.insert(&key);
-            wtr.write_byte_record(&curr_row)?;
+            dupes_count += 1;
+            if let Some(ref mut w) = dupewtr {
+                dupe_row.clear();
+                // 1-based data-row index (matches the existing fixture format).
+                dupe_row.push_field(itoa::Buffer::new().format(row_idx + 1).as_bytes());
+                dupe_row.extend(curr_row.iter());
+                w.write_byte_record(&dupe_row)?;
+            }
         }
     }
 
-    dupewtr.flush()?;
+    if let Some(mut w) = dupewtr {
+        w.flush()?;
+    }
     wtr.flush()?;
 
     Ok(dupes_count)
@@ -214,54 +239,38 @@ fn dedup_lines(args: Args, mem_limited_buffer: u64) -> Result<u64, crate::clityp
             stdout().lock(),
         )),
     };
-    let mut write_dupes = false;
-    #[cfg(target_family = "unix")]
+
+    // Only open the dupes file when --dupes-output was given. The previous
+    // implementation opened /dev/null (or "nul" on Windows) as a sink,
+    // which wasted a real file handle and forced platform-specific code.
     let mut dupes_writer = match args.flag_dupes_output {
-        Some(dupes_output) => {
-            write_dupes = true;
-            io::BufWriter::with_capacity(
-                config::DEFAULT_WTR_BUFFER_CAPACITY,
-                fs::File::create(dupes_output)?,
-            )
-        },
-        _ => io::BufWriter::with_capacity(
+        Some(path) => Some(io::BufWriter::with_capacity(
             config::DEFAULT_WTR_BUFFER_CAPACITY,
-            fs::File::create("/dev/null")?,
-        ),
-    };
-    #[cfg(target_family = "windows")]
-    let mut dupes_writer = if let Some(dupes_output) = args.flag_dupes_output {
-        write_dupes = true;
-        io::BufWriter::with_capacity(
-            config::DEFAULT_WTR_BUFFER_CAPACITY,
-            fs::File::create(dupes_output)?,
-        )
-    } else {
-        io::BufWriter::with_capacity(
-            config::DEFAULT_WTR_BUFFER_CAPACITY,
-            fs::File::create("nul")?,
-        )
+            fs::File::create(path)?,
+        )),
+        None => None,
     };
     let temp_dir = args.flag_temp_dir.map(PathBuf::from);
     let mut dedup_cache = odhtcache::ExtDedupCache::new(mem_limited_buffer, temp_dir);
     let mut dupes_count = 0_u64;
-    let mut line_work = String::with_capacity(1024);
+    let no_output = args.flag_no_output;
     for (row_idx, line) in input_reader.lines().enumerate() {
-        line_work.clone_from(&line?);
-        if dedup_cache.contains(&line_work) {
-            dupes_count += 1;
-            if write_dupes {
-                writeln!(dupes_writer, "{row_idx}\t{line_work}")?;
+        let line = line?;
+        // Single hash-table touch: insert returns true when the line is new.
+        if dedup_cache.insert(&line) {
+            if !no_output {
+                writeln!(output_writer, "{line}")?;
             }
         } else {
-            dedup_cache.insert(&line_work);
-            if args.flag_no_output {
-                continue;
+            dupes_count += 1;
+            if let Some(ref mut dw) = dupes_writer {
+                writeln!(dw, "{row_idx}\t{line}")?;
             }
-            writeln!(output_writer, "{line_work}")?;
         }
     }
-    dupes_writer.flush()?;
+    if let Some(mut dw) = dupes_writer {
+        dw.flush()?;
+    }
     output_writer.flush()?;
 
     Ok(dupes_count)

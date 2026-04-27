@@ -50,6 +50,8 @@ qsv foreach query -u -c from_query 'search {}' queries.csv > results.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_foreach.rs).
 
+If any child command exits with a non-zero status, foreach finishes processing
+all rows but then exits with a non-zero status of its own.
 
 <a name="usage"></a>
 
@@ -66,9 +68,9 @@ qsv foreach --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑u,`<br>`‑‑unify`&nbsp; | flag | If the output of the executed command is a CSV, unify the result by skipping headers on each subsequent command. Does not work when --dry-run is true. |  |
+| &nbsp;`‑u,`<br>`‑‑unify`&nbsp; | flag | If the output of the executed command is a CSV, unify the result by skipping headers on each subsequent command. Does not work when --dry-run is true. The first child's CSV header row becomes canonical; later children are expected to produce the same schema. |  |
 | &nbsp;`‑c,`<br>`‑‑new‑column`&nbsp; | string | If unifying, add a new column with given name and copying the value of the current input file line. |  |
-| &nbsp;`‑‑dry‑run`&nbsp; | string | If set to true (the default for safety reasons), the commands are sent to stdout instead of executing them. If set to a file, the commands will be written to the specified text file instead of executing them. Only if set to false will the commands be actually executed. | `true` |
+| &nbsp;`‑‑dry‑run`&nbsp; | string | If set to true (the default for safety reasons), the commands are sent to stdout instead of executing them. If set to a file, the commands will be written to the specified text file instead of executing them. The file is only created after all flag validation succeeds, so a conflicting flag combination will not truncate an existing file. Only if set to false will the commands be actually executed. | `true` |
 
 <a name="common-options"></a>
 

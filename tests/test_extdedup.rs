@@ -215,10 +215,15 @@ fn extdedup_csvmode_key_collision() {
     let mut cmd = wrk.command("extdedup");
     cmd.arg("in.csv").args(["--select", "a,b"]);
     // Single execution: assert stdout and stderr from the same Output.
+    // Normalize CRLF→LF via dos2unix so the comparison is portable to Windows
+    // runners, where csv::Writer may emit \r\n line terminators.
     let output = wrk.output(&mut cmd);
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout.trim_end_matches(['\r', '\n']), "a,b\nab,cd\na,bcd");
+    assert_eq!(
+        dos2unix(&stdout).trim_end_matches('\n'),
+        "a,b\nab,cd\na,bcd"
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(stderr.trim(), "0");
 }

@@ -143,66 +143,68 @@ impl ExtDedupCache {
     }
 
     /// Insert an item into the cache.
-    /// Returns true if the item was newly inserted, false if it already existed.
+    /// Returns true if the item was newly inserted, false if it already existed
+    /// in either the in-memory set or the on-disk hash table.
     #[inline]
     pub fn insert(&mut self, item: &str) -> bool {
-        let res = self.memo.insert(item.to_owned());
-        if res {
-            self.memo_size += item.len() as u64;
+        // Membership must consult both memo AND disk: dump_to_disk drains memo,
+        // so an item that exists only on disk would otherwise look "new" to a
+        // memo-only check and produce false negatives (re-emitted duplicates).
+        if self.memo.contains(item) || self.contains_on_disk(item) {
+            return false;
+        }
+        self.memo.insert(item.to_owned());
+        self.memo_size += item.len() as u64;
 
-            // Check if we need to dump to disk after adding this item
-            if self.memo_size > self.memo_limit {
-                self.dump_to_disk();
-            } else if self.memo_size >= self.memo_limit && !self.disk_initialized {
-                // Initialize disk cache when memory limit is reached
-                if let Err(e) = self.create_mmap() {
-                    debug!("Failed to initialize disk cache: {e}");
-                }
-            }
-
-            // If disk cache is initialized, also insert there
-            if self.disk_initialized {
-                self.insert_on_disk(item);
+        // Check if we need to dump to disk after adding this item
+        if self.memo_size > self.memo_limit {
+            self.dump_to_disk();
+        } else if self.memo_size >= self.memo_limit && !self.disk_initialized {
+            // Initialize disk cache when memory limit is reached
+            if let Err(e) = self.create_mmap() {
+                debug!("Failed to initialize disk cache: {e}");
             }
         }
 
-        res
+        // If disk cache is initialized, also insert there
+        if self.disk_initialized {
+            self.insert_on_disk(item);
+        }
+
+        true
     }
 
     /// Check if an item exists in the cache (memory or disk).
     /// Returns true if the item is found, false otherwise.
     ///
-    /// `extdedup` itself uses [`Self::insert`]'s return value to fold the
-    /// contains-then-insert pattern into a single hash-table touch, so this
-    /// method is currently unused by the bin targets but kept as part of the
-    /// cache's public API for callers that need a read-only check.
+    /// `extdedup` itself uses [`Self::insert`]'s return value (which now
+    /// consults both memo and disk) to fold the contains-then-insert pattern
+    /// into a single call. This method is currently unused by the bin targets
+    /// but kept as part of the cache's public API for read-only callers.
     #[inline]
     #[allow(dead_code)]
     pub fn contains(&self, item: &str) -> bool {
-        if self.memo.contains(item) {
-            return true;
+        self.memo.contains(item) || self.contains_on_disk(item)
+    }
+
+    /// Check if an item exists in the on-disk hash table.
+    /// Returns false when the disk cache has not been initialized yet.
+    #[inline]
+    fn contains_on_disk(&self, item: &str) -> bool {
+        if !self.disk_initialized {
+            return false;
         }
-
-        // Work directly with the memory-mapped hash table
-        if self.disk_initialized && self.mmap.is_some() {
-            if let Some(mmap) = &self.mmap {
-                // Create a temporary table reference to work with the mmap
-                // safety: The mmap is created and initialized to hold a valid HashTable,
-                // and is only accessed while it is valid and not mutably borrowed elsewhere.
-                let table_result = HashTable::<ExtDedupConfigImpl, &[u8]>::from_raw_bytes(mmap);
-
-                match table_result {
-                    Ok(table) => {
-                        let keys = self.item_to_keys(item);
-                        keys.iter().all(|key| table.contains_key(key))
-                    },
-                    Err(_) => false,
-                }
-            } else {
-                false
-            }
-        } else {
-            false
+        let Some(mmap) = self.mmap.as_ref() else {
+            return false;
+        };
+        // safety: The mmap is created and initialized to hold a valid HashTable,
+        // and is only accessed while it is valid and not mutably borrowed elsewhere.
+        match HashTable::<ExtDedupConfigImpl, &[u8]>::from_raw_bytes(mmap) {
+            Ok(table) => {
+                let keys = self.item_to_keys(item);
+                keys.iter().all(|key| table.contains_key(key))
+            },
+            Err(_) => false,
         }
     }
 

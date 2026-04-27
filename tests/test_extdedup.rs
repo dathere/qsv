@@ -214,11 +214,11 @@ fn extdedup_csvmode_key_collision() {
 
     let mut cmd = wrk.command("extdedup");
     cmd.arg("in.csv").args(["--select", "a,b"]);
+    // Single execution: assert stdout and stderr from the same Output.
     let output = wrk.output(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    let expected = vec![svec!["a", "b"], svec!["ab", "cd"], svec!["a", "bcd"]];
-    assert_eq!(got, expected);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim_end_matches(['\r', '\n']), "a,b\nab,cd\na,bcd");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(stderr.trim(), "0");
 }

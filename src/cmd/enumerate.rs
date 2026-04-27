@@ -135,7 +135,7 @@ use xxhash_rust::xxh3::Xxh3;
 use crate::{
     CliResult,
     config::{Config, Delimiter},
-    select::SelectColumns,
+    select::{SelectColumns, Selection},
     util,
 };
 
@@ -203,14 +203,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .filter(|&i| Some(i) != hash_index)
             .collect();
 
-        let selection_string = filtered_indices
-            .iter()
-            .map(|&i| (i + 1).to_string())
-            .collect::<Vec<_>>()
-            .join(",");
+        // Reject the degenerate case where the user's --hash selection resolves
+        // to *only* the existing "hash" column. Otherwise the auto-exclusion
+        // would leave nothing to hash, producing the same digest on every row.
+        if filtered_indices.is_empty() {
+            return fail_clierror!(
+                "--hash selection resolves only to the existing \"hash\" column; nothing left to \
+                 hash after auto-exclusion."
+            );
+        }
 
-        rconfig = rconfig.select(SelectColumns::parse(&selection_string)?);
-        Some(rconfig.selection(&headers)?)
+        // Build the Selection directly from the filtered indices to avoid an
+        // ambiguous parse/selection round-trip — `SelectColumns::parse("")`
+        // would produce an empty selector list, and `selection()` then returns
+        // *all* columns, silently re-introducing the "hash" column.
+        Some(Selection::from_indices(filtered_indices))
     } else {
         None
     };

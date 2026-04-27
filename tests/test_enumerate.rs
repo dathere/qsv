@@ -635,3 +635,29 @@ fn enumerate_hash_no_concat_collision() {
         "rows ['ab','c'] and ['a','bc'] must hash differently"
     );
 }
+
+
+#[test]
+fn enumerate_hash_only_existing_hash_column_errors() {
+    // Regression test: when --hash resolves to ONLY the existing "hash"
+    // column, the auto-exclusion would leave nothing to hash. Previously
+    // this silently re-included the "hash" column via an empty SelectColumns
+    // round-trip; now it must error out cleanly.
+    let wrk = Workdir::new("enumerate_hash_only_existing_hash_column_errors");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "hash"],
+            svec!["Alice", "1"],
+            svec!["Bob", "2"],
+        ],
+    );
+    let mut cmd = wrk.command("enum");
+    cmd.args(["--hash", "hash"]).arg("data.csv");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("nothing left to hash"),
+        "expected error mentioning 'nothing left to hash', got: {stderr}"
+    );
+}

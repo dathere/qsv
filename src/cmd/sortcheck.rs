@@ -10,15 +10,33 @@ first before deduping. However, if you know a CSV is sorted beforehand, you can 
 `dedup` with the --sorted option, and it will skip loading entire CSV into memory to sort
 it first. It will just immediately dedupe on a streaming basis.
 
-`sort` also requires loading the entire CSV into memory. For simple "sorts" (not numeric,
-reverse, unique & random sorts), particularly of very large CSV files that will not fit in memory,
-`extsort` - a multi-threaded streaming sort that is exponentially faster and can work with 
-arbitrarily large files, can be used instead.
+`sort` also requires loading the entire CSV into memory. For very large CSV files that will
+not fit in memory, `extsort` - a multi-threaded streaming sort that can work with arbitrarily
+large files - can be used instead.
+
+Use --numeric or --natural to verify the file matches the order produced by `sort --numeric`
+or `sort --natural` before piping into a downstream command (e.g. `dedup --numeric --sorted`).
+When multiple comparison flags are set, --natural takes precedence over --numeric, which takes
+precedence over --ignore-case (matching `sort` and `dedup` semantics).
 
 Simply put, sortcheck allows you to make informed choices on how to compose pipelines that
 require sorted data.
 
 Returns exit code 0 if a CSV is sorted, and exit code 1 otherwise.
+
+Examples:
+
+  # Check if file.csv is lexicographically sorted on all columns:
+  qsv sortcheck file.csv
+
+  # Check column "name" only, ignoring case:
+  qsv sortcheck --select name --ignore-case file.csv
+
+  # Verify file.csv is sorted numerically before piping into `dedup --numeric --sorted`:
+  qsv sortcheck --numeric file.csv && qsv dedup --numeric --sorted file.csv
+
+  # Check natural order (e.g. item1, item2, item10) and emit JSON stats:
+  qsv sortcheck --natural --json file.csv
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_sortcheck.rs.
 
@@ -29,12 +47,17 @@ Usage:
 sort options:
     -s, --select <arg>      Select a subset of columns to check for sort.
                             See 'qsv select --help' for the format details.
-    -i, --ignore-case       Compare strings disregarding case
-    --all                   Check all records. Do not stop/short-circuit the check 
+    -N, --numeric           Compare according to string numerical value.
+    --natural               Compare using natural sort order (e.g. item1 < item2 < item10).
+                            Takes precedence over --numeric. Composes with --ignore-case.
+    -i, --ignore-case       Compare strings disregarding case. Ignored under pure
+                            numeric comparison (i.e. --numeric without --natural),
+                            since numeric comparison is case-insensitive by definition.
+    --all                   Check all records. Do not stop/short-circuit the check
                             on the first unsorted record.
-    --json                  Return results in JSON format, scanning --all records. 
-                            The JSON result has the following properties - 
-                            sorted (boolean), record_count (number), 
+    --json                  Return results in JSON format, scanning --all records.
+                            The JSON result has the following properties -
+                            sorted (boolean), record_count (number),
                             unsorted_breaks (number) & dupe_count (number).
                             Unsorted breaks count the number of times two consecutive
                             rows are unsorted (i.e. n row > n+1 row).
@@ -54,7 +77,7 @@ Common options:
     -p, --progressbar       Show progress bars. Not valid for stdin.
 "#;
 
-use std::cmp;
+use std::cmp::Ordering;
 
 use csv::ByteRecord;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
@@ -63,17 +86,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     CliResult,
-    cmd::sort::{iter_cmp, iter_cmp_ignore_case},
+    cmd::sort::{
+        iter_cmp, iter_cmp_ignore_case, iter_cmp_natural, iter_cmp_natural_ignore_case,
+        iter_cmp_num,
+    },
     config::{Config, Delimiter},
     select::SelectColumns,
     util,
 };
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct Args {
     arg_input:        Option<String>,
     flag_select:      SelectColumns,
+    flag_numeric:     bool,
+    flag_natural:     bool,
     flag_ignore_case: bool,
     flag_all:         bool,
     flag_no_headers:  bool,
@@ -91,9 +118,37 @@ struct SortCheckStruct {
     dupe_count:      i64,
 }
 
+// Mirrors `SortMode` in `cmd/sort.rs` so sortcheck verifies the same ordering
+// the user would get from `sort` / `dedup`.
+#[derive(Clone, Copy)]
+enum ComparisonMode {
+    Lex,
+    LexIgnoreCase,
+    Numeric,
+    Natural,
+    NaturalIgnoreCase,
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
-    let ignore_case = args.flag_ignore_case;
+
+    // Resolution order matches `sort` and `dedup`: --natural beats --numeric
+    // beats --ignore-case. Done once before the loop so the dispatch `match`
+    // monomorphizes to a single comparator per row.
+    let compare_mode = if args.flag_natural {
+        if args.flag_ignore_case {
+            ComparisonMode::NaturalIgnoreCase
+        } else {
+            ComparisonMode::Natural
+        }
+    } else if args.flag_numeric {
+        ComparisonMode::Numeric
+    } else if args.flag_ignore_case {
+        ComparisonMode::LexIgnoreCase
+    } else {
+        ComparisonMode::Lex
+    };
+
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers)
@@ -127,7 +182,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         record_count = 0;
     }
 
-    let do_json = args.flag_json | args.flag_pretty_json;
+    let do_json = args.flag_json || args.flag_pretty_json;
 
     let mut record = ByteRecord::new();
     let mut next_record = ByteRecord::new();
@@ -136,43 +191,51 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut dupe_count: u64 = 0;
     let mut unsorted_breaks: u64 = 0;
 
-    rdr.read_byte_record(&mut record)?;
-    loop {
-        #[cfg(any(feature = "feature_capable", feature = "lite"))]
-        if show_progress {
-            progress.inc(1);
-        }
-        scan_ctr += 1;
-        let more_records = rdr.read_byte_record(&mut next_record)?;
-        if !more_records {
-            break;
-        }
-        let a = sel.select(&record);
-        let b = sel.select(&next_record);
-        let comparison = if ignore_case {
-            iter_cmp_ignore_case(a, b)
-        } else {
-            iter_cmp(a, b)
-        };
+    // Skip the loop entirely on empty input (header-only CSV) so scan_ctr
+    // correctly stays at 0 and JSON `record_count` reports 0 data records.
+    if rdr.read_byte_record(&mut record)? {
+        loop {
+            #[cfg(any(feature = "feature_capable", feature = "lite"))]
+            if show_progress {
+                progress.inc(1);
+            }
+            scan_ctr += 1;
+            let more_records = rdr.read_byte_record(&mut next_record)?;
+            if !more_records {
+                break;
+            }
+            let a = sel.select(&record);
+            let b = sel.select(&next_record);
+            let comparison = match compare_mode {
+                ComparisonMode::Lex => iter_cmp(a, b),
+                ComparisonMode::LexIgnoreCase => iter_cmp_ignore_case(a, b),
+                ComparisonMode::Numeric => iter_cmp_num(a, b),
+                ComparisonMode::Natural => iter_cmp_natural(a, b),
+                ComparisonMode::NaturalIgnoreCase => iter_cmp_natural_ignore_case(a, b),
+            };
 
-        match comparison {
-            cmp::Ordering::Equal => {
-                dupe_count += 1;
-            },
-            cmp::Ordering::Less => {
-                record.clone_from(&next_record);
-            },
-            cmp::Ordering::Greater => {
-                sorted = false;
-                if args.flag_all || do_json {
-                    unsorted_breaks += 1;
-                    record.clone_from(&next_record);
-                } else {
-                    break;
-                }
-            },
-        }
-    } // end loop
+            match comparison {
+                Ordering::Equal => {
+                    dupe_count += 1;
+                },
+                Ordering::Less => {
+                    // Allocation-free buffer rotation: next_record will be
+                    // overwritten by the next read_byte_record, so swapping is
+                    // safe and avoids the clone_from copy.
+                    std::mem::swap(&mut record, &mut next_record);
+                },
+                Ordering::Greater => {
+                    sorted = false;
+                    if args.flag_all || do_json {
+                        unsorted_breaks += 1;
+                        std::mem::swap(&mut record, &mut next_record);
+                    } else {
+                        break;
+                    }
+                },
+            }
+        } // end inner loop
+    } // end empty-input guard
 
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
     if show_progress {
@@ -201,15 +264,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     if do_json {
+        // `do_json` forces a full scan in the Greater arm above, so scan_ctr
+        // is always the authoritative count of data records (and is correctly
+        // 0 for header-only input thanks to the empty-input guard above).
         let sortcheck_struct = SortCheckStruct {
             sorted,
-            record_count: if record_count == 0 {
-                scan_ctr
-            } else {
-                record_count
-            },
+            record_count: scan_ctr,
             unsorted_breaks,
-            dupe_count: if sorted { dupe_count as i64 } else { -1 },
+            // -1 signals "not applicable" when the file is unsorted.
+            // try_from is defensive; in practice u64 dupe counts never
+            // exceed i64::MAX on real CSVs.
+            dupe_count: if sorted {
+                i64::try_from(dupe_count).unwrap_or(i64::MAX)
+            } else {
+                -1
+            },
         };
         // it's OK to have unwrap here as we know sortcheck_struct is valid json
         if args.flag_pretty_json {

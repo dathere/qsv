@@ -20,6 +20,8 @@ the first time they are encountered.
 
 The option `--default <value>` fills all empty values
 in the selected columns with the provided default value.
+When `--default` is set, it takes precedence over forward-fill
+and `--first`, which become no-ops.
 
 The option `--first` fills empty values using the first
 seen non-empty value in that column, instead of the most

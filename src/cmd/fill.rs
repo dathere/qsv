@@ -8,6 +8,8 @@ the first time they are encountered.
 
 The option `--default <value>` fills all empty values
 in the selected columns with the provided default value.
+When `--default` is set, it takes precedence over forward-fill
+and `--first`, which become no-ops.
 
 The option `--first` fills empty values using the first
 seen non-empty value in that column, instead of the most
@@ -53,7 +55,7 @@ Common options:
 
 use std::{io, iter, ops};
 
-use foldhash::{HashMap, HashMapExt};
+use foldhash::{HashMap, HashMapExt, HashSet};
 use serde::Deserialize;
 
 use crate::{
@@ -178,6 +180,12 @@ impl GroupValues {
 
 trait GroupMemorizer {
     fn fill(&self, selection: &Selection, record: ByteRecord) -> ByteRecord;
+    fn fill_into(
+        &self,
+        select_set: &HashSet<usize>,
+        input: &csv::ByteRecord,
+        output: &mut csv::ByteRecord,
+    );
     fn memorize(&mut self, selection: &Selection, record: &csv::ByteRecord);
     fn memorize_first(&mut self, selection: &Selection, record: &csv::ByteRecord);
 }
@@ -195,6 +203,31 @@ impl GroupMemorizer for GroupValues {
         }
     }
 
+    // Fast path: write the filled row directly into a reusable csv::ByteRecord,
+    // avoiding the per-row Vec<Vec<u8>> allocations of the owned-ByteRecord path.
+    // Used when buffering is impossible (no --backfill).
+    fn fill_into(
+        &self,
+        select_set: &HashSet<usize>,
+        input: &csv::ByteRecord,
+        output: &mut csv::ByteRecord,
+    ) {
+        output.clear();
+        for (i, field) in input.iter().enumerate() {
+            if field.is_empty()
+                && select_set.contains(&i)
+                && let Some(replacement) = self
+                    .default
+                    .as_deref()
+                    .or_else(|| self.map.get(&i).map(Vec::as_slice))
+            {
+                output.push_field(replacement);
+                continue;
+            }
+            output.push_field(field);
+        }
+    }
+
     fn fill(&self, selection: &Selection, record: ByteRecord) -> ByteRecord {
         record
             .into_iter()
@@ -204,9 +237,10 @@ impl GroupMemorizer for GroupValues {
                     col,
                     if field.is_empty() {
                         self.default
-                            .clone()
-                            .or_else(|| self.map.get(&col).cloned())
-                            .unwrap_or_else(|| field.clone())
+                            .as_ref()
+                            .or_else(|| self.map.get(&col))
+                            .cloned()
+                            .unwrap_or(field)
                     } else {
                         field
                     },
@@ -215,6 +249,12 @@ impl GroupMemorizer for GroupValues {
             .map(|(_, field)| field)
             .collect()
     }
+}
+
+enum MemorizeKind {
+    None,
+    First,
+    Latest,
 }
 
 struct Filler {
@@ -257,28 +297,49 @@ impl Filler {
 
     fn fill(mut self, rdr: &mut BoxedReader, wtr: &mut BoxedWriter) -> CliResult<()> {
         let mut record = csv::ByteRecord::new();
+        let mut out_record = csv::ByteRecord::new();
+
+        // Precompute O(1) selected-column membership lookup for the fast path.
+        let select_set: HashSet<usize> = self.select.iter().copied().collect();
+        let memorize_kind = match (self.default_value.is_some(), self.first) {
+            (true, _) => MemorizeKind::None,
+            (false, true) => MemorizeKind::First,
+            (false, false) => MemorizeKind::Latest,
+        };
 
         while rdr.read_byte_record(&mut record)? {
             // Precompute groupby key
             let key = self.groupby.key(&record)?;
 
-            // Record valid fields, and fill empty fields
-            let default_value = self.default_value.clone();
-            let group = self
-                .grouper
-                .entry(key.clone())
-                .or_insert_with(|| GroupValues::new(default_value));
+            // Look up the group; only clone the key if we have to insert a new one.
+            // Clone the default value lazily for the same reason.
+            let group = match self.grouper.get_mut(&key) {
+                Some(g) => g,
+                None => self
+                    .grouper
+                    .entry(key.clone())
+                    .or_insert_with(|| GroupValues::new(self.default_value.clone())),
+            };
 
-            match (self.default_value.is_some(), self.first) {
-                (true, _) => {},
-                (false, true) => group.memorize_first(&self.select, &record),
-                (false, false) => group.memorize(&self.select, &record),
+            match memorize_kind {
+                MemorizeKind::None => {},
+                MemorizeKind::First => group.memorize_first(&self.select, &record),
+                MemorizeKind::Latest => group.memorize(&self.select, &record),
+            }
+
+            // Fast path: without --backfill we never buffer, so we can write the
+            // filled row directly into a reusable csv::ByteRecord. This avoids
+            // the Vec<Vec<u8>> allocations of the owned-ByteRecord round-trip.
+            if !self.backfill {
+                group.fill_into(&select_set, &record, &mut out_record);
+                wtr.write_byte_record(&out_record)?;
+                continue;
             }
 
             let row = group.fill(&self.select, ByteRecord::from(&record));
 
             // Handle buffering rows which still have nulls.
-            if self.backfill && (self.select.iter().any(|&i| row[i] == b"")) {
+            if self.select.iter().any(|&i| row[i].is_empty()) {
                 self.buffer.entry(key.clone()).or_default().push(row);
             } else {
                 if let Some(rows) = self.buffer.remove(&key) {
@@ -292,6 +353,8 @@ impl Filler {
 
         // Ensure any remaining buffers are dumped at the end.
         for (key, rows) in self.buffer {
+            // safety: every key inserted into `buffer` was first inserted into
+            // `grouper` immediately above, so the lookup always succeeds.
             let group = self.grouper.get(&key).unwrap();
             for buffered_row in rows {
                 wtr.write_record(group.fill(&self.select, buffered_row).iter())?;
@@ -348,8 +411,14 @@ where
     where
         F: FnMut(B) -> B,
     {
+        // MapSelected scans the row left-to-right and advances `selection_index`
+        // only on ascending matches, so the index list must be sorted and unique
+        // (user-supplied selections may be unordered or contain duplicates).
+        let mut selection: Vec<usize> = selector.iter().copied().collect();
+        selection.sort_unstable();
+        selection.dedup();
         MapSelected {
-            selection: selector.iter().copied().collect(),
+            selection,
             selection_index: 0,
             index: 0,
             iterator: self,

@@ -252,7 +252,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         for i in 0..headers_len {
             headers.push_field(itoa::Buffer::new().format(i));
         }
-    } else {
+    }
+
+    // Compute Python-safe local-variable names from the input headers BEFORE
+    // any new output column is appended below, so header_vec.len() ==
+    // headers_len and the per-row loop doesn't need a .take() guard.
+    let (header_vec, _) = util::safe_header_names(&headers, true, false, None, "_", false);
+
+    if !rconfig.no_headers {
         if !args.cmd_filter {
             let new_column = args
                 .arg_new_column
@@ -273,9 +280,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else {
         progress.set_draw_target(ProgressDrawTarget::hidden());
     }
-
-    // ensure col/header names are valid and safe Python variables
-    let (header_vec, _) = util::safe_header_names(&headers, true, false, None, "_", false);
 
     // amortize memory allocation by reusing record
     let mut batch_record = csv::StringRecord::new();
@@ -397,19 +401,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 row_number += 1;
 
                 // Tolerate jagged rows: short records yield "" via unwrap_or_default,
-                // and any cells beyond headers_len are ignored by .take().
-                for (i, key) in header_vec.iter().enumerate().take(headers_len) {
+                // long records are ignored beyond header_vec.len() (== headers_len).
+                // The PyList is built in the same pass that sets the per-column
+                // locals, and storing the row data directly in a Python object
+                // releases the &str borrows on `record` before push_field below.
+                let row_data = PyList::empty(py);
+                for (i, key) in header_vec.iter().enumerate() {
                     let cell_value = record.get(i).unwrap_or_default();
                     batch_locals.set_item(key, cell_value)?;
+                    row_data.append(cell_value)?;
                 }
-
-                // Build the row's argument list directly into a PyList (one Python
-                // allocation, no intermediate Rust Vec) so the &str borrows on
-                // `record` are released before push_field/write_record below.
-                let row_data = PyList::new(
-                    py,
-                    (0..headers_len).map(|i| record.get(i).unwrap_or_default()),
-                )?;
                 py_row.call_method1(intern!(py, "_update_underlying_data"), (row_data,))?;
 
                 let result =

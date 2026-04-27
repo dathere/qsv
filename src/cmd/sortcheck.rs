@@ -63,7 +63,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     CliResult,
-    cmd::{dedup, sort::iter_cmp},
+    cmd::sort::{iter_cmp, iter_cmp_ignore_case},
     config::{Config, Delimiter},
     select::SelectColumns,
     util,
@@ -150,7 +150,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let a = sel.select(&record);
         let b = sel.select(&next_record);
         let comparison = if ignore_case {
-            dedup::iter_cmp_ignore_case(a, b)
+            iter_cmp_ignore_case(a, b)
         } else {
             iter_cmp(a, b)
         };

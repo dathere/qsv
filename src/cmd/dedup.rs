@@ -81,7 +81,7 @@ use serde::Deserialize;
 
 use crate::{
     CliResult,
-    cmd::sort::{iter_cmp, iter_cmp_num},
+    cmd::sort::{iter_cmp, iter_cmp_ignore_case, iter_cmp_num},
     config::{Config, Delimiter},
     select::SelectColumns,
     util,
@@ -275,49 +275,4 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     Ok(())
-}
-
-/// Try comparing `a` and `b` ignoring the case.
-///
-/// Cells that are pure ASCII compare via a zero-allocation byte-wise lowercase
-/// fold (the common case). Non-ASCII cells fall back to allocating a
-/// lowercased `String`. Cells that are not valid UTF-8 fall back to a raw
-/// byte comparison so a deterministic order is still produced.
-#[inline]
-pub fn iter_cmp_ignore_case<'a, L, R>(mut a: L, mut b: R) -> Ordering
-where
-    L: Iterator<Item = &'a [u8]>,
-    R: Iterator<Item = &'a [u8]>,
-{
-    loop {
-        match (a.next(), b.next()) {
-            (None, None) => return Ordering::Equal,
-            (None, _) => return Ordering::Less,
-            (_, None) => return Ordering::Greater,
-            (Some(x), Some(y)) => match cmp_ignore_case(x, y) {
-                Ordering::Equal => (),
-                non_eq => return non_eq,
-            },
-        }
-    }
-}
-
-#[inline]
-fn cmp_ignore_case(a: &[u8], b: &[u8]) -> Ordering {
-    // ASCII fast path: zero-allocation byte-wise lowercase compare.
-    if a.is_ascii() && b.is_ascii() {
-        return a
-            .iter()
-            .map(u8::to_ascii_lowercase)
-            .cmp(b.iter().map(u8::to_ascii_lowercase));
-    }
-    // Unicode slow path: allocate lowercased Strings.
-    match (
-        simdutf8::basic::from_utf8(a).ok(),
-        simdutf8::basic::from_utf8(b).ok(),
-    ) {
-        (Some(sa), Some(sb)) => sa.to_lowercase().cmp(&sb.to_lowercase()),
-        // Invalid UTF-8 on either side: fall back to raw byte comparison.
-        _ => a.cmp(b),
-    }
 }

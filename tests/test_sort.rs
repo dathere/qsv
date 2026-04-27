@@ -415,6 +415,44 @@ fn sort_uniq_faster() {
 }
 
 #[test]
+fn sort_uniq_numeric_natural() {
+    // Regression: --numeric --natural --unique must use the same comparison
+    // mode for BOTH the sort and the unique-filter. --natural takes
+    // precedence over --numeric for the sort, and previously the
+    // unique-filter silently disagreed by re-evaluating the flags with
+    // numeric-first precedence — dropping records the natural sort had
+    // intentionally kept distinct.
+    //
+    // Under natural compare: "1" < "01" < "2" < "02" (same numeric value,
+    // shorter string sorts first). Under numeric compare those four are
+    // pairwise equal, so the buggy unique-filter would drop "01" and "02".
+    let wrk = Workdir::new("sort_uniq_numeric_natural");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["data"],
+            svec!["02"],
+            svec!["1"],
+            svec!["2"],
+            svec!["01"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sort");
+    cmd.args(["-N", "--natural", "-u"]).arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["data"],
+        svec!["1"],
+        svec!["01"],
+        svec!["2"],
+        svec!["02"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn sort_random() {
     let wrk = Workdir::new("sort_random");
     wrk.create(

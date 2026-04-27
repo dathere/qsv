@@ -17,7 +17,7 @@ These names can be used in commands like 'select' to refer to columns in the
 CSV data.
 
 Note that multiple CSV files may be given to this command. This is useful with
-the --intersect flag.
+the --union flag.
 
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_headers.rs>.
 
@@ -47,8 +47,8 @@ qsv headers --help
 |--------|------|-------------|--------|
 | &nbsp;`‑j,`<br>`‑‑just‑names`&nbsp; | flag | Only show the header names (hide column index). This is automatically enabled if more than one input is given. |  |
 | &nbsp;`‑J,`<br>`‑‑just‑count`&nbsp; | flag | Only show the number of headers. |  |
-| &nbsp;`‑‑intersect`&nbsp; | flag | Shows the intersection of all headers in all of the inputs given. |  |
-| &nbsp;`‑‑trim`&nbsp; | flag | Trim space & quote characters from header name. |  |
+| &nbsp;`‑‑union`&nbsp; | flag | Shows the union of headers across all inputs (deduplicated). |  |
+| &nbsp;`‑‑trim`&nbsp; | flag | Trim leading/trailing space, tab, and quote characters from header name. |  |
 
 <a name="common-options"></a>
 

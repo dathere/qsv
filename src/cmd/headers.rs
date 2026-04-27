@@ -5,7 +5,7 @@ These names can be used in commands like 'select' to refer to columns in the
 CSV data.
 
 Note that multiple CSV files may be given to this command. This is useful with
-the --union (a.k.a. --intersect) flag.
+the --union flag.
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_headers.rs.
 
@@ -29,10 +29,6 @@ headers options:
     -J, --just-count       Only show the number of headers.
     --union                Shows the union of headers across all inputs
                            (deduplicated).
-    --intersect            Alias for --union, kept for backward compatibility.
-                           Despite its name, it does not compute a true set
-                           intersection; it is the original (misnamed) form
-                           of --union.
     --trim                 Trim leading/trailing space, tab, and quote
                            characters from header name.
 
@@ -54,7 +50,6 @@ struct Args {
     arg_input:       Vec<PathBuf>,
     flag_just_names: bool,
     flag_just_count: bool,
-    flag_intersect:  bool,
     flag_union:      bool,
     flag_trim:       bool,
     flag_delimiter:  Option<Delimiter>,
@@ -76,12 +71,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if num_inputs > 1 {
         args.flag_just_names = true;
     }
-    let dedup = args.flag_union || args.flag_intersect;
     let mut headers: Vec<Vec<u8>> = vec![];
     for conf in configs {
         let mut rdr = conf.reader()?;
         for header in rdr.byte_headers()? {
-            if !dedup || !headers.iter().any(|h| h.as_slice() == header) {
+            if !args.flag_union || !headers.iter().any(|h| h.as_slice() == header) {
                 headers.push(header.to_vec());
             }
         }

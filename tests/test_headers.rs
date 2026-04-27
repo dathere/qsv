@@ -199,19 +199,6 @@ fn headers_multiple_just_count() {
 }
 
 #[test]
-fn headers_intersect() {
-    let (wrk, mut cmd) = setup("headers_intersect");
-    cmd.arg("in2.csv").arg("--intersect");
-
-    let got: String = wrk.stdout(&mut cmd);
-    let expected = "\
-h1
-h2
-h3";
-    assert_eq!(got, expected.to_string());
-}
-
-#[test]
 fn headers_union() {
     let (wrk, mut cmd) = setup("headers_union");
     cmd.arg("in2.csv").arg("--union");
@@ -265,8 +252,8 @@ fn headers_infile() {
 }
 
 #[test]
-fn headers_intersect_infile() {
-    let wrk = Workdir::new("headers_intersect_infile");
+fn headers_union_infile() {
+    let wrk = Workdir::new("headers_union_infile");
     wrk.create("in1.csv", vec![svec!["a", "b", "c"], svec!["1", "2", "3"]]);
 
     wrk.create("in2.csv", vec![svec!["c", "d", "e"], svec!["3", "1", "2"]]);
@@ -279,7 +266,7 @@ fn headers_intersect_infile() {
     wrk.create_from_string("testdata.infile-list", "in1.csv\nin2.csv\nin3.csv\n");
 
     let mut cmd = wrk.command("headers");
-    cmd.arg("--intersect").arg("testdata.infile-list");
+    cmd.arg("--union").arg("testdata.infile-list");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![["a"], ["b"], ["c"], ["d"], ["e"], ["f"], ["g"]];

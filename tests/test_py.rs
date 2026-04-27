@@ -635,3 +635,31 @@ fn py_format_header_with_invalid_chars() {
     ];
     assert_eq!(got, expected);
 }
+
+// Locks in that jagged CSV input is rejected cleanly by the csv reader
+// (with `flexible: false`, which is the default) before reaching the
+// per-row Python eval loop. If someone enables `flexible(true)` on the
+// reader without thinking through the per-row path, this test will
+// notice.
+#[test]
+fn py_map_jagged_rows_error() {
+    let wrk = Workdir::new("py").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["a", "b", "c"],
+            svec!["1", "2", "3"],
+            svec!["4", "5"],
+            svec!["6", "7", "8", "9"],
+        ],
+    );
+    let mut cmd = wrk.command("py");
+    cmd.arg("map").arg("x").arg("a").arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("Error reading file") && stderr.contains("fields"),
+        "expected csv reader error about field count, got: {stderr}"
+    );
+}

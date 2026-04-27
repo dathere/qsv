@@ -334,9 +334,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let random_module = PyModule::import(py, "random")?;
         let datetime_module = PyModule::import(py, "datetime")?;
 
+        // Pass only the input headers (not the appended map output column) to
+        // QSVRow so its `__mapping` lines up with the row data; otherwise
+        // `col["<new-column>"]` would map to an out-of-range index.
         let py_row = helpers
             .getattr("QSVRow")?
-            .call1((headers.iter().collect::<Vec<&str>>(),))?;
+            .call1((headers.iter().take(headers_len).collect::<Vec<&str>>(),))?;
 
         Ok((
             helpers.unbind(),

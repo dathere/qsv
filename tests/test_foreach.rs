@@ -311,16 +311,70 @@ fn foreach_dry_run_file_preserved_on_conflict() {
 #[cfg(target_family = "unix")]
 fn foreach_child_failure_propagates() {
     // A child command that exits non-zero should cause foreach itself to
-    // exit non-zero (after still processing all rows).
+    // exit non-zero, but only AFTER still processing the remaining rows.
+    // Row 1 fails; row 2 succeeds and writes to a side file. We verify both:
+    // the run exits non-zero, and the side file shows row 2 ran — which
+    // would not be the case if the loop bailed on the first failure.
     let wrk = Workdir::new("foreach_child_failure_propagates");
     wrk.create(
         "data.csv",
-        vec![svec!["path"], svec!["/no/such/path/abc123"]],
+        vec![svec!["arg"], svec!["/no/such/path/abc123"], svec!["row2"]],
     );
+
+    let touch_path = wrk.path("row2_ran.txt");
+    let touch_path_str = touch_path.to_str().unwrap();
+    wrk.create_from_string(
+        "run.sh",
+        &format!(
+            r#"#!/bin/sh
+if [ "$1" = "row2" ]; then
+    echo "$1" >> {touch_path_str}
+    exit 0
+fi
+cat "$1"
+"#
+        ),
+    );
+    std::process::Command::new("chmod")
+        .arg("+x")
+        .arg(wrk.path("run.sh"))
+        .status()
+        .unwrap();
+
     let mut cmd = wrk.command("foreach");
-    cmd.arg("path")
-        .arg("cat {}")
+    cmd.arg("arg")
+        .arg("sh run.sh {}")
         .arg("data.csv")
         .args(["--dry-run", "false"]);
     wrk.assert_err(&mut cmd);
+
+    let contents = std::fs::read_to_string(&touch_path)
+        .expect("row2_ran.txt should exist — row 2 should still have run after row 1 failed");
+    assert!(
+        contents.contains("row2"),
+        "expected row 2 to have run after row 1 failed, file contents: {contents}"
+    );
+}
+
+#[test]
+#[cfg(target_family = "unix")]
+fn foreach_empty_after_substitution_continues() {
+    // If the templated command becomes empty after substitution at row N,
+    // foreach should warn, mark the run as failed, and continue with the
+    // remaining rows — same behaviour as a non-zero child exit.
+    let wrk = Workdir::new("foreach_empty_after_substitution_continues");
+    // command is just "{}", and the first row's value is empty, so after
+    // substitution there are no tokens at all.
+    wrk.create("data.csv", vec![svec!["v"], svec![""], svec!["echo"]]);
+    let mut cmd = wrk.command("foreach");
+    cmd.arg("v")
+        .arg("{}")
+        .arg("data.csv")
+        .args(["--dry-run", "false"]);
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("empty after substitution"),
+        "expected per-row warning in stderr, got: {stderr}"
+    );
 }

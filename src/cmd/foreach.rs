@@ -158,7 +158,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             sel.len()
         );
     }
-    let column_index = *sel.iter().next().unwrap();
+    let Some(&column_index) = sel.iter().next() else {
+        return fail_incorrectusage_clierror!("foreach: no input column selected");
+    };
 
     // template_pattern matches `{}` substitution markers in the user's command.
     #[allow(clippy::trivial_regex)]
@@ -221,7 +223,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut command_pieces = splitter_pattern.find_iter(&templated_command);
 
         let Some(prog_match) = command_pieces.next() else {
-            return fail_clierror!("foreach: command is empty after substitution at row {row_idx}");
+            // Empty post-substitution command — treat the same as a non-zero
+            // child exit so we honour the "finish all rows, then exit non-zero"
+            // contract instead of bailing mid-stream.
+            eprintln!("foreach: row {row_idx} command is empty after substitution; skipping");
+            any_child_failed = true;
+            continue;
         };
 
         #[cfg(target_family = "unix")]

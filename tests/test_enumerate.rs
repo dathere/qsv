@@ -636,7 +636,6 @@ fn enumerate_hash_no_concat_collision() {
     );
 }
 
-
 #[test]
 fn enumerate_hash_only_existing_hash_column_errors() {
     // Regression test: when --hash resolves to ONLY the existing "hash"

@@ -362,19 +362,54 @@ fn foreach_empty_after_substitution_continues() {
     // If the templated command becomes empty after substitution at row N,
     // foreach should warn, mark the run as failed, and continue with the
     // remaining rows — same behaviour as a non-zero child exit.
+    //
+    // Row 1's value is "" so substitution produces an empty command (warn +
+    // continue). Row 2's value points at a small shell script that writes
+    // to a marker file; checking that file confirms the loop did not bail
+    // out on row 1. Exit status, stderr, and the side effect are all
+    // observed from a single command execution.
     let wrk = Workdir::new("foreach_empty_after_substitution_continues");
-    // command is just "{}", and the first row's value is empty, so after
-    // substitution there are no tokens at all.
-    wrk.create("data.csv", vec![svec!["v"], svec![""], svec!["echo"]]);
+
+    let marker_path = wrk.path("row2_ran.txt");
+    let marker_str = marker_path.to_str().unwrap();
+    wrk.create_from_string(
+        "run.sh",
+        &format!(
+            r#"#!/bin/sh
+echo "ran" > {marker_str}
+"#
+        ),
+    );
+    std::process::Command::new("chmod")
+        .arg("+x")
+        .arg(wrk.path("run.sh"))
+        .status()
+        .unwrap();
+
+    wrk.create("data.csv", vec![svec!["v"], svec![""], svec!["./run.sh"]]);
+
     let mut cmd = wrk.command("foreach");
     cmd.arg("v")
         .arg("{}")
         .arg("data.csv")
         .args(["--dry-run", "false"]);
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit, got: {:?}",
+        output.status
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("empty after substitution"),
         "expected per-row warning in stderr, got: {stderr}"
+    );
+    let contents = std::fs::read_to_string(&marker_path).expect(
+        "row2_ran.txt should exist — row 2 should still have run after row 1's empty command",
+    );
+    assert!(
+        contents.contains("ran"),
+        "expected marker contents, got: {contents}"
     );
 }

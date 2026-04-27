@@ -328,7 +328,7 @@ fn foreach_child_failure_propagates() {
         &format!(
             r#"#!/bin/sh
 if [ "$1" = "row2" ]; then
-    echo "$1" >> {touch_path_str}
+    echo "$1" >> '{touch_path_str}'
     exit 0
 fi
 cat "$1"
@@ -376,7 +376,7 @@ fn foreach_empty_after_substitution_continues() {
         "run.sh",
         &format!(
             r#"#!/bin/sh
-echo "ran" > {marker_str}
+echo "ran" > '{marker_str}'
 "#
         ),
     );

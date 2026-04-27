@@ -86,7 +86,7 @@ qsv sortcheck --help
 | &nbsp;`‑s,`<br>`‑‑select`&nbsp; | string | Select a subset of columns to check for sort. See 'qsv select --help' for the format details. |  |
 | &nbsp;`‑N,`<br>`‑‑numeric`&nbsp; | flag | Compare according to string numerical value. |  |
 | &nbsp;`‑‑natural`&nbsp; | flag | Compare using natural sort order (e.g. item1 < item2 < item10). Takes precedence over --numeric. Composes with --ignore-case. |  |
-| &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | Compare strings disregarding case. Ignored when --numeric is set (numeric comparison is case-insensitive by definition). |  |
+| &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | Compare strings disregarding case. Ignored under pure numeric comparison (i.e. --numeric without --natural), since numeric comparison is case-insensitive by definition. |  |
 | &nbsp;`‑‑all`&nbsp; | flag | Check all records. Do not stop/short-circuit the check on the first unsorted record. |  |
 | &nbsp;`‑‑json`&nbsp; | flag | Return results in JSON format, scanning --all records. The JSON result has the following properties - sorted (boolean), record_count (number), unsorted_breaks (number) & dupe_count (number). Unsorted breaks count the number of times two consecutive rows are unsorted (i.e. n row > n+1 row). Dupe count is the number of times two consecutive rows are equal. Note that dupe count does not apply if the file is not sorted and is set to -1. |  |
 | &nbsp;`‑‑pretty‑json`&nbsp; | flag | Same as --json but in pretty JSON format. |  |

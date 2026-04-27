@@ -50,8 +50,9 @@ sort options:
     -N, --numeric           Compare according to string numerical value.
     --natural               Compare using natural sort order (e.g. item1 < item2 < item10).
                             Takes precedence over --numeric. Composes with --ignore-case.
-    -i, --ignore-case       Compare strings disregarding case. Ignored when --numeric is set
-                            (numeric comparison is case-insensitive by definition).
+    -i, --ignore-case       Compare strings disregarding case. Ignored under pure
+                            numeric comparison (i.e. --numeric without --natural),
+                            since numeric comparison is case-insensitive by definition.
     --all                   Check all records. Do not stop/short-circuit the check
                             on the first unsorted record.
     --json                  Return results in JSON format, scanning --all records.
@@ -119,6 +120,7 @@ struct SortCheckStruct {
 
 // Mirrors `SortMode` in `cmd/sort.rs` so sortcheck verifies the same ordering
 // the user would get from `sort` / `dedup`.
+#[derive(Clone, Copy)]
 enum ComparisonMode {
     Lex,
     LexIgnoreCase,
@@ -189,48 +191,51 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut dupe_count: u64 = 0;
     let mut unsorted_breaks: u64 = 0;
 
-    rdr.read_byte_record(&mut record)?;
-    loop {
-        #[cfg(any(feature = "feature_capable", feature = "lite"))]
-        if show_progress {
-            progress.inc(1);
-        }
-        scan_ctr += 1;
-        let more_records = rdr.read_byte_record(&mut next_record)?;
-        if !more_records {
-            break;
-        }
-        let a = sel.select(&record);
-        let b = sel.select(&next_record);
-        let comparison = match compare_mode {
-            ComparisonMode::Lex => iter_cmp(a, b),
-            ComparisonMode::LexIgnoreCase => iter_cmp_ignore_case(a, b),
-            ComparisonMode::Numeric => iter_cmp_num(a, b),
-            ComparisonMode::Natural => iter_cmp_natural(a, b),
-            ComparisonMode::NaturalIgnoreCase => iter_cmp_natural_ignore_case(a, b),
-        };
+    // Skip the loop entirely on empty input (header-only CSV) so scan_ctr
+    // correctly stays at 0 and JSON `record_count` reports 0 data records.
+    if rdr.read_byte_record(&mut record)? {
+        loop {
+            #[cfg(any(feature = "feature_capable", feature = "lite"))]
+            if show_progress {
+                progress.inc(1);
+            }
+            scan_ctr += 1;
+            let more_records = rdr.read_byte_record(&mut next_record)?;
+            if !more_records {
+                break;
+            }
+            let a = sel.select(&record);
+            let b = sel.select(&next_record);
+            let comparison = match compare_mode {
+                ComparisonMode::Lex => iter_cmp(a, b),
+                ComparisonMode::LexIgnoreCase => iter_cmp_ignore_case(a, b),
+                ComparisonMode::Numeric => iter_cmp_num(a, b),
+                ComparisonMode::Natural => iter_cmp_natural(a, b),
+                ComparisonMode::NaturalIgnoreCase => iter_cmp_natural_ignore_case(a, b),
+            };
 
-        match comparison {
-            Ordering::Equal => {
-                dupe_count += 1;
-            },
-            Ordering::Less => {
-                // Allocation-free buffer rotation: next_record will be
-                // overwritten by the next read_byte_record, so swapping is
-                // safe and avoids the clone_from copy.
-                std::mem::swap(&mut record, &mut next_record);
-            },
-            Ordering::Greater => {
-                sorted = false;
-                if args.flag_all || do_json {
-                    unsorted_breaks += 1;
+            match comparison {
+                Ordering::Equal => {
+                    dupe_count += 1;
+                },
+                Ordering::Less => {
+                    // Allocation-free buffer rotation: next_record will be
+                    // overwritten by the next read_byte_record, so swapping is
+                    // safe and avoids the clone_from copy.
                     std::mem::swap(&mut record, &mut next_record);
-                } else {
-                    break;
-                }
-            },
-        }
-    } // end loop
+                },
+                Ordering::Greater => {
+                    sorted = false;
+                    if args.flag_all || do_json {
+                        unsorted_breaks += 1;
+                        std::mem::swap(&mut record, &mut next_record);
+                    } else {
+                        break;
+                    }
+                },
+            }
+        } // end inner loop
+    } // end empty-input guard
 
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
     if show_progress {
@@ -259,16 +264,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     if do_json {
-        // `do_json` forces a full scan in the Greater arm above, so when
-        // record_count was not pre-computed via count_rows (no --progressbar
-        // / datapusher_plus build), scan_ctr equals the total record count.
+        // `do_json` forces a full scan in the Greater arm above, so scan_ctr
+        // is always the authoritative count of data records (and is correctly
+        // 0 for header-only input thanks to the empty-input guard above).
         let sortcheck_struct = SortCheckStruct {
             sorted,
-            record_count: if record_count == 0 {
-                scan_ctr
-            } else {
-                record_count
-            },
+            record_count: scan_ctr,
             unsorted_breaks,
             // -1 signals "not applicable" when the file is unsorted.
             // try_from is defensive; in practice u64 dupe counts never

@@ -192,8 +192,8 @@ fn sortcheck_simple_json() {
 }
 
 #[test]
-fn sortcheck_ignore_case_sorted() {
-    let wrk = Workdir::new("sortcheck_ignore_case_sorted");
+fn sortcheck_ignore_case_notsorted() {
+    let wrk = Workdir::new("sortcheck_ignore_case_notsorted");
     wrk.create(
         "in.csv",
         vec![
@@ -255,7 +255,7 @@ fn sortcheck_empty() {
     let got_stdout = std::str::from_utf8(&output.stdout).unwrap_or_default();
     assert_eq!(
         got_stdout,
-        "{\"sorted\":true,\"record_count\":1,\"unsorted_breaks\":0,\"dupe_count\":0}\n"
+        "{\"sorted\":true,\"record_count\":0,\"unsorted_breaks\":0,\"dupe_count\":0}\n"
     );
     wrk.assert_success(&mut cmd);
 }

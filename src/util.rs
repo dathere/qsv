@@ -1655,7 +1655,22 @@ pub fn safe_header_names(
         let mut sequence_suffix = 2_u16;
         let mut candidate_name = safe_name.clone();
         while name_vec.contains(&candidate_name) {
-            candidate_name = format!("{safe_name}_{sequence_suffix}");
+            // Trim the base so that base + "_<n>" stays within the 60-char
+            // limit; otherwise the pre-truncated `safe_name` plus suffix could
+            // overflow (e.g. safe_name=60 chars + "_2" → 62 chars).
+            let suffix = format!("_{sequence_suffix}");
+            let suffix_chars = suffix.chars().count();
+            let base_max = 60_usize.saturating_sub(suffix_chars);
+            let base = if safe_name.chars().count() > base_max {
+                let cut = safe_name
+                    .char_indices()
+                    .nth(base_max)
+                    .map_or(safe_name.len(), |(i, _)| i);
+                &safe_name[..cut]
+            } else {
+                safe_name.as_str()
+            };
+            candidate_name = format!("{base}{suffix}");
             sequence_suffix += 1;
         }
         if candidate_name.ne(header_name) {

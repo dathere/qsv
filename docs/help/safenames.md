@@ -98,7 +98,7 @@ qsv safenames --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑mode`&nbsp; | string | Rename header names to "safe" names - i.e. guaranteed "database-ready" names. It has six modes - conditional, always, verify, Verbose, with Verbose having two submodes - JSON & pretty JSON. | `Always` |
+| &nbsp;`‑‑mode`&nbsp; | string | Rename header names to "safe" names — i.e. guaranteed "database-ready" names. The mode is selected by the FIRST character of the value, and case matters: | `Always` |
 | &nbsp;`‑‑reserved`&nbsp; | string | Comma-delimited list of additional case-insensitive reserved names that should be considered "unsafe." If a header name is found in the reserved list, it will be prefixed with "reserved_". | `_id` |
 | &nbsp;`‑‑prefix`&nbsp; | string | Certain systems do not allow header names to start with "_" (e.g. CKAN Datastore). This option allows the specification of the unsafe prefix to use when a header starts with "_". | `unsafe_` |
 

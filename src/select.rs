@@ -155,17 +155,25 @@ impl SelectorParser {
             (self.parse_name(), false)
         };
         if name.is_empty() {
-            return fail!("Empty selector name.");
+            return if self.cur() == Some('[') {
+                fail!("Index '[...]' must be preceded by a column name.")
+            } else {
+                fail!("Empty selector name.")
+            };
         }
+        // First-occurrence index: matches the unquoted name fallback below,
+        // which also defaults to the first occurrence when the header name
+        // is not numeric (see `IndexedName(name, 0)` in the `Err` arm).
+        const FIRST_OCCURRENCE: usize = 0;
         Ok(if self.cur() == Some('[') {
             let idx = self.parse_index()?;
             OneSelector::IndexedName(name, idx)
         } else if quoted {
             // A quoted name is always a header name, never coerced to an index.
-            OneSelector::IndexedName(name, 0)
+            OneSelector::IndexedName(name, FIRST_OCCURRENCE)
         } else {
             match FromStr::from_str(&name) {
-                Err(_) => OneSelector::IndexedName(name, 0),
+                Err(_) => OneSelector::IndexedName(name, FIRST_OCCURRENCE),
                 Ok(idx) => OneSelector::Index(idx),
             }
         })

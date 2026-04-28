@@ -117,6 +117,7 @@ Common options:
 "#;
 
 use std::{
+    collections::BTreeMap,
     fs,
     sync::{
         Arc,
@@ -167,11 +168,24 @@ struct Args {
     flag_jobs:           Option<usize>,
 }
 
-// SearchResult holds information about a search result for parallel processing
+// SearchResult holds a record that needs to be written to output.
+// In filter mode (no --flag), only matched records are produced.
+// In flag mode (--flag), every record is produced so the flag column can be set.
 struct SearchResult {
     row_number: u64,
     record:     csv::ByteRecord,
     matched:    bool,
+}
+
+// ChunkOutput is what each parallel worker sends back over the channel.
+// In --quick mode, `records` is empty and only `first_match_row` is populated.
+// In normal mode, `first_match_row` is None; `records` holds the rows the worker
+// has decided need to be written, and `match_count` is the worker's tally.
+struct ChunkOutput {
+    chunk_index:     usize,
+    records:         Vec<SearchResult>,
+    match_count:     u64,
+    first_match_row: Option<u64>,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -471,7 +485,9 @@ impl Args {
         let preview_start = std::time::Instant::now();
         let mut collecting_preview = preview_limit > 0;
 
-        if flag_json {
+        // skip the opening '[' in quick mode since we return early
+        // without writing any records and would never write the closing ']'
+        if flag_json && !flag_quick {
             json_wtr.write_all(b"[")?;
         }
 
@@ -578,15 +594,18 @@ impl Args {
         let flag_quick = self.flag_quick;
         let flag_no_headers = self.flag_no_headers;
 
-        // Atomic flag for early termination in quick mode
+        // Best-effort flag for early termination in --quick mode.
+        // Workers check this between records to stop processing once any thread
+        // has reported a match. The receiver still waits for all chunks to
+        // determine the earliest matching row.
         let match_found = Arc::new(AtomicBool::new(false));
 
         // Create thread pool and channel
         let pool = ThreadPool::new(njobs);
-        let (send, recv) = crossbeam_channel::bounded(nchunks);
+        let (send, recv) = crossbeam_channel::bounded::<CliResult<ChunkOutput>>(nchunks);
 
         // Spawn search jobs
-        for i in 0..nchunks {
+        for chunk_index in 0..nchunks {
             let (send, args, sel, pattern, match_found_flag) = (
                 send.clone(),
                 self.clone(),
@@ -595,58 +614,104 @@ impl Args {
                 Arc::clone(&match_found),
             );
             pool.execute(move || {
-                // safety: we know the file is indexed and seekable
-                let mut idx = args.rconfig().indexed().unwrap().unwrap();
-                idx.seek((i * chunk_size) as u64).unwrap();
-                let it = idx.byte_records().take(chunk_size);
+                let result: CliResult<ChunkOutput> = (|| {
+                    let mut idx = args
+                        .rconfig()
+                        .indexed()?
+                        .ok_or_else(|| CliError::Other("CSV index unavailable".to_string()))?;
+                    idx.seek((chunk_index * chunk_size) as u64)?;
+                    let it = idx.byte_records().take(chunk_size);
+                    let start_row = (chunk_index * chunk_size) as u64 + 1;
 
-                let mut results = Vec::with_capacity(chunk_size);
-
-                // 1-based row numbering
-                for (row_number, record) in ((i * chunk_size) as u64 + 1..).zip(it.flatten()) {
-                    // Early exit for quick mode if match already found by another thread
-                    if flag_quick && match_found_flag.load(Ordering::Relaxed) {
-                        break;
+                    if flag_quick {
+                        // --quick: only track the earliest match in this chunk.
+                        // No record allocation; stop as soon as we find one.
+                        for (row_number, record_result) in (start_row..).zip(it) {
+                            if match_found_flag.load(Ordering::Relaxed) {
+                                break;
+                            }
+                            let record = record_result?;
+                            let matched = if invert_match {
+                                !sel.select(&record).any(|f| pattern.is_match(f))
+                            } else {
+                                sel.select(&record).any(|f| pattern.is_match(f))
+                            };
+                            if matched {
+                                match_found_flag.store(true, Ordering::Relaxed);
+                                return Ok(ChunkOutput {
+                                    chunk_index,
+                                    records: Vec::new(),
+                                    match_count: 1,
+                                    first_match_row: Some(row_number),
+                                });
+                            }
+                        }
+                        return Ok(ChunkOutput {
+                            chunk_index,
+                            records: Vec::new(),
+                            match_count: 0,
+                            first_match_row: None,
+                        });
                     }
 
-                    let matched = if invert_match {
-                        !sel.select(&record).any(|f| pattern.is_match(f))
-                    } else {
-                        sel.select(&record).any(|f| pattern.is_match(f))
-                    };
-
-                    // Set flag if we found a match in quick mode
-                    if flag_quick && matched {
-                        match_found_flag.store(true, Ordering::Relaxed);
+                    // Normal mode: only retain records we actually need to write.
+                    // In flag mode (flag_flag), every row is needed so the flag column
+                    // can be populated. In filter mode, only matched rows are needed.
+                    let mut records: Vec<SearchResult> = Vec::new();
+                    let mut match_count: u64 = 0;
+                    for (row_number, record_result) in (start_row..).zip(it) {
+                        let record = record_result?;
+                        let matched = if invert_match {
+                            !sel.select(&record).any(|f| pattern.is_match(f))
+                        } else {
+                            sel.select(&record).any(|f| pattern.is_match(f))
+                        };
+                        if matched {
+                            match_count += 1;
+                        }
+                        if flag_flag || matched {
+                            records.push(SearchResult {
+                                row_number,
+                                record,
+                                matched,
+                            });
+                        }
                     }
-
-                    results.push(SearchResult {
-                        row_number,
-                        record,
-                        matched,
-                    });
-                }
-                send.send(results).unwrap();
+                    Ok(ChunkOutput {
+                        chunk_index,
+                        records,
+                        match_count,
+                        first_match_row: None,
+                    })
+                })();
+                // If the receiver has already been dropped (e.g., main thread
+                // returned early on another worker's error), discard quietly.
+                let _ = send.send(result);
             });
         }
         drop(send);
 
-        // Collect all results from all chunks
-        let mut all_chunks: Vec<Vec<SearchResult>> = Vec::with_capacity(nchunks);
-        for chunk_results in &recv {
-            all_chunks.push(chunk_results);
-        }
-
-        // Sort chunks by first row_number to maintain original order
-        all_chunks.sort_unstable_by_key(|chunk| chunk.first().map_or(0, |r| r.row_number));
-
-        // Handle --quick mode: find earliest match
+        // --quick mode: collect each worker's earliest-match-in-chunk and
+        // pick the lowest chunk_index that reported Some(row).
         if self.flag_quick {
-            if let Some(first_match) = all_chunks.iter().flatten().find(|r| r.matched) {
-                if !self.flag_quiet {
-                    eprintln!("{}", first_match.row_number);
+            let mut earliest: Option<(usize, u64)> = None;
+            for chunk_msg in &recv {
+                let chunk = chunk_msg?;
+                if let Some(row) = chunk.first_match_row {
+                    match earliest {
+                        None => earliest = Some((chunk.chunk_index, row)),
+                        Some((idx, _)) if chunk.chunk_index < idx => {
+                            earliest = Some((chunk.chunk_index, row));
+                        },
+                        _ => {},
+                    }
                 }
-                info!("quick search first match at {}", first_match.row_number);
+            }
+            if let Some((_, row)) = earliest {
+                if !self.flag_quiet {
+                    eprintln!("{row}");
+                }
+                info!("quick search first match at {row}");
                 return Ok(());
             }
             // No match found
@@ -674,30 +739,37 @@ impl Args {
             json_wtr.write_all(b"[")?;
         }
 
-        for chunk in all_chunks {
-            for result in chunk {
-                let mut record = result.record;
-                let matched = result.matched;
+        // Stream chunks in row order as they arrive. Out-of-order chunks
+        // are buffered in `pending` until their predecessor lands; this caps
+        // memory at roughly the number of in-flight workers worth of rows
+        // rather than the whole file.
+        let mut pending: BTreeMap<usize, ChunkOutput> = BTreeMap::new();
+        let mut next_chunk: usize = 0;
 
-                if matched {
-                    match_ctr += 1;
+        for chunk_msg in &recv {
+            let chunk = chunk_msg?;
+            pending.insert(chunk.chunk_index, chunk);
+
+            while let Some(chunk) = pending.remove(&next_chunk) {
+                match_ctr += chunk.match_count;
+                for result in chunk.records {
+                    let mut record = result.record;
+                    write_result_record(
+                        &mut record,
+                        result.row_number,
+                        result.matched,
+                        flag_flag,
+                        flag_json,
+                        flag_no_headers,
+                        matches_only,
+                        &headers,
+                        &mut wtr,
+                        &mut json_wtr,
+                        &mut is_first,
+                        &mut matched_rows,
+                    )?;
                 }
-
-                // Use helper to write record if needed
-                write_result_record(
-                    &mut record,
-                    result.row_number,
-                    matched,
-                    flag_flag,
-                    flag_json,
-                    flag_no_headers,
-                    matches_only,
-                    &headers,
-                    &mut wtr,
-                    &mut json_wtr,
-                    &mut is_first,
-                    &mut matched_rows,
-                )?;
+                next_chunk += 1;
             }
         }
 

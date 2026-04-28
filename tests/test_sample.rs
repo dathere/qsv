@@ -2040,7 +2040,7 @@ fn sample_timeseries_adaptive_both() {
 //
 // These spin up a local actix-web server with hand-built fixture bytes and
 // exercise the boundary detection added in PR #3774:
-//   * RFC-4180 quoted newlines in the header are not mis-split.
+//   * RFC-4180 quoted newlines in the header are not split incorrectly.
 //   * --max-size truncation drops any partial trailing record.
 //   * Non-2xx HTTP status fails fast.
 //   * --delimiter is honored on the streaming path.

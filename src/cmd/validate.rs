@@ -1138,6 +1138,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // if no JSON Schema supplied, only let csv reader RFC4180-validate csv file
     if !has_json_schema && args.arg_json_schema.is_none() {
+        // Warn when a .json file appears earlier in the input list — schema detection
+        // only looks at the last positional, so a misordered argument silently falls
+        // into RFC 4180 mode.
+        if args.arg_input.iter().rev().skip(1).any(|p| {
+            p.extension()
+                .and_then(std::ffi::OsStr::to_str)
+                .is_some_and(|ext| ext.to_lowercase() == "json")
+        }) {
+            wwarn!(
+                "A .json file is present in the input list but is not the last argument. Falling \
+                 back to RFC 4180 validation. Move the schema file to the end if you intended \
+                 JSON Schema validation."
+            );
+        }
         // For RFC 4180 validation mode, we support Extended Input Support
         return validate_rfc4180_mode(&args);
     }
@@ -1167,6 +1181,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
+    // JSON Schema validation requires headers — reject early, before opening the file.
+    if args.flag_no_headers {
+        return fail_clierror!("Cannot validate CSV without headers against a JSON Schema.");
+    }
+
     let input_path = input_files.first().ok_or_else(|| {
         if has_json_schema && args.arg_input.len() == 1 {
             CliError::Other(
@@ -1190,15 +1209,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_delimiter.is_some() {
         rconfig = rconfig.delimiter(args.flag_delimiter);
     }
-    DELIMITER.set(args.flag_delimiter).unwrap();
+    // ignore the "already set" error so re-entrant calls (e.g., qsv used as a library)
+    // don't panic; first-call value wins, which is fine for a single-shot command.
+    let _ = DELIMITER.set(args.flag_delimiter);
 
     let mut rdr = rconfig.reader()?;
-
-    // if we're here, we're validating with a JSON Schema
-    // JSONSchema validation requires headers
-    if args.flag_no_headers {
-        return fail_clierror!("Cannot validate CSV without headers against a JSON Schema.");
-    }
 
     // prep progress bar
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
@@ -1224,27 +1239,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let header_len = headers.len();
 
     #[cfg(not(feature = "lite"))]
-    let qsv_cache_dir = lookup::set_qsv_cache_dir(&args.flag_cache_dir)?;
-    #[cfg(not(feature = "lite"))]
-    QSV_CACHE_DIR.set(qsv_cache_dir)?;
+    {
+        let qsv_cache_dir = lookup::set_qsv_cache_dir(&args.flag_cache_dir)?;
+        // ignore "already set" — first-call value wins; safe under re-entry.
+        let _ = QSV_CACHE_DIR.set(qsv_cache_dir);
 
-    // check the QSV_CKAN_API environment variable
-    #[cfg(not(feature = "lite"))]
-    CKAN_API.set(if let Ok(api) = std::env::var("QSV_CKAN_API") {
-        api
-    } else {
-        args.flag_ckan_api.clone()
-    })?;
+        let ckan_api = std::env::var("QSV_CKAN_API").unwrap_or_else(|_| args.flag_ckan_api.clone());
+        let _ = CKAN_API.set(ckan_api);
 
-    // check the QSV_CKAN_TOKEN environment variable
-    #[cfg(not(feature = "lite"))]
-    CKAN_TOKEN
-        .set(if let Ok(token) = std::env::var("QSV_CKAN_TOKEN") {
-            Some(token)
-        } else {
-            args.flag_ckan_token.clone()
-        })
-        .unwrap();
+        let ckan_token = std::env::var("QSV_CKAN_TOKEN")
+            .ok()
+            .or_else(|| args.flag_ckan_token.clone());
+        let _ = CKAN_TOKEN.set(ckan_token);
+    }
 
     // parse and compile supplied JSON Schema
     let json_schema_path =
@@ -1368,8 +1375,9 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
         debug!("schema json: {:?}", &schema_json);
     }
 
-    // set this once, as this is used repeatedly in a hot loop
-    NULL_TYPE.set(Value::String("null".to_string())).unwrap();
+    // set this once, as this is used repeatedly in a hot loop.
+    // get_or_init makes this re-entry-safe (first-call value wins).
+    NULL_TYPE.get_or_init(|| Value::String("null".to_string()));
 
     // get JSON types for each column in CSV file
     let header_types = get_json_types(&headers, &schema_json)?;
@@ -2603,6 +2611,9 @@ fn test_validate_currency_email_dynamicenum_validator() {
 }
 
 #[test]
+// makes a live network call; ignored by default so CI/offline runs are deterministic.
+// run explicitly with `cargo test test_load_json_via_url -- --ignored`.
+#[ignore]
 fn test_load_json_via_url() {
     #[cfg(not(feature = "lite"))]
     let qsv_cache_dir = lookup::set_qsv_cache_dir("~/.qsv-cache").unwrap();

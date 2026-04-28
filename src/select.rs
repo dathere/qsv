@@ -57,11 +57,6 @@ impl SelectColumns {
         }
         Ok(Selection(map))
     }
-
-    #[allow(dead_code)]
-    pub const fn is_empty(&self) -> bool {
-        self.selectors.is_empty()
-    }
 }
 
 impl fmt::Debug for SelectColumns {
@@ -101,7 +96,9 @@ impl SelectorParser {
 
     fn parse(&mut self) -> Result<Vec<Selector>, String> {
         if (self.chars.first(), self.chars.last()) == (Some(&'/'), Some(&'/')) {
-            if self.chars.len() == 2 {
+            // A single '/' has first == last (same element) but isn't a valid
+            // regex delimiter — treat it (and the empty `//` form) as empty.
+            if self.chars.len() < 3 {
                 return fail_format!("Empty regex: {}", self.chars.iter().collect::<String>());
             }
             let re: String = self.chars[1..(self.chars.len() - 1)].iter().collect();
@@ -147,19 +144,25 @@ impl SelectorParser {
     }
 
     fn parse_one(&mut self) -> Result<OneSelector, String> {
-        let name = if self.cur() == Some('"') {
+        let (name, quoted) = if self.cur() == Some('"') {
             self.bump();
-            self.parse_quoted_name()?
+            (self.parse_quoted_name()?, true)
         } else {
             if self.cur() == Some('_') {
                 self.bump();
                 return Ok(OneSelector::End);
             }
-            self.parse_name()
+            (self.parse_name(), false)
         };
+        if name.is_empty() {
+            return fail!("Empty selector name.");
+        }
         Ok(if self.cur() == Some('[') {
             let idx = self.parse_index()?;
             OneSelector::IndexedName(name, idx)
+        } else if quoted {
+            // A quoted name is always a header name, never coerced to an index.
+            OneSelector::IndexedName(name, 0)
         } else {
             match FromStr::from_str(&name) {
                 Err(_) => OneSelector::IndexedName(name, 0),
@@ -190,8 +193,9 @@ impl SelectorParser {
                 Some('"') => {
                     self.bump();
                     if self.cur() == Some('"') {
+                        // CSV-style escape: a doubled "" inside a quoted name
+                        // represents a single literal " in the header value.
                         self.bump();
-                        name.push('"');
                         name.push('"');
                         continue;
                     }
@@ -278,15 +282,7 @@ impl Selector {
                 Ok(match i1.cmp(&i2) {
                     Ordering::Equal => vec![i1],
                     Ordering::Less => (i1..=i2).collect(),
-                    Ordering::Greater => {
-                        let mut inds = vec![];
-                        let mut i = i1 + 1;
-                        while i > i2 {
-                            i -= 1;
-                            inds.push(i);
-                        }
-                        inds
-                    },
+                    Ordering::Greater => (i2..=i1).rev().collect(),
                 })
             },
             Selector::Regex(ref re) => {
@@ -311,11 +307,12 @@ impl OneSelector {
     fn index(&self, first_record: &csv::ByteRecord, use_names: bool) -> Result<usize, String> {
         match *self {
             OneSelector::Start => Ok(0),
-            OneSelector::End => Ok(if first_record.is_empty() {
-                0
-            } else {
-                first_record.len() - 1
-            }),
+            OneSelector::End => {
+                if first_record.is_empty() {
+                    return fail!("Input is empty.");
+                }
+                Ok(first_record.len() - 1)
+            },
             OneSelector::Index(i) => {
                 if first_record.is_empty() {
                     return fail!("Input is empty.");

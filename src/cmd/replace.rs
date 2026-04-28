@@ -88,9 +88,9 @@ Common options:
 
 "#;
 
-use std::{borrow::Cow, fs, sync::Arc};
+use std::{borrow::Cow, collections::BTreeMap, fs, sync::Arc};
 
-use crossbeam_channel;
+use crossbeam_channel::bounded;
 use foldhash::HashSet;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget};
@@ -106,7 +106,6 @@ use crate::{
     util,
 };
 
-#[allow(dead_code)]
 #[derive(Deserialize, Clone)]
 struct Args {
     arg_input:           Option<String>,
@@ -130,45 +129,40 @@ struct Args {
 
 const NULL_VALUE: &str = "<null>";
 
-// ReplaceResult holds information about a replacement result for parallel processing
-struct ReplaceResult {
-    row_number:  u64,
-    record:      csv::ByteRecord,
-    match_count: u64,  // matches in this record
-    had_match:   bool, // did this record have any matches
+// ChunkOutput is the unit of work returned by each parallel worker:
+// the processed records for a chunk, the chunk's index (used to write
+// chunks back in input order), and the chunk's total match count.
+struct ChunkOutput {
+    chunk_index: usize,
+    records:     Vec<csv::ByteRecord>,
+    match_count: u64,
 }
 
 /// Process a single record, applying the regex pattern and replacement to selected fields.
-/// Returns (processed_record, match_count, had_any_match)
+/// Returns (processed_record, match_count).
 #[inline]
 fn process_record(
     record: &csv::ByteRecord,
     sel_indices: &HashSet<usize>,
     pattern: &regex::bytes::Regex,
     replacement: &[u8],
-) -> (csv::ByteRecord, u64, bool) {
+) -> (csv::ByteRecord, u64) {
     let mut match_count = 0;
-    let mut had_match = false;
 
     let processed_record = record
         .into_iter()
         .enumerate()
         .map(|(i, v)| {
-            if sel_indices.contains(&i) {
-                if pattern.is_match(v) {
-                    match_count += 1;
-                    had_match = true;
-                    pattern.replace_all(v, replacement)
-                } else {
-                    Cow::Borrowed(v)
-                }
+            if sel_indices.contains(&i) && pattern.is_match(v) {
+                match_count += 1;
+                pattern.replace_all(v, replacement)
             } else {
                 Cow::Borrowed(v)
             }
         })
         .collect();
 
-    (processed_record, match_count, had_match)
+    (processed_record, match_count)
 }
 
 /// Handle the final results of a replace operation.
@@ -226,7 +220,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if let Some(idx) = rconfig.indexed()?
         && util::njobs(args.flag_jobs) > 1
     {
-        args.parallel_replace(&idx, pattern, &rconfig, replacement)
+        args.parallel_replace(&idx, &pattern, &rconfig, replacement)
     } else {
         args.sequential_replace(&pattern, &rconfig, replacement)
     }
@@ -277,17 +271,16 @@ impl Args {
                 progress.inc(1);
             }
 
-            let (processed_record, match_count, had_match) =
+            let (processed_record, match_count) =
                 process_record(&record, &sel_indices, pattern, replacement);
 
             total_match_ctr += match_count;
             #[cfg(any(feature = "feature_capable", feature = "lite"))]
-            if had_match {
+            if match_count > 0 {
                 rows_with_matches_ctr += 1;
             }
 
             wtr.write_byte_record(&processed_record)?;
-            record = processed_record;
         }
 
         wtr.flush()?;
@@ -310,7 +303,7 @@ impl Args {
     fn parallel_replace(
         &self,
         idx: &Indexed<fs::File, fs::File>,
-        pattern: regex::bytes::Regex,
+        pattern: &regex::bytes::Regex,
         rconfig: &Config,
         replacement: &[u8],
     ) -> CliResult<()> {
@@ -318,9 +311,17 @@ impl Args {
         let headers = rdr.byte_headers()?.clone();
         let sel = rconfig.selection(&headers)?;
 
+        // Setup writer and emit headers up-front so the empty-index path
+        // produces the same output shape as `sequential_replace`.
+        let mut wtr = Config::new(self.flag_output.as_ref()).writer()?;
+        if !rconfig.no_headers {
+            wtr.write_record(&headers)?;
+        }
+
         let idx_count = idx.count() as usize;
         if idx_count == 0 {
-            return Ok(());
+            wtr.flush()?;
+            return handle_replace_results(0, self.flag_quiet, self.flag_not_one);
         }
 
         let njobs = util::njobs(self.flag_jobs);
@@ -331,86 +332,74 @@ impl Args {
         let sel_indices: Arc<HashSet<usize>> = Arc::new(sel.iter().copied().collect());
 
         // Wrap pattern in Arc for sharing across threads
-        let pattern = Arc::new(pattern);
+        let pattern = Arc::new(pattern.clone());
         let replacement = Arc::new(replacement.to_vec());
 
         // Create thread pool and channel
         let pool = ThreadPool::new(njobs);
-        let (send, recv) = crossbeam_channel::bounded(nchunks);
+        let (send, recv) = bounded::<CliResult<ChunkOutput>>(nchunks);
 
-        // Before the loop, prepare what each thread needs
         let rconfig_template = rconfig.clone();
 
         // Spawn replacement jobs
-        for i in 0..nchunks {
+        for chunk_index in 0..nchunks {
             let (send, sel_indices, pattern, replacement) = (
                 send.clone(),
-                // self.clone(),
                 Arc::clone(&sel_indices),
                 Arc::clone(&pattern),
                 Arc::clone(&replacement),
             );
             let rconfig = rconfig_template.clone();
             pool.execute(move || {
-                // safety: we know the file is indexed and seekable
-                let mut idx = rconfig.indexed().unwrap().unwrap();
-                idx.seek((i * chunk_size) as u64).unwrap();
-                let it = idx.byte_records().take(chunk_size);
+                let result: CliResult<ChunkOutput> = (|| {
+                    let mut idx = rconfig
+                        .indexed()?
+                        .ok_or_else(|| CliError::Other("CSV index unavailable".to_string()))?;
+                    idx.seek((chunk_index * chunk_size) as u64)?;
+                    let it = idx.byte_records().take(chunk_size);
 
-                let mut results = Vec::with_capacity(chunk_size);
-
-                // 1-based row numbering
-                for (row_number, record) in ((i * chunk_size) as u64 + 1..).zip(it.flatten()) {
-                    let (processed_record, match_count_local, had_match_local) =
-                        process_record(&record, &sel_indices, &pattern, replacement.as_slice());
-
-                    results.push(ReplaceResult {
-                        row_number,
-                        record: processed_record,
-                        match_count: match_count_local,
-                        had_match: had_match_local,
-                    });
-                }
-                send.send(results).unwrap();
+                    let mut records = Vec::with_capacity(chunk_size);
+                    let mut match_count: u64 = 0;
+                    for record_result in it {
+                        let record = record_result?;
+                        let (processed, n) =
+                            process_record(&record, &sel_indices, &pattern, replacement.as_slice());
+                        match_count += n;
+                        records.push(processed);
+                    }
+                    Ok(ChunkOutput {
+                        chunk_index,
+                        records,
+                        match_count,
+                    })
+                })();
+                // If the receiver has already been dropped (e.g. the main
+                // thread bailed on another worker's error), discard quietly.
+                let _ = send.send(result);
             });
         }
         drop(send);
 
-        // Collect all results from all chunks
-        let mut all_chunks: Vec<Vec<ReplaceResult>> = Vec::with_capacity(nchunks);
-        for chunk_results in &recv {
-            all_chunks.push(chunk_results);
-        }
-
-        // Sort chunks by first row_number to maintain original order
-        all_chunks.sort_unstable_by_key(|chunk| chunk.first().map_or(0, |r| r.row_number));
-
-        // Setup writer
-        let mut wtr = Config::new(self.flag_output.as_ref()).writer()?;
-
-        // Write headers
-        if !rconfig.no_headers {
-            wtr.write_record(&headers)?;
-        }
-
-        // Write results and aggregate match counters
+        // Stream chunks in input order as they arrive. Out-of-order chunks
+        // are buffered in `pending` until their predecessor lands; this caps
+        // peak memory at roughly one chunk per in-flight worker rather than
+        // the entire file.
         let mut total_match_ctr: u64 = 0;
-        #[cfg(any(feature = "feature_capable", feature = "lite"))]
-        let mut _rows_with_matches_ctr: u64 = 0;
-
-        for chunk in all_chunks {
-            for result in chunk {
-                total_match_ctr += result.match_count;
-                #[cfg(any(feature = "feature_capable", feature = "lite"))]
-                if result.had_match {
-                    _rows_with_matches_ctr += 1;
+        let mut pending: BTreeMap<usize, ChunkOutput> = BTreeMap::new();
+        let mut next_chunk: usize = 0;
+        for chunk_msg in &recv {
+            let chunk = chunk_msg?;
+            pending.insert(chunk.chunk_index, chunk);
+            while let Some(chunk) = pending.remove(&next_chunk) {
+                total_match_ctr += chunk.match_count;
+                for record in chunk.records {
+                    wtr.write_byte_record(&record)?;
                 }
-                wtr.write_byte_record(&result.record)?;
+                next_chunk += 1;
             }
         }
 
         wtr.flush()?;
-
         handle_replace_results(total_match_ctr, self.flag_quiet, self.flag_not_one)
     }
 }

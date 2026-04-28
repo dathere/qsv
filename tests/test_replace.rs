@@ -831,3 +831,39 @@ fn replace_indexed_parallel() {
     assert_eq!(got, expected);
     wrk.assert_success(&mut cmd);
 }
+
+#[test]
+fn replace_indexed_empty() {
+    // Regression: parallel_replace must emit headers and honor --not-one
+    // even when the indexed file has zero data rows, matching sequential_replace.
+    let wrk = Workdir::new("replace_indexed_empty");
+    wrk.create("data.csv", vec![svec!["identifier", "color"]]);
+
+    let mut cmd = wrk.command("index");
+    cmd.arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    // Without --not-one, an empty file produces zero matches → exit 1.
+    let mut cmd = wrk.command("replace");
+    cmd.arg("foo")
+        .arg("bar")
+        .arg("data.csv")
+        .arg("--jobs")
+        .arg("2");
+    wrk.assert_err(&mut cmd);
+
+    // With --not-one, the same input succeeds and the header is preserved.
+    let mut cmd = wrk.command("replace");
+    cmd.arg("foo")
+        .arg("bar")
+        .arg("data.csv")
+        .arg("--jobs")
+        .arg("2")
+        .arg("--not-one");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["identifier", "color"]];
+    assert_eq!(got, expected);
+    wrk.assert_success(&mut cmd);
+}

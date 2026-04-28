@@ -16,8 +16,10 @@ then the row is written to the output, and the number of matches to stderr.
 The columns to search can be limited with the '--select' flag (but the full row
 is still written to the output if there is a match).
 
-Returns exitcode 0 when matches are found, returning number of matches to stderr.
+Returns exitcode 0 when matches are found.
 Returns exitcode 1 when no match is found, unless the '--not-one' flag is used.
+Use --count to also write the number of matches to stderr (suppressed by --quiet).
+With --json, a JSON summary is always written to stderr instead.
 
 When --quick is enabled, no output is produced and exitcode 0 is returned on 
 the first match.
@@ -66,8 +68,8 @@ searchset options:
                                the row number of the first match to stderr.
                                Return exit code 1 if no match is found.
                                No output is produced. Ignored if --json is enabled.
-    -c, --count                Return number of matches to stderr.
-                               Ignored if --json is enabled.
+    -c, --count                Write the number of matches to stderr.
+                               Suppressed by --quiet. Ignored if --json is enabled.
     -j, --json                 Return number of matches, number of rows with matches,
                                and number of rows to stderr in JSON format.
     --size-limit <mb>          Set the approximate size limit (MB) of the compiled
@@ -93,15 +95,18 @@ Common options:
     -d, --delimiter <arg>      The field delimiter for reading CSV data.
                                Must be a single character. (default: ,)
     -p, --progressbar          Show progress bars. Not valid for stdin.
-    -q, --quiet                Do not return number of matches to stderr.
+    -q, --quiet                Do not write the match count (--count) or the
+                               first match row number reported by --quick to stderr.
+                               Does not suppress the --json summary.
 "#;
 
 use std::{
+    collections::BTreeMap,
     fs::{self, File},
     io::{self, BufRead, BufReader},
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
@@ -150,12 +155,26 @@ struct Args {
     flag_jobs:              Option<usize>,
 }
 
-// SearchSetResult holds information about a search result for parallel processing
+// SearchSetResult holds a record that needs to be written by the main thread.
+// In filter mode, only matched rows are produced. In flag mode, every row is
+// produced (for the flag column). When --flag-matches-only is set without
+// --unmatched-output, non-matched rows are dropped in the worker.
 struct SearchSetResult {
     row_number: u64,
     record:     csv::ByteRecord,
     matched:    bool,
     match_list: Vec<usize>, // indices of matched regexes (1-based)
+}
+
+// ChunkOutput is what each parallel worker sends back over the channel.
+// In --quick mode, `results` is empty and only `first_match_row` is populated.
+// In normal mode, `first_match_row` is None; `results` holds the rows the worker
+// retained for writing, and `match_row_count` is the worker's tally of matched rows.
+struct ChunkOutput {
+    chunk_index:     usize,
+    results:         Vec<SearchSetResult>,
+    match_row_count: u64,
+    first_match_row: Option<u64>,
 }
 
 fn read_regexset(filename: &str, literal: bool, exact: bool) -> io::Result<Vec<String>> {
@@ -435,95 +454,170 @@ impl Args {
             true
         });
 
-        // Wrap pattern and regex_labels in Arc for sharing across threads
+        // Decide whether non-matched rows must be retained by workers:
+        //   - flag mode without --flag-matches-only: every row is written to the main output (with
+        //     the flag column), so non-matched are needed.
+        //   - flag mode with --flag-matches-only AND --unmatched-output: non-matched rows are
+        //     routed to the unmatched writer.
+        //   - all other cases (filter mode, or matches-only without unmatched-output): non-matched
+        //     rows are discarded — drop them in the worker.
+        let has_unmatched_output = self.flag_unmatched_output.is_some();
+        let needs_unmatched =
+            do_match_list && (!self.flag_flag_matches_only || has_unmatched_output);
+
         let pattern = Arc::new(pattern);
-        let regex_labels = Arc::new(regex_labels.to_vec());
         let invert_match = self.flag_invert_match;
         let flag_quick = self.flag_quick;
 
-        // Atomic flag for early termination in quick mode
-        let match_found = Arc::new(AtomicBool::new(false));
+        // Lowest chunk_index that has reported a match in --quick mode (or
+        // usize::MAX if none yet). A chunk can stop scanning only when a
+        // STRICTLY LOWER-indexed chunk has matched - if its own or a
+        // higher-indexed chunk has matched, this chunk may still contain an
+        // earlier match in row order and must keep going. This preserves the
+        // sequential "first match in row order" semantic under parallelism.
+        let lowest_match_chunk = Arc::new(AtomicUsize::new(usize::MAX));
 
         // Create thread pool and channel
         let pool = ThreadPool::new(njobs);
-        let (send, recv) = crossbeam_channel::bounded(nchunks);
+        let (send, recv) = crossbeam_channel::bounded::<CliResult<ChunkOutput>>(nchunks);
+
+        // Share Args across workers via Arc to avoid a per-worker clone
+        // of SelectColumns and other inner allocations.
+        let args = Arc::new(self.clone());
 
         // Spawn search jobs
-        for i in 0..nchunks {
-            let (send, args, sel, pattern, match_found_flag) = (
+        for chunk_index in 0..nchunks {
+            let (send, args, sel, pattern, lowest_match) = (
                 send.clone(),
-                self.clone(),
+                Arc::clone(&args),
                 sel.clone(),
                 Arc::clone(&pattern),
-                Arc::clone(&match_found),
+                Arc::clone(&lowest_match_chunk),
             );
             pool.execute(move || {
-                // safety: we know the file is indexed and seekable
-                let mut idx = args.rconfig().indexed().unwrap().unwrap();
-                idx.seek((i * chunk_size) as u64).unwrap();
-                let it = idx.byte_records().take(chunk_size);
+                let result: CliResult<ChunkOutput> = (|| {
+                    let mut idx = args
+                        .rconfig()
+                        .indexed()?
+                        .ok_or_else(|| CliError::Other("CSV index unavailable".to_string()))?;
+                    idx.seek((chunk_index * chunk_size) as u64)?;
+                    let it = idx.byte_records().take(chunk_size);
+                    let start_row = (chunk_index * chunk_size) as u64 + 1;
 
-                let mut results = Vec::with_capacity(chunk_size);
-
-                // 1-based row numbering
-                for (row_number, record) in ((i * chunk_size) as u64 + 1..).zip(it.flatten()) {
-                    // Early exit for quick mode if match already found by another thread
-                    if flag_quick && match_found_flag.load(Ordering::Relaxed) {
-                        break;
-                    }
-
-                    let mut match_list = Vec::with_capacity(pattern.len());
-
-                    // Check if any field matches
-                    let row_matched = sel.select(&record).any(|f| {
-                        let is_match = pattern.is_match(f);
-                        if is_match && do_match_list {
-                            for m in pattern.matches(f) {
-                                match_list.push(m + 1); // 1-based for human readability
+                    if flag_quick {
+                        // --quick: only track the earliest match in this chunk.
+                        // No record allocation; stop as soon as we find one.
+                        // Skip the rest of the chunk if a strictly lower-indexed
+                        // chunk has already matched (no earlier row possible here).
+                        for (row_number, record_result) in (start_row..).zip(it) {
+                            if lowest_match.load(Ordering::Relaxed) < chunk_index {
+                                break;
+                            }
+                            let record = record_result?;
+                            let row_matched = sel.select(&record).any(|f| pattern.is_match(f));
+                            let final_matched = if invert_match {
+                                !row_matched
+                            } else {
+                                row_matched
+                            };
+                            if final_matched {
+                                // Publish this chunk as the lowest matching chunk
+                                // (only if it's strictly lower than the current value).
+                                let mut current = lowest_match.load(Ordering::Relaxed);
+                                while chunk_index < current {
+                                    match lowest_match.compare_exchange_weak(
+                                        current,
+                                        chunk_index,
+                                        Ordering::Relaxed,
+                                        Ordering::Relaxed,
+                                    ) {
+                                        Ok(_) => break,
+                                        Err(c) => current = c,
+                                    }
+                                }
+                                return Ok(ChunkOutput {
+                                    chunk_index,
+                                    results: Vec::new(),
+                                    match_row_count: 1,
+                                    first_match_row: Some(row_number),
+                                });
                             }
                         }
-                        is_match
-                    });
-
-                    let final_matched = if invert_match {
-                        !row_matched
-                    } else {
-                        row_matched
-                    };
-
-                    // Set flag if we found a match in quick mode
-                    if flag_quick && final_matched {
-                        match_found_flag.store(true, Ordering::Relaxed);
+                        return Ok(ChunkOutput {
+                            chunk_index,
+                            results: Vec::new(),
+                            match_row_count: 0,
+                            first_match_row: None,
+                        });
                     }
 
-                    results.push(SearchSetResult {
-                        row_number,
-                        record,
-                        matched: final_matched,
-                        match_list,
-                    });
-                }
-                send.send(results).unwrap();
+                    // Normal mode: only retain records that need to be written.
+                    let mut results: Vec<SearchSetResult> = Vec::new();
+                    let mut match_row_count: u64 = 0;
+                    for (row_number, record_result) in (start_row..).zip(it) {
+                        let record = record_result?;
+                        let mut match_list = Vec::with_capacity(pattern.len());
+                        let row_matched = sel.select(&record).any(|f| {
+                            let is_match = pattern.is_match(f);
+                            if is_match && do_match_list {
+                                for m in pattern.matches(f) {
+                                    match_list.push(m + 1); // 1-based for human readability
+                                }
+                            }
+                            is_match
+                        });
+                        let final_matched = if invert_match {
+                            !row_matched
+                        } else {
+                            row_matched
+                        };
+                        if final_matched {
+                            match_row_count += 1;
+                        }
+                        if final_matched || needs_unmatched {
+                            results.push(SearchSetResult {
+                                row_number,
+                                record,
+                                matched: final_matched,
+                                match_list,
+                            });
+                        }
+                    }
+                    Ok(ChunkOutput {
+                        chunk_index,
+                        results,
+                        match_row_count,
+                        first_match_row: None,
+                    })
+                })();
+                // If the receiver has already been dropped (e.g., main thread
+                // returned early on another worker's error), discard quietly.
+                let _ = send.send(result);
             });
         }
         drop(send);
 
-        // Collect all results from all chunks
-        let mut all_chunks: Vec<Vec<SearchSetResult>> = Vec::with_capacity(nchunks);
-        for chunk_results in &recv {
-            all_chunks.push(chunk_results);
-        }
-
-        // Sort chunks by first row_number to maintain original order
-        all_chunks.sort_unstable_by_key(|chunk| chunk.first().map_or(0, |r| r.row_number));
-
-        // Handle --quick mode: find earliest match
+        // --quick mode: collect each worker's earliest-match-in-chunk and
+        // pick the lowest chunk_index that reported Some(row).
         if self.flag_quick {
-            if let Some(first_match) = all_chunks.iter().flatten().find(|r| r.matched) {
-                if !self.flag_quiet {
-                    eprintln!("{}", first_match.row_number);
+            let mut earliest: Option<(usize, u64)> = None;
+            for chunk_msg in &recv {
+                let chunk = chunk_msg?;
+                if let Some(row) = chunk.first_match_row {
+                    match earliest {
+                        None => earliest = Some((chunk.chunk_index, row)),
+                        Some((idx, _)) if chunk.chunk_index < idx => {
+                            earliest = Some((chunk.chunk_index, row));
+                        },
+                        _ => {},
+                    }
                 }
-                info!("quick searchset first match at {}", first_match.row_number);
+            }
+            if let Some((_, row)) = earliest {
+                if !self.flag_quiet {
+                    eprintln!("{row}");
+                }
+                info!("quick searchset first match at {row}");
                 return Ok(());
             }
             // No match found
@@ -549,53 +643,63 @@ impl Args {
         #[allow(unused_assignments)]
         let mut match_list_with_row = String::with_capacity(20);
 
-        for chunk in all_chunks {
-            for result in chunk {
-                let mut record = result.record;
-                let matched = result.matched;
-                let match_list = result.match_list;
+        // Stream chunks in row order as they arrive. Out-of-order chunks
+        // are buffered in `pending` until their predecessor lands; this caps
+        // memory at roughly the number of in-flight workers worth of rows
+        // rather than the whole file.
+        let mut pending: BTreeMap<usize, ChunkOutput> = BTreeMap::new();
+        let mut next_chunk: usize = 0;
 
-                if matched {
-                    match_row_ctr += 1;
-                }
+        for chunk_msg in &recv {
+            let chunk = chunk_msg?;
+            pending.insert(chunk.chunk_index, chunk);
 
-                if do_match_list {
-                    let flag_column = if matched {
-                        itoa::Buffer::new()
-                            .format(result.row_number)
-                            .clone_into(&mut matched_rows);
-                        if self.flag_invert_match {
-                            matched_rows.as_bytes().to_vec()
-                        } else {
-                            total_matches += match_list.len() as u64;
-                            // builds format!("{matched_rows};{match_list}")
-                            // without intermediate Vec allocation
-                            match_list_with_row.clear();
-                            match_list_with_row.push_str(&matched_rows);
-                            match_list_with_row.push(';');
-                            for (idx, i) in match_list.iter().enumerate() {
-                                if idx > 0 {
-                                    match_list_with_row.push(',');
+            while let Some(chunk) = pending.remove(&next_chunk) {
+                match_row_ctr += chunk.match_row_count;
+                for result in chunk.results {
+                    let mut record = result.record;
+                    let matched = result.matched;
+                    let match_list = result.match_list;
+
+                    if do_match_list {
+                        let flag_column = if matched {
+                            itoa::Buffer::new()
+                                .format(result.row_number)
+                                .clone_into(&mut matched_rows);
+                            if self.flag_invert_match {
+                                matched_rows.as_bytes().to_vec()
+                            } else {
+                                total_matches += match_list.len() as u64;
+                                // builds format!("{matched_rows};{match_list}")
+                                // without intermediate Vec allocation
+                                match_list_with_row.clear();
+                                match_list_with_row.push_str(&matched_rows);
+                                match_list_with_row.push(';');
+                                for (idx, i) in match_list.iter().enumerate() {
+                                    if idx > 0 {
+                                        match_list_with_row.push(',');
+                                    }
+                                    match_list_with_row.push_str(&regex_labels[*i - 1]);
                                 }
-                                match_list_with_row.push_str(&regex_labels[*i - 1]);
+                                match_list_with_row.as_bytes().to_vec()
                             }
-                            match_list_with_row.as_bytes().to_vec()
-                        }
-                    } else {
-                        b"0".to_vec()
-                    };
+                        } else {
+                            b"0".to_vec()
+                        };
 
-                    if self.flag_flag_matches_only && !matched {
-                        if self.flag_unmatched_output.is_some() {
-                            unmatched_wtr.write_byte_record(&record)?;
+                        if self.flag_flag_matches_only && !matched {
+                            if has_unmatched_output {
+                                unmatched_wtr.write_byte_record(&record)?;
+                            }
+                            continue;
                         }
-                        continue;
+                        record.push_field(&flag_column);
+                        wtr.write_byte_record(&record)?;
+                    } else if matched {
+                        wtr.write_byte_record(&record)?;
                     }
-                    record.push_field(&flag_column);
-                    wtr.write_byte_record(&record)?;
-                } else if matched {
-                    wtr.write_byte_record(&record)?;
                 }
+                next_chunk += 1;
             }
         }
 

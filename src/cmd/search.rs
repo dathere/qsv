@@ -135,7 +135,7 @@ use std::{
     fs,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
@@ -606,11 +606,13 @@ impl Args {
         let flag_quick = self.flag_quick;
         let flag_no_headers = self.flag_no_headers;
 
-        // Best-effort flag for early termination in --quick mode.
-        // Workers check this between records to stop processing once any thread
-        // has reported a match. The receiver still waits for all chunks to
-        // determine the earliest matching row.
-        let match_found = Arc::new(AtomicBool::new(false));
+        // Lowest chunk_index that has reported a match in --quick mode (or
+        // usize::MAX if none yet). A chunk can stop scanning only when a
+        // STRICTLY LOWER-indexed chunk has matched - if its own or a
+        // higher-indexed chunk has matched, this chunk may still contain an
+        // earlier match in row order and must keep going. This preserves the
+        // sequential "first match in row order" semantic under parallelism.
+        let lowest_match_chunk = Arc::new(AtomicUsize::new(usize::MAX));
 
         // Create thread pool and channel
         let pool = ThreadPool::new(njobs);
@@ -622,12 +624,12 @@ impl Args {
 
         // Spawn search jobs
         for chunk_index in 0..nchunks {
-            let (send, args, sel, pattern, match_found_flag) = (
+            let (send, args, sel, pattern, lowest_match) = (
                 send.clone(),
                 Arc::clone(&args),
                 sel.clone(),
                 Arc::clone(&pattern),
-                Arc::clone(&match_found),
+                Arc::clone(&lowest_match_chunk),
             );
             pool.execute(move || {
                 let result: CliResult<ChunkOutput> = (|| {
@@ -642,8 +644,10 @@ impl Args {
                     if flag_quick {
                         // --quick: only track the earliest match in this chunk.
                         // No record allocation; stop as soon as we find one.
+                        // Skip the rest of the chunk if a strictly lower-indexed
+                        // chunk has already matched (no earlier row possible here).
                         for (row_number, record_result) in (start_row..).zip(it) {
-                            if match_found_flag.load(Ordering::Relaxed) {
+                            if lowest_match.load(Ordering::Relaxed) < chunk_index {
                                 break;
                             }
                             let record = record_result?;
@@ -653,7 +657,20 @@ impl Args {
                                 sel.select(&record).any(|f| pattern.is_match(f))
                             };
                             if matched {
-                                match_found_flag.store(true, Ordering::Relaxed);
+                                // Publish this chunk as the lowest matching chunk
+                                // (only if it's strictly lower than the current value).
+                                let mut current = lowest_match.load(Ordering::Relaxed);
+                                while chunk_index < current {
+                                    match lowest_match.compare_exchange_weak(
+                                        current,
+                                        chunk_index,
+                                        Ordering::Relaxed,
+                                        Ordering::Relaxed,
+                                    ) {
+                                        Ok(_) => break,
+                                        Err(c) => current = c,
+                                    }
+                                }
                                 return Ok(ChunkOutput {
                                     chunk_index,
                                     records: Vec::new(),

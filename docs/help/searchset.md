@@ -28,8 +28,10 @@ then the row is written to the output, and the number of matches to stderr.
 The columns to search can be limited with the '--select' flag (but the full row
 is still written to the output if there is a match).
 
-Returns exitcode 0 when matches are found, returning number of matches to stderr.
+Returns exitcode 0 when matches are found.
 Returns exitcode 1 when no match is found, unless the '--not-one' flag is used.
+Use --count to also write the number of matches to stderr (suppressed by --quiet).
+With --json, a JSON summary is always written to stderr instead.
 
 When --quick is enabled, no output is produced and exitcode 0 is returned on
 the first match.
@@ -73,7 +75,7 @@ qsv searchset --help
 | &nbsp;`‑‑flag‑matches‑only`&nbsp; | flag | When --flag is enabled, only rows that match are sent to output. Rows that do not match are filtered. |  |
 | &nbsp;`‑‑unmatched‑output`&nbsp; | string | When --flag-matches-only is enabled, output the rows that did not match to <file>. |  |
 | &nbsp;`‑Q,`<br>`‑‑quick`&nbsp; | flag | Return on first match with an exitcode of 0, returning the row number of the first match to stderr. Return exit code 1 if no match is found. No output is produced. Ignored if --json is enabled. |  |
-| &nbsp;`‑c,`<br>`‑‑count`&nbsp; | flag | Return number of matches to stderr. Ignored if --json is enabled. |  |
+| &nbsp;`‑c,`<br>`‑‑count`&nbsp; | flag | Write the number of matches to stderr. Suppressed by --quiet. Ignored if --json is enabled. |  |
 | &nbsp;`‑j,`<br>`‑‑json`&nbsp; | flag | Return number of matches, number of rows with matches, and number of rows to stderr in JSON format. |  |
 | &nbsp;`‑‑size‑limit`&nbsp; | string | Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned. Modify this only if you're getting regular expression compilation errors. | `50` |
 | &nbsp;`‑‑dfa‑size‑limit`&nbsp; | string | Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. Modify this only if you're getting regular expression compilation errors. | `10` |
@@ -91,7 +93,7 @@ qsv searchset --help
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |
-| &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not return number of matches to stderr. |  |
+| &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not write the match count (--count) or the first match row number reported by --quick to stderr. Does not suppress the --json summary. |  |
 
 ---
 **Source:** [`src/cmd/searchset.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/searchset.rs)

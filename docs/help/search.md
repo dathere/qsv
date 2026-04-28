@@ -19,8 +19,9 @@ then the row is written to the output, and the number of matches to stderr.
 The columns to search can be limited with the '--select' flag (but the full row
 is still written to the output if there is a match).
 
-Returns exitcode 0 when matches are found, returning number of matches to stderr.
+Returns exitcode 0 when matches are found.
 Returns exitcode 1 when no match is found, unless the '--not-one' flag is used.
+Use --count to also write the number of matches to stderr (suppressed by --quiet and --json).
 
 When --quick is enabled, no output is produced and exitcode 0 is returned on
 the first match.
@@ -113,13 +114,13 @@ qsv search --help
 | &nbsp;`‑s,`<br>`‑‑select`&nbsp; | string | Select the columns to search. See 'qsv select -h' for the full syntax. |  |
 | &nbsp;`‑v,`<br>`‑‑invert‑match`&nbsp; | flag | Select only rows that did not match |  |
 | &nbsp;`‑u,`<br>`‑‑unicode`&nbsp; | flag | Enable unicode support. When enabled, character classes will match all unicode word characters instead of only ASCII word characters. Decreases performance. |  |
-| &nbsp;`‑f,`<br>`‑‑flag`&nbsp; | string | If given, the command will not filter rows but will instead flag the found rows in a new column named <column>, with the row numbers of the matched rows and 0 for the non-matched rows. If column is named M, only the M column will be written to the output, and only matched rows are returned. |  |
+| &nbsp;`‑f,`<br>`‑‑flag`&nbsp; | string | If given, the command will not filter rows but will instead flag every row in a new column named <column>, set to the row number for matched rows and "0" for non-matched rows. SPECIAL: if <column> is exactly "M", only matched rows are returned AND only the M column is written (all other columns are dropped). To use a literal column name "M" without this behavior, rename it afterward (e.g., with `qsv rename`). |  |
 | &nbsp;`‑Q,`<br>`‑‑quick`&nbsp; | flag | Return on first match with an exitcode of 0, returning the row number of the first match to stderr. Return exit code 1 if no match is found. No output is produced. |  |
-| &nbsp;`‑‑preview‑match`&nbsp; | string | Preview the first N matches or all the matches found in N milliseconds, whichever occurs first. Returns the preview to stderr. Output is still written to stdout or --output as usual. Only applicable when CSV is NOT indexed, as it's read sequentially. Forces a sequential search, even if the CSV is indexed. |  |
-| &nbsp;`‑c,`<br>`‑‑count`&nbsp; | flag | Return number of matches to stderr. |  |
+| &nbsp;`‑‑preview‑match`&nbsp; | string | Preview the first N matches OR all matches found within N milliseconds, whichever occurs first. NOTE: the same numeric value is used for BOTH the match count AND the millisecond timeout - choose a value where one bound effectively dominates (e.g., a small count for "first N" preview, or a large count for "all within N ms"). Returns the preview to stderr; output is still written to stdout or --output as usual. Forces a sequential search, even if the CSV is indexed. |  |
+| &nbsp;`‑c,`<br>`‑‑count`&nbsp; | flag | Write the number of matches to stderr. Suppressed by --quiet and --json. |  |
 | &nbsp;`‑‑size‑limit`&nbsp; | string | Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned. Modify this only if you're getting regular expression compilation errors. | `50` |
 | &nbsp;`‑‑dfa‑size‑limit`&nbsp; | string | Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. Modify this only if you're getting regular expression compilation errors. | `10` |
-| &nbsp;`‑‑json`&nbsp; | flag | Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based). Automatically sets --quiet. |  |
+| &nbsp;`‑‑json`&nbsp; | flag | Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based). Automatically sets --quiet (also suppresses --count). |  |
 | &nbsp;`‑‑not‑one`&nbsp; | flag | Use exit code 0 instead of 1 for no match found. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
 
@@ -133,8 +134,8 @@ qsv search --help
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. Only applicable when CSV is NOT indexed. |  |
-| &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not return number of matches to stderr. |  |
+| &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. Disabled when running parallel search (i.e., when the CSV is indexed and --jobs > 1). Sequential search on an indexed CSV (--jobs 1) still shows the progress bar. |  |
+| &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not write the match count (--count) or the first match row number reported by --quick to stderr. |  |
 
 ---
 **Source:** [`src/cmd/search.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/search.rs)

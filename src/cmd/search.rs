@@ -7,8 +7,9 @@ then the row is written to the output, and the number of matches to stderr.
 The columns to search can be limited with the '--select' flag (but the full row
 is still written to the output if there is a match).
 
-Returns exitcode 0 when matches are found, returning number of matches to stderr.
+Returns exitcode 0 when matches are found.
 Returns exitcode 1 when no match is found, unless the '--not-one' flag is used.
+Use --count to also write the number of matches to stderr (suppressed by --quiet and --json).
 
 When --quick is enabled, no output is produced and exitcode 0 is returned on 
 the first match.
@@ -68,21 +69,30 @@ search options:
                            will match all unicode word characters instead of only
                            ASCII word characters. Decreases performance.
     -f, --flag <column>    If given, the command will not filter rows
-                           but will instead flag the found rows in a new
-                           column named <column>, with the row numbers
-                           of the matched rows and 0 for the non-matched rows.
-                           If column is named M, only the M column will be written
-                           to the output, and only matched rows are returned.
+                           but will instead flag every row in a new column
+                           named <column>, set to the row number for matched
+                           rows and "0" for non-matched rows.
+                           SPECIAL: if <column> is exactly "M", only matched
+                           rows are returned AND only the M column is written
+                           (all other columns are dropped). To use a literal
+                           column name "M" without this behavior, rename it
+                           afterward (e.g., with `qsv rename`).
     -Q, --quick            Return on first match with an exitcode of 0, returning
                            the row number of the first match to stderr.
                            Return exit code 1 if no match is found.
                            No output is produced.
-    --preview-match <arg>  Preview the first N matches or all the matches found in
-                           N milliseconds, whichever occurs first. Returns the preview to
-                           stderr. Output is still written to stdout or --output as usual.
-                           Only applicable when CSV is NOT indexed, as it's read sequentially.
+    --preview-match <arg>  Preview the first N matches OR all matches found
+                           within N milliseconds, whichever occurs first.
+                           NOTE: the same numeric value is used for BOTH the
+                           match count AND the millisecond timeout - choose a
+                           value where one bound effectively dominates (e.g.,
+                           a small count for "first N" preview, or a large
+                           count for "all within N ms").
+                           Returns the preview to stderr; output is still
+                           written to stdout or --output as usual.
                            Forces a sequential search, even if the CSV is indexed.
-    -c, --count            Return number of matches to stderr.
+    -c, --count            Write the number of matches to stderr.
+                           Suppressed by --quiet and --json.
     --size-limit <mb>      Set the approximate size limit (MB) of the compiled
                            regular expression. If the compiled expression exceeds this 
                            number, then a compilation error is returned.
@@ -97,7 +107,7 @@ search options:
                            The value is the field value. The output is a
                            JSON array. If --no-headers is set, then
                            the keys are the column indices (zero-based).
-                           Automatically sets --quiet.
+                           Automatically sets --quiet (also suppresses --count).
     --not-one              Use exit code 0 instead of 1 for no match found.
     -j, --jobs <arg>       The number of jobs to run in parallel when the given CSV data has
                            an index. Note that a file handle is opened for each job.
@@ -112,8 +122,12 @@ Common options:
     -d, --delimiter <arg>  The field delimiter for reading CSV data.
                            Must be a single character. (default: ,)
     -p, --progressbar      Show progress bars. Not valid for stdin.
-                           Only applicable when CSV is NOT indexed.
-    -q, --quiet            Do not return number of matches to stderr.
+                           Disabled when running parallel search (i.e., when
+                           the CSV is indexed and --jobs > 1). Sequential
+                           search on an indexed CSV (--jobs 1) still shows
+                           the progress bar.
+    -q, --quiet            Do not write the match count (--count) or the
+                           first match row number reported by --quick to stderr.
 "#;
 
 use std::{
@@ -228,17 +242,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 }
 
-/// Check if preview collection should continue
-/// Returns true if still within both N matches and N milliseconds
+/// Check if preview collection should continue.
+/// Returns true if still within both N matches and N milliseconds.
+/// Caller is responsible for gating on `preview_limit > 0`.
 #[inline]
 fn should_collect_preview(
     preview_count: usize,
     start_time: std::time::Instant,
     preview_limit: usize,
 ) -> bool {
-    if preview_limit == 0 {
-        return false;
-    }
     preview_count < preview_limit && start_time.elapsed().as_millis() < preview_limit as u128
 }
 
@@ -604,11 +616,15 @@ impl Args {
         let pool = ThreadPool::new(njobs);
         let (send, recv) = crossbeam_channel::bounded::<CliResult<ChunkOutput>>(nchunks);
 
+        // Share Args across workers via Arc to avoid a per-worker clone
+        // of SelectColumns and other inner allocations.
+        let args = Arc::new(self.clone());
+
         // Spawn search jobs
         for chunk_index in 0..nchunks {
             let (send, args, sel, pattern, match_found_flag) = (
                 send.clone(),
-                self.clone(),
+                Arc::clone(&args),
                 sel.clone(),
                 Arc::clone(&pattern),
                 Arc::clone(&match_found),

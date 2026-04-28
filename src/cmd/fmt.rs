@@ -134,13 +134,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Err(e) => return fail_clierror!("Error buffering final record: {e}"),
     };
     // wconfig.from_writer prepends a UTF-8 BOM when QSV_OUTPUT_BOM is set,
-    // but the main writer already emitted one at output start; strip ours.
-    if buf.starts_with(b"\xEF\xBB\xBF") {
+    // but the main writer already emitted one at output start. Gate the
+    // strip on the same env var (not on a content match) so a record whose
+    // first field happens to begin with U+FEFF is preserved verbatim.
+    if util::get_envvar_flag("QSV_OUTPUT_BOM") {
+        debug_assert!(buf.starts_with(b"\xEF\xBB\xBF"));
         buf.drain(..3);
     }
-    // Strip the trailing terminator. wconfig precedence: --ascii overrides
-    // --crlf (see lines above where ascii's .terminator(\x1e) is applied last).
-    // So term_len is 2 only for --crlf without --ascii.
+    // Strip the trailing terminator. In wconfig, --ascii's
+    // `.terminator(Any(b'\x1e'))` override is applied after `.crlf(...)`,
+    // so when both flags are set the actual terminator is the 1-byte RS,
+    // not CRLF. term_len is therefore 2 only for --crlf without --ascii.
     let term_len = if args.flag_crlf && !args.flag_ascii {
         2
     } else {

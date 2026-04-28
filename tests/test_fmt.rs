@@ -180,6 +180,36 @@ fn fmt_ascii_crlf_no_final_newline() {
 }
 
 #[test]
+fn fmt_bom_no_final_newline() {
+    // QSV_OUTPUT_BOM=1 makes Config::from_writer prepend a UTF-8 BOM. The
+    // --no-final-newline path uses wconfig.from_writer for a final-record
+    // buffer too, so without explicit handling the output would have a
+    // duplicated BOM in the middle. Lock down: exactly one BOM at start,
+    // no trailing terminator at end.
+    let (wrk, mut cmd) = setup("fmt_bom_no_final_newline");
+    let output_file = wrk.path("output.csv").to_string_lossy().to_string();
+    cmd.args(["--no-final-newline", "--output", &output_file]);
+    cmd.env("QSV_OUTPUT_BOM", "1");
+
+    wrk.assert_success(&mut cmd);
+
+    let got_bytes = std::fs::read(wrk.path("output.csv")).unwrap();
+    let mut expected: Vec<u8> = b"\xEF\xBB\xBF".to_vec();
+    expected
+        .extend_from_slice(b"h1,h2\nabcdef,ghijkl\nmnopqr,stuvwx\n\"ab\"\"cd\"\"ef\",\"gh,ij,kl\"");
+    assert_eq!(got_bytes, expected);
+    // Belt-and-suspenders: only one BOM in the entire stream.
+    assert_eq!(
+        got_bytes
+            .windows(3)
+            .filter(|w| *w == b"\xEF\xBB\xBF")
+            .count(),
+        1,
+        "expected exactly one UTF-8 BOM in output"
+    );
+}
+
+#[test]
 fn fmt_quote_always() {
     let (wrk, mut cmd) = setup("fmt_quote_always");
     cmd.arg("--quote-always");

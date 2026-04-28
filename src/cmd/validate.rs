@@ -464,7 +464,9 @@ impl Keyword for DynEnumValidator {
 struct UniqueCombinedWithValidator {
     column_names:      Vec<String>,
     column_indices:    Vec<usize>,
-    seen_combinations: std::sync::RwLock<HashSet<String>>,
+    // Mutex (not RwLock): `validate` always check-and-inserts under exclusive access,
+    // so there is no read-only path that would benefit from an RwLock.
+    seen_combinations: std::sync::Mutex<HashSet<String>>,
 }
 
 impl UniqueCombinedWithValidator {
@@ -472,7 +474,7 @@ impl UniqueCombinedWithValidator {
         Self {
             column_names,
             column_indices,
-            seen_combinations: std::sync::RwLock::new(HashSet::new()),
+            seen_combinations: std::sync::Mutex::new(HashSet::new()),
         }
     }
 }
@@ -510,7 +512,7 @@ impl Keyword for UniqueCombinedWithValidator {
         }
 
         let combination = values.join("|");
-        let mut seen = self.seen_combinations.write().unwrap();
+        let mut seen = self.seen_combinations.lock().unwrap();
 
         if seen.contains(&combination) {
             let mut column_desc_parts =
@@ -827,6 +829,63 @@ fn test_parse_dynenum_uri() {
     assert_eq!(column, Some("state_col".to_string()));
 }
 
+/// Drain `column` (or column 0 if `None`) of a CSV file at `path` into a `HashSet`.
+///
+/// Shared by the lite and non-lite `dyn_enum_validator_factory` variants.
+/// `column` may be either a numeric index (parsed as `usize`) or a header name.
+#[allow(clippy::result_large_err)]
+fn load_dynenum_set<'a>(
+    path: &str,
+    column: Option<String>,
+    initial_capacity: usize,
+) -> Result<HashSet<String>, ValidationError<'a>> {
+    let rconfig = Config::new(Some(path.to_owned()).as_ref());
+    let mut rdr = match rconfig
+        .flexible(true)
+        .comment(Some(b'#'))
+        .skip_format_check(true)
+        .reader()
+    {
+        Ok(reader) => reader,
+        Err(e) => return fail_validation_error!("Error opening dynamicEnum file: {e}"),
+    };
+
+    let column_idx = if let Some(col_name) = column {
+        if let Ok(idx) = col_name.parse::<usize>() {
+            idx
+        } else {
+            match rdr.headers() {
+                Ok(headers) => match headers.iter().position(|h| h == col_name) {
+                    Some(i) => i,
+                    None => {
+                        return fail_validation_error!(
+                            "Column '{col_name}' not found in lookup table"
+                        );
+                    },
+                },
+                Err(e) => {
+                    return fail_validation_error!("Error reading headers: {e}");
+                },
+            }
+        }
+    } else {
+        0
+    };
+
+    let mut enum_set = HashSet::with_capacity(initial_capacity);
+    for result in rdr.records() {
+        match result {
+            Ok(record) => {
+                if let Some(value) = record.get(column_idx) {
+                    enum_set.insert(value.to_owned());
+                }
+            },
+            Err(e) => return fail_validation_error!("Error reading dynamicEnum file - {e}"),
+        }
+    }
+    Ok(enum_set)
+}
+
 /// Factory function that creates a DynEnumValidator for validating against dynamic enums loaded
 /// from CSV files.
 ///
@@ -866,7 +925,6 @@ fn dyn_enum_validator_factory<'a>(
 
     let (lookup_name, final_uri, cache_age_secs, column) = parse_dynenum_uri(uri);
 
-    // Create lookup table options
     let opts = LookupTableOptions {
         name: lookup_name,
         uri: final_uri,
@@ -878,63 +936,13 @@ fn dyn_enum_validator_factory<'a>(
         timeout_secs: TIMEOUT_SECS.load(Ordering::Relaxed),
     };
 
-    // Load the lookup table
     let lookup_result = match load_lookup_table(&opts) {
         Ok(result) => result,
         Err(e) => return fail_validation_error!("Error loading dynamicEnum lookup table: {e}"),
     };
 
-    // Read the specified column into a HashSet
-    let mut enum_set = HashSet::with_capacity(lookup_result.headers.len());
-    let rconfig = Config::new(Some(lookup_result.filepath).as_ref());
-    let mut rdr = match rconfig
-        .flexible(true)
-        .comment(Some(b'#'))
-        .skip_format_check(true)
-        .reader()
-    {
-        Ok(reader) => reader,
-        Err(e) => return fail_validation_error!("Error opening dynamicEnum file: {e}"),
-    };
-
-    // Get column index based on name or default to first column
-    let column_idx = if let Some(col_name) = column {
-        // Try parsing as index first
-        if let Ok(idx) = col_name.parse::<usize>() {
-            idx
-        } else {
-            // Try finding column by name
-            match rdr.headers() {
-                Ok(headers) => {
-                    let idx = headers.iter().position(|h| h == col_name);
-                    match idx {
-                        Some(i) => i,
-                        None => {
-                            return fail_validation_error!(
-                                "Column '{}' not found in lookup table",
-                                col_name
-                            );
-                        },
-                    }
-                },
-                Err(e) => return fail_validation_error!("Error reading headers: {e}"),
-            }
-        }
-    } else {
-        0
-    };
-
-    for result in rdr.records() {
-        match result {
-            Ok(record) => {
-                if let Some(value) = record.get(column_idx) {
-                    enum_set.insert(value.to_owned());
-                }
-            },
-            Err(e) => return fail_validation_error!("Error reading dynamicEnum file - {e}"),
-        }
-    }
-
+    let initial_capacity = lookup_result.headers.len();
+    let enum_set = load_dynenum_set(&lookup_result.filepath, column, initial_capacity)?;
     Ok(Box::new(DynEnumValidator::new(enum_set)))
 }
 
@@ -945,109 +953,58 @@ fn dyn_enum_validator_factory<'a>(
     value: &'a Value,
     _location: Location,
 ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
-    if let Value::String(uri) = value {
-        let temp_download = match NamedTempFile::new() {
-            Ok(file) => file,
-            Err(e) => return fail_validation_error!("Failed to create temporary file: {e}"),
-        };
-
-        // Split URI to get column specification
-        let parts: Vec<&str> = uri.split('|').collect();
-        let base_uri = parts[0];
-        let column = parts.get(1).map(std::string::ToString::to_string);
-
-        let dynenum_path = if base_uri.starts_with("http") {
-            let valid_url = reqwest::Url::parse(base_uri).map_err(|e| {
-                ValidationError::custom(format!("Error parsing dynamicEnum URL: {e}"))
-            })?;
-
-            // download the CSV file from the URL
-            let download_timeout = TIMEOUT_SECS.load(Ordering::Relaxed);
-            let future = util::download_file(
-                valid_url.as_str(),
-                temp_download.path().to_path_buf(),
-                false,
-                None,
-                Some(download_timeout),
-                None,
-            );
-            match tokio::runtime::Runtime::new() {
-                Ok(runtime) => {
-                    if let Err(e) = runtime.block_on(future) {
-                        return fail_validation_error!("Error downloading dynamicEnum file - {e}");
-                    }
-                },
-                Err(e) => {
-                    return fail_validation_error!("Error creating Tokio runtime - {e}");
-                },
-            }
-
-            temp_download.path().to_str().unwrap().to_string()
-        } else {
-            // its a local file
-            let uri_path = std::path::Path::new(base_uri);
-            let uri_exists = uri_path.exists();
-            if !uri_exists {
-                return fail_validation_error!("dynamicEnum file not found - {base_uri}");
-            }
-            uri_path.to_str().unwrap().to_string()
-        };
-
-        // read the specified column into a HashSet
-        let mut enum_set = HashSet::with_capacity(50);
-        let rconfig = Config::new(Some(dynenum_path).as_ref());
-        let mut rdr = match rconfig
-            .flexible(true)
-            .comment(Some(b'#'))
-            .skip_format_check(true)
-            .reader()
-        {
-            Ok(reader) => reader,
-            Err(e) => return fail_validation_error!("Error opening dynamicEnum file: {e}"),
-        };
-
-        // Get column index based on name or default to first column
-        let column_idx = if let Some(col_name) = column {
-            // Try parsing as index first
-            if let Ok(idx) = col_name.parse::<usize>() {
-                idx
-            } else {
-                // Try finding column by name
-                match rdr.headers() {
-                    Ok(headers) => match headers.iter().position(|h| h == col_name) {
-                        Some(i) => i,
-                        None => {
-                            return fail_validation_error!(
-                                "dynamicEnum column '{col_name}' not found in headers"
-                            );
-                        },
-                    },
-                    Err(e) => {
-                        return fail_validation_error!("Error reading dynamicEnum headers: {e}");
-                    },
-                }
-            }
-        } else {
-            0
-        };
-
-        for result in rdr.records() {
-            match result {
-                Ok(record) => {
-                    if let Some(value) = record.get(column_idx) {
-                        enum_set.insert(value.to_owned());
-                    }
-                },
-                Err(e) => return fail_validation_error!("Error reading dynamicEnum file - {e}"),
-            };
-        }
-
-        Ok(Box::new(DynEnumValidator::new(enum_set)))
-    } else {
-        Err(ValidationError::custom(
+    let Value::String(uri) = value else {
+        return Err(ValidationError::custom(
             "'dynamicEnum' must be set to a CSV file on the local filesystem or on a URL.",
-        ))
-    }
+        ));
+    };
+
+    let temp_download = match NamedTempFile::new() {
+        Ok(file) => file,
+        Err(e) => return fail_validation_error!("Failed to create temporary file: {e}"),
+    };
+
+    // Split URI to get column specification
+    let parts: Vec<&str> = uri.split('|').collect();
+    let base_uri = parts[0];
+    let column = parts.get(1).map(std::string::ToString::to_string);
+
+    let dynenum_path = if base_uri.starts_with("http") {
+        let valid_url = reqwest::Url::parse(base_uri)
+            .map_err(|e| ValidationError::custom(format!("Error parsing dynamicEnum URL: {e}")))?;
+
+        let download_timeout = TIMEOUT_SECS.load(Ordering::Relaxed);
+        let future = util::download_file(
+            valid_url.as_str(),
+            temp_download.path().to_path_buf(),
+            false,
+            None,
+            Some(download_timeout),
+            None,
+        );
+        match tokio::runtime::Runtime::new() {
+            Ok(runtime) => {
+                if let Err(e) = runtime.block_on(future) {
+                    return fail_validation_error!("Error downloading dynamicEnum file - {e}");
+                }
+            },
+            Err(e) => {
+                return fail_validation_error!("Error creating Tokio runtime - {e}");
+            },
+        }
+        temp_download.path().to_str().unwrap().to_string()
+    } else {
+        let uri_path = std::path::Path::new(base_uri);
+        if !uri_path.exists() {
+            return fail_validation_error!("dynamicEnum file not found - {base_uri}");
+        }
+        uri_path.to_str().unwrap().to_string()
+    };
+
+    let enum_set = load_dynenum_set(&dynenum_path, column, 50)?;
+    // `temp_download` outlives the load above; drop it explicitly to make intent clear.
+    drop(temp_download);
+    Ok(Box::new(DynEnumValidator::new(enum_set)))
 }
 
 /// Walk a parsed JSON Schema and detect which custom formats/keywords are present.
@@ -1446,6 +1403,11 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
             match rdr.read_byte_record(&mut record) {
                 Ok(true) => {
                     row_number += 1;
+                    // Append the row number as an extra ByteRecord field at index `header_len`.
+                    // It travels with the record into the parallel closure where it's read back
+                    // via `record[header_len]` for error-report formatting. `to_json_instance`
+                    // ignores it because it iterates `header_types` (length = header_len), so
+                    // the appended field is not visible to schema validation.
                     record.push_field(itoa_buffer.format(row_number).as_bytes());
                     if flag_trim {
                         record.trim();
@@ -1538,8 +1500,8 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
         for (i, result) in batch_validation_results.iter().enumerate() {
             if let Some(validation_error_msg) = result {
                 invalid_count += 1;
-                // safety: we know the index is in bounds because we just extended the vector
-                unsafe { valid_flags.set_unchecked(start_idx + i, false) };
+                // safe set(): negligible cost on this path (dominated by validator work)
+                valid_flags.set(start_idx + i, false);
                 validation_error_messages.push(validation_error_msg.to_owned());
             }
         }
@@ -1962,6 +1924,17 @@ Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."#
     Ok(())
 }
 
+/// Re-reads the input CSV and demuxes records into `.valid` / `.invalid` files.
+///
+/// We intentionally re-read the input rather than streaming during the validation loop:
+/// - The OS page cache makes the second read very cheap (the file was just read once).
+/// - The all-valid case is the common case and currently produces no output files at all; a
+///   streaming approach would have to write every record to `.valid` and then delete the file on
+///   success, costing extra I/O on the hot path.
+/// - Memory is bounded — we keep only the BitVec of valid/invalid flags, not the records
+///   themselves.
+///
+/// Only called when there is at least one invalid record.
 fn split_invalid_records(
     rconfig: &Config,
     valid_flags: &BitSlice,

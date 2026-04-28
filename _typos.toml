@@ -21,6 +21,7 @@ Generice      = "Generice"
 Portugese     = "Portugese"
 ACI           = "ACI"
 consts        = "consts"
+Caf          = "Caf"
 
 [files]
 extend-exclude = [

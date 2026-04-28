@@ -385,7 +385,9 @@ impl<R: io::Read + io::Seek, W: io::Write> IoState<R, W> {
                 self.wtr.write_record(row1.iter().chain(&row2))?;
             }
         }
-        Ok(self.wtr.flush()?)
+        self.wtr.flush()?;
+        self.keys_wtr.flush()?;
+        Ok(())
     }
 
     fn get_padding(&mut self) -> CliResult<(csv::ByteRecord, csv::ByteRecord)> {
@@ -399,11 +401,11 @@ impl Args {
     fn new_io_state(
         &self,
     ) -> CliResult<IoState<Box<dyn SeekRead + 'static>, Box<dyn io::Write + 'static>>> {
-        let rconf1 = Config::new(Some(self.arg_input1.clone()).as_ref())
+        let rconf1 = Config::new(Some(&self.arg_input1))
             .delimiter(self.flag_delimiter)
             .no_headers_flag(self.flag_no_headers)
             .select(self.arg_columns1.clone());
-        let rconf2 = Config::new(Some(self.arg_input2.clone()).as_ref())
+        let rconf2 = Config::new(Some(&self.arg_input2))
             .delimiter(self.flag_delimiter)
             .no_headers_flag(self.flag_no_headers)
             .select(self.arg_columns2.clone());
@@ -419,6 +421,9 @@ impl Args {
         let (sel1, sel2) = self.get_selections(&rconf1, &mut rdr1, &rconf2, &mut rdr2)?;
 
         let keys_wtr = if self.flag_cross {
+            if self.flag_keys_output.is_some() {
+                wwarn!("--keys-output is ignored for cross joins.");
+            }
             KeysWriter::new(None)?
         } else {
             KeysWriter::new(self.flag_keys_output.as_ref())?
@@ -504,6 +509,8 @@ impl<R: io::Read + io::Seek> ValueIndex<R> {
         zerosi: bool,
         nulls: bool,
     ) -> CliResult<ValueIndex<R>> {
+        // Initial capacities chosen for typical lookup-table cardinality;
+        // the HashMap and Vec grow as needed.
         let mut val_idx = HashMap::with_capacity(20_000);
         let mut row_idx = io::Cursor::new(Vec::with_capacity(8 * 20_000));
         let (mut rowi, mut count) = (0_usize, 0_usize);
@@ -530,37 +537,11 @@ impl<R: io::Read + io::Seek> ValueIndex<R> {
             // This is a bit hokey. We're doing this manually instead of using
             // the `csv-index` crate directly so that we can create both
             // indexes in one pass.
-            row_idx.write_u64::<BigEndian>(row.position().unwrap().byte())?;
+            // safety: read_byte_record always sets a position on the record.
+            let byte_pos = row.position().map_or(0, csv::Position::byte);
+            row_idx.write_u64::<BigEndian>(byte_pos)?;
 
-            let fields: Vec<_> = sel
-                .select(&row)
-                .map(|v| {
-                    if let Ok(s) = simdutf8::basic::from_utf8(v) {
-                        let cased_bytes_vec = if casei {
-                            s.trim().to_lowercase().into_bytes()
-                        } else {
-                            s.trim().as_bytes().to_vec()
-                        };
-                        if zerosi {
-                            if cased_bytes_vec.iter().all(|&b| b == b'0')
-                                && !cased_bytes_vec.is_empty()
-                            {
-                                vec![b'0']
-                            } else {
-                                cased_bytes_vec
-                                    .iter()
-                                    .skip_while(|&b| *b == b'0')
-                                    .copied()
-                                    .collect()
-                            }
-                        } else {
-                            cased_bytes_vec
-                        }
-                    } else {
-                        v.to_vec()
-                    }
-                })
-                .collect();
+            let fields = get_row_key(sel, &row, casei, zerosi);
             if nulls || !fields.iter().any(std::vec::Vec::is_empty) {
                 match val_idx.entry(fields) {
                     Entry::Vacant(v) => {
@@ -605,95 +586,73 @@ impl<R> fmt::Debug for ValueIndex<R> {
 }
 
 #[inline]
+/// Transforms a single field for join-key comparison.
+///
+/// For valid UTF-8 input: trims whitespace, optionally lowercases (ASCII
+/// fast-path), and optionally strips leading zeros (preserving a single `'0'`
+/// for all-zero input). Invalid UTF-8 is returned unchanged.
+fn transform_field(v: &[u8], casei: bool, zerosi: bool) -> ByteString {
+    let Ok(s) = simdutf8::basic::from_utf8(v) else {
+        return v.to_vec();
+    };
+    let trimmed = s.trim();
+    let mut buf = trimmed.as_bytes().to_vec();
+    if casei {
+        if buf.is_ascii() {
+            buf.make_ascii_lowercase();
+        } else {
+            buf = trimmed.to_lowercase().into_bytes();
+        }
+    }
+    if zerosi && !buf.is_empty() {
+        // strip leading zeros, but keep at least one byte so all-zero input
+        // collapses to a single "0" rather than an empty key.
+        let strip = buf
+            .iter()
+            .take(buf.len() - 1)
+            .take_while(|&&b| b == b'0')
+            .count();
+        if strip > 0 {
+            buf.drain(..strip);
+        }
+    }
+    buf
+}
+
+#[inline]
 /// Extracts key values from a CSV row based on the given selection and options.
-///
-/// # Arguments
-///
-/// * `sel` - The selection that specifies which fields to extract from the row
-/// * `row` - The CSV row to extract values from
-/// * `casei` - If true, converts extracted values to lowercase for case-insensitive comparison
-/// * `zerosi` - If true, removes leading zeros from numeric values
-///
-/// # Returns
-///
-/// A vector of ByteStrings containing the extracted and processed key values.
-///
-/// # Processing
-///
-/// For each selected field:
-/// 1. Attempts to convert the bytes to a UTF-8 string
-/// 2. If successful:
-///    - Trims leading/trailing whitespace
-///    - Optionally converts to lowercase if `casei` is true
-///    - If `zerosi` is true:
-///      * For all-zero values, returns a single "0" byte
-///      * Otherwise, strips leading zeros
-///    - Converts back to bytes
-/// 3. If not valid UTF-8, returns the original bytes unchanged
 fn get_row_key(
     sel: &Selection,
     row: &csv::ByteRecord,
     casei: bool,
     zerosi: bool,
 ) -> Vec<ByteString> {
-    let key: Vec<_> = sel
-        .select(row)
-        .map(|v| {
-            if let Ok(s) = simdutf8::basic::from_utf8(v) {
-                let cased_bytes_vec = if casei {
-                    s.trim().to_lowercase().into_bytes()
-                } else {
-                    s.trim().as_bytes().to_vec()
-                };
-                if zerosi {
-                    if cased_bytes_vec.iter().all(|&b| b == b'0') && !cased_bytes_vec.is_empty() {
-                        vec![b'0']
-                    } else {
-                        cased_bytes_vec
-                            .iter()
-                            .skip_while(|&b| *b == b'0')
-                            .copied()
-                            .collect()
-                    }
-                } else {
-                    cased_bytes_vec
-                }
-            } else {
-                v.to_vec()
-            }
-        })
-        .collect();
-    key
+    sel.select(row)
+        .map(|v| transform_field(v, casei, zerosi))
+        .collect()
 }
 
-struct KeysWriter {
-    writer:  csv::Writer<Box<dyn io::Write>>,
-    enabled: bool,
-}
+struct KeysWriter(Option<csv::Writer<Box<dyn io::Write>>>);
 
 impl KeysWriter {
     fn new(keys_path: Option<&String>) -> CliResult<Self> {
-        let (writer, enabled) = if let Some(path) = keys_path {
-            (Config::new(Some(path)).writer()?, true)
-        } else {
-            let sink: Box<dyn io::Write> = Box::new(std::io::sink());
-            (csv::WriterBuilder::new().from_writer(sink), false)
-        };
-
-        Ok(Self { writer, enabled })
+        Ok(Self(match keys_path {
+            Some(path) => Some(Config::new(Some(path)).writer()?),
+            None => None,
+        }))
     }
 
     #[inline]
     fn write_key(&mut self, key: &[ByteString]) -> CliResult<()> {
-        if self.enabled {
-            self.writer.write_record(key)?;
+        if let Some(w) = self.0.as_mut() {
+            w.write_record(key)?;
         }
         Ok(())
     }
 
     fn flush(&mut self) -> CliResult<()> {
-        if self.enabled {
-            self.writer.flush()?;
+        if let Some(w) = self.0.as_mut() {
+            w.flush()?;
         }
         Ok(())
     }

@@ -118,7 +118,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .keep()
             .map_err(|e| format!("Failed to keep temporary stdin file: {e}"))?;
 
-        args.arg_input = Some(temp_path.to_string_lossy().into_owned());
+        // Round-tripping through `String` requires UTF-8; bail out cleanly on
+        // exotic temp paths instead of panicking or silently corrupting via
+        // lossy conversion.
+        let temp_path_str = temp_path.to_str().ok_or_else(|| {
+            format!(
+                "Temporary stdin file path is not valid UTF-8: {}",
+                temp_path.display()
+            )
+        })?;
+        args.arg_input = Some(temp_path_str.to_owned());
     }
 
     fs::create_dir_all(&args.arg_outdir)?;
@@ -174,6 +183,15 @@ impl Args {
             None => {
                 // 90% of the system limit with 10% safety margin
                 let auto_limit = (sys_limit * 9) / 10;
+                if auto_limit == 0 {
+                    // Pathologically small `sys_limit` (e.g. <10) — `chunks(0)`
+                    // would panic, so fall back to processing everything at once.
+                    log::info!(
+                        "System open-file limit too small ({sys_limit}); processing all data at \
+                         once"
+                    );
+                    return self.process_all_data(&mut rdr, &headers, key_col, &mut writer_gen);
+                }
                 log::info!(
                     "Auto-setting limit to {auto_limit} based on system limit with 10% safety \
                      margin"

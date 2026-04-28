@@ -159,6 +159,7 @@ fn geoconvert_csv_partial_latlon_flag_errors() {
         got.contains("--latitude and --longitude must be used together"),
         "expected partial-flag error, got: {got}"
     );
+    wrk.assert_err(&mut cmd);
 }
 
 #[test]

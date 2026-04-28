@@ -130,6 +130,11 @@ where
         csv_writer.write_record(&truncated_record)?;
     }
 
+    // Flush explicitly so any buffered CSV write errors are surfaced here
+    // instead of being silently dropped when callers early-return before
+    // the module-level wtr.flush() at the end of run().
+    csv_writer.flush()?;
+
     // temp_file is dropped here, removing the underlying file.
     Ok(())
 }
@@ -208,6 +213,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
     let max_length = args.flag_max_length;
+    if let Some(0) = max_length {
+        return fail_incorrectusage_clierror!("--max-length must be greater than 0.");
+    }
 
     // Output writer is shared across all input formats.
     let stdout = io::stdout();

@@ -495,7 +495,11 @@ impl Keyword for UniqueCombinedWithValidator {
             }
         }
 
-        // Get values from column indices by converting to array first
+        // Get values from column indices.
+        // Index N refers to the Nth field of the CSV record. This relies on the JSON
+        // instance preserving header order — true here because qsv enables
+        // `serde_json/preserve_order` (so `Map` is `IndexMap`) and `to_json_instance`
+        // inserts in header order.
         if !self.column_indices.is_empty() {
             let array: Vec<_> = obj.values().collect();
             for &idx in &self.column_indices {
@@ -537,33 +541,12 @@ impl Keyword for UniqueCombinedWithValidator {
         Ok(())
     }
 
-    fn is_valid(&self, instance: &Value) -> bool {
-        let Some(obj) = instance.as_object() else {
-            return false;
-        };
-
-        let mut values = Vec::with_capacity(self.column_names.len() + self.column_indices.len());
-
-        // Get values from column names
-        for name in &self.column_names {
-            if let Some(value) = obj.get(name) {
-                values.push(value.to_string());
-            }
-        }
-
-        // Get values from column indices by converting to array first
-        if !self.column_indices.is_empty() {
-            let array: Vec<_> = obj.values().collect();
-            for &idx in &self.column_indices {
-                if let Some(value) = array.get(idx) {
-                    values.push(value.to_string());
-                }
-            }
-        }
-
-        let combination = values.join("|");
-        let seen = self.seen_combinations.read().unwrap();
-        !seen.contains(&combination)
+    fn is_valid(&self, _instance: &Value) -> bool {
+        // `uniqueCombinedWith` is stateful: a "valid" answer must atomically record the
+        // combination, otherwise two concurrent duplicates both pass. Since `is_valid` is
+        // not allowed to observably mutate state, we always return `false` to force the
+        // caller through `validate`, which performs the check + insert under lock.
+        false
     }
 }
 
@@ -1067,6 +1050,85 @@ fn dyn_enum_validator_factory<'a>(
     }
 }
 
+/// Walk a parsed JSON Schema and detect which custom formats/keywords are present.
+///
+/// Returns (has_currency_format, has_email_format, has_dynamic_enum, has_unique_combined).
+///
+/// We look for:
+/// - `"format": "currency"` and `"format": "email"` on objects (any nesting)
+/// - any object key named `dynamicEnum` or `uniqueCombinedWith`
+///
+/// This replaces a substring search on the raw schema text, which was sensitive to
+/// whitespace and could false-match on descriptions/titles containing these literals.
+fn detect_custom_schema_features(schema: &Value) -> (bool, bool, bool, bool) {
+    let mut has_currency = false;
+    let mut has_email = false;
+    let mut has_dynamic_enum = false;
+    let mut has_unique_combined = false;
+
+    fn walk(
+        v: &Value,
+        has_currency: &mut bool,
+        has_email: &mut bool,
+        has_dynamic_enum: &mut bool,
+        has_unique_combined: &mut bool,
+    ) {
+        match v {
+            Value::Object(map) => {
+                for (k, val) in map {
+                    match k.as_str() {
+                        "format" => {
+                            if let Some(s) = val.as_str() {
+                                match s {
+                                    "currency" => *has_currency = true,
+                                    "email" => *has_email = true,
+                                    _ => {},
+                                }
+                            }
+                        },
+                        "dynamicEnum" => *has_dynamic_enum = true,
+                        "uniqueCombinedWith" => *has_unique_combined = true,
+                        _ => {},
+                    }
+                    walk(
+                        val,
+                        has_currency,
+                        has_email,
+                        has_dynamic_enum,
+                        has_unique_combined,
+                    );
+                }
+            },
+            Value::Array(arr) => {
+                for item in arr {
+                    walk(
+                        item,
+                        has_currency,
+                        has_email,
+                        has_dynamic_enum,
+                        has_unique_combined,
+                    );
+                }
+            },
+            _ => {},
+        }
+    }
+
+    walk(
+        schema,
+        &mut has_currency,
+        &mut has_email,
+        &mut has_dynamic_enum,
+        &mut has_unique_combined,
+    );
+    (
+        has_currency,
+        has_email,
+        has_dynamic_enum,
+        has_unique_combined,
+    )
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
@@ -1234,14 +1296,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // safety: we know the schema is_some() because we checked above
             match load_json(&json_schema_path.to_string_lossy()) {
             Ok(s) => {
-                // Check for custom formats and keywords before parsing
-                let has_currency_format = s.contains(r#""format": "currency""#);
-                let has_dynamic_enum = s.contains("dynamicEnum");
-                let has_unique_combined = s.contains("uniqueCombinedWith");
-                let has_email_format = s.contains(r#""format": "email""#);
-                debug!("Custom formats/keywords: currency: {has_currency_format}, dynamicEnum: {has_dynamic_enum}");
-                debug!("uniqueCombinedWith: {has_unique_combined}, email: {has_email_format}");
-
                 // parse JSON string - use platform-appropriate JSON deserialization
                 #[cfg(target_endian = "big")]
                 let json_result = serde_json::from_str::<Value>(&s);
@@ -1253,25 +1307,57 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                 match json_result {
                     Ok(json) => {
+                        // Detect custom formats/keywords by walking the parsed schema.
+                        // This is robust to whitespace and avoids false matches on
+                        // descriptions/titles that mention these strings as text.
+                        let (
+                            has_currency_format,
+                            has_email_format,
+                            has_dynamic_enum,
+                            has_unique_combined,
+                        ) = detect_custom_schema_features(&json);
+                        debug!(
+                            "Custom formats/keywords: currency: {has_currency_format}, dynamicEnum: {has_dynamic_enum}"
+                        );
+                        debug!(
+                            "uniqueCombinedWith: {has_unique_combined}, email: {has_email_format}"
+                        );
+
                         // compile JSON Schema
                         let mut validator_options = Validator::options()
                             .should_validate_formats(!args.flag_no_format_validation);
 
                         // Add custom validators based on pre-checked flags
                         if has_email_format {
+                            // Apply each option explicitly:
+                            // - required_tld is enable-only in the jsonschema crate, but the
+                            //   default ("not required") matches the docopt default (flag off),
+                            //   so this is fine.
+                            // - display_text and domain_literal toggles are explicit in both
+                            //   directions so future jsonschema default flips don't silently
+                            //   change behavior.
+                            // - min_subdomains keeps the `> 2` guard: at the default of 2 we
+                            //   preserve the jsonschema crate's lenient default rather than
+                            //   forcing a stricter rule. Users who want strict enforcement
+                            //   set it to 3+.
                             let mut email_options = EmailOptions::default();
                             if args.flag_email_required_tld {
                                 email_options = email_options.with_required_tld();
                             }
-                            if !args.flag_email_display_text {
-                                email_options = email_options.without_display_text();
-                            }
+                            email_options = if args.flag_email_display_text {
+                                email_options.with_display_text()
+                            } else {
+                                email_options.without_display_text()
+                            };
                             if args.flag_email_min_subdomains > 2 {
-                                email_options = email_options.with_minimum_sub_domains(args.flag_email_min_subdomains);
+                                email_options = email_options
+                                    .with_minimum_sub_domains(args.flag_email_min_subdomains);
                             }
-                            if !args.flag_email_domain_literal {
-                                email_options = email_options.without_domain_literal();
-                            }
+                            email_options = if args.flag_email_domain_literal {
+                                email_options.with_domain_literal()
+                            } else {
+                                email_options.without_domain_literal()
+                            };
                             validator_options = validator_options.with_email_options(email_options);
                         }
 
@@ -1446,7 +1532,9 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
         // because Rayon collect() guarantees original order, we can sequentially append results
         // to vector with each batch
         let start_idx = valid_flags.len();
-        valid_flags.extend(std::iter::repeat_n(true, batch_size));
+        // extend by the actual batch length, not batch_size — the last batch may be partial,
+        // and over-extending would leave trailing `true` flags for nonexistent rows.
+        valid_flags.extend(std::iter::repeat_n(true, batch.len()));
         for (i, result) in batch_validation_results.iter().enumerate() {
             if let Some(validation_error_msg) = result {
                 invalid_count += 1;
@@ -2095,7 +2183,18 @@ fn load_json(uri: &str) -> Result<String, String> {
             };
 
             match client.get(url).send() {
-                Ok(response) => response.text().unwrap_or_default(),
+                Ok(response) => {
+                    let status = response.status();
+                    if !status.is_success() {
+                        return fail_format!("HTTP error fetching JSON at url {url}: {status}");
+                    }
+                    match response.text() {
+                        Ok(body) => body,
+                        Err(e) => {
+                            return fail_format!("Cannot read response body from {url}: {e}.");
+                        },
+                    }
+                },
                 Err(e) => return fail_format!("Cannot read JSON at url {url}: {e}."),
             }
         },
@@ -2103,9 +2202,9 @@ fn load_json(uri: &str) -> Result<String, String> {
             let mut buffer = String::new();
             match File::open(path) {
                 Ok(p) => {
-                    BufReader::new(p)
-                        .read_to_string(&mut buffer)
-                        .unwrap_or_default();
+                    if let Err(e) = BufReader::new(p).read_to_string(&mut buffer) {
+                        return fail_format!("Cannot read JSON file {path}: {e}.");
+                    }
                 },
                 Err(e) => return fail_format!("Cannot read JSON file {path}: {e}."),
             }

@@ -2061,6 +2061,7 @@ fn validate_schema_subcommand_with_invalid_url_schema() {
             || got.contains("io error")
             || got.contains("timeout")
             || got.contains("JSON error")
+            || got.contains("HTTP error")
     );
 }
 

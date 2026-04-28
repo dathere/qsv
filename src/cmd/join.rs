@@ -537,8 +537,10 @@ impl<R: io::Read + io::Seek> ValueIndex<R> {
             // This is a bit hokey. We're doing this manually instead of using
             // the `csv-index` crate directly so that we can create both
             // indexes in one pass.
-            // safety: read_byte_record always sets a position on the record.
-            let byte_pos = row.position().map_or(0, csv::Position::byte);
+            let byte_pos = row
+                .position()
+                .expect("safety: read_byte_record always sets a position on the record")
+                .byte();
             row_idx.write_u64::<BigEndian>(byte_pos)?;
 
             let fields = get_row_key(sel, &row, casei, zerosi);
@@ -596,14 +598,17 @@ fn transform_field(v: &[u8], casei: bool, zerosi: bool) -> ByteString {
         return v.to_vec();
     };
     let trimmed = s.trim();
-    let mut buf = trimmed.as_bytes().to_vec();
-    if casei {
-        if buf.is_ascii() {
+    let mut buf = if casei {
+        if trimmed.is_ascii() {
+            let mut buf = trimmed.as_bytes().to_vec();
             buf.make_ascii_lowercase();
+            buf
         } else {
-            buf = trimmed.to_lowercase().into_bytes();
+            trimmed.to_lowercase().into_bytes()
         }
-    }
+    } else {
+        trimmed.as_bytes().to_vec()
+    };
     if zerosi && !buf.is_empty() {
         // strip leading zeros, but keep at least one byte so all-zero input
         // collapses to a single "0" rather than an empty key.

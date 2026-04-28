@@ -211,11 +211,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         for (i, header_name) in noquote_headers.iter().enumerate() {
             *counts.entry(header_name.to_string()).or_insert(0) += 1;
             if safe_headers[i] == header_name {
-                // safe_headers is deduped by name (we only display each safe
-                // name once) while unsafe_headers below records every offending
-                // position so the count matches always-mode's changed_count —
-                // hence a duplicated header (e.g. 5x "col1") shows up once in
-                // safe and four times in unsafe.
+                // safe_headers is the positional rewritten-header vector; the
+                // displayed safe-header list is deduped here via seen_safe so
+                // we only show each unchanged safe name once. unsafe_headers
+                // below still records every offending position so the count
+                // matches always-mode's changed_count — hence a duplicated
+                // header (e.g. 5x "col1") shows up once in safe and four times
+                // in unsafe.
                 if seen_safe.insert(header_name.to_string()) {
                     safenames_vec.push(header_name.to_string());
                 }

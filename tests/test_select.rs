@@ -198,14 +198,13 @@ select_test_err!(select_err_idx_not_int_2, "h1[a]");
 select_test_err!(select_err_unclosed_quote, r#""h1"#);
 select_test_err!(select_err_unclosed_bracket, r#""h1"[1"#);
 select_test_err!(select_err_expected_end_of_field, "a-b-");
+// Regression: a single `/` previously triggered a slice-OOB panic in the
+// regex-delimiter guard (`chars[1..0]`); now it must be a clean parse error.
 select_test_err!(select_err_single_slash, "/");
 select_test_err!(select_err_regex_nomatch, "/nomatch/");
 select_test_err!(select_err_regex_invalid, "/?/");
 select_test_err!(select_err_regex_empty, "//");
 select_test_err!(select_err_regex_triple_slash, "///");
-// Regression: a single `/` previously triggered a slice-OOB panic in the
-// regex-delimiter guard (`chars[1..0]`); now it must be a clean parse error.
-select_test_err!(select_err_regex_single_slash, "/");
 select_test_err!(select_err_empty_name_bracket, "[5]");
 select_test_err!(select_err_empty_name_leading_comma, ",h1");
 

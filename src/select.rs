@@ -163,7 +163,8 @@ impl SelectorParser {
         }
         // First-occurrence index: matches the unquoted name fallback below,
         // which also defaults to the first occurrence when the header name
-        // is not numeric (see `IndexedName(name, 0)` in the `Err` arm).
+        // is not numeric (see `IndexedName(name, FIRST_OCCURRENCE)` in the
+        // `Err` arm).
         const FIRST_OCCURRENCE: usize = 0;
         Ok(if self.cur() == Some('[') {
             let idx = self.parse_index()?;

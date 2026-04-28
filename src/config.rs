@@ -42,7 +42,9 @@ pub static TEMP_FILE_DIR: OnceLock<PathBuf> = OnceLock::new();
 #[cfg(feature = "polars")]
 pub static POLARS_FLOAT_PRECISION: OnceLock<Option<usize>> = OnceLock::new();
 
-#[allow(unused_variables)]
+// Variants are constructed by `get_special_format` but only meaningfully matched
+// when the `polars` feature is enabled (via `util::convert_special_format`),
+// so non-polars builds see them as never read.
 #[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SpecialFormat {
@@ -127,6 +129,18 @@ pub struct Config {
 pub trait SeekRead: io::Seek + io::Read {}
 impl<T: io::Seek + io::Read> SeekRead for T {}
 
+/// Parse the named env var as `T`, falling back to `default` if it is unset or invalid.
+/// Logs a warning if the env var is set but cannot be parsed.
+fn parse_env_or_warn<T: std::str::FromStr + std::fmt::Display>(name: &str, default: T) -> T {
+    match env::var(name) {
+        Ok(s) => s.parse().unwrap_or_else(|_| {
+            warn!("invalid {name} value {s:?}; using default {default}");
+            default
+        }),
+        Err(_) => default,
+    }
+}
+
 impl Config {
     /// Creates a new `Config` instance with default settings and optional file path.
     ///
@@ -163,7 +177,13 @@ impl Config {
     /// - `QSV_SKIP_FORMAT_CHECK`: Set to skip file extension checking.
     pub fn new(path: Option<&String>) -> Config {
         let default_delim = match env::var("QSV_DEFAULT_DELIMITER") {
-            Ok(delim) => Delimiter::decode_delimiter(&delim).unwrap().as_byte(),
+            Ok(delim) => match Delimiter::decode_delimiter(&delim) {
+                Ok(d) => d.as_byte(),
+                Err(e) => {
+                    warn!("invalid QSV_DEFAULT_DELIMITER {delim:?} ({e}); using ','");
+                    b','
+                },
+            },
             _ => b',',
         };
         let mut sniff = util::get_envvar_flag("QSV_SNIFF_DELIMITER")
@@ -189,12 +209,20 @@ impl Config {
             //     (Some(PathBuf::from(s)), delim, snappy)
             // },
             Some(s) if s == "-" => (None, default_delim, false),
-            Some(ref s) => {
+            Some(s) => {
                 let mut path = PathBuf::from(s);
 
                 // if QSV_SKIP_FORMAT_CHECK is set or path is a temp file, we skip format check
-                let temp_dir = crate::config::TEMP_FILE_DIR
-                    .get_or_init(|| tempfile::TempDir::new().unwrap().keep());
+                let temp_dir = crate::config::TEMP_FILE_DIR.get_or_init(|| {
+                    tempfile::TempDir::new()
+                        .map(tempfile::TempDir::keep)
+                        .unwrap_or_else(|e| {
+                            warn!(
+                                "failed to create temp dir: {e}; falling back to system temp dir"
+                            );
+                            env::temp_dir()
+                        })
+                });
                 skip_format_check = sniff
                     || util::get_envvar_flag("QSV_SKIP_FORMAT_CHECK")
                     || path.starts_with(temp_dir);
@@ -243,34 +271,34 @@ impl Config {
                 (Some(path), delim, snappy)
             },
         };
-        let comment: Option<u8> = match env::var("QSV_COMMENT_CHAR") {
-            Ok(comment_char) => Some(comment_char.as_bytes().first().unwrap().to_owned()),
-            Err(_) => None,
-        };
+        let comment: Option<u8> = env::var("QSV_COMMENT_CHAR")
+            .ok()
+            .and_then(|s| s.as_bytes().first().copied());
         let no_headers = util::get_envvar_flag("QSV_NO_HEADERS");
         let mut preamble = 0_u64;
-        if sniff && path.is_some() {
-            // safety: we can safely unwrap as we just checked path.is_some()
-            #[allow(clippy::unnecessary_unwrap)]
-            let sniff_path = path.as_ref().unwrap().to_str().unwrap();
-
-            match Sniffer::new()
-                .sample_size(SampleSize::Records(DEFAULT_SNIFFER_SAMPLE))
-                .sniff_path(sniff_path)
-            {
-                Ok(metadata) => {
-                    delim = metadata.dialect.delimiter;
-                    preamble = metadata.dialect.header.num_preamble_rows as u64;
-                    info!(
-                        "sniffed delimiter {} and {preamble} preamble rows",
-                        delim as char
-                    );
-                },
-                Err(e) => {
+        if let (true, Some(sniff_path_buf)) = (sniff, path.as_ref()) {
+            if let Some(sniff_path) = sniff_path_buf.to_str() {
+                match Sniffer::new()
+                    .sample_size(SampleSize::Records(DEFAULT_SNIFFER_SAMPLE))
+                    .sniff_path(sniff_path)
+                {
+                    Ok(metadata) => {
+                        delim = metadata.dialect.delimiter;
+                        preamble = metadata.dialect.header.num_preamble_rows as u64;
+                        info!(
+                            "sniffed delimiter {} and {preamble} preamble rows",
+                            delim as char
+                        );
+                    },
                     // we only warn, as we don't want to stop processing the file
                     // if sniffing doesn't work
-                    warn!("sniff error: {e}");
-                },
+                    Err(e) => warn!("sniff error: {e}"),
+                }
+            } else {
+                warn!(
+                    "skipping delimiter sniff: path {} is not valid UTF-8",
+                    sniff_path_buf.display()
+                );
             }
         }
 
@@ -289,21 +317,18 @@ impl Config {
             quoting: true,
             preamble_rows: preamble,
             trim: csv::Trim::None,
-            autoindex_size: std::env::var("QSV_AUTOINDEX_SIZE")
-                .unwrap_or_else(|_| "0".to_owned())
-                .parse()
-                .unwrap_or(0),
+            autoindex_size: parse_env_or_warn("QSV_AUTOINDEX_SIZE", 0_u64),
             prefer_dmy: util::get_envvar_flag("QSV_PREFER_DMY"),
             comment,
             snappy,
-            read_buffer: std::env::var("QSV_RDR_BUFFER_CAPACITY")
-                .unwrap_or_else(|_| DEFAULT_RDR_BUFFER_CAPACITY.to_string())
-                .parse()
-                .unwrap_or(DEFAULT_RDR_BUFFER_CAPACITY as u32),
-            write_buffer: std::env::var("QSV_WTR_BUFFER_CAPACITY")
-                .unwrap_or_else(|_| DEFAULT_WTR_BUFFER_CAPACITY.to_string())
-                .parse()
-                .unwrap_or(DEFAULT_WTR_BUFFER_CAPACITY as u32),
+            read_buffer: parse_env_or_warn(
+                "QSV_RDR_BUFFER_CAPACITY",
+                DEFAULT_RDR_BUFFER_CAPACITY as u32,
+            ),
+            write_buffer: parse_env_or_warn(
+                "QSV_WTR_BUFFER_CAPACITY",
+                DEFAULT_WTR_BUFFER_CAPACITY as u32,
+            ),
             format_error,
             skip_format_check,
         }
@@ -406,16 +431,24 @@ impl Config {
     }
 
     pub fn set_read_buffer(mut self, buffer: usize) -> Config {
-        self.read_buffer = buffer
-            .try_into()
-            .unwrap_or(DEFAULT_RDR_BUFFER_CAPACITY as u32);
+        self.read_buffer = u32::try_from(buffer).unwrap_or_else(|_| {
+            warn!(
+                "read buffer {buffer} exceeds u32::MAX; using default \
+                 {DEFAULT_RDR_BUFFER_CAPACITY}"
+            );
+            DEFAULT_RDR_BUFFER_CAPACITY as u32
+        });
         self
     }
 
     pub fn set_write_buffer(mut self, buffer: usize) -> Config {
-        self.write_buffer = buffer
-            .try_into()
-            .unwrap_or(DEFAULT_WTR_BUFFER_CAPACITY as u32);
+        self.write_buffer = u32::try_from(buffer).unwrap_or_else(|_| {
+            warn!(
+                "write buffer {buffer} exceeds u32::MAX; using default \
+                 {DEFAULT_WTR_BUFFER_CAPACITY}"
+            );
+            DEFAULT_WTR_BUFFER_CAPACITY as u32
+        });
         self
     }
 
@@ -589,9 +622,13 @@ impl Config {
     /// Unless the CSV's file size >= QSV_AUTOINDEX_SIZE, then we'll create an index automatically.
     /// This will also automatically update stale indices (i.e. the CSV is newer than the index )
     pub fn index_files(&self) -> io::Result<Option<(csv::Reader<fs::File>, fs::File)>> {
+        // Track the data file's mtime and the resolved index path *only* on the
+        // path that may need a staleness recheck. For the auto_indexed and
+        // explicit-(path, idx_path) branches, staleness is not re-checked, so
+        // these stay at their default values.
         let mut data_modified = 0_u64;
         let data_fsize;
-        let mut idx_path_work = PathBuf::new();
+        let mut idx_path_work: Option<PathBuf> = None;
 
         // the auto_indexed flag is set when an index is created automatically with
         // autoindex_file(). We use this flag to avoid checking if the index exists every
@@ -613,14 +650,16 @@ impl Config {
                         "Cannot use <stdin> with indexes",
                     ));
                 },
+                // When the caller supplies both paths explicitly, trust them and skip
+                // the staleness recheck below (idx_path_work stays None).
                 (Some(p), Some(ip)) => (fs::File::open(p)?, fs::File::open(ip)?),
                 (Some(p), &None) => {
                     // We generally don't want to report an error here, since we're
                     // passively trying to find an index.
 
                     (data_modified, data_fsize) = util::file_metadata(&p.metadata()?);
-                    idx_path_work = util::idx_path(p);
-                    let idx_file = match fs::File::open(&idx_path_work) {
+                    let idx_path = util::idx_path(p);
+                    let idx_file = match fs::File::open(&idx_path) {
                         Err(_) => {
                             // the index file doesn't exist
                             if self.snappy {
@@ -630,17 +669,17 @@ impl Config {
                                 // if CSV file size >= QSV_AUTOINDEX_SIZE, and
                                 // its not a snappy file, create an index automatically
                                 self.autoindex_file();
-                                fs::File::open(&idx_path_work)?
+                                fs::File::open(&idx_path)?
                             } else if data_fsize >= NO_INDEX_WARNING_FILESIZE {
                                 // warn user that the CSV file is large and not indexed
-                                use indicatif::HumanCount;
+                                use indicatif::HumanBytes;
 
                                 warn!(
-                                    "The {} MB CSV file is larger than the {} MB \
+                                    "The {} CSV file is larger than the {} \
                                      NO_INDEX_WARNING_FILESIZE threshold. Consider creating an \
                                      index file as it will make qsv commands much faster.",
-                                    HumanCount(data_fsize * 100),
-                                    HumanCount(NO_INDEX_WARNING_FILESIZE * 100)
+                                    HumanBytes(data_fsize),
+                                    HumanBytes(NO_INDEX_WARNING_FILESIZE)
                                 );
                                 return Ok(None);
                             } else {
@@ -651,17 +690,21 @@ impl Config {
                         },
                         Ok(f) => f,
                     };
+                    idx_path_work = Some(idx_path);
                     (fs::File::open(p)?, idx_file)
                 },
             }
         };
         // If the CSV data was last modified after the index file was last
-        // modified, recreate the stale index automatically
-        let (idx_modified, _) = util::file_metadata(&idx_file.metadata()?);
-        if data_modified > idx_modified {
-            info!("index stale... autoindexing...");
-            self.autoindex_file();
-            idx_file = fs::File::open(&idx_path_work)?;
+        // modified, recreate the stale index automatically. Only checked when
+        // we resolved the index path ourselves (idx_path_work is Some).
+        if let Some(idx_path) = &idx_path_work {
+            let (idx_modified, _) = util::file_metadata(&idx_file.metadata()?);
+            if data_modified > idx_modified {
+                info!("index stale... autoindexing...");
+                self.autoindex_file();
+                idx_file = fs::File::open(idx_path)?;
+            }
         }
 
         let csv_rdr = self.from_reader(csv_file);
@@ -758,8 +801,12 @@ impl Config {
 
     #[allow(clippy::wrong_self_convention)]
     pub fn from_writer<W: io::Write>(&self, mut wtr: W) -> csv::Writer<W> {
-        if util::get_envvar_flag("QSV_OUTPUT_BOM") {
-            wtr.write_all("\u{FEFF}".as_bytes()).unwrap();
+        if util::get_envvar_flag("QSV_OUTPUT_BOM")
+            && let Err(e) = wtr.write_all("\u{FEFF}".as_bytes())
+        {
+            // BOM is best-effort: a broken pipe here would otherwise abort the
+            // whole process. Log and let the next real write surface the error.
+            warn!("failed to write UTF-8 BOM: {e}");
         }
 
         csv::WriterBuilder::new()
@@ -857,54 +904,24 @@ pub fn get_special_format(path: &Path) -> SpecialFormat {
         "ipc" | "arrow" => SpecialFormat::Ipc,
         "jsonl" | "ndjson" => SpecialFormat::Jsonl,
         "json" => SpecialFormat::Json,
-        "gz" => {
-            let path_str = if let Some(s) = path.to_str() {
-                s.to_ascii_lowercase()
-            } else {
-                return SpecialFormat::Unknown;
-            };
-            if path_str.ends_with(".csv.gz") {
-                SpecialFormat::CompressedCsv
-            } else if path_str.ends_with(".tsv.gz") || path_str.ends_with(".tab.gz") {
-                SpecialFormat::CompressedTsv
-            } else if path_str.ends_with(".ssv.gz") {
-                SpecialFormat::CompressedSsv
-            } else {
-                SpecialFormat::Unknown
-            }
-        },
-        "zst" => {
-            let path_str = if let Some(s) = path.to_str() {
-                s.to_ascii_lowercase()
-            } else {
-                return SpecialFormat::Unknown;
-            };
-            if path_str.ends_with(".csv.zst") {
-                SpecialFormat::CompressedCsv
-            } else if path_str.ends_with(".tsv.zst") || path_str.ends_with(".tab.zst") {
-                SpecialFormat::CompressedTsv
-            } else if path_str.ends_with(".ssv.zst") {
-                SpecialFormat::CompressedSsv
-            } else {
-                SpecialFormat::Unknown
-            }
-        },
-        "zlib" => {
-            let path_str = if let Some(s) = path.to_str() {
-                s.to_ascii_lowercase()
-            } else {
-                return SpecialFormat::Unknown;
-            };
-            if path_str.ends_with(".csv.zlib") {
-                SpecialFormat::CompressedCsv
-            } else if path_str.ends_with(".tsv.zlib") || path_str.ends_with(".tab.zlib") {
-                SpecialFormat::CompressedTsv
-            } else if path_str.ends_with(".ssv.zlib") {
-                SpecialFormat::CompressedSsv
-            } else {
-                SpecialFormat::Unknown
-            }
-        },
+        "gz" | "zst" | "zlib" => compressed_csv_format(path),
+        _ => SpecialFormat::Unknown,
+    }
+}
+
+/// For a path like `data.csv.gz`, classify the inner CSV-family extension
+/// (`csv`, `tsv`/`tab`, or `ssv`) into a `SpecialFormat::Compressed*` variant.
+/// Returns `Unknown` if the inner extension is missing or not a known CSV family.
+fn compressed_csv_format(path: &Path) -> SpecialFormat {
+    let inner_ext = path
+        .file_stem()
+        .and_then(|stem| Path::new(stem).extension())
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase);
+    match inner_ext.as_deref() {
+        Some("csv") => SpecialFormat::CompressedCsv,
+        Some("tsv" | "tab") => SpecialFormat::CompressedTsv,
+        Some("ssv") => SpecialFormat::CompressedSsv,
         _ => SpecialFormat::Unknown,
     }
 }

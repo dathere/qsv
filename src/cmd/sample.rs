@@ -725,9 +725,17 @@ fn check_stats_cache(
 // bytes as a record" behavior fire at the cap boundary.
 #[allow(clippy::future_not_send)]
 async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -> CliResult<()> {
-    let default_delim = match std::env::var("QSV_DEFAULT_DELIMITER") {
-        Ok(delim) => Delimiter::decode_delimiter(&delim).unwrap().as_byte(),
-        _ => b',',
+    // Resolve the delimiter ONCE: --delimiter wins, then QSV_DEFAULT_DELIMITER,
+    // then comma. The same byte is reused for every csv::ReaderBuilder probe
+    // below so header and data parses agree.
+    let delim_byte = if let Some(d) = args.flag_delimiter {
+        d.as_byte()
+    } else if let Ok(delim) = std::env::var("QSV_DEFAULT_DELIMITER") {
+        Delimiter::decode_delimiter(&delim)
+            .map(|d| d.as_byte())
+            .unwrap_or(b',')
+    } else {
+        b','
     };
 
     let mut wtr = Config::new(args.flag_output.as_ref())
@@ -740,7 +748,10 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
         Some(uri.to_string()),
     )?;
 
-    let response = client.get(uri).send().await?;
+    // Fail fast on non-2xx — reqwest's `.send()` does NOT error on HTTP error
+    // status, so without this a 404/500 HTML body would be streamed straight
+    // into the csv parser and produce confusing record errors.
+    let response = client.get(uri).send().await?.error_for_status()?;
     let mut stream = response.bytes_stream();
 
     let max_bytes = args.flag_max_size.map(|mb| mb * 1024 * 1024);
@@ -801,7 +812,7 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
         if !header_handled {
             let mut probe = csv::ReaderBuilder::new()
                 .has_headers(false)
-                .delimiter(default_delim)
+                .delimiter(delim_byte)
                 .from_reader(&buffer[..]);
             let mut hdr = csv::ByteRecord::new();
             if let Ok(true) = probe.read_byte_record(&mut hdr) {
@@ -824,7 +835,7 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
         if header_handled && !buffer.is_empty() {
             let mut probe = csv::ReaderBuilder::new()
                 .has_headers(false)
-                .delimiter(default_delim)
+                .delimiter(delim_byte)
                 .from_reader(&buffer[..]);
             let mut last_consumed = 0usize;
             while let Ok(true) = probe.read_byte_record(&mut record) {

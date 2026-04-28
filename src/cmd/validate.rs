@@ -959,24 +959,28 @@ fn dyn_enum_validator_factory<'a>(
         ));
     };
 
-    let temp_download = match NamedTempFile::new() {
-        Ok(file) => file,
-        Err(e) => return fail_validation_error!("Failed to create temporary file: {e}"),
-    };
-
     // Split URI to get column specification
     let parts: Vec<&str> = uri.split('|').collect();
     let base_uri = parts[0];
     let column = parts.get(1).map(std::string::ToString::to_string);
 
+    // Hold the temp file across the load so it isn't deleted prematurely.
+    // Only created in the URL branch; local paths don't need a temp file.
+    let mut _temp_download: Option<NamedTempFile> = None;
+
     let dynenum_path = if base_uri.starts_with("http") {
         let valid_url = reqwest::Url::parse(base_uri)
             .map_err(|e| ValidationError::custom(format!("Error parsing dynamicEnum URL: {e}")))?;
 
+        let temp_file = match NamedTempFile::new() {
+            Ok(file) => file,
+            Err(e) => return fail_validation_error!("Failed to create temporary file: {e}"),
+        };
+
         let download_timeout = TIMEOUT_SECS.load(Ordering::Relaxed);
         let future = util::download_file(
             valid_url.as_str(),
-            temp_download.path().to_path_buf(),
+            temp_file.path().to_path_buf(),
             false,
             None,
             Some(download_timeout),
@@ -992,18 +996,35 @@ fn dyn_enum_validator_factory<'a>(
                 return fail_validation_error!("Error creating Tokio runtime - {e}");
             },
         }
-        temp_download.path().to_str().unwrap().to_string()
+        let path_str = match temp_file.path().to_str() {
+            Some(p) => p.to_string(),
+            None => {
+                return fail_validation_error!(
+                    "Downloaded dynamicEnum file path is not valid UTF-8: {}",
+                    temp_file.path().display()
+                );
+            },
+        };
+        _temp_download = Some(temp_file);
+        path_str
     } else {
         let uri_path = std::path::Path::new(base_uri);
         if !uri_path.exists() {
             return fail_validation_error!("dynamicEnum file not found - {base_uri}");
         }
-        uri_path.to_str().unwrap().to_string()
+        match uri_path.to_str() {
+            Some(p) => p.to_string(),
+            None => {
+                return fail_validation_error!(
+                    "dynamicEnum file path is not valid UTF-8: {}",
+                    uri_path.display()
+                );
+            },
+        }
     };
 
     let enum_set = load_dynenum_set(&dynenum_path, column, 50)?;
-    // `temp_download` outlives the load above; drop it explicitly to make intent clear.
-    drop(temp_download);
+    // `_temp_download` is dropped at end of scope after `enum_set` is fully populated.
     Ok(Box::new(DynEnumValidator::new(enum_set)))
 }
 

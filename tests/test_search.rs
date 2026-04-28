@@ -221,12 +221,21 @@ fn search_match_quick() {
 
 #[test]
 fn search_match_quick_json() {
-    // regression: --quick + --json must not emit an unclosed JSON array `[`
+    // regression: --quick + --json must not emit an unclosed JSON array `[`,
+    // and per USAGE --json "Automatically sets --quiet" so the --quick row
+    // number must NOT be printed to stderr either.
     let wrk = Workdir::new("search_match_quick_json");
     wrk.create("data.csv", data(true));
     let mut cmd = wrk.command("search");
     cmd.arg("^a").arg("--quick").arg("--json").arg("data.csv");
 
+    // Workdir::output_stderr returns the literal "No error" sentinel when
+    // stderr is empty and the command succeeded.
+    let got_err = wrk.output_stderr(&mut cmd);
+    assert_eq!(
+        got_err, "No error",
+        "--quick --json should silence stderr (--json implies --quiet); got: {got_err:?}"
+    );
     wrk.assert_success(&mut cmd);
     let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "");

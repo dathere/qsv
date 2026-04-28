@@ -268,6 +268,9 @@ impl Args {
         regex_labels: &[String],
     ) -> CliResult<()> {
         let flag_not_one = self.flag_not_one;
+        // Per USAGE, --quick is "Ignored if --json is enabled" - --json needs the
+        // full record_count and total_matches summary, so we must not break early.
+        let flag_quick = self.flag_quick && !self.flag_json;
 
         let mut rdr = rconfig.reader()?;
         let mut wtr = Config::new(self.flag_output.as_ref()).writer()?;
@@ -281,7 +284,7 @@ impl Args {
             true
         });
 
-        if !rconfig.no_headers && !self.flag_quick {
+        if !rconfig.no_headers && !flag_quick {
             wtr.write_record(&headers)?;
         }
 
@@ -341,7 +344,7 @@ impl Args {
             }
             if m {
                 match_row_ctr += 1;
-                if self.flag_quick {
+                if flag_quick {
                     break;
                 }
             }
@@ -408,7 +411,7 @@ impl Args {
             });
             eprintln!("{json}");
         } else {
-            if self.flag_count && !self.flag_quick {
+            if self.flag_count && !flag_quick {
                 if !self.flag_quiet {
                     eprintln!("{match_row_ctr}");
                 }
@@ -417,7 +420,7 @@ impl Args {
 
             if match_row_ctr == 0 && !flag_not_one {
                 return Err(CliError::NoMatch());
-            } else if self.flag_quick {
+            } else if flag_quick {
                 if !self.flag_quiet {
                     eprintln!("{row_ctr}");
                 }
@@ -467,7 +470,11 @@ impl Args {
 
         let pattern = Arc::new(pattern);
         let invert_match = self.flag_invert_match;
-        let flag_quick = self.flag_quick;
+        // Per USAGE, --quick is "Ignored if --json is enabled" - --json needs the
+        // full record_count and total_matches summary, so workers must scan
+        // every chunk in normal mode and the quick early-return block below
+        // must be skipped.
+        let flag_quick = self.flag_quick && !self.flag_json;
 
         // Lowest chunk_index that has reported a match in --quick mode (or
         // usize::MAX if none yet). A chunk can stop scanning only when a
@@ -599,7 +606,8 @@ impl Args {
 
         // --quick mode: collect each worker's earliest-match-in-chunk and
         // pick the lowest chunk_index that reported Some(row).
-        if self.flag_quick {
+        // Skipped when --json is enabled (per USAGE: --quick is ignored).
+        if flag_quick {
             let mut earliest: Option<(usize, u64)> = None;
             for chunk_msg in &recv {
                 let chunk = chunk_msg?;

@@ -562,9 +562,10 @@ impl Args {
             self.write_preview(&preview_records, &headers, row_ctr, elapsed_ms)?;
         }
 
-        // Handle quick mode separately
+        // Handle quick mode separately. --json implies --quiet per USAGE,
+        // so the row-number print is also suppressed when --json is set.
         if self.flag_quick {
-            if !self.flag_quiet {
+            if !(self.flag_quiet || self.flag_json) {
                 eprintln!("{row_ctr}");
             }
             info!("quick search first match at {row_ctr}");
@@ -741,7 +742,9 @@ impl Args {
                 }
             }
             if let Some((_, row)) = earliest {
-                if !self.flag_quiet {
+                // --json implies --quiet per USAGE, so suppress the row print
+                // when --json is set.
+                if !(self.flag_quiet || self.flag_json) {
                     eprintln!("{row}");
                 }
                 info!("quick search first match at {row}");

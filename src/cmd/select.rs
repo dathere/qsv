@@ -148,9 +148,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Selection::from_indices(idxs)
     } else if args.flag_sort {
         let mut idxs: Vec<usize> = rconfig.selection(&headers)?.iter().copied().collect();
-        // Sort by the raw header bytes — preserves non-UTF-8 bytes, embedded
-        // quotes, and duplicate names that a string round-trip would mangle.
-        idxs.sort_unstable_by(|&a, &b| headers[a].cmp(&headers[b]));
+        // Sort by the raw header bytes — preserves non-UTF-8 bytes and embedded
+        // quotes. Use the original column index as a deterministic tiebreaker
+        // so duplicate header names retain their left-to-right order.
+        idxs.sort_unstable_by(|&a, &b| headers[a].cmp(&headers[b]).then_with(|| a.cmp(&b)));
         Selection::from_indices(idxs)
     } else {
         rconfig.selection(&headers)?

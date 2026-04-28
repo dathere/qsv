@@ -69,7 +69,12 @@ use crate::{CliError, CliResult, util};
 
 /// Truncate a string at the nearest char boundary <= max_len bytes,
 /// then append an ellipsis. Avoids panicking on multi-byte UTF-8.
+///
+/// Precondition: `max_len > 0`. Callers in this module only invoke this when
+/// `value.len() > max_len`, so a zero `max_len` is meaningless here. We
+/// debug-assert it to catch any future misuse during development.
 fn truncate_with_ellipsis(value: &str, max_len: usize) -> String {
+    debug_assert!(max_len > 0, "truncate_with_ellipsis requires max_len > 0");
     let mut boundary = max_len;
     while boundary > 0 && !value.is_char_boundary(boundary) {
         boundary -= 1;
@@ -90,12 +95,16 @@ where
 {
     let temp_file = NamedTempFile::new()?;
 
-    // Write the CSV output to the temporary file
+    // Write the CSV output to the temporary file. We flush explicitly so a
+    // failed flush surfaces as an error here instead of being swallowed by
+    // BufWriter's Drop, which would let the reader below silently see a
+    // truncated file.
     {
         let temp_writer = BufWriter::new(temp_file.reopen()?);
         let mut temp_box: Box<dyn Write> = Box::new(temp_writer);
         process_fn(&mut temp_box)?;
-    } // temp_writer is dropped here, which will flush it
+        temp_box.flush()?;
+    }
 
     // Read the temporary file and truncate columns that exceed the max length
     let mut rdr = Reader::from_path(temp_file.path())?;
@@ -257,30 +266,32 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // Stream features directly into wtr — avoids buffering the entire
             // output as Vec<u8> + UTF-8 round-trip for large shapefiles.
+            // Per-feature errors are propagated (fail-fast) so malformed SHP
+            // records don't silently produce truncated output.
             match args.arg_output_format {
                 OutputFormat::Geojson => {
-                    let _ = reader
-                        .iter_features(&mut GeoJsonWriter::new(&mut wtr))?
-                        .collect::<Vec<_>>();
+                    for feature in reader.iter_features(&mut GeoJsonWriter::new(&mut wtr))? {
+                        feature?;
+                    }
                 },
                 OutputFormat::Geojsonl => {
-                    let _ = reader
-                        .iter_features(&mut GeoJsonLineWriter::new(&mut wtr))?
-                        .collect::<Vec<_>>();
+                    for feature in reader.iter_features(&mut GeoJsonLineWriter::new(&mut wtr))? {
+                        feature?;
+                    }
                 },
                 OutputFormat::Csv => {
                     if let Some(max_len) = max_length {
                         process_csv_with_max_length(&mut wtr, max_len, |writer| {
-                            let _ = reader
-                                .iter_features(&mut CsvWriter::new(writer))?
-                                .collect::<Vec<_>>();
+                            for feature in reader.iter_features(&mut CsvWriter::new(writer))? {
+                                feature?;
+                            }
                             Ok(())
                         })?;
                         return Ok(());
                     }
-                    let _ = reader
-                        .iter_features(&mut CsvWriter::new(&mut wtr))?
-                        .collect::<Vec<_>>();
+                    for feature in reader.iter_features(&mut CsvWriter::new(&mut wtr))? {
+                        feature?;
+                    }
                 },
                 OutputFormat::Svg => {
                     return fail_clierror!("Converting SHP to SVG is not supported");
@@ -439,4 +450,51 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     Ok(wtr.flush()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression for the prior `String::replace(".shp", ...)` bug: paths that
+    /// contain `.shp` in a directory component must not have those occurrences
+    /// rewritten when computing sibling extensions. `Path::with_extension`
+    /// only touches the file extension, so `archive.shp.bak/data.shp` is
+    /// resolved correctly.
+    #[test]
+    fn shp_sibling_paths_with_extension() {
+        let p = Path::new("archive.shp.bak/data.shp");
+        assert_eq!(
+            p.with_extension("shx"),
+            Path::new("archive.shp.bak/data.shx")
+        );
+        assert_eq!(
+            p.with_extension("dbf"),
+            Path::new("archive.shp.bak/data.dbf")
+        );
+
+        let p2 = Path::new("/tmp/dir/file.shp");
+        assert_eq!(p2.with_extension("shx"), Path::new("/tmp/dir/file.shx"));
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_ascii() {
+        assert_eq!(truncate_with_ellipsis("abcdefghij", 5), "abcde...");
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_multibyte() {
+        // 'é' is 2 bytes (0xC3 0xA9). In "Café au lait" the byte layout is
+        // C=0 a=1 f=2 é=3..5 (boundary at 5). max_len=4 falls inside 'é';
+        // naive byte-slicing would panic. We must walk back to byte 3.
+        let got = truncate_with_ellipsis("Café au lait", 4);
+        assert_eq!(got, "Caf...");
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_em_dash() {
+        // '—' is 3 bytes (U+2014). max_len=2 lands inside it; walk back to 1.
+        let got = truncate_with_ellipsis("a—b", 2);
+        assert_eq!(got, "a...");
+    }
 }

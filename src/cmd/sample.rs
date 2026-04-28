@@ -578,7 +578,8 @@ fn parse_timestamp(
     // and treat anything larger as milliseconds.
     if let Ok(ts_val) = atoi_simd::parse::<i64, false, false>(value) {
         const SEC_LIMIT: i64 = 100_000_000_000; // 10^11
-        if ts_val.abs() < SEC_LIMIT {
+        // Range form (not `.abs()`) so i64::MIN doesn't panic in debug.
+        if (-SEC_LIMIT..SEC_LIMIT).contains(&ts_val) {
             if let Some(dt) = Utc.timestamp_opt(ts_val, 0).single() {
                 return Ok(dt);
             }
@@ -628,8 +629,10 @@ fn check_stats_cache(
         return Ok((None, None));
     }
 
-    // Set stats config. flag_force is always false here — we returned early
-    // above when it was set.
+    // We returned early above when flag_force was set, so this is always
+    // false here. Asserting (rather than hard-coding the literal) keeps the
+    // two callsites in sync if the early-return guard ever moves.
+    debug_assert!(!args.flag_force);
     let schema_args = SchemaArgs {
         arg_input:            args.arg_input.clone(),
         flag_no_headers:      args.flag_no_headers,
@@ -637,7 +640,7 @@ fn check_stats_cache(
         flag_jobs:            None,
         flag_polars:          false,
         flag_memcheck:        false,
-        flag_force:           false,
+        flag_force:           args.flag_force,
         flag_prefer_dmy:      false,
         flag_dates_whitelist: String::new(),
         flag_enum_threshold:  0,
@@ -708,6 +711,18 @@ fn check_stats_cache(
 }
 
 // "streaming" bernoulli sampling
+//
+// Boundary detection: instead of scanning the byte buffer for raw `\n` (which
+// would mis-split CSVs whose fields contain quoted newlines), we drive the csv
+// parser itself and use `Reader::position().byte()` to learn where each record
+// actually ends. We only commit records whose terminator we know lies WITHIN
+// the current buffer — if the parser consumes all of it, the trailing record
+// might be partial, so we hold it back until either more data arrives or the
+// stream closes naturally.
+//
+// `--max-size` truncation is treated as NOT-EOF: a capped buffer may have cut
+// the final record in half, so we never let the parser's "treat trailing
+// bytes as a record" behavior fire at the cap boundary.
 #[allow(clippy::future_not_send)]
 async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -> CliResult<()> {
     let default_delim = match std::env::var("QSV_DEFAULT_DELIMITER") {
@@ -715,7 +730,6 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
         _ => b',',
     };
 
-    // Create output writer
     let mut wtr = Config::new(args.flag_output.as_ref())
         .delimiter(args.flag_delimiter)
         .writer()?;
@@ -729,7 +743,6 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
     let response = client.get(uri).send().await?;
     let mut stream = response.bytes_stream();
 
-    // Optional max-size cap (mirrors the download path).
     let max_bytes = args.flag_max_size.map(|mb| mb * 1024 * 1024);
 
     // Create only the RNG we'll actually use — Cryptosecure init is slow.
@@ -749,52 +762,78 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
 
     let mut buffer: Vec<u8> = Vec::new();
     let mut bytes_read: u64 = 0;
-    let mut header_handled = args.flag_no_headers; // nothing to do when input has no headers
-
-    // Pull from the stream, splitting records on newlines. We treat every
-    // complete line up to the last `\n` in the buffer as ready to parse, and
-    // keep the trailing partial line for the next iteration.
+    let mut header_handled = args.flag_no_headers;
     let mut record = csv::ByteRecord::new();
     let mut size_capped = false;
+    let mut stream_done = false;
 
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        if let Some(cap) = max_bytes {
-            let remaining = cap.saturating_sub(bytes_read);
-            if remaining == 0 {
-                break;
-            }
-            let take = (chunk.len() as u64).min(remaining) as usize;
-            buffer.extend_from_slice(&chunk[..take]);
-            bytes_read += take as u64;
-            if take < chunk.len() {
-                size_capped = true;
-            }
-        } else {
-            buffer.extend_from_slice(&chunk);
-            bytes_read += chunk.len() as u64;
+    while !stream_done {
+        match stream.next().await {
+            Some(chunk) => {
+                let chunk = chunk?;
+                if let Some(cap) = max_bytes {
+                    let remaining = cap.saturating_sub(bytes_read);
+                    if remaining == 0 {
+                        size_capped = true;
+                        stream_done = true;
+                    } else {
+                        let take = (chunk.len() as u64).min(remaining) as usize;
+                        buffer.extend_from_slice(&chunk[..take]);
+                        bytes_read += take as u64;
+                        if take < chunk.len() {
+                            size_capped = true;
+                        }
+                    }
+                } else {
+                    buffer.extend_from_slice(&chunk);
+                    bytes_read += chunk.len() as u64;
+                }
+            },
+            None => stream_done = true,
         }
 
-        // Split off the header on the first newline before parsing data.
-        if !header_handled && let Some(nl) = buffer.iter().position(|&b| b == b'\n') {
-            let header_slice = &buffer[..=nl];
-            let mut header_rdr = csv::ReaderBuilder::new()
-                .has_headers(true)
-                .delimiter(default_delim)
-                .from_reader(header_slice);
-            let headers = header_rdr.headers()?.clone();
-            wtr.write_record(&headers)?;
-            buffer.drain(..=nl);
-            header_handled = true;
-        }
+        // EOF flag for the csv parser: only true on a *natural* stream end.
+        // A size-capped buffer may have truncated the final record mid-way,
+        // so we must NOT trust the parser's trailing-record fallback there.
+        let parser_eof = stream_done && !size_capped;
 
-        if header_handled && let Some(pos) = buffer.iter().rposition(|&b| b == b'\n') {
-            let mut csv_reader = csv::ReaderBuilder::new()
+        // Header: read exactly one complete record from the buffer.
+        if !header_handled {
+            let mut probe = csv::ReaderBuilder::new()
                 .has_headers(false)
                 .delimiter(default_delim)
-                .from_reader(&buffer[..=pos]);
+                .from_reader(&buffer[..]);
+            let mut hdr = csv::ByteRecord::new();
+            if let Ok(true) = probe.read_byte_record(&mut hdr) {
+                let pos = probe.position().byte() as usize;
+                // A record terminator was definitely inside the buffer iff the
+                // parser stopped before consuming all of it. (Or the stream is
+                // genuinely over and what we have IS the whole header.)
+                if parser_eof || pos < buffer.len() {
+                    wtr.write_byte_record(&hdr)?;
+                    buffer.drain(..pos);
+                    header_handled = true;
+                }
+                // else: the parser may have treated EOF-of-slice as a record
+                // terminator; wait for more data before committing.
+            }
+        }
 
-            while matches!(csv_reader.read_byte_record(&mut record), Ok(true)) {
+        // Data: read every record whose terminator is INSIDE the buffer (or
+        // every remaining record once we know the stream is naturally done).
+        if header_handled && !buffer.is_empty() {
+            let mut probe = csv::ReaderBuilder::new()
+                .has_headers(false)
+                .delimiter(default_delim)
+                .from_reader(&buffer[..]);
+            let mut last_consumed = 0usize;
+            while let Ok(true) = probe.read_byte_record(&mut record) {
+                let pos = probe.position().byte() as usize;
+                if !parser_eof && pos == buffer.len() {
+                    // Parser ate the rest of the buffer — this last "record"
+                    // might be a partial one. Hold it back.
+                    break;
+                }
                 let pick = match rng_kind {
                     RngKind::Standard => std_rng.as_mut().unwrap().random_bool(probability),
                     RngKind::Faster => faster_rng.as_mut().unwrap().random_bool(probability),
@@ -803,32 +842,15 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
                 if pick {
                     wtr.write_byte_record(&record)?;
                 }
+                last_consumed = pos;
             }
-
-            buffer.drain(..=pos);
+            if last_consumed > 0 {
+                buffer.drain(..last_consumed);
+            }
         }
 
         if size_capped {
             break;
-        }
-    }
-
-    // Flush any trailing partial line (a final record with no newline).
-    if header_handled && !buffer.is_empty() {
-        let mut csv_reader = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .delimiter(default_delim)
-            .from_reader(&buffer[..]);
-
-        while matches!(csv_reader.read_byte_record(&mut record), Ok(true)) {
-            let pick = match rng_kind {
-                RngKind::Standard => std_rng.as_mut().unwrap().random_bool(probability),
-                RngKind::Faster => faster_rng.as_mut().unwrap().random_bool(probability),
-                RngKind::Cryptosecure => crypto_rng.as_mut().unwrap().random_bool(probability),
-            };
-            if pick {
-                wtr.write_byte_record(&record)?;
-            }
         }
     }
 
@@ -1368,10 +1390,11 @@ fn sample_stratified<R: io::Read, W: io::Write>(
 ) -> CliResult<()> {
     const ESTIMATED_STRATA_COUNT: usize = 100;
 
-    // Single-pass: collect records, and discover strata into a reservoirs map
-    // as we go. The previous code maintained a parallel strata_counts HashMap
-    // purely to size the reservoirs map afterwards — the count was never read.
-    let mut reservoirs: HashMap<Vec<u8>, Vec<csv::ByteRecord>> =
+    // Single-pass: collect records, and discover strata into a per-stratum
+    // state map as we go. Each entry holds (reservoir, records_seen) — packing
+    // both into one HashMap halves per-record lookups in do_stratified_sampling
+    // and removes the awkward "lookup-or-insert" dance over a parallel map.
+    let mut strata: HashMap<Vec<u8>, (Vec<csv::ByteRecord>, usize)> =
         HashMap::with_capacity(ESTIMATED_STRATA_COUNT);
     let mut records = Vec::with_capacity(ESTIMATED_STRATA_COUNT * samples_per_stratum);
 
@@ -1380,16 +1403,16 @@ fn sample_stratified<R: io::Read, W: io::Write>(
         let stratum_bytes = curr_record
             .get(strata_column)
             .ok_or_else(|| format!("Strata column index {strata_column} out of bounds"))?;
-        if !reservoirs.contains_key(stratum_bytes) {
-            reservoirs.insert(
+        if !strata.contains_key(stratum_bytes) {
+            strata.insert(
                 stratum_bytes.to_vec(),
-                Vec::with_capacity(samples_per_stratum),
+                (Vec::with_capacity(samples_per_stratum), 0),
             );
         }
         records.push(curr_record);
     }
 
-    if reservoirs.is_empty() {
+    if strata.is_empty() {
         return fail_incorrectusage_clierror!("No valid strata found in the data");
     }
 
@@ -1397,7 +1420,7 @@ fn sample_stratified<R: io::Read, W: io::Write>(
     with_rng!(rng_kind, seed, |rng| {
         do_stratified_sampling(
             records.into_iter(),
-            &mut reservoirs,
+            &mut strata,
             strata_column,
             samples_per_stratum,
             &mut rng,
@@ -1405,11 +1428,11 @@ fn sample_stratified<R: io::Read, W: io::Write>(
     });
 
     // Write results in deterministic order
-    let mut strata: Vec<_> = reservoirs.keys().collect();
-    strata.par_sort_unstable();
-    for stratum in strata {
-        if let Some(records) = reservoirs.get(stratum) {
-            for record in records {
+    let mut keys: Vec<_> = strata.keys().collect();
+    keys.par_sort_unstable();
+    for k in keys {
+        if let Some((reservoir, _)) = strata.get(k) {
+            for record in reservoir {
                 wtr.write_byte_record(record)?;
             }
         }
@@ -1420,31 +1443,20 @@ fn sample_stratified<R: io::Read, W: io::Write>(
 
 fn do_stratified_sampling<T: Rng + ?Sized>(
     records: impl Iterator<Item = csv::ByteRecord>,
-    reservoirs: &mut HashMap<Vec<u8>, Vec<csv::ByteRecord>>,
+    strata: &mut HashMap<Vec<u8>, (Vec<csv::ByteRecord>, usize)>,
     strata_column: usize,
     samples_per_stratum: usize,
     rng: &mut T,
 ) -> CliResult<()> {
-    let mut records_seen: HashMap<Vec<u8>, usize> = HashMap::with_capacity(reservoirs.len());
-
     for record in records {
         let stratum_bytes = record
             .get(strata_column)
             .ok_or_else(|| format!("Strata column index {strata_column} out of bounds"))?;
 
-        // Look up via &[u8] (Borrow-based) to avoid allocating a Vec<u8> per
-        // record on the hot path. We only allocate when we actually need to
-        // insert into records_seen — which happens once per stratum, not per
-        // record.
-        let Some(reservoir) = reservoirs.get_mut(stratum_bytes) else {
+        // One Borrow<[u8]>-based lookup per record, no allocation. The strata
+        // map was pre-populated by the caller in its first pass.
+        let Some((reservoir, seen)) = strata.get_mut(stratum_bytes) else {
             continue;
-        };
-
-        let seen = if let Some(s) = records_seen.get_mut(stratum_bytes) {
-            s
-        } else {
-            records_seen.insert(stratum_bytes.to_vec(), 0);
-            records_seen.get_mut(stratum_bytes).unwrap()
         };
 
         if reservoir.len() < samples_per_stratum {

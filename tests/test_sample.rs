@@ -2034,3 +2034,243 @@ fn sample_timeseries_adaptive_both() {
         "Should prefer business hours record for Monday"
     );
 }
+
+// =============================================================================
+// Streaming Bernoulli sampling tests (regression coverage for the URL path)
+//
+// These spin up a local actix-web server with hand-built fixture bytes and
+// exercise the boundary detection added in PR #3774:
+//   * RFC-4180 quoted newlines in the header are not mis-split.
+//   * --max-size truncation drops any partial trailing record.
+//   * Non-2xx HTTP status fails fast.
+//   * --delimiter is honored on the streaming path.
+// =============================================================================
+
+use std::{sync::mpsc, thread};
+
+use actix_web::{App, HttpResponse, HttpServer, dev::ServerHandle, rt, web};
+use serial_test::serial;
+
+// Distinct from test_fetch.rs (which uses 8081) so the two suites don't clash
+// when run in parallel across integration-test binaries.
+const SAMPLE_TEST_PORT: u16 = 8082;
+const SAMPLE_TEST_HOST: &str = "127.0.0.1:8082";
+
+fn sample_test_url(path: &str) -> String {
+    format!("http://{SAMPLE_TEST_HOST}/{path}")
+}
+
+// Header field 0 contains a quoted newline (per RFC 4180). The OLD streaming
+// header parser split on the first raw `\n`, which would land INSIDE the
+// quote and corrupt every subsequent record.
+const QUOTED_NL_HEADER_CSV: &str = "\"first\nline\",second,third\n1,2,3\n4,5,6\n7,8,9\n";
+
+// Tab-delimited fixture for the --delimiter test. With the default-comma
+// parser this would parse as a single-column CSV.
+const TSV_BODY: &str = "id\tname\tcity\n1\talice\tparis\n2\tbob\tlondon\n3\tcarol\trome\n";
+
+// Builds a CSV just over 1 MiB with fixed-size 100-byte records so the
+// --max-size 1 cap (= 1_048_576 bytes) lands deterministically inside a
+// record. Header (`id,payload\n`) is 11 bytes; each data record is exactly
+// 100 bytes (`NNNNN,` + 93 'X' + `\n`). Total ≈ 1.2 MiB.
+fn large_csv_body() -> String {
+    let mut body = String::with_capacity(1_200_100);
+    body.push_str("id,payload\n");
+    let payload: String = "X".repeat(93);
+    for i in 1..=12_000u32 {
+        body.push_str(&format!("{i:05},{payload}\n"));
+    }
+    body
+}
+
+async fn serve_quoted_nl_header() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/csv")
+        .body(QUOTED_NL_HEADER_CSV)
+}
+
+async fn serve_tsv() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/tab-separated-values")
+        .body(TSV_BODY)
+}
+
+async fn serve_large_csv() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/csv")
+        .body(large_csv_body())
+}
+
+async fn run_sample_webserver(tx: mpsc::Sender<ServerHandle>) -> std::io::Result<()> {
+    let server = HttpServer::new(|| {
+        App::new()
+            .service(web::resource("/quoted_nl_header.csv").to(serve_quoted_nl_header))
+            .service(web::resource("/data.tsv").to(serve_tsv))
+            .service(web::resource("/large.csv").to(serve_large_csv))
+        // anything else -> 404 (handled by actix-web default)
+    })
+    .bind((
+        SAMPLE_TEST_HOST.split(':').next().unwrap(),
+        SAMPLE_TEST_PORT,
+    ))?
+    .run();
+
+    let _ = tx.send(server.handle());
+    server.await
+}
+
+fn start_sample_webserver() -> ServerHandle {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let server_future = run_sample_webserver(tx);
+        rt::System::new().block_on(server_future)
+    });
+    rx.recv().expect("test webserver failed to start")
+}
+
+#[test]
+#[serial]
+fn sample_bernoulli_url_quoted_newline_header() {
+    let handle = start_sample_webserver();
+
+    let wrk = Workdir::new("sample_bernoulli_url_quoted_nl");
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--bernoulli", "--seed", "42"])
+        .arg("0.999")
+        .arg(sample_test_url("quoted_nl_header.csv"));
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    rt::System::new().block_on(handle.stop(true));
+
+    // Header must come through INTACT — three fields, with the embedded
+    // newline preserved in field 0. The old buggy splitter would have
+    // produced one or two fields and shifted every following row.
+    assert!(
+        !got.is_empty(),
+        "no rows emitted (header should always be present)"
+    );
+    let header = &got[0];
+    assert_eq!(
+        header.len(),
+        3,
+        "header should have 3 fields, got {header:?}"
+    );
+    assert_eq!(header[0], "first\nline");
+    assert_eq!(header[1], "second");
+    assert_eq!(header[2], "third");
+
+    // Every data row must also have 3 fields. (Bernoulli at 0.999 with
+    // seed 42 over only three rows may or may not include all of them —
+    // we don't assert on count, only on shape.)
+    for row in &got[1..] {
+        assert_eq!(row.len(), 3, "data row should have 3 fields, got {row:?}");
+    }
+}
+
+#[test]
+#[serial]
+fn sample_bernoulli_url_max_size_truncation() {
+    let handle = start_sample_webserver();
+
+    let wrk = Workdir::new("sample_bernoulli_url_max_size");
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--bernoulli", "--seed", "42"])
+        .args(["--max-size", "1"])
+        .arg("0.5")
+        .arg(sample_test_url("large.csv"));
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    rt::System::new().block_on(handle.stop(true));
+
+    // The cap is 1 MiB = 1_048_576 bytes. Header is 11 bytes; each data
+    // record is 100 bytes. So records 1..=10485 fully fit (ending at byte
+    // 11 + 10485*100 = 1_048_511, well under the cap), but record 10486
+    // would extend to byte 1_048_611 — past the cap. The streaming code
+    // must NOT emit that partial 10486 record.
+    assert!(!got.is_empty(), "no rows emitted");
+    let header = &got[0];
+    assert_eq!(header, &vec!["id".to_string(), "payload".to_string()]);
+
+    let max_id: u32 = got[1..]
+        .iter()
+        .map(|r| {
+            r[0].parse::<u32>()
+                .unwrap_or_else(|_| panic!("bad id row: {r:?}"))
+        })
+        .max()
+        .expect("at least one data row should pass Bernoulli with seed 42 + p=0.5");
+
+    assert!(
+        max_id <= 10485,
+        "saw id {max_id} which is past the --max-size 1 MiB cap (last full record is 10485)"
+    );
+
+    // Every emitted record must be well-formed: 2 fields, 5-digit id,
+    // 93-char payload of 'X'. This catches half-records being flushed at
+    // the cap boundary.
+    for row in &got[1..] {
+        assert_eq!(row.len(), 2, "data row should have 2 fields: {row:?}");
+        assert_eq!(row[0].len(), 5, "id should be 5 chars: {row:?}");
+        assert_eq!(row[1].len(), 93, "payload should be 93 chars: {row:?}");
+        assert!(
+            row[1].chars().all(|c| c == 'X'),
+            "payload should be all 'X': {row:?}"
+        );
+    }
+}
+
+#[test]
+#[serial]
+fn sample_bernoulli_url_404_fails_fast() {
+    let handle = start_sample_webserver();
+
+    let wrk = Workdir::new("sample_bernoulli_url_404");
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--bernoulli", "--seed", "42"])
+        .arg("0.5")
+        .arg(sample_test_url("does_not_exist.csv"));
+
+    // .error_for_status() should turn the 404 into an Err in the streaming
+    // path, so qsv exits with non-zero. Without that, the HTML 404 body
+    // would be fed straight into the csv parser.
+    wrk.assert_err(&mut cmd);
+
+    rt::System::new().block_on(handle.stop(true));
+}
+
+#[test]
+#[serial]
+fn sample_bernoulli_url_custom_delimiter() {
+    let handle = start_sample_webserver();
+
+    let wrk = Workdir::new("sample_bernoulli_url_tsv");
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--bernoulli", "--seed", "42"])
+        .args(["--delimiter", "\t"])
+        .arg("0.999")
+        .arg(sample_test_url("data.tsv"));
+
+    // qsv's writer also honors --delimiter, so output is tab-separated.
+    // read_stdout()'s CSV parser would treat that as a single comma-field, so
+    // we parse the raw stdout with tab delimiter ourselves.
+    let stdout: String = wrk.stdout(&mut cmd);
+
+    rt::System::new().block_on(handle.stop(true));
+
+    let got: Vec<Vec<&str>> = stdout.lines().map(|l| l.split('\t').collect()).collect();
+
+    // With --delimiter '\t' honored on the streaming path, fields split into
+    // 3 columns. Without the fix the streaming parser would treat the whole
+    // row as one comma-field and the writer would emit a single-column CSV.
+    assert!(!got.is_empty(), "no rows emitted");
+    assert_eq!(
+        got[0],
+        vec!["id", "name", "city"],
+        "TSV header should split into 3 fields when --delimiter '\\t' is honored"
+    );
+    for row in &got[1..] {
+        assert_eq!(row.len(), 3, "TSV data row should have 3 fields: {row:?}");
+    }
+}

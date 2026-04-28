@@ -102,7 +102,7 @@ use serde::Deserialize;
 use crate::{
     CliResult,
     config::{Config, Delimiter},
-    select::SelectColumns,
+    select::{SelectColumns, Selection},
     util,
 };
 
@@ -135,7 +135,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let headers = rdr.byte_headers()?.clone();
     let sel = if args.flag_random {
-        // Use seed if it is provided when initializing the random number generator.
         let mut rng = match args.flag_seed {
             Some(seed) => {
                 // we add the DevSkim ignore comment here because we don't need to worry about
@@ -144,54 +143,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             },
             _ => rand::make_rng::<rand::rngs::StdRng>(),
         };
-
-        let initial_selection = rconfig.selection(&headers)?;
-
-        // make a vector of the column indices (1-indexed).
-        let mut shuffled_selection_vec: Vec<usize> =
-            initial_selection.iter().map(|&i| i + 1).collect();
-
-        shuffled_selection_vec.shuffle(&mut rng);
-
-        // Convert the shuffled indices into a comma-separated string.
-        let shuffled_selection_string = shuffled_selection_vec
-            .into_iter()
-            .map(|i| i.to_string())
-            .collect::<Vec<String>>()
-            .join(",");
-
-        // Parse the shuffled string into a SelectColumns object.
-        let shuffled_selection = SelectColumns::parse(&shuffled_selection_string)?;
-
-        rconfig
-            .clone()
-            .select(shuffled_selection)
-            .selection(&headers)?
+        let mut idxs: Vec<usize> = rconfig.selection(&headers)?.iter().copied().collect();
+        idxs.shuffle(&mut rng);
+        Selection::from_indices(idxs)
     } else if args.flag_sort {
-        // get the headers from the initial selection
-        let initial_selection = rconfig.selection(&headers)?;
-        let mut initial_headers_vec = initial_selection
-            .iter()
-            .map(|&i| &headers[i])
-            .collect::<Vec<&[u8]>>();
-
-        // sort the headers lexicographically
-        initial_headers_vec.sort_unstable();
-
-        // make a comma-separated string of the sorted, quoted headers
-        let sorted_selection_string = initial_headers_vec
-            .iter()
-            .map(|h| format!("\"{}\"", String::from_utf8_lossy(h)))
-            .collect::<Vec<String>>()
-            .join(",");
-
-        // Parse the sorted selection string into a SelectColumns object.
-        let sorted_selection = SelectColumns::parse(&sorted_selection_string)?;
-
-        rconfig
-            .clone()
-            .select(sorted_selection)
-            .selection(&headers)?
+        let mut idxs: Vec<usize> = rconfig.selection(&headers)?.iter().copied().collect();
+        // Sort by the raw header bytes — preserves non-UTF-8 bytes, embedded
+        // quotes, and duplicate names that a string round-trip would mangle.
+        idxs.sort_unstable_by(|&a, &b| headers[a].cmp(&headers[b]));
+        Selection::from_indices(idxs)
     } else {
         rconfig.selection(&headers)?
     };

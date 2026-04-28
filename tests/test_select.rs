@@ -305,6 +305,75 @@ fn test_select_sort_subset() {
 }
 
 #[test]
+fn test_select_sort_embedded_quote_in_header() {
+    // Headers contain an embedded `"`; the prior implementation built a quoted
+    // selector string without escaping, which mangled the round-trip.
+    let wrk = Workdir::new("test_select_sort_embedded_quote_in_header");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec![r#"Say "hi""#, "Alpha", r#"Quote " in middle"#],
+            svec!["v1", "v2", "v3"],
+        ],
+    );
+    let mut cmd = wrk.command("select");
+    cmd.arg("1-").arg("--sort").arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    let expected = vec![
+        svec!["Alpha", r#"Quote " in middle"#, r#"Say "hi""#],
+        svec!["v2", "v3", "v1"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn test_select_sort_duplicate_header_names() {
+    // With duplicates, the prior round-trip resolved every quoted name to the
+    // first occurrence, silently dropping the second column. Sorting by index
+    // preserves both.
+    let wrk = Workdir::new("test_select_sort_duplicate_header_names");
+    wrk.create(
+        "data.csv",
+        vec![svec!["b", "a", "a", "b"], svec!["1", "2", "3", "4"]],
+    );
+    let mut cmd = wrk.command("select");
+    cmd.arg("1-").arg("--sort").arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    let expected = vec![svec!["a", "a", "b", "b"], svec!["2", "3", "1", "4"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn test_select_sort_non_utf8_headers() {
+    // Headers contain bytes that are not valid UTF-8 (Latin-1 encoded names).
+    // The prior implementation went through `String::from_utf8_lossy`, replacing
+    // those bytes with U+FFFD; the resolved selector then could not match the
+    // original header.
+    let wrk = Workdir::new("test_select_sort_non_utf8_headers");
+    let path = wrk.path("data.csv");
+    // Header row: "café" with é as Latin-1 (0xE9), then "apple", then 0xFF byte.
+    // CSV body: a,b,c
+    let bytes: Vec<u8> = b"caf\xE9,apple,\xFFbad\n1,2,3\n".to_vec();
+    std::fs::write(&path, &bytes).unwrap();
+
+    let mut cmd = wrk.command("select");
+    cmd.arg("1-").arg("--sort").arg("data.csv");
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "select --sort failed on non-UTF-8 headers: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Lexicographic byte order: "apple" (0x61) < "café" (0x63) < "\xFFbad" (0xFF).
+    // Body columns are reordered accordingly: apple,café,\xFFbad → 2,1,3.
+    let expected: Vec<u8> = b"apple,caf\xE9,\xFFbad\n2,1,3\n".to_vec();
+    assert_eq!(out.stdout, expected);
+}
+
+#[test]
 fn test_select_random_seeded() {
     let wrk = Workdir::new("test_select_random_seeded");
     wrk.create("data.csv", unsorted_data(true));

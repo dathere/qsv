@@ -713,12 +713,12 @@ fn check_stats_cache(
 // "streaming" bernoulli sampling
 //
 // Boundary detection: instead of scanning the byte buffer for raw `\n` (which
-// would mis-split CSVs whose fields contain quoted newlines), we drive the csv
-// parser itself and use `Reader::position().byte()` to learn where each record
-// actually ends. We only commit records whose terminator we know lies WITHIN
-// the current buffer — if the parser consumes all of it, the trailing record
-// might be partial, so we hold it back until either more data arrives or the
-// stream closes naturally.
+// would incorrectly split CSVs whose fields contain quoted newlines), we drive
+// the csv parser itself and use `Reader::position().byte()` to learn where each
+// record actually ends. We only commit records whose terminator we know lies
+// WITHIN the current buffer — if the parser consumes all of it, the trailing
+// record might be partial, so we hold it back until either more data arrives
+// or the stream closes naturally.
 //
 // `--max-size` truncation is treated as NOT-EOF: a capped buffer may have cut
 // the final record in half, so we never let the parser's "treat trailing

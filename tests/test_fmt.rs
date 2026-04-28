@@ -156,6 +156,30 @@ fn fmt_ascii_no_final_newline() {
 }
 
 #[test]
+fn fmt_ascii_crlf_no_final_newline() {
+    // --ascii overrides --crlf in wconfig, so the terminator is RS (\x1e),
+    // not CRLF. The buffered last-record writer must mirror that precedence,
+    // otherwise the last record could be terminated/quoted differently from
+    // the rest. Output bytes must match `fmt_ascii_no_final_newline`.
+    let (wrk, mut cmd) = setup("fmt_ascii_crlf_no_final_newline");
+    let output_file = wrk.path("output.csv").to_string_lossy().to_string();
+    cmd.args([
+        "--ascii",
+        "--crlf",
+        "--no-final-newline",
+        "--output",
+        &output_file,
+    ]);
+
+    wrk.assert_success(&mut cmd);
+
+    let got_bytes = std::fs::read(wrk.path("output.csv")).unwrap();
+    let expected: &[u8] =
+        b"h1\x1fh2\x1eabcdef\x1fghijkl\x1emnopqr\x1fstuvwx\x1eab\"cd\"ef\x1fgh,ij,kl";
+    assert_eq!(got_bytes, expected);
+}
+
+#[test]
 fn fmt_quote_always() {
     let (wrk, mut cmd) = setup("fmt_quote_always");
     cmd.arg("--quote-always");

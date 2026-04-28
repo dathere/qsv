@@ -123,40 +123,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // --no-final-newline: format the last record into an in-memory buffer using
-    // the same writer settings, strip the trailing terminator, then append the
-    // raw bytes to the underlying output. Avoids a temp file (and the
-    // UTF-8/CRLF/leak hazards that came with it).
-    let mut buf_wtr = csv::WriterBuilder::new()
-        .delimiter(if args.flag_ascii {
-            b'\x1f'
-        } else {
-            args.flag_out_delimiter.map_or(b',', |d| d.as_byte())
-        })
-        .terminator(if args.flag_crlf {
-            csv::Terminator::CRLF
-        } else if args.flag_ascii {
-            csv::Terminator::Any(b'\x1e')
-        } else {
-            csv::Terminator::Any(b'\n')
-        })
-        .quote(args.flag_quote.as_byte())
-        .quote_style(if args.flag_quote_always {
-            csv::QuoteStyle::Always
-        } else if args.flag_quote_never {
-            csv::QuoteStyle::Never
-        } else {
-            csv::QuoteStyle::default()
-        })
-        .double_quote(args.flag_escape.is_none())
-        .escape(args.flag_escape.map_or(b'\\', |e| e.as_byte()))
-        .from_writer(Vec::<u8>::new());
+    // the *exact same* writer settings (via wconfig.from_writer) so the last
+    // record can never drift from preceding records when wconfig changes.
+    // Strip the trailing terminator, then append the raw bytes to the
+    // underlying output.
+    let mut buf_wtr = wconfig.from_writer(Vec::<u8>::new());
     buf_wtr.write_record(&pending)?;
     let mut buf = match buf_wtr.into_inner() {
         Ok(b) => b,
         Err(e) => return fail_clierror!("Error buffering final record: {e}"),
     };
-    // Strip the trailing terminator: 2 bytes for \r\n, 1 byte for \n or \x1e.
-    let term_len = if args.flag_crlf { 2 } else { 1 };
+    // wconfig.from_writer prepends a UTF-8 BOM when QSV_OUTPUT_BOM is set,
+    // but the main writer already emitted one at output start; strip ours.
+    if buf.starts_with(b"\xEF\xBB\xBF") {
+        buf.drain(..3);
+    }
+    // Strip the trailing terminator. wconfig precedence: --ascii overrides
+    // --crlf (see lines above where ascii's .terminator(\x1e) is applied last).
+    // So term_len is 2 only for --crlf without --ascii.
+    let term_len = if args.flag_crlf && !args.flag_ascii {
+        2
+    } else {
+        1
+    };
     buf.truncate(buf.len().saturating_sub(term_len));
 
     let mut inner = match wtr.into_inner() {

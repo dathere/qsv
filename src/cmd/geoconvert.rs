@@ -28,7 +28,8 @@ geoconvert REQUIRED arguments:
     <output-format>   Valid values are:
                       - For GeoJSON input: "csv", "svg", and "geojsonl"
                       - For SHP input: "csv", "geojson", and "geojsonl"
-                      - For CSV input: "geojson", "geojsonl", "csv", and "svg"
+                      - For CSV input: "geojson", "geojsonl", and "svg"
+                                       ("csv" only with --max-length, for truncation)
 
 geoconvert options:
                                  REQUIRED FOR CSV INPUT
@@ -49,8 +50,7 @@ Common options:
 "#;
 
 use std::{
-    env,
-    fs::{self, File},
+    fs::File,
     io::{self, BufRead, BufReader, BufWriter, Write},
     path::Path,
 };
@@ -63,10 +63,23 @@ use geozero::{
     svg::SvgWriter,
 };
 use serde::Deserialize;
+use tempfile::NamedTempFile;
 
 use crate::{CliError, CliResult, util};
 
-/// Helper function to handle CSV output with max_length truncation
+/// Truncate a string at the nearest char boundary <= max_len bytes,
+/// then append an ellipsis. Avoids panicking on multi-byte UTF-8.
+fn truncate_with_ellipsis(value: &str, max_len: usize) -> String {
+    let mut boundary = max_len;
+    while boundary > 0 && !value.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    format!("{}...", &value[..boundary])
+}
+
+/// Helper function to handle CSV output with max_length truncation.
+/// Buffers geozero's CSV output to a tempfile, then re-emits truncated rows.
+/// The tempfile is cleaned up automatically on both success and error paths.
 fn process_csv_with_max_length<F>(
     wtr: &mut Box<dyn Write>,
     max_len: usize,
@@ -75,20 +88,17 @@ fn process_csv_with_max_length<F>(
 where
     F: FnOnce(&mut Box<dyn Write>) -> CliResult<()>,
 {
-    // Create a temporary file for the CSV output
-    let temp_dir = env::temp_dir();
-    let temp_file_path = temp_dir.join(format!("qsv_geoconvert_{}.csv", uuid::Uuid::new_v4()));
+    let temp_file = NamedTempFile::new()?;
 
     // Write the CSV output to the temporary file
     {
-        let temp_file = File::create(&temp_file_path)?;
-        let temp_writer = BufWriter::new(temp_file);
+        let temp_writer = BufWriter::new(temp_file.reopen()?);
         let mut temp_box: Box<dyn Write> = Box::new(temp_writer);
         process_fn(&mut temp_box)?;
     } // temp_writer is dropped here, which will flush it
 
     // Read the temporary file and truncate columns that exceed the max length
-    let mut rdr = Reader::from_path(&temp_file_path)?;
+    let mut rdr = Reader::from_path(temp_file.path())?;
     let headers = rdr.headers()?.clone();
 
     // Create a new CSV writer for the final output
@@ -98,11 +108,11 @@ where
     // Process each record and truncate columns that exceed the max length
     for result in rdr.records() {
         let record = result?;
-        let mut truncated_record = Vec::new();
+        let mut truncated_record = Vec::with_capacity(record.len());
 
         for value in &record {
             if value.len() > max_len {
-                truncated_record.push(format!("{}...", &value[..max_len]));
+                truncated_record.push(truncate_with_ellipsis(value, max_len));
             } else {
                 truncated_record.push(value.to_string());
             }
@@ -111,9 +121,7 @@ where
         csv_writer.write_record(&truncated_record)?;
     }
 
-    // Clean up the temporary file
-    fs::remove_file(temp_file_path)?;
-
+    // temp_file is dropped here, removing the underlying file.
     Ok(())
 }
 
@@ -122,7 +130,6 @@ where
 #[serde(rename_all = "lowercase")]
 enum InputFormat {
     Geojson,
-    // Geojsonl,
     Shp,
     Csv,
 }
@@ -177,31 +184,33 @@ fn validate_input_file(path: &str) -> CliResult<()> {
     Ok(())
 }
 
+/// Open a buffered input reader from a file path, "-", or stdin (None).
+fn open_input_reader(input: Option<&str>) -> CliResult<Box<dyn BufRead>> {
+    Ok(match input {
+        Some("-") | None => Box::new(BufReader::new(io::stdin())),
+        Some(path) => {
+            validate_input_file(path)?;
+            Box::new(BufReader::new(File::open(path)?))
+        },
+    })
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
     let max_length = args.flag_max_length;
 
-    let mut buf_reader: Box<dyn BufRead> = if let Some(input_path) = args.arg_input.clone() {
-        if &input_path == "-" {
-            Box::new(BufReader::new(std::io::stdin()))
-        } else {
-            validate_input_file(&input_path)?;
-            Box::new(BufReader::new(File::open(&input_path)?))
-        }
-    } else {
-        Box::new(BufReader::new(std::io::stdin()))
-    };
-    // Create buffered writer for output
+    // Output writer is shared across all input formats.
     let stdout = io::stdout();
     let mut wtr: Box<dyn Write> = if let Some(output_path) = args.flag_output {
         Box::new(BufWriter::new(File::create(output_path)?))
     } else {
         Box::new(BufWriter::new(stdout.lock()))
     };
-    // Convert the input data to the specified output format
+
     match args.arg_input_format {
         InputFormat::Geojson => {
+            let mut buf_reader = open_input_reader(args.arg_input.as_deref())?;
             let mut geometry = geozero::geojson::GeoJsonReader(&mut buf_reader);
 
             match args.arg_output_format {
@@ -214,7 +223,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         })?;
                         return Ok(());
                     }
-                    // If max_length is not set, write directly to the output
                     let mut processor = CsvWriter::new(&mut wtr);
                     geometry.process(&mut processor)?;
                 },
@@ -231,92 +239,57 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 },
             }
         },
-        // InputFormat::Geojsonl => {
-        //     let mut geometry = geozero::geojson::GeoJsonLineReader::new(&mut buf_reader);
-        //     match args.arg_output_format {
-        //         OutputFormat::Csv => {
-        //             let mut processor = CsvWriter::new(&mut wtr);
-        //             geometry.process(&mut processor)?
-        //         },
-        //         OutputFormat::Svg => {
-        //             let mut processor = SvgWriter::new(&mut wtr, false);
-        //             geometry.process(&mut processor)?
-        //         },
-        //         OutputFormat::Geojson => {
-        //             let mut processor = GeoJsonWriter::new(&mut wtr);
-        //             geometry.process(&mut processor)?
-        //         },
-        //         OutputFormat::Geojsonl => {
-        //             return fail_clierror!("Converting GeoJSON Lines to GeoJSON Lines is not
-        // supported");         }
-        //     };
-        // },
         InputFormat::Shp => {
-            let shp_input_path = if let Some(shp_input_path) = args.arg_input {
-                if shp_input_path == "-" {
+            let shp_input_path = match args.arg_input.as_deref() {
+                Some("-") | None => {
                     return fail_clierror!("SHP input argument must be a path to a .shp file.");
-                }
-                shp_input_path
-            } else {
-                return fail_clierror!("SHP input argument must be a path to a .shp file.");
+                },
+                Some(p) => Path::new(p),
             };
-            let mut buf_reader = BufReader::new(File::open(&shp_input_path)?);
-            let mut reader = geozero::shp::ShpReader::new(&mut buf_reader)?;
-            let mut input_reader =
-                BufReader::new(File::open(shp_input_path.replace(".shp", ".shx"))?);
-            let mut dbf_reader =
-                BufReader::new(File::open(shp_input_path.replace(".shp", ".dbf"))?);
-            reader.add_index_source(&mut input_reader)?;
+            let shx_path = shp_input_path.with_extension("shx");
+            let dbf_path = shp_input_path.with_extension("dbf");
+            let mut shp_buf_reader = BufReader::new(File::open(shp_input_path)?);
+            let mut reader = geozero::shp::ShpReader::new(&mut shp_buf_reader)?;
+            let mut shx_reader = BufReader::new(File::open(&shx_path)?);
+            let mut dbf_reader = BufReader::new(File::open(&dbf_path)?);
+            reader.add_index_source(&mut shx_reader)?;
             reader.add_dbf_source(&mut dbf_reader)?;
 
-            let output_string = match args.arg_output_format {
+            // Stream features directly into wtr — avoids buffering the entire
+            // output as Vec<u8> + UTF-8 round-trip for large shapefiles.
+            match args.arg_output_format {
                 OutputFormat::Geojson => {
-                    let mut json: Vec<u8> = Vec::new();
                     let _ = reader
-                        .iter_features(&mut GeoJsonWriter::new(&mut json))?
+                        .iter_features(&mut GeoJsonWriter::new(&mut wtr))?
                         .collect::<Vec<_>>();
-                    String::from_utf8(json)
-                        .map_err(|e| CliError::Other(format!("Invalid UTF-8 in output: {e}")))?
                 },
                 OutputFormat::Geojsonl => {
-                    let mut json: Vec<u8> = Vec::new();
                     let _ = reader
-                        .iter_features(&mut GeoJsonLineWriter::new(&mut json))?
+                        .iter_features(&mut GeoJsonLineWriter::new(&mut wtr))?
                         .collect::<Vec<_>>();
-                    String::from_utf8(json)
-                        .map_err(|e| CliError::Other(format!("Invalid UTF-8 in output: {e}")))?
                 },
                 OutputFormat::Csv => {
                     if let Some(max_len) = max_length {
                         process_csv_with_max_length(&mut wtr, max_len, |writer| {
-                            let mut csv: Vec<u8> = Vec::new();
                             let _ = reader
-                                .iter_features(&mut CsvWriter::new(&mut csv))?
+                                .iter_features(&mut CsvWriter::new(writer))?
                                 .collect::<Vec<_>>();
-                            writer.write_all(&csv)?;
                             Ok(())
                         })?;
                         return Ok(());
                     }
-                    // If max_length is not set, write directly to the output
-                    let mut csv: Vec<u8> = Vec::new();
                     let _ = reader
-                        .iter_features(&mut CsvWriter::new(&mut csv))?
+                        .iter_features(&mut CsvWriter::new(&mut wtr))?
                         .collect::<Vec<_>>();
-                    String::from_utf8(csv)
-                        .map_err(|e| CliError::Other(format!("Invalid UTF-8 in output: {e}")))?
                 },
                 OutputFormat::Svg => {
                     return fail_clierror!("Converting SHP to SVG is not supported");
                 },
-            };
-
-            // Only write to the output if we haven't already written to it
-            if args.arg_output_format != OutputFormat::Csv || max_length.is_none() {
-                wtr.write_all(output_string.as_bytes())?;
             }
         },
         InputFormat::Csv => {
+            // Validate flag combinations up front so users get a clear error
+            // before we open the input.
             if args.flag_geometry.is_some()
                 && (args.flag_latitude.is_some() || args.flag_longitude.is_some())
             {
@@ -324,147 +297,139 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     "Cannot use --geometry flag with --latitude or --longitude."
                 );
             }
+            if args.flag_geometry.is_none()
+                && args.flag_latitude.is_some() != args.flag_longitude.is_some()
+            {
+                return fail_clierror!("--latitude and --longitude must be used together.");
+            }
+
+            let buf_reader = open_input_reader(args.arg_input.as_deref())?;
+
             if let Some(geometry_col) = args.flag_geometry {
-                let mut csv = geozero::csv::CsvReader::new(&geometry_col, buf_reader);
+                let mut csv_in = geozero::csv::CsvReader::new(&geometry_col, buf_reader);
 
                 match args.arg_output_format {
                     OutputFormat::Geojson => {
                         let mut processor = GeoJsonWriter::new(&mut wtr);
-                        csv.process(&mut processor)?;
+                        csv_in.process(&mut processor)?;
                     },
                     OutputFormat::Geojsonl => {
                         let mut processor = GeoJsonLineWriter::new(&mut wtr);
-                        csv.process(&mut processor)?;
+                        csv_in.process(&mut processor)?;
                     },
                     OutputFormat::Svg => {
                         let mut processor = SvgWriter::new(&mut wtr, false);
-                        csv.process(&mut processor)?;
+                        csv_in.process(&mut processor)?;
                     },
                     OutputFormat::Csv => {
                         if let Some(max_len) = max_length {
                             process_csv_with_max_length(&mut wtr, max_len, |writer| {
                                 let mut processor = CsvWriter::new(writer);
-                                csv.process(&mut processor)?;
+                                csv_in.process(&mut processor)?;
                                 Ok(())
                             })?;
                             return Ok(());
                         }
-                        return fail_clierror!("Converting CSV to CSV is not supported");
+                        return fail_clierror!(
+                            "Converting CSV to CSV is only supported with --max-length."
+                        );
+                    },
+                }
+            } else if let (Some(y_col), Some(x_col)) = (args.flag_latitude, args.flag_longitude) {
+                let mut rdr = csv::Reader::from_reader(buf_reader);
+                let headers = rdr.headers()?.clone();
+                let mut feature_collection =
+                    serde_json::json!({"type": "FeatureCollection", "features": []});
+
+                let latitude_col_index =
+                    headers.iter().position(|y| y == y_col).ok_or_else(|| {
+                        CliError::IncorrectUsage(format!("Latitude column '{y_col}' not found"))
+                    })?;
+                let longitude_col_index =
+                    headers.iter().position(|x| x == x_col).ok_or_else(|| {
+                        CliError::IncorrectUsage(format!("Longitude column '{x_col}' not found"))
+                    })?;
+
+                for result in rdr.records() {
+                    let record = result?;
+                    let mut feature =
+                        serde_json::json!({"type": "Feature", "geometry": {}, "properties": {}});
+
+                    let latitude_value = record
+                        .get(latitude_col_index)
+                        .ok_or_else(|| CliError::Other("Missing latitude value".to_string()))?
+                        .parse::<f64>()
+                        .map_err(|e| CliError::Other(format!("Invalid latitude value: {e}")))?;
+                    let longitude_value = record
+                        .get(longitude_col_index)
+                        .ok_or_else(|| CliError::Other("Missing longitude value".to_string()))?
+                        .parse::<f64>()
+                        .map_err(|e| CliError::Other(format!("Invalid longitude value: {e}")))?;
+
+                    let geometry_obj = feature
+                        .get_mut("geometry")
+                        .and_then(serde_json::Value::as_object_mut)
+                        .ok_or_else(|| {
+                            CliError::IncorrectUsage("Invalid geometry object".to_string())
+                        })?;
+                    geometry_obj.insert("type".to_string(), serde_json::Value::from("Point"));
+                    // GeoJSON RFC 7946 §3.1.1: coordinates are [longitude, latitude].
+                    geometry_obj.insert(
+                        "coordinates".to_string(),
+                        serde_json::Value::from(vec![longitude_value, latitude_value]),
+                    );
+
+                    let properties_obj = feature
+                        .get_mut("properties")
+                        .and_then(serde_json::Value::as_object_mut)
+                        .ok_or_else(|| CliError::Other("Invalid properties object".to_string()))?;
+                    for (index, value) in record.iter().enumerate() {
+                        if index != longitude_col_index && index != latitude_col_index {
+                            let new_key = headers
+                                .get(index)
+                                .ok_or_else(|| {
+                                    CliError::Other(format!("Missing header at index {index}"))
+                                })?
+                                .to_string();
+                            properties_obj.insert(new_key, serde_json::Value::from(value));
+                        }
+                    }
+
+                    let features_array = feature_collection
+                        .get_mut("features")
+                        .and_then(serde_json::Value::as_array_mut)
+                        .ok_or_else(|| CliError::Other("Invalid features array".to_string()))?;
+                    features_array.push(feature);
+                }
+
+                let fc_string = feature_collection.to_string();
+                let mut geometry = geozero::geojson::GeoJson(&fc_string);
+                match args.arg_output_format {
+                    OutputFormat::Csv => {
+                        if let Some(max_len) = max_length {
+                            process_csv_with_max_length(&mut wtr, max_len, |writer| {
+                                let mut processor = CsvWriter::new(writer);
+                                geometry.process(&mut processor)?;
+                                Ok(())
+                            })?;
+                            return Ok(());
+                        }
+                        let mut processor = CsvWriter::new(&mut wtr);
+                        geometry.process(&mut processor)?;
+                    },
+                    OutputFormat::Svg => {
+                        let mut processor = SvgWriter::new(&mut wtr, false);
+                        geometry.process(&mut processor)?;
+                    },
+                    OutputFormat::Geojsonl => {
+                        let mut processor = GeoJsonLineWriter::new(&mut wtr);
+                        geometry.process(&mut processor)?;
+                    },
+                    OutputFormat::Geojson => {
+                        wtr.write_all(fc_string.as_bytes())?;
                     },
                 }
             } else {
-                if let Some(y_col) = args.flag_latitude
-                    && let Some(x_col) = args.flag_longitude
-                {
-                    let mut rdr = csv::Reader::from_reader(buf_reader);
-                    let headers = rdr.headers()?.clone();
-                    let mut feature_collection =
-                        serde_json::json!({"type": "FeatureCollection", "features": []});
-
-                    let latitude_col_index =
-                        headers.iter().position(|y| y == y_col).ok_or_else(|| {
-                            CliError::IncorrectUsage(format!("Latitude column '{y_col}' not found"))
-                        })?;
-                    let longitude_col_index =
-                        headers.iter().position(|x| x == x_col).ok_or_else(|| {
-                            CliError::IncorrectUsage(format!(
-                                "Longitude column '{x_col}' not found"
-                            ))
-                        })?;
-
-                    for result in rdr.records() {
-                        let record = result?;
-                        let mut feature = serde_json::json!({"type": "Feature", "geometry": {}, "properties": {}});
-
-                        // Add lat/lon coordinates geometry
-                        let latitude_value = record
-                            .get(latitude_col_index)
-                            .ok_or_else(|| CliError::Other("Missing latitude value".to_string()))?
-                            .parse::<f64>()
-                            .map_err(|e| CliError::Other(format!("Invalid latitude value: {e}")))?;
-                        let longitude_value = record
-                            .get(longitude_col_index)
-                            .ok_or_else(|| CliError::Other("Missing longitude value".to_string()))?
-                            .parse::<f64>()
-                            .map_err(|e| {
-                                CliError::Other(format!("Invalid longitude value: {e}"))
-                            })?;
-
-                        let geometry = feature.get_mut("geometry").ok_or_else(|| {
-                            CliError::IncorrectUsage("Missing geometry object".to_string())
-                        })?;
-                        let geometry_obj = geometry.as_object_mut().ok_or_else(|| {
-                            CliError::IncorrectUsage("Invalid geometry object".to_string())
-                        })?;
-                        geometry_obj.insert("type".to_string(), serde_json::Value::from("Point"));
-                        geometry_obj.insert(
-                            "coordinates".to_string(),
-                            serde_json::Value::from(vec![latitude_value, longitude_value]),
-                        );
-
-                        // Add properties
-                        for (index, value) in record.iter().enumerate() {
-                            if index != longitude_col_index && index != latitude_col_index {
-                                let properties =
-                                    feature.get_mut("properties").ok_or_else(|| {
-                                        CliError::Other("Missing properties object".to_string())
-                                    })?;
-                                let properties_obj =
-                                    properties.as_object_mut().ok_or_else(|| {
-                                        CliError::Other("Invalid properties object".to_string())
-                                    })?;
-                                let new_key = headers
-                                    .get(index)
-                                    .ok_or_else(|| {
-                                        CliError::Other(format!("Missing header at index {index}"))
-                                    })?
-                                    .to_string();
-                                let new_value = serde_json::Value::from(value);
-                                properties_obj.insert(new_key, new_value);
-                            }
-                        }
-
-                        // Add Feature to FeatureCollection
-                        let features = feature_collection
-                            .get_mut("features")
-                            .ok_or_else(|| CliError::Other("Missing features array".to_string()))?;
-                        let features_array = features
-                            .as_array_mut()
-                            .ok_or_else(|| CliError::Other("Invalid features array".to_string()))?;
-                        features_array.push(feature);
-                    }
-
-                    // Write FeatureCollection
-                    let fc_string = feature_collection.to_string();
-                    let mut geometry = geozero::geojson::GeoJson(&fc_string);
-                    match args.arg_output_format {
-                        OutputFormat::Csv => {
-                            if let Some(max_len) = max_length {
-                                process_csv_with_max_length(&mut wtr, max_len, |writer| {
-                                    let mut processor = CsvWriter::new(writer);
-                                    geometry.process(&mut processor)?;
-                                    Ok(())
-                                })?;
-                                return Ok(());
-                            }
-                            // If max_length is not set, write directly to the output
-                            let mut processor = CsvWriter::new(&mut wtr);
-                            geometry.process(&mut processor)?;
-                        },
-                        OutputFormat::Svg => {
-                            let mut processor = SvgWriter::new(&mut wtr, false);
-                            geometry.process(&mut processor)?;
-                        },
-                        OutputFormat::Geojsonl => {
-                            let mut processor = GeoJsonLineWriter::new(&mut wtr);
-                            geometry.process(&mut processor)?;
-                        },
-                        OutputFormat::Geojson => {
-                            wtr.write_all(fc_string.as_bytes())?;
-                        },
-                    }
-                    return Ok(());
-                }
                 return fail_clierror!(
                     "Please specify a geometry column with the --geometry option or \
                      longitude/latitude with the --latitude and --longitude options."
@@ -473,6 +438,5 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         },
     }
 
-    // wtr.write_all(output_string.as_bytes())?;
     Ok(wtr.flush()?)
 }

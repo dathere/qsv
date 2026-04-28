@@ -2051,13 +2051,14 @@ use std::{sync::mpsc, thread};
 use actix_web::{App, HttpResponse, HttpServer, dev::ServerHandle, rt, web};
 use serial_test::serial;
 
-// Distinct from test_fetch.rs (which uses 8081) so the two suites don't clash
-// when run in parallel across integration-test binaries.
+// Single source of truth: the bind host literal and port. Distinct from
+// test_fetch.rs (which uses 8081) so the two suites don't clash when run in
+// parallel across integration-test binaries.
+const SAMPLE_TEST_BIND_HOST: &str = "127.0.0.1";
 const SAMPLE_TEST_PORT: u16 = 8082;
-const SAMPLE_TEST_HOST: &str = "127.0.0.1:8082";
 
 fn sample_test_url(path: &str) -> String {
-    format!("http://{SAMPLE_TEST_HOST}/{path}")
+    format!("http://{SAMPLE_TEST_BIND_HOST}:{SAMPLE_TEST_PORT}/{path}")
 }
 
 // Header field 0 contains a quoted newline (per RFC 4180). The OLD streaming
@@ -2109,29 +2110,49 @@ async fn run_sample_webserver(tx: mpsc::Sender<ServerHandle>) -> std::io::Result
             .service(web::resource("/large.csv").to(serve_large_csv))
         // anything else -> 404 (handled by actix-web default)
     })
-    .bind((
-        SAMPLE_TEST_HOST.split(':').next().unwrap(),
-        SAMPLE_TEST_PORT,
-    ))?
+    .bind((SAMPLE_TEST_BIND_HOST, SAMPLE_TEST_PORT))?
     .run();
 
     let _ = tx.send(server.handle());
     server.await
 }
 
-fn start_sample_webserver() -> ServerHandle {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let server_future = run_sample_webserver(tx);
-        rt::System::new().block_on(server_future)
-    });
-    rx.recv().expect("test webserver failed to start")
+// RAII guard so the server is torn down even if the test panics in the middle
+// (e.g. read_stdout fails). Without this, a panicking test would leave the
+// port bound and cascade into a "Address already in use" on the next #[serial]
+// test, producing confusing follow-on failures.
+struct SampleWebServer {
+    handle: Option<ServerHandle>,
+}
+
+impl SampleWebServer {
+    fn start() -> Self {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let server_future = run_sample_webserver(tx);
+            rt::System::new().block_on(server_future)
+        });
+        Self {
+            handle: Some(rx.recv().expect("test webserver failed to start")),
+        }
+    }
+}
+
+impl Drop for SampleWebServer {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            // block_on returns whatever stop() returns; we don't care about
+            // errors during teardown — best-effort cleanup.
+            rt::System::new().block_on(handle.stop(true));
+        }
+    }
 }
 
 #[test]
 #[serial]
 fn sample_bernoulli_url_quoted_newline_header() {
-    let handle = start_sample_webserver();
+    // RAII guard: server is torn down even if the test panics below.
+    let _server = SampleWebServer::start();
 
     let wrk = Workdir::new("sample_bernoulli_url_quoted_nl");
     let mut cmd = wrk.command("sample");
@@ -2139,9 +2160,10 @@ fn sample_bernoulli_url_quoted_newline_header() {
         .arg("0.999")
         .arg(sample_test_url("quoted_nl_header.csv"));
 
+    // Surface qsv's stderr if the command fails, instead of letting the CSV
+    // parse step downstream produce a confusing generic error.
+    wrk.assert_success(&mut cmd);
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-
-    rt::System::new().block_on(handle.stop(true));
 
     // Header must come through INTACT — three fields, with the embedded
     // newline preserved in field 0. The old buggy splitter would have
@@ -2171,7 +2193,7 @@ fn sample_bernoulli_url_quoted_newline_header() {
 #[test]
 #[serial]
 fn sample_bernoulli_url_max_size_truncation() {
-    let handle = start_sample_webserver();
+    let _server = SampleWebServer::start();
 
     let wrk = Workdir::new("sample_bernoulli_url_max_size");
     let mut cmd = wrk.command("sample");
@@ -2180,9 +2202,8 @@ fn sample_bernoulli_url_max_size_truncation() {
         .arg("0.5")
         .arg(sample_test_url("large.csv"));
 
+    wrk.assert_success(&mut cmd);
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-
-    rt::System::new().block_on(handle.stop(true));
 
     // The cap is 1 MiB = 1_048_576 bytes. Header is 11 bytes; each data
     // record is 100 bytes. So records 1..=10485 fully fit (ending at byte
@@ -2224,7 +2245,7 @@ fn sample_bernoulli_url_max_size_truncation() {
 #[test]
 #[serial]
 fn sample_bernoulli_url_404_fails_fast() {
-    let handle = start_sample_webserver();
+    let _server = SampleWebServer::start();
 
     let wrk = Workdir::new("sample_bernoulli_url_404");
     let mut cmd = wrk.command("sample");
@@ -2236,14 +2257,12 @@ fn sample_bernoulli_url_404_fails_fast() {
     // path, so qsv exits with non-zero. Without that, the HTML 404 body
     // would be fed straight into the csv parser.
     wrk.assert_err(&mut cmd);
-
-    rt::System::new().block_on(handle.stop(true));
 }
 
 #[test]
 #[serial]
 fn sample_bernoulli_url_custom_delimiter() {
-    let handle = start_sample_webserver();
+    let _server = SampleWebServer::start();
 
     let wrk = Workdir::new("sample_bernoulli_url_tsv");
     let mut cmd = wrk.command("sample");
@@ -2255,9 +2274,8 @@ fn sample_bernoulli_url_custom_delimiter() {
     // qsv's writer also honors --delimiter, so output is tab-separated.
     // read_stdout()'s CSV parser would treat that as a single comma-field, so
     // we parse the raw stdout with tab delimiter ourselves.
+    wrk.assert_success(&mut cmd);
     let stdout: String = wrk.stdout(&mut cmd);
-
-    rt::System::new().block_on(handle.stop(true));
 
     let got: Vec<Vec<&str>> = stdout.lines().map(|l| l.split('\t').collect()).collect();
 

@@ -2102,18 +2102,31 @@ async fn serve_large_csv() -> HttpResponse {
         .body(large_csv_body())
 }
 
-async fn run_sample_webserver(tx: mpsc::Sender<ServerHandle>) -> std::io::Result<()> {
-    let server = HttpServer::new(|| {
+// Channel payload: Ok(handle) on a successful bind, Err(msg) if bind() failed
+// (e.g. "Address already in use"). Sending Result instead of just the handle
+// means a failed bind surfaces a real error to start() instead of leaving the
+// receiver to time out.
+async fn run_sample_webserver(
+    tx: mpsc::Sender<Result<ServerHandle, String>>,
+) -> std::io::Result<()> {
+    let server_builder = HttpServer::new(|| {
         App::new()
             .service(web::resource("/quoted_nl_header.csv").to(serve_quoted_nl_header))
             .service(web::resource("/data.tsv").to(serve_tsv))
             .service(web::resource("/large.csv").to(serve_large_csv))
         // anything else -> 404 (handled by actix-web default)
-    })
-    .bind((SAMPLE_TEST_BIND_HOST, SAMPLE_TEST_PORT))?
-    .run();
+    });
 
-    let _ = tx.send(server.handle());
+    let bound = match server_builder.bind((SAMPLE_TEST_BIND_HOST, SAMPLE_TEST_PORT)) {
+        Ok(b) => b,
+        Err(e) => {
+            let _ = tx.send(Err(format!("bind failed: {e}")));
+            return Err(e);
+        },
+    };
+
+    let server = bound.run();
+    let _ = tx.send(Ok(server.handle()));
     server.await
 }
 
@@ -2132,8 +2145,17 @@ impl SampleWebServer {
             let server_future = run_sample_webserver(tx);
             rt::System::new().block_on(server_future)
         });
-        Self {
-            handle: Some(rx.recv().expect("test webserver failed to start")),
+
+        // recv_timeout (rather than recv) so a failed bind that the server
+        // thread can't surface in time doesn't hang the test forever.
+        match rx.recv_timeout(std::time::Duration::from_secs(10)) {
+            Ok(Ok(handle)) => Self {
+                handle: Some(handle),
+            },
+            Ok(Err(msg)) => panic!("test webserver failed to bind: {msg}"),
+            Err(e) => {
+                panic!("test webserver did not start within 10s ({e:?})")
+            },
         }
     }
 }
@@ -2148,6 +2170,39 @@ impl Drop for SampleWebServer {
     }
 }
 
+// Run the command exactly once, assert it succeeded, and return the captured
+// Output so the caller can parse stdout from the same execution. The previous
+// `wrk.assert_success(&mut cmd)` + `wrk.read_stdout(&mut cmd)` pattern ran the
+// process twice — doubling fixture-server requests and meaning the parsed
+// stdout was from a second run, not the one whose status we asserted.
+fn run_and_assert_success(cmd: &mut std::process::Command) -> std::process::Output {
+    let output = cmd.output().expect("failed to execute sample command");
+    assert!(
+        output.status.success(),
+        "sample command failed (status {}):\n--- stderr ---\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+// Parse a captured stdout buffer as CSV (default comma delimiter), preserving
+// the same Vec<Vec<String>> shape that wrk.read_stdout would have produced.
+fn parse_csv_stdout(stdout: &[u8]) -> Vec<Vec<String>> {
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(stdout);
+    rdr.records()
+        .map(|r| {
+            r.expect("sample stdout was not valid CSV")
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect()
+        })
+        .collect()
+}
+
 #[test]
 #[serial]
 fn sample_bernoulli_url_quoted_newline_header() {
@@ -2160,10 +2215,10 @@ fn sample_bernoulli_url_quoted_newline_header() {
         .arg("0.999")
         .arg(sample_test_url("quoted_nl_header.csv"));
 
-    // Surface qsv's stderr if the command fails, instead of letting the CSV
-    // parse step downstream produce a confusing generic error.
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Run once, assert success, and parse stdout from the same execution
+    // — surfaces qsv's stderr on failure and doesn't double-hit the fixture.
+    let output = run_and_assert_success(&mut cmd);
+    let got = parse_csv_stdout(&output.stdout);
 
     // Header must come through INTACT — three fields, with the embedded
     // newline preserved in field 0. The old buggy splitter would have
@@ -2202,8 +2257,11 @@ fn sample_bernoulli_url_max_size_truncation() {
         .arg("0.5")
         .arg(sample_test_url("large.csv"));
 
-    wrk.assert_success(&mut cmd);
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Single run — the previous double-run pattern doubled the ~1.2 MiB
+    // download AND meant the stdout we parsed was from a different execution
+    // than the one whose status we'd asserted.
+    let output = run_and_assert_success(&mut cmd);
+    let got = parse_csv_stdout(&output.stdout);
 
     // The cap is 1 MiB = 1_048_576 bytes. Header is 11 bytes; each data
     // record is 100 bytes. So records 1..=10485 fully fit (ending at byte
@@ -2273,9 +2331,9 @@ fn sample_bernoulli_url_custom_delimiter() {
 
     // qsv's writer also honors --delimiter, so output is tab-separated.
     // read_stdout()'s CSV parser would treat that as a single comma-field, so
-    // we parse the raw stdout with tab delimiter ourselves.
-    wrk.assert_success(&mut cmd);
-    let stdout: String = wrk.stdout(&mut cmd);
+    // we parse the raw stdout with tab delimiter ourselves. Run once.
+    let output = run_and_assert_success(&mut cmd);
+    let stdout = String::from_utf8(output.stdout).expect("sample stdout must be valid UTF-8");
 
     let got: Vec<Vec<&str>> = stdout.lines().map(|l| l.split('\t').collect()).collect();
 

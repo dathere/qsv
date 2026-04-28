@@ -301,9 +301,11 @@ impl Args {
             );
         }
 
-        // If not a number, try to find column by name
+        // If not a number, try to find column by name (compare raw bytes —
+        // header fields are CSV bytes, the spec is a UTF-8 string).
+        let needle = column_spec.as_bytes();
         for (i, field) in header.iter().enumerate() {
-            if column_spec == String::from_utf8_lossy(field) {
+            if field == needle {
                 return Ok(i);
             }
         }
@@ -358,6 +360,28 @@ enum RngKind {
     Standard,
     Faster,
     Cryptosecure,
+}
+
+// Dispatches `$body` against the chosen RNG kind, binding `$rng` to a freshly
+// created RNG of the matching concrete type. Replaces the recurring three-arm
+// `match rng_kind { Standard => …, Faster => …, Cryptosecure => … }` blocks.
+macro_rules! with_rng {
+    ($rng_kind:expr, $seed:expr, |$rng:ident| $body:block) => {
+        match $rng_kind {
+            RngKind::Standard => {
+                let mut $rng = StandardRng::create($seed);
+                $body
+            },
+            RngKind::Faster => {
+                let mut $rng = FasterRng::create($seed);
+                $body
+            },
+            RngKind::Cryptosecure => {
+                let mut $rng = CryptoRng::create($seed);
+                $body
+            },
+        }
+    };
 }
 
 #[derive(PartialEq)]
@@ -546,14 +570,19 @@ fn parse_timestamp(
         return fail_incorrectusage_clierror!("Time column value is not valid UTF-8");
     };
 
-    // Try parsing as Unix timestamp first (simple integer check)
+    // Try parsing as Unix timestamp first (simple integer check).
+    // Disambiguate seconds vs milliseconds by magnitude: chrono accepts a huge
+    // year range, so a millisecond value like 1_704_067_200_000 would silently
+    // parse as seconds (year ~55,899) if we tried seconds first. We pick a
+    // 10^11 cutoff (covers any reasonable date in seconds well past year 5000)
+    // and treat anything larger as milliseconds.
     if let Ok(ts_val) = atoi_simd::parse::<i64, false, false>(value) {
-        // Try as seconds first
-        if let Some(dt) = Utc.timestamp_opt(ts_val, 0).single() {
-            return Ok(dt);
-        }
-        // Try as milliseconds
-        if let Some(dt) = Utc.timestamp_millis_opt(ts_val).single() {
+        const SEC_LIMIT: i64 = 100_000_000_000; // 10^11
+        if ts_val.abs() < SEC_LIMIT {
+            if let Some(dt) = Utc.timestamp_opt(ts_val, 0).single() {
+                return Ok(dt);
+            }
+        } else if let Some(dt) = Utc.timestamp_millis_opt(ts_val).single() {
             return Ok(dt);
         }
     }
@@ -599,7 +628,8 @@ fn check_stats_cache(
         return Ok((None, None));
     }
 
-    // Set stats config
+    // Set stats config. flag_force is always false here — we returned early
+    // above when it was set.
     let schema_args = SchemaArgs {
         arg_input:            args.arg_input.clone(),
         flag_no_headers:      args.flag_no_headers,
@@ -607,7 +637,7 @@ fn check_stats_cache(
         flag_jobs:            None,
         flag_polars:          false,
         flag_memcheck:        false,
-        flag_force:           args.flag_force,
+        flag_force:           false,
         flag_prefer_dmy:      false,
         flag_dates_whitelist: String::new(),
         flag_enum_threshold:  0,
@@ -629,13 +659,11 @@ fn check_stats_cache(
                 SamplingMethod::Weighted => {
                     // For weighted sampling, get max weight
                     if let Some(weight_col) = &args.flag_weighted {
-                        let idx = if weight_col.chars().all(char::is_numeric) {
-                            weight_col.parse::<usize>().ok()
-                        } else {
+                        let idx = weight_col.parse::<usize>().ok().or_else(|| {
                             csv_fields
                                 .iter()
                                 .position(|field| field == weight_col.as_bytes())
-                        };
+                        });
 
                         if let Some(idx) = idx
                             && let Some(col_stats) = stats.get(idx)
@@ -659,13 +687,11 @@ fn check_stats_cache(
                 SamplingMethod::Cluster => {
                     // For cluster sampling, get cardinality
                     if let Some(cluster_col) = &args.flag_cluster {
-                        let idx = if cluster_col.chars().all(char::is_numeric) {
-                            cluster_col.parse::<usize>().ok()
-                        } else {
+                        let idx = cluster_col.parse::<usize>().ok().or_else(|| {
                             csv_fields
                                 .iter()
                                 .position(|field| field == cluster_col.as_bytes())
-                        };
+                        });
 
                         if let Some(idx) = idx {
                             cardinality = stats.get(idx).map(|col_stats| col_stats.cardinality);
@@ -700,99 +726,108 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
         Some(uri.to_string()),
     )?;
 
-    // Get the response
     let response = client.get(uri).send().await?;
     let mut stream = response.bytes_stream();
 
-    // Write headers if present
-    if !args.flag_no_headers {
-        let mut header_bytes = Vec::new();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            header_bytes.extend_from_slice(&chunk);
+    // Optional max-size cap (mirrors the download path).
+    let max_bytes = args.flag_max_size.map(|mb| mb * 1024 * 1024);
 
-            // Try to read headers from accumulated bytes
-            let mut rdr = csv::ReaderBuilder::new()
-                .has_headers(true)
-                .delimiter(default_delim)
-                .from_reader(&header_bytes[..]);
+    // Create only the RNG we'll actually use — Cryptosecure init is slow.
+    let mut std_rng = match rng_kind {
+        RngKind::Standard => Some(StandardRng::create(args.flag_seed)),
+        _ => None,
+    };
+    let mut faster_rng = match rng_kind {
+        RngKind::Faster => Some(FasterRng::create(args.flag_seed)),
+        _ => None,
+    };
+    let mut crypto_rng = match rng_kind {
+        RngKind::Cryptosecure => Some(CryptoRng::create(args.flag_seed)),
+        _ => None,
+    };
+    let probability = args.arg_sample_size;
 
-            if let Ok(headers) = rdr.headers() {
-                wtr.write_record(headers)?;
-                break;
-            }
-        }
-    }
+    let mut buffer: Vec<u8> = Vec::new();
+    let mut bytes_read: u64 = 0;
+    let mut header_handled = args.flag_no_headers; // nothing to do when input has no headers
 
-    let mut std_rng = StandardRng::create(args.flag_seed);
-    let mut faster_rng = FasterRng::create(args.flag_seed);
-    let mut crypto_rng = CryptoRng::create(args.flag_seed);
-
-    // Process records using streaming
+    // Pull from the stream, splitting records on newlines. We treat every
+    // complete line up to the last `\n` in the buffer as ready to parse, and
+    // keep the trailing partial line for the next iteration.
     let mut record = csv::ByteRecord::new();
-    let mut buffer = Vec::new();
+    let mut size_capped = false;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
-        buffer.extend_from_slice(&chunk);
+        if let Some(cap) = max_bytes {
+            let remaining = cap.saturating_sub(bytes_read);
+            if remaining == 0 {
+                break;
+            }
+            let take = (chunk.len() as u64).min(remaining) as usize;
+            buffer.extend_from_slice(&chunk[..take]);
+            bytes_read += take as u64;
+            if take < chunk.len() {
+                size_capped = true;
+            }
+        } else {
+            buffer.extend_from_slice(&chunk);
+            bytes_read += chunk.len() as u64;
+        }
 
-        // Find the last complete record by looking for the last newline
-        if let Some(pos) = buffer.iter().rposition(|&b| b == b'\n') {
-            // Process only up to the last complete record
+        // Split off the header on the first newline before parsing data.
+        if !header_handled && let Some(nl) = buffer.iter().position(|&b| b == b'\n') {
+            let header_slice = &buffer[..=nl];
+            let mut header_rdr = csv::ReaderBuilder::new()
+                .has_headers(true)
+                .delimiter(default_delim)
+                .from_reader(header_slice);
+            let headers = header_rdr.headers()?.clone();
+            wtr.write_record(&headers)?;
+            buffer.drain(..=nl);
+            header_handled = true;
+        }
+
+        if header_handled && let Some(pos) = buffer.iter().rposition(|&b| b == b'\n') {
             let mut csv_reader = csv::ReaderBuilder::new()
-                .has_headers(args.flag_no_headers)
+                .has_headers(false)
                 .delimiter(default_delim)
                 .from_reader(&buffer[..=pos]);
 
             while matches!(csv_reader.read_byte_record(&mut record), Ok(true)) {
-                match rng_kind {
-                    RngKind::Standard => {
-                        if std_rng.random_bool(args.arg_sample_size) {
-                            wtr.write_byte_record(&record)?;
-                        }
-                    },
-                    RngKind::Faster => {
-                        if faster_rng.random_bool(args.arg_sample_size) {
-                            wtr.write_byte_record(&record)?;
-                        }
-                    },
-                    RngKind::Cryptosecure => {
-                        if crypto_rng.random_bool(args.arg_sample_size) {
-                            wtr.write_byte_record(&record)?;
-                        }
-                    },
+                let pick = match rng_kind {
+                    RngKind::Standard => std_rng.as_mut().unwrap().random_bool(probability),
+                    RngKind::Faster => faster_rng.as_mut().unwrap().random_bool(probability),
+                    RngKind::Cryptosecure => crypto_rng.as_mut().unwrap().random_bool(probability),
+                };
+                if pick {
+                    wtr.write_byte_record(&record)?;
                 }
             }
 
-            // Keep the remaining bytes (after the last newline) in the buffer
             buffer.drain(..=pos);
+        }
+
+        if size_capped {
+            break;
         }
     }
 
-    // Process any remaining records in the buffer
-    if !buffer.is_empty() {
+    // Flush any trailing partial line (a final record with no newline).
+    if header_handled && !buffer.is_empty() {
         let mut csv_reader = csv::ReaderBuilder::new()
-            .has_headers(args.flag_no_headers)
+            .has_headers(false)
             .delimiter(default_delim)
             .from_reader(&buffer[..]);
 
         while matches!(csv_reader.read_byte_record(&mut record), Ok(true)) {
-            match rng_kind {
-                RngKind::Standard => {
-                    if std_rng.random_bool(args.arg_sample_size) {
-                        wtr.write_byte_record(&record)?;
-                    }
-                },
-                RngKind::Faster => {
-                    if faster_rng.random_bool(args.arg_sample_size) {
-                        wtr.write_byte_record(&record)?;
-                    }
-                },
-                RngKind::Cryptosecure => {
-                    if crypto_rng.random_bool(args.arg_sample_size) {
-                        wtr.write_byte_record(&record)?;
-                    }
-                },
+            let pick = match rng_kind {
+                RngKind::Standard => std_rng.as_mut().unwrap().random_bool(probability),
+                RngKind::Faster => faster_rng.as_mut().unwrap().random_bool(probability),
+                RngKind::Cryptosecure => crypto_rng.as_mut().unwrap().random_bool(probability),
+            };
+            if pick {
+                wtr.write_byte_record(&record)?;
             }
         }
     }
@@ -803,6 +838,9 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
+    if !args.arg_sample_size.is_finite() {
+        return fail_incorrectusage_clierror!("Sample size must be a finite number.");
+    }
     if args.arg_sample_size.is_sign_negative() {
         return fail_incorrectusage_clierror!("Sample size cannot be negative.");
     }
@@ -818,6 +856,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     ];
     if methods.iter().filter(|&&x| x).count() > 1 {
         return fail_incorrectusage_clierror!("Only one sampling method can be specified");
+    }
+
+    // For Bernoulli, sample-size IS the probability — validate up front so the
+    // streaming-URL path (which dispatches before the per-method checks below)
+    // can't reach random_bool() with an out-of-range value and panic.
+    if args.flag_bernoulli && (args.arg_sample_size >= 1.0 || args.arg_sample_size <= 0.0) {
+        return fail_incorrectusage_clierror!(
+            "Bernoulli sampling requires a probability between 0 and 1"
+        );
     }
 
     let Ok(rng_kind) = RngKind::from_str(&args.flag_rng) else {
@@ -893,12 +940,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     match sampling_method {
         SamplingMethod::Bernoulli => {
-            if args.arg_sample_size >= 1.0 || args.arg_sample_size <= 0.0 {
-                return fail_incorrectusage_clierror!(
-                    "Bernoulli sampling requires a probability between 0 and 1"
-                );
-            }
-
+            // probability range was validated up front (see run() prelude)
             sample_bernoulli(
                 &mut rdr,
                 &mut wtr,
@@ -1094,32 +1136,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 let sample_count = sample_size as usize;
                 let total_count = idx.count().try_into().unwrap();
 
-                match rng_kind {
-                    RngKind::Standard => {
-                        log::info!("doing standard INDEXED sampling...");
-                        let mut rng = StandardRng::create(args.flag_seed);
-                        sample_indices(&mut rng, total_count, sample_count, |i| {
-                            idx.seek(i as u64)?;
-                            Ok(wtr.write_byte_record(&idx.byte_records().next().unwrap()?)?)
-                        })?;
-                    },
-                    RngKind::Faster => {
-                        log::info!("doing --faster INDEXED sampling...");
-                        let mut rng = FasterRng::create(args.flag_seed);
-                        sample_indices(&mut rng, total_count, sample_count, |i| {
-                            idx.seek(i as u64)?;
-                            Ok(wtr.write_byte_record(&idx.byte_records().next().unwrap()?)?)
-                        })?;
-                    },
-                    RngKind::Cryptosecure => {
-                        log::info!("doing --cryptosecure INDEXED sampling...");
-                        let mut rng = CryptoRng::create(args.flag_seed);
-                        sample_indices(&mut rng, total_count, sample_count, |i| {
-                            idx.seek(i as u64)?;
-                            Ok(wtr.write_byte_record(&idx.byte_records().next().unwrap()?)?)
-                        })?;
-                    },
-                }
+                log::info!("doing {:?} INDEXED sampling...", rng_kind);
+                with_rng!(&rng_kind, args.flag_seed, |rng| {
+                    sample_indices(&mut rng, total_count, sample_count, |i| {
+                        idx.seek(i as u64)?;
+                        Ok(wtr.write_byte_record(&idx.byte_records().next().unwrap()?)?)
+                    })?;
+                });
             } else {
                 // No sampling method is specified and no index is present
                 // do reservoir sampling
@@ -1181,7 +1204,9 @@ fn sample_reservoir<R: io::Read, W: io::Write>(
     Ok(())
 }
 
-// Generic reservoir sampling implementation using constant memory
+// Generic reservoir sampling implementation. Memory: O(k) for the reservoir
+// passed in by the caller (the algorithm itself uses only constant extra
+// state).
 fn do_reservoir_sampling<T: RngProvider>(
     records: &mut impl Iterator<Item = (usize, Result<csv::ByteRecord, csv::Error>)>,
     reservoir: &mut [csv::ByteRecord],
@@ -1190,15 +1215,19 @@ fn do_reservoir_sampling<T: RngProvider>(
 ) -> CliResult<()> {
     log::info!("doing {} RESERVOIR sampling...", T::get_name());
     let mut rng = T::create(seed);
-    let mut random_idx: usize;
+
+    // Bound writes against the reservoir's actual length, not sample_size.
+    // sample_reservoir() pre-fills via take(sample_size), which yields fewer
+    // when the input is shorter than k — in that case we have nothing to
+    // sample, but checking reservoir.len() keeps this defensible if a future
+    // caller passes an undersized slice.
+    let reservoir_cap = reservoir.len().min(sample_size as usize);
 
     // Process remaining records using Algorithm R (Robert Floyd)
     for (i, row) in records {
-        random_idx = rng.random_range(0..=i);
-        if random_idx < sample_size as usize {
-            unsafe {
-                *reservoir.get_unchecked_mut(random_idx) = row?;
-            }
+        let random_idx = rng.random_range(0..=i);
+        if random_idx < reservoir_cap {
+            reservoir[random_idx] = row?;
         }
     }
     Ok(())
@@ -1245,7 +1274,8 @@ fn do_bernoulli_sampling<T: RngProvider>(
     Ok(())
 }
 
-// Helper function to sample indices using constant memory
+// Helper function to sample indices. Memory: O(k) for the selected-index
+// buffer (the algorithm itself uses constant extra state).
 fn sample_indices<F>(
     rng: &mut impl Rng,
     total_count: usize,
@@ -1259,19 +1289,13 @@ where
         return fail!("Sample size cannot be larger than population size");
     }
 
-    // Store selected indices in a sorted vec of size k
-    let mut selected = Vec::with_capacity(sample_count);
+    // Fill first k positions, then reservoir-sample (Algorithm R) the rest.
+    let mut selected: Vec<usize> = (0..sample_count).collect();
 
-    // Fill first k positions
-    for i in 0..sample_count {
-        selected.push(i);
-    }
-
-    // Process remaining positions using reservoir sampling
     for i in sample_count..total_count {
         let j = rng.random_range(0..=i);
         if j < sample_count {
-            unsafe { *selected.get_unchecked_mut(j) = i };
+            selected[j] = i;
         }
     }
 
@@ -1316,20 +1340,7 @@ fn sample_systematic<R: io::Read, W: io::Write>(
 
     // Select starting point
     let start = if starting_point == "random" {
-        match rng_kind {
-            RngKind::Standard => {
-                let mut rng = StandardRng::create(seed);
-                rng.random_range(0..interval)
-            },
-            RngKind::Faster => {
-                let mut rng = FasterRng::create(seed);
-                rng.random_range(0..interval)
-            },
-            RngKind::Cryptosecure => {
-                let mut rng = CryptoRng::create(seed);
-                rng.random_range(0..interval)
-            },
-        }
+        with_rng!(rng_kind, seed, |rng| { rng.random_range(0..interval) })
     } else {
         0 // starting point is the first record
     };
@@ -1357,67 +1368,41 @@ fn sample_stratified<R: io::Read, W: io::Write>(
 ) -> CliResult<()> {
     const ESTIMATED_STRATA_COUNT: usize = 100;
 
-    // Pre-allocate with capacity for better performance
-    let mut strata_counts: HashMap<Vec<u8>, usize> = HashMap::with_capacity(ESTIMATED_STRATA_COUNT);
+    // Single-pass: collect records, and discover strata into a reservoirs map
+    // as we go. The previous code maintained a parallel strata_counts HashMap
+    // purely to size the reservoirs map afterwards — the count was never read.
+    let mut reservoirs: HashMap<Vec<u8>, Vec<csv::ByteRecord>> =
+        HashMap::with_capacity(ESTIMATED_STRATA_COUNT);
     let mut records = Vec::with_capacity(ESTIMATED_STRATA_COUNT * samples_per_stratum);
-    let mut curr_record;
 
-    // First pass: count strata and collect records
     for record in rdr.byte_records() {
-        curr_record = record?;
-        let stratum = curr_record
+        let curr_record = record?;
+        let stratum_bytes = curr_record
             .get(strata_column)
-            .ok_or_else(|| format!("Strata column index {strata_column} out of bounds"))?
-            .to_vec();
-        *strata_counts.entry(stratum.clone()).or_default() += 1;
+            .ok_or_else(|| format!("Strata column index {strata_column} out of bounds"))?;
+        if !reservoirs.contains_key(stratum_bytes) {
+            reservoirs.insert(
+                stratum_bytes.to_vec(),
+                Vec::with_capacity(samples_per_stratum),
+            );
+        }
         records.push(curr_record);
     }
 
-    let strata_count = strata_counts.len();
-    if strata_count == 0 {
+    if reservoirs.is_empty() {
         return fail_incorrectusage_clierror!("No valid strata found in the data");
     }
 
-    // Initialize reservoirs with capacity
-    let mut reservoirs: HashMap<Vec<u8>, Vec<csv::ByteRecord>> =
-        HashMap::with_capacity(strata_count);
-    for stratum in strata_counts.keys() {
-        reservoirs.insert(stratum.clone(), Vec::with_capacity(samples_per_stratum));
-    }
-
     // Create RNG and perform sampling
-    match rng_kind {
-        RngKind::Standard => {
-            let mut rng = StandardRng::create(seed);
-            do_stratified_sampling(
-                records.into_iter(),
-                &mut reservoirs,
-                strata_column,
-                samples_per_stratum,
-                &mut rng,
-            )?;
-        },
-        RngKind::Faster => {
-            let mut rng = FasterRng::create(seed);
-            do_stratified_sampling(
-                records.into_iter(),
-                &mut reservoirs,
-                strata_column,
-                samples_per_stratum,
-                &mut rng,
-            )?;
-        },
-        RngKind::Cryptosecure => {
-            let mut rng = CryptoRng::create(seed);
-            do_stratified_sampling(
-                records.into_iter(),
-                &mut reservoirs,
-                strata_column,
-                samples_per_stratum,
-                &mut rng,
-            )?;
-        },
-    }
+    with_rng!(rng_kind, seed, |rng| {
+        do_stratified_sampling(
+            records.into_iter(),
+            &mut reservoirs,
+            strata_column,
+            samples_per_stratum,
+            &mut rng,
+        )?;
+    });
 
     // Write results in deterministic order
     let mut strata: Vec<_> = reservoirs.keys().collect();
@@ -1443,25 +1428,34 @@ fn do_stratified_sampling<T: Rng + ?Sized>(
     let mut records_seen: HashMap<Vec<u8>, usize> = HashMap::with_capacity(reservoirs.len());
 
     for record in records {
-        let stratum = record
+        let stratum_bytes = record
             .get(strata_column)
-            .ok_or_else(|| format!("Strata column index {strata_column} out of bounds"))?
-            .to_vec();
+            .ok_or_else(|| format!("Strata column index {strata_column} out of bounds"))?;
 
-        let seen = records_seen.entry(stratum.clone()).or_default();
+        // Look up via &[u8] (Borrow-based) to avoid allocating a Vec<u8> per
+        // record on the hot path. We only allocate when we actually need to
+        // insert into records_seen — which happens once per stratum, not per
+        // record.
+        let Some(reservoir) = reservoirs.get_mut(stratum_bytes) else {
+            continue;
+        };
 
-        if let Some(reservoir) = reservoirs.get_mut(&stratum) {
-            if reservoir.len() < samples_per_stratum {
-                reservoir.push(record);
-            } else {
-                let j = rng.random_range(0..=*seen);
-                if j < samples_per_stratum {
-                    // safety: we know that j is within the bounds of the reservoir
-                    unsafe { *reservoir.get_unchecked_mut(j) = record };
-                }
+        let seen = if let Some(s) = records_seen.get_mut(stratum_bytes) {
+            s
+        } else {
+            records_seen.insert(stratum_bytes.to_vec(), 0);
+            records_seen.get_mut(stratum_bytes).unwrap()
+        };
+
+        if reservoir.len() < samples_per_stratum {
+            reservoir.push(record);
+        } else {
+            let j = rng.random_range(0..=*seen);
+            if j < samples_per_stratum {
+                reservoir[j] = record;
             }
-            *seen += 1;
         }
+        *seen += 1;
     }
     Ok(())
 }
@@ -1508,49 +1502,27 @@ fn sample_weighted<R: io::Read, W: io::Write>(
     // Second pass: acceptance-rejection sampling
     let mut rdr2 = rconfig.reader()?;
 
-    match rng_kind {
-        RngKind::Standard => {
-            log::info!("doing standard WEIGHTED sampling...");
-            let mut rng = StandardRng::create(seed);
-            do_weighted_sampling(
-                &mut rdr2.byte_records(),
-                wtr,
-                weight_column,
-                sample_size,
-                max_weight,
-                &mut rng,
-            )?;
-        },
-        RngKind::Faster => {
-            log::info!("doing --faster WEIGHTED sampling...");
-            let mut rng = FasterRng::create(seed);
-            do_weighted_sampling(
-                &mut rdr2.byte_records(),
-                wtr,
-                weight_column,
-                sample_size,
-                max_weight,
-                &mut rng,
-            )?;
-        },
-        RngKind::Cryptosecure => {
-            log::info!("doing --cryptosecure WEIGHTED sampling...");
-            let mut rng = CryptoRng::create(seed);
-            do_weighted_sampling(
-                &mut rdr2.byte_records(),
-                wtr,
-                weight_column,
-                sample_size,
-                max_weight,
-                &mut rng,
-            )?;
-        },
-    }
+    log::info!("doing {:?} WEIGHTED sampling...", rng_kind);
+    with_rng!(rng_kind, seed, |rng| {
+        do_weighted_sampling(
+            &mut rdr2.byte_records(),
+            wtr,
+            weight_column,
+            sample_size,
+            max_weight,
+            &mut rng,
+        )?;
+    });
 
     Ok(())
 }
 
-// Helper function to handle the actual sampling with any RNG type
+// Single-pass acceptance-rejection sampling. The caller already determined
+// `max_weight` (either from the stats cache or via a prior pass), and the
+// records iterator is consumed exactly once — so there is no way to "retry"
+// rejected records. If acceptance ends up under-filling the reservoir we
+// just warn (the previous outer-loop "retry" was dead code: the iterator
+// is unbounded only at the source level, not here).
 fn do_weighted_sampling<T: Rng + ?Sized>(
     records: &mut impl Iterator<Item = Result<csv::ByteRecord, csv::Error>>,
     wtr: &mut csv::Writer<impl io::Write>,
@@ -1559,53 +1531,33 @@ fn do_weighted_sampling<T: Rng + ?Sized>(
     max_weight: f64,
     rng: &mut T,
 ) -> CliResult<()> {
-    let mut selected = HashSet::with_capacity(sample_size);
-    let mut attempts = 0;
-    let max_attempts = sample_size * 100; // Prevent infinite loops
-    let mut curr_record;
     let mut selected_len = 0;
-    let mut records_exhausted = false;
 
-    while selected_len < sample_size && attempts < max_attempts && !records_exhausted {
-        let mut any_records = false;
-        for (i, record) in records.enumerate() {
-            any_records = true;
-            if selected_len >= sample_size {
-                break;
-            }
-
-            curr_record = record?;
-
-            let weight: f64 = fast_float2::parse(
-                curr_record
-                    .get(weight_column)
-                    .ok_or_else(|| format!("Weight column index {weight_column} out of bounds"))?,
-            )
-            .unwrap_or(0.0);
-
-            if weight < 0.0 {
-                return fail_incorrectusage_clierror!("Weights must be non-negative: ({weight})");
-            }
-
-            // Modified acceptance-rejection method to handle zero weights
-            let include_flag = if weight == 0.0 {
-                false
-            } else {
-                rng.random::<f64>() <= (weight / max_weight)
-            };
-
-            if include_flag && !selected.contains(&i) {
-                selected.insert(i);
-                selected_len += 1;
-                wtr.write_byte_record(&curr_record)?;
-            }
-
-            attempts += 1;
-            if attempts >= max_attempts {
-                break;
-            }
+    for record in records {
+        if selected_len >= sample_size {
+            break;
         }
-        records_exhausted = !any_records;
+
+        let curr_record = record?;
+        let weight: f64 = fast_float2::parse(
+            curr_record
+                .get(weight_column)
+                .ok_or_else(|| format!("Weight column index {weight_column} out of bounds"))?,
+        )
+        .unwrap_or(0.0);
+
+        if weight < 0.0 {
+            return fail_incorrectusage_clierror!("Weights must be non-negative: ({weight})");
+        }
+
+        // Skip zero-weight records; otherwise accept with probability w/max_weight.
+        if weight == 0.0 {
+            continue;
+        }
+        if rng.random::<f64>() <= (weight / max_weight) {
+            wtr.write_byte_record(&curr_record)?;
+            selected_len += 1;
+        }
     }
 
     if selected_len < sample_size {
@@ -1646,10 +1598,16 @@ fn aggregate_numeric_values(values: &[f64], func: AggregationFunction) -> f64 {
     }
 }
 
+// Aggregates `records` into a single ByteRecord using `func`.
+// `numeric_cols[i]` must be true iff column i is numeric across the WHOLE
+// dataset (computed once by the caller). For numeric columns we apply the
+// aggregation function over the parsed values; for non-numeric ones we pick
+// the first or last raw value depending on the function.
 fn aggregate_records(
-    records: &[csv::ByteRecord],
+    records: &[&csv::ByteRecord],
     headers: &csv::ByteRecord,
     func: AggregationFunction,
+    numeric_cols: &[bool],
 ) -> CliResult<csv::ByteRecord> {
     if records.is_empty() {
         return fail_incorrectusage_clierror!("Cannot aggregate empty record set");
@@ -1658,27 +1616,19 @@ fn aggregate_records(
     let mut result_fields = Vec::with_capacity(headers.len());
 
     for col_idx in 0..headers.len() {
-        // Try to parse all values in this column as numbers
-        let mut numeric_values = Vec::new();
-        let mut all_numeric = true;
+        let is_numeric = numeric_cols.get(col_idx).copied().unwrap_or(false);
 
-        for record in records {
-            if let Some(field) = record.get(col_idx) {
-                if let Ok(num) = fast_float2::parse::<f64, &[u8]>(field) {
-                    numeric_values.push(num);
-                } else {
-                    all_numeric = false;
-                    break;
-                }
-            } else {
-                // missing field - treat as non-numeric
-                all_numeric = false;
-                break;
-            }
-        }
-
-        if all_numeric && !numeric_values.is_empty() {
-            // Aggregate numeric values
+        if is_numeric {
+            // Parse and aggregate. The global numeric scan guarantees every
+            // value parses, but we still keep a defensive fallback to 0.0.
+            let numeric_values: Vec<f64> = records
+                .iter()
+                .map(|r| {
+                    r.get(col_idx)
+                        .and_then(|f| fast_float2::parse::<f64, &[u8]>(f).ok())
+                        .unwrap_or(0.0)
+                })
+                .collect();
             let aggregated = aggregate_numeric_values(&numeric_values, func);
             result_fields.push(aggregated.to_string().into_bytes());
         } else {
@@ -1747,6 +1697,31 @@ fn sample_timeseries<R: io::Read, W: io::Write>(
     // Sort by timestamp - parallel unstable sort for maximum performance
     records_with_times.par_sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
+    // If we'll be aggregating, pre-compute which columns are numeric across
+    // the WHOLE dataset (one O(records × cols) scan, instead of repeating
+    // the per-column "are all values numeric?" check inside every interval's
+    // aggregate_records call).
+    let numeric_cols: Vec<bool> = if aggregate_func.is_some() {
+        let mut mask = vec![true; headers.len()];
+        for (_, record) in &records_with_times {
+            for (col_idx, m) in mask.iter_mut().enumerate() {
+                if !*m {
+                    continue;
+                }
+                match record.get(col_idx) {
+                    Some(field) if fast_float2::parse::<f64, &[u8]>(field).is_ok() => {},
+                    _ => *m = false,
+                }
+            }
+            if mask.iter().all(|m| !*m) {
+                break;
+            }
+        }
+        mask
+    } else {
+        Vec::new()
+    };
+
     // Determine starting point
     let start_time = match start_mode {
         TSStartMode::Last => {
@@ -1761,20 +1736,8 @@ fn sample_timeseries<R: io::Read, W: io::Write>(
             let latest = records_with_times.last().unwrap().0;
             let range_secs = (latest - earliest).num_seconds();
             if range_secs > 0 {
-                let random_offset = match rng_kind {
-                    RngKind::Standard => {
-                        let mut rng = StandardRng::create(seed);
-                        rng.random_range(0..=range_secs)
-                    },
-                    RngKind::Faster => {
-                        let mut rng = FasterRng::create(seed);
-                        rng.random_range(0..=range_secs)
-                    },
-                    RngKind::Cryptosecure => {
-                        let mut rng = CryptoRng::create(seed);
-                        rng.random_range(0..=range_secs)
-                    },
-                };
+                let random_offset =
+                    with_rng!(rng_kind, seed, |rng| { rng.random_range(0..=range_secs) });
                 earliest + Duration::seconds(random_offset)
             } else {
                 earliest
@@ -1816,9 +1779,10 @@ fn sample_timeseries<R: io::Read, W: io::Write>(
         let group = interval_groups.get(&interval_key).unwrap();
 
         if let Some(agg_func) = aggregate_func {
-            // Aggregate records in this interval
-            let records_only: Vec<csv::ByteRecord> = group.iter().map(|(_, r)| r.clone()).collect();
-            let aggregated = aggregate_records(&records_only, &headers, agg_func)?;
+            // Aggregate records in this interval — pass refs so we don't clone
+            // each record into a temporary Vec<ByteRecord>.
+            let records_only: Vec<&csv::ByteRecord> = group.iter().map(|(_, r)| r).collect();
+            let aggregated = aggregate_records(&records_only, &headers, agg_func, &numeric_cols)?;
             wtr.write_byte_record(&aggregated)?;
         } else {
             // Select one record per interval
@@ -1883,26 +1847,28 @@ fn sample_cluster<R: io::Read, W: io::Write>(
 ) -> CliResult<()> {
     const ESTIMATED_CLUSTER_COUNT: usize = 100;
 
-    let cluster_count = if let Some(cardinality) = cluster_cardinality {
+    // Pre-allocate for the *number of unique clusters in the file* (cardinality),
+    // not for the sample size. requested_clusters is the user-asked sample —
+    // sizing the unique-cluster collections to it caused excessive rehashing
+    // any time cardinality > requested_clusters.
+    let prealloc = if let Some(cardinality) = cluster_cardinality {
         if requested_clusters > cardinality as usize {
             return fail_incorrectusage_clierror!(
                 "Requested sample size ({requested_clusters}) exceeds number of clusters \
                  ({cardinality})",
             );
         }
-        requested_clusters
+        cardinality as usize
     } else {
         ESTIMATED_CLUSTER_COUNT
     };
 
-    // Use HashSet for faster lookups of unique clusters
-    let mut unique_clusters: HashSet<Vec<u8>> = HashSet::with_capacity(cluster_count);
-    let mut all_clusters: Vec<Vec<u8>> = Vec::with_capacity(cluster_count);
-    let mut curr_record;
+    let mut unique_clusters: HashSet<Vec<u8>> = HashSet::with_capacity(prealloc);
+    let mut all_clusters: Vec<Vec<u8>> = Vec::with_capacity(prealloc);
 
     // First pass: collect unique clusters
     for record in rdr.byte_records() {
-        curr_record = record?;
+        let curr_record = record?;
         let cluster = curr_record
             .get(cluster_column)
             .ok_or_else(|| format!("Cluster column index {cluster_column} out of bounds"))?
@@ -1917,42 +1883,20 @@ fn sample_cluster<R: io::Read, W: io::Write>(
         return fail_incorrectusage_clierror!("No valid clusters found in the data");
     }
 
-    // Select clusters
-    let selected_clusters: HashSet<Vec<u8>> = match rng_kind {
-        RngKind::Standard => {
-            let mut rng = StandardRng::create(seed);
-            all_clusters
-                .sample(&mut rng, requested_clusters.min(all_clusters.len()))
-                .cloned()
-                .collect()
-        },
-        RngKind::Faster => {
-            let mut rng = FasterRng::create(seed);
-            all_clusters
-                .sample(&mut rng, requested_clusters.min(all_clusters.len()))
-                .cloned()
-                .collect()
-        },
-        RngKind::Cryptosecure => {
-            let mut rng = CryptoRng::create(seed);
-            all_clusters
-                .sample(&mut rng, requested_clusters.min(all_clusters.len()))
-                .cloned()
-                .collect()
-        },
-    };
+    let take = requested_clusters.min(all_clusters.len());
+    let selected_clusters: HashSet<Vec<u8>> = with_rng!(rng_kind, seed, |rng| {
+        all_clusters.sample(&mut rng, take).cloned().collect()
+    });
 
     // Second pass: output records from selected clusters
     let mut rdr2 = rconfig.reader()?;
-    let mut curr_record;
     for record in rdr2.byte_records() {
-        curr_record = record?;
+        let curr_record = record?;
         let cluster = curr_record
             .get(cluster_column)
-            .ok_or_else(|| format!("Cluster column index {cluster_column} out of bounds"))?
-            .to_vec();
+            .ok_or_else(|| format!("Cluster column index {cluster_column} out of bounds"))?;
 
-        if selected_clusters.contains(&cluster) {
+        if selected_clusters.contains(cluster) {
             wtr.write_byte_record(&curr_record)?;
         }
     }

@@ -173,62 +173,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let primary_key_cols: Vec<usize> = match args.flag_key {
         None => vec![0],
-        Some(s) => {
-            // check if the key is a comma separated list of numbers
-            if s.chars().all(|c: char| c.is_numeric() || c == ',') {
-                s.split(',')
-                    .map(str::parse::<usize>)
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|err| CliError::Other(err.to_string()))?
-            } else {
-                // check if the key is a comma separated list of column names
-                let left_key_indices = s.col_names_to_indices(',', headers_left, "left")?;
-
-                // now check if the right CSV has the same selected colnames in the same locations
-                let right_key_indices = s.col_names_to_indices(',', headers_right, "right")?;
-
-                if left_key_indices != right_key_indices {
-                    return fail_incorrectusage_clierror!(
-                        "Column names on left and right CSVs do not match.\nUse `qsv select` to \
-                         reorder the columns on the right CSV to match the order of the left \
-                         CSV.\nThe key column indices on the left CSV are in index \
-                         locations:\n{left_key_indices:?}\nand on the right CSV \
-                         are:\n{right_key_indices:?}",
-                    );
-                }
-                left_key_indices
-            }
-        },
+        Some(s) => parse_indices_or_colnames(&s, headers_left, headers_right, "key")?,
     };
 
     let sort_cols = args
         .flag_sort_columns
-        .map(|s| {
-            // check if the sort columns are a comma separated list of numbers
-            if s.chars().all(|c: char| c.is_numeric() || c == ',') {
-                s.split(',')
-                    .map(str::parse::<usize>)
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|err| CliError::Other(err.to_string()))
-            } else {
-                // check if the sort columns is a comma separated list of column names
-                let left_sort_indices = s.col_names_to_indices(',', headers_left, "left")?;
-
-                // now check if the right CSV has the same selected colnames in the same locations
-                let right_sort_indices = s.col_names_to_indices(',', headers_right, "right")?;
-
-                if left_sort_indices != right_sort_indices {
-                    return fail_incorrectusage_clierror!(
-                        "Column names on left and right CSVs do not match.\nUse `qsv select` to \
-                         reorder the columns on the right CSV to match the order of the left \
-                         CSV.\nThe sort column indices on the left CSV are in index \
-                         locations:\n{left_sort_indices:?}\nand on the right CSV \
-                         are:\n{right_sort_indices:?}",
-                    );
-                }
-                Ok(left_sort_indices)
-            }
-        })
+        .as_deref()
+        .map(|s| parse_indices_or_colnames(s, headers_left, headers_right, "sort"))
         .transpose()?;
 
     let wtr = Config::new(args.flag_output.as_ref())
@@ -239,12 +190,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // ===== DIFF PROCESSING =====
 
-    let Ok(csv_diff) = CsvByteDiffBuilder::new()
+    let csv_diff = CsvByteDiffBuilder::new()
         .primary_key_columns(primary_key_cols.clone())
         .build()
-    else {
-        return fail_clierror!("Cannot instantiate diff");
-    };
+        .map_err(|e| CliError::Other(format!("Cannot instantiate diff: {e}")))?;
 
     let mut diff_byte_records = csv_diff
         .diff(csv_rdr_left.into(), csv_rdr_right.into())
@@ -270,23 +219,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(csv_diff_writer.write_diff_byte_records(diff_byte_records)?)
 }
 
-trait StringExt {
-    fn col_names_to_indices<C: Into<char>>(
+trait StrExt {
+    fn col_names_to_indices(
         &self,
-        col_names_split_by: C,
+        col_names_split_by: char,
         headers: &ByteRecord,
         msg_left_or_right: &str,
     ) -> Result<Vec<usize>, CliError>;
 }
 
-impl StringExt for String {
-    fn col_names_to_indices<C: Into<char>>(
+impl StrExt for str {
+    fn col_names_to_indices(
         &self,
-        col_names_split_by: C,
+        col_names_split_by: char,
         headers: &ByteRecord,
         msg_left_or_right: &str,
     ) -> Result<Vec<usize>, CliError> {
-        self.split(col_names_split_by.into())
+        self.split(col_names_split_by)
             .map(|col_name| {
                 headers
                     .iter()
@@ -299,6 +248,37 @@ impl StringExt for String {
             })
             .collect::<Result<Vec<usize>, _>>()
     }
+}
+
+/// Parse a comma-separated list of either 0-based column indices or column names.
+/// When column names are given, both CSVs must resolve them to the same indices.
+/// `kind` is used in error messages (e.g., "key" or "sort").
+fn parse_indices_or_colnames(
+    s: &str,
+    headers_left: &ByteRecord,
+    headers_right: &ByteRecord,
+    kind: &str,
+) -> Result<Vec<usize>, CliError> {
+    if s.chars().all(|c| c.is_ascii_digit() || c == ',') {
+        return s
+            .split(',')
+            .map(str::parse::<usize>)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| CliError::Other(err.to_string()));
+    }
+
+    let left_indices = s.col_names_to_indices(',', headers_left, "left")?;
+    let right_indices = s.col_names_to_indices(',', headers_right, "right")?;
+
+    if left_indices != right_indices {
+        return fail_incorrectusage_clierror!(
+            "Column names on left and right CSVs do not match.\nUse `qsv select` to reorder the \
+             columns on the right CSV to match the order of the left CSV.\nThe {kind} column \
+             indices on the left CSV are in index locations:\n{left_indices:?}\nand on the right \
+             CSV are:\n{right_indices:?}",
+        );
+    }
+    Ok(left_indices)
 }
 
 struct CsvDiffWriter<W: Write> {
@@ -325,10 +305,14 @@ impl<W: Write> CsvDiffWriter<W> {
 
     fn write_headers(&mut self, headers: &Headers, num_columns: Option<&usize>) -> csv::Result<()> {
         match (headers.headers_left(), headers.headers_right()) {
-            (Some(lbh), Some(_rbh)) => {
+            (Some(lbh), Some(rbh)) => {
                 // currently, `diff` can only handle two CSVs that have the same
                 // headers ordering, so in this case we can either choose the left
                 // or right headers, because both are the same
+                debug_assert_eq!(
+                    lbh, rbh,
+                    "csv_diff invariant: left/right headers must match"
+                );
                 if !self.no_headers {
                     lbh.write_diffresult_header(&mut self.csv_writer)?;
                 }
@@ -430,9 +414,9 @@ impl<W: Write> CsvDiffWriter<W> {
             tmp
         };
         // key field values and modified field values should appear in the output
-        for &key_field in self.key_fields.iter().chain(modified_field_indices) {
+        for &field_idx in self.key_fields.iter().chain(modified_field_indices) {
             // + 1 here, because of the prefix value (see above)
-            vec_to_fill[key_field + 1] = &byte_record[key_field];
+            vec_to_fill[field_idx + 1] = &byte_record[field_idx];
         }
 
         vec_to_fill

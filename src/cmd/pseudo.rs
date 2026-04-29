@@ -96,6 +96,26 @@ type ValuesNum = HashMap<String, u64>;
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
+
+    // Validate usage-level flags before opening any reader/writer so usage
+    // errors don't emit partial output (e.g. CSV headers) on stdout.
+    let increment = args.flag_increment;
+    if increment == 0 {
+        return fail_incorrectusage_clierror!("--increment must be greater than 0.");
+    }
+    if args.flag_formatstr != "{}"
+        && (!args.flag_formatstr.contains("{}")
+            || dynfmt2::SimpleCurlyFormat
+                .format(&args.flag_formatstr, [0])
+                .is_err())
+    {
+        return fail_incorrectusage_clierror!(
+            "Invalid format string: \"{}\". The format string must contain a single \"{{}}\" \
+             which will be replaced with the incremental identifier.",
+            args.flag_formatstr
+        );
+    }
+
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers)
@@ -122,11 +142,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     if !rconfig.no_headers {
         wtr.write_record(&headers)?;
-    }
-
-    let increment = args.flag_increment;
-    if increment == 0 {
-        return fail_incorrectusage_clierror!("--increment must be greater than 0.");
     }
 
     let mut record = csv::StringRecord::new();
@@ -160,20 +175,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     } else {
         // we need to use dynfmt2::SimpleCurlyFormat if the format string is not "{}"
-
-        // first, validate the format string
-        if !args.flag_formatstr.contains("{}")
-            || dynfmt2::SimpleCurlyFormat
-                .format(&args.flag_formatstr, [0])
-                .is_err()
-        {
-            return fail_incorrectusage_clierror!(
-                "Invalid format string: \"{}\". The format string must contain a single \"{{}}\" \
-                 which will be replaced with the incremental identifier.",
-                args.flag_formatstr
-            );
-        }
-
+        // (format string was already validated up front)
         let mut values = Values::with_capacity(1000);
         while rdr.read_record(&mut record)? {
             let value = record[column_index].to_owned();

@@ -226,4 +226,10 @@ fn pseudo_increment_zero_rejected() {
         got_err.contains("--increment must be greater than 0"),
         "stderr was: {got_err}"
     );
+    // usage-level errors must not write any partial output to stdout
+    let got_stdout = wrk.stdout::<String>(&mut cmd);
+    assert!(
+        got_stdout.is_empty(),
+        "expected empty stdout, got: {got_stdout:?}"
+    );
 }

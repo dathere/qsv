@@ -59,12 +59,10 @@ impl From<arboard::Error> for CliError {
                  incompatible format to the requested one."
                     .to_string(),
             ),
-            arboard::Error::Unknown { description: _ } => CliError::Other(
-                "An unknown error occurred while attempting to use the clipboard.".to_string(),
-            ),
-            _ => CliError::Other(
-                "An unexpected error occurred while using the clipboard.".to_string(),
-            ),
+            arboard::Error::Unknown { description } => CliError::Other(format!(
+                "An unknown error occurred while attempting to use the clipboard: {description}"
+            )),
+            other => CliError::Other(format!("Unexpected clipboard error: {other}")),
         }
     }
 }
@@ -75,9 +73,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_save {
         let mut buffer = String::new();
         std::io::stdin().read_to_string(&mut buffer)?;
-        clipboard.set_text(buffer).unwrap();
+        clipboard.set_text(buffer)?;
     } else {
-        print!("{}", clipboard.get_text().unwrap());
+        print!("{}", clipboard.get_text()?);
     }
 
     Ok(())

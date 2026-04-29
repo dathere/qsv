@@ -265,9 +265,7 @@ fn parse_indices_or_colnames(
             .map(str::parse::<usize>)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|err| {
-                CliError::IncorrectUsage(format!(
-                    "Invalid {kind} column index list '{s}': {err}"
-                ))
+                CliError::IncorrectUsage(format!("Invalid {kind} column index list '{s}': {err}"))
             });
     }
 

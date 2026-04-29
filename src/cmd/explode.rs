@@ -58,12 +58,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .no_headers_flag(args.flag_no_headers)
         .select(args.arg_column);
 
+    if args.arg_separator.is_empty() {
+        return fail_incorrectusage_clierror!("<separator> cannot be empty.");
+    }
+
     let mut rdr = rconfig.reader()?;
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
 
     let headers = rdr.byte_headers()?.clone();
     let sel = rconfig.selection(&headers)?;
-    let column_index = *sel.iter().next().unwrap();
+    if sel.len() != 1 {
+        return fail_incorrectusage_clierror!(
+            "explode requires exactly one <column>; got {} columns.",
+            sel.len()
+        );
+    }
+    let column_index = *sel
+        .iter()
+        .next()
+        .expect("explode requires exactly one <column>");
 
     let mut headers = rdr.headers()?.clone();
 

@@ -70,63 +70,79 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let in_place = args.flag_in_place;
     let value = args.arg_value;
     let no_headers = args.flag_no_headers;
-    let mut tempfile = NamedTempFile::new()?;
+
+    // --in-place needs a real on-disk path; reject stdin / unset input early.
+    if in_place && !matches!(input.as_deref(), Some(p) if p != "-") {
+        return fail_clierror!("--in-place requires an input file path (stdin is not supported).");
+    }
 
     // Build the CSV reader and iterate over each record.
     let conf = Config::new(input.as_ref()).no_headers(true);
     let mut rdr = conf.reader()?;
-    let mut wtr: Writer<Box<dyn std::io::Write>> = if in_place {
-        csv::Writer::from_writer(Box::new(tempfile.as_file_mut()))
+
+    let mut tempfile = if in_place {
+        Some(NamedTempFile::new()?)
+    } else {
+        None
+    };
+    let mut wtr: Writer<Box<dyn std::io::Write>> = if let Some(tf) = tempfile.as_mut() {
+        csv::Writer::from_writer(Box::new(tf.as_file_mut()))
     } else {
         Config::new(args.flag_output.as_ref()).writer()?
     };
 
     let headers = rdr.headers()?;
-    let mut column_index: Option<usize> = None;
-    if column == "_" {
-        column_index = Some(headers.len() - 1);
-    } else if let Ok(c) = column.parse::<usize>() {
-        column_index = Some(c);
-    } else {
-        for (i, header) in headers.iter().enumerate() {
-            if column.as_str() == header {
-                column_index = Some(i);
-                break;
-            }
+    let column_index: usize = if column == "_" {
+        match headers.len().checked_sub(1) {
+            Some(i) => i,
+            None => return fail_clierror!("Invalid column selected."),
         }
-    }
-    if column_index.is_none() {
-        return fail_clierror!("Invalid column selected.");
-    }
+    } else if let Ok(c) = column.parse::<usize>() {
+        if c >= headers.len() {
+            return fail_clierror!("Invalid column selected.");
+        }
+        c
+    } else {
+        match headers.iter().position(|h| column.as_str() == h) {
+            Some(i) => i,
+            None => return fail_clierror!("Invalid column selected."),
+        }
+    };
 
     let mut record = csv::ByteRecord::new();
     #[allow(clippy::bool_to_int_with_if)]
     let mut current_row: usize = if no_headers { 1 } else { 0 };
+    let target_row = row + 1;
+    let mut row_matched = false;
     while rdr.read_byte_record(&mut record)? {
-        if row + 1 == current_row {
-            for (current_col, field) in record.iter().enumerate() {
-                if column_index == Some(current_col) {
-                    wtr.write_field(&value)?;
+        if current_row == target_row {
+            row_matched = true;
+            let mut updated = csv::ByteRecord::new();
+            for (i, field) in record.iter().enumerate() {
+                if i == column_index {
+                    updated.push_field(value.as_bytes());
                 } else {
-                    wtr.write_field(field)?;
+                    updated.push_field(field);
                 }
             }
-            wtr.write_record(None::<&[u8]>)?;
+            wtr.write_byte_record(&updated)?;
         } else {
             wtr.write_byte_record(&record)?;
         }
         current_row += 1;
     }
 
+    if !row_matched {
+        return fail_clierror!("Row {row} not found.");
+    }
+
     wtr.flush()?;
     drop(wtr);
 
-    if in_place && let Some(input_path_string) = input {
+    if let (Some(tempfile), Some(input_path_string)) = (tempfile, input) {
         let input_path = std::path::Path::new(&input_path_string);
-        if input_path.extension().is_some() {
-            std::fs::rename(input_path, input_path.with_added_extension("bak"))?;
-            std::fs::copy(tempfile.path(), input_path)?;
-        }
+        std::fs::rename(input_path, input_path.with_added_extension("bak"))?;
+        std::fs::copy(tempfile.path(), input_path)?;
     }
 
     Ok(())

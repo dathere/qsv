@@ -116,6 +116,85 @@ b,2"
 }
 
 #[test]
+fn edit_in_place_no_extension() {
+    let wrk = Workdir::new("edit_in_place_no_extension");
+    wrk.create(
+        "data",
+        vec![svec!["letter", "number"], svec!["a", "1"], svec!["b", "2"]],
+    );
+
+    let mut cmd = wrk.command("edit");
+    cmd.env("QSV_SKIP_FORMAT_CHECK", "1");
+    cmd.arg("data");
+    cmd.arg("number");
+    cmd.arg("0");
+    cmd.arg("3");
+    cmd.arg("--in-place");
+
+    cmd.output().unwrap();
+
+    let test_file = wrk.path("data");
+    let backup_file = wrk.path("data.bak");
+    let got = std::fs::read_to_string(test_file).unwrap();
+    let got_backup = std::fs::read_to_string(backup_file).unwrap();
+    let expected = "letter,number\na,3\nb,2\n".to_string();
+    let expected_backup = "letter,number\na,1\nb,2\n".to_string();
+    assert_eq!(got, expected);
+    assert_eq!(got_backup, expected_backup);
+}
+
+#[test]
+fn edit_in_place_rejects_stdin() {
+    let wrk = Workdir::new("edit_in_place_rejects_stdin");
+
+    let mut cmd = wrk.command("edit");
+    cmd.arg("-");
+    cmd.arg("0");
+    cmd.arg("0");
+    cmd.arg("x");
+    cmd.arg("--in-place");
+
+    let got_stderr = wrk.output_stderr(&mut cmd);
+    assert!(got_stderr.contains("--in-place requires an input file path"));
+}
+
+#[test]
+fn edit_row_out_of_range_errors() {
+    let wrk = Workdir::new("edit_row_out_of_range_errors");
+    wrk.create(
+        "data.csv",
+        vec![svec!["letter", "number"], svec!["a", "1"], svec!["b", "2"]],
+    );
+
+    let mut cmd = wrk.command("edit");
+    cmd.arg("data.csv");
+    cmd.arg("number");
+    cmd.arg("99");
+    cmd.arg("3");
+
+    let got_stderr = wrk.output_stderr(&mut cmd);
+    assert!(got_stderr.contains("Row 99 not found"));
+}
+
+#[test]
+fn edit_column_index_out_of_range_errors() {
+    let wrk = Workdir::new("edit_column_index_out_of_range_errors");
+    wrk.create(
+        "data.csv",
+        vec![svec!["letter", "number"], svec!["a", "1"], svec!["b", "2"]],
+    );
+
+    let mut cmd = wrk.command("edit");
+    cmd.arg("data.csv");
+    cmd.arg("99");
+    cmd.arg("0");
+    cmd.arg("3");
+
+    let got_stderr = wrk.output_stderr(&mut cmd);
+    assert!(got_stderr.contains("Invalid column selected."));
+}
+
+#[test]
 fn edit_in_place() {
     let wrk = Workdir::new("edit_in_place");
     wrk.create(

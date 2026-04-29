@@ -225,14 +225,26 @@ impl Args {
         let mut rdr = rconfig.reader()?;
         let headers = rdr.byte_headers()?.clone();
 
+        // Helper: measure the CSV-encoded byte length of a record using the same
+        // writer settings that `new_writer` will use on disk. We go through
+        // `Config::from_writer` so that any future tweak to Config's quoting,
+        // terminator, or delimiter stays consistent between measurement and the
+        // produced chunk file. (BOM bytes, when QSV_OUTPUT_BOM is set, are
+        // emitted by both paths and cancel out for budget purposes — at worst
+        // they cause slightly earlier rollover, never an over-the-budget chunk.)
+        let measure_record = |record: &csv::ByteRecord| -> CliResult<usize> {
+            let mut buf: Vec<u8> = Vec::with_capacity(256);
+            let mut m = Config::new(None).from_writer(&mut buf);
+            m.write_byte_record(record)?;
+            m.flush()?;
+            drop(m);
+            Ok(buf.len())
+        };
+
         let header_byte_size = if self.flag_no_headers {
             0
         } else {
-            let mut headerbuf_wtr = csv::WriterBuilder::new().from_writer(Vec::with_capacity(256));
-            headerbuf_wtr.write_byte_record(&headers)?;
-
-            // safety: vec writer cannot fail to flush/finalize
-            headerbuf_wtr.into_inner().unwrap().len()
+            measure_record(&headers)?
         };
 
         let chunk_size_bytes = chunk_size * 1024;
@@ -243,50 +255,65 @@ impl Args {
             );
         }
 
-        let mut wtr = self.new_writer(&headers, 0, self.flag_pad)?;
+        // Open chunk files lazily so an empty input produces zero chunks
+        // (no phantom `0.csv` containing only the header row).
+        let mut wtr: Option<csv::Writer<Box<dyn io::Write + 'static>>> = None;
         let mut i: usize = 0; // total data rows processed
-        let mut num_chunks: usize = 1; // we always create chunk 0
+        let mut num_chunks: usize = 0;
         let mut chunk_start: usize = 0;
         let mut chunk_used_bytes = header_byte_size;
-
         let mut row = csv::ByteRecord::new();
-        // Reusable buffer to measure CSV-encoded row sizes without allocating per row.
+        // Per-row measurement buffer reused between reads.
         let mut measure_buf: Vec<u8> = Vec::with_capacity(256);
 
         while rdr.read_byte_record(&mut row)? {
-            // Measure the CSV-encoded size of `row` using a reusable buffer.
+            // Measure the CSV-encoded size of `row` using the shared writer settings.
             let row_size = {
                 measure_buf.clear();
-                let mut m = csv::WriterBuilder::new().from_writer(&mut measure_buf);
+                let mut m = Config::new(None).from_writer(&mut measure_buf);
                 m.write_byte_record(&row)?;
                 m.flush()?;
                 drop(m);
                 measure_buf.len()
             };
 
-            // Roll over if adding this row would exceed the budget. Always allow
-            // at least one data row per chunk (otherwise an oversized row would
-            // loop forever with empty chunks).
-            if chunk_used_bytes + row_size > chunk_size_bytes && chunk_used_bytes > header_byte_size
-            {
-                wtr.flush()?;
-                if self.flag_filter.is_some() {
-                    self.run_filter_command(chunk_start, self.flag_pad)?;
+            let need_new_chunk = match &wtr {
+                None => true,
+                // Roll over if adding this row would exceed the budget. Always
+                // allow at least one data row per chunk (otherwise an oversized
+                // single row would loop forever with empty chunks).
+                Some(_) => {
+                    chunk_used_bytes + row_size > chunk_size_bytes
+                        && chunk_used_bytes > header_byte_size
+                },
+            };
+
+            if need_new_chunk {
+                if let Some(mut w) = wtr.take() {
+                    w.flush()?;
+                    if self.flag_filter.is_some() {
+                        self.run_filter_command(chunk_start, self.flag_pad)?;
+                    }
+                    chunk_start = i;
                 }
-                chunk_start = i;
-                wtr = self.new_writer(&headers, i, self.flag_pad)?;
+                wtr = Some(self.new_writer(&headers, chunk_start, self.flag_pad)?);
                 chunk_used_bytes = header_byte_size;
                 num_chunks += 1;
             }
 
-            wtr.write_byte_record(&row)?;
+            // safety: `wtr` was just set above when `need_new_chunk` was true,
+            // and was Some on every prior iteration once initialized.
+            let active = wtr.as_mut().unwrap();
+            active.write_byte_record(&row)?;
             chunk_used_bytes += row_size;
             i += 1;
         }
-        wtr.flush()?;
-        // Run filter for the final chunk only if it actually received data rows.
-        if self.flag_filter.is_some() && i > 0 {
-            self.run_filter_command(chunk_start, self.flag_pad)?;
+
+        if let Some(mut w) = wtr {
+            w.flush()?;
+            if self.flag_filter.is_some() {
+                self.run_filter_command(chunk_start, self.flag_pad)?;
+            }
         }
 
         if !self.flag_quiet {

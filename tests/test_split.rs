@@ -1833,9 +1833,8 @@ fn split_empty_input_kb_size() {
         .arg("in.csv");
     wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
-    // The first chunk is created (empty body) so the path exists, but we don't
-    // create a phantom second chunk — and the run must not error.
-    assert!(wrk.path("0.csv").exists());
+    // Empty input must produce zero chunks (no phantom header-only file).
+    assert!(!wrk.path("0.csv").exists());
 }
 
 #[test]
@@ -1855,4 +1854,27 @@ fn split_filter_multiword_command() {
     wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
     assert!(wrk.path("0.csv.bak").exists());
+}
+
+#[test]
+#[cfg(windows)]
+fn split_filter_multiword_command_windows() {
+    // Regression for B5 on Windows: previously the command was split on spaces
+    // before being handed to `cmd /C`, breaking quoted arguments. Use a quoted
+    // destination path with an embedded space to assert it survives intact.
+    let wrk = Workdir::new("split_filter_multiword_command_windows");
+    wrk.create("in.csv", data(true));
+
+    // The destination filename ("name with space.bak") contains a literal
+    // space inside a quoted argument; the pre-fix code would split on this
+    // space and copy to the wrong path.
+    let mut cmd = wrk.command("split");
+    cmd.args(["--size", "2"])
+        .arg("--filter")
+        .arg("copy /Y %FILE% \"name with space.bak\"")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.run(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert!(wrk.path("name with space.bak").exists());
 }

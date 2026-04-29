@@ -266,7 +266,7 @@ fn check_mode(
                 bytes_to_hex(&buf)
             };
 
-            if actual_hex == expected_hash {
+            if actual_hex.eq_ignore_ascii_case(&expected_hash) {
                 if !args.flag_quiet {
                     writeln!(output_writer, "{filename}: OK")?;
                 }
@@ -292,22 +292,24 @@ fn check_mode(
     Ok(())
 }
 
-/// Parse a standard checksum line: `hash  filename`
+/// Parse a standard checksum line: `hash  filename` (text mode)
+/// or `hash *filename` (binary mode, single space + asterisk).
 fn parse_standard_line(line: &str) -> CliResult<(String, String)> {
-    // Split on two spaces (standard b3sum format)
+    // Text mode: two spaces between hash and filename (standard b3sum format).
     if let Some((hash, filename)) = line.split_once("  ") {
-        Ok((hash.to_string(), filename.to_string()))
-    } else {
-        fail_clierror!("Invalid checksum line: {line}")
+        return Ok((hash.to_string(), filename.to_string()));
     }
+    // Binary mode: single space + asterisk-prefixed filename.
+    if let Some((hash, filename)) = line.split_once(" *") {
+        return Ok((hash.to_string(), filename.to_string()));
+    }
+    fail_clierror!("Invalid checksum line: {line}")
 }
 
 /// Parse a BSD-style tag line: `BLAKE3 (filename) = hash`
 fn parse_tag_line(line: &str) -> CliResult<(String, String)> {
-    // Format: BLAKE3 (filename) = hash
-    let rest = line
-        .strip_prefix("BLAKE3 (")
-        .ok_or_else(|| CliError::Other(format!("Invalid tag line: {line}")))?;
+    // Caller already verified the `BLAKE3 (` prefix, so strip_prefix cannot fail here.
+    let rest = &line["BLAKE3 (".len()..];
     if let Some((filename, hash)) = rest.rsplit_once(") = ") {
         Ok((hash.to_string(), filename.to_string()))
     } else {

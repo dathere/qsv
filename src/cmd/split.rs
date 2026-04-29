@@ -127,6 +127,8 @@ Common options:
     -q, --quiet            Do not display an output summary to stderr.
 "#;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::{fs, io, path::Path, process::Command};
 
 use log::debug;
@@ -529,18 +531,24 @@ impl Args {
             };
 
             // Execute the command using the appropriate shell based on platform.
-            // On Windows we pass the entire command as a single argument to `cmd /C`
-            // so that quoted arguments containing spaces are preserved (a previous
-            // implementation split on whitespace, which corrupted such commands).
-            let status = if cfg!(windows) {
+            // On Windows we hand the entire filter string to `cmd /C` via `raw_arg`
+            // so cmd.exe sees the literal command line. Using the cross-platform
+            // `arg` would let Rust apply CommandLineToArgvW escaping (wrapping the
+            // arg in quotes and back-slash-escaping inner quotes), which then
+            // corrupts cmd.exe's two-quote parsing for filters like
+            // `copy /Y %FILE% "name with space.bak"`.
+            #[cfg(windows)]
+            let status = {
                 debug!("Running Windows command: cmd /C {cmd}");
                 Command::new("cmd")
                     .arg("/C")
-                    .arg(&cmd)
+                    .raw_arg(&cmd)
                     .current_dir(&canonical_outdir)
                     .env("FILE", path_str)
                     .status()
-            } else {
+            };
+            #[cfg(not(windows))]
+            let status = {
                 debug!("Running Unix command: sh -c {cmd}");
                 Command::new("sh")
                     .arg("-c")

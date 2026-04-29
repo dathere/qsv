@@ -219,12 +219,9 @@ fn sort_csv(
 
     let mut sorted_csv_wtr = Config::new(args.arg_output.as_ref()).writer()?;
 
-    // position_delta is always 1: idx_position.record() is a 1-indexed record
-    // count (set by csv::Reader after each read; the position attached to the
-    // first data record has record == 1 because byte_headers consumed one
-    // record). Converting to the 0-indexed record number that idxfile.seek
-    // expects needs a constant subtraction of 1 in both modes.
-    let position_delta: u64 = 1;
+    // idx_position.record() is 1-indexed when headers are present and
+    // 0-indexed without; subtract accordingly to get the 0-indexed seek key.
+    let position_delta: u64 = u64::from(!args.flag_no_headers);
     if !args.flag_no_headers {
         // Write the header row if --no-headers is false
         sorted_csv_wtr.write_byte_record(&headers)?;

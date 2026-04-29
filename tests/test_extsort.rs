@@ -114,3 +114,72 @@ fn extsort_issue_2391() {
     ];
     assert_eq!(got, expected);
 }
+
+#[test]
+fn extsort_csvmode_no_headers() {
+    // Guards the no-headers CSV-mode path: every input row must appear
+    // exactly once in the output. Previously, hard-coding position_delta=1
+    // duplicated the first row and dropped the last.
+    let wrk = Workdir::new("extsort_csvmode_no_headers").flexible(true);
+    wrk.clear_contents().unwrap();
+
+    let csv = "9\n2\n5\n1\n7\n4\n8\n3\n6\n";
+    wrk.create_from_string("nh.csv", csv);
+
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg("nh.csv");
+    wrk.assert_success(&mut idx_cmd);
+
+    let mut cmd = wrk.command("extsort");
+    cmd.arg("nh.csv")
+        .args(["--select", "1"])
+        .arg("--no-headers");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["1"],
+        svec!["2"],
+        svec!["3"],
+        svec!["4"],
+        svec!["5"],
+        svec!["6"],
+        svec!["7"],
+        svec!["8"],
+        svec!["9"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn extsort_csvmode_crlf_no_headers() {
+    // Guards CRLF + no-headers + CSV mode: combines the two paths the
+    // earlier off-by-one fixes regressed individually.
+    let wrk = Workdir::new("extsort_csvmode_crlf_no_headers").flexible(true);
+    wrk.clear_contents().unwrap();
+
+    let csv = "9\r\n2\r\n5\r\n1\r\n7\r\n4\r\n8\r\n3\r\n6\r\n";
+    wrk.create_from_string("nh_crlf.csv", csv);
+
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg("nh_crlf.csv");
+    wrk.assert_success(&mut idx_cmd);
+
+    let mut cmd = wrk.command("extsort");
+    cmd.arg("nh_crlf.csv")
+        .args(["--select", "1"])
+        .arg("--no-headers");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["1"],
+        svec!["2"],
+        svec!["3"],
+        svec!["4"],
+        svec!["5"],
+        svec!["6"],
+        svec!["7"],
+        svec!["8"],
+        svec!["9"],
+    ];
+    assert_eq!(got, expected);
+}

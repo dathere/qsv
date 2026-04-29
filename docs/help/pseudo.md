@@ -80,7 +80,7 @@ qsv pseudo --help
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 | &nbsp;`‑‑start`&nbsp; | string | The starting number for the incremental identifier. | `0` |
-| &nbsp;`‑‑increment`&nbsp; | string | The increment for the incremental identifier. | `1` |
+| &nbsp;`‑‑increment`&nbsp; | string | The increment for the incremental identifier. Must be greater than 0. | `1` |
 | &nbsp;`‑‑formatstr`&nbsp; | string | The format string for the incremental identifier. The format string must contain a single "{}" which will be replaced with the incremental identifier. | `{}` |
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. |  |

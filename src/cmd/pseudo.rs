@@ -54,6 +54,7 @@ Common options:
     --start <number>        The starting number for the incremental identifier.
                             [default: 0]
     --increment <number>    The increment for the incremental identifier.
+                            Must be greater than 0.
                             [default: 1]
     --formatstr <template>  The format string for the incremental identifier.
                             The format string must contain a single "{}" which
@@ -123,9 +124,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         wtr.write_record(&headers)?;
     }
 
+    let increment = args.flag_increment;
+    if increment == 0 {
+        return fail_incorrectusage_clierror!("--increment must be greater than 0.");
+    }
+
     let mut record = csv::StringRecord::new();
     let mut counter: u64 = args.flag_start;
-    let increment = args.flag_increment;
     let mut curr_counter: u64 = 0;
     let mut overflowed = false;
 
@@ -135,18 +140,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         while rdr.read_record(&mut record)? {
             let value = record[column_index].to_owned();
-            let new_value = values_num.entry(value.clone()).or_insert_with(|| {
+            // refuse to allocate a new pseudonym once the counter has overflowed,
+            // but continue serving previously-assigned ones
+            if overflowed && !values_num.contains_key(&value) {
+                return fail_incorrectusage_clierror!(
+                    "Counter overflow: incrementing past u64::MAX ({}). Last valid counter: \
+                     {curr_counter}.",
+                    u64::MAX
+                );
+            }
+            let new_value = values_num.entry(value).or_insert_with(|| {
                 curr_counter = counter;
                 (counter, overflowed) = counter.overflowing_add(increment);
                 curr_counter
             });
-            if overflowed {
-                return fail_incorrectusage_clierror!(
-                    "Overflowed. The counter is larger than u64::MAX {}. The last valid counter \
-                     is {curr_counter}.",
-                    u64::MAX
-                );
-            }
             record = replace_column_value(&record, column_index, &new_value.to_string());
 
             wtr.write_record(&record)?;
@@ -170,9 +177,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut values = Values::with_capacity(1000);
         while rdr.read_record(&mut record)? {
             let value = record[column_index].to_owned();
+            // refuse to allocate a new pseudonym once the counter has overflowed,
+            // but continue serving previously-assigned ones
+            if overflowed && !values.contains_key(&value) {
+                return fail_incorrectusage_clierror!(
+                    "Counter overflow: incrementing past u64::MAX ({}). Last valid counter: \
+                     {curr_counter}.",
+                    u64::MAX
+                );
+            }
 
             // safety: we checked that the format string contains "{}"
-            let new_value = values.entry(value.clone()).or_insert_with(|| {
+            let new_value = values.entry(value).or_insert_with(|| {
                 curr_counter = counter;
                 (counter, overflowed) = counter.overflowing_add(increment);
                 dynfmt2::SimpleCurlyFormat
@@ -180,13 +196,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     .unwrap()
                     .to_string()
             });
-            if overflowed {
-                return fail_incorrectusage_clierror!(
-                    "Overflowed. The counter is larger than u64::MAX({}). The last valid counter \
-                     is {curr_counter}.",
-                    u64::MAX
-                );
-            }
 
             record = replace_column_value(&record, column_index, new_value);
             wtr.write_record(&record)?;

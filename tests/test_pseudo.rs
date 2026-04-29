@@ -175,6 +175,7 @@ fn pseudo_overflow() {
             svec!["Sue", "orange"],
             svec!["John", "magenta"],
             svec!["Mary", "cyan"],
+            svec!["Bob", "teal"],
         ],
     );
     let close_to_max = std::u64::MAX - 10;
@@ -186,19 +187,43 @@ fn pseudo_overflow() {
         .arg("data.csv");
 
     wrk.assert_err(&mut cmd);
+    // Sue gets the last valid counter (u64::MAX) and is written. Repeats of
+    // Mary/John continue to resolve from the cache. Bob would need a new
+    // pseudonym after the counter overflowed, so the command errors there.
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["name", "colors"],
         svec!["ID-18446744073709551605", "yellow"],
         svec!["ID-18446744073709551610", "blue"],
         svec!["ID-18446744073709551605", "purple"],
+        svec!["ID-18446744073709551615", "orange"],
+        svec!["ID-18446744073709551610", "magenta"],
+        svec!["ID-18446744073709551605", "cyan"],
     ];
     assert_eq!(got, expected);
 
     let got_err = wrk.output_stderr(&mut cmd);
     assert_eq!(
         got_err,
-        "usage error: Overflowed. The counter is larger than u64::MAX(18446744073709551615). The \
-         last valid counter is 18446744073709551615.\n"
+        "usage error: Counter overflow: incrementing past u64::MAX (18446744073709551615). Last \
+         valid counter: 18446744073709551615.\n"
+    );
+}
+
+#[test]
+fn pseudo_increment_zero_rejected() {
+    let wrk = Workdir::new("pseudo_increment_zero_rejected");
+    wrk.create(
+        "data.csv",
+        vec![svec!["name"], svec!["Mary"], svec!["John"]],
+    );
+    let mut cmd = wrk.command("pseudo");
+    cmd.arg("name").args(["--increment", "0"]).arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+    let got_err = wrk.output_stderr(&mut cmd);
+    assert!(
+        got_err.contains("--increment must be greater than 0"),
+        "stderr was: {got_err}"
     );
 }

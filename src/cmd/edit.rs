@@ -199,17 +199,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Persist the edited tempfile to input_path. Since the tempfile lives
         // in the same directory as the input, this is an atomic same-fs rename.
         // The window between this and the rename above is two same-dir rename
-        // syscalls — much smaller than the prior copy, but not zero.
+        // syscalls — much smaller than the prior copy, but not zero. We accept
+        // the small window rather than copy-then-persist (which would halve
+        // throughput on every successful edit by doubling disk I/O); the only
+        // loser is a concurrent reader hitting ENOENT.
+        // NOTE: the rollback branch below is not covered by an automated test
+        // — reliably forcing tempfile.persist to fail after a successful rename
+        // requires platform-specific filesystem manipulation.
         if let Err(e) = tempfile.persist(&input_path) {
             // Best-effort rollback: restore the original from the backup we
             // just took, so the user isn't left without input_path.
-            let _ = std::fs::rename(&backup_path, &input_path);
+            let recovery = match std::fs::rename(&backup_path, &input_path) {
+                Ok(()) => format!("original restored from {}", backup_path.display()),
+                Err(rollback_err) => format!(
+                    "rollback also failed ({}); original remains at {}",
+                    rollback_err,
+                    backup_path.display()
+                ),
+            };
             return fail_clierror!(
-                "Failed to install edited file at {}: {}. Backup at {} (restored if rollback \
-                 succeeded).",
+                "Failed to install edited file at {}: {}. {}.",
                 input_path.display(),
                 e.error,
-                backup_path.display()
+                recovery
             );
         }
     } else if !row_matched {

@@ -193,8 +193,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             },
             Err(e) => return Err(e.into()),
         }
-        // Move input over our placeholder. std::fs::rename replaces the
-        // destination on all platforms.
+        // Move input over our placeholder. std::fs::rename is documented to
+        // replace the destination on all platforms (per std docs: "This
+        // function will replace the destination file if it already exists.").
+        // On Windows, this is backed by FileRenameInfoEx on supported
+        // filesystems and by MoveFileEx with REPLACE_EXISTING otherwise — the
+        // only case rename refuses to overwrite is directory-on-directory,
+        // which doesn't apply here since our placeholder is a regular file.
         std::fs::rename(&input_path, &backup_path)?;
         // Persist the edited tempfile to input_path. Since the tempfile lives
         // in the same directory as the input, this is an atomic same-fs rename.

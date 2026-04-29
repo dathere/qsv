@@ -219,8 +219,10 @@ fn sort_csv(
 
     let mut sorted_csv_wtr = Config::new(args.arg_output.as_ref()).writer()?;
 
-    // idx_position.record() is 1-indexed when headers are present and
-    // 0-indexed without; subtract accordingly to get the 0-indexed seek key.
+    // idx_position.record() is always a 0-based count of records read.
+    // When headers are present, the header row is record 0, so the first data
+    // record is 1; without headers, the first data record is 0. Subtract 1
+    // only in the headered case to get the 0-based seek key for data records.
     let position_delta: u64 = u64::from(!args.flag_no_headers);
     if !args.flag_no_headers {
         // Write the header row if --no-headers is false

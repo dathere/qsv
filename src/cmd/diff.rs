@@ -264,7 +264,11 @@ fn parse_indices_or_colnames(
             .split(',')
             .map(str::parse::<usize>)
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|err| CliError::Other(err.to_string()));
+            .map_err(|err| {
+                CliError::IncorrectUsage(format!(
+                    "Invalid {kind} column index list '{s}': {err}"
+                ))
+            });
     }
 
     let left_indices = s.col_names_to_indices(',', headers_left, "left")?;

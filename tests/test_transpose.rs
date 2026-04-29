@@ -824,9 +824,11 @@ fn transpose_long_format_stdin() {
 
     let mut child = cmd.spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
-    std::thread::spawn(move || {
-        stdin.write_all(stdin_data.as_bytes()).unwrap();
-    });
+    // Small payload — write on the current thread and drop stdin to signal EOF
+    // to the child. (Avoid a detached writer thread that could panic on
+    // BrokenPipe and complicate failure diagnosis.)
+    stdin.write_all(stdin_data.as_bytes()).unwrap();
+    drop(stdin);
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success());
 

@@ -272,7 +272,15 @@ impl Args {
         // No `.populate()` here on purpose — `--multipass` exists to avoid loading
         // the whole dataset into memory, so we let the OS page in lazily.
         let file = File::open(self.arg_input.as_ref().unwrap())?;
-        // safety: caller ensured we have a file input (input_is_stdin == false).
+        // safety: `run()` only routes here when `input_is_stdin == false`, so
+        // `arg_input` names an on-disk file that can be memory-mapped. The
+        // `file` binding stays in scope for the rest of this function and all
+        // uses of `mmap` are confined to the same scope, so the file handle
+        // outlives the mapping. We open the file read-only and only ever read
+        // from `&mmap[..]` to feed CSV parsers across passes — this command
+        // does not mutate or truncate the file. As with any file-backed mmap,
+        // soundness still relies on no other process concurrently truncating
+        // or otherwise mutating the file while the mapping is live.
         let mmap = unsafe { MmapOptions::new().map(&file)? };
 
         let rconfig = self.rconfig();

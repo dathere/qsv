@@ -458,7 +458,7 @@ fn transpose_long_format_no_columns_selected() {
 
     // Verify the error message mentions no columns selected
     let stderr: String = wrk.output_stderr(&mut cmd);
-    let expected = "Column selection error: Selector regex '^nonexistent' does not match any \
+    let expected = "--long selection error: Selector regex '^nonexistent' does not match any \
                     columns in the CSV header.\n";
     assert_eq!(stderr, expected);
 }
@@ -774,6 +774,71 @@ fn transpose_select_single_column() {
     let expected = vec![svec!["b", "2", "5"]];
 
     wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_format_mixed_empty_values() {
+    // Verifies that empty values are skipped *selectively* — non-empty values
+    // on the same row still emit output rows.
+    let wrk = Workdir::new("transpose_long_format_mixed_empty_values");
+
+    let wide_format = vec![
+        svec!["field", "type", "sum", "min", "max"],
+        svec!["name", "String", "", "Alice", ""],
+        svec!["age", "", "104", "", "53"],
+    ];
+
+    wrk.create("in.csv", wide_format);
+
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", "1"]).arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    let expected = vec![
+        svec!["field", "attribute", "value"],
+        svec!["name", "type", "String"],
+        svec!["name", "min", "Alice"],
+        svec!["age", "sum", "104"],
+        svec!["age", "max", "53"],
+    ];
+
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn transpose_long_format_stdin() {
+    // --long mode should work with stdin input.
+    use std::io::Write;
+
+    let wrk = Workdir::new("transpose_long_format_stdin");
+
+    let stdin_data = "field,type,sum,min\nname,String,,Alice\nage,Integer,104,6\n";
+
+    let mut cmd = wrk.command("transpose");
+    cmd.args(["--long", "1"]).arg("-");
+    cmd.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    std::thread::spawn(move || {
+        stdin.write_all(stdin_data.as_bytes()).unwrap();
+    });
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+
+    let got = String::from_utf8_lossy(&output.stdout);
+    let expected = concat!(
+        "field,attribute,value\n",
+        "name,type,String\n",
+        "name,min,Alice\n",
+        "age,type,Integer\n",
+        "age,sum,104\n",
+        "age,min,6\n",
+    );
     assert_eq!(got, expected);
 }
 

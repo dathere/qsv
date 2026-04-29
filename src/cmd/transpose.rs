@@ -45,7 +45,7 @@ transpose options:
                            Output format is three columns:
                            field, attribute, value. Empty values are skipped.
                            Mutually exclusive with --multipass.
-                           
+
                            The <selection> argument is REQUIRED when using --long,
                            it specifies which column(s) to use as the "field" identifier.
                            It uses the same selection syntax as 'qsv select':
@@ -120,6 +120,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 }
 
 impl Args {
+    /// Resolve --select against the given header record.
+    /// Returns Ok(None) when --select was not specified.
+    fn parse_select(&self, headers: &ByteRecord) -> CliResult<Option<Vec<usize>>> {
+        let Some(ref sel) = self.flag_select else {
+            return Ok(None);
+        };
+        let selection = sel
+            .selection(headers, true)
+            .map_err(|e| CliError::Other(format!("--select error: {e}")))?;
+        if selection.is_empty() {
+            return fail_incorrectusage_clierror!("--select resulted in no columns to transpose.");
+        }
+        Ok(Some(selection.iter().copied().collect()))
+    }
+
     fn wide_to_long(&self) -> CliResult<()> {
         let mut rdr = Config::new(self.arg_input.as_ref())
             .delimiter(self.flag_delimiter)
@@ -127,49 +142,37 @@ impl Args {
             .reader()?;
         let mut wtr = self.wconfig().writer()?;
 
-        // Read headers
         let headers = rdr.byte_headers()?.clone();
         if headers.is_empty() {
             return fail_incorrectusage_clierror!("CSV file must have at least one column.");
         }
 
-        // Determine which columns to use as field columns
-        let field_column_indices: Vec<usize> = if let Some(ref selection_str) = self.flag_long {
-            let select_cols = SelectColumns::parse(selection_str)
-                .map_err(|e| CliError::Other(format!("Invalid column selection: {e}")))?;
-            let selection = select_cols
-                .selection(&headers, true)
-                .map_err(|e| CliError::Other(format!("Column selection error: {e}")))?;
-            if selection.is_empty() {
+        // --long is required by docopt; defensively report a usage error if absent.
+        let selection_str = match self.flag_long.as_deref() {
+            Some(s) => s,
+            None => {
                 return fail_incorrectusage_clierror!(
-                    "Column selection resulted in no columns. At least one field column is \
-                     required."
+                    "--long requires a column selection argument."
                 );
-            }
-            selection.iter().copied().collect()
-        } else {
-            unreachable!("Should not happen as docopt --long <selection> is required.");
+            },
         };
-
-        // Create a set of field column indices for efficient lookup
+        let select_cols = SelectColumns::parse(selection_str)
+            .map_err(|e| CliError::Other(format!("--long parse error: {e}")))?;
+        let selection = select_cols
+            .selection(&headers, true)
+            .map_err(|e| CliError::Other(format!("--long selection error: {e}")))?;
+        if selection.is_empty() {
+            return fail_incorrectusage_clierror!(
+                "--long resulted in no columns. At least one field column is required."
+            );
+        }
+        let field_column_indices: Vec<usize> = selection.iter().copied().collect();
         let field_column_set: HashSet<usize> = field_column_indices.iter().copied().collect();
 
-        // Determine selected attribute columns if --select is specified
         // --select filters which columns become attribute rows (field columns are unaffected)
-        let selected_attribute_set: Option<HashSet<usize>> = if let Some(ref sel) = self.flag_select
-        {
-            let selection = sel
-                .selection(&headers, true)
-                .map_err(|e| CliError::Other(format!("Column selection error: {e}")))?;
-            if selection.is_empty() {
-                return fail_incorrectusage_clierror!(
-                    "--select resulted in no columns to transpose."
-                );
-            }
-            Some(selection.iter().copied().collect())
-        } else {
-            None
-        };
+        let selected_attribute_set: Option<HashSet<usize>> = self
+            .parse_select(&headers)?
+            .map(|v| v.into_iter().collect());
 
         // Write output headers
         let mut header_record = ByteRecord::with_capacity(64, 3);
@@ -178,59 +181,48 @@ impl Args {
         header_record.push_field(b"value");
         wtr.write_byte_record(&header_record)?;
 
-        // Process each record in a streaming fashion to avoid loading all records into memory
+        // Reusable buffers (allocated once, reused per row).
+        let multi_field = field_column_indices.len() > 1;
+        let mut field_buf: Vec<u8> = Vec::with_capacity(256);
         let mut output_record = ByteRecord::with_capacity(256, 3);
-        for result in rdr.byte_records() {
-            let record = result?;
-            if record.is_empty() {
-                continue;
-            }
+        let mut data_record = ByteRecord::new();
 
-            // Build the field value (concatenated if multiple columns)
-            let field_bytes: Vec<u8> = if field_column_indices.len() == 1 {
-                // Single field column - use directly
-                let idx = field_column_indices[0];
-                if idx < record.len() {
-                    record[idx].to_vec()
-                } else {
-                    Vec::new()
-                }
-            } else {
-                // Multiple field columns - concatenate with | separator
-                let mut concatenated = Vec::new();
+        while rdr.read_byte_record(&mut data_record)? {
+            // Build the field key — borrow the slice for the single-column case to
+            // avoid an allocation per row; concatenate into a reused buffer otherwise.
+            let field_slice: &[u8] = if multi_field {
+                field_buf.clear();
                 for (i, &idx) in field_column_indices.iter().enumerate() {
                     if i > 0 {
-                        concatenated.push(b'|');
+                        field_buf.push(b'|');
                     }
-                    if idx < record.len() {
-                        concatenated.extend_from_slice(&record[idx]);
+                    if let Some(v) = data_record.get(idx) {
+                        field_buf.extend_from_slice(v);
                     }
                 }
-                concatenated
+                &field_buf
+            } else {
+                data_record.get(field_column_indices[0]).unwrap_or(b"")
             };
 
             // Iterate through all columns, skipping field columns and non-selected columns
             for (i, attribute_header) in headers.iter().enumerate() {
-                // Skip if this is a field column
                 if field_column_set.contains(&i) {
                     continue;
                 }
-                // Skip if --select is specified and this column is not in the selection
                 if let Some(ref sel_set) = selected_attribute_set
                     && !sel_set.contains(&i)
                 {
                     continue;
                 }
-                if i < record.len() {
-                    let value = &record[i];
-                    // Skip empty values
-                    if !value.is_empty() {
-                        output_record.clear();
-                        output_record.push_field(&field_bytes);
-                        output_record.push_field(attribute_header);
-                        output_record.push_field(value);
-                        wtr.write_byte_record(&output_record)?;
-                    }
+                if let Some(value) = data_record.get(i)
+                    && !value.is_empty()
+                {
+                    output_record.clear();
+                    output_record.push_field(field_slice);
+                    output_record.push_field(attribute_header);
+                    output_record.push_field(value);
+                    wtr.write_byte_record(&output_record)?;
                 }
             }
         }
@@ -247,20 +239,20 @@ impl Args {
             return self.multipass_transpose_streaming();
         }
 
-        // Get selected column indices if --select is specified
-        let selected_indices = self.get_selected_indices()?;
-
         let mut rdr = self.rconfig().reader()?;
         let mut wtr = self.wconfig().writer()?;
-        let nrows = rdr.byte_headers()?.len();
 
+        // The reader is configured with no_headers(true), so the first record IS the
+        // input CSV's header row — we need it to participate in the transpose AND to
+        // resolve --select by column name. Collect everything once.
         let all = rdr.byte_records().collect::<Result<Vec<_>, _>>()?;
+        let ncols = all.first().map_or(0, ByteRecord::len);
 
-        // Determine which column indices to transpose
-        let indices: Vec<usize> = match &selected_indices {
-            Some(sel) => sel.clone(),
-            None => (0..nrows).collect(),
-        };
+        let empty_rec = ByteRecord::new();
+        let headers_for_select = all.first().unwrap_or(&empty_rec);
+        let indices: Vec<usize> = self
+            .parse_select(headers_for_select)?
+            .unwrap_or_else(|| (0..ncols).collect());
 
         let mut record = ByteRecord::with_capacity(1024, all.len());
         for i in indices {
@@ -276,34 +268,37 @@ impl Args {
     }
 
     fn multipass_transpose_streaming(&self) -> CliResult<()> {
-        // Get selected column indices if --select is specified
-        let selected_indices = self.get_selected_indices()?;
-
-        // Get the number of columns from the first row
-        let nrows = self.rconfig().reader()?.byte_headers()?.len();
-
-        // Determine which column indices to transpose
-        let indices: Vec<usize> = match &selected_indices {
-            Some(sel) => sel.clone(),
-            None => (0..nrows).collect(),
-        };
-
-        // Memory map the file for efficient access
+        // Memory map the file for efficient cross-pass access.
+        // No `.populate()` here on purpose — `--multipass` exists to avoid loading
+        // the whole dataset into memory, so we let the OS page in lazily.
         let file = File::open(self.arg_input.as_ref().unwrap())?;
-        // safety: we know we have a file input at this stage
-        let mmap = unsafe { MmapOptions::new().populate().map(&file)? };
-        let mut wtr = self.wconfig().writer()?;
+        // safety: caller ensured we have a file input (input_is_stdin == false).
+        let mmap = unsafe { MmapOptions::new().map(&file)? };
 
-        let mut record = ByteRecord::with_capacity(1024, nrows);
+        let rconfig = self.rconfig();
+
+        // Read the first record to determine column count & resolve --select. This
+        // also serves as the header row for name-based selection.
+        let mut header_rdr = rconfig.from_reader(&mmap[..]);
+        let mut headers = ByteRecord::new();
+        let _ = header_rdr.read_byte_record(&mut headers)?;
+        let ncols = headers.len();
+        drop(header_rdr);
+
+        let indices: Vec<usize> = self
+            .parse_select(&headers)?
+            .unwrap_or_else(|| (0..ncols).collect());
+
+        let mut wtr = self.wconfig().writer()?;
+        let mut record = ByteRecord::with_capacity(1024, ncols);
 
         for i in indices {
             record.clear();
 
-            // Create a reader from the memory-mapped data
-            // this is more efficient for large files as we reduce I/O
-            let mut rdr = self.rconfig().from_reader(&mmap[..]);
-
-            // Read all rows for this column
+            // Restart parsing of the mmap'd CSV for this output column.
+            // The mmap stays mapped across passes, so we get page-cache locality
+            // rather than re-reading bytes from disk.
+            let mut rdr = rconfig.from_reader(&mmap[..]);
             for row in rdr.byte_records() {
                 let row = row?;
                 if i < row.len() {
@@ -316,31 +311,9 @@ impl Args {
         Ok(wtr.flush()?)
     }
 
-    /// Compute which column indices should be transposed based on the --select flag.
-    /// Returns None if no selection was specified (meaning all columns).
-    fn get_selected_indices(&self) -> CliResult<Option<Vec<usize>>> {
-        if let Some(ref sel) = self.flag_select {
-            // Read headers with no_headers(false) to get actual column names
-            let mut rdr = Config::new(self.arg_input.as_ref())
-                .delimiter(self.flag_delimiter)
-                .no_headers(false)
-                .reader()?;
-            let headers = rdr.byte_headers()?.clone();
-            let selection = sel
-                .selection(&headers, true)
-                .map_err(|e| CliError::Other(format!("Column selection error: {e}")))?;
-            if selection.is_empty() {
-                return fail_incorrectusage_clierror!(
-                    "--select resulted in no columns to transpose."
-                );
-            }
-            Ok(Some(selection.iter().copied().collect()))
-        } else {
-            Ok(None)
-        }
-    }
-
     fn wconfig(&self) -> Config {
+        // Wide rows after transpose can be very large; bump the write buffer
+        // to amortize syscalls.
         Config::new(self.flag_output.as_ref()).set_write_buffer(DEFAULT_WTR_BUFFER_CAPACITY * 20)
     }
 

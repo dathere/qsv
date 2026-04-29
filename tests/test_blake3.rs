@@ -400,3 +400,78 @@ fn blake3_check_invalid_hex() {
 
     wrk.assert_err(&mut cmd);
 }
+
+#[test]
+fn blake3_check_uppercase_hex() {
+    // Checksum file containing uppercase hex must verify OK; the comparison
+    // is ASCII-case-insensitive so files produced by tools that emit
+    // uppercase hashes still round-trip.
+    let wrk = Workdir::new("blake3_check_uppercase_hex");
+    wrk.create_from_string("hello.txt", "hello");
+
+    // Generate the (lowercase) checksum first, then uppercase the hash half.
+    let mut cmd = wrk.command("blake3");
+    cmd.arg(wrk.path("hello.txt"));
+    let checksum_line: String = wrk.stdout(&mut cmd);
+    let (hash, rest) = checksum_line.split_once("  ").expect("two-space separator");
+    let upper_line = format!("{}  {}", hash.to_uppercase(), rest);
+
+    let checksum_path = wrk.path("checksums.txt");
+    fs::write(&checksum_path, format!("{upper_line}\n")).unwrap();
+
+    let mut cmd = wrk.command("blake3");
+    cmd.arg("--check").arg(&checksum_path);
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert!(
+        got.contains("OK"),
+        "uppercase hex should verify OK, got: {got}"
+    );
+}
+
+#[test]
+fn blake3_check_binary_mode_separator() {
+    // `<hash> *<filename>` (single space + asterisk) is the standard *sum
+    // binary-mode separator; check_mode must accept it alongside the
+    // two-space text-mode separator.
+    let wrk = Workdir::new("blake3_check_binary_mode_separator");
+    wrk.create_from_string("hello.txt", "hello");
+
+    // Generate the checksum (text-mode default), then rewrite to binary mode.
+    let mut cmd = wrk.command("blake3");
+    cmd.arg(wrk.path("hello.txt"));
+    let checksum_line: String = wrk.stdout(&mut cmd);
+    let (hash, filename) = checksum_line.split_once("  ").expect("two-space separator");
+    let binary_line = format!("{hash} *{filename}");
+
+    let checksum_path = wrk.path("checksums.txt");
+    fs::write(&checksum_path, format!("{binary_line}\n")).unwrap();
+
+    let mut cmd = wrk.command("blake3");
+    cmd.arg("--check").arg(&checksum_path);
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert!(
+        got.contains("OK"),
+        "binary-mode separator should verify OK, got: {got}"
+    );
+}
+
+#[test]
+fn blake3_check_malformed_separator() {
+    // A line that is neither `<hash>  <filename>` (two spaces) nor
+    // `<hash> *<filename>` (single space + asterisk) must error.
+    let wrk = Workdir::new("blake3_check_malformed_separator");
+    wrk.create_from_string("hello.txt", "hello");
+
+    // 64-char valid hex but with a single plain space (no asterisk) — neither format.
+    let checksum_path = wrk.path("checksums.txt");
+    let hash = "a".repeat(64);
+    let hello_path = wrk.path("hello.txt").to_string_lossy().to_string();
+    fs::write(&checksum_path, format!("{hash} {hello_path}\n")).unwrap();
+
+    let mut cmd = wrk.command("blake3");
+    cmd.arg("--check").arg(&checksum_path);
+
+    wrk.assert_err(&mut cmd);
+}

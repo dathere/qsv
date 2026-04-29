@@ -308,8 +308,11 @@ fn parse_standard_line(line: &str) -> CliResult<(String, String)> {
 
 /// Parse a BSD-style tag line: `BLAKE3 (filename) = hash`
 fn parse_tag_line(line: &str) -> CliResult<(String, String)> {
-    // Caller already verified the `BLAKE3 (` prefix, so strip_prefix cannot fail here.
-    let rest = &line["BLAKE3 (".len()..];
+    // Caller (check_mode) gates on `line.starts_with("BLAKE3 (")` before
+    // dispatching here, so this strip_prefix is infallible by contract.
+    let rest = line
+        .strip_prefix("BLAKE3 (")
+        .expect("parse_tag_line: caller must verify BLAKE3 ( prefix");
     if let Some((filename, hash)) = rest.rsplit_once(") = ") {
         Ok((hash.to_string(), filename.to_string()))
     } else {

@@ -131,14 +131,12 @@ fn sort_csv(
         .select(args.flag_select.clone().unwrap());
 
     let mut idxfile = match rconfig.indexed() {
-        Ok(idx) => {
-            if idx.is_none() {
-                return fail_incorrectusage_clierror!("extsort CSV mode requires an index");
-            }
-            idx.unwrap()
-        },
-        _ => {
+        Ok(Some(idx)) => idx,
+        Ok(None) => {
             return fail_incorrectusage_clierror!("extsort CSV mode requires an index");
+        },
+        Err(e) => {
+            return fail_incorrectusage_clierror!("extsort CSV mode requires an index: {e}");
         },
     };
 
@@ -151,7 +149,6 @@ fn sort_csv(
     let sel = rconfig.selection(&headers)?;
 
     let mut sort_key = String::with_capacity(20);
-    let mut utf8_string = String::with_capacity(20);
     let mut curr_row = csv::ByteRecord::new();
 
     let rowcount = idxfile.count();
@@ -167,9 +164,7 @@ fn sort_csv(
             if let Ok(s_utf8) = simdutf8::basic::from_utf8(field) {
                 sort_key.push_str(s_utf8);
             } else {
-                utf8_string.clear();
-                utf8_string.push_str(&String::from_utf8_lossy(field));
-                sort_key.push_str(&utf8_string);
+                sort_key.push_str(&String::from_utf8_lossy(field));
             }
         }
         let idx_position = curr_row.position().unwrap();
@@ -177,6 +172,9 @@ fn sort_csv(
         writeln!(line_wtr, "{sort_key}|{:01$}", idx_position.line(), width)?;
     }
     line_wtr.flush()?;
+    // Drop the writer so its handle on the temp file is released before
+    // we re-open the same path for reading (Windows file-sharing safety).
+    drop(line_wtr);
 
     let line_rdr = io::BufReader::with_capacity(
         RW_BUFFER_CAPACITY,
@@ -204,12 +202,16 @@ fn sort_csv(
     let mut sorted_line_wtr =
         io::BufWriter::with_capacity(RW_BUFFER_CAPACITY, sorted_tfile.as_file());
 
-    for item in sorted.map(Result::unwrap) {
+    for item in sorted {
+        let item = item.map_err(|e| {
+            crate::clitypes::CliError::Other(format!("cannot read sorted item: {e}"))
+        })?;
         sorted_line_wtr.write_all(format!("{item}\n").as_bytes())?;
     }
     sorted_line_wtr.flush()?;
+    // Drop the writer before re-opening the path for reading below.
+    drop(sorted_line_wtr);
     // Delete the temporary file containing unsorted lines
-    drop(line_wtr);
     linewtr_tfile.close()?;
 
     // now write the sorted CSV file by reading the sorted_line temp file
@@ -231,10 +233,9 @@ fn sort_csv(
 
     // amortize allocations
     let mut record_wrk = csv::ByteRecord::new();
-    let mut line = String::new();
 
     for l in sorted_line_rdr.lines() {
-        line.clone_from(&l?);
+        let line = l?;
         let Ok(position) =
             atoi_simd::parse::<u64, false, false>(&line.as_bytes()[line.len() - width..])
         else {
@@ -246,7 +247,6 @@ fn sort_csv(
         sorted_csv_wtr.write_byte_record(&record_wrk)?;
     }
     sorted_csv_wtr.flush()?;
-    drop(sorted_line_wtr);
     sorted_tfile.close()?;
 
     Ok(())
@@ -316,7 +316,10 @@ fn sort_lines(
         output_wtr.write_all(format!("{}\n", header.trim_end()).as_bytes())?;
     }
 
-    for item in sorted.map(Result::unwrap) {
+    for item in sorted {
+        let item = item.map_err(|e| {
+            crate::clitypes::CliError::Other(format!("cannot read sorted item: {e}"))
+        })?;
         output_wtr.write_all(format!("{item}\n").as_bytes())?;
     }
     output_wtr.flush()?;

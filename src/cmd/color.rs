@@ -43,7 +43,6 @@ use csv::ByteRecord;
 use serde::Deserialize;
 use strum_macros::EnumString;
 use terminal_colorsaurus::{QueryOptions, ThemeMode, theme_mode};
-use textwrap;
 
 use crate::{
     CliResult,
@@ -68,7 +67,6 @@ struct Args {
 
 struct ColorStruct<'a> {
     colors:      Option<&'a Colors>,
-    headers:     ByteRecord,
     layout:      Vec<usize>,
     pipe:        String,
     records:     Vec<ByteRecord>,
@@ -733,49 +731,47 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // edge case
         return Ok(());
     }
-    let headers = &records[0];
-    if headers.is_empty() {
+    let headers_len = records[0].len();
+    if headers_len == 0 {
         // edge case
         return Ok(());
     }
 
-    //
-    // ColorStruct (our state)
-    //
-
-    let mut color_struct = ColorStruct {
-        headers:     headers.clone(),
-        records:     records.clone(),
-        row_numbers: args.flag_row_numbers,
-        // these get setup later
-        colors:      None,
-        layout:      Vec::new(),
-        pipe:        String::new(),
-    };
-    let mut fill_buffer = String::new();
-
     // measure the maximum width for each column. Never <2 chars
-    let mut columns: Vec<usize> = vec![2; color_struct.headers.len()];
+    let mut columns: Vec<usize> = vec![2; headers_len];
     for rec in &records {
         for (idx, field) in rec.iter().enumerate() {
             columns[idx] = columns[idx].max(field_width(field));
         }
     }
-    if color_struct.row_numbers {
+    if args.flag_row_numbers {
         // prepend row number column
-        columns.insert(0, num_digits(color_struct.records.len() - 1).max(RN_WIDTH));
+        columns.insert(0, num_digits(records.len() - 1).max(RN_WIDTH));
     }
-    color_struct.colors = match get_theme(qsv_theme()) {
+    let colors = match get_theme(qsv_theme()) {
         Theme::Dark => Some(&COLORS_DARK),
         Theme::Light => Some(&COLORS_LIGHT),
         Theme::None => None,
     };
-    color_struct.layout = autolayout(&columns, get_termwidth());
-    color_struct.pipe = if let Some(colors) = color_struct.colors {
+    let layout = autolayout(&columns, get_termwidth());
+    let pipe = if let Some(colors) = colors {
         format!("{}", StyledContent::new(colors.chrome, PIPE))
     } else {
         PIPE.to_string()
     };
+
+    //
+    // ColorStruct (our state)
+    //
+
+    let color_struct = ColorStruct {
+        colors,
+        layout,
+        pipe,
+        records,
+        row_numbers: args.flag_row_numbers,
+    };
+    let mut fill_buffer = String::new();
 
     //
     // write
@@ -795,7 +791,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         render_sep(&mut out, &color_struct, (NW, N, NE))?;
     }
 
-    for (idx, _) in records.iter().enumerate() {
+    for idx in 0..color_struct.records.len() {
         render_row(&mut out, &color_struct, idx, &mut fill_buffer)?;
         if idx == 0 {
             render_sep(&mut out, &color_struct, (W, C, E))?;

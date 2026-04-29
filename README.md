@@ -31,7 +31,7 @@
 | [blake3](docs/help/blake3.md)<br>🚀 | Compute or check [BLAKE3](https://github.com/BLAKE3-team/BLAKE3/?tab=readme-ov-file#blake3) hashes of files. |
 | [cat](docs/help/cat.md)<br>🗄️ | Concatenate CSV files by row or by column. |
 | [clipboard](docs/help/clipboard.md)✨<br>🖥️ | Provide input from the clipboard or save output to the clipboard. |
-| [color](docs/help/color.md)✨<br>🐻‍❄️🖥️ | Outputs tabular data as a pretty, colorized table that always fits into the terminal. Apart from CSV and its dialects, Arrow, Avro/IPC, Parquet, JSON array & JSONL formats are supported with the "polars" feature. |
+| [color](docs/help/color.md)✨<br>🤯🐻‍❄️🖥️ | Outputs tabular data as a pretty, colorized table that always fits into the terminal. Apart from CSV and its dialects, Arrow, Avro/IPC, Parquet, JSON array & JSONL formats are supported with the "polars" feature. |
 | [count](docs/help/count.md)<br>📇🏎️🐻‍❄️ | Count the rows and optionally compile record width statistics of a CSV file. (11.87 seconds for a 15gb, 28m row NYC 311 dataset without an index. Instantaneous with an index.) If the `polars` feature is enabled, uses Polars' multithreaded, mem-mapped CSV reader for fast counts even without an index |
 | [datefmt](docs/help/datefmt.md)<br>📇🚀👆 | Formats recognized date fields ([19 formats recognized](https://docs.rs/qsv-dateparser/latest/qsv_dateparser/#accepted-date-formats)) to a specified date format using [strftime date format specifiers](https://docs.rs/chrono/latest/chrono/format/strftime/). |
 | [dedup](docs/help/dedup.md)<br>🤯🚀👆 | Remove duplicate rows (See also `extdedup`, `extsort`, `sort` & `sortcheck` commands). |

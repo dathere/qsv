@@ -51,8 +51,9 @@ input options:
     --skip-lastlines <arg>   The number of epilogue CSV records to skip.
     --trim-headers           Trim leading & trailing whitespace & quotes from header values.
     --trim-fields            Trim leading & trailing whitespace from field values.
-    --comment <char>         The comment character to use (ASCII only). When set,
-                             lines starting with this character will be skipped.
+    --comment <char>         The comment character to use (single-byte; only the
+                             first byte of the UTF-8 encoding is matched). When set,
+                             lines starting with this byte will be skipped.
     --encoding-errors <arg>  How to handle UTF-8 encoding errors.
                              Possible values: replace, skip, strict.
                                replace: Replace invalid UTF-8 sequences with �.
@@ -124,7 +125,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     if args.flag_auto_skip {
-        if args.arg_input.is_none() {
+        if matches!(args.arg_input.as_deref(), None | Some("-")) {
             return fail_incorrectusage_clierror!("--auto-skip does not work with <stdin>.");
         }
         // safety: we are in single-threaded code.
@@ -134,7 +135,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let comment_char: Option<u8> = env::var("QSV_COMMENT_CHAR")
         .ok()
         .and_then(|s| s.as_bytes().first().copied())
-        .or_else(|| args.flag_comment.map(|c| c as u8));
+        .or_else(|| {
+            args.flag_comment.map(|c| {
+                let mut buf = [0u8; 4];
+                c.encode_utf8(&mut buf).as_bytes()[0]
+            })
+        });
 
     let mut rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
@@ -221,6 +227,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             str_row.push_field(String::from_utf8_lossy(field).trim_matches('"'));
         }
         wtr.write_record(&str_row)?;
+        // The header was consumed/written outside the main loop. The loop's
+        // `idx > total_lines` cutoff counts only records read inside the loop,
+        // so subtract 1 from total_lines to keep --skip-lastlines accurate.
+        if total_lines > 0 {
+            total_lines = total_lines.saturating_sub(1);
+        }
     }
 
     let mut idx = 1_u64;

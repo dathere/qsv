@@ -478,3 +478,25 @@ fn input_headertrim() {
     ];
     assert_eq!(got, expected);
 }
+
+#[test]
+fn input_autoskip_rejects_stdin_implicit() {
+    let wrk = Workdir::new("input_autoskip_rejects_stdin_implicit");
+
+    let mut cmd = wrk.command("input");
+    cmd.arg("--auto-skip");
+
+    let got_stderr = wrk.output_stderr(&mut cmd);
+    assert!(got_stderr.contains("--auto-skip does not work with <stdin>"));
+}
+
+#[test]
+fn input_autoskip_rejects_stdin_dash() {
+    let wrk = Workdir::new("input_autoskip_rejects_stdin_dash");
+
+    let mut cmd = wrk.command("input");
+    cmd.arg("--auto-skip").arg("-");
+
+    let got_stderr = wrk.output_stderr(&mut cmd);
+    assert!(got_stderr.contains("--auto-skip does not work with <stdin>"));
+}

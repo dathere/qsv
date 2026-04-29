@@ -1718,12 +1718,12 @@ fn split_filter_cleanup_without_filter_rejected() {
         .arg("in.csv");
     wrk.assert_err(&mut cmd);
 
-    let mut cmd2 = wrk.command("split");
-    cmd2.args(["--size", "2"])
+    let mut cmd_2 = wrk.command("split");
+    cmd_2.args(["--size", "2"])
         .arg("--filter-ignore-errors")
         .arg(&wrk.path("."))
         .arg("in.csv");
-    wrk.assert_err(&mut cmd2);
+    wrk.assert_err(&mut cmd_2);
 }
 
 #[test]

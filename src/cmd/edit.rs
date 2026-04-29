@@ -152,16 +152,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         let input_path = std::path::Path::new(&input_path_string);
         let backup_path = input_path.with_added_extension("bak");
-        if backup_path.exists() {
-            return fail_clierror!(
-                "Backup file {} already exists; refusing to overwrite.",
-                backup_path.display()
-            );
+        // Atomically reserve the backup path via hard_link so a concurrent
+        // process can't slip in between an existence check and the rename.
+        match std::fs::hard_link(input_path, &backup_path) {
+            Ok(()) => {},
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                return fail_clierror!(
+                    "Backup file {} already exists; refusing to overwrite.",
+                    backup_path.display()
+                );
+            },
+            Err(e) => return Err(e.into()),
         }
-        std::fs::rename(input_path, &backup_path)?;
+        std::fs::remove_file(input_path)?;
         std::fs::copy(tempfile.path(), input_path)?;
     } else if !row_matched {
-        eprintln!("Warning: row {row} not found; output is unchanged.");
+        eprintln!("Warning: row {row} not found; input passed through unchanged.");
     }
 
     Ok(())

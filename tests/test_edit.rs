@@ -172,6 +172,10 @@ fn edit_row_out_of_range_warns_on_stdout() {
     cmd.arg("99");
     cmd.arg("3");
 
+    let got_stderr = wrk.output_stderr(&mut cmd);
+    assert!(got_stderr.contains("row 99 not found"));
+    assert!(got_stderr.contains("input passed through unchanged"));
+
     let got: String = wrk.stdout(&mut cmd);
     let expected = "letter,number\na,1\nb,2".to_string();
     assert_eq!(got, expected);

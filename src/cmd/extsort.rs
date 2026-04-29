@@ -136,7 +136,7 @@ fn sort_csv(
             return fail_incorrectusage_clierror!("extsort CSV mode requires an index");
         },
         Err(e) => {
-            return fail_incorrectusage_clierror!("extsort CSV mode requires an index: {e}");
+            return fail_clierror!("could not load index for extsort CSV mode: {e}");
         },
     };
 

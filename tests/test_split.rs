@@ -790,18 +790,19 @@ fn split_kbsize_boston_5k() {
         .arg(test_file);
     wrk.run(&mut cmd);
 
-    assert!(wrk.path("0.csv").exists());
-    assert!(wrk.path("11.csv").exists());
-    assert!(wrk.path("19.csv").exists());
-    assert!(wrk.path("27.csv").exists());
-    assert!(wrk.path("36.csv").exists());
-    assert!(wrk.path("45.csv").exists());
-    assert!(wrk.path("52.csv").exists());
-    assert!(wrk.path("61.csv").exists());
-    assert!(wrk.path("70.csv").exists());
-    assert!(wrk.path("78.csv").exists());
-    assert!(wrk.path("86.csv").exists());
-    assert!(wrk.path("95.csv").exists());
+    let chunks = [
+        "0", "12", "21", "30", "40", "49", "58", "68", "77", "86", "96",
+    ];
+    for stem in chunks {
+        let p = wrk.path(&format!("{stem}.csv"));
+        assert!(p.exists(), "expected chunk {stem}.csv to exist");
+        // Each chunk must respect the 5KB (5120 byte) budget.
+        let len = std::fs::metadata(&p).unwrap().len();
+        assert!(
+            len <= 5 * 1024,
+            "chunk {stem}.csv is {len} bytes; exceeds 5KB"
+        );
+    }
 }
 
 #[test]
@@ -818,17 +819,16 @@ fn split_kbsize_boston_5k_padded() {
     wrk.run(&mut cmd);
 
     assert!(wrk.path("testme-000.csv").exists());
-    assert!(wrk.path("testme-011.csv").exists());
-    assert!(wrk.path("testme-019.csv").exists());
-    assert!(wrk.path("testme-027.csv").exists());
-    assert!(wrk.path("testme-036.csv").exists());
-    assert!(wrk.path("testme-045.csv").exists());
-    assert!(wrk.path("testme-052.csv").exists());
-    assert!(wrk.path("testme-061.csv").exists());
-    assert!(wrk.path("testme-070.csv").exists());
-    assert!(wrk.path("testme-078.csv").exists());
+    assert!(wrk.path("testme-012.csv").exists());
+    assert!(wrk.path("testme-021.csv").exists());
+    assert!(wrk.path("testme-030.csv").exists());
+    assert!(wrk.path("testme-040.csv").exists());
+    assert!(wrk.path("testme-049.csv").exists());
+    assert!(wrk.path("testme-058.csv").exists());
+    assert!(wrk.path("testme-068.csv").exists());
+    assert!(wrk.path("testme-077.csv").exists());
     assert!(wrk.path("testme-086.csv").exists());
-    assert!(wrk.path("testme-095.csv").exists());
+    assert!(wrk.path("testme-096.csv").exists());
 }
 
 #[test]
@@ -844,16 +844,15 @@ fn split_kbsize_boston_5k_no_headers() {
     wrk.run(&mut cmd);
 
     assert!(wrk.path("0.csv").exists());
-    assert!(wrk.path("12.csv").exists());
-    assert!(wrk.path("21.csv").exists());
-    assert!(wrk.path("29.csv").exists());
-    assert!(wrk.path("39.csv").exists());
-    assert!(wrk.path("48.csv").exists());
-    assert!(wrk.path("56.csv").exists());
-    assert!(wrk.path("66.csv").exists());
-    assert!(wrk.path("76.csv").exists());
-    assert!(wrk.path("84.csv").exists());
-    assert!(wrk.path("93.csv").exists());
+    assert!(wrk.path("13.csv").exists());
+    assert!(wrk.path("22.csv").exists());
+    assert!(wrk.path("31.csv").exists());
+    assert!(wrk.path("42.csv").exists());
+    assert!(wrk.path("51.csv").exists());
+    assert!(wrk.path("61.csv").exists());
+    assert!(wrk.path("72.csv").exists());
+    assert!(wrk.path("82.csv").exists());
+    assert!(wrk.path("92.csv").exists());
 }
 
 #[test]
@@ -1133,15 +1132,15 @@ fn split_filter_with_kb_size() {
     wrk.assert_success(&mut cmd);
     // Check that at least some of the original files were created
     assert!(wrk.path("0.csv").exists());
-    assert!(wrk.path("11.csv").exists());
+    assert!(wrk.path("12.csv").exists());
 
     // Check that at least some of the filtered files were created
     assert!(wrk.path("0.bak").exists());
-    assert!(wrk.path("11.bak").exists());
+    assert!(wrk.path("12.bak").exists());
 
     // Verify the content of the filtered files matches the original files
     split_eq!(wrk, "0.bak", wrk.from_str::<String>(&wrk.path("0.csv")));
-    split_eq!(wrk, "11.bak", wrk.from_str::<String>(&wrk.path("11.csv")));
+    split_eq!(wrk, "12.bak", wrk.from_str::<String>(&wrk.path("12.csv")));
 }
 
 #[test]
@@ -1658,4 +1657,202 @@ id,name,value
 99,item_99,value_99
 "
     );
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests for review fixes:
+//   B1 — `--chunks 0` rejected on indexed inputs.
+//   B2 — empty input + `--filter` no longer underflows in sequential split.
+//   B3 — `--kb-size` with header larger than the budget returns a clean error.
+//   B4 — kb-size chunks always stay within the budget, even with variable row sizes.
+//   U1 — `--filter-cleanup` / `--filter-ignore-errors` require `--filter`.
+//   U2 — `--kb-size 0` rejected.
+//   U3 — empty input no longer creates a phantom kb-size chunk.
+//   B5/U-extra — multi-word filter commands are passed verbatim to the shell.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn split_chunks_zero_rejected() {
+    // Regression: parallel_split previously divided by zero; both code paths
+    // (sequential and parallel) must reject `--chunks 0`.
+    let wrk = Workdir::new("split_chunks_zero_rejected");
+    wrk.create("in.csv", data(true));
+
+    let mut cmd = wrk.command("split");
+    cmd.args(["--chunks", "0"])
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.assert_err(&mut cmd);
+
+    // also exercise the indexed path
+    wrk.create_indexed("in_idx.csv", data(true));
+    let mut cmd = wrk.command("split");
+    cmd.args(["--chunks", "0"])
+        .arg(&wrk.path("."))
+        .arg("in_idx.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn split_kb_size_zero_rejected() {
+    let wrk = Workdir::new("split_kb_size_zero_rejected");
+    wrk.create("in.csv", data(true));
+
+    let mut cmd = wrk.command("split");
+    cmd.args(["--kb-size", "0"])
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn split_filter_cleanup_without_filter_rejected() {
+    // Regression: --filter-cleanup without --filter was silently ignored.
+    let wrk = Workdir::new("split_filter_cleanup_without_filter_rejected");
+    wrk.create("in.csv", data(true));
+
+    let mut cmd = wrk.command("split");
+    cmd.args(["--size", "2"])
+        .arg("--filter-cleanup")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.assert_err(&mut cmd);
+
+    let mut cmd2 = wrk.command("split");
+    cmd2.args(["--size", "2"])
+        .arg("--filter-ignore-errors")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.assert_err(&mut cmd2);
+}
+
+#[test]
+fn split_kb_size_header_too_large_rejected() {
+    // Regression: header larger than --kb-size used to underflow the budget.
+    let wrk = Workdir::new("split_kb_size_header_too_large_rejected");
+    let mut wide_header: Vec<String> = Vec::new();
+    for i in 0..400 {
+        wide_header.push(format!("col_{i:04}"));
+    }
+    let row: Vec<String> = (0..400).map(|i| format!("v{i:04}")).collect();
+    wrk.create("in.csv", vec![wide_header.clone(), row.clone(), row]);
+
+    // 1KB budget vs. ~3KB+ header should produce a clean error.
+    let mut cmd = wrk.command("split");
+    cmd.args(["--kb-size", "1"])
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn split_kb_size_variable_rows_under_budget() {
+    // Regression for B4: after a chunk rollover the budget tracker used the
+    // wrong row's size, which could allow chunks to over- or under-shoot the
+    // requested kb-size when row widths vary.  Build a CSV that mixes short
+    // and long rows so any miscount surfaces.
+    let wrk = Workdir::new("split_kb_size_variable_rows_under_budget");
+    let mut rows: Vec<Vec<String>> = vec![svec!["id", "payload"]];
+    for i in 0..200 {
+        // Alternate 50-byte and 800-byte payloads.
+        let payload = if i % 2 == 0 {
+            "x".repeat(50)
+        } else {
+            "y".repeat(800)
+        };
+        rows.push(vec![format!("{i}"), payload]);
+    }
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("split");
+    cmd.args(["--kb-size", "2"])
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.run(&mut cmd);
+
+    // Every chunk file must be within budget. Check every numeric-prefixed
+    // .csv file in the workdir (skip the input "in.csv").
+    let budget = 2 * 1024;
+    let mut chunks_seen = 0usize;
+    for entry in std::fs::read_dir(wrk.path(".")).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name == "in.csv" || !name.ends_with(".csv") {
+            continue;
+        }
+        let stem = name.trim_end_matches(".csv");
+        if stem.parse::<u64>().is_err() {
+            continue;
+        }
+        chunks_seen += 1;
+        let len = entry.metadata().unwrap().len();
+        assert!(
+            len <= budget,
+            "chunk {name} is {len} bytes; exceeds {budget}-byte budget"
+        );
+    }
+    assert!(
+        chunks_seen > 1,
+        "expected multiple chunks, got {chunks_seen}"
+    );
+}
+
+#[test]
+fn split_empty_input_sequential() {
+    // Regression for B2/U3: empty input plus --filter must not underflow.
+    let wrk = Workdir::new("split_empty_input_sequential");
+    wrk.create("in.csv", vec![svec!["h1", "h2"]]);
+
+    let mut cmd = wrk.command("split");
+    if cfg!(windows) {
+        cmd.args(["--size", "10"])
+            .arg("--filter")
+            .arg("copy /Y %FILE% {}.bak")
+            .arg(&wrk.path("."))
+            .arg("in.csv");
+    } else {
+        cmd.args(["--size", "10"])
+            .arg("--filter")
+            .arg("cp $FILE {}.bak")
+            .arg(&wrk.path("."))
+            .arg("in.csv");
+    }
+    wrk.run(&mut cmd);
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn split_empty_input_kb_size() {
+    let wrk = Workdir::new("split_empty_input_kb_size");
+    wrk.create("in.csv", vec![svec!["h1", "h2"]]);
+
+    let mut cmd = wrk.command("split");
+    cmd.args(["--kb-size", "5"])
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.run(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    // The first chunk is created (empty body) so the path exists, but we don't
+    // create a phantom second chunk — and the run must not error.
+    assert!(wrk.path("0.csv").exists());
+}
+
+#[test]
+#[cfg(not(windows))]
+fn split_filter_multiword_command() {
+    // Regression for B5: even on Unix, ensure that filter commands containing
+    // multiple words and shell metacharacters survive the round-trip.
+    let wrk = Workdir::new("split_filter_multiword_command");
+    wrk.create("in.csv", data(true));
+
+    let mut cmd = wrk.command("split");
+    cmd.args(["--size", "2"])
+        .arg("--filter")
+        .arg("sh -c 'cp \"$FILE\" \"$FILE.bak\"'")
+        .arg(&wrk.path("."))
+        .arg("in.csv");
+    wrk.run(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert!(wrk.path("0.csv.bak").exists());
 }

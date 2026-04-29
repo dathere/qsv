@@ -70,20 +70,21 @@ qsv split . -s 100 input.csv
 qsv split outdir --kb-size 1000 input.csv
 ```
 
-> Read from stdin and create files like mysplitoutput_0.csv, mysplitoutput_1000.csv, etc.
+> Read from stdin and create files like 0.csv, 1000.csv, etc. in the directory
+> 'mysplitoutput', creating it if it does not exist.
 
 ```console
 cat in.csv | qsv split mysplitoutput -s 1000
 ```
 
-> Create 10 files with names like 0.csv, 1000.csv, etc. in the directory 'outdir',
+> Split into 10 chunks. Files are named with the zero-based starting row index
+> of each chunk (e.g. 0.csv, N.csv, 2N.csv, ...) in the directory 'outdir'.
 
 ```console
 qsv split outdir --chunks 10 input.csv
 ```
 
-> Create 10 files with names like splitoutdir_0.csv, splitoutdir_1000.csv, etc.
-> using 4 parallel jobs. Note that the input CSV must have an index
+> Same, using 4 parallel jobs. Note that the input CSV must have an index.
 
 ```console
 qsv split splitoutdir -c 10 -j 4 input.csv

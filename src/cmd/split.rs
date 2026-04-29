@@ -42,14 +42,15 @@ Examples:
   # to 1000KB in size.
   qsv split outdir --kb-size 1000 input.csv
 
-  # Read from stdin and create files like mysplitoutput_0.csv, mysplitoutput_1000.csv, etc.
+  # Read from stdin and create files like 0.csv, 1000.csv, etc. in the directory
+  # 'mysplitoutput', creating it if it does not exist.
   cat in.csv | qsv split mysplitoutput -s 1000
 
-  # Create 10 files with names like 0.csv, 1000.csv, etc. in the directory 'outdir',
+  # Split into 10 chunks. Files are named with the zero-based starting row index
+  # of each chunk (e.g. 0.csv, N.csv, 2N.csv, ...) in the directory 'outdir'.
   qsv split outdir --chunks 10 input.csv
 
-  # Create 10 files with names like splitoutdir_0.csv, splitoutdir_1000.csv, etc.
-  # using 4 parallel jobs. Note that the input CSV must have an index
+  # Same, using 4 parallel jobs. Note that the input CSV must have an index.
   qsv split splitoutdir -c 10 -j 4 input.csv
 
   # This will create files with names like 0.csv, 100.csv, etc. in the directory
@@ -128,7 +129,6 @@ Common options:
 
 use std::{fs, io, path::Path, process::Command};
 
-use dunce;
 use log::debug;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::Deserialize;
@@ -162,6 +162,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
     if args.flag_size == 0 {
         return fail_incorrectusage_clierror!("--size must be greater than 0.");
+    }
+    if let Some(0) = args.flag_chunks {
+        return fail_incorrectusage_clierror!("--chunks must be greater than 0.");
+    }
+    if let Some(0) = args.flag_kb_size {
+        return fail_incorrectusage_clierror!("--kb-size must be greater than 0.");
+    }
+
+    // --filter-cleanup and --filter-ignore-errors only make sense with --filter
+    if args.flag_filter.is_none() && (args.flag_filter_cleanup || args.flag_filter_ignore_errors) {
+        return fail_incorrectusage_clierror!(
+            "--filter-cleanup and --filter-ignore-errors require --filter to be set."
+        );
     }
 
     // check if outdir is set correctly
@@ -215,71 +228,74 @@ impl Args {
         let header_byte_size = if self.flag_no_headers {
             0
         } else {
-            let mut headerbuf_wtr = csv::WriterBuilder::new().from_writer(vec![]);
+            let mut headerbuf_wtr = csv::WriterBuilder::new().from_writer(Vec::with_capacity(256));
             headerbuf_wtr.write_byte_record(&headers)?;
 
-            // safety: we know the inner vec is valid
+            // safety: vec writer cannot fail to flush/finalize
             headerbuf_wtr.into_inner().unwrap().len()
         };
 
-        let mut wtr = self.new_writer(&headers, 0, self.flag_pad)?;
-        let mut i = 0;
-        let mut num_chunks = 0;
-        let mut chunk_start = 0; // Track the start index of current chunk
-        let mut row = csv::ByteRecord::new();
         let chunk_size_bytes = chunk_size * 1024;
-        let mut chunk_size_bytes_left = chunk_size_bytes - header_byte_size;
+        if chunk_size_bytes <= header_byte_size {
+            return fail_incorrectusage_clierror!(
+                "--kb-size {chunk_size}KB ({chunk_size_bytes} bytes) is too small to fit the \
+                 header row ({header_byte_size} bytes). Increase --kb-size or use --no-headers."
+            );
+        }
 
-        let mut not_empty = rdr.read_byte_record(&mut row)?;
-        let mut curr_size_bytes;
-        let mut next_size_bytes;
-        wtr.write_byte_record(&row)?;
+        let mut wtr = self.new_writer(&headers, 0, self.flag_pad)?;
+        let mut i: usize = 0; // total data rows processed
+        let mut num_chunks: usize = 1; // we always create chunk 0
+        let mut chunk_start: usize = 0;
+        let mut chunk_used_bytes = header_byte_size;
 
-        while not_empty {
-            let mut buf_curr_wtr = csv::WriterBuilder::new().from_writer(vec![]);
-            buf_curr_wtr.write_byte_record(&row)?;
+        let mut row = csv::ByteRecord::new();
+        // Reusable buffer to measure CSV-encoded row sizes without allocating per row.
+        let mut measure_buf: Vec<u8> = Vec::with_capacity(256);
 
-            curr_size_bytes = buf_curr_wtr.into_inner().unwrap().len();
-
-            not_empty = rdr.read_byte_record(&mut row)?;
-            next_size_bytes = if not_empty {
-                let mut buf_next_wtr = csv::WriterBuilder::new().from_writer(vec![]);
-                buf_next_wtr.write_byte_record(&row)?;
-
-                buf_next_wtr.into_inner().unwrap().len()
-            } else {
-                0
+        while rdr.read_byte_record(&mut row)? {
+            // Measure the CSV-encoded size of `row` using a reusable buffer.
+            let row_size = {
+                measure_buf.clear();
+                let mut m = csv::WriterBuilder::new().from_writer(&mut measure_buf);
+                m.write_byte_record(&row)?;
+                m.flush()?;
+                drop(m);
+                measure_buf.len()
             };
 
-            if curr_size_bytes + next_size_bytes >= chunk_size_bytes_left {
+            // Roll over if adding this row would exceed the budget. Always allow
+            // at least one data row per chunk (otherwise an oversized row would
+            // loop forever with empty chunks).
+            if chunk_used_bytes + row_size > chunk_size_bytes && chunk_used_bytes > header_byte_size
+            {
                 wtr.flush()?;
-                // Run filter command if specified
                 if self.flag_filter.is_some() {
                     self.run_filter_command(chunk_start, self.flag_pad)?;
                 }
-                chunk_start = i; // Set start index for next chunk
+                chunk_start = i;
                 wtr = self.new_writer(&headers, i, self.flag_pad)?;
-                chunk_size_bytes_left = chunk_size_bytes - header_byte_size;
+                chunk_used_bytes = header_byte_size;
                 num_chunks += 1;
             }
-            if next_size_bytes > 0 {
-                wtr.write_byte_record(&row)?;
-                chunk_size_bytes_left -= curr_size_bytes;
-                i += 1;
-            }
+
+            wtr.write_byte_record(&row)?;
+            chunk_used_bytes += row_size;
+            i += 1;
         }
         wtr.flush()?;
-        // Run filter command for the last chunk if specified
-        if self.flag_filter.is_some() {
+        // Run filter for the final chunk only if it actually received data rows.
+        if self.flag_filter.is_some() && i > 0 {
             self.run_filter_command(chunk_start, self.flag_pad)?;
         }
 
         if !self.flag_quiet {
             eprintln!(
-                "Wrote chunk/s to '{}'. Size/chunk: <= {}KB; Num chunks: {}",
+                "Wrote {} chunk/s to '{}'. Size/chunk: <= {}KB; Num records: {}",
+                num_chunks,
                 dunce::canonicalize(Path::new(&self.arg_outdir))?.display(),
                 chunk_size,
-                num_chunks + 1
+                i
             );
         }
 
@@ -321,8 +337,10 @@ impl Args {
             i += 1;
         }
         wtr.flush()?;
-        // Run filter command for the last chunk if specified
-        if self.flag_filter.is_some() {
+        // Run filter command for the last chunk if specified.
+        // Skip when input had zero data rows: the unconditional new_writer above
+        // already created (an empty) `0.csv`, but `i == 0` would underflow below.
+        if self.flag_filter.is_some() && i > 0 {
             // Calculate the start index for the last chunk
             let last_chunk_start = ((i - 1) / chunk_size) * chunk_size;
             self.run_filter_command(last_chunk_start, self.flag_pad)?;
@@ -361,41 +379,35 @@ impl Args {
 
         util::njobs(self.flag_jobs);
 
-        // safety: we cannot use ? here because we're in a closure
-        (0..nchunks).into_par_iter().for_each(|i| {
-            let conf = self.rconfig();
-            // safety: safe to unwrap because we know the file is indexed
-            let mut idx = conf.indexed().unwrap().unwrap();
-            // safety: the only way this can fail is if the file first row of the chunk
-            // is not a valid CSV record, which is impossible because we're reading
-            // from a file with a valid index
-            let headers = idx.byte_headers().unwrap();
+        // Each worker writes its chunk independently; errors from any worker
+        // short-circuit the whole operation via try_for_each.
+        (0..nchunks)
+            .into_par_iter()
+            .try_for_each(|i| -> CliResult<()> {
+                let conf = self.rconfig();
+                // safety: indexed() returned Some at the call site; the index is
+                // guaranteed to exist because parallel_split is only entered when
+                // the caller observed a valid index. A failed re-open here is a
+                // genuine I/O error and should propagate.
+                let mut idx = conf.indexed()?.ok_or_else(|| {
+                    crate::CliError::Other("indexed CSV vanished during parallel split".to_string())
+                })?;
+                let headers = idx.byte_headers()?;
 
-            let mut wtr = self
-                // safety: the only way this can fail is if we cannot create a file
-                .new_writer(headers, i * chunk_size, self.flag_pad)
-                .unwrap();
+                let mut wtr = self.new_writer(headers, i * chunk_size, self.flag_pad)?;
 
-            // safety: we know that there is more than one chunk, so we can safely
-            // seek to the start of the chunk
-            idx.seek((i * chunk_size) as u64).unwrap();
-            let mut write_row;
-            for row in idx.byte_records().take(chunk_size) {
-                write_row = row.unwrap();
-                wtr.write_byte_record(&write_row).unwrap();
-            }
-            // safety: safe to unwrap because we know the writer is a file
-            // the only way this can fail is if we cannot write to the file
-            wtr.flush().unwrap();
-
-            // Run filter command if specified
-            if self.flag_filter.is_some() {
-                // We can't use ? here because we're in a closure
-                if let Err(e) = self.run_filter_command(i * chunk_size, self.flag_pad) {
-                    eprintln!("Error running filter command: {e}");
+                idx.seek((i * chunk_size) as u64)?;
+                for row in idx.byte_records().take(chunk_size) {
+                    let write_row = row?;
+                    wtr.write_byte_record(&write_row)?;
                 }
-            }
-        });
+                wtr.flush()?;
+
+                if self.flag_filter.is_some() {
+                    self.run_filter_command(i * chunk_size, self.flag_pad)?;
+                }
+                Ok(())
+            })?;
 
         if !self.flag_quiet {
             eprintln!(
@@ -475,13 +487,15 @@ impl Args {
                 },
             };
 
-            // Execute the command using the appropriate shell based on platform
+            // Execute the command using the appropriate shell based on platform.
+            // On Windows we pass the entire command as a single argument to `cmd /C`
+            // so that quoted arguments containing spaces are preserved (a previous
+            // implementation split on whitespace, which corrupted such commands).
             let status = if cfg!(windows) {
                 debug!("Running Windows command: cmd /C {cmd}");
-                let cmd_vec = cmd.split(' ').collect::<Vec<&str>>();
                 Command::new("cmd")
                     .arg("/C")
-                    .args(&cmd_vec)
+                    .arg(&cmd)
                     .current_dir(&canonical_outdir)
                     .env("FILE", path_str)
                     .status()

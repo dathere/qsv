@@ -172,14 +172,12 @@ fn sort_csv(
         writeln!(line_wtr, "{sort_key}|{:01$}", idx_position.line(), width)?;
     }
     line_wtr.flush()?;
-    // Drop the writer so its handle on the temp file is released before
-    // we re-open the same path for reading (Windows file-sharing safety).
     drop(line_wtr);
 
-    let line_rdr = io::BufReader::with_capacity(
-        RW_BUFFER_CAPACITY,
-        std::fs::File::open(linewtr_tfile.path())?,
-    );
+    // Re-open the temp file for reading via NamedTempFile::reopen() rather than
+    // File::open(path) so the read handle is obtained directly from tempfile —
+    // avoids any path-based race and is the idiomatic Windows-safe approach.
+    let line_rdr = io::BufReader::with_capacity(RW_BUFFER_CAPACITY, linewtr_tfile.reopen()?);
 
     let reverse_flag = args.flag_reverse;
     let compare = |a: &String, b: &String| {
@@ -209,7 +207,6 @@ fn sort_csv(
         sorted_line_wtr.write_all(format!("{item}\n").as_bytes())?;
     }
     sorted_line_wtr.flush()?;
-    // Drop the writer before re-opening the path for reading below.
     drop(sorted_line_wtr);
     // Delete the temporary file containing unsorted lines
     linewtr_tfile.close()?;
@@ -218,8 +215,7 @@ fn sort_csv(
     // and extracting the position from each line
     // and then using that to seek the input file to retrieve the record
     // and then write the record to the final sorted CSV
-    let sorted_lines = std::fs::File::open(sorted_tfile.path())?;
-    let sorted_line_rdr = io::BufReader::with_capacity(RW_BUFFER_CAPACITY, sorted_lines);
+    let sorted_line_rdr = io::BufReader::with_capacity(RW_BUFFER_CAPACITY, sorted_tfile.reopen()?);
 
     let mut sorted_csv_wtr = Config::new(args.arg_output.as_ref()).writer()?;
 

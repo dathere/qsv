@@ -225,20 +225,42 @@ impl Args {
         let mut rdr = rconfig.reader()?;
         let headers = rdr.byte_headers()?.clone();
 
-        // Helper: measure the CSV-encoded byte length of a record using the same
-        // writer settings that `new_writer` will use on disk. We go through
-        // `Config::from_writer` so that any future tweak to Config's quoting,
-        // terminator, or delimiter stays consistent between measurement and the
-        // produced chunk file. (BOM bytes, when QSV_OUTPUT_BOM is set, are
-        // emitted by both paths and cancel out for budget purposes — at worst
-        // they cause slightly earlier rollover, never an over-the-budget chunk.)
-        let measure_record = |record: &csv::ByteRecord| -> CliResult<usize> {
-            let mut buf: Vec<u8> = Vec::with_capacity(256);
-            let mut m = Config::new(None).from_writer(&mut buf);
+        // Build a representative chunk path (chunk-0) so the measurement Config
+        // resolves the same extension-driven settings as `new_writer` (e.g. a
+        // `--filename foo_{}.tsv` template uses tab delimiters). This way the
+        // budget tracker and the on-disk writer agree on per-record bytes even
+        // when the user picks a non-CSV extension or relies on extension-based
+        // sniffing.
+        let sample_chunk_path = Path::new(&self.arg_outdir)
+            .join(
+                self.flag_filename
+                    .filename(&format!("{:0>width$}", 0, width = self.flag_pad)),
+            )
+            .display()
+            .to_string();
+        let measure_cfg = Config::new(Some(&sample_chunk_path));
+
+        // `Config::from_writer` writes a UTF-8 BOM at writer construction when
+        // QSV_OUTPUT_BOM is set. The real chunk writer emits that BOM exactly
+        // once per file, so subtract it from each per-record measurement and
+        // re-add it once below when initializing per-chunk byte usage.
+        const UTF8_BOM_LEN: usize = 3;
+        let bom_overhead = if util::get_envvar_flag("QSV_OUTPUT_BOM") {
+            UTF8_BOM_LEN
+        } else {
+            0
+        };
+
+        // Single helper used for both header and per-row measurement. Reuses
+        // one buffer to avoid allocating per row.
+        let mut measure_buf: Vec<u8> = Vec::with_capacity(256);
+        let mut measure_record = |record: &csv::ByteRecord| -> CliResult<usize> {
+            measure_buf.clear();
+            let mut m = measure_cfg.from_writer(&mut measure_buf);
             m.write_byte_record(record)?;
             m.flush()?;
             drop(m);
-            Ok(buf.len())
+            Ok(measure_buf.len().saturating_sub(bom_overhead))
         };
 
         let header_byte_size = if self.flag_no_headers {
@@ -248,7 +270,9 @@ impl Args {
         };
 
         let chunk_size_bytes = chunk_size * 1024;
-        if chunk_size_bytes <= header_byte_size {
+        // Each chunk file actually contains: [BOM?] + header + rows.
+        let per_chunk_fixed_overhead = bom_overhead + header_byte_size;
+        if chunk_size_bytes <= per_chunk_fixed_overhead {
             return fail_incorrectusage_clierror!(
                 "--kb-size {chunk_size}KB ({chunk_size_bytes} bytes) is too small to fit the \
                  header row ({header_byte_size} bytes). Increase --kb-size or use --no-headers."
@@ -261,21 +285,11 @@ impl Args {
         let mut i: usize = 0; // total data rows processed
         let mut num_chunks: usize = 0;
         let mut chunk_start: usize = 0;
-        let mut chunk_used_bytes = header_byte_size;
+        let mut chunk_used_bytes = per_chunk_fixed_overhead;
         let mut row = csv::ByteRecord::new();
-        // Per-row measurement buffer reused between reads.
-        let mut measure_buf: Vec<u8> = Vec::with_capacity(256);
 
         while rdr.read_byte_record(&mut row)? {
-            // Measure the CSV-encoded size of `row` using the shared writer settings.
-            let row_size = {
-                measure_buf.clear();
-                let mut m = Config::new(None).from_writer(&mut measure_buf);
-                m.write_byte_record(&row)?;
-                m.flush()?;
-                drop(m);
-                measure_buf.len()
-            };
+            let row_size = measure_record(&row)?;
 
             let need_new_chunk = match &wtr {
                 None => true,
@@ -284,7 +298,7 @@ impl Args {
                 // single row would loop forever with empty chunks).
                 Some(_) => {
                     chunk_used_bytes + row_size > chunk_size_bytes
-                        && chunk_used_bytes > header_byte_size
+                        && chunk_used_bytes > per_chunk_fixed_overhead
                 },
             };
 
@@ -297,7 +311,7 @@ impl Args {
                     chunk_start = i;
                 }
                 wtr = Some(self.new_writer(&headers, chunk_start, self.flag_pad)?);
-                chunk_used_bytes = header_byte_size;
+                chunk_used_bytes = per_chunk_fixed_overhead;
                 num_chunks += 1;
             }
 

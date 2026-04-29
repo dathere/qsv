@@ -1819,7 +1819,6 @@ fn split_empty_input_sequential() {
             .arg(&wrk.path("."))
             .arg("in.csv");
     }
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
 }
 
@@ -1832,7 +1831,6 @@ fn split_empty_input_kb_size() {
     cmd.args(["--kb-size", "5"])
         .arg(&wrk.path("."))
         .arg("in.csv");
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
     // Empty input must produce zero chunks (no phantom header-only file).
     assert!(!wrk.path("0.csv").exists());
@@ -1852,7 +1850,6 @@ fn split_filter_multiword_command() {
         .arg("sh -c 'cp \"$FILE\" \"$FILE.bak\"'")
         .arg(&wrk.path("."))
         .arg("in.csv");
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
     assert!(wrk.path("0.csv.bak").exists());
 }
@@ -1875,7 +1872,6 @@ fn split_filter_multiword_command_windows() {
         .arg("copy /Y %FILE% \"name with space.bak\"")
         .arg(&wrk.path("."))
         .arg("in.csv");
-    wrk.run(&mut cmd);
     wrk.assert_success(&mut cmd);
     assert!(wrk.path("name with space.bak").exists());
 }

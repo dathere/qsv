@@ -52,7 +52,7 @@ qsv edit --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑i,`<br>`‑‑in‑place`&nbsp; | flag | Overwrite the input file data with the output. The input file is renamed to a .bak file in the same directory. If the .bak file already exists, the command errors instead of overwriting it. |  |
+| &nbsp;`‑i,`<br>`‑‑in‑place`&nbsp; | flag | Overwrite the input file data with the output. The input file is renamed to a .bak file in the same directory. If the .bak file already exists, the command errors instead of overwriting it. Symlinks are rejected; pass the resolved path instead. |  |
 
 <a name="common-options"></a>
 

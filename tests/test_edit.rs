@@ -226,6 +226,33 @@ fn edit_unknown_column_name_errors() {
     assert!(got_stderr.contains("Invalid column selected."));
 }
 
+#[cfg(unix)]
+#[test]
+fn edit_in_place_rejects_symlink() {
+    let wrk = Workdir::new("edit_in_place_rejects_symlink");
+    wrk.create(
+        "real.csv",
+        vec![svec!["letter", "number"], svec!["a", "1"], svec!["b", "2"]],
+    );
+    std::os::unix::fs::symlink(wrk.path("real.csv"), wrk.path("link.csv")).unwrap();
+
+    let mut cmd = wrk.command("edit");
+    cmd.arg("link.csv");
+    cmd.arg("number");
+    cmd.arg("0");
+    cmd.arg("3");
+    cmd.arg("--in-place");
+
+    let got_stderr = wrk.output_stderr(&mut cmd);
+    assert!(got_stderr.contains("does not support symlinks"));
+
+    // real file untouched, no .bak created
+    let got_real = std::fs::read_to_string(wrk.path("real.csv")).unwrap();
+    assert_eq!(got_real, "letter,number\na,1\nb,2\n");
+    assert!(!wrk.path("real.csv.bak").exists());
+    assert!(!wrk.path("link.csv.bak").exists());
+}
+
 #[test]
 fn edit_in_place_existing_bak_errors() {
     let wrk = Workdir::new("edit_in_place_existing_bak_errors");

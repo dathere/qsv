@@ -41,6 +41,7 @@ edit options:
     -i, --in-place         Overwrite the input file data with the output.
                            The input file is renamed to a .bak file in the same directory.
                            If the .bak file already exists, the command errors instead of overwriting it.
+                           Symlinks are rejected; pass the resolved path instead.
 
 Common options:
     -h, --help             Display this message
@@ -76,17 +77,40 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let value = args.arg_value;
     let no_headers = args.flag_no_headers;
 
-    // --in-place needs a real on-disk path; reject stdin / unset input early.
-    if in_place && !matches!(input.as_deref(), Some(p) if p != "-") {
-        return fail_clierror!("--in-place requires an input file path (stdin is not supported).");
-    }
+    // --in-place needs a real, non-symlink on-disk path. Validate up front so
+    // we don't create a tempfile or do any work for an obviously-bad request.
+    let in_place_path = if in_place {
+        let p = match input.as_deref() {
+            Some(p) if p != "-" => std::path::PathBuf::from(p),
+            _ => {
+                return fail_clierror!(
+                    "--in-place requires an input file path (stdin is not supported).",
+                );
+            },
+        };
+        let metadata = std::fs::symlink_metadata(&p)?;
+        if metadata.file_type().is_symlink() {
+            return fail_clierror!(
+                "--in-place does not support symlinks; pass the resolved path instead.",
+            );
+        }
+        Some(p)
+    } else {
+        None
+    };
 
     // Build the CSV reader and iterate over each record.
     let conf = Config::new(input.as_ref()).no_headers(true);
     let mut rdr = conf.reader()?;
 
-    let mut tempfile = if in_place {
-        Some(NamedTempFile::new()?)
+    // Place the in-place tempfile in the same directory as the input so the
+    // final persist is a same-filesystem rename (atomic and fast).
+    let mut tempfile = if let Some(p) = in_place_path.as_ref() {
+        let parent = p
+            .parent()
+            .filter(|d| !d.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."));
+        Some(NamedTempFile::new_in(parent)?)
     } else {
         None
     };
@@ -146,16 +170,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // the input to .bak and replace it with an unchanged copy). For stdout/output
     // mode, warn but still emit the unchanged CSV so callers piping output get a
     // valid pass-through with exit 0.
-    if let (Some(tempfile), Some(input_path_string)) = (tempfile, input) {
+    if let (Some(tempfile), Some(input_path)) = (tempfile, in_place_path) {
         if !row_matched {
             return fail_clierror!("Row {row} not found.");
         }
-        let input_path = std::path::Path::new(&input_path_string);
         let backup_path = input_path.with_added_extension("bak");
-        // Atomically reserve the backup path via hard_link so a concurrent
+        // Atomically reserve the backup path with create_new so a concurrent
         // process can't slip in between an existence check and the rename.
-        match std::fs::hard_link(input_path, &backup_path) {
-            Ok(()) => {},
+        // Works on any filesystem (unlike hard_link, which fails on FAT/SMB).
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&backup_path)
+        {
+            Ok(_) => {},
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 return fail_clierror!(
                     "Backup file {} already exists; refusing to overwrite.",
@@ -164,8 +192,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             },
             Err(e) => return Err(e.into()),
         }
-        std::fs::remove_file(input_path)?;
-        std::fs::copy(tempfile.path(), input_path)?;
+        // Move input over our placeholder. std::fs::rename replaces the
+        // destination on all platforms.
+        std::fs::rename(&input_path, &backup_path)?;
+        // Persist the edited tempfile to input_path. Since the tempfile lives
+        // in the same directory as the input, this is an atomic same-fs rename
+        // — no window where input_path is missing.
+        tempfile.persist(&input_path).map_err(|e| e.error)?;
     } else if !row_matched {
         eprintln!("Warning: row {row} not found; input passed through unchanged.");
     }

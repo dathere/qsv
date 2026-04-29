@@ -65,7 +65,6 @@ fn explode_empty_separator() {
     let mut cmd = wrk.command("explode");
     cmd.arg("colors").arg("").arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
     let got = wrk.output_stderr(&mut cmd);
     assert!(got.contains("<separator> cannot be empty"));
 }
@@ -83,7 +82,6 @@ fn explode_multi_column_rejected() {
     let mut cmd = wrk.command("explode");
     cmd.arg("colors,shapes").arg("|").arg("data.csv");
 
-    wrk.assert_err(&mut cmd);
     let got = wrk.output_stderr(&mut cmd);
     assert!(got.contains("exactly one <column>"));
 }

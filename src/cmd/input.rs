@@ -44,15 +44,15 @@ input options:
                               NonNumeric: Quotes all fields that are non-numeric.
                               Never: Never write quotes. Even if it produces invalid CSV.
                              [default: necessary]
-    --skip-lines <arg>       The number of preamble lines to skip.
-    --auto-skip              Sniffs a CSV for preamble lines and automatically
+    --skip-lines <arg>       The number of preamble CSV records to skip.
+    --auto-skip              Sniffs a CSV for preamble records and automatically
                              skips them. Takes precedence over --skip-lines option.
                              Does not work with <stdin>.
-    --skip-lastlines <arg>   The number of epilogue lines to skip.
+    --skip-lastlines <arg>   The number of epilogue CSV records to skip.
     --trim-headers           Trim leading & trailing whitespace & quotes from header values.
     --trim-fields            Trim leading & trailing whitespace from field values.
-    --comment <char>         The comment character to use. When set, lines
-                             starting with this character will be skipped.
+    --comment <char>         The comment character to use (ASCII only). When set,
+                             lines starting with this character will be skipped.
     --encoding-errors <arg>  How to handle UTF-8 encoding errors.
                              Possible values: replace, skip, strict.
                                replace: Replace invalid UTF-8 sequences with �.
@@ -124,15 +124,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     if args.flag_auto_skip {
+        if args.arg_input.is_none() {
+            return fail_incorrectusage_clierror!("--auto-skip does not work with <stdin>.");
+        }
         // safety: we are in single-threaded code.
         unsafe { std::env::set_var("QSV_SNIFF_PREAMBLE", "1") };
     }
 
-    let comment_char: Option<u8> = if let Ok(cmt_char) = env::var("QSV_COMMENT_CHAR") {
-        Some(cmt_char.as_bytes().first().unwrap().to_owned())
-    } else {
-        args.flag_comment.map(|char| char as u8)
-    };
+    let comment_char: Option<u8> = env::var("QSV_COMMENT_CHAR")
+        .ok()
+        .and_then(|s| s.as_bytes().first().copied())
+        .or_else(|| args.flag_comment.map(|c| c as u8));
 
     let mut rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
@@ -179,7 +181,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "--skip-lastlines: {skip_llines} is greater than row_count: {row_count}."
             );
         }
-        info!("Set to skip last {skip_llines} lines...");
+        info!("Set to skip last {skip_llines} records...");
         row_count.saturating_sub(skip_llines)
     } else {
         0_u64
@@ -205,9 +207,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         for _i in 1..=preamble_rows {
             rdr.read_byte_record(&mut row)?;
         }
-        if total_lines.saturating_sub(preamble_rows) > 0 {
-            total_lines -= preamble_rows;
-        }
+        total_lines = total_lines.saturating_sub(preamble_rows);
     }
     // the first rdr record is the header, since we have no_headers = true.
     // If trim_setting is equal to Headers or All, we "manually" trim the first record
@@ -288,8 +288,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             EncodingHandling::Skip => warn!(
                 "Some fields contained invalid UTF-8 sequences. These fields set to \"<SKIPPED>\"."
             ),
-            // STRICT is unreachable because we return early if we encounter invalid UTF-8
-            EncodingHandling::Strict => unreachable!(),
+            // Strict returns early on invalid UTF-8, so not_utf8 is never true here.
+            EncodingHandling::Strict => {},
         }
     }
 

@@ -33,9 +33,14 @@ edit arguments:
     row                    The cell's row index. Indices start from the first non-header row as 0.
     value                  The new value to replace the old cell content with.
 
+If <row> is out of range:
+  - in stdout/--output mode, the input is passed through unchanged with a warning on stderr.
+  - in --in-place mode, the command errors and the input file is left untouched.
+
 edit options:
     -i, --in-place         Overwrite the input file data with the output.
                            The input file is renamed to a .bak file in the same directory.
+                           If the .bak file already exists, the command errors instead of overwriting it.
 
 Common options:
     -h, --help             Display this message
@@ -112,7 +117,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut record = csv::ByteRecord::new();
     #[allow(clippy::bool_to_int_with_if)]
     let mut current_row: usize = if no_headers { 1 } else { 0 };
-    let target_row = row + 1;
+    let Some(target_row) = row.checked_add(1) else {
+        return fail_clierror!("Row index too large.");
+    };
     let mut row_matched = false;
     while rdr.read_byte_record(&mut record)? {
         if current_row == target_row {
@@ -132,17 +139,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         current_row += 1;
     }
 
-    if !row_matched {
-        return fail_clierror!("Row {row} not found.");
-    }
-
     wtr.flush()?;
     drop(wtr);
 
+    // For in-place edits, missing rows are a hard error (we don't want to rename
+    // the input to .bak and replace it with an unchanged copy). For stdout/output
+    // mode, warn but still emit the unchanged CSV so callers piping output get a
+    // valid pass-through with exit 0.
     if let (Some(tempfile), Some(input_path_string)) = (tempfile, input) {
+        if !row_matched {
+            return fail_clierror!("Row {row} not found.");
+        }
         let input_path = std::path::Path::new(&input_path_string);
-        std::fs::rename(input_path, input_path.with_added_extension("bak"))?;
+        let backup_path = input_path.with_added_extension("bak");
+        if backup_path.exists() {
+            return fail_clierror!(
+                "Backup file {} already exists; refusing to overwrite.",
+                backup_path.display()
+            );
+        }
+        std::fs::rename(input_path, &backup_path)?;
         std::fs::copy(tempfile.path(), input_path)?;
+    } else if !row_matched {
+        eprintln!("Warning: row {row} not found; output is unchanged.");
     }
 
     Ok(())

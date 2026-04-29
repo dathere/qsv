@@ -480,6 +480,61 @@ fn input_headertrim() {
 }
 
 #[test]
+fn input_trim_headers_with_skip_lastlines() {
+    // Combines --trim-headers (consumes header outside the main loop) with
+    // --skip-lastlines (record-count cutoff). Locks in the off-by-one fix
+    // where total_lines must be decremented after the header is written
+    // outside the loop.
+    let wrk = Workdir::new("input_trim_headers_with_skip_lastlines");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec![" col1 ", " col2 "],
+            svec!["a", "1"],
+            svec!["b", "2"],
+            svec!["c", "3"],
+            svec!["epilogue", "z"],
+        ],
+    );
+
+    let mut cmd = wrk.command("input");
+    cmd.arg("--trim-headers")
+        .args(["--skip-lastlines", "1"])
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["col1", "col2"],
+        svec!["a", "1"],
+        svec!["b", "2"],
+        svec!["c", "3"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn input_trim_headers_skip_lastlines_boundary() {
+    // Boundary case: --skip-lastlines equals data-row-count, which after
+    // header-consumption leaves total_lines == 0. Without the
+    // skip_lastlines_active flag, total_lines == 0 was overloaded as "no
+    // cutoff" and would emit all data rows.
+    let wrk = Workdir::new("input_trim_headers_skip_lastlines_boundary");
+    wrk.create(
+        "data.csv",
+        vec![svec![" col1 ", " col2 "], svec!["a", "1"], svec!["b", "2"]],
+    );
+
+    let mut cmd = wrk.command("input");
+    cmd.arg("--trim-headers")
+        .args(["--skip-lastlines", "2"])
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["col1", "col2"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn input_autoskip_rejects_stdin_implicit() {
     let wrk = Workdir::new("input_autoskip_rejects_stdin_implicit");
 

@@ -132,6 +132,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         unsafe { std::env::set_var("QSV_SNIFF_PREAMBLE", "1") };
     }
 
+    // Take the first UTF-8 byte for both env-var and flag paths so the two
+    // sources behave identically. `c as u8` would truncate the Unicode scalar
+    // (e.g. 'é' (U+00E9) → 0xE9), which differs from the env-var path's first
+    // UTF-8 byte (0xC3 for 'é') and would silently mismatch.
     let comment_char: Option<u8> = env::var("QSV_COMMENT_CHAR")
         .ok()
         .and_then(|s| s.as_bytes().first().copied())
@@ -178,6 +182,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         rconfig = rconfig.flexible(true);
     }
 
+    let skip_lastlines_active = args.flag_skip_lastlines.is_some();
     let mut total_lines = if let Some(skip_llines) = args.flag_skip_lastlines {
         // use the regular count_rows to get the row_count
         // as Polars doesn't support skipping last lines
@@ -228,11 +233,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         wtr.write_record(&str_row)?;
         // The header was consumed/written outside the main loop. The loop's
-        // `idx > total_lines` cutoff counts only records read inside the loop,
-        // so subtract 1 from total_lines to keep --skip-lastlines accurate.
-        if total_lines > 0 {
-            total_lines = total_lines.saturating_sub(1);
-        }
+        // cutoff counts only records read inside the loop, so subtract 1 from
+        // total_lines to keep --skip-lastlines accurate. Unconditional because
+        // total_lines is only consulted when skip_lastlines_active is true.
+        total_lines = total_lines.saturating_sub(1);
     }
 
     let mut idx = 1_u64;
@@ -241,6 +245,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let debug_log = log::log_enabled!(log::Level::Debug);
 
     'main: loop {
+        // Check the cutoff before reading the next record. Checking before the
+        // write avoids the boundary case where total_lines == 0 means "stop now"
+        // but a post-write check would still emit one record.
+        if skip_lastlines_active && idx > total_lines {
+            break 'main;
+        }
         match rdr.read_byte_record(&mut row) {
             Ok(moredata) => {
                 if !moredata {
@@ -285,10 +295,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         wtr.write_record(&str_row)?;
         idx += 1;
-
-        if total_lines > 0 && idx > total_lines {
-            break 'main;
-        }
     }
 
     if not_utf8 {

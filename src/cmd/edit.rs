@@ -41,7 +41,8 @@ edit options:
     -i, --in-place         Overwrite the input file data with the output.
                            The input file is renamed to a .bak file in the same directory.
                            If the .bak file already exists, the command errors instead of overwriting it.
-                           Symlinks are rejected; pass the resolved path instead.
+                           Symbolic links are rejected; pass the resolved path instead.
+                           (Other Windows reparse points such as junction points are not detected.)
 
 Common options:
     -h, --help             Display this message
@@ -196,9 +197,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // destination on all platforms.
         std::fs::rename(&input_path, &backup_path)?;
         // Persist the edited tempfile to input_path. Since the tempfile lives
-        // in the same directory as the input, this is an atomic same-fs rename
-        // — no window where input_path is missing.
-        tempfile.persist(&input_path).map_err(|e| e.error)?;
+        // in the same directory as the input, this is an atomic same-fs rename.
+        // The window between this and the rename above is two same-dir rename
+        // syscalls — much smaller than the prior copy, but not zero.
+        if let Err(e) = tempfile.persist(&input_path) {
+            // Best-effort rollback: restore the original from the backup we
+            // just took, so the user isn't left without input_path.
+            let _ = std::fs::rename(&backup_path, &input_path);
+            return fail_clierror!(
+                "Failed to install edited file at {}: {}. Backup at {} (restored if rollback \
+                 succeeded).",
+                input_path.display(),
+                e.error,
+                backup_path.display()
+            );
+        }
     } else if !row_matched {
         eprintln!("Warning: row {row} not found; input passed through unchanged.");
     }

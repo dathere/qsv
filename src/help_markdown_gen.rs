@@ -720,14 +720,28 @@ fn parse_usage_sections(usage_text: &str) -> UsageSections {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
 
-        // Detect section transitions
-        if trimmed.starts_with("Examples:")
+        // Detect section transitions. Only allow entering Examples state from
+        // Description/UsagePatterns — once we're inside Arguments/Options, an
+        // option's help text containing "Examples:" or "Example:" must not
+        // hijack the parser state and pull subsequent option lines into the
+        // examples vec. When already in Examples state, swallow further
+        // "Examples:"/"Example:" markers so they aren't emitted as literal
+        // text (commands like `to` and `fetch` use multiple sub-Examples).
+        let is_examples_marker = trimmed.starts_with("Examples:")
             || trimmed.starts_with("Examples (")
             || trimmed.starts_with("Example:")
-            || trimmed.starts_with("Example (")
-        {
-            state = State::Examples;
-            continue;
+            || trimmed.starts_with("Example (");
+        if is_examples_marker {
+            if state == State::Description
+                || state == State::UsagePatterns
+                || state == State::Examples
+            {
+                state = State::Examples;
+                continue;
+            }
+            // In Arguments/Options: leave state alone; line falls through to
+            // the per-state arm below and is captured with the rest of the
+            // option/argument text.
         }
         if trimmed.starts_with("Usage:") {
             // Finalize any pending option group
@@ -1141,17 +1155,9 @@ fn format_examples(lines: &[String]) -> String {
 
         // ALL-CAPS lines are headings (with optional trailing colon, e.g.
         // "USING THE HTTP-HEADER OPTION:" — must be multi-word to avoid matching
-        // single-word capitalized values like "URL:"). Plural option-group
-        // markers (`OPTIONS:`, `ARGUMENTS:`, `ARGS:`) are skipped so that
-        // option-group sub-headings emitted by parse_usage_text are not
-        // duplicated here when the parser slips into Examples state mid-options
-        // (e.g. an option's help text contains "Examples:").
+        // single-word capitalized values like "URL:").
         let heading_body = trimmed.strip_suffix(':').unwrap_or(trimmed);
-        let is_option_group_marker = heading_body.ends_with(" OPTIONS")
-            || heading_body.ends_with(" ARGUMENTS")
-            || heading_body.ends_with(" ARGS");
-        if !is_option_group_marker
-            && heading_body.len() > 2
+        if heading_body.len() > 2
             && heading_body.contains(' ')
             && heading_body.chars().all(|c| {
                 c.is_uppercase()

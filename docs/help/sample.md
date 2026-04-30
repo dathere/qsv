@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sample.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sample.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🌐](TableOfContents.md#legend "has web-aware options.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sample Options](#sample-options) | [Sampling Methods Options](#sampling-methods-options) | [Time-Series Sampling Options](#time-series-sampling-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sample Options](#sample-options) | [Sampling Methods Options](#sampling-methods-options) | [Time-Series Sampling Options](#time-series-sampling-options) | [Remote File Options](#remote-file-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -154,34 +154,6 @@ qsv sample --cluster Neighborhood 10 data.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_sample.rs).
 
-If not specified, <sample-size> is treated as hours.
---ts-start <mode>      Starting point for time-series sampling.
-Options: "first" (earliest timestamp, default), "last" (most recent timestamp),
-"random" (random starting point).
-[default: first]
---ts-adaptive <mode>   Adaptive sampling mode for time-series data.
-Options: "business-hours" (prefer 9am-5pm Mon-Fri),
-"weekends" (prefer weekends), "business-days" (prefer weekdays),
-"both" (combine business-hours and weekends).
---ts-aggregate <func>  Aggregation function to apply within each time interval.
-Options: "first", "last", "mean", "sum", "count", "min", "max", "median".
-When specified, aggregates all records in each interval instead of selecting a single record.
---ts-input-tz <tz>     Timezone for parsing input timestamps. Can be an IANA timezone name or "local" for the local timezone.
-[default: UTC]
---ts-prefer-dmy        Prefer to parse dates in dmy format. Otherwise, use mdy format.
-REMOTE FILE OPTIONS:  
---user-agent <agent>   Specify custom user agent to use when the input is a URL.
-It supports the following variables -
-$QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
-Try to follow the syntax here -
-<https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent>
---timeout <secs>       Timeout for downloading URLs in seconds. If 0, no timeout is used.
-[default: 30]
---max-size <mb>        Maximum size of the file to download in MB before sampling.
-Will download the entire file if not specified.
-If the CSV is partially downloaded, the sample will be taken
-only from the downloaded portion.
---force                Do not use stats cache, even if its available.
 
 <a name="usage"></a>
 
@@ -227,9 +199,25 @@ qsv sample --help
 
 ## Time-Series Sampling Options [↩](#nav)
 
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`‑‑ts‑interval`&nbsp; | string | Time interval for grouping records. Format: <number><unit> where unit is h (hour), d (day), w (week), m (month), y (year). Examples: "1h", "1d", "1w", "2d" (every 2 days). If not specified, <sample-size> is treated as hours. |  |
+| &nbsp;`‑‑ts‑start`&nbsp; | string | Starting point for time-series sampling. Options: "first" (earliest timestamp, default), "last" (most recent timestamp), "random" (random starting point). | `first` |
+| &nbsp;`‑‑ts‑adaptive`&nbsp; | string | Adaptive sampling mode for time-series data. Options: "business-hours" (prefer 9am-5pm Mon-Fri), "weekends" (prefer weekends), "business-days" (prefer weekdays), "both" (combine business-hours and weekends). |  |
+| &nbsp;`‑‑ts‑aggregate`&nbsp; | string | Aggregation function to apply within each time interval. Options: "first", "last", "mean", "sum", "count", "min", "max", "median". When specified, aggregates all records in each interval instead of selecting a single record. |  |
+| &nbsp;`‑‑ts‑input‑tz`&nbsp; | string | Timezone for parsing input timestamps. Can be an IANA timezone name or "local" for the local timezone. | `UTC` |
+| &nbsp;`‑‑ts‑prefer‑dmy`&nbsp; | flag | Prefer to parse dates in dmy format. Otherwise, use mdy format. |  |
+
+<a name="remote-file-options"></a>
+
+## Remote File Options [↩](#nav)
+
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑ts‑interval`&nbsp; | string | Time interval for grouping records. Format: <number><unit> where unit is h (hour), d (day), w (week), m (month), y (year). |  |
+| &nbsp;`‑‑user‑agent`&nbsp; | string | Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
+| &nbsp;`‑‑timeout`&nbsp; | string | Timeout for downloading URLs in seconds. If 0, no timeout is used. | `30` |
+| &nbsp;`‑‑max‑size`&nbsp; | string | Maximum size of the file to download in MB before sampling. Will download the entire file if not specified. If the CSV is partially downloaded, the sample will be taken only from the downloaded portion. |  |
+| &nbsp;`‑‑force`&nbsp; | flag | Do not use stats cache, even if its available. |  |
 
 <a name="common-options"></a>
 

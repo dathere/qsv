@@ -165,10 +165,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_size == 0 {
         return fail_incorrectusage_clierror!("--size must be greater than 0.");
     }
-    if let Some(0) = args.flag_chunks {
+    if args.flag_chunks == Some(0) {
         return fail_incorrectusage_clierror!("--chunks must be greater than 0.");
     }
-    if let Some(0) = args.flag_kb_size {
+    if args.flag_kb_size == Some(0) {
         return fail_incorrectusage_clierror!("--kb-size must be greater than 0.");
     }
 
@@ -223,6 +223,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
 impl Args {
     fn split_by_kb_size(&self, chunk_size: usize) -> CliResult<()> {
+        const UTF8_BOM_LEN: usize = 3;
+
         let rconfig = self.rconfig();
         let mut rdr = rconfig.reader()?;
         let headers = rdr.byte_headers()?.clone();
@@ -246,7 +248,6 @@ impl Args {
         // QSV_OUTPUT_BOM is set. The real chunk writer emits that BOM exactly
         // once per file, so subtract it from each per-record measurement and
         // re-add it once below when initializing per-chunk byte usage.
-        const UTF8_BOM_LEN: usize = 3;
         let bom_overhead = if util::get_envvar_flag("QSV_OUTPUT_BOM") {
             UTF8_BOM_LEN
         } else {

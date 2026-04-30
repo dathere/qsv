@@ -1038,61 +1038,61 @@ fn dyn_enum_validator_factory<'a>(
 ///
 /// This replaces a substring search on the raw schema text, which was sensitive to
 /// whitespace and could false-match on descriptions/titles containing these literals.
+fn detect_custom_schema_features_walk(
+    v: &Value,
+    has_currency: &mut bool,
+    has_email: &mut bool,
+    has_dynamic_enum: &mut bool,
+    has_unique_combined: &mut bool,
+) {
+    match v {
+        Value::Object(map) => {
+            for (k, val) in map {
+                match k.as_str() {
+                    "format" => {
+                        if let Some(s) = val.as_str() {
+                            match s {
+                                "currency" => *has_currency = true,
+                                "email" => *has_email = true,
+                                _ => {},
+                            }
+                        }
+                    },
+                    "dynamicEnum" => *has_dynamic_enum = true,
+                    "uniqueCombinedWith" => *has_unique_combined = true,
+                    _ => {},
+                }
+                detect_custom_schema_features_walk(
+                    val,
+                    has_currency,
+                    has_email,
+                    has_dynamic_enum,
+                    has_unique_combined,
+                );
+            }
+        },
+        Value::Array(arr) => {
+            for item in arr {
+                detect_custom_schema_features_walk(
+                    item,
+                    has_currency,
+                    has_email,
+                    has_dynamic_enum,
+                    has_unique_combined,
+                );
+            }
+        },
+        _ => {},
+    }
+}
+
 fn detect_custom_schema_features(schema: &Value) -> (bool, bool, bool, bool) {
     let mut has_currency = false;
     let mut has_email = false;
     let mut has_dynamic_enum = false;
     let mut has_unique_combined = false;
 
-    fn walk(
-        v: &Value,
-        has_currency: &mut bool,
-        has_email: &mut bool,
-        has_dynamic_enum: &mut bool,
-        has_unique_combined: &mut bool,
-    ) {
-        match v {
-            Value::Object(map) => {
-                for (k, val) in map {
-                    match k.as_str() {
-                        "format" => {
-                            if let Some(s) = val.as_str() {
-                                match s {
-                                    "currency" => *has_currency = true,
-                                    "email" => *has_email = true,
-                                    _ => {},
-                                }
-                            }
-                        },
-                        "dynamicEnum" => *has_dynamic_enum = true,
-                        "uniqueCombinedWith" => *has_unique_combined = true,
-                        _ => {},
-                    }
-                    walk(
-                        val,
-                        has_currency,
-                        has_email,
-                        has_dynamic_enum,
-                        has_unique_combined,
-                    );
-                }
-            },
-            Value::Array(arr) => {
-                for item in arr {
-                    walk(
-                        item,
-                        has_currency,
-                        has_email,
-                        has_dynamic_enum,
-                        has_unique_combined,
-                    );
-                }
-            },
-            _ => {},
-        }
-    }
-
-    walk(
+    detect_custom_schema_features_walk(
         schema,
         &mut has_currency,
         &mut has_email,

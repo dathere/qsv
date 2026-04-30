@@ -148,13 +148,8 @@ impl Args {
         }
 
         // --long is required by docopt; defensively report a usage error if absent.
-        let selection_str = match self.flag_long.as_deref() {
-            Some(s) => s,
-            None => {
-                return fail_incorrectusage_clierror!(
-                    "--long requires a column selection argument."
-                );
-            },
+        let Some(selection_str) = self.flag_long.as_deref() else {
+            return fail_incorrectusage_clierror!("--long requires a column selection argument.");
         };
         let select_cols = SelectColumns::parse(selection_str)
             .map_err(|e| CliError::Other(format!("--long parse error: {e}")))?;

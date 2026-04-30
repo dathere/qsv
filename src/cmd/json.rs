@@ -282,10 +282,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .collect();
 
         if jaq_values.is_empty() {
-            return match first_dropped_err {
-                Some(msg) => fail_clierror!("jaq query returned no results: {msg}"),
-                None => fail_clierror!("jaq query returned no results."),
-            };
+            if let Some(msg) = first_dropped_err {
+                return fail_clierror!("jaq query returned no results: {msg}");
+            }
+            return fail_clierror!("jaq query returned no results.");
         }
 
         let jaq_value = if jaq_values.len() == 1 {

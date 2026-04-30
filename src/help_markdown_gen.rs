@@ -731,17 +731,16 @@ fn parse_usage_sections(usage_text: &str) -> UsageSections {
             || trimmed.starts_with("Examples (")
             || trimmed.starts_with("Example:")
             || trimmed.starts_with("Example (");
-        if is_examples_marker {
-            if state == State::Description
+        // In Arguments/Options: leave state alone; line falls through to the
+        // per-state arm below and is captured with the rest of the
+        // option/argument text.
+        if is_examples_marker
+            && (state == State::Description
                 || state == State::UsagePatterns
-                || state == State::Examples
-            {
-                state = State::Examples;
-                continue;
-            }
-            // In Arguments/Options: leave state alone; line falls through to
-            // the per-state arm below and is captured with the rest of the
-            // option/argument text.
+                || state == State::Examples)
+        {
+            state = State::Examples;
+            continue;
         }
         if trimmed.starts_with("Usage:") {
             // Finalize any pending option group
@@ -1186,7 +1185,7 @@ fn format_examples(lines: &[String]) -> String {
                     || c == '/'
                     || c == '&'
             })
-            && heading_body.chars().any(|c| c.is_alphabetic())
+            && heading_body.chars().any(char::is_alphabetic)
         {
             if in_code_block {
                 md.push_str("```\n\n");

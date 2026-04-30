@@ -143,11 +143,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let tmpdir = tempfile::tempdir()?;
     let input = if args.arg_input.as_deref().unwrap_or("-") == "-" {
-        // No input file (or explicit "-"): pass "-" through to csvlens so it
-        // can read stdin directly (and honor --streaming-stdin via
-        // no_streaming_stdin below). Routing through util::process_input here
-        // would buffer all of stdin into a temp file, defeating
-        // --streaming-stdin entirely.
+        // No input file (or explicit "-"): preserve stdin handling for csvlens
+        // by avoiding util::process_input here, which would buffer all of
+        // stdin into a temp file and defeat --streaming-stdin entirely.
+        // Config::new below maps "-" to config.path = None, so csvlens is
+        // ultimately invoked with filename: None (its stdin marker) and
+        // no_streaming_stdin controls buffer-vs-stream.
         "-".to_string()
     } else {
         // Process input file
@@ -173,12 +174,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         other => other,
     };
 
-    // Convert the wrap mode to a WrapMode enum value
-    // we only check the first character of the wrap mode string for convenience
-    let wrap_mode = match args.flag_wrap_mode.to_ascii_lowercase().chars().next() {
-        Some('d') => Some(WrapMode::Disabled),
-        Some('w') => Some(WrapMode::Words),
-        Some('c') => Some(WrapMode::Chars),
+    // Convert the wrap mode to a WrapMode enum value.
+    // Accept the full names (words/chars/disabled) and their single-letter
+    // shortcuts (w/c/d), case-insensitive. Anything else is rejected so typos
+    // like `--wrap-mode wodrs` don't silently get treated as `words`.
+    let wrap_mode = match args.flag_wrap_mode.to_ascii_lowercase().as_str() {
+        "d" | "disabled" => Some(WrapMode::Disabled),
+        "w" | "words" => Some(WrapMode::Words),
+        "c" | "chars" => Some(WrapMode::Chars),
         _ => {
             return fail_incorrectusage_clierror!(
                 "Invalid --wrap-mode value '{}'. Valid modes are: words, chars, disabled.",

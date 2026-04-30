@@ -185,8 +185,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // so just make a reasonably big batch size
             1_000_000
         } else {
-            // arg_input is guaranteed Some here: the stdin branch above is the
-            // only path where it stays None.
+            // safety: `arg_input` is guaranteed `Some` here: the stdin branch
+            // above is the only path where it stays `None`.
             util::count_lines_in_file(&args.arg_input.unwrap())? as usize
         }
     } else {

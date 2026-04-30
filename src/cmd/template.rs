@@ -16,40 +16,46 @@ the filename rendered using --outfilename option.
 Otherwise, ALL the rendered rows will be sent to STDOUT or the designated --output.
 
 Example:
-data.csv:
-  "first name","last name",balance,"loyalty points",active,us_state
-  alice,jones,100.50,1000,true,TX
-  bob,smith,200.75,2000,false,CA
-  john,doe,10,1,true,NJ
 
-NOTE: All variables are of type String and will need to be cast with the `|float` or `|int`
-  filters for math operations and when a MiniJinja filter/function requires it.
-  qsv's custom filters (substr, format_float, human_count, human_float_count, round_banker &
-  str_to_bool) do not require casting for convenience.
+data.csv
+```csv
+"first name","last name",balance,"loyalty points",active,us_state
+alice,jones,100.50,1000,true,TX
+bob,smith,200.75,2000,false,CA
+john,doe,10,1,true,NJ
+```
 
 template.tpl
-  {% set us_state_lookup_loaded = register_lookup("us_states", "dathere://us-states-example.csv") -%}
-  Dear {{ first_name|title }} {{ last_name|title }}!
-    Your account balance is {{ balance|format_float(2) }}
-       with {{ loyalty_points|human_count }} point{{ loyalty_points|int|pluralize }}!
-    {# This is a comment and will not be rendered. The closing minus sign in this
-       block tells MiniJinja to trim whitespaces -#}
-    {% if us_state_lookup_loaded -%}
-       {% if us_state not in ["DE", "CA"] -%}
-          {% set tax_rate = us_state|lookup("us_states", "Sales Tax (2023)")|float -%}
-            State: {{ us_state|lookup("us_states", "Name") }} {{us_state}} Tax Rate: {{ tax_rate }}%
-          {% set loyalty_value = loyalty_points|int / 100 -%}
-          {%- set tax_amount = loyalty_value * (tax_rate / 100) -%}
-          {%- set loyalty_value = loyalty_value - tax_amount -%}
-          Value of Points: {{ loyalty_value }}
-        {% else %}
-          {% set loyalty_value = 0 -%}
-        {% endif %}
-       Final Balance: {{ (balance|int - loyalty_value)|format_float(2) }}
+```luau
+{% set us_state_lookup_loaded = register_lookup("us_states", "dathere://us-states-example.csv") -%}
+Dear {{ first_name|title }} {{ last_name|title }}!
+Your account balance is {{ balance|format_float(2) }}
+    with {{ loyalty_points|human_count }} point{{ loyalty_points|int|pluralize }}!
+{# This is a comment and will not be rendered. The closing minus sign in this
+    block tells MiniJinja to trim whitespaces -#}
+{% if us_state_lookup_loaded -%}
+    {% if us_state not in ["DE", "CA"] -%}
+        {% set tax_rate = us_state|lookup("us_states", "Sales Tax (2023)")|float -%}
+        State: {{ us_state|lookup("us_states", "Name") }} {{us_state}} Tax Rate: {{ tax_rate }}%
+        {% set loyalty_value = loyalty_points|int / 100 -%}
+        {%- set tax_amount = loyalty_value * (tax_rate / 100) -%}
+        {%- set loyalty_value = loyalty_value - tax_amount -%}
+        Value of Points: {{ loyalty_value }}
+    {% else %}
+        {% set loyalty_value = 0 -%}
     {% endif %}
-    Status: {% if active|to_bool %}Active{% else %}Inactive{% endif %}
+    Final Balance: {{ (balance|int - loyalty_value)|format_float(2) }}
+{% endif %}
+Status: {% if active|to_bool %}Active{% else %}Inactive{% endif %}
+```
 
   $ qsv template --template-file template.tpl data.csv
+
+> [!NOTE]
+> All variables are of type String and will need to be cast with the `|float` or `|int`
+>  filters for math operations and when a MiniJinja filter/function requires it.
+> qsv's custom filters (substr, format_float, human_count, human_float_count, round_banker &
+> str_to_bool) do not require casting for convenience.
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_template.rs.
 For a relatively complex MiniJinja template, see https://github.com/dathere/qsv/blob/master/scripts/template.tpl

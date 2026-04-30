@@ -12,7 +12,7 @@ the Python version of Polars, so there will be some minor syntax differences.
 
 Returns the shape of the query result (number of rows, number of columns) to stderr.
 
-Example queries:
+Examples:
 
   $ qsv sqlp data.csv 'select * from data where col1 > 10 order by all desc limit 20'
 

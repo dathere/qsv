@@ -61,16 +61,16 @@ lens options:
       --no-headers                 Do not interpret the first row as headers
 
       --columns <regex>            Use this regex to select columns to display by default.
-                                   Example: "col1|col2|col3" to select columns "col1", "col2" and "col3"
+                                   e.g. "col1|col2|col3" to select columns "col1", "col2" and "col3"
                                    and also columns like "col1_1", "col22" and "col3-more".
       --filter <regex>             Use this regex to filter rows to display by default.
                                    The regex is matched against each cell in every column.
-                                   Example: "val1|val2" filters rows with any cells containing "val1", "val2"
+                                   e.g. "val1|val2" filters rows with any cells containing "val1", "val2"
                                    or text like "my_val1" or "val234".
       --find <regex>               Use this regex to find and highlight matches by default.
                                    Automatically sets --monochrome to true so the matches are easier to see.
                                    The regex is matched against each cell in every column.
-                                   Example: "val1|val2" highlights text containing "val1", "val2" or
+                                   e.g. "val1|val2" highlights text containing "val1", "val2" or
                                    longer text like "val1_ok" or "val2_error".
 
   -i, --ignore-case                Searches ignore case. Ignored if any uppercase letters

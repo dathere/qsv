@@ -1,21 +1,23 @@
 static USAGE: &str = r#"
 Replace the value of a cell specified by its row and column.
 
-For example we have the following CSV file named items.csv:
+Example:
 
+items.csv
+```csv
 item,color
 shoes,blue
 flashlight,gray
+```
 
-To output the data with the color of the shoes as green instead of blue, run:
+# To output the data with the color of the shoes as green instead of blue
+qsv edit items.csv color 0 green
 
-  $ qsv edit items.csv color 0 green
-
-The following is returned as output:
-
+```csv
 item,color
 shoes,green
 flashlight,gray
+```
 
 You may also choose to specify the column name by its index (in this case 1).
 Specifying a column as a number is prioritized by index rather than name.

@@ -28,7 +28,7 @@ John,magenta
 Mary,cyan
 ```
 
- will replace the value of the "Name" column with the following values:
+will replace the value of the "Name" column with the following values:
 
 ```csv
 Name,Color

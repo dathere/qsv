@@ -130,7 +130,7 @@ EXCEL XLSX
 ==========
 Convert to new xlsx file.
 
-Example:
+Examples:
 
 Load `file1.csv` and `file2.csv' into xlsx file.
 Will create `output.xlsx`, creating new sheets for each file, with the sheet name being the
@@ -158,7 +158,7 @@ ODS
 ===
 Convert to new ODS (Open Document Spreadsheet) file.
 
-Example:
+Examples:
 
 Load `file1.csv` and `file2.csv' into ODS file.
 Will create `output.ods`, creating new sheets for each file, with the sheet name being the

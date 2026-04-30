@@ -73,71 +73,76 @@ written as an empty cell (or the parse error if --store-error is set). If you ne
 byte-exact server output, post-process the response yourself or use --jaq to
 extract specific fields.
 
-EXAMPLES USING THE URL-COLUMN ARGUMENT:
+Example:
+
+USING THE URL-COLUMN ARGUMENT:
 
 data.csv
-  URL
-  https://api.zippopotam.us/us/90210
-  https://api.zippopotam.us/us/94105
-  https://api.zippopotam.us/us/92802
+```csv
+URL
+https://api.zippopotam.us/us/90210
+https://api.zippopotam.us/us/94105
+https://api.zippopotam.us/us/92802
+```
 
-Given the data.csv above, fetch the JSON response.
-
-  $ qsv fetch URL data.csv
+# Given the data.csv above, fetch the JSON response.
+$ qsv fetch URL data.csv
 
 Note the output will be a JSONL file - with a minified JSON response per line, not a CSV file.
 
-Now, if we want to generate a CSV file with the parsed City and State, we use the
-new-column and jaq options.
-
-  $ qsv fetch URL --new-column CityState --jaq '[ ."places"[0]."place name",."places"[0]."state abbreviation" ]' \
-      data.csv > data_with_CityState.csv
+# Now, if we want to generate a CSV file with the parsed City and State, we use the
+# new-column and jaq options.
+$ qsv fetch URL --new-column CityState --jaq '[ ."places"[0]."place name",."places"[0]."state abbreviation" ]' \
+    data.csv > data_with_CityState.csv
 
 data_with_CityState.csv
-  URL, CityState,
-  https://api.zippopotam.us/us/90210, "[\"Beverly Hills\",\"CA\"]"
-  https://api.zippopotam.us/us/94105, "[\"San Francisco\",\"CA\"]"
-  https://api.zippopotam.us/us/92802, "[\"Anaheim\",\"CA\"]"
+```csv  
+URL, CityState,
+https://api.zippopotam.us/us/90210, "[\"Beverly Hills\",\"CA\"]"
+https://api.zippopotam.us/us/94105, "[\"San Francisco\",\"CA\"]"
+https://api.zippopotam.us/us/92802, "[\"Anaheim\",\"CA\"]"
+```
 
-As you can see, entering jaq selectors on the command line is error prone and can quickly become cumbersome.
-Alternatively, the jaq selector can be saved and loaded from a file using the --jaqfile option.
+# As you can see, entering jaq selectors on the command line is error prone and can quickly become cumbersome.
+# Alternatively, the jaq selector can be saved and loaded from a file using the --jaqfile option.
+$ qsv fetch URL --new-column CityState --jaqfile places.jaq data.csv > datatest.csv
 
-  $ qsv fetch URL --new-column CityState --jaqfile places.jaq data.csv > datatest.csv
+Examples:
 
-EXAMPLES USING THE --URL-TEMPLATE OPTION:
-
+USING THE --URL-TEMPLATE OPTION:
 Instead of using hardcoded URLs, you can also dynamically construct the URL for each CSV row using CSV column
 values in that row.
 
-Exanple 1:
+Example 1:
 For example, we have a CSV with four columns and we want to geocode against the geocode.earth API that expects
 latitude and longitude passed as URL parameters.
 
 addr_data.csv
-  location, description, latitude, longitude
-  Home, "house is not a home when there's no one there", 40.68889829703977, -73.99589368107037
-  X, "marks the spot", 40.78576117777992, -73.96279560368552
-  work, "moolah", 40.70692672280804, -74.0112264146281
-  school, "exercise brain", 40.72916494539206, -73.99624185993626
-  gym, "exercise muscles", 40.73947342617386, -73.99039923885411
+```csv
+location, description, latitude, longitude
+Home, "house is not a home when there's no one there", 40.68889829703977, -73.99589368107037
+X, "marks the spot", 40.78576117777992, -73.96279560368552
+work, "moolah", 40.70692672280804, -74.0112264146281
+school, "exercise brain", 40.72916494539206, -73.99624185993626
+gym, "exercise muscles", 40.73947342617386, -73.99039923885411
+```
 
-Geocode addresses in addr_data.csv, pass the latitude and longitude fields and store
-the response in a new column called response into enriched_addr_data.csv.
-
-  $ qsv fetch --url-template "https://api.geocode.earth/v1/reverse?point.lat={latitude}&point.lon={longitude}" \
-      addr_data.csv -c response > enriched_addr_data.csv
+# Geocode addresses in addr_data.csv, pass the latitude and longitude fields and store
+# the response in a new column called response into enriched_addr_data.csv.
+$ qsv fetch --url-template "https://api.geocode.earth/v1/reverse?point.lat={latitude}&point.lon={longitude}" \
+    addr_data.csv -c response > enriched_addr_data.csv
 
 Example 2:
-Geocode addresses in addresses.csv, pass the "street address" and "zip-code" fields
-and use jaq to parse placename from the JSON response into a new column in addresses_with_placename.csv.
-Note how field name non-alphanumeric characters (space and hyphen) in the url-template were replaced with _.
+# Geocode addresses in addresses.csv, pass the "street address" and "zip-code" fields
+# and use jaq to parse placename from the JSON response into a new column in addresses_with_placename.csv.
+#Note how field name non-alphanumeric characters (space and hyphen) in the url-template were replaced with _.
+$ qsv fetch --jaq '."features"[0]."properties", ."name"' addresses.csv -c placename --url-template \
+  "https://api.geocode.earth/v1/search/structured?address={street_address}&postalcode={zip_code}" \
+  > addresses_with_placename.csv
 
-  $ qsv fetch --jaq '."features"[0]."properties", ."name"' addresses.csv -c placename --url-template \
-      "https://api.geocode.earth/v1/search/structured?address={street_address}&postalcode={zip_code}" \
-      > addresses_with_placename.csv
+Example:
 
 USING THE HTTP-HEADER OPTION:
-
 The --http-header option allows you to append arbitrary key value pairs (a valid pair is a key and value
 separated by a colon) to the HTTP header (to authenticate against an API, pass custom header fields, etc.).
 Note that you can pass as many key-value pairs by using --http-header option repeatedly. For example:

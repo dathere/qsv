@@ -2,25 +2,33 @@ static USAGE: &str = r#"
 Implodes multiple rows into one by grouping on key column(s) and joining the
 values of another column with the given separator. The inverse of `explode`.
 
-For instance, the following CSV:
+Examples:
 
+```csv
 name,color
 John,blue
 John,yellow
 John,light red
 Mary,red
+```
 
-Can be imploded by key column "name", joining the "color" column with "; ":
+# Can be imploded by key column "name", joining the "color" column with "; "
+qsv implode -k name -v color "; " data.csv
 
+```csv
 name,color
 John,blue; yellow; light red
 Mary,red
+```
 
-With `-r colors` the value column is renamed:
+# With `-r colors` the value column is renamed
+qsv implode -k name -v color -r colors "; " data.csv
 
+```csv
 name,colors
 John,blue; yellow; light red
 Mary,red
+```
 
 Only the key column(s) and the value column appear in the output; any other
 columns are dropped.

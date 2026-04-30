@@ -256,9 +256,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let input: Val = serde_json::from_value(value.clone())
             .map_err(|e| CliError::Other(format!("Failed to convert JSON to jaq value: {e}")))?;
 
-        // Run the filter and convert jaq output back to serde_json::Value
+        // Run the filter and convert jaq output back to serde_json::Value.
+        // `first_dropped_err` captures the first error encountered while
+        // dropping values — either a jaq filter runtime error or a
+        // Val-to-JSON conversion error — so the user-facing message can
+        // surface the underlying cause when no values survive.
         let ctx = Ctx::<data::JustLut<Val>>::new(&jaq_filter.lut, Vars::new([]));
-        let mut first_runtime_err: Option<String> = None;
+        let mut first_dropped_err: Option<String> = None;
         let jaq_values: Vec<serde_json::Value> = jaq_filter
             .id
             .run((ctx, input))
@@ -272,13 +276,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     Err(e) => format!("jaq filter runtime error: {e}"),
                 };
                 warn!("{msg} (value dropped)");
-                first_runtime_err.get_or_insert(msg);
+                first_dropped_err.get_or_insert(msg);
                 None
             })
             .collect();
 
         if jaq_values.is_empty() {
-            return match first_runtime_err {
+            return match first_dropped_err {
                 Some(msg) => fail_clierror!("jaq query returned no results: {msg}"),
                 None => fail_clierror!("jaq query returned no results."),
             };
@@ -351,14 +355,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // convert JSON to CSV
     // its inside a block so all the unneeded resources are freed & flushed after the block ends
     {
-        // Use `as_array()` directly so the single-object branch can wrap the
-        // value in a 1-element stack slice without a heap allocation or
-        // temporary-lifetime extension across the if/else.
-        let single = [value.clone()];
-        let values: &[serde_json::Value] = if let Some(arr) = value.as_array() {
-            arr.as_slice()
-        } else {
-            &single
+        // Borrow either the existing array's slice or a 1-element slice over
+        // `value` itself. `slice::from_ref` avoids cloning the value — for
+        // an array input we never touch it, and for a single object we just
+        // wrap the existing reference.
+        let values: &[serde_json::Value] = match value.as_array() {
+            Some(arr) => arr.as_slice(),
+            None => std::slice::from_ref(&value),
         };
 
         let flattener = Flattener::new();

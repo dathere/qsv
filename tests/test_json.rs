@@ -393,7 +393,6 @@ fn json_2843_default_select() {
     assert_eq!(got.trim(), expected.trim());
 }
 
-
 #[test]
 #[serial]
 fn json_jaq_bigint_precision() {
@@ -410,14 +409,36 @@ fn json_jaq_bigint_precision() {
     wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    let expected = vec![
-        svec!["id", "name"],
-        svec!["9007199254740993", "alice"],
-    ];
+    let expected = vec![svec!["id", "name"], svec!["9007199254740993", "alice"]];
     assert_eq!(got, expected);
 }
 
 
+#[test]
+#[serial]
+fn json_jaq_bigint_u64_precision() {
+    // 12345678901234567890 is in (i64::MAX, u64::MAX]. serde_json parses it
+    // as u64 and jaq_json's visit_u64 routes that through Num::from_integral,
+    // which puts u64-but-not-isize values into Num::BigInt — exercising the
+    // new u64 parse arm of val_to_json_value (the i64 parse fails, the u64
+    // parse succeeds, no String fallback).
+    let wrk = Workdir::new("json_jaq_bigint_u64_precision");
+    let json_data = r#"[{"id": 12345678901234567890, "name": "alice"}]"#;
+    wrk.create_from_string("data.json", json_data);
+
+    let mut cmd = wrk.command("json");
+    cmd.arg("data.json");
+    cmd.args(vec!["--jaq", "."]);
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "name"],
+        svec!["12345678901234567890", "alice"],
+    ];
+    assert_eq!(got, expected);
+}
 
 #[test]
 #[serial]

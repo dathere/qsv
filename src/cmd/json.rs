@@ -351,9 +351,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // convert JSON to CSV
     // its inside a block so all the unneeded resources are freed & flushed after the block ends
     {
-        // `is_array()` already proved `as_array()` is `Some`; the single-object
-        // branch wraps the value in a 1-element slice on the stack so we don't
-        // pay for a heap allocation or rely on temporary-lifetime extension.
+        // Use `as_array()` directly so the single-object branch can wrap the
+        // value in a 1-element stack slice without a heap allocation or
+        // temporary-lifetime extension across the if/else.
         let single = [value.clone()];
         let values: &[serde_json::Value] = if let Some(arr) = value.as_array() {
             arr.as_slice()
@@ -425,12 +425,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 /// This avoids the `format!("{v}")` → `serde_json::from_str` round-trip which can
 /// produce non-JSON output for NaN, Infinity, byte strings, and objects with non-string keys.
 ///
-/// Note on numeric precision: `serde_json` is built without the `arbitrary_precision`
-/// feature in this project, so `serde_json::Number` is internally `i64`/`u64`/`f64`.
-/// To avoid silently rounding, BigInts that don't fit `i64`/`u64` and `Num::Dec`
-/// values (which jaq uses precisely to preserve decimals that did not parse as
-/// integers) are emitted as `Value::String` so their original digits round-trip
-/// verbatim into the CSV output.
+/// Note on numeric precision (CSV-sink-specific): `serde_json` is built without
+/// the `arbitrary_precision` feature in this project, so `serde_json::Number` is
+/// internally `i64`/`u64`/`f64`. To avoid silently rounding, BigInts that don't
+/// fit `i64`/`u64` and `Num::Dec` values (which jaq uses precisely to preserve
+/// decimals that did not parse as integers) are emitted as `Value::String` so
+/// their original digits round-trip verbatim into the CSV output.
+///
+/// Caveat: this means the returned `serde_json::Value` is **not** a faithful
+/// re-encoding of the input JSON — re-serializing it to JSON would produce
+/// quoted strings where the original had numeric literals. This helper is
+/// intended to feed `qsv json`'s CSV writer (where every cell is text, so
+/// quoting is invisible). Do not lift it to a JSON sink without revisiting
+/// these branches.
 fn val_to_json_value(v: Val) -> Result<serde_json::Value, String> {
     match v {
         Val::Null => Ok(serde_json::Value::Null),

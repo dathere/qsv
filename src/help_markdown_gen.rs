@@ -721,7 +721,11 @@ fn parse_usage_sections(usage_text: &str) -> UsageSections {
         let trimmed = line.trim();
 
         // Detect section transitions
-        if trimmed.starts_with("Examples:") || trimmed.starts_with("Examples (") {
+        if trimmed.starts_with("Examples:")
+            || trimmed.starts_with("Examples (")
+            || trimmed.starts_with("Example:")
+            || trimmed.starts_with("Example (")
+        {
             state = State::Examples;
             continue;
         }
@@ -847,11 +851,37 @@ fn parse_usage_sections(usage_text: &str) -> UsageSections {
 fn format_description(lines: &[String]) -> String {
     let mut md = String::new();
     let mut in_code_block = false;
+    let mut in_fenced_block = false;
     let mut prev_empty = false;
     let mut prev_was_heading = false;
 
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
+
+        // Inside an explicit ``` fenced code block — preserve original whitespace.
+        if in_fenced_block {
+            md.push_str(line);
+            md.push('\n');
+            if trimmed.starts_with("```") {
+                in_fenced_block = false;
+                md.push('\n');
+            }
+            prev_empty = false;
+            continue;
+        }
+
+        // Opening of an explicit ``` fenced code block.
+        if trimmed.starts_with("```") {
+            if in_code_block {
+                md.push_str("```\n\n");
+                in_code_block = false;
+            }
+            md.push_str(line);
+            md.push('\n');
+            in_fenced_block = true;
+            prev_empty = false;
+            continue;
+        }
 
         // Skip empty leading lines
         if trimmed.is_empty() && md.is_empty() {
@@ -964,11 +994,22 @@ fn format_description(lines: &[String]) -> String {
 
         // Regular paragraph text
         md.push_str(&linkify_bare_urls(trimmed));
+        // Lines ending in a colon (other than Examples:/Example:) get a hard line break,
+        // so the following line renders on its own row in markdown.
+        if trimmed.ends_with(':')
+            && !trimmed.starts_with("Examples:")
+            && !trimmed.starts_with("Example:")
+        {
+            md.push_str("  ");
+        }
         md.push('\n');
         prev_empty = false;
     }
 
     if in_code_block {
+        md.push_str("```\n");
+    }
+    if in_fenced_block {
         md.push_str("```\n");
     }
 
@@ -1020,6 +1061,7 @@ fn titlecase_heading(s: &str) -> String {
 fn format_examples(lines: &[String]) -> String {
     let mut md = String::new();
     let mut in_code_block = false;
+    let mut in_fenced_block = false;
     let mut skip_next = false;
 
     for (idx, line) in lines.iter().enumerate() {
@@ -1029,6 +1071,29 @@ fn format_examples(lines: &[String]) -> String {
         }
 
         let trimmed = line.trim();
+
+        // Inside an explicit ``` fenced code block — preserve original whitespace.
+        if in_fenced_block {
+            md.push_str(line);
+            md.push('\n');
+            if trimmed.starts_with("```") {
+                in_fenced_block = false;
+                md.push('\n');
+            }
+            continue;
+        }
+
+        // Opening of an explicit ``` fenced code block.
+        if trimmed.starts_with("```") {
+            if in_code_block {
+                md.push_str("```\n\n");
+                in_code_block = false;
+            }
+            md.push_str(line);
+            md.push('\n');
+            in_fenced_block = true;
+            continue;
+        }
 
         // Skip empty lines
         if trimmed.is_empty() {
@@ -1207,10 +1272,21 @@ fn format_examples(lines: &[String]) -> String {
 
         // Any other text (description paragraphs within examples)
         md.push_str(&linkify_bare_urls(trimmed));
+        // Lines ending in a colon (other than Examples:/Example:) get a hard line break,
+        // so the following line renders on its own row in markdown.
+        if trimmed.ends_with(':')
+            && !trimmed.starts_with("Examples:")
+            && !trimmed.starts_with("Example:")
+        {
+            md.push_str("  ");
+        }
         md.push('\n');
     }
 
     if in_code_block {
+        md.push_str("```\n\n");
+    }
+    if in_fenced_block {
         md.push_str("```\n\n");
     }
 

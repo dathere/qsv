@@ -323,7 +323,7 @@ Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl."#,
     // from "input was empty".
     if !headers_emitted && input_line_idx > 0 {
         log::warn!(
-            "All {input_line_idx} input line(s) were unparseable; --ignore-errors produced empty \
+            "All {input_line_idx} input line(s) were unparsable; --ignore-errors produced empty \
              output."
         );
     }

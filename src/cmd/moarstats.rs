@@ -5326,7 +5326,6 @@ mod tests {
         assert!(OUTLIER_TOTAL < OUTLIER_COUNTS_LEN);
     }
 
-
     // ---------------------------------------------------------------------
     // Pure helper-function tests. These guard the math kernels exercised
     // indirectly by the integration suite — a regression in one of these
@@ -5409,10 +5408,7 @@ mod tests {
         let got = compute_bimodality_coefficient(Some(0.0), Some(0.0)).unwrap();
         assert!((got - 1.0 / 3.0).abs() < 1e-12);
         // kurt == -3 makes the denominator zero -> None.
-        assert_eq!(
-            compute_bimodality_coefficient(Some(0.0), Some(-3.0)),
-            None,
-        );
+        assert_eq!(compute_bimodality_coefficient(Some(0.0), Some(-3.0)), None,);
         assert_eq!(compute_bimodality_coefficient(None, Some(0.0)), None);
         assert_eq!(compute_bimodality_coefficient(Some(0.0), None), None);
     }
@@ -5539,7 +5535,6 @@ mod tests {
         assert_eq!(parse_date_to_days("not-a-date", false), None);
     }
 
-
     #[test]
     fn finalize_covariance_sample_and_population() {
         // Build a state for x = y = [1, 2, 3, 4, 5].
@@ -5579,29 +5574,22 @@ mod tests {
     #[test]
     fn compute_pearson_correlation_known_values() {
         // Perfect positive linear -> +1.
-        let r = compute_pearson_correlation(
-            &[1.0, 2.0, 3.0, 4.0, 5.0],
-            &[2.0, 4.0, 6.0, 8.0, 10.0],
-        )
-        .unwrap();
+        let r =
+            compute_pearson_correlation(&[1.0, 2.0, 3.0, 4.0, 5.0], &[2.0, 4.0, 6.0, 8.0, 10.0])
+                .unwrap();
         assert!((r - 1.0).abs() < 1e-12, "perfect positive: {r}");
 
         // Perfect negative linear -> -1.
-        let r = compute_pearson_correlation(
-            &[1.0, 2.0, 3.0, 4.0, 5.0],
-            &[10.0, 8.0, 6.0, 4.0, 2.0],
-        )
-        .unwrap();
+        let r =
+            compute_pearson_correlation(&[1.0, 2.0, 3.0, 4.0, 5.0], &[10.0, 8.0, 6.0, 4.0, 2.0])
+                .unwrap();
         assert!((r + 1.0).abs() < 1e-12, "perfect negative: {r}");
 
         // Hand-computed: x=[1,2,3,4,5], y=[2,4,5,4,5]
         //   dx = [-2,-1,0,1,2], dy = [-2,0,1,0,1]
         //   Sxy = 6, Sxx = 10, Syy = 6 -> r = 6 / sqrt(60) = sqrt(0.6).
-        let r = compute_pearson_correlation(
-            &[1.0, 2.0, 3.0, 4.0, 5.0],
-            &[2.0, 4.0, 5.0, 4.0, 5.0],
-        )
-        .unwrap();
+        let r = compute_pearson_correlation(&[1.0, 2.0, 3.0, 4.0, 5.0], &[2.0, 4.0, 5.0, 4.0, 5.0])
+            .unwrap();
         assert!(
             (r - 0.6_f64.sqrt()).abs() < 1e-12,
             "fractional case: got {r}, expected {}",
@@ -5635,11 +5623,9 @@ mod tests {
         assert!((r - 1.0).abs() < 1e-12, "cubic monotonic: {r}");
 
         // Strictly decreasing -> -1.
-        let r = compute_spearman_correlation(
-            &[1.0, 2.0, 3.0, 4.0, 5.0],
-            &[5.0, 4.0, 3.0, 2.0, 1.0],
-        )
-        .unwrap();
+        let r =
+            compute_spearman_correlation(&[1.0, 2.0, 3.0, 4.0, 5.0], &[5.0, 4.0, 3.0, 2.0, 1.0])
+                .unwrap();
         assert!((r + 1.0).abs() < 1e-12, "decreasing: {r}");
 
         // Tie handling. y has two pairs of ties at 4 and 5:
@@ -5648,11 +5634,9 @@ mod tests {
         //   y_ranks = [1, 2.5, 4.5, 2.5, 4.5]
         // Pearson on the ranks: dx = [-2,-1,0,1,2], dy = [-2,-0.5,1.5,-0.5,1.5]
         //   Sxy = 7, Sxx = 10, Syy = 9 -> r = 7 / sqrt(90).
-        let r = compute_spearman_correlation(
-            &[1.0, 2.0, 3.0, 4.0, 5.0],
-            &[2.0, 4.0, 5.0, 4.0, 5.0],
-        )
-        .unwrap();
+        let r =
+            compute_spearman_correlation(&[1.0, 2.0, 3.0, 4.0, 5.0], &[2.0, 4.0, 5.0, 4.0, 5.0])
+                .unwrap();
         let expected = 7.0_f64 / 90.0_f64.sqrt();
         assert!(
             (r - expected).abs() < 1e-9,

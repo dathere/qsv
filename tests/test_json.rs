@@ -392,3 +392,75 @@ fn json_2843_default_select() {
 
     assert_eq!(got.trim(), expected.trim());
 }
+
+#[test]
+#[serial]
+fn json_jaq_bigint_precision() {
+    // 2^53 + 1 = 9007199254740993 — outside f64 exact-integer range.
+    // jaq parses this as Num::BigInt; the converter must preserve every digit.
+    let wrk = Workdir::new("json_jaq_bigint_precision");
+    let json_data = r#"[{"id": 9007199254740993, "name": "alice"}]"#;
+    wrk.create_from_string("data.json", json_data);
+
+    let mut cmd = wrk.command("json");
+    cmd.arg("data.json");
+    cmd.args(vec!["--jaq", "."]);
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["id", "name"], svec!["9007199254740993", "alice"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[serial]
+fn json_jaq_bigint_u64_precision() {
+    // 12345678901234567890 is in (i64::MAX, u64::MAX]. serde_json parses it
+    // as u64 and jaq_json's visit_u64 routes that through Num::from_integral,
+    // which puts u64-but-not-isize values into Num::BigInt — exercising the
+    // new u64 parse arm of val_to_json_value (the i64 parse fails, the u64
+    // parse succeeds, no String fallback).
+    let wrk = Workdir::new("json_jaq_bigint_u64_precision");
+    let json_data = r#"[{"id": 12345678901234567890, "name": "alice"}]"#;
+    wrk.create_from_string("data.json", json_data);
+
+    let mut cmd = wrk.command("json");
+    cmd.arg("data.json");
+    cmd.args(vec!["--jaq", "."]);
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["id", "name"], svec!["12345678901234567890", "alice"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[serial]
+fn json_jaq_runtime_error_surfaced() {
+    // When every produced value errors, the user should see the underlying
+    // jaq runtime error rather than a generic "no results" message.
+    let wrk = Workdir::new("json_jaq_runtime_error_surfaced");
+    let json_data = r#"[{"a": 1}]"#;
+    wrk.create_from_string("data.json", json_data);
+
+    // `error("...")` is jq's explicit runtime-error builtin — guaranteed to
+    // produce an Exn::Err for every value, so the filter yields zero usable
+    // outputs and the new error-surfacing branch should fire.
+    let mut cmd = wrk.command("json");
+    cmd.arg("data.json");
+    cmd.args(vec!["--jaq", r#"error("custom_runtime_err")"#]);
+
+    wrk.assert_err(&mut cmd);
+    let got_stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        got_stderr.contains("jaq query returned no results"),
+        "stderr did not mention 'no results': {got_stderr}"
+    );
+    assert!(
+        got_stderr.contains("jaq filter runtime error")
+            || got_stderr.contains("custom_runtime_err"),
+        "stderr did not surface the underlying runtime error: {got_stderr}"
+    );
+}

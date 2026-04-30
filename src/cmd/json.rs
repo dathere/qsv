@@ -256,30 +256,36 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let input: Val = serde_json::from_value(value.clone())
             .map_err(|e| CliError::Other(format!("Failed to convert JSON to jaq value: {e}")))?;
 
-        // Run the filter and convert jaq output back to serde_json::Value
+        // Run the filter and convert jaq output back to serde_json::Value.
+        // `first_dropped_err` captures the first error encountered while
+        // dropping values — either a jaq filter runtime error or a
+        // Val-to-JSON conversion error — so the user-facing message can
+        // surface the underlying cause when no values survive.
         let ctx = Ctx::<data::JustLut<Val>>::new(&jaq_filter.lut, Vars::new([]));
+        let mut first_dropped_err: Option<String> = None;
         let jaq_values: Vec<serde_json::Value> = jaq_filter
             .id
             .run((ctx, input))
             .map(unwrap_valr)
-            .filter_map(|r| match r {
-                Ok(v) => Some(v),
-                Err(e) => {
-                    warn!("jaq filter runtime error (value dropped): {e}");
-                    None
-                },
-            })
-            .filter_map(|v| match val_to_json_value(v) {
-                Ok(val) => Some(val),
-                Err(e) => {
-                    warn!("jaq Val could not be converted to JSON (value dropped): {e}");
-                    None
-                },
+            .filter_map(|r| {
+                let msg = match r {
+                    Ok(v) => match val_to_json_value(v) {
+                        Ok(val) => return Some(val),
+                        Err(e) => format!("jaq Val could not be converted to JSON: {e}"),
+                    },
+                    Err(e) => format!("jaq filter runtime error: {e}"),
+                };
+                warn!("{msg} (value dropped)");
+                first_dropped_err.get_or_insert(msg);
+                None
             })
             .collect();
 
         if jaq_values.is_empty() {
-            return fail_clierror!("jaq query returned no results.");
+            return match first_dropped_err {
+                Some(msg) => fail_clierror!("jaq query returned no results: {msg}"),
+                None => fail_clierror!("jaq query returned no results."),
+            };
         }
 
         let jaq_value = if jaq_values.len() == 1 {
@@ -349,11 +355,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // convert JSON to CSV
     // its inside a block so all the unneeded resources are freed & flushed after the block ends
     {
-        let empty_values = vec![serde_json::Value::Null; 1];
-        let values = if value.is_array() {
-            value.as_array().unwrap_or(&empty_values)
-        } else {
-            &vec![value.clone()]
+        // Borrow either the existing array's slice or a 1-element slice over
+        // `value` itself. `slice::from_ref` avoids cloning the value — for
+        // an array input we never touch it, and for a single object we just
+        // wrap the existing reference.
+        let values: &[serde_json::Value] = match value.as_array() {
+            Some(arr) => arr.as_slice(),
+            None => std::slice::from_ref(&value),
         };
 
         let flattener = Flattener::new();
@@ -419,6 +427,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 ///
 /// This avoids the `format!("{v}")` → `serde_json::from_str` round-trip which can
 /// produce non-JSON output for NaN, Infinity, byte strings, and objects with non-string keys.
+///
+/// Note on numeric precision (CSV-sink-specific): `serde_json` is built without
+/// the `arbitrary_precision` feature in this project, so `serde_json::Number` is
+/// internally `i64`/`u64`/`f64`. To avoid silently rounding, BigInts that don't
+/// fit `i64`/`u64` and `Num::Dec` values (which jaq uses precisely to preserve
+/// decimals that did not parse as integers) are emitted as `Value::String` so
+/// their original digits round-trip verbatim into the CSV output.
+///
+/// Caveat: this means the returned `serde_json::Value` is **not** a faithful
+/// re-encoding of the input JSON — re-serializing it to JSON would produce
+/// quoted strings where the original had numeric literals. This helper is
+/// intended to feed `qsv json`'s CSV writer (where every cell is text, so
+/// quoting is invisible). Do not lift it to a JSON sink without revisiting
+/// these branches.
 fn val_to_json_value(v: Val) -> Result<serde_json::Value, String> {
     match v {
         Val::Null => Ok(serde_json::Value::Null),
@@ -437,21 +459,25 @@ fn val_to_json_value(v: Val) -> Result<serde_json::Value, String> {
                 }
             },
             Num::BigInt(bi) => {
-                // Try to parse the BigInt string representation as a JSON number
+                // Try i64/u64 directly without round-tripping through serde_json's
+                // f64 fallback, which would silently lose precision for values
+                // outside ±2^53.
                 let s = bi.to_string();
-                s.parse::<serde_json::Number>()
-                    .map(serde_json::Value::Number)
-                    .or_else(|_| {
-                        // BigInt too large for JSON number — represent as string
-                        warn!("BigInt {bi} too large for JSON number, converting to string");
-                        Ok(serde_json::Value::String(s))
-                    })
+                if let Ok(i) = s.parse::<i64>() {
+                    Ok(serde_json::Value::Number(i.into()))
+                } else if let Ok(u) = s.parse::<u64>() {
+                    Ok(serde_json::Value::Number(u.into()))
+                } else {
+                    warn!("BigInt {bi} too large for JSON number, converting to string");
+                    Ok(serde_json::Value::String(s))
+                }
             },
             Num::Dec(s) => {
-                // Decimal stored as string — parse it as a JSON number
-                s.parse::<serde_json::Number>()
-                    .map(serde_json::Value::Number)
-                    .map_err(|e| format!("invalid decimal number {s}: {e}"))
+                // jaq's Dec preserves decimals that didn't parse as integer. Without
+                // serde_json's arbitrary_precision feature, parse::<Number>() would
+                // round to f64 and silently drop precision. The downstream sink is
+                // CSV (text), so pass the original string through verbatim.
+                Ok(serde_json::Value::String(s.to_string()))
             },
         },
         Val::TStr(ref s) => Ok(serde_json::Value::String(

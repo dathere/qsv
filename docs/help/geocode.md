@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/geocode.rs](https://github.com/dathere/qsv/blob/master/src/cmd/geocode.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🧠](TableOfContents.md#legend "expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.")[🌐](TableOfContents.md#legend "has web-aware options.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")[🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")[🌎](TableOfContents.md#legend "has geospatial capabilities.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Geocode Options](#geocode-options) | [Suggest Only Options](#suggest-only-options) | [Reverse Only Option](#reverse-only-option) | [Dynamic Formatting Options](#dynamic-formatting-options) | [Index-update Only Options](#index-update-only-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Geocode Options](#geocode-options) | [Suggest Only Options](#suggest-only-options) | [Reverse Only Option](#reverse-only-option) | [Dynamic Formatting Options](#dynamic-formatting-options) | [Index-Update Only Options](#index-update-only-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -397,7 +397,7 @@ qsv geocode --help
 
 <a name="index-update-only-options"></a>
 
-## Index-update Only Options [↩](#nav)
+## Index-Update Only Options [↩](#nav)
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|

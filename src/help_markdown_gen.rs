@@ -1037,7 +1037,8 @@ fn titlecase_part(part: &str) -> String {
 }
 
 /// Convert ALL-CAPS heading to title case, preserving known acronyms
-/// and handling `/`-separated parts (e.g. "ANALYSIS/INFERENCING" → "Analysis/Inferencing")
+/// and handling `/`- and `-`-separated parts (e.g. "ANALYSIS/INFERENCING" →
+/// "Analysis/Inferencing", "URL-COLUMN" → "URL-Column")
 fn titlecase_heading(s: &str) -> String {
     let s = s.trim();
     let words: Vec<&str> = s.split_whitespace().collect();
@@ -1046,15 +1047,27 @@ fn titlecase_heading(s: &str) -> String {
         .map(|w| {
             if w.contains('/') {
                 w.split('/')
-                    .map(titlecase_part)
+                    .map(titlecase_hyphenated)
                     .collect::<Vec<_>>()
                     .join("/")
             } else {
-                titlecase_part(w)
+                titlecase_hyphenated(w)
             }
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Title-case a hyphenated word, recursively title-casing each `-`-separated
+/// part so embedded acronyms (e.g. URL, HTTP) are preserved.
+fn titlecase_hyphenated(w: &str) -> String {
+    if !w.contains('-') {
+        return titlecase_part(w);
+    }
+    w.split('-')
+        .map(titlecase_part)
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 /// Format examples section into markdown
@@ -1128,9 +1141,17 @@ fn format_examples(lines: &[String]) -> String {
 
         // ALL-CAPS lines are headings (with optional trailing colon, e.g.
         // "USING THE HTTP-HEADER OPTION:" — must be multi-word to avoid matching
-        // single-word capitalized values like "URL:")
+        // single-word capitalized values like "URL:"). Plural option-group
+        // markers (`OPTIONS:`, `ARGUMENTS:`, `ARGS:`) are skipped so that
+        // option-group sub-headings emitted by parse_usage_text are not
+        // duplicated here when the parser slips into Examples state mid-options
+        // (e.g. an option's help text contains "Examples:").
         let heading_body = trimmed.strip_suffix(':').unwrap_or(trimmed);
-        if heading_body.len() > 2
+        let is_option_group_marker = heading_body.ends_with(" OPTIONS")
+            || heading_body.ends_with(" ARGUMENTS")
+            || heading_body.ends_with(" ARGS");
+        if !is_option_group_marker
+            && heading_body.len() > 2
             && heading_body.contains(' ')
             && heading_body.chars().all(|c| {
                 c.is_uppercase()
@@ -1142,7 +1163,7 @@ fn format_examples(lines: &[String]) -> String {
                     || c == '/'
                     || c == '&'
             })
-            && heading_body.chars().any(|c| c.is_uppercase())
+            && heading_body.chars().any(|c| c.is_alphabetic())
         {
             if in_code_block {
                 md.push_str("```\n\n");

@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sample.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sample.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🌐](TableOfContents.md#legend "has web-aware options.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sample Options](#sample-options) | [Sampling Methods Options](#sampling-methods-options) | [Time-series Sampling Options](#time-series-sampling-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sample Options](#sample-options) | [Sampling Methods Options](#sampling-methods-options) | [Time-Series Sampling Options](#time-series-sampling-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -169,8 +169,7 @@ When specified, aggregates all records in each interval instead of selecting a s
 --ts-input-tz <tz>     Timezone for parsing input timestamps. Can be an IANA timezone name or "local" for the local timezone.
 [default: UTC]
 --ts-prefer-dmy        Prefer to parse dates in dmy format. Otherwise, use mdy format.
-### Remote File Options
-
+REMOTE FILE OPTIONS:  
 --user-agent <agent>   Specify custom user agent to use when the input is a URL.
 It supports the following variables -
 $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
@@ -226,7 +225,7 @@ qsv sample --help
 
 <a name="time-series-sampling-options"></a>
 
-## Time-series Sampling Options [↩](#nav)
+## Time-Series Sampling Options [↩](#nav)
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|

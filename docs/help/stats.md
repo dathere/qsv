@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/stats.rs](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🤯](TableOfContents.md#legend "loads entire CSV into memory, though `dedup`, `stats` & `transpose` have \"streaming\" modes as well.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")[🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Stats Options](#stats-options) | [Boolean Inferencing Options](#boolean-inferencing-options) | [Numeric & Date/Datetime Stats That Require In-memory Sorting Options](#numeric-&-date/datetime-stats-that-require-in-memory-sorting-options) | [Date Inferencing Options](#date-inferencing-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Stats Options](#stats-options) | [Boolean Inferencing Options](#boolean-inferencing-options) | [Numeric & Date/Datetime Stats That Require In-Memory Sorting Options](#numeric-&-date/datetime-stats-that-require-in-memory-sorting-options) | [Date Inferencing Options](#date-inferencing-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -241,7 +241,7 @@ qsv stats --help
 
 <a name="numeric-&-date/datetime-stats-that-require-in-memory-sorting-options"></a>
 
-## Numeric & Date/Datetime Stats That Require In-memory Sorting Options [↩](#nav)
+## Numeric & Date/Datetime Stats That Require In-Memory Sorting Options [↩](#nav)
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|

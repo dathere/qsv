@@ -3484,12 +3484,12 @@ fn stats_cache_invalidates_on_select_change() {
 
     let header = &got[0];
     let field_idx = header.iter().position(|h| h == "field").unwrap();
-    let fields: Vec<&str> = got
-        .iter()
-        .skip(1)
-        .map(|r| r[field_idx].as_str())
-        .collect();
-    assert_eq!(fields.len(), 2, "expected 2 rows for select c,d, got {fields:?}");
+    let fields: Vec<&str> = got.iter().skip(1).map(|r| r[field_idx].as_str()).collect();
+    assert_eq!(
+        fields.len(),
+        2,
+        "expected 2 rows for select c,d, got {fields:?}"
+    );
     assert!(
         fields.iter().any(|f| *f == "c") && fields.iter().any(|f| *f == "d"),
         "expected stats for columns c,d but got {fields:?}"
@@ -3564,14 +3564,15 @@ fn stats_cache_invalidates_on_typesonly_change() {
 
     assert!(
         got[0].len() < everything_cols,
-        "--typesonly must not serve the --everything cache; got {} cols, \
-         expected < {everything_cols}",
+        "--typesonly must not serve the --everything cache; got {} cols, expected < \
+         {everything_cols}",
         got[0].len()
     );
 }
 
 #[test]
-#[ignore = "documents pre-existing bug: --everything cache shortcut does not compare flag_infer_boolean"]
+#[ignore = "documents pre-existing bug: --everything cache shortcut does not compare \
+            flag_infer_boolean"]
 fn stats_cache_invalidates_on_infer_boolean_change() {
     // --infer-boolean changes the type column. The cache short-circuit must
     // compare flag_infer_boolean.
@@ -3629,7 +3630,10 @@ fn stats_force_recompute() {
     wrk.assert_success(&mut cmd);
 
     let cache_csv = wrk.path("data.stats.csv");
-    assert!(Path::new(&cache_csv).exists(), "cache CSV should exist after first run");
+    assert!(
+        Path::new(&cache_csv).exists(),
+        "cache CSV should exist after first run"
+    );
 
     // Tamper: write a wrong-but-well-formed CSV. Without --force this would be served.
     std::fs::write(&cache_csv, "field,type\nv,Tampered\n").unwrap();
@@ -3652,7 +3656,7 @@ fn stats_force_recompute() {
 
 #[test]
 fn stats_cache_corrupt_json_recomputes() {
-    // If <stem>.stats.csv.json is unparseable, `run` should silently delete the
+    // If <stem>.stats.csv.json is unparsable, `run` should silently delete the
     // sidecar files and recompute (it logs a warning). The next run must succeed
     // and rewrite a parseable JSON.
     use std::path::Path;

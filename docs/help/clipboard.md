@@ -21,13 +21,13 @@ Meanwhile on Linux and macOS, they may be represented as \n (LF).
 
 ## Examples [↩](#nav)
 
-Pipe into qsv stats using qsv clipboard and render it as a table:
+Pipe into qsv stats using qsv clipboard and render it as a table:  
 ```console
 qsv clipboard | qsv stats | qsv table
 ```
 
 If you want to save the output of a command to the clipboard,
-pipe into qsv clipboard using the --save or -s flag:
+pipe into qsv clipboard using the --save or -s flag:  
 ```console
 qsv clipboard | qsv stats | qsv clipboard -s
 ```

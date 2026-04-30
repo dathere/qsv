@@ -18,9 +18,9 @@ the inputs given. The number of rows in the result is always equivalent to
 the minimum number of rows across all given CSV data. (This behavior can be
 reversed with the '--pad' flag.)
 
-Concatenating by rows can be done in two ways:
+Concatenating by rows can be done in two ways:  
 
-'rows' subcommand:
+'rows' subcommand:  
 All CSV data must have the same number of columns (unless --flexible is enabled)
 and in the same order.
 If you need to rearrange the columns or fix the lengths of records, use the
@@ -28,7 +28,7 @@ If you need to rearrange the columns or fix the lengths of records, use the
 data given are used. Headers in subsequent inputs are ignored. (This behavior
 can be disabled with --no-headers.)
 
-'rowskey' subcommand:
+'rowskey' subcommand:  
 CSV data can have different numbers of columns and in different orders. All
 columns are written in insertion order. If a column is missing in a row, an
 empty field is written. If a column is missing in the header, an empty field

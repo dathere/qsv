@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/edit.rs](https://github.com/dathere/qsv/blob/master/src/cmd/edit.rs)**
 
 <a name="nav"></a>
-[Description](#description) | [Usage](#usage) | [Edit Options](#edit-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Edit Options](#edit-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -13,29 +13,33 @@
 
 Replace the value of a cell specified by its row and column.
 
-For example we have the following CSV file named items.csv:
 
+<a name="examples"></a>
+
+## Examples [↩](#nav)
+
+items.csv
+```csv
 item,color
 shoes,blue
 flashlight,gray
-
-To output the data with the color of the shoes as green instead of blue, run:
-
-```console
-$ qsv edit items.csv color 0 green
 ```
 
+> To output the data with the color of the shoes as green instead of blue
 
-The following is returned as output:
+```console
+qsv edit items.csv color 0 green
+```
 
+```csv
 item,color
 shoes,green
 flashlight,gray
+```
 
 You may also choose to specify the column name by its index (in this case 1).
 Specifying a column as a number is prioritized by index rather than name.
 If there is no newline (\n) at the end of the input data, it may be added to the output.
-
 
 <a name="usage"></a>
 

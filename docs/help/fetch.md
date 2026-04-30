@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/fetch.rs](https://github.com/dathere/qsv/blob/master/src/cmd/fetch.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🧠](TableOfContents.md#legend "expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.")[🌐](TableOfContents.md#legend "has web-aware options.")
 
 <a name="nav"></a>
-[Description](#description) | [Usage](#usage) | [Fetch Options](#fetch-options) | [Caching Options](#caching-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Fetch Options](#fetch-options) | [Caching Options](#caching-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -16,22 +16,22 @@ Send/Fetch data to/from web services for every row using HTTP Get.
 Fetch is integrated with `jaq` (a jq clone) to directly parse out values from an API JSON response.
 (See <https://github.com/01mf02/jaq> for more info on how to use the jaq JSON Query Language)
 
-CACHE OPTIONS:
+CACHE OPTIONS:  
 Fetch caches responses to minimize traffic and maximize performance. It has four
-mutually-exclusive caching options:
+mutually-exclusive caching options:  
 
 1. In memory cache (the default)
 2. Disk cache
 3. Redis cache
 4. No cache
 
-In memory Cache:
+In memory Cache:  
 In memory cache is the default and is used if no caching option is set.
 It uses a non-persistent, in-memory, 2 million entry Least Recently Used (LRU)
 cache for each fetch session. To change the maximum number of entries in the cache,
 set the --mem-cache-size option.
 
-Disk Cache:
+Disk Cache:  
 For persistent, inter-session caching, a DiskCache can be enabled with the --disk-cache flag.
 By default, it will store the cache in the directory ~/.qsv-cache/fetch, with a cache expiry
 Time-to-Live (TTL) of 2,419,200 seconds (28 days), and cache hits NOT refreshing the TTL
@@ -40,7 +40,7 @@ of cached values.
 Set the --disk-cache-dir option and the environment variables QSV_DISKCACHE_TTL_SECS and
 QSV_DISKCACHE_TTL_REFRESH to change default DiskCache settings.
 
-Redis Cache:
+Redis Cache:  
 Another persistent, inter-session cache option is a Redis cache enabled with the --redis flag.
 By default, it will connect to a local Redis instance at redis://127.0.0.1:6379/1,
 with a cache expiry Time-to-Live (TTL) of 2,419,200 seconds (28 days),
@@ -51,7 +51,7 @@ QSV_REDIS_TTL_REFRESH to change default Redis settings.
 
 If you don't want responses to be cached at all, use the --no-cache flag.
 
-NETWORK OPTIONS:
+NETWORK OPTIONS:  
 Fetch recognizes RateLimit and Retry-After headers and dynamically throttles requests
 to be as fast as allowed. The --rate-limit option sets the maximum number of queries per second
 (QPS) to be made. The default is 0, which means to go as fast as possible, automatically
@@ -71,11 +71,11 @@ with adaptive flow control if the server supports it.
 See <https://www.cloudflare.com/learning/performance/http2-vs-http1.1/> and
 <https://medium.com/coderscorner/http-2-flow-control-77e54f7fd518> for more info.
 
-URL OPTIONS:
+URL OPTIONS:  
 <url-column> needs to be a fully qualified URL path. Alternatively, you can dynamically
 construct URLs for each CSV record with the --url-template option (see Examples below).
 
-JSON RESPONSE HANDLING:
+JSON RESPONSE HANDLING:  
 When --jaq is not used, fetch parses each successful response with serde_json and
 writes it back out (compact by default, or re-indented with --pretty). Object key
 order is preserved (qsv enables serde_json's preserve_order feature), but the body
@@ -87,97 +87,94 @@ written as an empty cell (or the parse error if --store-error is set). If you ne
 byte-exact server output, post-process the response yourself or use --jaq to
 extract specific fields.
 
-EXAMPLES USING THE URL-COLUMN ARGUMENT:
 
+<a name="examples"></a>
+
+## Examples [↩](#nav)
+
+USING THE URL-COLUMN ARGUMENT:  
 data.csv
-### URL
-
-<https://api.zippopotam.us/us/90210>
-<https://api.zippopotam.us/us/94105>
-<https://api.zippopotam.us/us/92802>
-
-Given the data.csv above, fetch the JSON response.
-
-```console
-$ qsv fetch URL data.csv
+```csv
+URL
+https://api.zippopotam.us/us/90210
+https://api.zippopotam.us/us/94105
+https://api.zippopotam.us/us/92802
 ```
 
-
-Note the output will be a JSONL file - with a minified JSON response per line, not a CSV file.
-
-Now, if we want to generate a CSV file with the parsed City and State, we use the
-new-column and jaq options.
+> Given the data.csv above, fetch the JSON response.
 
 ```console
-$ qsv fetch URL --new-column CityState --jaq '[ ."places"[0]."place name",."places"[0]."state abbreviation" ]' \
+qsv fetch URL data.csv
+```
+
+Note the output will be a JSONL file - with a minified JSON response per line, not a CSV file.
+> Now, if we want to generate a CSV file with the parsed City and State, we use the
+> new-column and jaq options.
+
+```console
+qsv fetch URL --new-column CityState --jaq '[ ."places"[0]."place name",."places"[0]."state abbreviation" ]' \
 data.csv > data_with_CityState.csv
 ```
 
-
 data_with_CityState.csv
+```csv  
 URL, CityState,
-<https://api.zippopotam.us/us/90210>, "[\"Beverly Hills\",\"CA\"]"
-<https://api.zippopotam.us/us/94105>, "[\"San Francisco\",\"CA\"]"
-<https://api.zippopotam.us/us/92802>, "[\"Anaheim\",\"CA\"]"
-
-As you can see, entering jaq selectors on the command line is error prone and can quickly become cumbersome.
-Alternatively, the jaq selector can be saved and loaded from a file using the --jaqfile option.
-
-```console
-$ qsv fetch URL --new-column CityState --jaqfile places.jaq data.csv > datatest.csv
+https://api.zippopotam.us/us/90210, "[\"Beverly Hills\",\"CA\"]"
+https://api.zippopotam.us/us/94105, "[\"San Francisco\",\"CA\"]"
+https://api.zippopotam.us/us/92802, "[\"Anaheim\",\"CA\"]"
 ```
 
+> As you can see, entering jaq selectors on the command line is error prone and can quickly become cumbersome.
+> Alternatively, the jaq selector can be saved and loaded from a file using the --jaqfile option.
 
-EXAMPLES USING THE --URL-TEMPLATE OPTION:
+```console
+qsv fetch URL --new-column CityState --jaqfile places.jaq data.csv > datatest.csv
+```
 
+USING THE --URL-TEMPLATE OPTION:  
 Instead of using hardcoded URLs, you can also dynamically construct the URL for each CSV row using CSV column
 values in that row.
-
-Exanple 1:
+Example 1:  
 For example, we have a CSV with four columns and we want to geocode against the geocode.earth API that expects
 latitude and longitude passed as URL parameters.
-
 addr_data.csv
+```csv
 location, description, latitude, longitude
 Home, "house is not a home when there's no one there", 40.68889829703977, -73.99589368107037
 X, "marks the spot", 40.78576117777992, -73.96279560368552
 work, "moolah", 40.70692672280804, -74.0112264146281
 school, "exercise brain", 40.72916494539206, -73.99624185993626
 gym, "exercise muscles", 40.73947342617386, -73.99039923885411
+```
 
-Geocode addresses in addr_data.csv, pass the latitude and longitude fields and store
-the response in a new column called response into enriched_addr_data.csv.
+> Geocode addresses in addr_data.csv, pass the latitude and longitude fields and store
+> the response in a new column called response into enriched_addr_data.csv.
 
 ```console
-$ qsv fetch --url-template "https://api.geocode.earth/v1/reverse?point.lat={latitude}&point.lon={longitude}" \
+qsv fetch --url-template "https://api.geocode.earth/v1/reverse?point.lat={latitude}&point.lon={longitude}" \
 addr_data.csv -c response > enriched_addr_data.csv
 ```
 
-
-Example 2:
-Geocode addresses in addresses.csv, pass the "street address" and "zip-code" fields
-and use jaq to parse placename from the JSON response into a new column in addresses_with_placename.csv.
-Note how field name non-alphanumeric characters (space and hyphen) in the url-template were replaced with _.
+Example 2:  
+> Geocode addresses in addresses.csv, pass the "street address" and "zip-code" fields
+> and use jaq to parse placename from the JSON response into a new column in addresses_with_placename.csv.
+> Note how field name non-alphanumeric characters (space and hyphen) in the url-template were replaced with _.
 
 ```console
-$ qsv fetch --jaq '."features"[0]."properties", ."name"' addresses.csv -c placename --url-template \
+qsv fetch --jaq '."features"[0]."properties", ."name"' addresses.csv -c placename --url-template \
 "https://api.geocode.earth/v1/search/structured?address={street_address}&postalcode={zip_code}" \
 > addresses_with_placename.csv
 ```
 
-
-USING THE HTTP-HEADER OPTION:
-
+USING THE HTTP-HEADER OPTION:  
 The --http-header option allows you to append arbitrary key value pairs (a valid pair is a key and value
 separated by a colon) to the HTTP header (to authenticate against an API, pass custom header fields, etc.).
-Note that you can pass as many key-value pairs by using --http-header option repeatedly. For example:
-
+Note that you can pass as many key-value pairs by using --http-header option repeatedly. For example:  
 ```console
-$ qsv fetch URL data.csv --http-header "X-Api-Key:TEST_KEY" -H "X-Api-Secret:ABC123XYZ" -H "Accept-Language: fr-FR"
+qsv fetch URL data.csv --http-header "X-Api-Key:TEST_KEY" -H "X-Api-Secret:ABC123XYZ" -H "Accept-Language: fr-FR"
 ```
 
-
-For more extensive examples, see <https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs>.
+For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs).
 
 
 <a name="usage"></a>

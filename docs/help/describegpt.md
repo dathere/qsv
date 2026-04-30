@@ -22,13 +22,13 @@ The Data Dictionary is "neuro-procedural" as it uses a hybrid approach. It's pri
 deterministically using Summary Statistics & Frequency Distribution data, and only the human-friendly
 Label & Description are populated by the "neural network" LLM using the same statistical context.
 
-CHAT MODE:
+CHAT MODE:  
 You can also use the --prompt option to ask a natural language question about the Dataset.
 
 If the question can be answered by solely using the Dataset's Summary Statistics and
 Frequency Distribution data, the LLM will return the answer directly.
 
-CHAT SQL RETRIEVAL-AUGMENTED GENERATION (RAG) SUB-MODE:
+CHAT SQL RETRIEVAL-AUGMENTED GENERATION (RAG) SUB-MODE:  
 If the question cannot be answered using the Dataset's Summary Statistics & Frequency Distribution,
 it will first create a Data Dictionary and a small random sample (default: 100 rows) of the Dataset
 and provide it to the LLM as additional context to help it generate a SQL query that DETERMINISTICALLY
@@ -50,7 +50,7 @@ When using DuckDB, all loaded DuckDB extensions will be sent as additional conte
 it know what functions (even UDFs!) it can use in the SQL queries it generates. If you want a
 specific function or technique to be used in the SQL query, mention it in the prompt.
 
-SUPPORTED MODELS & LLM PROVIDERS:
+SUPPORTED MODELS & LLM PROVIDERS:  
 OpenAI's open-weights gpt-oss model (both 20b and 120b variants) was used during development &
 is recommended for most use cases.
 It was also tested with OpenAI, TogetherAI, OpenRouter and Google Gemini cloud providers.
@@ -59,7 +59,7 @@ Local LLMs tested include Ollama, Jan and LM Studio.
 
 NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
 
-CACHING:
+CACHING:  
 As LLM inferencing takes time and can be expensive, describegpt caches the LLM inferencing results
 in a either a disk cache (default) or a Redis cache. It does so by calculating the BLAKE3 hash of the
 input file and using it as the primary cache key along with the prompt type, model and every flag that

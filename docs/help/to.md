@@ -156,7 +156,6 @@ qsv to sqlite --dump - file1.csv file2.csv
 ### Excel XLSX
 
 Convert to new xlsx file.
-Example:
 Load `file1.csv` and `file2.csv' into xlsx file.
 Will create `output.xlsx`, creating new sheets for each file, with the sheet name being the
 filename without the extension. Note the `output.xlsx` will be overwritten if it exists.
@@ -187,7 +186,6 @@ cat data.csv | qsv to xlsx output.xlsx --table "Monthly Report" -
 ### ODS
 
 Convert to new ODS (Open Document Spreadsheet) file.
-Example:
 Load `file1.csv` and `file2.csv' into ODS file.
 Will create `output.ods`, creating new sheets for each file, with the sheet name being the
 filename without the extension. Note the `output.ods` will be overwritten if it exists.

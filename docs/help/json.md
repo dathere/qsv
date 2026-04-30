@@ -13,7 +13,7 @@
 
 Convert JSON to CSV.
 
-The JSON data is expected to be non-empty and non-nested as either:
+The JSON data is expected to be non-empty and non-nested as either:  
 
 1. An array of objects where:
 A. All objects are non-empty, have non-empty and unique keys, and the same keys are in each object.
@@ -26,7 +26,7 @@ If your JSON data is not in the expected format and/or is nested or complex, try
 the --jaq option to pass a jq-like filter before parsing with the above constraints.
 Learn more about jaqhere: <https://github.com/01mf02/jaq>
 
-As an example, say we have the following JSON data in a file fruits.json:
+As an example, say we have the following JSON data in a file fruits.json:  
 
 [
 {
@@ -41,27 +41,27 @@ As an example, say we have the following JSON data in a file fruits.json:
 }
 ]
 
-To convert it to CSV format run:
+To convert it to CSV format run:  
 
 ```console
 $ qsv json fruits.json
 ```
 
 
-And the following is printed to the terminal:
+And the following is printed to the terminal:  
 
 fruit,price,calories
 apple,2.5,95
 banana,3.0,105
 
-IMPORTANT:
+IMPORTANT:  
 The order of the columns in the CSV file will be the same as the order of the keys in the first JSON object.
 The order of the rows in the CSV file will be the same as the order of the objects in the JSON array.
 
 Additional keys not present in the first JSON object will be appended as additional columns in the
 output CSV in the order they appear.
 
-For example, say we have the following JSON data in a file fruits2.json:
+For example, say we have the following JSON data in a file fruits2.json:  
 
 [
 {
@@ -88,14 +88,14 @@ For example, say we have the following JSON data in a file fruits2.json:
 }
 ]
 
-If we run the following command:
+If we run the following command:  
 
 ```console
 $ qsv json fruits2.json | qsv table
 ```
 
 
-The output CSV will have the following columns:
+The output CSV will have the following columns:  
 
 fruit       cost  price  calories  rating
 apple       1.75  2.5    95
@@ -106,14 +106,14 @@ banana            3.0    105
 Note that the "rating" column is added as an additional column in the output CSV,
 though it appears as the 2nd column in the third JSON object for "starapple".
 
-If you want to select/reorder/drop columns in the output CSV, use the --select option, for example:
+If you want to select/reorder/drop columns in the output CSV, use the --select option, for example:  
 
 ```console
 $ qsv json fruits.json --select price,fruit
 ```
 
 
-The following is printed to the terminal:
+The following is printed to the terminal:  
 
 price,fruit
 2.5,apple
@@ -122,7 +122,7 @@ price,fruit
 Note: Trailing zeroes in decimal numbers after the decimal are truncated (2.50 becomes 2.5).
 
 If the JSON data was provided using stdin then either use - or do not provide a file path.
-For example you may copy the JSON data above to your clipboard then run:
+For example you may copy the JSON data above to your clipboard then run:  
 
 ```console
 $ qsv clipboard | qsv json
@@ -131,13 +131,13 @@ $ qsv clipboard | qsv json
 
 Again, when JSON data is nested or complex, try using the --jaq option and provide a filter value.
 
-For example we have a .json file with a "data" key and the value being the same array as before:
+For example we have a .json file with a "data" key and the value being the same array as before:  
 
 {
 "data": [...]
 }
 
-We may run the following to select the JSON file and convert the nested array to CSV:
+We may run the following to select the JSON file and convert the nested array to CSV:  
 
 ```console
 $ qsv prompt -F json | qsv json --jaq .data

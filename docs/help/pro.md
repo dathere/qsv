@@ -16,7 +16,7 @@ Interact with qsv pro API. Learn more about qsv pro at: <https://qsvpro.dathere.
 - qsv pro must be running for this command to work as described.
 - Some features of this command require a paid plan of qsv pro and may require an Internet connection.
 
-The qsv pro command has subcommands:
+The qsv pro command has subcommands:  
 lens:     Run csvlens on a local file in a new Alacritty terminal emulator window (Windows only).
 workflow: Import a local file into the qsv pro Workflow (Workflow must be open).
 

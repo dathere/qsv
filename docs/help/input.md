@@ -25,7 +25,7 @@ Finally, non UTF-8 encoded files are "lossy" saved to UTF-8 by default, replacin
 invalid UTF-8 sequences with �. Note though that this is not true transcoding.
 
 If you need to properly transcode non UTF-8 files, you'll need to use a tool like `iconv`
-before processing it with qsv - e.g. to convert an ISO-8859-1 encoded file to UTF-8:
+before processing it with qsv - e.g. to convert an ISO-8859-1 encoded file to UTF-8:  
 `iconv -f ISO-8859-1 -t UTF-8 input.csv -o utf8_output.csv`.
 
 You can change this behavior with the --encoding-errors option.

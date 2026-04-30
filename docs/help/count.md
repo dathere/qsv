@@ -13,7 +13,7 @@
 
 Returns a count of the number of records in the CSV data.
 
-It has three modes of operation:
+It has three modes of operation:  
 1. If a valid index is present, it will use it to lookup the count and
 return instantaneously. (fastest)
 

@@ -14,7 +14,7 @@
 Apply a series of transformation functions to given CSV column/s. This can be used to
 perform typical data-wrangling tasks and/or to harmonize some values, etc.
 
-It has four subcommands:
+It has four subcommands:  
 1. operations*   - 40 string, format, currency, regex & NLP operators.
 2. emptyreplace* - replace empty cells with <--replacement> string.
 3. dynfmt        - Dynamically constructs a new column from other columns using
@@ -25,7 +25,7 @@ and conversions.
 
 OPERATIONS (multi-column capable)
 Multiple operations can be applied, with the comma-delimited operation series
-applied in order:
+applied in order:  
 
 trim => Trim the cell
 trim,upper => Trim the cell, then transform to uppercase
@@ -35,14 +35,14 @@ Damerau-Levenshtein similarity to --comparand
 Operations support multi-column transformations. Just make sure the
 number of transformed columns with the --rename option is the same.
 For example, to trim and fold to uppercase the col1,col2 and col3 columns &
-rename them to newcol1,newcol2 and newcol3:
+rename them to newcol1,newcol2 and newcol3:  
 
 ```console
 qsv apply operations trim,upper col1,col2,col3 -r newcol1,newcol2,newcol3 file.csv
 ```
 
 
-It has 40 supported operations:
+It has 40 supported operations:  
 
 * len: Return string length
 * lower: Transform to lowercase
@@ -78,7 +78,7 @@ Add additional comma-delimited profanities with -comparand.
 Midpoint Nearest Even Rounding Strategy AKA "Bankers Rounding."
 Specify the number of decimal places with --formatstr (default: 3).
 * thousands: Add thousands separators to numeric values.
-Specify the separator policy with --formatstr (default: comma). The valid policies are:
+Specify the separator policy with --formatstr (default: comma). The valid policies are:  
 comma, dot, space, underscore, hexfour (place a space every four hex digits) and
 indiancomma (place a comma every two digits, except the last three digits).
 The decimal separator can be specified with --replacement (default: '.')

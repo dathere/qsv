@@ -14,7 +14,7 @@
 Does streaming compression/decompression of the input using the Snappy framing format.
 <https://github.com/google/snappy/blob/main/framing_format.txt>
 
-It has four subcommands:
+It has four subcommands:  
 compress:   Compress the input (multithreaded).
 decompress: Decompress the input (single-threaded).
 check:      Quickly check if the input is a Snappy file by inspecting the

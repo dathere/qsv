@@ -14,7 +14,7 @@
 Fetchpost sends/fetches data to/from web services for every row using HTTP Post.
 As opposed to fetch, which uses HTTP Get.
 
-CSV data is posted using two methods:
+CSV data is posted using two methods:  
 1. As an HTML Form using using the <column-list> argument
 The columns are used to construct the HTML form data and posted to the server
 as a URL-encoded form. (content-type: application/x-www-form-urlencoded)
@@ -28,22 +28,22 @@ the user's responsibility to ensure the content-type format is valid.
 Fetchpost is integrated with `jaq` (a jq clone) to directly parse out values from an API JSON response.
 (See <https://github.com/01mf02/jaq> for more info on how to use the jaq JSON Query Language)
 
-CACHE OPTIONS:
+CACHE OPTIONS:  
 Fetchpost caches responses to minimize traffic and maximize performance. It has four
-mutually-exclusive caching options:
+mutually-exclusive caching options:  
 
 1. In memory cache (the default)
 2. Disk cache
 3. Redis cache
 4. No cache
 
-In memory Cache:
+In memory Cache:  
 In memory cache is the default and is used if no caching option is set.
 It uses a non-persistent, in-memory, 2 million entry Least Recently Used (LRU)
 cache for each fetch session. To change the maximum number of entries in the cache,
 set the --mem-cache-size option.
 
-Disk Cache:
+Disk Cache:  
 For persistent, inter-session caching, a DiskCache can be enabled with the --disk-cache flag.
 By default, it will store the cache in the directory ~/.qsv-cache/fetchpost, with a cache expiry
 Time-to-Live (TTL) of 2,419,200 seconds (28 days), and cache hits NOT refreshing the TTL
@@ -52,7 +52,7 @@ of cached values.
 Set the --disk-cache-dir option and the environment variables QSV_DISKCACHE_TTL_SECS and
 QSV_DISKCACHE_TTL_REFRESH to change default DiskCache settings.
 
-Redis Cache:
+Redis Cache:  
 Another persistent, inter-session cache option is a Redis cache enabled with the --redis flag.
 By default, it will connect to a local Redis instance at redis://127.0.0.1:6379/2,
 with a cache expiry Time-to-Live (TTL) of 2,419,200 seconds (28 days),
@@ -66,7 +66,7 @@ cache at database 2, as opposed to database 1 with fetch.
 
 If you don't want responses to be cached at all, use the --no-cache flag.
 
-NETWORK OPTIONS:
+NETWORK OPTIONS:  
 Fetchpost recognizes RateLimit and Retry-After headers and dynamically throttles requests
 to be as fast as allowed. The --rate-limit option sets the maximum number of queries per second
 (QPS) to be made. The default is 0, which means to go as fast as possible, automatically
@@ -91,11 +91,11 @@ with adaptive flow control if the server supports it.
 See <https://www.cloudflare.com/learning/performance/http2-vs-http1.1/> and
 <https://medium.com/coderscorner/http-2-flow-control-77e54f7fd518> for more info.
 
-URL OPTIONS:
+URL OPTIONS:  
 <url-column> needs to be a fully qualified URL path. It can be specified as a column name
 from which the URL value will be retrieved for each record, or as the URL literal itself.
 
-JSON RESPONSE HANDLING:
+JSON RESPONSE HANDLING:  
 When --jaq is not used, fetchpost parses each successful response with serde_json and
 writes it back out (compact by default, or re-indented with --pretty). Object key
 order is preserved (qsv enables serde_json's preserve_order feature), but the body
@@ -107,7 +107,7 @@ written as an empty cell (or the parse error if --store-error is set). If you ne
 byte-exact server output, post-process the response yourself or use --jaq to
 extract specific fields.
 
-EXAMPLES:
+EXAMPLES:  
 
 data.csv
 URL, zipcode, country
@@ -148,16 +148,16 @@ $ qsv fetchpost https://httpbin.org/post 2,3 --new-column form --jaqfile form.ja
 Also note that for the column-list argument, we used the column index (2,3 for second & third column)
 instead of using the column names, and we loaded the jaq selector from the form.jaq file.
 
-The form.jaq file simply contains the string literal ".form", including the enclosing double quotes:
+The form.jaq file simply contains the string literal ".form", including the enclosing double quotes:  
 
 form.jaq
 ".form"
 
-USING THE HTTP-HEADER OPTION:
+USING THE HTTP-HEADER OPTION:  
 
 The --http-header option allows you to append arbitrary key value pairs (a valid pair is a key and value
 separated by a colon) to the HTTP header (to authenticate against an API, pass custom header fields, etc.).
-Note that you can pass as many key-value pairs by using --http-header option repeatedly. For example:
+Note that you can pass as many key-value pairs by using --http-header option repeatedly. For example:  
 
 ```console
 $ qsv fetchpost https://httpbin.org/post col1-col3 data.csv -H "X-Api-Key:TEST_KEY" -H "X-Api-Secret:ABC123XYZ"

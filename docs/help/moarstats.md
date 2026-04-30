@@ -26,7 +26,7 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 25 additional univariate statistics:
+Currently computes the following 25 additional univariate statistics:  
 1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
 Measures asymmetry of the distribution.
 Positive values indicate right skew, negative values indicate left skew.
@@ -136,9 +136,9 @@ with --pct-thresholds.
 
 In addition, it computes the following univariate outlier statistics (24 outlier statistics total).
 <https://en.wikipedia.org/wiki/Outlier>
-(requires --quartiles or --everything in stats):
+(requires --quartiles or --everything in stats):  
 
-Outlier Counts (7 statistics):
+Outlier Counts (7 statistics):  
 - outliers_extreme_lower_cnt: Count of values below the lower outer fence
 - outliers_mild_lower_cnt: Count of values between lower outer and inner fences
 - outliers_normal_cnt: Count of values between inner fences (non-outliers)
@@ -147,7 +147,7 @@ Outlier Counts (7 statistics):
 - outliers_total_cnt: Total count of all outliers (sum of extreme and mild outliers)
 - outliers_percentage: Percentage of values that are outliers
 
-Outlier Descriptive Statistics (6 statistics):
+Outlier Descriptive Statistics (6 statistics):  
 - outliers_mean: Mean value of outliers
 - non_outliers_mean: Mean value of non-outliers
 - outliers_to_normal_mean_ratio: Ratio of outlier mean to non-outlier mean
@@ -155,7 +155,7 @@ Outlier Descriptive Statistics (6 statistics):
 - outliers_max: Maximum value among outliers
 - outliers_range: Range of outlier values (max - min)
 
-Outlier Variance/Spread Statistics (7 statistics):
+Outlier Variance/Spread Statistics (7 statistics):  
 - outliers_stddev: Standard deviation of outlier values
 - outliers_variance: Variance of outlier values
 - non_outliers_stddev: Standard deviation of non-outlier values
@@ -164,17 +164,17 @@ Outlier Variance/Spread Statistics (7 statistics):
 - non_outliers_cv: Coefficient of variation for non-outliers (stddev / mean)
 - outliers_normal_stddev_ratio: Ratio of outlier stddev to non-outlier stddev
 
-Outlier Impact Statistics (2 statistics):
+Outlier Impact Statistics (2 statistics):  
 - outlier_impact: Difference between overall mean and non-outlier mean
 - outlier_impact_ratio: Relative impact (outlier_impact / non_outlier_mean)
 
-Outlier Boundary Statistics (2 statistics):
+Outlier Boundary Statistics (2 statistics):  
 - lower_outer_fence_zscore: Z-score of the lower outer fence boundary
 - upper_outer_fence_zscore: Z-score of the upper outer fence boundary
 
 These outlier statistics require reading the original CSV file and comparing each
 value against the fence thresholds.
-Fences are computed using the IQR method:
+Fences are computed using the IQR method:  
 inner fences at Q1/Q3 ± 1.5*IQR, outer fences at Q1/Q3 ± 3.0*IQR.
 
 These univariate statistics are only computed for numeric and date/datetime columns
@@ -185,9 +185,9 @@ Winsorized/trimmed means require either Q1/Q3 or percentiles to be available.
 Kurtosis, Gini & Atkinson Index require reading the original CSV file to collect
 all values for computation.
 
-BIVARIATE STATISTICS:
+BIVARIATE STATISTICS:  
 
-The `moarstats` command also computes the following 6 bivariate statistics:
+The `moarstats` command also computes the following 6 bivariate statistics:  
 1. Pearson's correlation
 Measures linear correlation between two numeric/date fields.
 Values range from -1 (perfect negative correlation) to +1 (perfect positive correlation).
@@ -225,7 +225,7 @@ Bivariate statistics require reading the entire CSV file and are computationally
 For large files (>= 10k records), parallel chunked processing is used when an index is available.
 For smaller files or when no index exists, sequential processing is used.
 
-MULTI-DATASET BIVARIATE STATISTICS:
+MULTI-DATASET BIVARIATE STATISTICS:  
 
 When using the `--join-inputs` flag, multiple datasets can be joined internally before
 computing bivariate statistics. This allows analyzing bivariate statistics across datasets

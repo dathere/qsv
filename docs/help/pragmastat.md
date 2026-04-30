@@ -77,7 +77,7 @@ COMPARE1 OUTPUT (--compare1, one-sample confirmatory analysis)
 field, n, metric, threshold, estimate, lower, upper, verdict
 
 Tests one-sample estimates (center/spread) against user-defined thresholds.
-Each threshold produces one row per column with a verdict:
+Each threshold produces one row per column with a verdict:  
 less          Estimate is statistically less than the threshold.
 greater       Estimate is statistically greater than the threshold.
 inconclusive  Not enough evidence to decide (interval contains threshold).
@@ -175,7 +175,7 @@ qsv pragmastat --standalone --no-bounds data.csv
 qsv pragmastat --standalone --subsample 10000 --no-bounds data.csv
 ```
 
-Full Pragmastat manual:
+Full Pragmastat manual:  
 <https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.0.0/pragmastat-v12.0.0.pdf>
 <https://pragmastat.dev/> (latest version)
 

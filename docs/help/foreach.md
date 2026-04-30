@@ -33,17 +33,17 @@ stranger on the internet that runs...FOR EACH LINE in your CSV file. GASP!"
 
 ## Examples [↩](#nav)
 
-Delete all files whose filenames are listed in the filename column:
+Delete all files whose filenames are listed in the filename column:  
 ```console
 qsv foreach filename 'rm {}' assets.csv
 ```
 
-Execute a command that outputs CSV once per record without repeating headers:
+Execute a command that outputs CSV once per record without repeating headers:  
 ```console
 qsv foreach query --unify 'search --year 2020 {}' queries.csv > results.csv
 ```
 
-Same as above but with an additional column containing the current value:
+Same as above but with an additional column containing the current value:  
 ```console
 qsv foreach query -u -c from_query 'search {}' queries.csv > results.csv
 ```

@@ -18,7 +18,7 @@ specified rows (RANDOM ACCESS MODE) of a CSV file.
 Luau is not just another qsv command. It is qsv's Domain-Specific Language (DSL)
 for data-wrangling. 👑
 
-The executed Luau has 3 ways to reference row columns (as strings):
+The executed Luau has 3 ways to reference row columns (as strings):  
 1. Directly by using column name (e.g. Amount), can be disabled with --no-globals
 2. Indexing col variable by column name: col.Amount or col["Total Balance"]
 3. Indexing col variable by column 1-based index: col[1], col[2], etc.
@@ -27,12 +27,12 @@ This is only available with the --colindex or --no-headers options.
 Of course, if your input has no headers, then 3. will be the only available
 option.
 
-It has two subcommands:
+It has two subcommands:  
 map     - Create new columns by mapping the result of a Luau script for each row.
 filter  - Filter rows by executing a Luau script for each row. Rows that return
 true are kept, the rest are filtered out.
 
-Some examples:
+Some examples:  
 
 Sum numeric columns 'a' and 'b' and call new column 'c'
 ```console
@@ -108,12 +108,12 @@ $ qsv luau filter "tonumber(a) >= tonumber(b)"
 ```
 
 
-PATTERN MATCHING WITH string.find AND OTHER STRING FUNCTIONS:
+PATTERN MATCHING WITH string.find AND OTHER STRING FUNCTIONS:  
 Lua/Luau string functions like string.find, string.match, string.gsub use
-PATTERN MATCHING by default, where certain characters have special meanings:
+PATTERN MATCHING by default, where certain characters have special meanings:  
 ( ) . % + - * ? [ ] ^ $
 
-If you need to search for these characters literally, you have two options:
+If you need to search for these characters literally, you have two options:  
 
 1. Escape special characters with % (percent sign):
 ```console
@@ -135,7 +135,7 @@ $ qsv luau map match "string.find(col.text, 'Mr.', 1, true)"
 ```
 
 
-Common gotchas:
+Common gotchas:  
 - Parentheses in names like "Jane (Smith)" need escaping or plain mode
 - Dots in email addresses, URLs, or decimal numbers
 - Hyphens in phone numbers or dates
@@ -162,7 +162,7 @@ With "luau filter", if the MAIN script is invalid for a row, that row is not fil
 If any row has an invalid result, an exitcode of 1 is returned and an error count
 is logged.
 
-SPECIAL VARIABLES:
+SPECIAL VARIABLES:  
 "_IDX" - a READ-only variable that is zero during the BEGIN script and
 set to the current row number during the MAIN & END scripts.
 
@@ -207,7 +207,7 @@ With the judicious use of "require", the BEGIN script & special variables, one c
 create variables, tables, arrays & functions that can be used for complex aggregation
 operations in the END script.
 
-SCRIPT DEVELOPMENT TIPS:
+SCRIPT DEVELOPMENT TIPS:  
 When developing Luau scripts, be sure to take advantage of the "qsv_log" function to
 debug your script. It will log messages at the level (INFO, WARN, ERROR, DEBUG, TRACE)
 specified by the QSV_LOG_LEVEL environment variable (see docs/Logging.md for details).

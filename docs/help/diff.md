@@ -17,7 +17,7 @@ NOTE: diff does not support stdin. A file path is required for both arguments.
 Further, PRIMARY KEY VALUES MUST BE UNIQUE WITHIN EACH CSV.
 
 To check if a CSV has unique primary key values, use `qsv extdedup`
-with the same key columns using the `--select` option:
+with the same key columns using the `--select` option:  
 
 ```console
 $ qsv extdedup --select keycol data.csv --no-output

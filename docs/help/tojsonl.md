@@ -17,7 +17,7 @@ By computing stats on the CSV first, it "smartly" infers the appropriate JSON da
 for each column (string, number, boolean, null).
 
 It will infer a column as boolean if its cardinality is 2, and the first character of
-the values are one of the following case-insensitive combinations:
+the values are one of the following case-insensitive combinations:  
 t/f; t/null; 1/0; 1/null; y/n & y/null are treated as true/false.
 
 The `tojsonl` command will reuse a `stats.csv.data.jsonl` file if it exists and is

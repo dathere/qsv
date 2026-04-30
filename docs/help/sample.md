@@ -13,7 +13,7 @@
 
 Randomly samples CSV data.
 
-It supports eight sampling methods:
+It supports eight sampling methods:  
 * RESERVOIR: the default sampling method when NO INDEX is present and no sampling method
 is specified. Visits every CSV record exactly once, using MEMORY PROPORTIONAL to the
 sample size (k) - O(k).
@@ -169,7 +169,7 @@ When specified, aggregates all records in each interval instead of selecting a s
 --ts-input-tz <tz>     Timezone for parsing input timestamps. Can be an IANA timezone name or "local" for the local timezone.
 [default: UTC]
 --ts-prefer-dmy        Prefer to parse dates in dmy format. Otherwise, use mdy format.
-REMOTE FILE OPTIONS:
+REMOTE FILE OPTIONS:  
 --user-agent <agent>   Specify custom user agent to use when the input is a URL.
 It supports the following variables -
 $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.

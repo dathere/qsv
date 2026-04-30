@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/implode.rs](https://github.com/dathere/qsv/blob/master/src/cmd/implode.rs)** | [😣](TableOfContents.md#legend "uses additional memory proportional to the cardinality of the columns in the CSV.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
-[Description](#description) | [Usage](#usage) | [Implode Options](#implode-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Implode Options](#implode-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -14,34 +14,49 @@
 Implodes multiple rows into one by grouping on key column(s) and joining the
 values of another column with the given separator. The inverse of `explode`.
 
-For instance, the following CSV:
 
+<a name="examples"></a>
+
+## Examples [↩](#nav)
+
+```csv
 name,color
 John,blue
 John,yellow
 John,light red
 Mary,red
+```
 
-Can be imploded by key column "name", joining the "color" column with "; ":
+> Can be imploded by key column "name", joining the "color" column with "; "
 
+```console
+qsv implode -k name -v color "; " data.csv
+```
+
+```csv
 name,color
 John,blue; yellow; light red
 Mary,red
+```
 
-With `-r colors` the value column is renamed:
+> With `-r colors` the value column is renamed
 
+```console
+qsv implode -k name -v color -r colors "; " data.csv
+```
+
+```csv
 name,colors
 John,blue; yellow; light red
 Mary,red
+```
 
 Only the key column(s) and the value column appear in the output; any other
 columns are dropped.
-
 By default, all input rows are buffered in memory and groups are emitted in the
 order keys are first seen. If the input is already sorted by the key column(s),
 use --sorted to stream groups as they are seen (memory proportional to the
 largest group, not the whole input).
-
 
 <a name="usage"></a>
 

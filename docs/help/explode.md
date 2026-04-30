@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/explode.rs](https://github.com/dathere/qsv/blob/master/src/cmd/explode.rs)** | [🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
-[Description](#description) | [Usage](#usage) | [Explode Options](#explode-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Explode Options](#explode-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -14,18 +14,29 @@
 Explodes a row into multiple ones by splitting a column value based on the
 given separator.
 
-For instance the following CSV:
 
+<a name="examples"></a>
+
+## Examples [↩](#nav)
+
+```csv
 name,colors
 John,blue|yellow
 Mary,red
+```
 
-Can be exploded on the "colors" <column> based on the "|" <separator> to:
+> Can be exploded on the "colors" <column> based on the "|" <separator>
 
+```console
+qsv explode colors "|" data.csv
+```
+
+```csv
 name,colors
 John,blue
 John,yellow
 Mary,red
+```
 
 
 <a name="usage"></a>

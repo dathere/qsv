@@ -14,7 +14,7 @@
 Create a new computed column or filter rows by evaluating a Python expression on
 every row of a CSV file.
 
-The executed Python has 4 ways to reference cell values (as strings):
+The executed Python has 4 ways to reference cell values (as strings):  
 1. Directly by using column name (e.g. amount) as a local variable. If a column
 name has spaces and other special characters, they are replaced with underscores
 (e.g. "unit cost" -> unit_cost, "test-units/sec" -> test_units_sec)
@@ -25,7 +25,7 @@ name has spaces and other special characters, they are replaced with underscores
 Of course, if your input has no headers, then 4. will be the only available
 option.
 
-Some usage examples:
+Some usage examples:  
 
 Sum numeric columns 'a' and 'b' and call new column 'c'
 ```console
@@ -48,7 +48,7 @@ $ qsv py map formatted 'f"{qty} {fruit} cost ${(float(unit_cost) * float(qty)):.
 ```
 
 
-You can even have conditionals in your f-string:
+You can even have conditionals in your f-string:  
 ```console
 $ qsv py map formatted \
 'f"""{qty} {fruit} cost ${(float(unit_cost) * float(qty)):.2f}. Its quite {"cheap" if ((float(unit_cost) * float(qty)) < 20.0) else "expensive"}!"""'
@@ -76,31 +76,31 @@ $ qsv py map --helper fibonacci.py fib qsv_uh.fibonacci(num_col) data.csv
 ```
 
 
-Below is a detailed example of the --helper option:
+Below is a detailed example of the --helper option:  
 
-Use case:
+Use case:  
 Need to calculate checksum/md5sum of some columns. First column (c1) is "id", and do md5sum of
 the rest of the columns (c2, c3 and c4).
 
-Given test.csv:
+Given test.csv:  
 c1,c2,c3,c4
 1,a2,a3,a4
 2,b2,b3,b4
 3,c2,c3,c4
 
-and hashhelper.py:
+and hashhelper.py:  
 import hashlib
-def md5hash (*args):
+def md5hash (*args):  
 s = ",".join(args)
 return(hashlib.md5(s.encode('utf-8')).hexdigest())
 
-with the following command:
+with the following command:  
 ```console
 $ qsv py map --helper hashhelper.py hashcol 'qsv_uh.md5hash(c2,c3,c4)' test.csv
 ```
 
 
-we get:
+we get:  
 c1,c2,c3,c4,hashcol
 1,a2,a3,a4,cb675342ed940908eef0844d17c35fab
 2,b2,b3,b4,7d594b33f82bdcbc1cfa6f924a84c4cd

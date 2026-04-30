@@ -11,14 +11,14 @@
 
 ## Description [↩](#nav)
 
-Rename the columns of a CSV efficiently. It has two modes of operation:
+Rename the columns of a CSV efficiently. It has two modes of operation:  
 
-Positional mode (default):
+Positional mode (default):  
 The new column names are given as a comma-separated list of names.
 The number of column names given MUST match the number of columns in the
 CSV unless "_all_generic" is used.
 
-Pairwise mode:
+Pairwise mode:  
 The new column names are given as a comma-separated list of pairs of old and new
 column names. The format is "old1,new1,old2,new2,...".
 
@@ -27,27 +27,27 @@ column names. The format is "old1,new1,old2,new2,...".
 
 ## Examples [↩](#nav)
 
-Change the column names of a CSV with three columns:
+Change the column names of a CSV with three columns:  
 ```console
 qsv rename id,name,title
 ```
 
-Rename only specific columns using pairs:
+Rename only specific columns using pairs:  
 ```console
 qsv rename --pairwise oldname,newname,oldcol,newcol
 ```
 
-Replace the column names with generic ones (_col_N):
+Replace the column names with generic ones (_col_N):  
 ```console
 qsv rename _all_generic
 ```
 
-Add generic column names to a CSV with no headers:
+Add generic column names to a CSV with no headers:  
 ```console
 qsv rename _all_generic --no-headers
 ```
 
-Use column names that contains commas and conflict with the separator:
+Use column names that contains commas and conflict with the separator:  
 ```console
 qsv rename '"Date - Opening","Date - Actual Closing"'
 ```

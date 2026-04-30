@@ -23,16 +23,16 @@ Note: To account for case-insensitive file system collisions (e.g. macOS APFS
 and Windows NTFS), the command will add a number suffix to the filename if the
 value is already in use.
 
-EXAMPLE:
+EXAMPLE:  
 
 Partition nyc311.csv file into separate files based on the value of the
-"Borough" column in the current directory:
+"Borough" column in the current directory:  
 ```console
 $ qsv partition Borough . --filename "nyc311-{}.csv" nyc311.csv
 ```
 
 
-will create the following files, each containing the data for each borough:
+will create the following files, each containing the data for each borough:  
 nyc311-Bronx.csv
 nyc311-Brooklyn.csv
 nyc311-Manhattan.csv

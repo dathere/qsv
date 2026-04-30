@@ -15,7 +15,7 @@ Replace occurrences of a pattern across a CSV file.
 
 You can of course match groups using parentheses and use those in
 the replacement string. But don't forget to escape your $ in bash by using a
-backslash or by wrapping the replacement string into single quotes:
+backslash or by wrapping the replacement string into single quotes:  
 
 ```console
 $ qsv replace 'hel(lo)' 'hal$1' file.csv

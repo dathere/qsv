@@ -11,7 +11,7 @@
 
 ## Description [↩](#nav)
 
-Validates CSV data using two main modes:
+Validates CSV data using two main modes:  
 
 ### JSON Schema Validation Mode:
 
@@ -23,7 +23,7 @@ files are created and the command returns an exit code of 0.
 If invalid records are found, they are put into an "invalid" file, with the rest of the
 records put into a "valid"" file.
 
-A "validation-errors.tsv" report is also created with the following columns:
+A "validation-errors.tsv" report is also created with the following columns:  
 
 * row_number: the row number of the invalid record
 * field: the field name of the invalid field
@@ -33,7 +33,7 @@ It uses the JSON Schema Validation Specification (draft 2020-12) to validate the
 It validates the structure of the file, as well as the data types and domain/range of the fields.
 See <https://json-schema.org/draft/2020-12/json-schema-validation.html>
 
-qsv supports a custom format - `currency`. This format will only accept a valid currency, defined as:
+qsv supports a custom format - `currency`. This format will only accept a valid currency, defined as:  
 
 1. ISO Currency Symbol (optional): This is the ISO 4217 three-character code or currency symbol
 (e.g. USD, EUR, JPY, $, €, ¥, etc.)
@@ -54,7 +54,7 @@ qsv also supports two custom keywords - `dynamicEnum` and `uniqueCombinedWith`.
 It can be used to validate against a set of values unknown at the time of schema creation or
 when the set of valid values is dynamic or too large to hardcode into the JSON Schema with `enum`.
 The reference CSV file can be local or a URL (http/https, dathere & ckan schemes supported).
-The "dynamicEnum" value has the form:
+The "dynamicEnum" value has the form:  
 
 // qsvlite binary variant only supports URIs which can be files on the local filesystem
 // or remote files (http and https schemes supported)
@@ -103,7 +103,7 @@ If colname is not specified, the first column of the CSV file is read and used f
 ### Uniquecombinedwith
 
 `uniqueCombinedWith` allows you to validate that combinations of values across specified columns
-are unique. It can be used with either column names or column indices (0-based). For example:
+are unique. It can be used with either column names or column indices (0-based). For example:  
 
 // Validate that combinations of name and email are unique
 uniqueCombinedWith = ["name", "email"]
@@ -136,7 +136,7 @@ validation rules.
 
 For example, if we created a JSON schema file called "reference.schema.json" using the `schema` command.
 And want to validate "mydata.csv" which we know has validation errors, the output files from running
-`qsv validate mydata.csv reference.schema.json` are:
+`qsv validate mydata.csv reference.schema.json` are:  
 
 * mydata.csv.valid
 * mydata.csv.invalid
@@ -147,14 +147,14 @@ With an exit code of 1 to indicate a validation error.
 If we validate another CSV file, "mydata2.csv", which we know is valid, there are no output files,
 and the exit code is 0.
 
-If piped from stdin, the filenames will use `stdin.csv` as the base filename. For example:
+If piped from stdin, the filenames will use `stdin.csv` as the base filename. For example:  
 `cat mydata.csv | qsv validate reference.schema.json`
 
 * stdin.csv.valid
 * stdin.csv.invalid
 * stdin.csv.validation-errors.tsv
 
-JSON SCHEMA SCHEMA VALIDATION SUBMODE:
+JSON SCHEMA SCHEMA VALIDATION SUBMODE:  
 ---
 
 `validate` also has a `schema` subcommand to validate JSON Schema files themselves. E.g.

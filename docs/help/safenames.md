@@ -20,7 +20,7 @@ If a header with the same name already exists, append a sequence suffix (e.g. co
 Names are limited to 60 bytes in length (snapped to UTF-8 char boundary, including any
 duplicate-disambiguation suffix). Empty names are replaced with the unsafe prefix.
 
-In addition, specifically because of CKAN Datastore requirements:
+In addition, specifically because of CKAN Datastore requirements:  
 - Headers with leading underscores are replaced with "unsafe_" prefix.
 - Headers that are named "_id" are renamed to "reserved__id".
 
@@ -36,7 +36,7 @@ No stdout output is generated in Verify and Verbose mode.
 In JSON (j) mode, returns Verbose mode info in minified JSON to stdout.
 In Pretty JSON (J) mode, returns Verbose mode info in pretty printed JSON to stdout.
 
-Given data.csv:
+Given data.csv:  
 c1,12_col,Col with Embedded Spaces,,Column!@Invalid+Chars,c1
 1,a2,a3,a4,a5,a6
 
@@ -48,7 +48,7 @@ c1,unsafe_12_col,col_with_embedded_spaces,unsafe_,column__invalid_chars,c1_2
 1,a2,a3,a4,a5,a6
 stderr: 5
 
-Conditionally rename headers, allowing "quoted identifiers":
+Conditionally rename headers, allowing "quoted identifiers":  
 ```console
 $ qsv safenames --mode c data.csv
 ```
@@ -57,14 +57,14 @@ c1,unsafe_12_col,Col with Embedded Spaces,unsafe_,column__invalid_chars,c1_2
 1,a2,a3,a4,a5,a6
 stderr: 4
 
-Verify how many "unsafe" headers are found:
+Verify how many "unsafe" headers are found:  
 ```console
 $ qsv safenames --mode v data.csv
 ```
 
 stderr: 4
 
-Verbose mode:
+Verbose mode:  
 ```console
 $ qsv safenames --mode V data.csv
 ```

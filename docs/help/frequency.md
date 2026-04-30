@@ -35,9 +35,9 @@ to the cardinality of each column would be normally required.
 However, this is problematic for columns with ALL unique values (e.g. an ID column),
 as the command will need to allocate memory proportional to the column's cardinality.
 
-To overcome this, the frequency command uses several mechanisms:
+To overcome this, the frequency command uses several mechanisms:  
 
-STATS CACHE:
+STATS CACHE:  
 If the stats cache exists for the input file, it is used to get column cardinality information.
 This short-circuits frequency compilation for columns with all unique values (i.e. where
 rowcount == cardinality), eliminating the need to maintain an in-memory hashmap for ID columns.
@@ -48,7 +48,7 @@ That's why for MAXIMUM PERFORMANCE, it's HIGHLY RECOMMENDED to create an index (
 and pre-populate the stats cache (`qsv stats data.csv --cardinality --stats-jsonl`)
 BEFORE running `frequency`.
 
-MEMORY-AWARE CHUNKING:
+MEMORY-AWARE CHUNKING:  
 When working with large datasets, memory-aware chunking is automatically enabled. Chunk size
 is dynamically calculated based on available memory and record sampling.
 
@@ -57,7 +57,7 @@ You can override this behavior by setting the QSV_FREQ_CHUNK_MEMORY_MB environme
 or any non-u64 value (e.g. -1 or "auto") for CPU-based chunking (1 chunk = num records/number of
 CPUs)), or by setting the --jobs option.
 
-NOTE: "Complete" Frequency Tables:
+NOTE: "Complete" Frequency Tables:  
 
 By default, ID columns will have an "<ALL UNIQUE>" value with count equal to
 rowcount and percentage set to 100 with a rank of 0. This is done by using the

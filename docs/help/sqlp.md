@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sqlp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sqlp.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")[🐻‍❄️](TableOfContents.md#legend "command powered/accelerated by  vectorized query engine.")[🗄️](TableOfContents.md#legend "Extended input support.")[🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")
 
 <a name="nav"></a>
-[Description](#description) | [Usage](#usage) | [Sqlp Options](#sqlp-options) | [Polars CSV Input Parsing Options](#polars-csv-input-parsing-options) | [CSV Output Format Only Options](#csv-output-format-only-options) | [Arrow/Avro/Parquet Output Formats Only Options](#arrow/avro/parquet-output-formats-only-options) | [Parquet Output Format Only Options](#parquet-output-format-only-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Sqlp Options](#sqlp-options) | [Polars CSV Input Parsing Options](#polars-csv-input-parsing-options) | [CSV Output Format Only Options](#csv-output-format-only-options) | [Arrow/Avro/Parquet Output Formats Only Options](#arrow/avro/parquet-output-formats-only-options) | [Parquet Output Format Only Options](#parquet-output-format-only-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -24,265 +24,266 @@ the Python version of Polars, so there will be some minor syntax differences.
 
 Returns the shape of the query result (number of rows, number of columns) to stderr.
 
-Example queries:
+
+<a name="examples"></a>
+
+## Examples [↩](#nav)
 
 ```console
-$ qsv sqlp data.csv 'select * from data where col1 > 10 order by all desc limit 20'
+qsv sqlp data.csv 'select * from data where col1 > 10 order by all desc limit 20'
 ```
-
 
 ```console
-$ qsv sqlp data.csv 'select col1, col2 as friendlyname from data' --format parquet --output data.parquet
+qsv sqlp data.csv 'select col1, col2 as friendlyname from data' --format parquet --output data.parquet
 ```
 
-
-# enclose column names with spaces in double quotes
-```console
-$ qsv sqlp data.csv 'select "col 1", "col 2" from data'
-```
-
+> enclose column names with spaces in double quotes
 
 ```console
-$ qsv sqlp data.csv data2.csv 'select * from data join data2 on data.colname = data2.colname'
+qsv sqlp data.csv 'select "col 1", "col 2" from data'
 ```
-
 
 ```console
-$ qsv sqlp data.csv data2.csv 'SELECT col1 FROM data WHERE col1 IN (SELECT col2 FROM data2)'
+qsv sqlp data.csv data2.csv 'select * from data join data2 on data.colname = data2.colname'
 ```
 
+```console
+qsv sqlp data.csv data2.csv 'SELECT col1 FROM data WHERE col1 IN (SELECT col2 FROM data2)'
+```
 
-# Use dollar-quoting to avoid escaping reserved characters in literals.
+> Use dollar-quoting to avoid escaping reserved characters in literals.
+
 <https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-DOLLAR-QUOTING>
 ```console
-$ qsv sqlp data.csv "SELECT * FROM data WHERE col1 = $$O'Reilly$$"
+qsv sqlp data.csv "SELECT * FROM data WHERE col1 = $$O'Reilly$$"
 ```
 
 ```console
-$ qsv sqlp data.csv 'SELECT * FROM data WHERE col1 = $SomeTag$Diane's horse "Twinkle"$SomeTag$'
+qsv sqlp data.csv 'SELECT * FROM data WHERE col1 = $SomeTag$Diane's horse "Twinkle"$SomeTag$'
 ```
 
+> Unions and Joins are supported.
 
-# Unions and Joins are supported.
 ```console
-$ qsv sqlp data1.csv data2.csv 'SELECT * FROM data1 UNION ALL BY NAME SELECT * FROM data2'
+qsv sqlp data1.csv data2.csv 'SELECT * FROM data1 UNION ALL BY NAME SELECT * FROM data2'
 ```
 
-
 ```console
-$ qsv sqlp tbl_a.csv tbl_b.csv tbl_c.csv "SELECT * FROM tbl_a \
+qsv sqlp tbl_a.csv tbl_b.csv tbl_c.csv "SELECT * FROM tbl_a \
 RIGHT ANTI JOIN tbl_b USING (b) \
 LEFT SEMI JOIN tbl_c USING (c)"
 ```
 
+> use "_t_N" aliases to refer to input files, where N is the 1-based index
+> of the input file/s. For example, _t_1 refers to the first input file, _t_2
+> refers to the second input file, and so on.
 
-# use "_t_N" aliases to refer to input files, where N is the 1-based index
-# of the input file/s. For example, _t_1 refers to the first input file, _t_2
-# refers to the second input file, and so on.
 ```console
-$ qsv sqlp data.csv data2.csv 'select * from _t_1 join _t_2 on _t_1.colname = _t_2.colname'
+qsv sqlp data.csv data2.csv 'select * from _t_1 join _t_2 on _t_1.colname = _t_2.colname'
 ```
 
-
 ```console
-$ qsv sqlp data.csv 'SELECT col1, count(*) AS cnt FROM data GROUP BY col1 ORDER BY cnt DESC, col1 ASC'
+qsv sqlp data.csv 'SELECT col1, count(*) AS cnt FROM data GROUP BY col1 ORDER BY cnt DESC, col1 ASC'
 ```
 
-
 ```console
-$ qsv sqlp data.csv "select lower(col1), substr(col2, 2, 4) from data WHERE starts_with(col1, 'foo')"
+qsv sqlp data.csv "select lower(col1), substr(col2, 2, 4) from data WHERE starts_with(col1, 'foo')"
 ```
 
-
 ```console
-$ qsv sqlp data.csv "select COALESCE(NULLIF(col2, ''), 'foo') from data"
+qsv sqlp data.csv "select COALESCE(NULLIF(col2, ''), 'foo') from data"
 ```
 
-
 ```console
-$ qsv sqlp tbl1.csv "SELECT x FROM tbl1 WHERE x IN (SELECT y FROM tbl1)"
+qsv sqlp tbl1.csv "SELECT x FROM tbl1 WHERE x IN (SELECT y FROM tbl1)"
 ```
 
+> Natural Joins are supported too! (<https://www.w3resource.com/sql/joins/natural-join.php>)
 
-# Natural Joins are supported too! (<https://www.w3resource.com/sql/joins/natural-join.php>)
 ```console
-$ qsv sqlp data1.csv data2.csv data3.csv \
+qsv sqlp data1.csv data2.csv data3.csv \
 "SELECT COLUMNS('^[^:]+$') FROM data1 NATURAL JOIN data2 NATURAL JOIN data3 ORDER BY COMPANY_ID"
 ```
 
+> Use a SQL script to run a long, complex SQL query or to run SEVERAL SQL queries.
+> When running several queries, each query needs to be separated by a semicolon,
+> the last query will be returned as the result.
+> Typically, earlier queries are used to create tables that can be used in later queries.
+> Note that scripts support single-line comments starting with '--' so feel free to
+> add comments to your script.
+> In long, complex scripts that produce multiple temporary tables, note that you can use
+> `truncate table <table_name>;` to free up memory used by temporary tables. Otherwise,
+> the memory used by the temporary tables won't be freed until the script finishes.
+> See test_sqlp/sqlp_boston311_sql_script() for an example.
 
-# Use a SQL script to run a long, complex SQL query or to run SEVERAL SQL queries.
-# When running several queries, each query needs to be separated by a semicolon,
-# the last query will be returned as the result.
-# Typically, earlier queries are used to create tables that can be used in later queries.
-# Note that scripts support single-line comments starting with '--' so feel free to
-# add comments to your script.
-# In long, complex scripts that produce multiple temporary tables, note that you can use
-# `truncate table <table_name>;` to free up memory used by temporary tables. Otherwise,
-# the memory used by the temporary tables won't be freed until the script finishes.
-# See test_sqlp/sqlp_boston311_sql_script() for an example.
 ```console
-$ qsv sqlp data.csv data2.csv data3.csv data4.csv script.sql --format json --output data.json
+qsv sqlp data.csv data2.csv data3.csv data4.csv script.sql --format json --output data.json
 ```
 
+> use Common Table Expressions (CTEs) using WITH to simplify complex queries
 
-# use Common Table Expressions (CTEs) using WITH to simplify complex queries
 ```console
-$ qsv sqlp people.csv "WITH millennials AS (SELECT * FROM people WHERE age >= 25 and age <= 40) \
+qsv sqlp people.csv "WITH millennials AS (SELECT * FROM people WHERE age >= 25 and age <= 40) \
 SELECT * FROM millennials WHERE STARTS_WITH(name,'C')"
 ```
 
+> CASE statement
 
-# CASE statement
 ```console
-$ qsv sqlp data.csv "select CASE WHEN col1 > 10 THEN 'foo' WHEN col1 > 5 THEN 'bar' ELSE 'baz' END from data"
+qsv sqlp data.csv "select CASE WHEN col1 > 10 THEN 'foo' WHEN col1 > 5 THEN 'bar' ELSE 'baz' END from data"
 ```
 
 ```console
-$ qsv sqlp data.csv "select CASE col*5 WHEN 10 THEN 'foo' WHEN 5 THEN 'bar' ELSE 'baz' END from _t_1"
+qsv sqlp data.csv "select CASE col*5 WHEN 10 THEN 'foo' WHEN 5 THEN 'bar' ELSE 'baz' END from _t_1"
 ```
 
+> spaceship operator: "<=>" (three-way comparison operator)
+> returns -1 if left < right, 0 if left == right, 1 if left > right
+> <https://en.wikipedia.org/wiki/Three-way_comparison#Spaceship_operator>
 
-# spaceship operator: "<=>" (three-way comparison operator)
-#  returns -1 if left < right, 0 if left == right, 1 if left > right
-# <https://en.wikipedia.org/wiki/Three-way_comparison#Spaceship_operator>
 ```console
-$ qsv sqlp data.csv data2.csv "select data.c2 <=> data2.c2 from data join data2 on data.c1 = data2.c1"
+qsv sqlp data.csv data2.csv "select data.c2 <=> data2.c2 from data join data2 on data.c1 = data2.c1"
 ```
 
-
-# support ^@ ("starts with"), and ~~ (like) ,~~* (ilike),!~~ (not like),!~~* (not ilike) operators
-```console
-$ qsv sqlp data.csv "select * from data WHERE col1 ^@ 'foo'"
-```
+> support ^@ ("starts with"), and ~~ (like) ,~~* (ilike),!~~ (not like),!~~* (not ilike) operators
 
 ```console
-$ qsv sqlp data.csv "select c1 ^@ 'a' AS c1_starts_with_a from data"
+qsv sqlp data.csv "select * from data WHERE col1 ^@ 'foo'"
 ```
 
 ```console
-$ qsv sqlp data.csv "select c1 ~~* '%B' AS c1_ends_with_b_caseinsensitive from data"
-```
-
-
-# support SELECT * ILIKE wildcard syntax
-# select all columns from customers where the column contains 'a' followed by an 'e'
-# with any characters (or no characters), in between, case-insensitive
-# if customers.csv has columns LastName, FirstName, Address, City, State, Zip
-# this query will return all columns for all rows except the columns that don't
-# contain 'a' followed by an 'e' - i.e. except City and Zip
-```console
-$ qsv sqlp customers.csv "SELECT * ILIKE '%a%e%' FROM customers ORDER BY LastName, FirstName"
-```
-
-
-# regex operators: "~" (contains pattern, case-sensitive); "~*" (contains pattern, case-insensitive)
-#   "!~" (does not contain pattern, case-sensitive); "!~*" (does not contain pattern, case-insensitive)
-```console
-$ qsv sqlp data.csv "select * from data WHERE col1 ~ '^foo' AND col2 > 10"
+qsv sqlp data.csv "select c1 ^@ 'a' AS c1_starts_with_a from data"
 ```
 
 ```console
-$ qsv sqlp data.csv "select * from data WHERE col1 !~* 'bar$' AND col2 > 10"
+qsv sqlp data.csv "select c1 ~~* '%B' AS c1_ends_with_b_caseinsensitive from data"
 ```
 
+> support SELECT * ILIKE wildcard syntax
+> select all columns from customers where the column contains 'a' followed by an 'e'
+> with any characters (or no characters), in between, case-insensitive
+> if customers.csv has columns LastName, FirstName, Address, City, State, Zip
+> this query will return all columns for all rows except the columns that don't
+> contain 'a' followed by an 'e' - i.e. except City and Zip
 
-# regexp_like function: regexp_like(<string>, <pattern>, <optional flags>)
-# returns true if <string> matches <pattern>, false otherwise
-#   <optional flags> can be one or more of the following:
-#   'c' (case-sensitive - default), 'i' (case-insensitive), 'm' (multiline)
 ```console
-$ qsv sqlp data.csv "select * from data WHERE regexp_like(col1, '^foo') AND col2 > 10"
+qsv sqlp customers.csv "SELECT * ILIKE '%a%e%' FROM customers ORDER BY LastName, FirstName"
 ```
 
-# case-insensitive regexp_like
+> regex operators: "~" (contains pattern, case-sensitive); "~*" (contains pattern, case-insensitive)
+> "!~" (does not contain pattern, case-sensitive); "!~*" (does not contain pattern, case-insensitive)
+
 ```console
-$ qsv sqlp data.csv "select * from data WHERE regexp_like(col1, '^foo', 'i') AND col2 > 10"
-```
-
-
-# regexp match using a literal pattern
-```console
-$ qsv sqlp data.csv "select idx,val from data WHERE val regexp '^foo'"
-```
-
-
-# regexp match using patterns from another column
-```console
-$ qsv sqlp data.csv "select idx,val from data WHERE val regexp pattern_col"
-```
-
-
-# use Parquet, JSONL and Arrow files in SQL queries
-```console
-$ qsv sqlp data.csv "select * from data join read_parquet('data2.parquet') as t2 ON data.c1 = t2.c1"
+qsv sqlp data.csv "select * from data WHERE col1 ~ '^foo' AND col2 > 10"
 ```
 
 ```console
-$ qsv sqlp data.csv "select * from data join read_ndjson('data2.jsonl') as t2 on data.c1 = t2.c1"
+qsv sqlp data.csv "select * from data WHERE col1 !~* 'bar$' AND col2 > 10"
+```
+
+> regexp_like function: regexp_like(<string>, <pattern>, <optional flags>)
+> returns true if <string> matches <pattern>, false otherwise
+> <optional flags> can be one or more of the following:
+> 'c' (case-sensitive - default), 'i' (case-insensitive), 'm' (multiline)
+
+```console
+qsv sqlp data.csv "select * from data WHERE regexp_like(col1, '^foo') AND col2 > 10"
+```
+
+> case-insensitive regexp_like
+
+```console
+qsv sqlp data.csv "select * from data WHERE regexp_like(col1, '^foo', 'i') AND col2 > 10"
+```
+
+> regexp match using a literal pattern
+
+```console
+qsv sqlp data.csv "select idx,val from data WHERE val regexp '^foo'"
+```
+
+> regexp match using patterns from another column
+
+```console
+qsv sqlp data.csv "select idx,val from data WHERE val regexp pattern_col"
+```
+
+> use Parquet, JSONL and Arrow files in SQL queries
+
+```console
+qsv sqlp data.csv "select * from data join read_parquet('data2.parquet') as t2 ON data.c1 = t2.c1"
 ```
 
 ```console
-$ qsv sqlp data.csv "select * from data join read_ipc('data2.arrow') as t2 ON data.c1 = t2.c1"
+qsv sqlp data.csv "select * from data join read_ndjson('data2.jsonl') as t2 on data.c1 = t2.c1"
 ```
 
 ```console
-$ qsv sqlp SKIP_INPUT "select * from read_parquet('data.parquet') order by col1 desc limit 100"
+qsv sqlp data.csv "select * from data join read_ipc('data2.arrow') as t2 ON data.c1 = t2.c1"
 ```
 
 ```console
-$ qsv sqlp SKIP_INPUT "select * from read_ndjson('data.jsonl') as t1 join read_ipc('data.arrow') as t2 on t1.c1 = t2.c1"
-```
-
-
-# you can also directly load CSVs using the Polars read_csv() SQL function. This is useful when
-# you want to bypass the regular CSV parser (with SKIP_INPUT) and use Polars' multithreaded,
-# mem-mapped CSV parser instead - making for dramatically faster queries at the cost of CSV parser
-# configurability (i.e. limited to comma delimiter, no CSV comments, etc.).
-```console
-$ qsv sqlp SKIP_INPUT "select * from read_csv('data.csv') order by col1 desc limit 100"
-```
-
-
-# note that you can also use read_csv() to read compressed files directly
-# gzip, zstd and zlib automatic decompression are supported
-```console
-$ qsv sqlp SKIP_INPUT "select * from read_csv('data.csv.gz')"
+qsv sqlp SKIP_INPUT "select * from read_parquet('data.parquet') order by col1 desc limit 100"
 ```
 
 ```console
-$ qsv sqlp SKIP_INPUT "select * from read_csv('data.csv.zst')"
+qsv sqlp SKIP_INPUT "select * from read_ndjson('data.jsonl') as t1 join read_ipc('data.arrow') as t2 on t1.c1 = t2.c1"
+```
+
+> you can also directly load CSVs using the Polars read_csv() SQL function. This is useful when
+> you want to bypass the regular CSV parser (with SKIP_INPUT) and use Polars' multithreaded,
+> mem-mapped CSV parser instead - making for dramatically faster queries at the cost of CSV parser
+> configurability (i.e. limited to comma delimiter, no CSV comments, etc.).
+
+```console
+qsv sqlp SKIP_INPUT "select * from read_csv('data.csv') order by col1 desc limit 100"
+```
+
+> note that you can also use read_csv() to read compressed files directly
+> gzip, zstd and zlib automatic decompression are supported
+
+```console
+qsv sqlp SKIP_INPUT "select * from read_csv('data.csv.gz')"
 ```
 
 ```console
-$ qsv sqlp SKIP_INPUT "select * from read_csv('data.csv.zlib')"
+qsv sqlp SKIP_INPUT "select * from read_csv('data.csv.zst')"
 ```
 
-
-# apart from using Polar's table functions, you can also use SKIP_INPUT when the SELECT
-# statement doesn't require an input file
 ```console
-$ qsv sqlp SKIP_INPUT "SELECT 1 AS one, '2' AS two, 3.0 AS three"
+qsv sqlp SKIP_INPUT "select * from read_csv('data.csv.zlib')"
 ```
 
+> apart from using Polar's table functions, you can also use SKIP_INPUT when the SELECT
+> statement doesn't require an input file
 
-# use stdin as input
-$ cat data.csv | qsv sqlp - 'select * from stdin'
-$ cat data.csv | qsv sqlp - data2.csv 'select * from stdin join data2 on stdin.col1 = data2.col1'
-
-# automatic snappy decompression/compression
 ```console
-$ qsv sqlp data.csv.sz 'select * from data where col1 > 10' --output result.csv.sz
+qsv sqlp SKIP_INPUT "SELECT 1 AS one, '2' AS two, 3.0 AS three"
 ```
 
+> use stdin as input
 
-# explain query plan
 ```console
-$ qsv sqlp data.csv 'explain select * from data where col1 > 10 order by col2 desc limit 20'
+cat data.csv | qsv sqlp - 'select * from stdin'
 ```
 
+```console
+cat data.csv | qsv sqlp - data2.csv 'select * from stdin join data2 on stdin.col1 = data2.col1'
+```
 
-For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_sqlp.rs>.
+> automatic snappy decompression/compression
+
+```console
+qsv sqlp data.csv.sz 'select * from data where col1 > 10' --output result.csv.sz
+```
+
+> explain query plan
+
+```console
+qsv sqlp data.csv 'explain select * from data where col1 > 10 order by col2 desc limit 20'
+```
+
+For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_sqlp.rs).
 
 
 <a name="usage"></a>

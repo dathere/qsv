@@ -30,7 +30,7 @@ By default, the prebuilt index uses the Geonames Gazeteer cities15000.zip file u
 English names. It contains cities with populations > 15,000 (about ~26k cities).
 See <https://download.geonames.org/export/dump/> for more information.
 
-It has seven major subcommands:
+It has seven major subcommands:  
 * suggest        - given a partial City name, return the closest City's location metadata
 per the local Geonames cities index (Jaro-Winkler distance)
 * suggestnow     - same as suggest, but using a partial City name from the command line,
@@ -263,7 +263,7 @@ $ qsv geocode iplookupnow -f "%cityrecord" 140.174.222.253
 INDEX-<operation>
 Manage the local Geonames cities index used by the geocode command.
 
-It has four operations:
+It has four operations:  
 * check  - checks if the local Geonames index is up-to-date compared to the Geonames website.
 returns the index file's metadata JSON to stdout.
 * update - updates the local Geonames index with the latest changes from the Geonames website.

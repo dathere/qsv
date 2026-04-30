@@ -17,7 +17,7 @@ performance score with actionable optimization suggestions BEFORE running the qu
 Accepts the same input/SQL arguments as sqlp. Outputs a human-readable performance report
 (default) or JSON (--json). Supports Polars mode (default) and DuckDB mode (--duckdb).
 
-Scoring factors include:
+Scoring factors include:  
 * Query plan analysis (EXPLAIN output from Polars or DuckDB)
 * Type optimization (column types vs. usage in query)
 * Join key cardinality and data distribution
@@ -25,7 +25,7 @@ Scoring factors include:
 * Query anti-pattern detection (SELECT *, missing LIMIT, cartesian joins, etc.)
 * Infrastructure checks (index files, cache freshness)
 
-Caches are auto-generated when missing:
+Caches are auto-generated when missing:  
 * stats cache via `qsv stats --everything --stats-jsonl`
 * frequency cache via `qsv frequency --frequency-jsonl`
 

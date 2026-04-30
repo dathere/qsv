@@ -13,28 +13,28 @@
 
 Convert between various spatial formats and CSV/SVG including GeoJSON, SHP, and more.
 
-For example to convert a GeoJSON file into CSV data:
+For example to convert a GeoJSON file into CSV data:  
 
 ```console
 $ qsv geoconvert file.geojson geojson csv
 ```
 
 
-To use stdin as input instead of a file path, use a dash "-":
+To use stdin as input instead of a file path, use a dash "-":  
 
 ```console
 $ qsv prompt -m "Choose a GeoJSON file" -F geojson | qsv geoconvert - geojson csv
 ```
 
 
-To convert a CSV file into GeoJSON data, specify the WKT geometry column with the --geometry flag:
+To convert a CSV file into GeoJSON data, specify the WKT geometry column with the --geometry flag:  
 
 ```console
 $ qsv geoconvert file.csv csv geojson --geometry geometry
 ```
 
 
-Alternatively specify the latitude and longitude columns with the --latitude and --longitude flags:
+Alternatively specify the latitude and longitude columns with the --latitude and --longitude flags:  
 
 ```console
 $ qsv geoconvert file.csv csv geojson --latitude lat --longitude lon

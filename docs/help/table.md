@@ -15,7 +15,7 @@ Outputs CSV data as a table with columns in alignment.
 
 Though this command is primarily designed for DISPLAYING CSV data using
 "elastic tabstops" so its more human-readable, it can also be used to convert
-CSV data to other special machine-readable formats:
+CSV data to other special machine-readable formats:  
 -  a more human-readable TSV format with the "leftendtab" alignment option
 -  Fixed-Width format with the "leftfwf" alignment option - similar to "left",
 but with the first line being a comment (prefixed with "#") that enumerates

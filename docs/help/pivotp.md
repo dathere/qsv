@@ -13,14 +13,14 @@
 
 Pivots or groups CSV data using the Polars engine.
 
-PIVOT MODE (with <on-cols>):
-The pivot operation consists of:
+PIVOT MODE (with <on-cols>):  
+The pivot operation consists of:  
 - One or more index columns (these will be the new rows)
 - A column that will be pivoted (this will create the new columns)
 - A values column that will be aggregated
 - An aggregation function to apply. Features "smart" aggregation auto-selection.
 
-GROUP-BY MODE (without <on-cols>):
+GROUP-BY MODE (without <on-cols>):  
 When <on-cols> is omitted, performs a group-by aggregation instead of a pivot.
 This is useful for simple aggregations like counting rows per group.
 In group-by mode, --index is required and --agg smart resolves to len (count).

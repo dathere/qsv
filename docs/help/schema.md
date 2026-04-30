@@ -28,7 +28,7 @@ the `validate` command to validate other CSV data with the same structure using 
 generated JSON schema.
 
 After manually fine-tuning the JSON schema file, note that you can also use the
-`validate` command to validate the JSON Schema file as well:
+`validate` command to validate the JSON Schema file as well:  
 
 ```console
 $ qsv validate schema manually-tuned-jsonschema.json

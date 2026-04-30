@@ -2413,10 +2413,10 @@ mod tests {
         // A line ending in `Examples:` does NOT get the hard break (handled
         // upstream as a section transition).
         let input2 = lines(&["Examples:", "details"]);
-        let md2 = format_description(&input2);
+        let md_2 = format_description(&input2);
         assert!(
-            !md2.contains("Examples:  \n"),
-            "Examples: should not get hard line break, got:\n{md2:?}"
+            !md_2.contains("Examples:  \n"),
+            "Examples: should not get hard line break, got:\n{md_2:?}"
         );
     }
 

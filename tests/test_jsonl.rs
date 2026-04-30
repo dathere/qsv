@@ -100,6 +100,77 @@ fn jsonl_simple_ignore_error() {
 }
 
 #[test]
+fn jsonl_ignore_error_first_line_malformed() {
+    let wrk = Workdir::new("jsonl_ignore_error_first_line_malformed");
+    wrk.create_from_string(
+        "data.jsonl",
+        r#"{"id":1,"name":"Mark"Espiritu","oldest_child":"Tom"}
+{"id":2,"name":"John","oldest_child":"Jessika"}
+{"id":3,"name":"Bob","oldest_child":"Jerry"}"#,
+    );
+    let mut cmd = wrk.command("jsonl");
+    cmd.arg("--ignore-errors").arg("data.jsonl");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // line 1 is malformed; --ignore-errors must skip it and infer headers
+    // from line 2 (the first parseable line).
+    let expected = vec![
+        svec!["id", "name", "oldest_child"],
+        svec!["2", "John", "Jessika"],
+        svec!["3", "Bob", "Jerry"],
+    ];
+    assert_eq!(got, expected);
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn jsonl_bare_scalars() {
+    let wrk = Workdir::new("jsonl_bare_scalars");
+    wrk.create_from_string("data.jsonl", "42\n\"hello\"\ntrue\nnull\n[1,2,3]");
+    let mut cmd = wrk.command("jsonl");
+    cmd.arg("data.jsonl");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // top-level non-Object roots: header is the synthesized "value" column,
+    // each row is the stringified root (null -> empty cell, array -> joined).
+    let expected = vec![
+        svec!["value"],
+        svec!["42"],
+        svec!["hello"],
+        svec!["true"],
+        svec![""],
+        svec!["1,2,3"],
+    ];
+    assert_eq!(got, expected);
+
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn jsonl_error_line_number() {
+    let wrk = Workdir::new("jsonl_error_line_number");
+    wrk.create_from_string(
+        "data.jsonl",
+        r#"{"id":1,"name":"Alice"}
+{"id":2,"name":"Bob"}
+{"id":3,"name":"Carol"}
+{"id":4,"name":"Dave"NOT_VALID}
+{"id":5,"name":"Eve"}"#,
+    );
+    let mut cmd = wrk.command("jsonl");
+    cmd.arg("data.jsonl");
+
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("Could not parse input line 4 as JSON"),
+        "expected stderr to reference input line 4, got: {stderr}"
+    );
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
 fn jsonl_nested() {
     let wrk = Workdir::new("jsonl");
     wrk.create_from_string(

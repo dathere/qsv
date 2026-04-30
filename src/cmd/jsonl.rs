@@ -216,8 +216,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 },
                 Err(e) => {
                     if args.flag_ignore_errors {
-                        // count the line even though we couldn't read it, so
-                        // subsequent line numbers remain accurate
+                        // best-effort: assume one read_line error == one line
+                        // skipped. BufRead::read_line consumes bytes up to and
+                        // including the next newline, so this holds for the
+                        // common cases (e.g. invalid-UTF-8 errors are returned
+                        // after the bytes have already been consumed). For
+                        // pathological I/O errors mid-stream this may drift by
+                        // one or more lines.
                         input_line_idx += 1;
                         continue;
                     }
@@ -312,6 +317,16 @@ Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl."#,
 
         batch.clear();
     } // end batch loop
+
+    // if --ignore-errors swallowed every line, the output is empty (no header,
+    // no rows). Surface a warning so this isn't silently indistinguishable
+    // from "input was empty".
+    if !headers_emitted && input_line_idx > 0 {
+        log::warn!(
+            "All {input_line_idx} input line(s) were unparseable; --ignore-errors produced empty \
+             output."
+        );
+    }
 
     Ok(wtr.flush()?)
 }

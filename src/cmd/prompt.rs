@@ -77,12 +77,8 @@ const DEFAULT_OUTPUT_TITLE: &str = "Save File As";
 fn copy_file_to_output(input_path: Option<PathBuf>, output_path: Option<PathBuf>) -> CliResult<()> {
     let mut buffer: Vec<u8> = Vec::new();
     let input_filename = if let Some(input_path) = input_path {
-        if output_path.is_none() {
-            // we are copying from file to stdout
-            // so read the file into buffer
-            let mut file = std::fs::File::open(&input_path)?;
-            file.read_to_end(&mut buffer)?;
-        }
+        // file input: fs::copy / io::copy stream directly from the path,
+        // so we don't need to read into the buffer here
         input_path
     } else {
         // its stdin, copy to buffer
@@ -102,7 +98,7 @@ fn copy_file_to_output(input_path: Option<PathBuf>, output_path: Option<PathBuf>
             file.flush()?;
         }
     } else if input_filename.exists() {
-        // we copied from file, copy to stdout
+        // file -> stdout: stream the file directly
         let mut input_file = std::fs::File::open(input_filename)?;
         let mut stdout = io::stdout();
         std::io::copy(&mut input_file, &mut stdout)?;
@@ -127,16 +123,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut input_path = None;
     if !(args.flag_fd_output || args.flag_output.is_some()) {
         // prompt for input
+        // No clone of flag_msg needed: the input-prompt branch and the --fd-output
+        // branch are mutually exclusive, so flag_msg won't be reused after this.
         let title = args
             .flag_msg
-            .clone()
-            .unwrap_or_else(|| DEFAULT_INPUT_TITLE.to_owned());
+            .as_deref()
+            .unwrap_or(DEFAULT_INPUT_TITLE)
+            .to_owned();
 
-        // piped commands are actually launched in parallel and not executed sequentially
-        // from left to right as commonly thought. So we need to introduce a delay to ensure
-        // that the input dialog is not opened before the save dialog.
-        // e.g. cat file.csv | qsv prompt | qsv stats | qsv prompt --skip-input --fd-output
-        // The delay ensures that the prompt for input is shown before the prompt for output.
+        // Piped commands launch in parallel, not sequentially left-to-right.
+        // In a pipeline like `qsv prompt | qsv stats | qsv prompt --fd-output`,
+        // this input dialog and the downstream --fd-output save dialog would
+        // otherwise race. Sleep so the save dialog opens first and this input
+        // dialog opens second — leaving the input dialog stacked on top, so
+        // the user picks the input file first and the save dialog is revealed
+        // underneath afterward.
         std::thread::sleep(std::time::Duration::from_millis(args.flag_base_delay_ms));
 
         let mut fd = FileDialog::new()

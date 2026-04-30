@@ -861,6 +861,57 @@ fn parse_usage_sections(usage_text: &str) -> UsageSections {
     }
 }
 
+/// Handle explicit ``` fenced-block start/continuation/end. Returns true when
+/// the line was consumed (the caller should `continue`). When opening a new
+/// fence, closes any active implicit `$ qsv` code block first.
+///
+/// Shared between `format_description` and `format_examples` so the two stay
+/// in sync.
+fn handle_fenced_block(
+    md: &mut String,
+    line: &str,
+    trimmed: &str,
+    in_code_block: &mut bool,
+    in_fenced_block: &mut bool,
+) -> bool {
+    // Inside an explicit ``` fenced code block — preserve original whitespace.
+    if *in_fenced_block {
+        md.push_str(line);
+        md.push('\n');
+        if trimmed.starts_with("```") {
+            *in_fenced_block = false;
+            md.push('\n');
+        }
+        return true;
+    }
+
+    // Opening of an explicit ``` fenced code block.
+    if trimmed.starts_with("```") {
+        if *in_code_block {
+            md.push_str("```\n\n");
+            *in_code_block = false;
+        }
+        md.push_str(line);
+        md.push('\n');
+        *in_fenced_block = true;
+        return true;
+    }
+
+    false
+}
+
+/// Append a markdown hard-line-break (two trailing spaces) when the trimmed
+/// line ends in `:` (other than `Examples:` / `Example:`), so the following
+/// line renders on its own row.
+fn maybe_append_colon_break(md: &mut String, trimmed: &str) {
+    if trimmed.ends_with(':')
+        && !trimmed.starts_with("Examples:")
+        && !trimmed.starts_with("Example:")
+    {
+        md.push_str("  ");
+    }
+}
+
 /// Format description lines into markdown
 fn format_description(lines: &[String]) -> String {
     let mut md = String::new();
@@ -872,27 +923,13 @@ fn format_description(lines: &[String]) -> String {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
 
-        // Inside an explicit ``` fenced code block — preserve original whitespace.
-        if in_fenced_block {
-            md.push_str(line);
-            md.push('\n');
-            if trimmed.starts_with("```") {
-                in_fenced_block = false;
-                md.push('\n');
-            }
-            prev_empty = false;
-            continue;
-        }
-
-        // Opening of an explicit ``` fenced code block.
-        if trimmed.starts_with("```") {
-            if in_code_block {
-                md.push_str("```\n\n");
-                in_code_block = false;
-            }
-            md.push_str(line);
-            md.push('\n');
-            in_fenced_block = true;
+        if handle_fenced_block(
+            &mut md,
+            line,
+            trimmed,
+            &mut in_code_block,
+            &mut in_fenced_block,
+        ) {
             prev_empty = false;
             continue;
         }
@@ -1008,14 +1045,7 @@ fn format_description(lines: &[String]) -> String {
 
         // Regular paragraph text
         md.push_str(&linkify_bare_urls(trimmed));
-        // Lines ending in a colon (other than Examples:/Example:) get a hard line break,
-        // so the following line renders on its own row in markdown.
-        if trimmed.ends_with(':')
-            && !trimmed.starts_with("Examples:")
-            && !trimmed.starts_with("Example:")
-        {
-            md.push_str("  ");
-        }
+        maybe_append_colon_break(&mut md, trimmed);
         md.push('\n');
         prev_empty = false;
     }
@@ -1099,26 +1129,13 @@ fn format_examples(lines: &[String]) -> String {
 
         let trimmed = line.trim();
 
-        // Inside an explicit ``` fenced code block — preserve original whitespace.
-        if in_fenced_block {
-            md.push_str(line);
-            md.push('\n');
-            if trimmed.starts_with("```") {
-                in_fenced_block = false;
-                md.push('\n');
-            }
-            continue;
-        }
-
-        // Opening of an explicit ``` fenced code block.
-        if trimmed.starts_with("```") {
-            if in_code_block {
-                md.push_str("```\n\n");
-                in_code_block = false;
-            }
-            md.push_str(line);
-            md.push('\n');
-            in_fenced_block = true;
+        if handle_fenced_block(
+            &mut md,
+            line,
+            trimmed,
+            &mut in_code_block,
+            &mut in_fenced_block,
+        ) {
             continue;
         }
 
@@ -1304,14 +1321,7 @@ fn format_examples(lines: &[String]) -> String {
 
         // Any other text (description paragraphs within examples)
         md.push_str(&linkify_bare_urls(trimmed));
-        // Lines ending in a colon (other than Examples:/Example:) get a hard line break,
-        // so the following line renders on its own row in markdown.
-        if trimmed.ends_with(':')
-            && !trimmed.starts_with("Examples:")
-            && !trimmed.starts_with("Example:")
-        {
-            md.push_str("  ");
-        }
+        maybe_append_colon_break(&mut md, trimmed);
         md.push('\n');
     }
 
@@ -2339,6 +2349,144 @@ mod tests {
         assert!(
             !md.contains("```console"),
             "Dangling backslash should not open code block, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_fenced_block_preserves_indentation_in_description() {
+        // Explicit ``` fenced blocks must preserve original indentation;
+        // trimming would destroy meaningful whitespace inside e.g. Jinja code.
+        let input = lines(&[
+            "Some prose.",
+            "",
+            "```jinja",
+            "{% if x -%}",
+            "    indented body",
+            "        deeper",
+            "{% endif %}",
+            "```",
+        ]);
+        let md = format_description(&input);
+        assert!(
+            md.contains("    indented body"),
+            "fenced indentation lost (4 spaces), got:\n{md}"
+        );
+        assert!(
+            md.contains("        deeper"),
+            "fenced indentation lost (8 spaces), got:\n{md}"
+        );
+        assert!(md.contains("```jinja"), "opening fence missing, got:\n{md}");
+    }
+
+    #[test]
+    fn test_fenced_block_in_examples_preserves_indentation_and_closes() {
+        let input = lines(&["```csv", "a,b", "  1,2", "```", "", "$ qsv stats data.csv"]);
+        let md = format_examples(&input);
+        // Indentation inside fence preserved
+        assert!(
+            md.contains("  1,2"),
+            "fenced indentation not preserved, got:\n{md}"
+        );
+        // Closing fence emitted
+        let closes = md.matches("```").count();
+        assert!(
+            closes >= 2,
+            "closing fence missing (found {closes} backticks blocks), got:\n{md}"
+        );
+        // qsv line still gets its own ```console fence after the explicit fence
+        assert!(
+            md.contains("```console\nqsv stats data.csv\n```"),
+            "implicit qsv code block did not render after explicit fence, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_colon_introducer_appends_hard_line_break() {
+        // A paragraph line ending in `:` (other than Examples:/Example:) should
+        // get two trailing spaces so the next line renders on its own row.
+        let input = lines(&["The supported formats are:", "csv, tsv, ssv"]);
+        let md = format_description(&input);
+        assert!(
+            md.contains("supported formats are:  \n"),
+            "missing hard line break after colon, got:\n{md:?}"
+        );
+        // A line ending in `Examples:` does NOT get the hard break (handled
+        // upstream as a section transition).
+        let input2 = lines(&["Examples:", "details"]);
+        let md2 = format_description(&input2);
+        assert!(
+            !md2.contains("Examples:  \n"),
+            "Examples: should not get hard line break, got:\n{md2:?}"
+        );
+    }
+
+    #[test]
+    fn test_parser_does_not_enter_examples_from_options() {
+        // An option's help text containing "Examples:" must not flip the
+        // parser state and pull subsequent option lines into the examples vec.
+        let usage = r#"
+Some description.
+
+Usage:
+    qsv foo [options]
+
+foo options:
+    --interval <s>    Time interval. Examples: "1h", "1d".
+    --remote <url>    A remote URL.
+
+Common options:
+    -h, --help
+"#;
+        let sections = parse_usage_sections(usage);
+        // Examples vec must remain empty — the source has no real Examples block.
+        assert!(
+            sections.examples.is_empty(),
+            "examples should be empty when only an option's help has \"Examples:\", got: {:?}",
+            sections.examples
+        );
+        // The --remote option must end up in an option group, not in examples.
+        let in_options = sections
+            .option_groups
+            .iter()
+            .any(|(_, lines)| lines.iter().any(|l| l.contains("--remote")));
+        assert!(
+            in_options,
+            "--remote option leaked out of options vec; option_groups: {:?}",
+            sections.option_groups
+        );
+    }
+
+    #[test]
+    fn test_parser_swallows_repeated_examples_markers_within_examples() {
+        // Multi-section commands (e.g. `to`, `fetch`) use repeated
+        // "Examples:" markers within the Examples block. Those subsequent
+        // markers should be swallowed (skipped), not emitted as literal text.
+        let usage = r#"
+Top description.
+
+Examples:
+
+$ qsv foo a.csv
+
+Examples:
+
+$ qsv foo b.csv
+
+Usage:
+    qsv foo [options]
+"#;
+        let sections = parse_usage_sections(usage);
+        let joined = sections.examples.join("\n");
+        // The literal text "Examples:" should not appear inside the examples
+        // vec — the marker is a state-transition keyword, not content.
+        assert!(
+            !joined.contains("Examples:"),
+            "literal \"Examples:\" leaked into examples vec, got:\n{joined}"
+        );
+        // Both qsv invocations should be present.
+        assert!(
+            joined.contains("qsv foo a.csv") && joined.contains("qsv foo b.csv"),
+            "both example commands should be in the examples vec, got:\n{joined}"
         );
     }
 }

@@ -5419,15 +5419,19 @@ mod tests {
 
     #[test]
     fn compute_jarque_bera_small_n_and_known_values() {
+        // The `kurtosis` parameter here is *excess* kurtosis (i.e. raw - 3),
+        // matching the convention produced by qsv's stats command. The hand-
+        // computed expectations below silently encode that — if the function
+        // ever switches to raw kurtosis, the second case will break.
         // n < 3 -> None.
         assert_eq!(compute_jarque_bera(Some(0.0), Some(0.0), 0), None);
         assert_eq!(compute_jarque_bera(Some(0.0), Some(0.0), 2), None);
-        // Skew = 0, kurt = 0 -> JB = 0, p = exp(0) = 1 (perfectly normal-looking moments).
+        // Skew = 0, excess kurt = 0 -> JB = 0, p = exp(0) = 1 (normal-looking moments).
         let (jb, p) = compute_jarque_bera(Some(0.0), Some(0.0), 100).unwrap();
         assert!(jb.abs() < 1e-12);
         assert!((p - 1.0).abs() < 1e-12);
-        // Hand-computed: n = 60, skew = 1, kurt = 2 -> JB = (60/6) * (1 + 1) = 20.
-        // p = exp(-10).
+        // Hand-computed (excess kurtosis convention):
+        //   n = 60, skew = 1, excess kurt = 2 -> JB = (60/6) * (1 + 4/4) = 20, p = exp(-10).
         let (jb, p) = compute_jarque_bera(Some(1.0), Some(2.0), 60).unwrap();
         assert!((jb - 20.0).abs() < 1e-9);
         assert!((p - (-10.0_f64).exp()).abs() < 1e-12);
@@ -5492,14 +5496,21 @@ mod tests {
 
     #[test]
     fn count_inversions_merge_known_cases() {
-        // Helper that runs the function on a fresh buffer pair.
+        // Helper that runs the function on a fresh buffer pair. Empty input
+        // returns 0 directly so the helper itself can be exercised on `&[]`
+        // without underflow when computing `last = data.len() - 1`.
         fn count(pairs: &[(f64, f64)]) -> i64 {
+            if pairs.is_empty() {
+                return 0;
+            }
             let mut data = pairs.to_vec();
             let mut temp = vec![(0.0, 0.0); data.len()];
             let last = data.len() - 1;
             count_inversions_merge(&mut data, &mut temp, 0, last)
         }
 
+        // Empty slice -> helper short-circuits to 0.
+        assert_eq!(count(&[]), 0);
         // Already sorted by y -> 0 inversions.
         assert_eq!(count(&[(1.0, 1.0), (2.0, 2.0), (3.0, 3.0)]), 0);
         // Reverse-sorted by y -> n*(n-1)/2 inversions for n=3 -> 3.

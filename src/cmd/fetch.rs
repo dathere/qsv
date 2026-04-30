@@ -96,7 +96,7 @@ $ qsv fetch URL --new-column CityState --jaq '[ ."places"[0]."place name",."plac
     data.csv > data_with_CityState.csv
 
 data_with_CityState.csv
-```csv  
+```csv
 URL, CityState,
 https://api.zippopotam.us/us/90210, "[\"Beverly Hills\",\"CA\"]"
 https://api.zippopotam.us/us/94105, "[\"San Francisco\",\"CA\"]"
@@ -135,12 +135,10 @@ $ qsv fetch --url-template "https://api.geocode.earth/v1/reverse?point.lat={lati
 Example 2:
 # Geocode addresses in addresses.csv, pass the "street address" and "zip-code" fields
 # and use jaq to parse placename from the JSON response into a new column in addresses_with_placename.csv.
-#Note how field name non-alphanumeric characters (space and hyphen) in the url-template were replaced with _.
+# Note how field name non-alphanumeric characters (space and hyphen) in the url-template were replaced with _.
 $ qsv fetch --jaq '."features"[0]."properties", ."name"' addresses.csv -c placename --url-template \
   "https://api.geocode.earth/v1/search/structured?address={street_address}&postalcode={zip_code}" \
   > addresses_with_placename.csv
-
-Example:
 
 USING THE HTTP-HEADER OPTION:
 The --http-header option allows you to append arbitrary key value pairs (a valid pair is a key and value

@@ -117,7 +117,7 @@ data.csv > data_with_CityState.csv
 ```
 
 data_with_CityState.csv
-```csv  
+```csv
 URL, CityState,
 https://api.zippopotam.us/us/90210, "[\"Beverly Hills\",\"CA\"]"
 https://api.zippopotam.us/us/94105, "[\"San Francisco\",\"CA\"]"

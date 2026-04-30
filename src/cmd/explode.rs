@@ -11,7 +11,7 @@ Mary,red
 ```
 
 # Can be exploded on the "colors" <column> based on the "|" <separator>
-qsv explode colors "|" data.csv
+$ qsv explode colors "|" data.csv
 
 ```csv
 name,colors

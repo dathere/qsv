@@ -13,7 +13,7 @@ Mary,red
 ```
 
 # Can be imploded by key column "name", joining the "color" column with "; "
-qsv implode -k name -v color "; " data.csv
+$ qsv implode -k name -v color "; " data.csv
 
 ```csv
 name,color
@@ -22,7 +22,7 @@ Mary,red
 ```
 
 # With `-r colors` the value column is renamed
-qsv implode -k name -v color -r colors "; " data.csv
+$ qsv implode -k name -v color -r colors "; " data.csv
 
 ```csv
 name,colors

@@ -26,7 +26,7 @@ john,doe,10,1,true,NJ
 ```
 
 template.tpl
-```luau
+```jinja
 {% set us_state_lookup_loaded = register_lookup("us_states", "dathere://us-states-example.csv") -%}
 Dear {{ first_name|title }} {{ last_name|title }}!
 Your account balance is {{ balance|format_float(2) }}

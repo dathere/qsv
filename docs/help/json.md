@@ -120,9 +120,10 @@ price,fruit
 3.0,banana
 
 Note: Trailing zeroes in decimal numbers from the input data are truncated (2.50 becomes 2.5)
-because input numbers round-trip through f64. With --jaq, integer literals beyond f64's
-precision are preserved (BigInts are kept exact when they fit i64/u64, otherwise emitted as
-strings), and decimal literals written inside the --jaq filter expression itself are passed
+because JSON decimals (numbers with a fractional part or exponent) round-trip through f64.
+Plain integer tokens are preserved exactly (serde_json parses them as i64/u64). With --jaq,
+integers that don't fit i64/u64 are emitted verbatim as strings to avoid silent precision
+loss, and decimal literals written inside the --jaq filter expression itself are passed
 through verbatim (2.50 stays 2.50, scientific notation is kept as written).
 
 If the JSON data was provided using stdin then either use - or do not provide a file path.

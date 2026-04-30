@@ -36,6 +36,49 @@ fn verify_new_columns_exist(csv_content: &str) -> Vec<String> {
     found_columns
 }
 
+/// Read the bivariate-stats CSV at `<wrk>/<path>` and assert that the row for
+/// the field pair (`field1`, `field2`) reports the expected `n_pairs` value.
+/// Field-pair lookup tries both orderings since `compute_all_bivariatestats`
+/// emits each pair exactly once and the order depends on column indices.
+fn assert_bivariate_n_pairs(
+    wrk: &Workdir,
+    path: &str,
+    field1: &str,
+    field2: &str,
+    expected_n_pairs: u64,
+    msg: &str,
+) {
+    let content = wrk.read_to_string(path).unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(content.as_bytes());
+    let headers = rdr.headers().unwrap().clone();
+    let f1_idx = get_column_index(&headers, "field1").expect("field1 column missing");
+    let f2_idx = get_column_index(&headers, "field2").expect("field2 column missing");
+    let np_idx = get_column_index(&headers, "n_pairs").expect("n_pairs column missing");
+
+    for record in rdr.records() {
+        let record = record.unwrap();
+        let f1 = get_field_value(&record, f1_idx).unwrap_or_default();
+        let f2 = get_field_value(&record, f2_idx).unwrap_or_default();
+        if (f1 == field1 && f2 == field2) || (f1 == field2 && f2 == field1) {
+            let np: u64 = get_field_value(&record, np_idx)
+                .unwrap_or_default()
+                .parse()
+                .expect("n_pairs must parse as u64");
+            assert_eq!(
+                np, expected_n_pairs,
+                "{msg}: bivariate row ({f1}, {f2}) reported n_pairs={np}, expected \
+                 {expected_n_pairs}\nfull bivariate output:\n{content}",
+            );
+            return;
+        }
+    }
+    panic!(
+        "{msg}: no bivariate row found for ({field1}, {field2})\nfull bivariate output:\n{content}",
+    );
+}
+
 #[test]
 fn moarstats_basic_with_existing_stats() {
     let wrk = Workdir::new("moarstats_basic");
@@ -1644,6 +1687,84 @@ longitude,Float,,-7107.2688,-71.1626,-71.0298,0.1328,Unsorted,0.1515,,,,,,,,-71.
 source,String,true,,Citizens Connect App,Self Service,,Unsorted,0.5354,12,20,1801,18.01,2.3473,5.5099,0.1303,,,,,,,,0,,,,,0,,,,,,,,,,,4,0.04,Citizens Connect App,1,56,Self Service,1,3,,,,,,,,,,,,,,,,,,,,,,,1.4916,0.7458,0.5834,string,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 "#;
     assert_eq!(got, expected);
+}
+
+#[test]
+fn moarstats_atkinson_repopulates_with_new_epsilon() {
+    let wrk = Workdir::new("moarstats_atkinson_repopulates");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate baseline stats once.
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("--everything")
+        .arg("--infer-dates")
+        .arg(&test_file);
+    wrk.assert_success(&mut stats_cmd);
+
+    // First moarstats run: adds kurtosis/gini/theil/mean_ad + atkinson_index_(1).
+    let mut first = wrk.command("moarstats");
+    first
+        .arg("--advanced")
+        .args(["--epsilon", "1.0"])
+        .arg(&test_file);
+    wrk.assert_success(&mut first);
+
+    // Second run with a different epsilon: only `atkinson_index_(2.5)` is new.
+    let mut second = wrk.command("moarstats");
+    second
+        .arg("--advanced")
+        .args(["--epsilon", "2.5"])
+        .arg(&test_file);
+    wrk.assert_success(&mut second);
+
+    let got = wrk.read_to_string("boston311-100.stats.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(got.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let new_col_idx = get_column_index(&headers, "atkinson_index_(2.5)").expect(
+        "atkinson_index_(2.5) column must exist after second --advanced run with new epsilon",
+    );
+    let prior_col_idx = get_column_index(&headers, "atkinson_index_(1)")
+        .expect("atkinson_index_(1) column from the first run must still be present");
+    let type_idx = get_column_index(&headers, "type").expect("stats CSV must have a type column");
+
+    // Assert at least one numeric/date row has a non-empty value for the new
+    // Atkinson column. The pre-fix behavior leaves this column blank for every
+    // row; this assertion is what would have caught the original bug.
+    let mut numeric_rows_seen = 0;
+    let mut populated_rows = 0;
+    for record in rdr.records() {
+        let record = record.unwrap();
+        let field_type = get_field_value(&record, type_idx).unwrap_or_default();
+        if !matches!(
+            field_type.as_str(),
+            "Integer" | "Float" | "Date" | "DateTime"
+        ) {
+            continue;
+        }
+        numeric_rows_seen += 1;
+        let new_val = get_field_value(&record, new_col_idx).unwrap_or_default();
+        let prior_val = get_field_value(&record, prior_col_idx).unwrap_or_default();
+        // The first-run column should still have content for this row; if we
+        // see content there but not in the new column we have the bug.
+        if !prior_val.is_empty() && !new_val.is_empty() {
+            populated_rows += 1;
+        }
+    }
+
+    assert!(
+        numeric_rows_seen > 0,
+        "fixture must contain numeric/date fields"
+    );
+    assert!(
+        populated_rows > 0,
+        "atkinson_index_(2.5) must be populated for at least one numeric/date row when \
+         atkinson_index_(1) is populated (regression: needs_kga gate ignored the parameterized \
+         Atkinson key)",
+    );
 }
 
 #[test]
@@ -4214,6 +4335,330 @@ fn moarstats_bivariate_with_join() {
     assert!(
         get_column_index(&headers, "field1").is_some(),
         "Bivariate joined file should have field1 column"
+    );
+}
+
+/// `--join-keys` count must equal `--join-inputs` count + 1 (one for primary,
+/// one per additional dataset). The pre-flight check inside
+/// `join_datasets_internal` returns an error when this invariant is violated.
+#[test]
+fn moarstats_join_keys_count_mismatch_errors() {
+    let wrk = Workdir::new("moarstats_join_keys_mismatch");
+
+    wrk.create(
+        "primary.csv",
+        vec![
+            svec!["id", "value1"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+            svec!["1", "10"],
+        ],
+    );
+    wrk.create(
+        "secondary.csv",
+        vec![
+            svec!["id", "value2"],
+            svec!["1", "100"],
+            svec!["2", "200"],
+            svec!["3", "300"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("primary.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    // Only one join key for two datasets (primary + secondary) -> should fail.
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("--join-inputs")
+        .arg("secondary.csv")
+        .arg("--join-keys")
+        .arg("id") // need "id,id"
+        .arg("primary.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+/// `--join-inputs` requires `--join-keys`; without keys, `run` fails before
+/// `join_datasets_internal` is even invoked.
+#[test]
+fn moarstats_join_inputs_without_keys_errors() {
+    let wrk = Workdir::new("moarstats_join_no_keys");
+
+    wrk.create(
+        "primary.csv",
+        vec![
+            svec!["id", "value1"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["1", "10"],
+        ],
+    );
+    wrk.create(
+        "secondary.csv",
+        vec![svec!["id", "value2"], svec!["1", "100"], svec!["2", "200"]],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("primary.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("--join-inputs")
+        .arg("secondary.csv")
+        .arg("primary.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+/// Verify that `--join-type left` propagates through `join_datasets_internal`
+/// and produces the larger joined dataset that left-join semantics require
+/// (all primary rows kept, including unmatched). The (id, value1) column pair
+/// is from the primary side only, so its n_pairs equals the joined row count
+/// — a regression silently coercing `left` to `inner` would drop the
+/// unmatched primary row and produce n_pairs=4 instead of 5.
+#[test]
+fn moarstats_join_type_left_runs_and_writes_bivariate() {
+    let wrk = Workdir::new("moarstats_join_left");
+
+    wrk.create(
+        "primary.csv",
+        vec![
+            svec!["id", "value1"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+            svec!["4", "40"], // no match in secondary
+            svec!["1", "10"], // duplicate so cardinality < rowcount
+        ],
+    );
+    wrk.create(
+        "secondary.csv",
+        vec![
+            svec!["id", "value2"],
+            svec!["1", "100"],
+            svec!["2", "200"],
+            svec!["3", "300"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("primary.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("--join-inputs")
+        .arg("secondary.csv")
+        .arg("--join-keys")
+        .arg("id,id")
+        .arg("--join-type")
+        .arg("left")
+        .arg("primary.csv");
+    wrk.assert_success(&mut cmd);
+
+    assert_bivariate_n_pairs(
+        &wrk,
+        "primary.stats.bivariate.joined.csv",
+        "id",
+        "value1",
+        5,
+        "left join must keep the unmatched primary row id=4 (n_pairs=5); a silent coercion to \
+         inner would yield 4",
+    );
+}
+
+/// `--join-type right` keeps every secondary row, including those unmatched
+/// in primary. The unmatched row has NULL primary columns, so any pair
+/// involving a primary column drops it. We therefore assert on a pair where
+/// BOTH columns are from secondary (`value2a`, `value2b`): that pair's
+/// n_pairs equals 6 under right (5 inner cross-matches + 1 unmatched
+/// secondary row, all with both secondary columns populated), but 5 under
+/// inner. A silent coercion to inner would yield 5.
+#[test]
+fn moarstats_join_type_right_runs_and_writes_bivariate() {
+    let wrk = Workdir::new("moarstats_join_right");
+
+    wrk.create(
+        "primary.csv",
+        vec![
+            svec!["id", "value1"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["1", "10"],
+        ],
+    );
+    wrk.create(
+        "secondary.csv",
+        vec![
+            svec!["id", "value2a", "value2b"],
+            svec!["1", "100", "1000"],
+            svec!["2", "200", "2000"],
+            svec!["3", "300", "3000"], // no match in primary
+            svec!["1", "100", "1000"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("primary.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("--join-inputs")
+        .arg("secondary.csv")
+        .arg("--join-keys")
+        .arg("id,id")
+        .arg("--join-type")
+        .arg("right")
+        .arg("primary.csv");
+    wrk.assert_success(&mut cmd);
+
+    assert_bivariate_n_pairs(
+        &wrk,
+        "primary.stats.bivariate.joined.csv",
+        "value2a",
+        "value2b",
+        6,
+        "right join must keep the unmatched secondary row id=3 (n_pairs(value2a, value2b)=6); a \
+         silent coercion to inner would yield 5",
+    );
+}
+
+/// `--join-type full` keeps unmatched rows from BOTH sides. The unmatched
+/// rows have NULL on the OTHER side's columns, so we assert with two
+/// same-side pairs: (`value1`, `value1b`) is sensitive to the unmatched
+/// primary row, (`value2a`, `value2b`) is sensitive to the unmatched
+/// secondary row. Inner would drop both unmatched rows; left would keep
+/// only primary's; right would keep only secondary's. Only full satisfies
+/// both assertions simultaneously.
+#[test]
+fn moarstats_join_type_full_runs_and_writes_bivariate() {
+    let wrk = Workdir::new("moarstats_join_full");
+
+    wrk.create(
+        "primary.csv",
+        vec![
+            svec!["id", "value1", "value1b"],
+            svec!["1", "10", "100"],
+            svec!["2", "20", "200"],
+            svec!["4", "40", "400"], // unmatched in secondary
+            svec!["1", "10", "100"],
+        ],
+    );
+    wrk.create(
+        "secondary.csv",
+        vec![
+            svec!["id", "value2a", "value2b"],
+            svec!["1", "1000", "10000"],
+            svec!["2", "2000", "20000"],
+            svec!["3", "3000", "30000"], // unmatched in primary
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("primary.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("--join-inputs")
+        .arg("secondary.csv")
+        .arg("--join-keys")
+        .arg("id,id")
+        .arg("--join-type")
+        .arg("full")
+        .arg("primary.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Inner would yield 3 cross-matches (primary id=1×2 + id=2). Full adds
+    // unmatched primary id=4 -> (value1, value1b) gets 4 valid rows; full
+    // adds unmatched secondary id=3 -> (value2a, value2b) gets 4 valid rows.
+    let path = "primary.stats.bivariate.joined.csv";
+    assert_bivariate_n_pairs(
+        &wrk,
+        path,
+        "value1",
+        "value1b",
+        4,
+        "full join must keep unmatched primary id=4 (n_pairs(value1, value1b)=4); inner would \
+         yield 3",
+    );
+    assert_bivariate_n_pairs(
+        &wrk,
+        path,
+        "value2a",
+        "value2b",
+        4,
+        "full join must keep unmatched secondary id=3 (n_pairs(value2a, value2b)=4); inner would \
+         yield 3",
+    );
+}
+
+/// Three-way join: chains the sequential-pair join logic in
+/// `join_datasets_internal` (intermediate temp file -> final temp file).
+/// Asserts a third-table column appears in the bivariate output, which
+/// proves the chained join actually merged tertiary into the result rather
+/// than silently producing a primary-only dataset.
+#[test]
+fn moarstats_join_three_datasets_runs() {
+    let wrk = Workdir::new("moarstats_join_three");
+
+    wrk.create(
+        "primary.csv",
+        vec![
+            svec!["id", "value1"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+            svec!["1", "10"],
+        ],
+    );
+    wrk.create(
+        "secondary.csv",
+        vec![
+            svec!["id", "value2"],
+            svec!["1", "100"],
+            svec!["2", "200"],
+            svec!["3", "300"],
+        ],
+    );
+    wrk.create(
+        "tertiary.csv",
+        vec![
+            svec!["id", "value3"],
+            svec!["1", "1000"],
+            svec!["2", "2000"],
+            svec!["3", "3000"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("primary.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("--join-inputs")
+        .arg("secondary.csv,tertiary.csv")
+        .arg("--join-keys")
+        .arg("id,id,id")
+        .arg("primary.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Inner-chain on matching keys yields 4 rows (primary's 4 rows all match
+    // through secondary and tertiary). The (value1, value3) pair proves
+    // tertiary actually got merged — if the chain stopped at primary×secondary,
+    // value3 would not exist in the joined dataset and this row would be absent.
+    assert_bivariate_n_pairs(
+        &wrk,
+        "primary.stats.bivariate.joined.csv",
+        "value1",
+        "value3",
+        4,
+        "three-way join must merge tertiary; (value1, value3) row in the bivariate output proves \
+         value3 made it into the joined dataset",
     );
 }
 

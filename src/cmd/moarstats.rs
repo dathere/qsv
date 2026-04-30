@@ -906,6 +906,20 @@ fn parse_float_opt_from_bytes(bytes: &[u8]) -> Option<f64> {
         .filter(|v| v.is_finite())
 }
 
+/// Format a percentile value compactly: integral percentiles render without a
+/// fractional part (e.g. `5.0` -> `"5"`, `5.5` -> `"5.5"`). Used for both
+/// constructing column names and for looking up keys in the percentiles string;
+/// keeping a single formatter avoids drift between the two sites.
+#[inline]
+fn fmt_pct(p: f64) -> String {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    if p.fract() == 0.0 && p >= 0.0 {
+        format!("{}", p as u32)
+    } else {
+        format!("{p}")
+    }
+}
+
 /// Parse a percentile value from the percentiles column string
 /// Format: "5: value1|10: value2|..." (separator from QSV_STATS_SEPARATOR env var, default "|")
 /// For Date/DateTime types, values are RFC3339 date strings; for numeric types, they're numbers
@@ -3710,11 +3724,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Determine column names for winsorized/trimmed means
     let (winsorized_col_name, trimmed_col_name) = if args.flag_use_percentiles {
         if let (Some(lower_pct), Some(_upper_pct)) = (lower_percentile, upper_percentile) {
-            let pct_str = if lower_pct.fract() == 0.0 {
-                format!("{}pct", lower_pct as u32)
-            } else {
-                format!("{lower_pct}pct")
-            };
+            let pct_str = format!("{}pct", fmt_pct(lower_pct));
             (
                 format!("winsorized_mean_{pct_str}"),
                 format!("trimmed_mean_{pct_str}"),
@@ -3799,7 +3809,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "jarque_bera",
             "jarque_bera_pvalue",
             "gini_coefficient",
-            "atkinson_index",
+            // atkinson_index headers are parameterized (e.g. atkinson_index_(1)) and
+            // are matched separately via the starts_with("atkinson_index_") check below.
             "theil_index",
             "mean_ad",
             "shannon_entropy",
@@ -3849,7 +3860,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // (with their precalculated stats)
     let needs_kga = new_column_indices.contains_key("kurtosis")
         || new_column_indices.contains_key("gini_coefficient")
-        || new_column_indices.contains_key("atkinson_index")
+        || new_column_indices.contains_key(&atkinson_index_col_name)
         || new_column_indices.contains_key("theil_index")
         || new_column_indices.contains_key("mean_ad");
 
@@ -3889,16 +3900,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     (percentiles_idx, lower_percentile, upper_percentile)
                 {
                     let percentiles_str = record.get(percentiles_idx_val).unwrap_or("");
-                    let lower_pct_str = if lower_pct.fract() == 0.0 {
-                        format!("{}", lower_pct as u32)
-                    } else {
-                        format!("{lower_pct}")
-                    };
-                    let upper_pct_str = if upper_pct.fract() == 0.0 {
-                        format!("{}", upper_pct as u32)
-                    } else {
-                        format!("{upper_pct}")
-                    };
+                    let lower_pct_str = fmt_pct(lower_pct);
+                    let upper_pct_str = fmt_pct(upper_pct);
 
                     let lower_val = parse_percentile_value(
                         percentiles_str,

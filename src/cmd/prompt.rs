@@ -131,11 +131,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .unwrap_or(DEFAULT_INPUT_TITLE)
             .to_owned();
 
-        // piped commands are actually launched in parallel and not executed sequentially
-        // from left to right as commonly thought. So we need to introduce a delay to ensure
-        // that the input dialog is not opened before the save dialog.
-        // e.g. qsv prompt | qsv stats | qsv prompt --fd-output
-        // The delay ensures that the prompt for input is shown before the prompt for output.
+        // Piped commands launch in parallel, not sequentially left-to-right.
+        // In a pipeline like `qsv prompt | qsv stats | qsv prompt --fd-output`,
+        // this input dialog and the downstream --fd-output save dialog would
+        // otherwise race. Sleep so the save dialog opens first and this input
+        // dialog opens second — leaving the input dialog stacked on top, so
+        // the user picks the input file first and the save dialog is revealed
+        // underneath afterward.
         std::thread::sleep(std::time::Duration::from_millis(args.flag_base_delay_ms));
 
         let mut fd = FileDialog::new()

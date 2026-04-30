@@ -5523,11 +5523,19 @@ mod tests {
         let days = parse_date_to_days("2022-01-15", false).unwrap();
         assert_eq!(days_to_rfc3339(days, FieldType::TDate), "2022-01-15");
 
-        // DateTime round-trip with explicit UTC: format must round-trip
-        // exactly through chrono's RFC3339.
+        // DateTime round-trip with explicit UTC: converting through `f64` days can
+        // introduce tiny rounding differences, so assert that the reconstructed
+        // timestamp is within 1 ms rather than requiring exact RFC3339 string
+        // equality.
         let dt = "2022-01-15T12:30:45+00:00";
         let dt_days = parse_date_to_days(dt, false).unwrap();
-        assert_eq!(days_to_rfc3339(dt_days, FieldType::TDateTime), dt);
+        let dt_rfc3339 = days_to_rfc3339(dt_days, FieldType::TDateTime);
+        let reparsed_days = parse_date_to_days(&dt_rfc3339, false).unwrap();
+        let one_millisecond_in_days = 1.0 / 86_400_000.0;
+        assert!(
+            (reparsed_days - dt_days).abs() <= one_millisecond_in_days,
+            "expected `{dt_rfc3339}` to round-trip within 1 ms of `{dt}`"
+        );
 
         // Empty input -> None.
         assert_eq!(parse_date_to_days("", false), None);

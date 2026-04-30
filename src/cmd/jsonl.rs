@@ -85,7 +85,10 @@ fn recurse_to_infer_headers(value: &Value, headers: &mut Vec<Vec<String>>, path:
             }
         },
         _ => {
-            headers.push(vec![String::from("value")]);
+            // top-level non-Object root: emit a single column with an empty
+            // path so `get_value_at_path` returns the root value as-is.
+            // The empty path is rendered as "value" in the CSV header row.
+            headers.push(Vec::new());
         },
     }
 }
@@ -182,18 +185,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // so just make a reasonably big batch size
             1_000_000
         } else {
-            // safety: we know arg_input is Some coz of the std_in check above
+            // arg_input is guaranteed Some here: the stdin branch above is the
+            // only path where it stays None.
             util::count_lines_in_file(&args.arg_input.unwrap())? as usize
         }
     } else {
         args.flag_batch
     };
-    let mut batch = Vec::with_capacity(batchsize);
-    let mut batch_results = Vec::with_capacity(batchsize);
+    // each batch entry carries its 1-based input-line number, so error messages
+    // and header inference can reference original line numbers even when
+    // --ignore-errors silently skips read errors.
+    let mut batch: Vec<(u64, String)> = Vec::with_capacity(batchsize);
+    let mut batch_results: Vec<(u64, Option<csv::StringRecord>)> =
+        Vec::with_capacity(batchsize);
 
     util::njobs(args.flag_jobs);
 
-    let mut result_idx = 0_u64;
+    let mut input_line_idx: u64 = 0;
 
     'batch_loop: loop {
         for _ in 0..batchsize {
@@ -204,10 +212,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     break;
                 },
                 Ok(_) => {
-                    batch.push(batch_line.clone());
+                    input_line_idx += 1;
+                    batch.push((input_line_idx, batch_line.clone()));
                 },
                 Err(e) => {
                     if args.flag_ignore_errors {
+                        // count the line even though we couldn't read it, so
+                        // subsequent line numbers remain accurate
+                        input_line_idx += 1;
                         continue;
                     }
                     return fail_clierror!(
@@ -224,46 +236,73 @@ Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl."#,
         }
 
         if !headers_emitted {
-            let value: Value = match serde_json::from_str(&batch[0]) {
-                Ok(v) => v,
-                Err(e) => {
-                    return fail_clierror!(
-                        "Could not parse first input line as JSON to infer headers: {e}",
-                    );
-                },
+            // Under --ignore-errors, scan forward for the first parseable line
+            // in this batch instead of failing on a malformed first line.
+            let header_value: Option<Value> = if args.flag_ignore_errors {
+                batch
+                    .iter()
+                    .find_map(|(_, line)| serde_json::from_str::<Value>(line).ok())
+            } else {
+                match serde_json::from_str::<Value>(&batch[0].1) {
+                    Ok(v) => Some(v),
+                    Err(e) => {
+                        return fail_clierror!(
+                            r#"Could not parse first input line as JSON to infer headers: {e}
+Use `--ignore-errors` option to skip malformed input lines.
+Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl."#,
+                        );
+                    },
+                }
             };
-            headers = infer_headers(&value);
 
-            let headers_formatted = headers.iter().map(|v| v.join(".")).collect::<Vec<String>>();
-            let headers_record = csv::StringRecord::from(headers_formatted);
-            wtr.write_record(&headers_record)?;
+            if let Some(value) = header_value {
+                headers = infer_headers(&value);
 
-            headers_emitted = true;
+                let headers_formatted = headers
+                    .iter()
+                    .map(|v| {
+                        if v.is_empty() {
+                            // top-level non-Object root: synthesize a "value" column name
+                            String::from("value")
+                        } else {
+                            v.join(".")
+                        }
+                    })
+                    .collect::<Vec<String>>();
+                let headers_record = csv::StringRecord::from(headers_formatted);
+                wtr.write_record(&headers_record)?;
+
+                headers_emitted = true;
+            } else {
+                // --ignore-errors set and no parseable line in this batch;
+                // discard it and try the next batch.
+                batch.clear();
+                continue 'batch_loop;
+            }
         }
 
         // do actual work via rayon
         batch
             .par_iter()
-            .map(|json_line| match serde_json::from_str(json_line) {
-                Ok(v) => Some(json_line_to_csv_record(&v, &headers)),
+            .map(|(line_no, json_line)| match serde_json::from_str(json_line) {
+                Ok(v) => (*line_no, Some(json_line_to_csv_record(&v, &headers))),
                 Err(e) => {
                     if !args.flag_ignore_errors {
                         log::error!("serde_json::from_str error: {e:#?}");
                     }
-                    None
+                    (*line_no, None)
                 },
             })
             .collect_into_vec(&mut batch_results);
 
         // rayon collect() guarantees original order, so we can just append results of each batch
-        for result_record in &batch_results {
-            result_idx += 1;
+        for (line_no, result_record) in &batch_results {
             if let Some(record) = result_record {
                 wtr.write_record(record)?;
             } else if !args.flag_ignore_errors {
                 // there was an error parsing a json line
                 return fail_clierror!(
-                    r#"Could not parse input line {result_idx} as JSON
+                    r#"Could not parse input line {line_no} as JSON
 Use `--ignore-errors` option to skip malformed input lines.
 Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl."#,
                 );

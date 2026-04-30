@@ -119,7 +119,12 @@ price,fruit
 2.5,apple
 3.0,banana
 
-Note: Trailing zeroes in decimal numbers after the decimal are truncated (2.50 becomes 2.5).
+Note: Trailing zeroes in decimal numbers from the input data are truncated (2.50 becomes 2.5)
+because JSON decimals (numbers with a fractional part or exponent) round-trip through f64.
+Plain integer tokens are preserved exactly (serde_json parses them as i64/u64). With --jaq,
+integers that don't fit i64/u64 are emitted verbatim as strings to avoid silent precision
+loss, and decimal literals written inside the --jaq filter expression itself are passed
+through verbatim (2.50 stays 2.50, scientific notation is kept as written).
 
 If the JSON data was provided using stdin then either use - or do not provide a file path.
 For example you may copy the JSON data above to your clipboard then run:  

@@ -98,7 +98,12 @@ price,fruit
 2.5,apple
 3.0,banana
 
-Note: Trailing zeroes in decimal numbers after the decimal are truncated (2.50 becomes 2.5).
+Note: Trailing zeroes in decimal numbers from the input data are truncated (2.50 becomes 2.5)
+because JSON decimals (numbers with a fractional part or exponent) round-trip through f64.
+Plain integer tokens are preserved exactly (serde_json parses them as i64/u64). With --jaq,
+integers that don't fit i64/u64 are emitted verbatim as strings to avoid silent precision
+loss, and decimal literals written inside the --jaq filter expression itself are passed
+through verbatim (2.50 stays 2.50, scientific notation is kept as written).
 
 If the JSON data was provided using stdin then either use - or do not provide a file path.
 For example you may copy the JSON data above to your clipboard then run:
@@ -459,17 +464,18 @@ fn val_to_json_value(v: Val) -> Result<serde_json::Value, String> {
                 }
             },
             Num::BigInt(bi) => {
-                // Try i64/u64 directly without round-tripping through serde_json's
-                // f64 fallback, which would silently lose precision for values
-                // outside ±2^53.
-                let s = bi.to_string();
-                if let Ok(i) = s.parse::<i64>() {
+                // Use TryFrom (prelude) to avoid an unconditional to_string allocation
+                // in the in-range case. We only stringify when the value overflows u64
+                // and we need a verbatim digit-preserving fallback for the CSV cell.
+                // This also avoids serde_json's f64 round-trip, which would silently
+                // lose precision for values outside ±2^53.
+                if let Ok(i) = i64::try_from(&**bi) {
                     Ok(serde_json::Value::Number(i.into()))
-                } else if let Ok(u) = s.parse::<u64>() {
+                } else if let Ok(u) = u64::try_from(&**bi) {
                     Ok(serde_json::Value::Number(u.into()))
                 } else {
-                    warn!("BigInt {bi} too large for JSON number, converting to string");
-                    Ok(serde_json::Value::String(s))
+                    warn!("BigInt {bi} out of range for i64/u64 JSON number, converting to string");
+                    Ok(serde_json::Value::String(bi.to_string()))
                 }
             },
             Num::Dec(s) => {

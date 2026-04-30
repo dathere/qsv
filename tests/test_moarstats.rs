@@ -36,7 +36,6 @@ fn verify_new_columns_exist(csv_content: &str) -> Vec<String> {
     found_columns
 }
 
-
 /// Read the bivariate-stats CSV at `<wrk>/<path>` and assert that the row for
 /// the field pair (`field1`, `field2`) reports the expected `n_pairs` value.
 /// Field-pair lookup tries both orderings since `compute_all_bivariatestats`
@@ -69,8 +68,8 @@ fn assert_bivariate_n_pairs(
                 .expect("n_pairs must parse as u64");
             assert_eq!(
                 np, expected_n_pairs,
-                "{msg}: bivariate row ({f1}, {f2}) reported n_pairs={np}, expected {expected_n_pairs}\n\
-                 full bivariate output:\n{content}",
+                "{msg}: bivariate row ({f1}, {f2}) reported n_pairs={np}, expected \
+                 {expected_n_pairs}\nfull bivariate output:\n{content}",
             );
             return;
         }
@@ -1690,7 +1689,6 @@ source,String,true,,Citizens Connect App,Self Service,,Unsorted,0.5354,12,20,180
     assert_eq!(got, expected);
 }
 
-
 #[test]
 fn moarstats_atkinson_repopulates_with_new_epsilon() {
     let wrk = Workdir::new("moarstats_atkinson_repopulates");
@@ -1741,7 +1739,10 @@ fn moarstats_atkinson_repopulates_with_new_epsilon() {
     for record in rdr.records() {
         let record = record.unwrap();
         let field_type = get_field_value(&record, type_idx).unwrap_or_default();
-        if !matches!(field_type.as_str(), "Integer" | "Float" | "Date" | "DateTime") {
+        if !matches!(
+            field_type.as_str(),
+            "Integer" | "Float" | "Date" | "DateTime"
+        ) {
             continue;
         }
         numeric_rows_seen += 1;
@@ -1754,12 +1755,15 @@ fn moarstats_atkinson_repopulates_with_new_epsilon() {
         }
     }
 
-    assert!(numeric_rows_seen > 0, "fixture must contain numeric/date fields");
+    assert!(
+        numeric_rows_seen > 0,
+        "fixture must contain numeric/date fields"
+    );
     assert!(
         populated_rows > 0,
-        "atkinson_index_(2.5) must be populated for at least one numeric/date row \
-         when atkinson_index_(1) is populated (regression: needs_kga gate ignored \
-         the parameterized Atkinson key)",
+        "atkinson_index_(2.5) must be populated for at least one numeric/date row when \
+         atkinson_index_(1) is populated (regression: needs_kga gate ignored the parameterized \
+         Atkinson key)",
     );
 }
 
@@ -4334,7 +4338,6 @@ fn moarstats_bivariate_with_join() {
     );
 }
 
-
 /// `--join-keys` count must equal `--join-inputs` count + 1 (one for primary,
 /// one per additional dataset). The pre-flight check inside
 /// `join_datasets_internal` returns an error when this invariant is violated.
@@ -4394,11 +4397,7 @@ fn moarstats_join_inputs_without_keys_errors() {
     );
     wrk.create(
         "secondary.csv",
-        vec![
-            svec!["id", "value2"],
-            svec!["1", "100"],
-            svec!["2", "200"],
-        ],
+        vec![svec!["id", "value2"], svec!["1", "100"], svec!["2", "200"]],
     );
 
     let mut stats_cmd = wrk.command("stats");
@@ -4465,8 +4464,8 @@ fn moarstats_join_type_left_runs_and_writes_bivariate() {
         "id",
         "value1",
         5,
-        "left join must keep the unmatched primary row id=4 (n_pairs=5); a \
-         silent coercion to inner would yield 4",
+        "left join must keep the unmatched primary row id=4 (n_pairs=5); a silent coercion to \
+         inner would yield 4",
     );
 }
 
@@ -4522,8 +4521,8 @@ fn moarstats_join_type_right_runs_and_writes_bivariate() {
         "value2a",
         "value2b",
         6,
-        "right join must keep the unmatched secondary row id=3 \
-         (n_pairs(value2a, value2b)=6); a silent coercion to inner would yield 5",
+        "right join must keep the unmatched secondary row id=3 (n_pairs(value2a, value2b)=6); a \
+         silent coercion to inner would yield 5",
     );
 }
 
@@ -4583,8 +4582,8 @@ fn moarstats_join_type_full_runs_and_writes_bivariate() {
         "value1",
         "value1b",
         4,
-        "full join must keep unmatched primary id=4 \
-         (n_pairs(value1, value1b)=4); inner would yield 3",
+        "full join must keep unmatched primary id=4 (n_pairs(value1, value1b)=4); inner would \
+         yield 3",
     );
     assert_bivariate_n_pairs(
         &wrk,
@@ -4592,8 +4591,8 @@ fn moarstats_join_type_full_runs_and_writes_bivariate() {
         "value2a",
         "value2b",
         4,
-        "full join must keep unmatched secondary id=3 \
-         (n_pairs(value2a, value2b)=4); inner would yield 3",
+        "full join must keep unmatched secondary id=3 (n_pairs(value2a, value2b)=4); inner would \
+         yield 3",
     );
 }
 
@@ -4658,8 +4657,8 @@ fn moarstats_join_three_datasets_runs() {
         "value1",
         "value3",
         4,
-        "three-way join must merge tertiary; (value1, value3) row in the \
-         bivariate output proves value3 made it into the joined dataset",
+        "three-way join must merge tertiary; (value1, value3) row in the bivariate output proves \
+         value3 made it into the joined dataset",
     );
 }
 

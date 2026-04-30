@@ -196,8 +196,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // and header inference can reference original line numbers even when
     // --ignore-errors silently skips read errors.
     let mut batch: Vec<(u64, String)> = Vec::with_capacity(batchsize);
-    let mut batch_results: Vec<(u64, Option<csv::StringRecord>)> =
-        Vec::with_capacity(batchsize);
+    let mut batch_results: Vec<(u64, Option<csv::StringRecord>)> = Vec::with_capacity(batchsize);
 
     util::njobs(args.flag_jobs);
 
@@ -284,15 +283,17 @@ Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl."#,
         // do actual work via rayon
         batch
             .par_iter()
-            .map(|(line_no, json_line)| match serde_json::from_str(json_line) {
-                Ok(v) => (*line_no, Some(json_line_to_csv_record(&v, &headers))),
-                Err(e) => {
-                    if !args.flag_ignore_errors {
-                        log::error!("serde_json::from_str error: {e:#?}");
-                    }
-                    (*line_no, None)
+            .map(
+                |(line_no, json_line)| match serde_json::from_str(json_line) {
+                    Ok(v) => (*line_no, Some(json_line_to_csv_record(&v, &headers))),
+                    Err(e) => {
+                        if !args.flag_ignore_errors {
+                            log::error!("serde_json::from_str error: {e:#?}");
+                        }
+                        (*line_no, None)
+                    },
                 },
-            })
+            )
             .collect_into_vec(&mut batch_results);
 
         // rayon collect() guarantees original order, so we can just append results of each batch

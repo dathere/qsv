@@ -5325,4 +5325,334 @@ mod tests {
         assert!(OUTLIER_EXTREME_UPPER < OUTLIER_COUNTS_LEN);
         assert!(OUTLIER_TOTAL < OUTLIER_COUNTS_LEN);
     }
+
+
+    // ---------------------------------------------------------------------
+    // Pure helper-function tests. These guard the math kernels exercised
+    // indirectly by the integration suite — a regression in one of these
+    // would otherwise surface only as a numeric drift in a large CSV diff.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn fmt_pct_drops_fraction_for_integral_values() {
+        assert_eq!(fmt_pct(5.0), "5");
+        assert_eq!(fmt_pct(25.0), "25");
+        assert_eq!(fmt_pct(0.0), "0");
+        // Non-integral values retain their fractional part via Display.
+        assert_eq!(fmt_pct(5.5), "5.5");
+        assert_eq!(fmt_pct(2.5), "2.5");
+    }
+
+    #[test]
+    fn compute_quartile_coefficient_dispersion_basic_and_edges() {
+        // Standard case: (3 - 1) / (3 + 1) = 0.5
+        assert_eq!(
+            compute_quartile_coefficient_dispersion(Some(1.0), Some(3.0)),
+            Some(0.5),
+        );
+        // Q1 == Q3 -> invalid order -> None (would otherwise be 0/(2*Q)).
+        assert_eq!(
+            compute_quartile_coefficient_dispersion(Some(2.0), Some(2.0)),
+            None,
+        );
+        // Q1 > Q3 -> invalid order -> None.
+        assert_eq!(
+            compute_quartile_coefficient_dispersion(Some(5.0), Some(3.0)),
+            None,
+        );
+        // Q1 == -Q3 (sum near zero) -> None to avoid divide-by-near-zero.
+        assert_eq!(
+            compute_quartile_coefficient_dispersion(Some(-2.0), Some(2.0)),
+            None,
+        );
+        // Either operand None -> None.
+        assert_eq!(
+            compute_quartile_coefficient_dispersion(None, Some(3.0)),
+            None,
+        );
+        assert_eq!(
+            compute_quartile_coefficient_dispersion(Some(1.0), None),
+            None,
+        );
+    }
+
+    #[test]
+    fn compute_robust_cv_basic_and_zero_median() {
+        assert_eq!(compute_robust_cv(Some(2.0), Some(4.0)), Some(0.5));
+        // |median| < EPSILON -> None.
+        assert_eq!(compute_robust_cv(Some(2.0), Some(0.0)), None);
+        // Negative median uses |median|, so still positive.
+        assert_eq!(compute_robust_cv(Some(2.0), Some(-4.0)), Some(0.5));
+        assert_eq!(compute_robust_cv(None, Some(4.0)), None);
+        assert_eq!(compute_robust_cv(Some(2.0), None), None);
+    }
+
+    #[test]
+    fn compute_normalized_entropy_handles_low_cardinality() {
+        // cardinality 0 or 1 -> always 0.0 (degenerate distribution).
+        assert_eq!(compute_normalized_entropy(Some(0.0), Some(0)), Some(0.0));
+        assert_eq!(compute_normalized_entropy(Some(0.0), Some(1)), Some(0.0));
+        // Uniform distribution over k values: entropy == log2(k), so
+        // normalized entropy == 1.
+        let k: u64 = 8;
+        let entropy = (k as f64).log2();
+        let got = compute_normalized_entropy(Some(entropy), Some(k)).unwrap();
+        assert!((got - 1.0).abs() < 1e-12, "expected ~1.0, got {got}");
+        // Either input None -> None.
+        assert_eq!(compute_normalized_entropy(None, Some(8)), None);
+        assert_eq!(compute_normalized_entropy(Some(1.0), None), None);
+    }
+
+    #[test]
+    fn compute_bimodality_coefficient_basic_and_singularity() {
+        // (skew^2 + 1) / (kurt + 3) for skew=0, kurt=0 -> 1/3.
+        let got = compute_bimodality_coefficient(Some(0.0), Some(0.0)).unwrap();
+        assert!((got - 1.0 / 3.0).abs() < 1e-12);
+        // kurt == -3 makes the denominator zero -> None.
+        assert_eq!(
+            compute_bimodality_coefficient(Some(0.0), Some(-3.0)),
+            None,
+        );
+        assert_eq!(compute_bimodality_coefficient(None, Some(0.0)), None);
+        assert_eq!(compute_bimodality_coefficient(Some(0.0), None), None);
+    }
+
+    #[test]
+    fn compute_jarque_bera_small_n_and_known_values() {
+        // n < 3 -> None.
+        assert_eq!(compute_jarque_bera(Some(0.0), Some(0.0), 0), None);
+        assert_eq!(compute_jarque_bera(Some(0.0), Some(0.0), 2), None);
+        // Skew = 0, kurt = 0 -> JB = 0, p = exp(0) = 1 (perfectly normal-looking moments).
+        let (jb, p) = compute_jarque_bera(Some(0.0), Some(0.0), 100).unwrap();
+        assert!(jb.abs() < 1e-12);
+        assert!((p - 1.0).abs() < 1e-12);
+        // Hand-computed: n = 60, skew = 1, kurt = 2 -> JB = (60/6) * (1 + 1) = 20.
+        // p = exp(-10).
+        let (jb, p) = compute_jarque_bera(Some(1.0), Some(2.0), 60).unwrap();
+        assert!((jb - 20.0).abs() < 1e-9);
+        assert!((p - (-10.0_f64).exp()).abs() < 1e-12);
+        // Either moment None -> None.
+        assert_eq!(compute_jarque_bera(None, Some(0.0), 100), None);
+        assert_eq!(compute_jarque_bera(Some(0.0), None, 100), None);
+    }
+
+    #[test]
+    fn merge_correlation_states_zero_count_passthrough() {
+        let empty = CorrelationState::default();
+        let mut populated = CorrelationState::default();
+        update_correlation_state(&mut populated, 1.0, 2.0);
+        update_correlation_state(&mut populated, 3.0, 4.0);
+
+        // Merging with an empty state must return the populated state untouched.
+        let merged_a = merge_correlation_states(&empty, &populated);
+        assert_eq!(merged_a.count, populated.count);
+        assert!((merged_a.mean_x - populated.mean_x).abs() < 1e-12);
+        assert!((merged_a.cxy - populated.cxy).abs() < 1e-12);
+
+        let merged_b = merge_correlation_states(&populated, &empty);
+        assert_eq!(merged_b.count, populated.count);
+        assert!((merged_b.mean_x - populated.mean_x).abs() < 1e-12);
+        assert!((merged_b.cxy - populated.cxy).abs() < 1e-12);
+    }
+
+    #[test]
+    fn merge_correlation_states_matches_single_pass() {
+        // Build the "ground truth" state by feeding all pairs sequentially.
+        let xs = [1.0_f64, 2.0, 4.0, 7.0, 11.0, 16.0, 22.0, 29.0];
+        let ys = [3.0_f64, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0];
+
+        let mut full = CorrelationState::default();
+        for i in 0..xs.len() {
+            update_correlation_state(&mut full, xs[i], ys[i]);
+        }
+
+        // Build two partial states for a non-trivial split (3 + 5).
+        let split = 3;
+        let mut part1 = CorrelationState::default();
+        for i in 0..split {
+            update_correlation_state(&mut part1, xs[i], ys[i]);
+        }
+        let mut part2 = CorrelationState::default();
+        for i in split..xs.len() {
+            update_correlation_state(&mut part2, xs[i], ys[i]);
+        }
+
+        let merged = merge_correlation_states(&part1, &part2);
+
+        // Counts must match exactly; floats within tight tolerance because
+        // the Welford parallel formula is algebraically equivalent but
+        // takes a different rounding path than single-pass.
+        assert_eq!(merged.count, full.count);
+        assert!((merged.mean_x - full.mean_x).abs() < 1e-9);
+        assert!((merged.mean_y - full.mean_y).abs() < 1e-9);
+        assert!((merged.m2_x - full.m2_x).abs() < 1e-9);
+        assert!((merged.m2_y - full.m2_y).abs() < 1e-9);
+        assert!((merged.cxy - full.cxy).abs() < 1e-9);
+    }
+
+    #[test]
+    fn count_inversions_merge_known_cases() {
+        // Helper that runs the function on a fresh buffer pair.
+        fn count(pairs: &[(f64, f64)]) -> i64 {
+            let mut data = pairs.to_vec();
+            let mut temp = vec![(0.0, 0.0); data.len()];
+            let last = data.len() - 1;
+            count_inversions_merge(&mut data, &mut temp, 0, last)
+        }
+
+        // Already sorted by y -> 0 inversions.
+        assert_eq!(count(&[(1.0, 1.0), (2.0, 2.0), (3.0, 3.0)]), 0);
+        // Reverse-sorted by y -> n*(n-1)/2 inversions for n=3 -> 3.
+        assert_eq!(count(&[(1.0, 3.0), (2.0, 2.0), (3.0, 1.0)]), 3);
+        // Ties don't count as inversions (uses Ordering::Greater).
+        assert_eq!(count(&[(1.0, 5.0), (2.0, 5.0), (3.0, 5.0)]), 0);
+        // Mixed: only (3 > 1) and (3 > 2) are inversions for y = [3, 1, 2] -> 2.
+        assert_eq!(count(&[(1.0, 3.0), (2.0, 1.0), (3.0, 2.0)]), 2);
+    }
+
+    #[test]
+    fn parse_date_and_days_to_rfc3339_roundtrip() {
+        // Date round-trip: parse "2022-01-15", format with TDate -> "2022-01-15".
+        let days = parse_date_to_days("2022-01-15", false).unwrap();
+        assert_eq!(days_to_rfc3339(days, FieldType::TDate), "2022-01-15");
+
+        // DateTime round-trip with explicit UTC: format must round-trip
+        // exactly through chrono's RFC3339.
+        let dt = "2022-01-15T12:30:45+00:00";
+        let dt_days = parse_date_to_days(dt, false).unwrap();
+        assert_eq!(days_to_rfc3339(dt_days, FieldType::TDateTime), dt);
+
+        // Empty input -> None.
+        assert_eq!(parse_date_to_days("", false), None);
+        // Garbage input -> None (no panic).
+        assert_eq!(parse_date_to_days("not-a-date", false), None);
+    }
+
+
+    #[test]
+    fn finalize_covariance_sample_and_population() {
+        // Build a state for x = y = [1, 2, 3, 4, 5].
+        // Centered: each (xi - mean) * (yi - mean) summed = m2 = 10.0
+        let mut state = CorrelationState::default();
+        for v in [1.0, 2.0, 3.0, 4.0, 5.0] {
+            update_correlation_state(&mut state, v, v);
+        }
+        // Sample covariance: cxy / (n - 1) = 10 / 4 = 2.5.
+        let sample = finalize_covariance(&state, true).unwrap();
+        assert!((sample - 2.5).abs() < 1e-12, "sample covariance: {sample}");
+        // Population covariance: cxy / n = 10 / 5 = 2.0.
+        let pop = finalize_covariance(&state, false).unwrap();
+        assert!((pop - 2.0).abs() < 1e-12, "population covariance: {pop}");
+
+        // count < 2 -> None.
+        let mut tiny = CorrelationState::default();
+        update_correlation_state(&mut tiny, 1.0, 2.0);
+        assert_eq!(finalize_covariance(&tiny, true), None);
+        assert_eq!(finalize_covariance(&tiny, false), None);
+    }
+
+    #[test]
+    fn finalize_pearson_correlation_guards() {
+        // count < 2 -> None.
+        let empty = CorrelationState::default();
+        assert_eq!(finalize_pearson_correlation(&empty), None);
+
+        // Constant y (variance_y == 0) -> None.
+        let mut const_y = CorrelationState::default();
+        for x in 1..=5 {
+            update_correlation_state(&mut const_y, f64::from(x), 7.0);
+        }
+        assert_eq!(finalize_pearson_correlation(&const_y), None);
+    }
+
+    #[test]
+    fn compute_pearson_correlation_known_values() {
+        // Perfect positive linear -> +1.
+        let r = compute_pearson_correlation(
+            &[1.0, 2.0, 3.0, 4.0, 5.0],
+            &[2.0, 4.0, 6.0, 8.0, 10.0],
+        )
+        .unwrap();
+        assert!((r - 1.0).abs() < 1e-12, "perfect positive: {r}");
+
+        // Perfect negative linear -> -1.
+        let r = compute_pearson_correlation(
+            &[1.0, 2.0, 3.0, 4.0, 5.0],
+            &[10.0, 8.0, 6.0, 4.0, 2.0],
+        )
+        .unwrap();
+        assert!((r + 1.0).abs() < 1e-12, "perfect negative: {r}");
+
+        // Hand-computed: x=[1,2,3,4,5], y=[2,4,5,4,5]
+        //   dx = [-2,-1,0,1,2], dy = [-2,0,1,0,1]
+        //   Sxy = 6, Sxx = 10, Syy = 6 -> r = 6 / sqrt(60) = sqrt(0.6).
+        let r = compute_pearson_correlation(
+            &[1.0, 2.0, 3.0, 4.0, 5.0],
+            &[2.0, 4.0, 5.0, 4.0, 5.0],
+        )
+        .unwrap();
+        assert!(
+            (r - 0.6_f64.sqrt()).abs() < 1e-12,
+            "fractional case: got {r}, expected {}",
+            0.6_f64.sqrt()
+        );
+
+        // Mismatched lengths -> None.
+        assert_eq!(
+            compute_pearson_correlation(&[1.0, 2.0], &[1.0, 2.0, 3.0]),
+            None,
+        );
+        // Length < 2 -> None.
+        assert_eq!(compute_pearson_correlation(&[1.0], &[2.0]), None);
+        // Constant input (zero variance) -> None, not NaN.
+        assert_eq!(
+            compute_pearson_correlation(&[5.0, 5.0, 5.0], &[1.0, 2.0, 3.0]),
+            None,
+        );
+    }
+
+    #[test]
+    fn compute_spearman_correlation_handles_monotonic_and_ties() {
+        // Strictly increasing non-linear (cubic) -> Spearman = +1
+        // even though Pearson would be < 1. This is the whole point of
+        // rank correlation.
+        let r = compute_spearman_correlation(
+            &[1.0, 2.0, 3.0, 4.0, 5.0],
+            &[1.0, 8.0, 27.0, 64.0, 125.0],
+        )
+        .unwrap();
+        assert!((r - 1.0).abs() < 1e-12, "cubic monotonic: {r}");
+
+        // Strictly decreasing -> -1.
+        let r = compute_spearman_correlation(
+            &[1.0, 2.0, 3.0, 4.0, 5.0],
+            &[5.0, 4.0, 3.0, 2.0, 1.0],
+        )
+        .unwrap();
+        assert!((r + 1.0).abs() < 1e-12, "decreasing: {r}");
+
+        // Tie handling. y has two pairs of ties at 4 and 5:
+        //   x=[1,2,3,4,5] -> ranks [1,2,3,4,5]
+        //   y=[2,4,5,4,5] -> 2->rank 1, 4 (×2)->avg rank 2.5, 5 (×2)->avg rank 4.5
+        //   y_ranks = [1, 2.5, 4.5, 2.5, 4.5]
+        // Pearson on the ranks: dx = [-2,-1,0,1,2], dy = [-2,-0.5,1.5,-0.5,1.5]
+        //   Sxy = 7, Sxx = 10, Syy = 9 -> r = 7 / sqrt(90).
+        let r = compute_spearman_correlation(
+            &[1.0, 2.0, 3.0, 4.0, 5.0],
+            &[2.0, 4.0, 5.0, 4.0, 5.0],
+        )
+        .unwrap();
+        let expected = 7.0_f64 / 90.0_f64.sqrt();
+        assert!(
+            (r - expected).abs() < 1e-9,
+            "tied Spearman: got {r}, expected {expected}",
+        );
+
+        // Length guards mirror Pearson.
+        assert_eq!(
+            compute_spearman_correlation(&[1.0, 2.0], &[1.0, 2.0, 3.0]),
+            None,
+        );
+        assert_eq!(compute_spearman_correlation(&[1.0], &[2.0]), None);
+    }
 }

@@ -92,7 +92,8 @@ extract specific fields.
 
 ## Examples [↩](#nav)
 
-USING THE URL-COLUMN ARGUMENT:  
+### Using The Url-column Argument
+
 data.csv
 ```csv
 URL
@@ -131,7 +132,8 @@ https://api.zippopotam.us/us/92802, "[\"Anaheim\",\"CA\"]"
 qsv fetch URL --new-column CityState --jaqfile places.jaq data.csv > datatest.csv
 ```
 
-USING THE --URL-TEMPLATE OPTION:  
+### Using The --url-template Option
+
 Instead of using hardcoded URLs, you can also dynamically construct the URL for each CSV row using CSV column
 values in that row.
 Example 1:  
@@ -166,7 +168,8 @@ qsv fetch --jaq '."features"[0]."properties", ."name"' addresses.csv -c placenam
 > addresses_with_placename.csv
 ```
 
-USING THE HTTP-HEADER OPTION:  
+### Using The Http-header Option
+
 The --http-header option allows you to append arbitrary key value pairs (a valid pair is a key and value
 separated by a colon) to the HTTP header (to authenticate against an API, pass custom header fields, etc.).
 Note that you can pass as many key-value pairs by using --http-header option repeatedly. For example:  

@@ -169,7 +169,8 @@ When specified, aggregates all records in each interval instead of selecting a s
 --ts-input-tz <tz>     Timezone for parsing input timestamps. Can be an IANA timezone name or "local" for the local timezone.
 [default: UTC]
 --ts-prefer-dmy        Prefer to parse dates in dmy format. Otherwise, use mdy format.
-REMOTE FILE OPTIONS:  
+### Remote File Options
+
 --user-agent <agent>   Specify custom user agent to use when the input is a URL.
 It supports the following variables -
 $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.

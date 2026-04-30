@@ -1126,9 +1126,13 @@ fn format_examples(lines: &[String]) -> String {
             continue;
         }
 
-        // ALL-CAPS lines are headings
-        if trimmed.len() > 2
-            && trimmed.chars().all(|c| {
+        // ALL-CAPS lines are headings (with optional trailing colon, e.g.
+        // "USING THE HTTP-HEADER OPTION:" — must be multi-word to avoid matching
+        // single-word capitalized values like "URL:")
+        let heading_body = trimmed.strip_suffix(':').unwrap_or(trimmed);
+        if heading_body.len() > 2
+            && heading_body.contains(' ')
+            && heading_body.chars().all(|c| {
                 c.is_uppercase()
                     || c.is_whitespace()
                     || c == '('
@@ -1138,12 +1142,13 @@ fn format_examples(lines: &[String]) -> String {
                     || c == '/'
                     || c == '&'
             })
+            && heading_body.chars().any(|c| c.is_uppercase())
         {
             if in_code_block {
                 md.push_str("```\n\n");
                 in_code_block = false;
             }
-            let _ = write!(md, "### {}\n\n", titlecase_heading(trimmed));
+            let _ = write!(md, "### {}\n\n", titlecase_heading(heading_body));
             continue;
         }
 

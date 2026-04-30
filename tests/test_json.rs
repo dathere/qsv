@@ -413,7 +413,6 @@ fn json_jaq_bigint_precision() {
     assert_eq!(got, expected);
 }
 
-
 #[test]
 #[serial]
 fn json_jaq_bigint_u64_precision() {
@@ -433,10 +432,7 @@ fn json_jaq_bigint_u64_precision() {
     wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    let expected = vec![
-        svec!["id", "name"],
-        svec!["12345678901234567890", "alice"],
-    ];
+    let expected = vec![svec!["id", "name"], svec!["12345678901234567890", "alice"]];
     assert_eq!(got, expected);
 }
 

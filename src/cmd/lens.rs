@@ -115,7 +115,6 @@ use std::path::PathBuf;
 
 use csvlens::{CsvlensOptions, WrapMode, run_csvlens_with_options};
 use serde::Deserialize;
-use tempfile;
 
 use crate::{CliError, CliResult, config::Config, util};
 
@@ -143,18 +142,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
     let tmpdir = tempfile::tempdir()?;
-    let input = if !args.flag_streaming_stdin && args.arg_input.is_none() {
+    let input = if args.arg_input.as_deref().unwrap_or("-") == "-" {
+        // No input file (or explicit "-"): preserve stdin handling for csvlens
+        // by avoiding util::process_input here, which would buffer all of
+        // stdin into a temp file and defeat --streaming-stdin entirely.
+        // Config::new below maps "-" to config.path = None, so csvlens is
+        // ultimately invoked with filename: None (its stdin marker) and
+        // no_streaming_stdin controls buffer-vs-stream.
         "-".to_string()
     } else {
         // Process input file
-        // support stdin and auto-decompress snappy file
-        // stdin/decompressed file is written to a temporary file in tmpdir
+        // support auto-decompress snappy file
+        // decompressed file is written to a temporary file in tmpdir
         // which is automatically deleted after the command finishes
         let work_input = util::process_input(
-            vec![PathBuf::from(
-                // if no input file is specified, read from stdin "-"
-                args.arg_input.clone().unwrap_or_else(|| "-".to_string()),
-            )],
+            vec![PathBuf::from(args.arg_input.clone().unwrap())],
             &tmpdir,
             "",
         )?;
@@ -164,32 +166,35 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // If the prompt starts with "file:", it's interpreted as a filepath
     // from which to load the prompt, e.g.
     // qsv lens --prompt "file:prompt.txt"
-    let prompt = if let Some(prompt) = args.flag_prompt {
-        if prompt.starts_with(util::FILE_PATH_PREFIX) {
-            let prompt_file = PathBuf::from(prompt.trim_start_matches(util::FILE_PATH_PREFIX));
-            let prompt = std::fs::read_to_string(prompt_file)?;
-            Some(prompt)
-        } else {
-            Some(prompt)
-        }
-    } else {
-        None
+    let prompt = match args.flag_prompt {
+        Some(p) if p.starts_with(util::FILE_PATH_PREFIX) => {
+            let prompt_file = PathBuf::from(p.trim_start_matches(util::FILE_PATH_PREFIX));
+            Some(std::fs::read_to_string(prompt_file)?)
+        },
+        other => other,
     };
 
-    // Convert the wrap mode to a WrapMode enum value
-    // we only check the first character of the wrap mode string for convenience
-    let wrap_mode = match args.flag_wrap_mode.to_ascii_lowercase().chars().next() {
-        Some('d') => Some(WrapMode::Disabled),
-        Some('w') => Some(WrapMode::Words),
-        Some('c') => Some(WrapMode::Chars),
-        _ => None,
+    // Convert the wrap mode to a WrapMode enum value.
+    // Accept the full names (words/chars/disabled) and their single-letter
+    // shortcuts (w/c/d), case-insensitive. Anything else is rejected so typos
+    // like `--wrap-mode wodrs` don't silently get treated as `words`.
+    let wrap_mode = match args.flag_wrap_mode.to_ascii_lowercase().as_str() {
+        "d" | "disabled" => Some(WrapMode::Disabled),
+        "w" | "words" => Some(WrapMode::Words),
+        "c" | "chars" => Some(WrapMode::Chars),
+        _ => {
+            return fail_incorrectusage_clierror!(
+                "Invalid --wrap-mode value '{}'. Valid modes are: words, chars, disabled.",
+                args.flag_wrap_mode
+            );
+        },
     };
 
     // Create a Config to:
     // 1. Get the delimiter (from QSV_DEFAULT_DELIMITER env var if set)
     // 2. Check if delimiter sniffing is enabled (via QSV_SNIFF_DELIMITER)
     // 3. Handle special file formats like Parquet/Avro if polars is enabled
-    let config: Config = Config::new(Some(input).as_ref());
+    let config: Config = Config::new(Some(&input));
 
     let input = config.path.clone().map(|p| p.to_string_lossy().to_string());
 

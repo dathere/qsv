@@ -1247,6 +1247,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 == current_stats_args.flag_weight
                             && existing_stats_args_json.flag_percentile_list
                                 == current_stats_args.flag_percentile_list
+                            && existing_stats_args_json.flag_select
+                                == current_stats_args.flag_select
+                            && existing_stats_args_json.flag_round == current_stats_args.flag_round
+                            && existing_stats_args_json.flag_typesonly
+                                == current_stats_args.flag_typesonly
+                            && existing_stats_args_json.flag_infer_boolean
+                                == current_stats_args.flag_infer_boolean
                             && existing_stats_args_json.qsv_version
                                 == current_stats_args.qsv_version)
                 {

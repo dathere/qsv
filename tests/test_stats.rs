@@ -3451,7 +3451,6 @@ fn stats_cache_invalidates_on_weight_change() {
 }
 
 #[test]
-#[ignore = "documents pre-existing bug: --everything cache shortcut does not compare flag_select"]
 fn stats_cache_invalidates_on_select_change() {
     // Regression: with --everything, the cache short-circuit (in `run`) must
     // compare flag_select. Otherwise the cached output (computed for the first
@@ -3497,7 +3496,6 @@ fn stats_cache_invalidates_on_select_change() {
 }
 
 #[test]
-#[ignore = "documents pre-existing bug: --everything cache shortcut does not compare flag_round"]
 fn stats_cache_invalidates_on_round_change() {
     // Regression: --round affects the formatted values stored in the cache CSV.
     // The --everything cache short-circuit must compare flag_round.
@@ -3538,7 +3536,6 @@ fn stats_cache_invalidates_on_round_change() {
 }
 
 #[test]
-#[ignore = "documents pre-existing bug: --everything cache shortcut does not compare flag_typesonly"]
 fn stats_cache_invalidates_on_typesonly_change() {
     // The --everything cache CSV holds the full stats schema; --typesonly
     // expects a much smaller schema. The cache short-circuit must compare
@@ -3571,8 +3568,6 @@ fn stats_cache_invalidates_on_typesonly_change() {
 }
 
 #[test]
-#[ignore = "documents pre-existing bug: --everything cache shortcut does not compare \
-            flag_infer_boolean"]
 fn stats_cache_invalidates_on_infer_boolean_change() {
     // --infer-boolean changes the type column. The cache short-circuit must
     // compare flag_infer_boolean.

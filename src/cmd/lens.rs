@@ -142,11 +142,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
     let tmpdir = tempfile::tempdir()?;
-    let input = if args.arg_input.is_none() {
-        // No input file: pass "-" through to csvlens so it can read stdin
-        // directly (and honor --streaming-stdin via no_streaming_stdin below).
-        // Routing through util::process_input here would buffer all of stdin
-        // into a temp file, defeating --streaming-stdin entirely.
+    let input = if args.arg_input.as_deref().unwrap_or("-") == "-" {
+        // No input file (or explicit "-"): pass "-" through to csvlens so it
+        // can read stdin directly (and honor --streaming-stdin via
+        // no_streaming_stdin below). Routing through util::process_input here
+        // would buffer all of stdin into a temp file, defeating
+        // --streaming-stdin entirely.
         "-".to_string()
     } else {
         // Process input file

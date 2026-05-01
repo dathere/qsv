@@ -204,6 +204,16 @@ export class UpdateChecker {
    * Check for available updates from GitHub releases
    */
   async checkGitHubReleases(signal?: AbortSignal): Promise<string | null> {
+    // Defense-in-depth: even when callers don't pass an AbortSignal, ensure the
+    // fetch can't hang indefinitely (e.g., DNS or TCP stalls during startup).
+    let internalTimer: NodeJS.Timeout | undefined;
+    let effectiveSignal = signal;
+    if (!effectiveSignal) {
+      const controller = new AbortController();
+      internalTimer = setTimeout(() => controller.abort(), 10_000);
+      internalTimer.unref?.();
+      effectiveSignal = controller.signal;
+    }
     try {
       // Use Node.js built-in fetch (available in Node 18+)
       const response = await fetch(
@@ -213,7 +223,7 @@ export class UpdateChecker {
             Accept: "application/vnd.github.v3+json",
             "User-Agent": "qsv-mcp-server",
           },
-          signal,
+          signal: effectiveSignal,
         },
       );
 
@@ -241,6 +251,8 @@ export class UpdateChecker {
     } catch (error: unknown) {
       console.error("[UpdateChecker] Failed to check GitHub releases:", error);
       return null;
+    } finally {
+      if (internalTimer) clearTimeout(internalTimer);
     }
   }
 
@@ -269,6 +281,11 @@ export class UpdateChecker {
       // NaN > 0 and NaN < 0 are both false, so unparsable versions
       // are safely ignored (no recommendations emitted).
       const comparison = compareVersions(currentQsvVersion, skillsVersion);
+      if (Number.isNaN(comparison)) {
+        console.warn(
+          `[UpdateChecker] Could not compare versions "${currentQsvVersion}" vs "${skillsVersion}" — skipping recommendation`,
+        );
+      }
       if (comparison > 0) {
         recommendations.push(
           `⚠️  qsv binary (${currentQsvVersion}) is newer than skills (${skillsVersion})`,

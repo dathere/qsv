@@ -121,6 +121,7 @@ export async function runQsvSimple(
 
     let stdout = "";
     let stderr = "";
+    let stdoutTruncated = false;
     let finalized = false;
 
     // Single finalization path: clears timer, calls onExit exactly once,
@@ -146,7 +147,16 @@ export async function runQsvSimple(
     }, timeoutMs);
 
     if (captureStdout) {
-      proc.stdout!.on("data", (chunk) => { stdout += chunk.toString(); });
+      proc.stdout!.on("data", (chunk) => {
+        if (stdoutTruncated) return;
+        const data = chunk.toString();
+        if (stdout.length + data.length <= DEFAULT_MAX_OUTPUT_SIZE) {
+          stdout += data;
+        } else {
+          stdout = stdout.slice(0, DEFAULT_MAX_OUTPUT_SIZE) + "\n[STDOUT TRUNCATED]";
+          stdoutTruncated = true;
+        }
+      });
     }
     proc.stderr!.on("data", (chunk) => {
       const data = chunk.toString();

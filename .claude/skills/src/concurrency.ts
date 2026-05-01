@@ -197,6 +197,11 @@ export const _testConcurrency = {
     activeOperationCount = 0;
     slotWaiters.length = 0;
   },
-  setMaxQueueSize: (n: number) => { MAX_QUEUE_SIZE = n; },
+  setMaxQueueSize: (n: number) => {
+    if (!Number.isInteger(n) || n < 1 || n > 10_000) {
+      throw new Error(`setMaxQueueSize: value must be an integer in [1, 10000], got ${n}`);
+    }
+    MAX_QUEUE_SIZE = n;
+  },
   getMaxQueueSize: () => MAX_QUEUE_SIZE,
 };

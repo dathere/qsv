@@ -216,7 +216,10 @@ async function processAgentResponses(
     } else {
       const agentResponse = llmResponses.find((r) => r.kind === phase.kind);
       if (!agentResponse) {
-        return errorResult(`Missing response for phase "${phase.kind}"`);
+        const provided = llmResponses.map((r) => `"${r.kind}"`).join(", ") || "(none)";
+        return errorResult(
+          `Missing response for phase "${phase.kind}". Provided kinds: ${provided}.`,
+        );
       }
       phaseResponses.push({
         kind: phase.kind,
@@ -679,10 +682,14 @@ export async function handleToolCall(
             moarstatsNote = `\n\n📊 Auto-enriched stats cache with moarstats (~25 additional columns, ${duration}ms)`;
             console.error(`[MCP Tools] moarstats auto-enrichment succeeded (${duration}ms)`);
           } else {
+            const reason = (moarstatsResult.stderr || "").trim().split("\n")[0]?.slice(0, 120) || "unknown error";
+            moarstatsNote = `\n\n⚠️  moarstats auto-enrichment skipped: ${reason}`;
             console.error(`[MCP Tools] moarstats auto-enrichment failed: ${moarstatsResult.stderr}`);
           }
         }
       } catch (error: unknown) {
+        const reason = getErrorMessage(error).split("\n")[0]?.slice(0, 120) || "unknown error";
+        moarstatsNote = `\n\n⚠️  moarstats auto-enrichment skipped: ${reason}`;
         console.error(`[MCP Tools] moarstats auto-enrichment error:`, getErrorMessage(error));
       }
     }

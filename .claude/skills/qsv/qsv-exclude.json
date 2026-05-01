@@ -98,7 +98,11 @@
       "command": "qsv exclude --ignore-case id records.csv id previously-processed.csv"
     },
     {
-      "description": "Read records.csv from stdin Chain exclude with sort to create a new sorted records file without previously processed records",
+      "description": "Read records.csv from stdin",
+      "command": "cat records.csv | qsv exclude id - id previously-processed.csv"
+    },
+    {
+      "description": "Chain exclude with sort to create a new sorted records file without previously processed records",
       "command": "qsv exclude id records.csv id previously-processed.csv |  qsv sort > new-sorted-records.csv"
     },
     {

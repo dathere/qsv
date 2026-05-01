@@ -28,7 +28,7 @@ Examples:
   # Use dollar-quoting to avoid escaping reserved characters in literals.
   https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-DOLLAR-QUOTING
   $ qsv sqlp data.csv "SELECT * FROM data WHERE col1 = $$O'Reilly$$"
-  $ qsv sqlp data.csv 'SELECT * FROM data WHERE col1 = $SomeTag$Diane's horse "Twinkle"$SomeTag$'
+  $ qsv sqlp data.csv 'SELECT * FROM data WHERE col1 = $SomeTag$Diane'\''s horse "Twinkle"$SomeTag$'
 
   # Unions and Joins are supported.
   $ qsv sqlp data1.csv data2.csv 'SELECT * FROM data1 UNION ALL BY NAME SELECT * FROM data2'

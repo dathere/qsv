@@ -1074,10 +1074,25 @@ impl UsageParser {
             return examples;
         };
 
-        // Collect lines until we hit an end marker or next section
-        let mut current_description = String::new();
+        // staged_description: accumulated from `#` comment lines, awaiting a command.
+        // active_description: the topic description applied to the current run of commands;
+        // it persists across consecutive commands (without intervening blank/comment) so
+        // multiple example commands can share the same description. Cleared on blank
+        // lines (topic separator) and replaced when a new staged description is taken.
+        let mut staged_description = String::new();
+        let mut active_description = String::new();
         let mut current_command = String::new();
         let mut in_continuation = false;
+
+        let flush = |examples: &mut Vec<Example>, current_command: &mut String, active: &str| {
+            if !current_command.is_empty() && !active.is_empty() {
+                examples.push(Example {
+                    description: active.trim().to_string(),
+                    command:     current_command.trim().to_string(),
+                });
+            }
+            current_command.clear();
+        };
 
         for line in lines.iter().skip(start_idx + 1) {
             let trimmed = line.trim();
@@ -1095,23 +1110,17 @@ impl UsageParser {
                 break;
             }
 
-            // Skip empty lines (but finalize any pending example)
+            // Blank line: topic separator. Flush any pending command and reset state.
             if trimmed.is_empty() {
-                if !current_command.is_empty() && !current_description.is_empty() {
-                    examples.push(Example {
-                        description: current_description.trim().to_string(),
-                        command:     current_command.trim().to_string(),
-                    });
-                    current_description.clear();
-                    current_command.clear();
-                }
+                flush(&mut examples, &mut current_command, &active_description);
+                staged_description.clear();
+                active_description.clear();
                 in_continuation = false;
                 continue;
             }
 
-            // Handle line continuation
+            // Handle line continuation (a previous command ended with `\`)
             if in_continuation {
-                // Remove the trailing backslash from previous line if present
                 if current_command.ends_with('\\') {
                     current_command.pop();
                     current_command.push(' ');
@@ -1121,46 +1130,43 @@ impl UsageParser {
                 continue;
             }
 
-            // Comment line (description for next command)
+            // Comment line — describes the next command(s).
             if trimmed.starts_with('#') {
-                let comment_text = trimmed.trim_start_matches('#').trim();
-                if !current_description.is_empty() {
-                    current_description.push(' ');
+                // If a comment block starts after a command was already paired with
+                // a description, flush that command first so the new comment doesn't
+                // leak into it.
+                if !current_command.is_empty() {
+                    flush(&mut examples, &mut current_command, &active_description);
+                    active_description.clear();
                 }
-                current_description.push_str(comment_text);
+                let comment_text = trimmed.trim_start_matches('#').trim();
+                if !staged_description.is_empty() {
+                    staged_description.push(' ');
+                }
+                staged_description.push_str(comment_text);
                 continue;
             }
 
-            // Command line
-            if trimmed.starts_with("$ qsv") || trimmed.starts_with("qsv ") {
-                // Finalize previous example if we have one
-                if !current_command.is_empty() && !current_description.is_empty() {
-                    examples.push(Example {
-                        description: current_description.trim().to_string(),
-                        command:     current_command.trim().to_string(),
-                    });
-                    current_description.clear();
-                    current_command.clear();
+            // Command line. Recognize plain `qsv ...`, `$ qsv ...`, and pipe-prefixed
+            // forms like `cat foo.csv | qsv ...` so stdin examples are not dropped.
+            let stripped_dollar = trimmed.strip_prefix("$ ").unwrap_or(trimmed);
+            let is_command = stripped_dollar.starts_with("qsv ")
+                || stripped_dollar.contains("| qsv ")
+                || stripped_dollar.contains("|qsv ");
+            if is_command {
+                // Flush any previous command using the existing active description.
+                flush(&mut examples, &mut current_command, &active_description);
+                // If a new description has been staged since the last command, take it.
+                if !staged_description.is_empty() {
+                    active_description = std::mem::take(&mut staged_description);
                 }
-
-                // Start new command, removing leading "$ " if present
-                let cmd = if trimmed.starts_with("$ ") {
-                    trimmed.trim_start_matches("$ ")
-                } else {
-                    trimmed
-                };
-                current_command = cmd.to_string();
+                current_command = stripped_dollar.to_string();
                 in_continuation = trimmed.ends_with('\\');
             }
         }
 
-        // Don't forget the last example
-        if !current_command.is_empty() && !current_description.is_empty() {
-            examples.push(Example {
-                description: current_description.trim().to_string(),
-                command:     current_command.trim().to_string(),
-            });
-        }
+        // Final flush
+        flush(&mut examples, &mut current_command, &active_description);
 
         examples
     }

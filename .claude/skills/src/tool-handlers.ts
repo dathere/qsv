@@ -336,6 +336,17 @@ function buildDescribegptArgs(
 }
 
 /**
+ * Format a single-line "skipped" note for moarstats auto-enrichment failures.
+ * Caps the reason at 120 chars and falls back to "unknown error" when the
+ * input is empty.
+ */
+function formatMoarstatsSkip(rawReason: string): string {
+  const firstLine = rawReason.trim().split("\n")[0].slice(0, 120);
+  const reason = firstLine || "unknown error";
+  return `\n\n⚠️  moarstats auto-enrichment skipped: ${reason}`;
+}
+
+/**
  * Handle execution of a qsv tool
  */
 export async function handleToolCall(
@@ -682,14 +693,12 @@ export async function handleToolCall(
             moarstatsNote = `\n\n📊 Auto-enriched stats cache with moarstats (~25 additional columns, ${duration}ms)`;
             console.error(`[MCP Tools] moarstats auto-enrichment succeeded (${duration}ms)`);
           } else {
-            const reason = (moarstatsResult.stderr || "").trim().split("\n")[0]?.slice(0, 120) || "unknown error";
-            moarstatsNote = `\n\n⚠️  moarstats auto-enrichment skipped: ${reason}`;
+            moarstatsNote = formatMoarstatsSkip(moarstatsResult.stderr || "");
             console.error(`[MCP Tools] moarstats auto-enrichment failed: ${moarstatsResult.stderr}`);
           }
         }
       } catch (error: unknown) {
-        const reason = getErrorMessage(error).split("\n")[0]?.slice(0, 120) || "unknown error";
-        moarstatsNote = `\n\n⚠️  moarstats auto-enrichment skipped: ${reason}`;
+        moarstatsNote = formatMoarstatsSkip(getErrorMessage(error));
         console.error(`[MCP Tools] moarstats auto-enrichment error:`, getErrorMessage(error));
       }
     }

@@ -153,7 +153,10 @@ export async function runQsvSimple(
         if (stdout.length + data.length <= DEFAULT_MAX_OUTPUT_SIZE) {
           stdout += data;
         } else {
-          stdout = stdout.slice(0, DEFAULT_MAX_OUTPUT_SIZE) + "\n[STDOUT TRUNCATED]";
+          // Keep as much of the new chunk as fits — slicing the previous
+          // stdout alone would discard the most recently produced bytes,
+          // which are usually the most relevant for diagnostics.
+          stdout = (stdout + data).slice(0, DEFAULT_MAX_OUTPUT_SIZE) + "\n[STDOUT TRUNCATED]";
           stdoutTruncated = true;
         }
       });

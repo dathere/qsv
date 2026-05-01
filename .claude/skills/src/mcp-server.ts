@@ -769,7 +769,7 @@ class QsvMcpServer {
             }
           }
           const errorMessage = rawErr !== undefined
-            ? (MAX_ARGS_LOG_LEN > 0 && rawErr.length > MAX_ARGS_LOG_LEN
+            ? (rawErr.length > MAX_ARGS_LOG_LEN
                 ? rawErr.slice(0, MAX_ARGS_LOG_LEN) + "…[truncated]"
                 : rawErr)
             : undefined;

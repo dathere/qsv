@@ -197,6 +197,10 @@ export const _testConcurrency = {
     activeOperationCount = 0;
     slotWaiters.length = 0;
   },
+  // Upper bound is intentionally generous — backpressure logic begins to
+  // amortize poorly past a few thousand queued waiters; 10_000 is a sanity
+  // ceiling that catches typos (e.g., setting size to 1e9) without
+  // constraining any realistic stress test.
   setMaxQueueSize: (n: number) => {
     if (!Number.isInteger(n) || n < 1 || n > 10_000) {
       throw new Error(`setMaxQueueSize: value must be an integer in [1, 10000], got ${n}`);

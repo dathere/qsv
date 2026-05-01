@@ -211,7 +211,7 @@ export class UpdateChecker {
     if (!effectiveSignal) {
       const controller = new AbortController();
       internalTimer = setTimeout(() => controller.abort(), 10_000);
-      internalTimer.unref?.();
+      internalTimer.unref();
       effectiveSignal = controller.signal;
     }
     try {

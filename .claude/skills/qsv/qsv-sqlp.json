@@ -140,87 +140,135 @@
   "examples": [
     {
       "description": "enclose column names with spaces in double quotes",
-      "command": "qsv sqlp data.csv 'select col1, col2 as friendlyname from data' --format parquet --output data.parquet"
+      "command": "qsv sqlp data.csv 'select \"col 1\", \"col 2\" from data'"
     },
     {
       "description": "Use dollar-quoting to avoid escaping reserved characters in literals.",
-      "command": "qsv sqlp data.csv data2.csv 'SELECT col1 FROM data WHERE col1 IN (SELECT col2 FROM data2)'"
+      "command": "qsv sqlp data.csv \"SELECT * FROM data WHERE col1 = $$O'Reilly$$\""
     },
     {
-      "description": "Unions and Joins are supported.",
+      "description": "Use dollar-quoting to avoid escaping reserved characters in literals.",
       "command": "qsv sqlp data.csv 'SELECT * FROM data WHERE col1 = $SomeTag$Diane's horse \"Twinkle\"$SomeTag$'"
     },
     {
+      "description": "Unions and Joins are supported.",
+      "command": "qsv sqlp data1.csv data2.csv 'SELECT * FROM data1 UNION ALL BY NAME SELECT * FROM data2'"
+    },
+    {
       "description": "use \"_t_N\" aliases to refer to input files, where N is the 1-based index of the input file/s. For example, _t_1 refers to the first input file, _t_2 refers to the second input file, and so on.",
-      "command": "qsv sqlp tbl_a.csv tbl_b.csv tbl_c.csv \"SELECT * FROM tbl_a  RIGHT ANTI JOIN tbl_b USING (b)  LEFT SEMI JOIN tbl_c USING (c)\""
+      "command": "qsv sqlp data.csv data2.csv 'select * from _t_1 join _t_2 on _t_1.colname = _t_2.colname'"
     },
     {
       "description": "Natural Joins are supported too! (https://www.w3resource.com/sql/joins/natural-join.php)",
-      "command": "qsv sqlp tbl1.csv \"SELECT x FROM tbl1 WHERE x IN (SELECT y FROM tbl1)\""
-    },
-    {
-      "description": "Use a SQL script to run a long, complex SQL query or to run SEVERAL SQL queries. When running several queries, each query needs to be separated by a semicolon, the last query will be returned as the result. Typically, earlier queries are used to create tables that can be used in later queries. Note that scripts support single-line comments starting with '--' so feel free to add comments to your script. In long, complex scripts that produce multiple temporary tables, note that you can use `truncate table <table_name>;` to free up memory used by temporary tables. Otherwise, the memory used by the temporary tables won't be freed until the script finishes. See test_sqlp/sqlp_boston311_sql_script() for an example.",
       "command": "qsv sqlp data1.csv data2.csv data3.csv  \"SELECT COLUMNS('^[^:]+$') FROM data1 NATURAL JOIN data2 NATURAL JOIN data3 ORDER BY COMPANY_ID\""
     },
     {
-      "description": "use Common Table Expressions (CTEs) using WITH to simplify complex queries",
+      "description": "Use a SQL script to run a long, complex SQL query or to run SEVERAL SQL queries. When running several queries, each query needs to be separated by a semicolon, the last query will be returned as the result. Typically, earlier queries are used to create tables that can be used in later queries. Note that scripts support single-line comments starting with '--' so feel free to add comments to your script. In long, complex scripts that produce multiple temporary tables, note that you can use `truncate table <table_name>;` to free up memory used by temporary tables. Otherwise, the memory used by the temporary tables won't be freed until the script finishes. See test_sqlp/sqlp_boston311_sql_script() for an example.",
       "command": "qsv sqlp data.csv data2.csv data3.csv data4.csv script.sql --format json --output data.json"
     },
     {
-      "description": "CASE statement",
+      "description": "use Common Table Expressions (CTEs) using WITH to simplify complex queries",
       "command": "qsv sqlp people.csv \"WITH millennials AS (SELECT * FROM people WHERE age >= 25 and age <= 40)  SELECT * FROM millennials WHERE STARTS_WITH(name,'C')\""
     },
     {
-      "description": "spaceship operator: \"<=>\" (three-way comparison operator) returns -1 if left < right, 0 if left == right, 1 if left > right https://en.wikipedia.org/wiki/Three-way_comparison#Spaceship_operator",
+      "description": "CASE statement",
+      "command": "qsv sqlp data.csv \"select CASE WHEN col1 > 10 THEN 'foo' WHEN col1 > 5 THEN 'bar' ELSE 'baz' END from data\""
+    },
+    {
+      "description": "CASE statement",
       "command": "qsv sqlp data.csv \"select CASE col*5 WHEN 10 THEN 'foo' WHEN 5 THEN 'bar' ELSE 'baz' END from _t_1\""
     },
     {
-      "description": "support ^@ (\"starts with\"), and ~~ (like) ,~~* (ilike),!~~ (not like),!~~* (not ilike) operators",
+      "description": "spaceship operator: \"<=>\" (three-way comparison operator) returns -1 if left < right, 0 if left == right, 1 if left > right https://en.wikipedia.org/wiki/Three-way_comparison#Spaceship_operator",
       "command": "qsv sqlp data.csv data2.csv \"select data.c2 <=> data2.c2 from data join data2 on data.c1 = data2.c1\""
     },
     {
-      "description": "support SELECT * ILIKE wildcard syntax select all columns from customers where the column contains 'a' followed by an 'e' with any characters (or no characters), in between, case-insensitive if customers.csv has columns LastName, FirstName, Address, City, State, Zip this query will return all columns for all rows except the columns that don't contain 'a' followed by an 'e' - i.e. except City and Zip",
+      "description": "support ^@ (\"starts with\"), and ~~ (like) ,~~* (ilike),!~~ (not like),!~~* (not ilike) operators",
+      "command": "qsv sqlp data.csv \"select * from data WHERE col1 ^@ 'foo'\""
+    },
+    {
+      "description": "support ^@ (\"starts with\"), and ~~ (like) ,~~* (ilike),!~~ (not like),!~~* (not ilike) operators",
+      "command": "qsv sqlp data.csv \"select c1 ^@ 'a' AS c1_starts_with_a from data\""
+    },
+    {
+      "description": "support ^@ (\"starts with\"), and ~~ (like) ,~~* (ilike),!~~ (not like),!~~* (not ilike) operators",
       "command": "qsv sqlp data.csv \"select c1 ~~* '%B' AS c1_ends_with_b_caseinsensitive from data\""
     },
     {
-      "description": "regex operators: \"~\" (contains pattern, case-sensitive); \"~*\" (contains pattern, case-insensitive) \"!~\" (does not contain pattern, case-sensitive); \"!~*\" (does not contain pattern, case-insensitive)",
+      "description": "support SELECT * ILIKE wildcard syntax select all columns from customers where the column contains 'a' followed by an 'e' with any characters (or no characters), in between, case-insensitive if customers.csv has columns LastName, FirstName, Address, City, State, Zip this query will return all columns for all rows except the columns that don't contain 'a' followed by an 'e' - i.e. except City and Zip",
       "command": "qsv sqlp customers.csv \"SELECT * ILIKE '%a%e%' FROM customers ORDER BY LastName, FirstName\""
     },
     {
-      "description": "regexp_like function: regexp_like(<string>, <pattern>, <optional flags>) returns true if <string> matches <pattern>, false otherwise <optional flags> can be one or more of the following: 'c' (case-sensitive - default), 'i' (case-insensitive), 'm' (multiline)",
+      "description": "regex operators: \"~\" (contains pattern, case-sensitive); \"~*\" (contains pattern, case-insensitive) \"!~\" (does not contain pattern, case-sensitive); \"!~*\" (does not contain pattern, case-insensitive)",
+      "command": "qsv sqlp data.csv \"select * from data WHERE col1 ~ '^foo' AND col2 > 10\""
+    },
+    {
+      "description": "regex operators: \"~\" (contains pattern, case-sensitive); \"~*\" (contains pattern, case-insensitive) \"!~\" (does not contain pattern, case-sensitive); \"!~*\" (does not contain pattern, case-insensitive)",
       "command": "qsv sqlp data.csv \"select * from data WHERE col1 !~* 'bar$' AND col2 > 10\""
     },
     {
-      "description": "case-insensitive regexp_like",
+      "description": "regexp_like function: regexp_like(<string>, <pattern>, <optional flags>) returns true if <string> matches <pattern>, false otherwise <optional flags> can be one or more of the following: 'c' (case-sensitive - default), 'i' (case-insensitive), 'm' (multiline)",
       "command": "qsv sqlp data.csv \"select * from data WHERE regexp_like(col1, '^foo') AND col2 > 10\""
     },
     {
-      "description": "regexp match using a literal pattern",
+      "description": "case-insensitive regexp_like",
       "command": "qsv sqlp data.csv \"select * from data WHERE regexp_like(col1, '^foo', 'i') AND col2 > 10\""
     },
     {
-      "description": "regexp match using patterns from another column",
+      "description": "regexp match using a literal pattern",
       "command": "qsv sqlp data.csv \"select idx,val from data WHERE val regexp '^foo'\""
     },
     {
-      "description": "use Parquet, JSONL and Arrow files in SQL queries",
+      "description": "regexp match using patterns from another column",
       "command": "qsv sqlp data.csv \"select idx,val from data WHERE val regexp pattern_col\""
     },
     {
-      "description": "you can also directly load CSVs using the Polars read_csv() SQL function. This is useful when you want to bypass the regular CSV parser (with SKIP_INPUT) and use Polars' multithreaded, mem-mapped CSV parser instead - making for dramatically faster queries at the cost of CSV parser configurability (i.e. limited to comma delimiter, no CSV comments, etc.).",
+      "description": "use Parquet, JSONL and Arrow files in SQL queries",
+      "command": "qsv sqlp data.csv \"select * from data join read_parquet('data2.parquet') as t2 ON data.c1 = t2.c1\""
+    },
+    {
+      "description": "use Parquet, JSONL and Arrow files in SQL queries",
+      "command": "qsv sqlp data.csv \"select * from data join read_ndjson('data2.jsonl') as t2 on data.c1 = t2.c1\""
+    },
+    {
+      "description": "use Parquet, JSONL and Arrow files in SQL queries",
+      "command": "qsv sqlp data.csv \"select * from data join read_ipc('data2.arrow') as t2 ON data.c1 = t2.c1\""
+    },
+    {
+      "description": "use Parquet, JSONL and Arrow files in SQL queries",
+      "command": "qsv sqlp SKIP_INPUT \"select * from read_parquet('data.parquet') order by col1 desc limit 100\""
+    },
+    {
+      "description": "use Parquet, JSONL and Arrow files in SQL queries",
       "command": "qsv sqlp SKIP_INPUT \"select * from read_ndjson('data.jsonl') as t1 join read_ipc('data.arrow') as t2 on t1.c1 = t2.c1\""
     },
     {
-      "description": "note that you can also use read_csv() to read compressed files directly gzip, zstd and zlib automatic decompression are supported",
+      "description": "you can also directly load CSVs using the Polars read_csv() SQL function. This is useful when you want to bypass the regular CSV parser (with SKIP_INPUT) and use Polars' multithreaded, mem-mapped CSV parser instead - making for dramatically faster queries at the cost of CSV parser configurability (i.e. limited to comma delimiter, no CSV comments, etc.).",
       "command": "qsv sqlp SKIP_INPUT \"select * from read_csv('data.csv') order by col1 desc limit 100\""
     },
     {
-      "description": "apart from using Polar's table functions, you can also use SKIP_INPUT when the SELECT statement doesn't require an input file",
+      "description": "note that you can also use read_csv() to read compressed files directly gzip, zstd and zlib automatic decompression are supported",
+      "command": "qsv sqlp SKIP_INPUT \"select * from read_csv('data.csv.gz')\""
+    },
+    {
+      "description": "note that you can also use read_csv() to read compressed files directly gzip, zstd and zlib automatic decompression are supported",
+      "command": "qsv sqlp SKIP_INPUT \"select * from read_csv('data.csv.zst')\""
+    },
+    {
+      "description": "note that you can also use read_csv() to read compressed files directly gzip, zstd and zlib automatic decompression are supported",
       "command": "qsv sqlp SKIP_INPUT \"select * from read_csv('data.csv.zlib')\""
     },
     {
-      "description": "use stdin as input",
+      "description": "apart from using Polar's table functions, you can also use SKIP_INPUT when the SELECT statement doesn't require an input file",
       "command": "qsv sqlp SKIP_INPUT \"SELECT 1 AS one, '2' AS two, 3.0 AS three\""
+    },
+    {
+      "description": "use stdin as input",
+      "command": "cat data.csv | qsv sqlp - 'select * from stdin'"
+    },
+    {
+      "description": "use stdin as input",
+      "command": "cat data.csv | qsv sqlp - data2.csv 'select * from stdin join data2 on stdin.col1 = data2.col1'"
     },
     {
       "description": "automatic snappy decompression/compression",

@@ -97,7 +97,11 @@
       "command": "qsv split outdir --kb-size 1000 input.csv"
     },
     {
-      "description": "Read from stdin and create files like 0.csv, 1000.csv, etc. in the directory 'mysplitoutput', creating it if it does not exist. Split into 10 chunks. Files are named with the zero-based starting row index of each chunk (e.g. 0.csv, N.csv, 2N.csv, ...) in the directory 'outdir'.",
+      "description": "Read from stdin and create files like 0.csv, 1000.csv, etc. in the directory 'mysplitoutput', creating it if it does not exist.",
+      "command": "cat in.csv | qsv split mysplitoutput -s 1000"
+    },
+    {
+      "description": "Split into 10 chunks. Files are named with the zero-based starting row index of each chunk (e.g. 0.csv, N.csv, 2N.csv, ...) in the directory 'outdir'.",
       "command": "qsv split outdir --chunks 10 input.csv"
     },
     {

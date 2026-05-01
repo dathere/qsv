@@ -280,14 +280,14 @@ fn download_lookup_table(
         // when there is no cache to fall back to.
         if cache_file_path.exists() {
             debug!(
-                "Lookup table download from {lookup_table_uri} returned an empty body; \
-                 keeping existing cache file."
+                "Lookup table download from {lookup_table_uri} returned an empty body; keeping \
+                 existing cache file."
             );
             return Ok(());
         }
         return Err(format!(
-            "Lookup table download from {lookup_table_uri} returned an empty response \
-             and no cache exists to fall back to"
+            "Lookup table download from {lookup_table_uri} returned an empty response and no \
+             cache exists to fall back to"
         )
         .into());
     }

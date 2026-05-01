@@ -128,6 +128,14 @@ export class ToolSearchIndex {
     // Perform BM25 search
     const results = this.engine.search(query);
 
+    if (results.length === 0) {
+      // Emitted when the query has content but BM25 yields no results — most
+      // commonly because every token was a stopword (e.g., "the and or").
+      console.error(
+        `[BM25] No matches for query "${query.slice(0, 80)}" — query may consist entirely of stopwords or unindexed terms`,
+      );
+    }
+
     // Convert results back to QsvSkill objects
     // wink-bm25 returns array of [docId, score] tuples where docId is a string
     const matchedSkills: QsvSkill[] = [];

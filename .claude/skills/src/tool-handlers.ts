@@ -216,7 +216,10 @@ async function processAgentResponses(
     } else {
       const agentResponse = llmResponses.find((r) => r.kind === phase.kind);
       if (!agentResponse) {
-        return errorResult(`Missing response for phase "${phase.kind}"`);
+        const provided = llmResponses.map((r) => `"${r.kind}"`).join(", ") || "(none)";
+        return errorResult(
+          `Missing response for phase "${phase.kind}". Provided kinds: ${provided}.`,
+        );
       }
       phaseResponses.push({
         kind: phase.kind,
@@ -330,6 +333,19 @@ function buildDescribegptArgs(
   args.push(inputFile);
 
   return args;
+}
+
+/**
+ * Format a single-line "skipped" note for moarstats auto-enrichment failures.
+ * Caps the reason at 120 chars and falls back to "unknown error" when the
+ * input is empty.
+ */
+function formatMoarstatsSkip(rawReason: string): string {
+  const trimmed = rawReason.trim();
+  const newlineIdx = trimmed.indexOf("\n");
+  const firstLine = (newlineIdx === -1 ? trimmed : trimmed.slice(0, newlineIdx)).slice(0, 120);
+  const reason = firstLine || "unknown error";
+  return `\n\n⚠️  moarstats auto-enrichment skipped: ${reason}`;
 }
 
 /**
@@ -679,10 +695,12 @@ export async function handleToolCall(
             moarstatsNote = `\n\n📊 Auto-enriched stats cache with moarstats (~25 additional columns, ${duration}ms)`;
             console.error(`[MCP Tools] moarstats auto-enrichment succeeded (${duration}ms)`);
           } else {
+            moarstatsNote = formatMoarstatsSkip(moarstatsResult.stderr || "");
             console.error(`[MCP Tools] moarstats auto-enrichment failed: ${moarstatsResult.stderr}`);
           }
         }
       } catch (error: unknown) {
+        moarstatsNote = formatMoarstatsSkip(getErrorMessage(error));
         console.error(`[MCP Tools] moarstats auto-enrichment error:`, getErrorMessage(error));
       }
     }

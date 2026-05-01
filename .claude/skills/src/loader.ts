@@ -96,17 +96,26 @@ export class SkillLoader {
     const files = await readdir(this.skillsDir);
     const jsonFiles = files.filter((f) => f.endsWith(".json"));
 
-    // Load all skill files in parallel
+    // Load all skill files in parallel. Per-file failures (read or JSON parse
+    // errors) must not reject the whole Promise.all — a single corrupt file
+    // (e.g., partial write during `qsv --update-mcp-skills`) would otherwise
+    // leave the server with no skills loaded.
     const loadResults = await Promise.all(
       jsonFiles.map(async (file) => {
         const skillPath = join(this.skillsDir, file);
-        const content = await readFile(skillPath, "utf-8");
-        const parsed: unknown = JSON.parse(content);
-        if (!isValidSkillShape(parsed)) {
-          console.warn(`[Loader] Skipping invalid skill file ${file}: missing required fields`);
+        try {
+          const content = await readFile(skillPath, "utf-8");
+          const parsed: unknown = JSON.parse(content);
+          if (!isValidSkillShape(parsed)) {
+            console.warn(`[Loader] Skipping invalid skill file ${file}: missing required fields`);
+            return null;
+          }
+          return parsed;
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          console.warn(`[Loader] Skipping unreadable skill file ${file}: ${msg}`);
           return null;
         }
-        return parsed;
       }),
     );
 

@@ -661,8 +661,15 @@ class QsvMcpServer {
       const startTime = Date.now();
       const invocationId = randomUUID();
 
-      // Extract and remove _reason before forwarding args
-      const reason = typeof args?._reason === "string" ? args._reason : name;
+      // Extract and remove _reason before forwarding args.
+      // _reason is user-supplied free text — truncate it before logging so a
+      // pathological 10 MB string can't bloat audit logs or hit OS arg-length
+      // limits when forwarded to `qsv log`.
+      const MAX_REASON_LEN = 1024;
+      const rawReason = typeof args?._reason === "string" ? args._reason : name;
+      const reason = rawReason.length > MAX_REASON_LEN
+        ? rawReason.slice(0, MAX_REASON_LEN) + "…[truncated]"
+        : rawReason;
       const toolArgs = args
         ? Object.fromEntries(
             Object.entries(args).filter(([k]) => k !== "_reason"),
@@ -743,9 +750,28 @@ class QsvMcpServer {
         // Record pipeline step for reproducibility manifest
         if (this.pipelineManifest && name.startsWith("qsv_")) {
           const meta = (result as Record<string | symbol, unknown>)[PIPELINE_METADATA] as PipelineMetadata | undefined;
-          const rawErr = isError ? ((result as { content?: Array<{ text?: string }> }).content?.[0]?.text ?? "") : undefined;
+          // CallToolResult.content is a discriminated union — narrow on type==="text"
+          // before extracting .text so non-text content (image/resource) doesn't
+          // produce an empty audit-log error message.
+          let rawErr: string | undefined;
+          if (isError) {
+            const contentArr = (result as { content?: unknown }).content;
+            if (Array.isArray(contentArr)) {
+              const firstText = contentArr.find(
+                (c): c is { type: "text"; text: string } =>
+                  !!c && typeof c === "object" &&
+                  (c as { type?: unknown }).type === "text" &&
+                  typeof (c as { text?: unknown }).text === "string",
+              );
+              rawErr = firstText?.text ?? "";
+            } else {
+              rawErr = "";
+            }
+          }
           const errorMessage = rawErr !== undefined
-            ? (rawErr.length > MAX_ARGS_LOG_LEN ? rawErr.slice(0, MAX_ARGS_LOG_LEN) + "…[truncated]" : rawErr)
+            ? (rawErr.length > MAX_ARGS_LOG_LEN
+                ? rawErr.slice(0, MAX_ARGS_LOG_LEN) + "…[truncated]"
+                : rawErr)
             : undefined;
           // For qsv_command, derive the actual tool name from args so
           // classifyKind/isDeterministic work correctly on the underlying command.
@@ -924,9 +950,10 @@ class QsvMcpServer {
       if (config.enableMcpApps && this.clientSupportsApps()) {
         const candidates = await this.workingDirManager.discoverDirectories();
         const currentDir = this.filesystemProvider.getWorkingDirectory();
-        // structuredContent is an MCP Apps extension not yet in the SDK's
-        // CallToolResult type. Cast to satisfy the compiler while still
-        // delivering the payload to App-capable clients.
+        // structuredContent is part of CallToolResult in current MCP SDK; the
+        // cast preserves both content and structuredContent so App-capable
+        // clients receive the payload while the response remains
+        // ListTools-compatible for older clients.
         return {
           content: [{ type: "text" as const, text: "Opening interactive directory picker..." }],
           structuredContent: {
@@ -934,7 +961,10 @@ class QsvMcpServer {
             knownDirs: candidates,
             homeDir: homedir(),
           },
-        } as { content: Array<{ type: "text"; text: string }> };
+        } as {
+          content: Array<{ type: "text"; text: string }>;
+          structuredContent: { currentPath: string; knownDirs: typeof candidates; homeDir: string };
+        };
       }
 
       // 2. Try interactive elicitation form

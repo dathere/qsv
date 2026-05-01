@@ -167,6 +167,44 @@ test('extension mode skips MCP server version check', { skip: !QSV_AVAILABLE }, 
   assert.strictEqual(result.versions.mcpServerVersion, 'extension');
 });
 
+test('checkGitHubReleases internal timeout returns null when fetch never resolves', async () => {
+  // Stub global fetch to honor the AbortSignal but never resolve otherwise.
+  const originalFetch = globalThis.fetch;
+  // Suppress the expected "[UpdateChecker] Failed to check GitHub releases:"
+  // log line so test output stays clean — we re-assert the return value below.
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  globalThis.fetch = ((_url: string, init?: { signal?: AbortSignal }) => {
+    return new Promise((_resolve, reject) => {
+      if (init?.signal) {
+        const signal = init.signal;
+        const onAbort = () => {
+          const err = new Error("aborted");
+          (err as Error & { name: string }).name = "AbortError";
+          reject(err);
+        };
+        if (signal.aborted) onAbort();
+        else signal.addEventListener("abort", onAbort, { once: true });
+      }
+      // Otherwise, never resolve.
+    });
+  }) as typeof fetch;
+
+  // Pre-abort the signal so fetch rejects immediately without depending on a
+  // timer firing during the test's event loop window (CI runners can park
+  // unrefed timers and stall the test).
+  const controller = new AbortController();
+  controller.abort();
+  try {
+    const checker = new UpdateChecker();
+    const result = await checker.checkGitHubReleases(controller.signal);
+    assert.strictEqual(result, null, "Aborted fetch should return null, not throw");
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.error = originalConsoleError;
+  }
+});
+
 if (!QSV_AVAILABLE) {
   console.log('\n  UpdateChecker tests requiring qsv binary were skipped - qsv not available');
   console.log(`   Current validation: ${JSON.stringify(config.qsvValidation, null, 2)}`);

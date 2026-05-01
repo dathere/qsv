@@ -3643,8 +3643,7 @@ fn stats_cache_invalidates_on_boolean_patterns_change() {
     let type_idx = header.iter().position(|h| h == "type").unwrap();
     assert_eq!(
         got[1][type_idx], "Boolean",
-        "changing --boolean-patterns must invalidate the cache and recompute as Boolean, \
-         got {:?}",
+        "changing --boolean-patterns must invalidate the cache and recompute as Boolean, got {:?}",
         got[1][type_idx]
     );
 }
@@ -3656,12 +3655,7 @@ fn stats_cache_invalidates_on_vis_whitespace_change() {
     let wrk = Workdir::new("stats_cache_invalidates_on_vis_whitespace_change");
     wrk.create(
         "data.csv",
-        vec![
-            svec!["s"],
-            svec!["a\tb"],
-            svec!["c d"],
-            svec!["e\nf"],
-        ],
+        vec![svec!["s"], svec!["a\tb"], svec!["c d"], svec!["e\nf"]],
     );
 
     // First run: no --vis-whitespace, raw whitespace in min/max.
@@ -3836,7 +3830,6 @@ fn stats_parallel_vs_sequential_equivalence() {
     );
 }
 
-
 #[test]
 fn stats_cache_threshold_zero_removes_stats_cache() {
     // With --cache-threshold 0, `run` deletes both the stats CSV and the JSON
@@ -3864,8 +3857,8 @@ fn stats_cache_threshold_zero_removes_stats_cache() {
     );
     assert!(
         !Path::new(&wrk.path("data.stats.csv.json")).exists(),
-        "stats cache JSON must not exist when --cache-threshold 0 \
-         (orphan sidecar must be cleaned up)"
+        "stats cache JSON must not exist when --cache-threshold 0 (orphan sidecar must be cleaned \
+         up)"
     );
 }
 

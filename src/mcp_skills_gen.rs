@@ -1084,16 +1084,15 @@ impl UsageParser {
         let mut current_command = String::new();
         let mut in_continuation = false;
 
-        let flush =
-            |examples: &mut Vec<Example>, current_command: &mut String, active: &str| {
-                if !current_command.is_empty() && !active.is_empty() {
-                    examples.push(Example {
-                        description: active.trim().to_string(),
-                        command:     current_command.trim().to_string(),
-                    });
-                }
-                current_command.clear();
-            };
+        let flush = |examples: &mut Vec<Example>, current_command: &mut String, active: &str| {
+            if !current_command.is_empty() && !active.is_empty() {
+                examples.push(Example {
+                    description: active.trim().to_string(),
+                    command:     current_command.trim().to_string(),
+                });
+            }
+            current_command.clear();
+        };
 
         for line in lines.iter().skip(start_idx + 1) {
             let trimmed = line.trim();

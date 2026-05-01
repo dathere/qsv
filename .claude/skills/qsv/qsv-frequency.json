@@ -33,7 +33,7 @@
       {
         "flag": "--force",
         "type": "flag",
-        "description": "Force recomputation and cache regeneration even when a valid frequency cache exists. Use with --frequency-jsonl to regenerate the cache."
+        "description": "Force recomputation even when a valid frequency cache exists, bypassing the auto-reuse path. Also regenerates the cache when combined with --frequency-jsonl."
       },
       {
         "flag": "--frequency-jsonl",
@@ -117,7 +117,7 @@
       {
         "flag": "--null-text",
         "type": "string",
-        "description": "The text to use for NULL values. If set to \"<NONE>\", NULLs will not be included in the frequency table (equivalent to --no-nulls).",
+        "description": "The text to use for NULL values. If set to the literal string \"<NONE>\" (case-sensitive, exact match), NULLs will not be included in the frequency table (equivalent to --no-nulls).",
         "default": "(NULL)"
       },
       {
@@ -128,7 +128,7 @@
       {
         "flag": "--other-text",
         "type": "string",
-        "description": "The text to use for the \"Other\" category. If set to \"<NONE>\", the \"Other\" category will not be included in the frequency table.",
+        "description": "The text to use for the \"Other\" category. If set to the literal string \"<NONE>\" (case-sensitive, exact match), the \"Other\" category will not be included in the frequency table.",
         "default": "Other"
       },
       {
@@ -176,7 +176,7 @@
       {
         "flag": "--unq-limit",
         "type": "string",
-        "description": "If a column has all unique values, limit the frequency table to a sample of N unique items. Set to '0' to disable a unique_limit.",
+        "description": "If a column has all unique values, limit the frequency table to a sample of N unique items. Set to '0' to disable a unique_limit. Only applies in unweighted mode; ignored when --weight is set.",
         "default": "10"
       },
       {

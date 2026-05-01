@@ -17,7 +17,7 @@
       {
         "flag": "--ascii",
         "type": "flag",
-        "description": "Use ASCII field and record separators. Use Substitute (U+00A1) as the quote character."
+        "description": "Use ASCII field/record separators: Unit Separator (U+001F) for fields and Record Separator (U+001E) for records. Substitute (U+001A) is used as the quote character."
       },
       {
         "flag": "--crlf",
@@ -42,7 +42,7 @@
       {
         "flag": "--out-delimiter",
         "type": "string",
-        "description": "The field delimiter for writing CSV data. Must be a single character. If set to \"T\", uses tab as the delimiter.",
+        "description": "The field delimiter for writing CSV data. Must be a single character. \"T\" or \"\\t\" can be used as shortcuts for tab.",
         "default": ","
       },
       {
@@ -53,7 +53,7 @@
       {
         "flag": "--quote",
         "type": "string",
-        "description": "The quote character to use.",
+        "description": "The quote character to use. Must be a single character.",
         "default": "\""
       },
       {

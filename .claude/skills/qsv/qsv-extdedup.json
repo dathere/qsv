@@ -28,7 +28,7 @@
       {
         "flag": "--dupes-output",
         "type": "string",
-        "description": "Write duplicates to <file>. Note that the file will NOT be a valid CSV. It is a list of duplicate lines, with the row number of the duplicate separated by a tab from the duplicate line itself."
+        "description": "Write duplicates to <file>. In CSV MODE, <file> is a valid CSV with the same columns as the input plus a leading \"dupe_rowno\" column (1-based data row number). In LINE MODE, <file> is NOT a valid CSV — each duplicate line is prefixed by its 0-based file line index and a tab character."
       },
       {
         "flag": "--human-readable",
@@ -49,7 +49,7 @@
       {
         "flag": "--no-output",
         "type": "flag",
-        "description": "Do not write deduplicated output to <output>. Use this if you only want to know the duplicate count."
+        "description": "Do not write deduplicated output to <output>. Use this if you only want to know the duplicate count. Applies to both CSV MODE and LINE MODE."
       },
       {
         "flag": "--select",

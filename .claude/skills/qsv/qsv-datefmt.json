@@ -56,7 +56,7 @@
       {
         "flag": "--new-column",
         "type": "string",
-        "description": "Put the transformed values in a new column instead."
+        "description": "Put the transformed values in new column(s) instead of replacing the source column(s). When the selection has multiple columns, pass a comma-separated list of new column names that match the selection count (e.g. --new-column 'open_iso,close_iso' for 'OpenDate,CloseDate'). To rename in place instead, use --rename."
       },
       {
         "flag": "--no-headers",

@@ -20,11 +20,6 @@
         "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
       },
       {
-        "flag": "--intersect",
-        "type": "flag",
-        "description": "Shows the intersection of all headers in all of the inputs given."
-      },
-      {
         "flag": "--just-count",
         "type": "flag",
         "description": "Only show the number of headers."
@@ -37,7 +32,12 @@
       {
         "flag": "--trim",
         "type": "flag",
-        "description": "Trim space & quote characters from header name."
+        "description": "Trim leading/trailing space, tab, and quote characters from header name."
+      },
+      {
+        "flag": "--union",
+        "type": "flag",
+        "description": "Shows the union of headers across all inputs (deduplicated)."
       }
     ]
   },

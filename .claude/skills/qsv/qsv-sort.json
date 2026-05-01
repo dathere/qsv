@@ -27,7 +27,7 @@
       {
         "flag": "--ignore-case",
         "type": "flag",
-        "description": "Compare strings disregarding case"
+        "description": "Compare strings disregarding case. Has no effect when numeric comparison is selected (i.e. when --numeric is used without --natural)."
       },
       {
         "flag": "--memcheck",
@@ -37,7 +37,7 @@
       {
         "flag": "--natural",
         "type": "flag",
-        "description": "Compare strings using natural sort order (treats numbers within strings as actual numbers, e.g. \"data1.txt\", \"data2.txt\", \"data10.txt\", as opposed to \"data1.txt\", \"data10.txt\", \"data2.txt\" when sorting lexicographically) https://en.wikipedia.org/wiki/Natural_sort_order"
+        "description": "Compare strings using natural sort order (treats numbers within strings as actual numbers, e.g. \"data1.txt\", \"data2.txt\", \"data10.txt\", as opposed to \"data1.txt\", \"data10.txt\", \"data2.txt\" when sorting lexicographically) https://en.wikipedia.org/wiki/Natural_sort_order When combined with --numeric, --natural takes precedence."
       },
       {
         "flag": "--no-headers",
@@ -57,7 +57,7 @@
       {
         "flag": "--random",
         "type": "flag",
-        "description": "Randomize (scramble) the data by row"
+        "description": "Randomize (scramble) the data by row. When set, the numeric, natural, and ignore-case comparison flags still apply to unique-filtering (if --unique is also set). The reverse flag has no effect on unique-filter equality and is ignored for the shuffle itself."
       },
       {
         "flag": "--reverse",
@@ -83,7 +83,7 @@
       {
         "flag": "--unique",
         "type": "flag",
-        "description": "When set, identical consecutive lines will be dropped to keep only one line per sorted value."
+        "description": "When set, identical consecutive lines will be dropped to keep only one line per sorted value. The same comparison mode used to sort the input is also used here, so unique-equality always agrees with the sort."
       }
     ]
   },

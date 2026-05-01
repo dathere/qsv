@@ -17,12 +17,12 @@
       {
         "flag": "--auto-skip",
         "type": "flag",
-        "description": "Sniffs a CSV for preamble lines and automatically skips them. Takes precedence over --skip-lines option. Does not work with <stdin>."
+        "description": "Sniffs a CSV for preamble records and automatically skips them. Takes precedence over --skip-lines option. Does not work with <stdin>."
       },
       {
         "flag": "--comment",
         "type": "string",
-        "description": "The comment character to use. When set, lines starting with this character will be skipped."
+        "description": "The comment character to use (single-byte; only the first byte of the UTF-8 encoding is matched). When set, lines starting with this byte will be skipped."
       },
       {
         "flag": "--delimiter",
@@ -65,12 +65,12 @@
       {
         "flag": "--skip-lastlines",
         "type": "string",
-        "description": "The number of epilogue lines to skip."
+        "description": "The number of epilogue CSV records to skip."
       },
       {
         "flag": "--skip-lines",
         "type": "string",
-        "description": "The number of preamble lines to skip."
+        "description": "The number of preamble CSV records to skip."
       },
       {
         "flag": "--trim-fields",

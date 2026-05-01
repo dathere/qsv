@@ -58,7 +58,7 @@
       {
         "flag": "--no-headers",
         "type": "flag",
-        "description": "When set, the first row will not be interpreted as headers. Templates must use numeric 1-based indices with the \"_c\" prefix.(e.g. col1: {{_c1}} col2: {{_c2}})"
+        "description": "When set, the first row will not be interpreted as headers. Templates must use numeric 1-based indices with the \"_c\" prefix. (e.g. col1: {{_c1}} col2: {{_c2}})"
       },
       {
         "flag": "--outfilename",

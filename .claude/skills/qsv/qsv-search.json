@@ -23,7 +23,7 @@
       {
         "flag": "--count",
         "type": "flag",
-        "description": "Return number of matches to stderr."
+        "description": "Write the number of matches to stderr. Suppressed by --quiet and --json."
       },
       {
         "flag": "--delimiter",
@@ -44,7 +44,7 @@
       {
         "flag": "--flag",
         "type": "string",
-        "description": "If given, the command will not filter rows but will instead flag the found rows in a new column named <column>, with the row numbers of the matched rows and 0 for the non-matched rows. If column is named M, only the M column will be written to the output, and only matched rows are returned."
+        "description": "If given, the command will not filter rows but will instead flag every row in a new column named <column>, set to the row number for matched rows and \"0\" for non-matched rows. SPECIAL: if <column> is exactly \"M\", only matched rows are returned AND only the M column is written (all other columns are dropped). To use a literal column name \"M\" without this behavior, rename it afterward (e.g., with `qsv rename`)."
       },
       {
         "flag": "--ignore-case",
@@ -59,7 +59,7 @@
       {
         "flag": "--json",
         "type": "flag",
-        "description": "Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based). Automatically sets --quiet."
+        "description": "Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based). Automatically sets --quiet (also suppresses --count)."
       },
       {
         "flag": "--literal",
@@ -84,7 +84,7 @@
       {
         "flag": "--preview-match",
         "type": "string",
-        "description": "Preview the first N matches or all the matches found in N milliseconds, whichever occurs first. Returns the preview to stderr. Output is still written to stdout or --output as usual. Only applicable when CSV is NOT indexed, as it's read sequentially. Forces a sequential search, even if the CSV is indexed."
+        "description": "Preview the first N matches OR all matches found within N milliseconds, whichever occurs first. NOTE: the same numeric value is used for BOTH the match count AND the millisecond timeout - choose a value where one bound effectively dominates (e.g., a small count for \"first N\" preview, or a large count for \"all within N ms\"). Returns the preview to stderr; output is still written to stdout or --output as usual. Forces a sequential search, even if the CSV is indexed."
       },
       {
         "flag": "--quick",

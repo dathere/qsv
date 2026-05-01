@@ -66,5 +66,15 @@
   },
   "hints": {
     "memory": "proportional"
-  }
+  },
+  "examples": [
+    {
+      "description": "Can be imploded by key column \"name\", joining the \"color\" column with \"; \"",
+      "command": "qsv implode -k name -v color \"; \" data.csv"
+    },
+    {
+      "description": "With `-r colors` the value column is renamed",
+      "command": "qsv implode -k name -v color -r colors \"; \" data.csv"
+    }
+  ]
 }

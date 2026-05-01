@@ -23,7 +23,7 @@
       {
         "flag": "--count",
         "type": "flag",
-        "description": "Return number of matches to stderr. Ignored if --json is enabled."
+        "description": "Write the number of matches to stderr. Suppressed by --quiet. Ignored if --json is enabled."
       },
       {
         "flag": "--delimiter",

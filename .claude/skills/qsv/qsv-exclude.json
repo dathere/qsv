@@ -28,7 +28,7 @@
         "name": "input2",
         "type": "file",
         "required": true,
-        "description": "is the file containing the data to be removed from <input1> e.g. 'qsv exclude id records.csv id previously-processed.csv'"
+        "description": "is the file containing the data to be removed from <input1> e.g. 'qsv exclude id records.csv id previously-processed.csv' Either input may be set to `-` to read from stdin, but not both."
       }
     ],
     "options": [
@@ -46,6 +46,11 @@
         "flag": "--invert",
         "type": "flag",
         "description": "When set, matching rows will be the only ones included, forming set intersection, instead of the ones discarded."
+      },
+      {
+        "flag": "--memcheck",
+        "type": "flag",
+        "description": "Check if there is enough memory to load <input2> into memory using CONSERVATIVE heuristics."
       },
       {
         "flag": "--no-headers",
@@ -93,7 +98,7 @@
       "command": "qsv exclude --ignore-case id records.csv id previously-processed.csv"
     },
     {
-      "description": "Chain exclude with sort to create a new sorted records file without previously processed records",
+      "description": "Read records.csv from stdin Chain exclude with sort to create a new sorted records file without previously processed records",
       "command": "qsv exclude id records.csv id previously-processed.csv |  qsv sort > new-sorted-records.csv"
     },
     {

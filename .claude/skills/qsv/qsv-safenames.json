@@ -22,7 +22,7 @@
       {
         "flag": "--mode",
         "type": "string",
-        "description": "Rename header names to \"safe\" names - i.e. guaranteed \"database-ready\" names. It has six modes - conditional, always, verify, Verbose, with Verbose having two submodes - JSON & pretty JSON.",
+        "description": "Rename header names to \"safe\" names — guaranteed \"database-ready\" names. Mode is selected by the FIRST character: c/C conditional, a/A always, v verify, V Verbose, j JSON, J pretty JSON (case matters for v vs V and j vs J; --mode verbose maps to 'v', NOT V). Mode details: c, C  - conditional. Check first before renaming; preserves \"quoted identifiers\" (mixed case with embedded spaces). a, A  - always. Rename every header, even safe ones. v     - verify. Count unsafe headers; result to stderr. V     - Verbose. Like verify, but also lists header count, duplicates, unsafe & safe headers. j     - JSON. Verbose data as minified JSON to stdout. J     - Pretty JSON. Verbose data as pretty-printed JSON. Quoted identifiers are only treated as safe in conditional mode; verify, Verbose, and the JSON modes flag them as unsafe.",
         "default": "Always"
       },
       {

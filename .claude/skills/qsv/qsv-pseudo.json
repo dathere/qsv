@@ -34,7 +34,7 @@
       {
         "flag": "--increment",
         "type": "string",
-        "description": "The increment for the incremental identifier.",
+        "description": "The increment for the incremental identifier. Must be greater than 0.",
         "default": "1"
       },
       {

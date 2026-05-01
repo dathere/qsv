@@ -54,7 +54,7 @@
       {
         "flag": "--metadata",
         "type": "string",
-        "description": "Outputs workbook metadata in CSV or JSON format: index, sheet_name, headers, type, visible, column_count, row_count, safe_headers, safe_headers_count, unsafe_headers, unsafe_headers_count and duplicate_headers_count, names, name_count, tables, table_count. headers is a list of the first row which is presumed to be the header row. type is the sheet type (WorkSheet, DialogSheet, MacroSheet, ChartSheet, Vba). visible is the sheet visibility (Visible, Hidden, VeryHidden). row_count includes all rows, including the first row. safe_headers is a list of headers with \"safe\"(PostgreSQL-ready) names. unsafe_headers is a list of headers with \"unsafe\" names. duplicate_headers_count is a count of duplicate header names. names is a list of defined names in the workbook, with the associated formula. name_count is the number of defined names in the workbook. tables is a list of tables in the workbook, along with the sheet where the table is found, the columns and the column_count.  (XLSX only) table_count is the number of tables in the workbook.  (XLSX only)",
+        "description": "Outputs workbook metadata in CSV or JSON format: index, sheet_name, type, visible, headers, column_count, row_count, safe_headers, safe_headers_count, unsafe_headers, unsafe_headers_count and duplicate_headers_count, names, name_count, tables, table_count. headers is a list of the first row which is presumed to be the header row. type is the sheet type (WorkSheet, DialogSheet, MacroSheet, ChartSheet, Vba). visible is the sheet visibility (Visible, Hidden, VeryHidden). row_count includes all rows, including the first row. safe_headers is a list of headers with \"safe\"(PostgreSQL-ready) names. unsafe_headers is a list of headers with \"unsafe\" names. duplicate_headers_count is a count of duplicate header names. names is a list of defined names in the workbook, with the associated formula. name_count is the number of defined names in the workbook. tables is a list of tables in the workbook, along with the sheet where the table is found, the columns and the column_count.  (XLSX only) table_count is the number of tables in the workbook.  (XLSX only)",
         "default": "none"
       },
       {
@@ -106,11 +106,11 @@
       "command": "qsv excel --sheet \"Sheet 3\" input.xlsx"
     },
     {
-      "description": "Export a sheet by index: this exports the 3nd sheet (0-based index)",
+      "description": "Export a sheet by index: this exports the 3rd sheet (0-based index)",
       "command": "qsv excel -s 2 input.xlsx"
     },
     {
-      "description": "Export the last sheet (negative index)):",
+      "description": "Export the last sheet (negative index):",
       "command": "qsv excel -s -1 input.xlsx"
     },
     {

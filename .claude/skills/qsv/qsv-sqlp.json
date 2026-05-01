@@ -148,7 +148,7 @@
     },
     {
       "description": "Use dollar-quoting to avoid escaping reserved characters in literals.",
-      "command": "qsv sqlp data.csv 'SELECT * FROM data WHERE col1 = $SomeTag$Diane's horse \"Twinkle\"$SomeTag$'"
+      "command": "qsv sqlp data.csv 'SELECT * FROM data WHERE col1 = $SomeTag$Diane'\\''s horse \"Twinkle\"$SomeTag$'"
     },
     {
       "description": "Unions and Joins are supported.",

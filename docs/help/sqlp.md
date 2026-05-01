@@ -59,7 +59,7 @@ qsv sqlp data.csv "SELECT * FROM data WHERE col1 = $$O'Reilly$$"
 ```
 
 ```console
-qsv sqlp data.csv 'SELECT * FROM data WHERE col1 = $SomeTag$Diane's horse "Twinkle"$SomeTag$'
+qsv sqlp data.csv 'SELECT * FROM data WHERE col1 = $SomeTag$Diane'\''s horse "Twinkle"$SomeTag$'
 ```
 
 > Unions and Joins are supported.

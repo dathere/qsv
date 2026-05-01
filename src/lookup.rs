@@ -117,7 +117,13 @@ pub fn load_lookup_table(
                     .duration_since(SystemTime::UNIX_EPOCH)?
                     .as_secs();
                 let age = if opts.cache_age_secs > 0 {
-                    (now_secs - modified_secs).try_into().unwrap_or(0_i64)
+                    // saturating_sub guards against clock skew / future mtimes
+                    // (NTP correction, restored caches, etc.) that would otherwise
+                    // underflow this u64 subtraction.
+                    now_secs
+                        .saturating_sub(modified_secs)
+                        .try_into()
+                        .unwrap_or(i64::MAX)
                 } else {
                     0_i64
                 };
@@ -177,6 +183,17 @@ pub fn load_lookup_table(
                 cache_csv_last_modified,
                 opts,
             )?;
+            // download_lookup_table either writes/refreshes the cache file or
+            // returns Err. Verify the file is actually present before reading
+            // it; otherwise surface a clear error rather than a downstream
+            // CSV "file not found".
+            if !cached_csv_path.exists() {
+                return Err(format!(
+                    "Lookup table download from {lookup_table_uri} produced no cached file at {}",
+                    cached_csv_path.display()
+                )
+                .into());
+            }
             lookup_table_uri = cached_csv_path.to_string_lossy().to_string();
         }
     }
@@ -217,10 +234,9 @@ fn download_lookup_table(
     )
     .map_err(|e| Box::new(std::io::Error::other(e.to_string())))?;
 
-    let now = SystemTime::now();
-    let now_dt_utc: chrono::DateTime<chrono::Utc> = now.into();
     let download_start = Instant::now();
-    let last_modified_rfc8222 = now_dt_utc.to_rfc2822();
+    let downloaded_at_dt: chrono::DateTime<chrono::Utc> = SystemTime::now().into();
+    let downloaded_at_rfc2822 = downloaded_at_dt.to_rfc2822();
 
     let lookup_csv_response = if lookup_ckan {
         get_ckan_response(&client, lookup_table_uri, resource_search, opts)?
@@ -228,23 +244,47 @@ fn download_lookup_table(
         get_http_response(&client, lookup_table_uri, cache_csv_last_modified)?
     };
 
-    let write_csv_contents = should_write_contents(&lookup_csv_response);
-    let lookup_csv_contents = lookup_csv_response.text()?;
-
-    if write_csv_contents && !lookup_csv_contents.is_empty() {
-        write_cache_file(
-            cache_file_path,
-            &lookup_csv_contents,
-            &last_modified_rfc8222,
-            download_start,
-            opts,
-        )?;
+    let status = lookup_csv_response.status();
+    if status == reqwest::StatusCode::NOT_MODIFIED {
+        debug!("Lookup CSV hasn't changed, so using cached CSV.");
+        // Refresh the cache file's mtime so we don't re-issue a conditional
+        // GET on every subsequent call. Best-effort; ignore platform errors.
+        if cache_file_path.exists()
+            && let Ok(file) = std::fs::OpenOptions::new()
+                .write(true)
+                .open(cache_file_path)
+        {
+            let times = std::fs::FileTimes::new().set_modified(SystemTime::now());
+            let _ = file.set_times(times);
+        }
+        return Ok(());
     }
+    if !status.is_success() {
+        return Err(format!(
+            "Failed to download lookup table from {lookup_table_uri}: HTTP {status}"
+        )
+        .into());
+    }
+
+    let lookup_csv_contents = lookup_csv_response.text()?;
+    if lookup_csv_contents.is_empty() {
+        return Err(format!(
+            "Lookup table download from {lookup_table_uri} returned an empty response"
+        )
+        .into());
+    }
+
+    write_cache_file(
+        cache_file_path,
+        &lookup_csv_contents,
+        &downloaded_at_rfc2822,
+        download_start,
+        opts,
+    )?;
 
     Ok(())
 }
 
-// Helper functions for download_lookup_table
 fn get_ckan_response(
     client: &Client,
     uri: &str,
@@ -261,7 +301,12 @@ fn get_ckan_response(
     }
 
     if resource_search {
-        let resource_search_result = client.get(uri).headers(headers.clone()).send()?.text()?;
+        let resource_search_result = client
+            .get(uri)
+            .headers(headers.clone())
+            .send()?
+            .error_for_status()?
+            .text()?;
         let resource_search_json: Value = serde_json::from_str(&resource_search_result)?;
 
         let resource_id = resource_search_json["result"]["results"][0]["id"]
@@ -275,9 +320,10 @@ fn get_ckan_response(
         );
 
         let resource_show_result = client
-            .get(resource_uri)
+            .get(&resource_uri)
             .headers(headers.clone())
             .send()?
+            .error_for_status()?
             .text()?;
         let resource_show_json: Value = serde_json::from_str(&resource_show_result)?;
 
@@ -285,7 +331,28 @@ fn get_ckan_response(
             .as_str()
             .ok_or("Cannot get resource URL from resource_show JSON response")?;
 
-        client.get(url).headers(headers).send().map_err(Into::into)
+        // Strip the AUTHORIZATION header before fetching the resource if it
+        // lives on a different origin than the CKAN API — CKAN admins can
+        // register external resource URLs, and the bearer token must not
+        // leak to third-party hosts.
+        let ckan_host = opts
+            .ckan_api_url
+            .as_deref()
+            .and_then(|u| reqwest::Url::parse(u).ok())
+            .and_then(|u| u.host_str().map(str::to_owned));
+        let resource_host = reqwest::Url::parse(url)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_owned));
+        let mut resource_headers = headers;
+        if ckan_host != resource_host {
+            resource_headers.remove(reqwest::header::AUTHORIZATION);
+        }
+
+        client
+            .get(url)
+            .headers(resource_headers)
+            .send()
+            .map_err(Into::into)
     } else {
         client.get(uri).headers(headers).send().map_err(Into::into)
     }
@@ -300,29 +367,25 @@ fn get_http_response(
 
     if let Some(modified) = cache_csv_last_modified {
         let last_modified: chrono::DateTime<chrono::Utc> = modified.into();
-        let last_modified_rfc8222 = last_modified.to_rfc2822();
+        // RFC 7231 §7.1.1.1 IMF-fixdate format: "Sun, 06 Nov 1994 08:49:37 GMT".
+        // chrono's to_rfc2822() emits "+0000" instead of "GMT", which strict
+        // origins/CDNs may reject and re-serve the full body.
+        let if_modified_since = last_modified
+            .format("%a, %d %b %Y %H:%M:%S GMT")
+            .to_string();
         headers.insert(
             reqwest::header::IF_MODIFIED_SINCE,
-            reqwest::header::HeaderValue::from_str(&last_modified_rfc8222)?,
+            reqwest::header::HeaderValue::from_str(&if_modified_since)?,
         );
     }
 
     client.get(uri).headers(headers).send().map_err(Into::into)
 }
 
-fn should_write_contents(response: &reqwest::blocking::Response) -> bool {
-    if response.status() == reqwest::StatusCode::NOT_MODIFIED {
-        debug!("Lookup CSV hasn't changed, so using cached CSV.");
-        false
-    } else {
-        response.status().is_success()
-    }
-}
-
 fn write_cache_file(
     cache_file_path: &Path,
     contents: &str,
-    last_modified: &str,
+    downloaded_at: &str,
     download_start: Instant,
     opts: &LookupTableOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -338,7 +401,7 @@ fn write_cache_file(
         "# qsv_register_lookup({}, {}, {})",
         opts.name, opts.uri, opts.cache_age_secs
     )?;
-    writeln!(cache_file, "# Last-Modified: {last_modified}")?;
+    writeln!(cache_file, "# Downloaded-At: {downloaded_at}")?;
     writeln!(
         cache_file,
         "# Download-duration-ms: {}",

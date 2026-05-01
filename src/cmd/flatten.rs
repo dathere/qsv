@@ -18,7 +18,7 @@ flatten options:
                                   specified. If the field is UTF-8 encoded, then
                                   <arg> refers to the number of code points.
                                   Otherwise, it refers to the number of bytes.
-    -f, --field-separator <arg>   A string of character to write between a column name
+    -f, --field-separator <arg>   A string of characters to write between a column name
                                   and its value.
     -s, --separator <arg>         A string of characters to write after each record.
                                   When non-empty, a new line is automatically
@@ -74,14 +74,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut record = csv::ByteRecord::new();
     let separator_flag = !args.flag_separator.is_empty();
     let separator = args.flag_separator;
-    let field_separator_flag = args.flag_field_separator.is_some();
-    let field_separator = args.flag_field_separator.unwrap_or_default().into_bytes();
+    // Treat an empty --field-separator the same as omitted, mirroring the way
+    // --separator special-cases empty above.
+    let field_separator = args
+        .flag_field_separator
+        .unwrap_or_default()
+        .into_bytes();
+    let field_separator_flag = !field_separator.is_empty();
 
     while rdr.read_byte_record(&mut record)? {
         if !first && separator_flag {
             writeln!(&mut wtr, "{separator}")?;
         }
         first = false;
+        // Note: zip() stops at the shorter iterator. The csv reader rejects
+        // inconsistent row widths by default (flexible=false), so headers and
+        // record are expected to have the same length here. If flexible reads
+        // are ever enabled upstream, mismatched fields would be silently dropped.
         for (i, (header, field)) in headers.iter().zip(&record).enumerate() {
             if rconfig.no_headers {
                 write!(&mut wtr, "{i}")?;

@@ -38,7 +38,7 @@ qsv flatten --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑c,`<br>`‑‑condense`&nbsp; | string | Limits the length of each field to the value specified. If the field is UTF-8 encoded, then <arg> refers to the number of code points. Otherwise, it refers to the number of bytes. |  |
-| &nbsp;`‑f,`<br>`‑‑field‑separator`&nbsp; | string | A string of character to write between a column name and its value. |  |
+| &nbsp;`‑f,`<br>`‑‑field‑separator`&nbsp; | string | A string of characters to write between a column name and its value. |  |
 | &nbsp;`‑s,`<br>`‑‑separator`&nbsp; | string | A string of characters to write after each record. When non-empty, a new line is automatically appended to the separator. | `#` |
 
 <a name="common-options"></a>

@@ -389,36 +389,38 @@ pub struct Args {
 // if we can skip recomputing stats.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Default)]
 struct StatsArgs {
-    arg_input:            String,
-    flag_select:          String,
-    flag_everything:      bool,
-    flag_typesonly:       bool,
-    flag_infer_boolean:   bool,
-    flag_mode:            bool,
-    flag_cardinality:     bool,
-    flag_median:          bool,
-    flag_mad:             bool,
-    flag_quartiles:       bool,
-    flag_percentiles:     bool,
-    flag_percentile_list: String,
-    flag_round:           u32,
-    flag_nulls:           bool,
-    flag_infer_dates:     bool,
-    flag_dates_whitelist: String,
-    flag_prefer_dmy:      bool,
-    flag_no_headers:      bool,
-    flag_delimiter:       String,
-    flag_output_snappy:   bool,
-    canonical_input_path: String,
-    canonical_stats_path: String,
-    record_count:         u64,
-    date_generated:       String,
-    compute_duration_ms:  u64,
-    qsv_version:          String,
-    flag_weight:          String,
-    field_count:          u64,
-    filesize_bytes:       u64,
-    hash:                 FileHash,
+    arg_input:             String,
+    flag_select:           String,
+    flag_everything:       bool,
+    flag_typesonly:        bool,
+    flag_infer_boolean:    bool,
+    flag_mode:             bool,
+    flag_cardinality:      bool,
+    flag_median:           bool,
+    flag_mad:              bool,
+    flag_quartiles:        bool,
+    flag_percentiles:      bool,
+    flag_percentile_list:  String,
+    flag_round:            u32,
+    flag_nulls:            bool,
+    flag_infer_dates:      bool,
+    flag_dates_whitelist:  String,
+    flag_prefer_dmy:       bool,
+    flag_no_headers:       bool,
+    flag_delimiter:        String,
+    flag_output_snappy:    bool,
+    canonical_input_path:  String,
+    canonical_stats_path:  String,
+    record_count:          u64,
+    date_generated:        String,
+    compute_duration_ms:   u64,
+    qsv_version:           String,
+    flag_weight:           String,
+    flag_boolean_patterns: String,
+    flag_vis_whitespace:   bool,
+    field_count:           u64,
+    filesize_bytes:        u64,
+    hash:                  FileHash,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -474,36 +476,38 @@ impl StatsArgs {
         };
 
         Ok(Self {
-            arg_input:            get_str("arg_input"),
-            flag_select:          get_str("flag_select"),
-            flag_everything:      get_bool("flag_everything"),
-            flag_typesonly:       get_bool("flag_typesonly"),
-            flag_infer_boolean:   get_bool("flag_infer_boolean"),
-            flag_mode:            get_bool("flag_mode"),
-            flag_cardinality:     get_bool("flag_cardinality"),
-            flag_median:          get_bool("flag_median"),
-            flag_mad:             get_bool("flag_mad"),
-            flag_quartiles:       get_bool("flag_quartiles"),
-            flag_percentiles:     get_bool("flag_percentiles"),
-            flag_percentile_list: get_str_or("flag_percentile_list", "5,10,40,60,90,95"),
-            flag_round:           get_u64("flag_round") as u32,
-            flag_nulls:           get_bool("flag_nulls"),
-            flag_infer_dates:     get_bool("flag_infer_dates"),
-            flag_dates_whitelist: get_str("flag_dates_whitelist"),
-            flag_prefer_dmy:      get_bool("flag_prefer_dmy"),
-            flag_no_headers:      get_bool("flag_no_headers"),
-            flag_delimiter:       get_str("flag_delimiter"),
-            flag_output_snappy:   get_bool("flag_output_snappy"),
-            canonical_input_path: get_str("canonical_input_path"),
-            canonical_stats_path: get_str("canonical_stats_path"),
-            record_count:         get_u64("record_count"),
-            date_generated:       get_str("date_generated"),
-            compute_duration_ms:  get_u64("compute_duration_ms"),
-            qsv_version:          get_str("qsv_version"),
-            flag_weight:          get_str("flag_weight"),
-            field_count:          get_u64("field_count"),
-            filesize_bytes:       get_u64("filesize_bytes"),
-            hash:                 get_hash(),
+            arg_input:             get_str("arg_input"),
+            flag_select:           get_str("flag_select"),
+            flag_everything:       get_bool("flag_everything"),
+            flag_typesonly:        get_bool("flag_typesonly"),
+            flag_infer_boolean:    get_bool("flag_infer_boolean"),
+            flag_mode:             get_bool("flag_mode"),
+            flag_cardinality:      get_bool("flag_cardinality"),
+            flag_median:           get_bool("flag_median"),
+            flag_mad:              get_bool("flag_mad"),
+            flag_quartiles:        get_bool("flag_quartiles"),
+            flag_percentiles:      get_bool("flag_percentiles"),
+            flag_percentile_list:  get_str_or("flag_percentile_list", "5,10,40,60,90,95"),
+            flag_round:            get_u64("flag_round") as u32,
+            flag_nulls:            get_bool("flag_nulls"),
+            flag_infer_dates:      get_bool("flag_infer_dates"),
+            flag_dates_whitelist:  get_str("flag_dates_whitelist"),
+            flag_prefer_dmy:       get_bool("flag_prefer_dmy"),
+            flag_no_headers:       get_bool("flag_no_headers"),
+            flag_delimiter:        get_str("flag_delimiter"),
+            flag_output_snappy:    get_bool("flag_output_snappy"),
+            canonical_input_path:  get_str("canonical_input_path"),
+            canonical_stats_path:  get_str("canonical_stats_path"),
+            record_count:          get_u64("record_count"),
+            date_generated:        get_str("date_generated"),
+            compute_duration_ms:   get_u64("compute_duration_ms"),
+            qsv_version:           get_str("qsv_version"),
+            flag_weight:           get_str("flag_weight"),
+            flag_boolean_patterns: get_str("flag_boolean_patterns"),
+            flag_vis_whitespace:   get_bool("flag_vis_whitespace"),
+            field_count:           get_u64("field_count"),
+            filesize_bytes:        get_u64("filesize_bytes"),
+            hash:                  get_hash(),
         })
     }
 }
@@ -962,25 +966,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // save the current args, we'll use it to generate
     // the stats.csv.json file
     let mut current_stats_args = StatsArgs {
-        arg_input:            args.arg_input.clone().unwrap_or_default(),
-        flag_select:          format!("{:?}", args.flag_select),
-        flag_everything:      args.flag_everything,
-        flag_typesonly:       args.flag_typesonly,
-        flag_infer_boolean:   args.flag_infer_boolean,
-        flag_mode:            args.flag_mode,
-        flag_cardinality:     args.flag_cardinality,
-        flag_median:          args.flag_median,
-        flag_mad:             args.flag_mad,
-        flag_quartiles:       args.flag_quartiles,
-        flag_percentiles:     args.flag_percentiles,
-        flag_percentile_list: args.flag_percentile_list.clone(),
-        flag_round:           args.flag_round,
-        flag_nulls:           args.flag_nulls,
-        flag_infer_dates:     args.flag_infer_dates,
-        flag_dates_whitelist: args.flag_dates_whitelist.clone(),
-        flag_prefer_dmy:      args.flag_prefer_dmy,
-        flag_no_headers:      args.flag_no_headers,
-        flag_delimiter:       args
+        arg_input:             args.arg_input.clone().unwrap_or_default(),
+        flag_select:           format!("{:?}", args.flag_select),
+        flag_everything:       args.flag_everything,
+        flag_typesonly:        args.flag_typesonly,
+        flag_infer_boolean:    args.flag_infer_boolean,
+        flag_mode:             args.flag_mode,
+        flag_cardinality:      args.flag_cardinality,
+        flag_median:           args.flag_median,
+        flag_mad:              args.flag_mad,
+        flag_quartiles:        args.flag_quartiles,
+        flag_percentiles:      args.flag_percentiles,
+        flag_percentile_list:  args.flag_percentile_list.clone(),
+        flag_round:            args.flag_round,
+        flag_nulls:            args.flag_nulls,
+        flag_infer_dates:      args.flag_infer_dates,
+        flag_dates_whitelist:  args.flag_dates_whitelist.clone(),
+        flag_prefer_dmy:       args.flag_prefer_dmy,
+        flag_no_headers:       args.flag_no_headers,
+        flag_delimiter:        args
             .flag_delimiter
             .as_ref()
             .map(|d| (d.as_byte() as char).to_string())
@@ -988,25 +992,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // when we write to stdout, we don't use snappy compression
         // when we write to a file with the --output option, we use
         // snappy compression if the file ends with ".sz"
-        flag_output_snappy:   if stdout_output_flag {
+        flag_output_snappy:    if stdout_output_flag {
             false
         } else {
             let p = args.flag_output.clone().unwrap();
             p.to_ascii_lowercase().ends_with(".sz")
         },
-        canonical_input_path: String::new(),
-        canonical_stats_path: String::new(),
-        record_count:         0,
-        date_generated:       String::new(),
-        compute_duration_ms:  0,
+        canonical_input_path:  String::new(),
+        canonical_stats_path:  String::new(),
+        record_count:          0,
+        date_generated:        String::new(),
+        compute_duration_ms:   0,
         // save the qsv version in the stats.csv.json file
         // so cached stats are automatically invalidated
         // when the qsv version changes
-        qsv_version:          env!("CARGO_PKG_VERSION").to_string(),
-        flag_weight:          args.flag_weight.clone().unwrap_or_default(),
-        field_count:          0,
-        filesize_bytes:       0,
-        hash:                 FileHash::default(),
+        qsv_version:           env!("CARGO_PKG_VERSION").to_string(),
+        flag_weight:           args.flag_weight.clone().unwrap_or_default(),
+        flag_boolean_patterns: args.flag_boolean_patterns.clone(),
+        flag_vis_whitespace:   args.flag_vis_whitespace,
+        field_count:           0,
+        filesize_bytes:        0,
+        hash:                  FileHash::default(),
     };
 
     // create a temporary file to store the <FILESTEM>.stats.csv file
@@ -1247,6 +1253,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 == current_stats_args.flag_weight
                             && existing_stats_args_json.flag_percentile_list
                                 == current_stats_args.flag_percentile_list
+                            && existing_stats_args_json.flag_select
+                                == current_stats_args.flag_select
+                            && existing_stats_args_json.flag_round == current_stats_args.flag_round
+                            && existing_stats_args_json.flag_typesonly
+                                == current_stats_args.flag_typesonly
+                            && existing_stats_args_json.flag_infer_boolean
+                                == current_stats_args.flag_infer_boolean
+                            && existing_stats_args_json.flag_boolean_patterns
+                                == current_stats_args.flag_boolean_patterns
+                            && existing_stats_args_json.flag_vis_whitespace
+                                == current_stats_args.flag_vis_whitespace
                             && existing_stats_args_json.qsv_version
                                 == current_stats_args.qsv_version)
                 {
@@ -1532,6 +1549,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 log::warn!(
                     "Could not remove stats cache file: {}",
                     stats_pathbuf.display()
+                );
+            }
+            // remove the stats cache JSON sidecar too, to avoid leaving an
+            // orphaned sidecar from a prior run.
+            let stats_json_pathbuf = stats_pathbuf.with_extension("csv.json");
+            if stats_json_pathbuf.exists() && fs::remove_file(&stats_json_pathbuf).is_err() {
+                log::warn!(
+                    "Could not remove stats cache JSON sidecar: {}",
+                    stats_json_pathbuf.display()
                 );
             }
             create_cache = false;

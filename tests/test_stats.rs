@@ -3451,6 +3451,418 @@ fn stats_cache_invalidates_on_weight_change() {
 }
 
 #[test]
+fn stats_cache_invalidates_on_select_change() {
+    // Regression: with --everything, the cache short-circuit (in `run`) must
+    // compare flag_select. Otherwise the cached output (computed for the first
+    // run's selection) is served for a different --select.
+    let wrk = Workdir::new("stats_cache_invalidates_on_select_change");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["a", "b", "c", "d"],
+            svec!["1", "10", "100", "1000"],
+            svec!["2", "20", "200", "2000"],
+            svec!["3", "30", "300", "3000"],
+        ],
+    );
+
+    // First run: cache --everything --select a,b
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--select", "a,b"])
+        .args(["--cache-threshold", "1"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Second run: --select c,d. Cache must be invalidated.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--select", "c,d"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    let header = &got[0];
+    let field_idx = header.iter().position(|h| h == "field").unwrap();
+    let fields: Vec<&str> = got.iter().skip(1).map(|r| r[field_idx].as_str()).collect();
+    assert_eq!(
+        fields.len(),
+        2,
+        "expected 2 rows for select c,d, got {fields:?}"
+    );
+    assert!(
+        fields.iter().any(|f| *f == "c") && fields.iter().any(|f| *f == "d"),
+        "expected stats for columns c,d but got {fields:?}"
+    );
+}
+
+#[test]
+fn stats_cache_invalidates_on_round_change() {
+    // Regression: --round affects the formatted values stored in the cache CSV.
+    // The --everything cache short-circuit must compare flag_round.
+    let wrk = Workdir::new("stats_cache_invalidates_on_round_change");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["v"],
+            svec!["1.123456"],
+            svec!["2.234567"],
+            svec!["3.345678"],
+        ],
+    );
+
+    // First run: cache with --round 5 (5 decimal places).
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--round", "5"])
+        .args(["--cache-threshold", "1"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Second run: --round 1. Stale cache would still show 5-decimal values.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--round", "1"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    let header = &got[0];
+    let mean_idx = header.iter().position(|h| h == "mean").unwrap();
+    let mean = &got[1][mean_idx];
+    let decimals = mean.split('.').nth(1).map_or(0, str::len);
+    assert!(
+        decimals <= 1,
+        "expected ≤1 decimal place under --round 1, got mean={mean:?}"
+    );
+}
+
+#[test]
+fn stats_cache_invalidates_on_typesonly_change() {
+    // The --everything cache CSV holds the full stats schema; --typesonly
+    // expects a much smaller schema. The cache short-circuit must compare
+    // flag_typesonly, otherwise the full row leaks through.
+    let wrk = Workdir::new("stats_cache_invalidates_on_typesonly_change");
+    wrk.create(
+        "data.csv",
+        vec![svec!["v"], svec!["1"], svec!["2"], svec!["3"]],
+    );
+
+    // First run: --everything caches full schema.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--cache-threshold", "1"])
+        .arg("data.csv");
+    let everything_cols = wrk.read_stdout::<Vec<Vec<String>>>(&mut cmd)[0].len();
+    assert!(everything_cols > 5, "sanity: --everything has many cols");
+
+    // Second run: --typesonly should use the typesonly schema, not the cached row.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--typesonly").arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert!(
+        got[0].len() < everything_cols,
+        "--typesonly must not serve the --everything cache; got {} cols, expected < \
+         {everything_cols}",
+        got[0].len()
+    );
+}
+
+#[test]
+fn stats_cache_invalidates_on_infer_boolean_change() {
+    // --infer-boolean changes the type column. The cache short-circuit must
+    // compare flag_infer_boolean.
+    let wrk = Workdir::new("stats_cache_invalidates_on_infer_boolean_change");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["b"],
+            svec!["true"],
+            svec!["false"],
+            svec!["true"],
+            svec!["false"],
+        ],
+    );
+
+    // First run: --everything caches with non-Boolean type for column b.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--cache-threshold", "1"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Second run: --infer-boolean must reclassify b as Boolean.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--infer-boolean")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    let header = &got[0];
+    let type_idx = header.iter().position(|h| h == "type").unwrap();
+    assert_eq!(
+        got[1][type_idx], "Boolean",
+        "--infer-boolean must recompute and report Boolean, got {:?}",
+        got[1][type_idx]
+    );
+}
+
+#[test]
+fn stats_cache_invalidates_on_boolean_patterns_change() {
+    // --infer-boolean uses --boolean-patterns to decide which 2-cardinality
+    // values map to Boolean. Changing the patterns must invalidate the cache.
+    let wrk = Workdir::new("stats_cache_invalidates_on_boolean_patterns_change");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["b"],
+            svec!["yes"],
+            svec!["no"],
+            svec!["yes"],
+            svec!["no"],
+        ],
+    );
+
+    // First run: patterns "true:false" — "yes"/"no" do NOT match, so type is String.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--infer-boolean")
+        .args(["--boolean-patterns", "true:false"])
+        .args(["--cache-threshold", "1"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Second run: patterns "yes:no" — must reclassify column b as Boolean.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--infer-boolean")
+        .args(["--boolean-patterns", "yes:no"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    let header = &got[0];
+    let type_idx = header.iter().position(|h| h == "type").unwrap();
+    assert_eq!(
+        got[1][type_idx], "Boolean",
+        "changing --boolean-patterns must invalidate the cache and recompute as Boolean, got {:?}",
+        got[1][type_idx]
+    );
+}
+
+#[test]
+fn stats_cache_invalidates_on_vis_whitespace_change() {
+    // --vis-whitespace changes how whitespace-bearing min/max strings are
+    // serialized in the stats CSV. The cache short-circuit must compare it.
+    let wrk = Workdir::new("stats_cache_invalidates_on_vis_whitespace_change");
+    wrk.create(
+        "data.csv",
+        vec![svec!["s"], svec!["a\tb"], svec!["c d"], svec!["e\nf"]],
+    );
+
+    // First run: no --vis-whitespace, raw whitespace in min/max.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--cache-threshold", "1"])
+        .arg("data.csv");
+    let baseline: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let header = &baseline[0];
+    let max_idx = header.iter().position(|h| h == "max").unwrap();
+    let baseline_max = baseline[1][max_idx].clone();
+
+    // Second run: --vis-whitespace must produce a different (escaped) max
+    // value, which means the cache was not reused.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--vis-whitespace")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let max_visible = got[1][max_idx].clone();
+
+    assert_ne!(
+        baseline_max, max_visible,
+        "--vis-whitespace must change the serialized max; cache appears stale \
+         (baseline={baseline_max:?}, vis-whitespace={max_visible:?})"
+    );
+}
+
+#[test]
+fn stats_force_recompute() {
+    // --force must skip the cache and recompute from the input. We verify by
+    // tampering with the cache CSV in place and confirming --force ignores it.
+    use std::path::Path;
+    let wrk = Workdir::new("stats_force_recompute");
+    wrk.create(
+        "data.csv",
+        vec![svec!["v"], svec!["1"], svec!["2"], svec!["3"]],
+    );
+
+    // Build the cache.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--cache-threshold", "1"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    let cache_csv = wrk.path("data.stats.csv");
+    assert!(
+        Path::new(&cache_csv).exists(),
+        "cache CSV should exist after first run"
+    );
+
+    // Tamper: write a wrong-but-well-formed CSV. Without --force this would be served.
+    std::fs::write(&cache_csv, "field,type\nv,Tampered\n").unwrap();
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--force")
+        .args(["--cache-threshold", "1"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    let header = &got[0];
+    let type_idx = header.iter().position(|h| h == "type").unwrap();
+    assert_eq!(
+        got[1][type_idx], "Integer",
+        "--force must recompute; tampered cache leaked through. Got {:?}",
+        got[1][type_idx]
+    );
+}
+
+#[test]
+fn stats_cache_corrupt_json_recomputes() {
+    // If <stem>.stats.csv.json is unparsable, `run` should silently delete the
+    // sidecar files and recompute (it logs a warning). The next run must succeed
+    // and rewrite a parseable JSON.
+    use std::path::Path;
+    let wrk = Workdir::new("stats_cache_corrupt_json_recomputes");
+    wrk.create(
+        "data.csv",
+        vec![svec!["v"], svec!["1"], svec!["2"], svec!["3"]],
+    );
+
+    // Build the cache.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--cache-threshold", "1"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    let cache_json = wrk.path("data.stats.csv.json");
+    assert!(Path::new(&cache_json).exists());
+
+    // Corrupt the JSON sidecar.
+    std::fs::write(&cache_json, b"{not valid json").unwrap();
+
+    // Second run: must succeed (recover by recomputing), not panic.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--cache-threshold", "1"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Cache JSON should be re-written and parseable.
+    let json = std::fs::read_to_string(&cache_json).unwrap();
+    assert!(
+        json.trim_start().starts_with('{') && json.contains("\"qsv_version\""),
+        "cache JSON should be regenerated, got: {json:?}"
+    );
+}
+
+#[test]
+fn stats_parallel_vs_sequential_equivalence() {
+    // Lock in `Commute::merge` correctness: deterministic, integer-valued
+    // fields must agree across --jobs 1 (sequential) and --jobs 4 (parallel).
+    // Floating-point fields (mean/variance) are excluded since their merge
+    // order can produce tiny ulp differences after rounding.
+    let wrk = Workdir::new("stats_parallel_vs_sequential_equivalence");
+    let mut data = vec![svec!["v"]];
+    for i in 1..=200i64 {
+        data.push(vec![format!("{i}")]);
+    }
+    wrk.create_indexed("data.csv", data);
+
+    let extract = |rows: &[Vec<String>], cols: &[&str]| -> Vec<String> {
+        let header = &rows[0];
+        cols.iter()
+            .map(|c| {
+                let i = header
+                    .iter()
+                    .position(|h| h == c)
+                    .unwrap_or_else(|| panic!("column {c} not present"));
+                rows[1][i].clone()
+            })
+            .collect()
+    };
+
+    // Deterministic integer-valued columns common to --everything output.
+    let cols = [
+        "type",
+        "min",
+        "max",
+        "sum",
+        "nullcount",
+        "n_negative",
+        "n_zero",
+        "n_positive",
+        "max_precision",
+        "cardinality",
+    ];
+
+    // Sequential: --jobs 1, --cache-threshold 0 to prevent cache reuse on rerun.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--jobs", "1"])
+        .args(["--cache-threshold", "0"])
+        .arg("data.csv");
+    let seq: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Parallel: --jobs 4 over the same indexed file, also no cache reuse.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--jobs", "4"])
+        .args(["--cache-threshold", "0"])
+        .arg("data.csv");
+    let par: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert_eq!(
+        extract(&seq, &cols),
+        extract(&par, &cols),
+        "deterministic integer fields must match across parallel/sequential"
+    );
+}
+
+#[test]
+fn stats_cache_threshold_zero_removes_stats_cache() {
+    // With --cache-threshold 0, `run` deletes both the stats CSV and the JSON
+    // sidecar at the end of the run. We pre-seed an orphan sidecar so the test
+    // exercises the active-deletion path, not just the never-written path.
+    use std::path::Path;
+    let wrk = Workdir::new("stats_cache_threshold_zero_removes_stats_cache");
+    wrk.create(
+        "data.csv",
+        vec![svec!["v"], svec!["1"], svec!["2"], svec!["3"]],
+    );
+
+    // Pre-seed an orphan JSON sidecar from a hypothetical prior run.
+    std::fs::write(wrk.path("data.stats.csv.json"), b"{}").unwrap();
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--cache-threshold", "0"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        !Path::new(&wrk.path("data.stats.csv")).exists(),
+        "stats cache CSV must not exist when --cache-threshold 0"
+    );
+    assert!(
+        !Path::new(&wrk.path("data.stats.csv.json")).exists(),
+        "stats cache JSON must not exist when --cache-threshold 0 (orphan sidecar must be cleaned \
+         up)"
+    );
+}
+
+#[test]
 fn stats_issue_2668_semicolon_separator() {
     let wrk = Workdir::new("stats_issue_2668_semicolon_separator");
     wrk.create("data.csv", vec![svec!["h1;h2;h3;h4"], svec!["1;2;3;4"]]);

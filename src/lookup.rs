@@ -318,7 +318,12 @@ fn get_ckan_response(
         );
     }
 
-    if resource_search {
+    // For `ckan://<name>?` (resource_search=true) the caller passes a
+    // `resource_search?query=name:<name>` URI; resolve it to a resource_id
+    // and build the corresponding `resource_show` URI. For `ckan://<id>`
+    // (resource_search=false) the caller already passes a `resource_show`
+    // URI directly.
+    let resource_show_uri: String = if resource_search {
         let resource_search_result = client
             .get(uri)
             .headers(headers.clone())
@@ -331,57 +336,60 @@ fn get_ckan_response(
             .as_str()
             .ok_or("Cannot find resource name")?;
 
-        let resource_uri = format!(
+        format!(
             "{}/resource_show?id={}",
             opts.ckan_api_url.as_deref().unwrap_or_default(),
             resource_id
-        );
-
-        let resource_show_result = client
-            .get(&resource_uri)
-            .headers(headers.clone())
-            .send()?
-            .error_for_status()?
-            .text()?;
-        let resource_show_json: Value = serde_json::from_str(&resource_show_result)?;
-
-        let url = resource_show_json["result"]["url"]
-            .as_str()
-            .ok_or("Cannot get resource URL from resource_show JSON response")?;
-
-        // Strip the AUTHORIZATION header before fetching the resource if it
-        // lives on a different origin than the CKAN API — CKAN admins can
-        // register external resource URLs, and the bearer token must not
-        // leak to third-party hosts. Fail-secure: any parse failure or
-        // missing host is treated as cross-origin. Origin comparison
-        // covers scheme + host + port (RFC 6454).
-        let ckan_url_parsed = opts
-            .ckan_api_url
-            .as_deref()
-            .and_then(|u| reqwest::Url::parse(u).ok());
-        let resource_url_parsed = reqwest::Url::parse(url).ok();
-        let same_origin = match (ckan_url_parsed.as_ref(), resource_url_parsed.as_ref()) {
-            (Some(a), Some(b)) => {
-                a.host_str().is_some()
-                    && a.host_str() == b.host_str()
-                    && a.scheme() == b.scheme()
-                    && a.port_or_known_default() == b.port_or_known_default()
-            },
-            _ => false,
-        };
-        let mut resource_headers = headers;
-        if !same_origin {
-            resource_headers.remove(reqwest::header::AUTHORIZATION);
-        }
-
-        client
-            .get(url)
-            .headers(resource_headers)
-            .send()
-            .map_err(Into::into)
+        )
     } else {
-        client.get(uri).headers(headers).send().map_err(Into::into)
+        uri.to_string()
+    };
+
+    // resource_show returns JSON with the actual data URL inside `result.url`.
+    // Both ckan:// forms must follow that redirect to fetch the CSV; without
+    // this, the JSON envelope itself was being cached as if it were CSV.
+    let resource_show_result = client
+        .get(&resource_show_uri)
+        .headers(headers.clone())
+        .send()?
+        .error_for_status()?
+        .text()?;
+    let resource_show_json: Value = serde_json::from_str(&resource_show_result)?;
+
+    let url = resource_show_json["result"]["url"]
+        .as_str()
+        .ok_or("Cannot get resource URL from resource_show JSON response")?;
+
+    // Strip the AUTHORIZATION header before fetching the resource if it
+    // lives on a different origin than the CKAN API — CKAN admins can
+    // register external resource URLs, and the bearer token must not
+    // leak to third-party hosts. Fail-secure: any parse failure or
+    // missing host is treated as cross-origin. Origin comparison
+    // covers scheme + host + port (RFC 6454).
+    let ckan_url_parsed = opts
+        .ckan_api_url
+        .as_deref()
+        .and_then(|u| reqwest::Url::parse(u).ok());
+    let resource_url_parsed = reqwest::Url::parse(url).ok();
+    let same_origin = match (ckan_url_parsed.as_ref(), resource_url_parsed.as_ref()) {
+        (Some(a), Some(b)) => {
+            a.host_str().is_some()
+                && a.host_str() == b.host_str()
+                && a.scheme() == b.scheme()
+                && a.port_or_known_default() == b.port_or_known_default()
+        },
+        _ => false,
+    };
+    let mut resource_headers = headers;
+    if !same_origin {
+        resource_headers.remove(reqwest::header::AUTHORIZATION);
     }
+
+    client
+        .get(url)
+        .headers(resource_headers)
+        .send()
+        .map_err(Into::into)
 }
 
 fn get_http_response(

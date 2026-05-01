@@ -190,13 +190,13 @@ test('checkGitHubReleases internal timeout returns null when fetch never resolve
     });
   }) as typeof fetch;
 
+  // Pre-abort the signal so fetch rejects immediately without depending on a
+  // timer firing during the test's event loop window (CI runners can park
+  // unrefed timers and stall the test).
+  const controller = new AbortController();
+  controller.abort();
   try {
     const checker = new UpdateChecker();
-    // Patch the 10s default down to a short interval for the test by
-    // pre-aborting via an external signal — this exercises the same code path
-    // (fetch handles the AbortSignal) without waiting 10s.
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 50).unref();
     const result = await checker.checkGitHubReleases(controller.signal);
     assert.strictEqual(result, null, "Aborted fetch should return null, not throw");
   } finally {

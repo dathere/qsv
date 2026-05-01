@@ -961,9 +961,9 @@ class QsvMcpServer {
             knownDirs: candidates,
             homeDir: homedir(),
           },
-        } as unknown as {
+        } as {
           content: Array<{ type: "text"; text: string }>;
-          structuredContent: { currentPath: string; knownDirs: unknown; homeDir: string };
+          structuredContent: { currentPath: string; knownDirs: typeof candidates; homeDir: string };
         };
       }
 

@@ -150,13 +150,21 @@ export async function runQsvSimple(
       proc.stdout!.on("data", (chunk) => {
         if (stdoutTruncated) return;
         const data = chunk.toString();
-        if (stdout.length + data.length <= DEFAULT_MAX_OUTPUT_SIZE) {
-          stdout += data;
+        const combined = stdout + data;
+        if (combined.length <= DEFAULT_MAX_OUTPUT_SIZE) {
+          stdout = combined;
         } else {
-          // Keep as much of the new chunk as fits — slicing the previous
-          // stdout alone would discard the most recently produced bytes,
-          // which are usually the most relevant for diagnostics.
-          stdout = (stdout + data).slice(0, DEFAULT_MAX_OUTPUT_SIZE) + "\n[STDOUT TRUNCATED]";
+          // Preserve the most recently produced bytes for diagnostics by
+          // keeping the tail of the combined output and reserving space for
+          // the truncation marker within the configured output budget.
+          const truncationMarker = "\n[STDOUT TRUNCATED]";
+          const availableOutputSize = Math.max(
+            DEFAULT_MAX_OUTPUT_SIZE - truncationMarker.length,
+            0,
+          );
+          stdout = availableOutputSize === 0
+            ? truncationMarker.slice(-DEFAULT_MAX_OUTPUT_SIZE)
+            : combined.slice(-availableOutputSize) + truncationMarker;
           stdoutTruncated = true;
         }
       });

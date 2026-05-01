@@ -341,7 +341,9 @@ function buildDescribegptArgs(
  * input is empty.
  */
 function formatMoarstatsSkip(rawReason: string): string {
-  const firstLine = rawReason.trim().split("\n")[0].slice(0, 120);
+  const trimmed = rawReason.trim();
+  const newlineIdx = trimmed.indexOf("\n");
+  const firstLine = (newlineIdx === -1 ? trimmed : trimmed.slice(0, newlineIdx)).slice(0, 120);
   const reason = firstLine || "unknown error";
   return `\n\n⚠️  moarstats auto-enrichment skipped: ${reason}`;
 }

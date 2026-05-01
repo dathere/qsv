@@ -4,7 +4,20 @@
 
 import test from "node:test";
 import assert from "node:assert";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { SkillLoader } from "../src/loader.js";
+
+// Minimal valid skill shape per isValidSkillShape() in loader.ts
+const minimalSkillJson = (name: string) =>
+  JSON.stringify({
+    name,
+    description: `${name} test skill`,
+    version: "1.0.0",
+    category: "test",
+    command: { subcommand: name.replace(/^qsv-/, "") },
+  });
 
 test("SkillLoader initializes without errors", () => {
   const loader = new SkillLoader();
@@ -202,6 +215,53 @@ test("loadByNames handles concurrent calls safely", async () => {
   // Verify cache is correct after concurrent loads
   const cachedLoad = await loader.loadByNames(skillNames);
   assert.strictEqual(cachedLoad.size, skillNames.length, "Cache should work");
+});
+
+test("loadAll skips malformed JSON files and loads remaining valid skills", async () => {
+  // Build a temp skills dir with several valid skills and one malformed file.
+  // The malformed file would otherwise reject the Promise.all in doLoadAll.
+  // BM25 consolidation requires a small minimum corpus, hence 3 valid skills.
+  const tempDir = await mkdtemp(join(tmpdir(), "qsv-loader-test-"));
+  try {
+    await writeFile(join(tempDir, "qsv-count.json"), minimalSkillJson("qsv-count"));
+    await writeFile(join(tempDir, "qsv-headers.json"), minimalSkillJson("qsv-headers"));
+    await writeFile(join(tempDir, "qsv-stats.json"), minimalSkillJson("qsv-stats"));
+    await writeFile(join(tempDir, "qsv-broken.json"), "{ this is not valid json");
+
+    const loader = new SkillLoader(tempDir);
+    const loaded = await loader.loadAll();
+
+    assert.ok(loaded.has("qsv-count"), "Valid skill qsv-count should still load");
+    assert.ok(loaded.has("qsv-headers"), "Valid skill qsv-headers should still load");
+    assert.ok(loaded.has("qsv-stats"), "Valid skill qsv-stats should still load");
+    assert.ok(!loaded.has("qsv-broken"), "Malformed file should be skipped, not crash");
+    assert.strictEqual(loader.isAllLoaded(), true, "isAllLoaded should be true after partial success");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("loadAll skips skill files missing required fields", async () => {
+  // A syntactically-valid JSON file that doesn't match the QsvSkill shape
+  // should be skipped without affecting other skills.
+  const tempDir = await mkdtemp(join(tmpdir(), "qsv-loader-test-"));
+  try {
+    await writeFile(join(tempDir, "qsv-count.json"), minimalSkillJson("qsv-count"));
+    await writeFile(join(tempDir, "qsv-headers.json"), minimalSkillJson("qsv-headers"));
+    await writeFile(join(tempDir, "qsv-stats.json"), minimalSkillJson("qsv-stats"));
+    await writeFile(
+      join(tempDir, "qsv-bogus.json"),
+      JSON.stringify({ not_a_skill: true }),
+    );
+
+    const loader = new SkillLoader(tempDir);
+    const loaded = await loader.loadAll();
+
+    assert.ok(loaded.has("qsv-count"), "Valid skill should still load");
+    assert.ok(!loaded.has("qsv-bogus"), "Shape-invalid skill should be skipped");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("loadAll handles concurrent calls safely", async () => {

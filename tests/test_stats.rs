@@ -3607,6 +3607,90 @@ fn stats_cache_invalidates_on_infer_boolean_change() {
 }
 
 #[test]
+fn stats_cache_invalidates_on_boolean_patterns_change() {
+    // --infer-boolean uses --boolean-patterns to decide which 2-cardinality
+    // values map to Boolean. Changing the patterns must invalidate the cache.
+    let wrk = Workdir::new("stats_cache_invalidates_on_boolean_patterns_change");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["b"],
+            svec!["yes"],
+            svec!["no"],
+            svec!["yes"],
+            svec!["no"],
+        ],
+    );
+
+    // First run: patterns "true:false" — "yes"/"no" do NOT match, so type is String.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--infer-boolean")
+        .args(["--boolean-patterns", "true:false"])
+        .args(["--cache-threshold", "1"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Second run: patterns "yes:no" — must reclassify column b as Boolean.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--infer-boolean")
+        .args(["--boolean-patterns", "yes:no"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    let header = &got[0];
+    let type_idx = header.iter().position(|h| h == "type").unwrap();
+    assert_eq!(
+        got[1][type_idx], "Boolean",
+        "changing --boolean-patterns must invalidate the cache and recompute as Boolean, \
+         got {:?}",
+        got[1][type_idx]
+    );
+}
+
+#[test]
+fn stats_cache_invalidates_on_vis_whitespace_change() {
+    // --vis-whitespace changes how whitespace-bearing min/max strings are
+    // serialized in the stats CSV. The cache short-circuit must compare it.
+    let wrk = Workdir::new("stats_cache_invalidates_on_vis_whitespace_change");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["s"],
+            svec!["a\tb"],
+            svec!["c d"],
+            svec!["e\nf"],
+        ],
+    );
+
+    // First run: no --vis-whitespace, raw whitespace in min/max.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--cache-threshold", "1"])
+        .arg("data.csv");
+    let baseline: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let header = &baseline[0];
+    let max_idx = header.iter().position(|h| h == "max").unwrap();
+    let baseline_max = baseline[1][max_idx].clone();
+
+    // Second run: --vis-whitespace must produce a different (escaped) max
+    // value, which means the cache was not reused.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--vis-whitespace")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let max_visible = got[1][max_idx].clone();
+
+    assert_ne!(
+        baseline_max, max_visible,
+        "--vis-whitespace must change the serialized max; cache appears stale \
+         (baseline={baseline_max:?}, vis-whitespace={max_visible:?})"
+    );
+}
+
+#[test]
 fn stats_force_recompute() {
     // --force must skip the cache and recompute from the input. We verify by
     // tampering with the cache CSV in place and confirming --force ignores it.
@@ -3709,7 +3793,7 @@ fn stats_parallel_vs_sequential_equivalence() {
                 let i = header
                     .iter()
                     .position(|h| h == c)
-                    .unwrap_or_else(|| panic!("column {c} present"));
+                    .unwrap_or_else(|| panic!("column {c} not present"));
                 rows[1][i].clone()
             })
             .collect()
@@ -3752,16 +3836,21 @@ fn stats_parallel_vs_sequential_equivalence() {
     );
 }
 
+
 #[test]
 fn stats_cache_threshold_zero_removes_stats_cache() {
-    // With --cache-threshold 0, `run` deletes the stats CSV and JSON sidecar
-    // after the run (see end of `run` in src/cmd/stats.rs).
+    // With --cache-threshold 0, `run` deletes both the stats CSV and the JSON
+    // sidecar at the end of the run. We pre-seed an orphan sidecar so the test
+    // exercises the active-deletion path, not just the never-written path.
     use std::path::Path;
     let wrk = Workdir::new("stats_cache_threshold_zero_removes_stats_cache");
     wrk.create(
         "data.csv",
         vec![svec!["v"], svec!["1"], svec!["2"], svec!["3"]],
     );
+
+    // Pre-seed an orphan JSON sidecar from a hypothetical prior run.
+    std::fs::write(wrk.path("data.stats.csv.json"), b"{}").unwrap();
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--everything")
@@ -3775,7 +3864,8 @@ fn stats_cache_threshold_zero_removes_stats_cache() {
     );
     assert!(
         !Path::new(&wrk.path("data.stats.csv.json")).exists(),
-        "stats cache JSON must not exist when --cache-threshold 0"
+        "stats cache JSON must not exist when --cache-threshold 0 \
+         (orphan sidecar must be cleaned up)"
     );
 }
 

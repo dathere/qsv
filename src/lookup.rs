@@ -133,7 +133,14 @@ pub fn load_lookup_table(
             (false, 0, 0, None)
         };
 
-    // Use cached file if valid
+    // Use cached file if valid.
+    //
+    // Note: `cached_csv_age_secs` is derived from the cache file's mtime,
+    // and a successful 304 response refreshes that mtime (see
+    // `download_lookup_table`). Effect: a cache that keeps validating
+    // against upstream stays "fresh" indefinitely from this check's
+    // perspective — `cache_age_secs` bounds *re-validation cadence*,
+    // not *absolute cache lifetime*.
     if !lookup_table_is_file
         && cached_csv_exists
         && cached_csv_age_secs <= opts.cache_age_secs
@@ -268,8 +275,19 @@ fn download_lookup_table(
 
     let lookup_csv_contents = lookup_csv_response.text()?;
     if lookup_csv_contents.is_empty() {
+        // Misconfigured CDN edges sometimes return 200 with Content-Length: 0.
+        // Fall back to the existing cache when one is present; only error
+        // when there is no cache to fall back to.
+        if cache_file_path.exists() {
+            debug!(
+                "Lookup table download from {lookup_table_uri} returned an empty body; \
+                 keeping existing cache file."
+            );
+            return Ok(());
+        }
         return Err(format!(
-            "Lookup table download from {lookup_table_uri} returned an empty response"
+            "Lookup table download from {lookup_table_uri} returned an empty response \
+             and no cache exists to fall back to"
         )
         .into());
     }
@@ -334,17 +352,25 @@ fn get_ckan_response(
         // Strip the AUTHORIZATION header before fetching the resource if it
         // lives on a different origin than the CKAN API — CKAN admins can
         // register external resource URLs, and the bearer token must not
-        // leak to third-party hosts.
-        let ckan_host = opts
+        // leak to third-party hosts. Fail-secure: any parse failure or
+        // missing host is treated as cross-origin. Origin comparison
+        // covers scheme + host + port (RFC 6454).
+        let ckan_url_parsed = opts
             .ckan_api_url
             .as_deref()
-            .and_then(|u| reqwest::Url::parse(u).ok())
-            .and_then(|u| u.host_str().map(str::to_owned));
-        let resource_host = reqwest::Url::parse(url)
-            .ok()
-            .and_then(|u| u.host_str().map(str::to_owned));
+            .and_then(|u| reqwest::Url::parse(u).ok());
+        let resource_url_parsed = reqwest::Url::parse(url).ok();
+        let same_origin = match (ckan_url_parsed.as_ref(), resource_url_parsed.as_ref()) {
+            (Some(a), Some(b)) => {
+                a.host_str().is_some()
+                    && a.host_str() == b.host_str()
+                    && a.scheme() == b.scheme()
+                    && a.port_or_known_default() == b.port_or_known_default()
+            },
+            _ => false,
+        };
         let mut resource_headers = headers;
-        if ckan_host != resource_host {
+        if !same_origin {
             resource_headers.remove(reqwest::header::AUTHORIZATION);
         }
 

@@ -426,8 +426,6 @@ fn scoresql_keyword_inside_string_literal() {
     );
 }
 
-/// Regression: two inputs sharing a file stem used to silently overwrite
-/// each other's table registration.
 #[test]
 fn scoresql_duplicate_file_stem_rejected() {
     let wrk = setup("scoresql_duplicate_file_stem_rejected");
@@ -444,10 +442,18 @@ fn scoresql_duplicate_file_stem_rejected() {
     cmd.arg("nested/data.csv");
     cmd.arg("SELECT * FROM data LIMIT 1");
 
-    let got = wrk.output_stderr(&mut cmd);
+    // Use `output()` so we can also assert non-zero exit — a future regression
+    // that downgrades duplicate-stem detection to a warning would otherwise
+    // slip through if we only matched stderr text.
+    let got = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&got.stderr);
     assert!(
-        got.contains("Duplicate table name"),
-        "expected duplicate-stem error, got: {got}"
+        !got.status.success(),
+        "scoresql should fail on duplicate stems but succeeded; stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("Duplicate table name"),
+        "expected duplicate-stem error, got: {stderr}"
     );
 }
 

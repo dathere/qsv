@@ -165,8 +165,10 @@ struct SqlInfo {
     where_columns:    Vec<String>,
     /// `(column, optional_literal)` pairs from `col OP literal` predicates in
     /// the WHERE clause. The literal is `Some` when the right-hand side is a
-    /// quoted string, a number, or an identifier; `None` is reserved for
-    /// future predicate types where no literal can be extracted.
+    /// quoted string, a number, or one of the SQL keyword literals
+    /// `TRUE`/`FALSE`/`NULL`; bare identifiers are intentionally excluded so
+    /// `a.x = b.y` doesn't masquerade as a value lookup. `None` is reserved
+    /// for future predicate types where no literal can be extracted.
     where_predicates: Vec<(String, Option<String>)>,
     join_columns:     Vec<String>,
     order_columns:    Vec<String>,
@@ -226,6 +228,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut lossy_table_name = Cow::default();
     let mut table_name;
     let mut table_names: Vec<String> = Vec::with_capacity(args.arg_input.len());
+    // O(1) duplicate-stem detection — `table_names.iter().position()` would be
+    // O(n²) when scoring a directory expanded to many CSVs by `process_input`.
+    // The map stores the first input index where each stem was seen so the
+    // error message can still report both positions.
+    let mut seen_stems: HashMap<String, usize> = HashMap::with_capacity(args.arg_input.len());
 
     for (idx, table) in args.arg_input.iter().enumerate() {
         table_name = Path::new(table)
@@ -238,7 +245,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Reject duplicate file stems — otherwise the second registration silently
         // overwrites the first in `table_aliases` / `SQLContext::register`, and the
         // user gets a confusing "table not found" error from polars/duckdb later.
-        if let Some(prev_idx) = table_names.iter().position(|t| t == table_name) {
+        if let Some(&prev_idx) = seen_stems.get(table_name) {
             return fail_incorrectusage_clierror!(
                 "Duplicate table name '{table_name}' from inputs #{a} and #{b}. Inputs must have \
                  unique file stems (the part of the file name before the extension).",
@@ -246,6 +253,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 b = idx + 1,
             );
         }
+        seen_stems.insert(table_name.to_string(), idx);
         table_aliases.insert(table_name.to_string(), format!("_t_{}", idx + 1));
         table_names.push(table_name.to_string());
     }
@@ -679,29 +687,31 @@ fn extract_where_predicates(sql: &str) -> Vec<(String, Option<String>)> {
     // doesn't shift the start position. The masked version preserves byte
     // offsets, so positions found on it are valid byte indices into `sql`.
     let masked = mask_string_literals(sql);
-    let upper_masked = masked.to_ascii_uppercase();
-    let Some(start) = upper_masked.find("WHERE") else {
+
+    // Word-boundary, case-insensitive WHERE locator. A bare `find("WHERE")` on
+    // the upper-cased text would also match the substring inside identifiers
+    // like `SOMEWHERE`, misclassifying queries.
+    static WHERE_LOC_REGEX: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)\bWHERE\b").unwrap());
+    let Some(m) = WHERE_LOC_REGEX.find(&masked) else {
         return Vec::new();
     };
-    let after_start = start + "WHERE".len();
-    let upper_after = &upper_masked[after_start..];
+    let after_start = m.end();
+    let masked_after = &masked[after_start..];
 
-    // Bound the WHERE clause by the next stop keyword.
-    let mut end = upper_after.len();
-    for kw in [
-        " ORDER BY ",
-        " GROUP BY ",
-        " HAVING ",
-        " LIMIT ",
-        " UNION ",
-        " EXCEPT ",
-        " INTERSECT ",
-        " WINDOW ",
-    ] {
-        if let Some(p) = upper_after.find(kw) {
-            end = end.min(p);
-        }
-    }
+    // Word-boundary, whitespace-tolerant stop-keyword matcher. The previous
+    // `" ORDER BY "` substring scan failed when clauses were separated by
+    // newlines, tabs, or punctuation (common in formatted SQL).
+    static STOP_KW_REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?i)\b(?:ORDER\s+BY|GROUP\s+BY|HAVING|LIMIT|UNION|EXCEPT|INTERSECT|WINDOW)\b",
+        )
+        .unwrap()
+    });
+    let end = STOP_KW_REGEX
+        .find(masked_after)
+        .map_or(masked_after.len(), |m| m.start());
+
     // Use raw `sql` for the actual scan so quoted literal values survive.
     let where_clause = &sql[after_start..after_start + end];
 
@@ -1357,9 +1367,23 @@ fn score_filter_selectivity(
                 .iter()
                 .find(|f| f.field.eq_ignore_ascii_case(col_upper))
             {
+                // Look up the literal in the frequency cache. SQL keyword
+                // literals need normalization:
+                //   - `NULL`  -> `qsv frequency` writes nulls as the empty string, so match
+                //     `fv.value == ""`
+                //   - `TRUE` / `FALSE` -> match case-insensitively against the stringified CSV cell
+                //     ("True", "true", "TRUE", ...)
+                // Other literals fall back to exact string equality.
                 let matched_pct = val_opt
                     .as_ref()
-                    .and_then(|v| freq.frequencies.iter().find(|fv| fv.value == *v))
+                    .and_then(|v| {
+                        let upper = v.to_ascii_uppercase();
+                        freq.frequencies.iter().find(|fv| match upper.as_str() {
+                            "NULL" => fv.value.is_empty(),
+                            "TRUE" | "FALSE" => fv.value.eq_ignore_ascii_case(v),
+                            _ => fv.value == *v,
+                        })
+                    })
                     .map(|fv| fv.percentage);
 
                 if let Some(pct) = matched_pct {

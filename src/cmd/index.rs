@@ -49,7 +49,7 @@ struct Args {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
-    // can only index CSV, TSV, or TAB files
+    // can only index CSV, TSV/TAB or SSV files
     let exts = ["csv", "tsv", "tab", "ssv"];
     let input_path = Path::new(&args.arg_input);
     let ext = input_path

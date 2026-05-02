@@ -1,4 +1,3 @@
-#![allow(unused_assignments)]
 static USAGE: &str = r#"
 Smartly converts CSV to a newline-delimited JSON (JSONL/NDJSON).
 
@@ -182,6 +181,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let headers = rdr.headers()?.clone();
 
+    // precompute JSON-escaped header keys (with surrounding quotes) once,
+    // so the per-row hot loop doesn't re-allocate them for every record.
+    let header_keys: Vec<String> = headers
+        .iter()
+        .map(|h| serde_json::to_string(h).unwrap_or_else(|_| "\"\"".to_string()))
+        .collect();
+
     // if there are less than 3 records, we can't infer boolean fields
     let no_boolean = if record_count < 3 {
         true
@@ -284,7 +290,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // amortize memory allocation by reusing record
-    #[allow(unused_assignments)]
     let mut batch_record = csv::StringRecord::new();
 
     let num_jobs = util::njobs(args.flag_jobs);
@@ -321,8 +326,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 let mut json_string = String::new();
                 let mut temp_string2 = String::new();
 
-                let mut header_key = Value::String(String::new());
-                let mut temp_val = Value::String(String::new());
                 let mut temp_numval: serde_json::Number;
 
                 if args.flag_trim {
@@ -338,26 +341,32 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 } else {
                                     // we round-trip thru serde_json to escape the str
                                     // per json spec (https://www.json.org/json-en.html)
-                                    temp_val = field.into();
-                                    temp_string2 = temp_val.to_string();
+                                    let v: Value = field.into();
+                                    temp_string2 = v.to_string();
                                     &temp_string2
                                 }
                             },
                             JsonlType::Null => "null",
                             JsonlType::Integer => field,
                             JsonlType::Number => {
-                                // round-trip thru serde_json to parse the number per the json spec
-                                // safety: we know the number is a valid f64 and the inner
-                                // unwrap_or(0.0) covers the bare
-                                // outer unwrap()
-                                temp_numval = serde_json::Number::from_f64(
-                                    fast_float2::parse(field).unwrap_or(0.0),
-                                )
-                                .unwrap();
-                                temp_string2 = temp_numval.to_string();
-                                &temp_string2
+                                if field.is_empty() {
+                                    "null"
+                                } else {
+                                    // round-trip thru serde_json to parse the number per the json
+                                    // spec. Guard against non-finite f64 (NaN/±Infinity), which
+                                    // serde_json::Number::from_f64 rejects with None — fall back
+                                    // to 0 so a stray "Infinity"/"NaN"/overflow doesn't panic.
+                                    let parsed = fast_float2::parse(field).unwrap_or(0.0);
+                                    temp_numval = serde_json::Number::from_f64(parsed)
+                                        .unwrap_or_else(|| serde_json::Number::from(0));
+                                    temp_string2 = temp_numval.to_string();
+                                    &temp_string2
+                                }
                             },
                             JsonlType::Boolean => {
+                                // an empty value is treated as the falsy side of the
+                                // boolean pair (the t/null, y/null, 1/null inference rule
+                                // explicitly admits null as the false case).
                                 if let 't' | 'y' | '1' = boolcheck(field, &mut temp_string2) {
                                     "true"
                                 } else {
@@ -368,11 +377,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     } else {
                         "null"
                     };
-                    header_key = headers[idx].into();
+                    let header_key = &header_keys[idx];
                     if field_val.is_empty() {
-                        write!(json_string, r#"{header_key}:null,"#).unwrap();
+                        write!(json_string, "{header_key}:null,").unwrap();
                     } else {
-                        write!(json_string, r#"{header_key}:{field_val},"#).unwrap();
+                        write!(json_string, "{header_key}:{field_val},").unwrap();
                     }
                 }
                 json_string.pop(); // remove last comma

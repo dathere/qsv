@@ -539,26 +539,35 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
             // then delete .bak.
             //
             // Crash recovery: if a previous run was interrupted between the orig→bak
-            // and tmp→orig renames, the original is preserved at .bak (the half-written
-            // new content was still in .tmp and gets overwritten on retry). The user
-            // can recover manually by renaming .bak back to the target. To keep the
-            // current run unblocked, any stale .bak left behind by such a crash is
-            // removed before the new orig→bak rename below — otherwise that rename
-            // would fail because Windows refuses to overwrite an existing file.
+            // and tmp→orig renames, the original is preserved at .bak — and orig is
+            // missing. We MUST NOT touch .bak in that state: it's the only surviving
+            // copy of the cache and the user's manual recovery point (rename .bak
+            // back to the target). We only clear the .bak slot when orig still
+            // exists (the prior run completed cleanly or crashed before orig→bak),
+            // because then .bak is just stale and would block our own orig→bak
+            // rename — Windows refuses to overwrite.
             //
             // Build the backup path by appending ".bak" to the FULL filename
             // (e.g. "data.stats.csv" -> "data.stats.csv.bak"). Don't use
             // Path::with_extension — it only replaces the LAST extension, which
             // would yield "data.stats.stats.csv.bak" for a multi-dot stem.
             let bak_path = append_to_filename(&output_path, ".bak");
-            // Remove stale .bak from a prior interrupted run; non-fatal if absent.
-            let _ = std::fs::remove_file(&bak_path);
-            if output_path.exists() {
+            let did_create_bak = if output_path.exists() {
+                // Live original present — safe to clear any stale .bak so the
+                // orig→bak rename below succeeds, then rotate orig -> .bak.
+                let _ = std::fs::remove_file(&bak_path);
                 std::fs::rename(&output_path, &bak_path)?;
-            }
+                true
+            } else {
+                // Orig missing — preserve any pre-existing .bak as the user's
+                // recovery point. Don't touch it now or in the cleanup below.
+                false
+            };
             std::fs::rename(&write_target, &output_path)?;
-            // Clean up backup; non-fatal if this fails
-            let _ = std::fs::remove_file(&bak_path);
+            if did_create_bak {
+                // Only clean up the .bak we just created. Non-fatal if this fails.
+                let _ = std::fs::remove_file(&bak_path);
+            }
         }
         #[cfg(not(windows))]
         {
@@ -1764,7 +1773,6 @@ fn write_compare2_results(
     }
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {

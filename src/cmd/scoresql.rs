@@ -169,9 +169,28 @@ struct SqlInfo {
     /// `TRUE`/`FALSE`/`NULL`; bare identifiers are intentionally excluded so
     /// `a.x = b.y` doesn't masquerade as a value lookup. `None` is reserved
     /// for future predicate types where no literal can be extracted.
-    where_predicates: Vec<(String, Option<String>)>,
+    ///
+    /// Keyword vs string literals are tagged via [`WhereLiteral`] so that
+    /// `WHERE col = NULL` and `WHERE col = 'NULL'` get different lookup
+    /// semantics in `score_filter_selectivity` — the former matches empty
+    /// frequency-cache cells, the latter only the literal string `"NULL"`.
+    where_predicates: Vec<(String, Option<WhereLiteral>)>,
     join_columns:     Vec<String>,
     order_columns:    Vec<String>,
+}
+
+/// Distinguishes SQL keyword literals (`TRUE`/`FALSE`/`NULL`) from regular
+/// values so `score_filter_selectivity` can normalize keyword forms (case-
+/// insensitive match for booleans, empty-string match for nulls) without
+/// affecting quoted strings whose payload happens to be the same word.
+#[derive(Clone, Debug)]
+enum WhereLiteral {
+    /// SQL keyword: `TRUE`, `FALSE`, or `NULL`. Stored as upper-case canonical
+    /// form so callers can match with `==`.
+    Keyword(String),
+    /// Quoted string (already un-escaped) or numeric literal. Compared with
+    /// exact string equality against frequency-cache values.
+    Value(String),
 }
 
 // ── Cache data per input file ──────────────────────────────────────────────
@@ -681,7 +700,7 @@ fn mask_string_literals(sql: &str) -> String {
     out
 }
 
-fn extract_where_predicates(sql: &str) -> Vec<(String, Option<String>)> {
+fn extract_where_predicates(sql: &str) -> Vec<(String, Option<WhereLiteral>)> {
     // Locate the WHERE clause boundary on the *masked* SQL so a literal
     // `WHERE` inside a string (`SELECT 'WHERE foo' AS x FROM t WHERE col = 'bar'`)
     // doesn't shift the start position. The masked version preserves byte
@@ -761,13 +780,23 @@ fn extract_where_predicates(sql: &str) -> Vec<(String, Option<String>)> {
             continue;
         }
 
-        // Strip surrounding quotes from string literals; un-escape ''
+        // Tag the literal so score_filter_selectivity can apply keyword
+        // normalization (TRUE/FALSE/NULL) only to the *unquoted* form.
+        // `'TRUE'` / `'FALSE'` / `'NULL'` (the quoted strings) are stored as
+        // `Value` and compared with exact string equality.
         let value = if val_raw.starts_with('\'') && val_raw.ends_with('\'') && val_raw.len() >= 2 {
-            Some(val_raw[1..val_raw.len() - 1].replace("''", "'"))
+            // Quoted string — un-escape '' and store as Value
+            WhereLiteral::Value(val_raw[1..val_raw.len() - 1].replace("''", "'"))
         } else {
-            Some(val_raw.to_string())
+            // Unquoted: number or TRUE/FALSE/NULL keyword
+            let upper = val_raw.to_ascii_uppercase();
+            if matches!(upper.as_str(), "TRUE" | "FALSE" | "NULL") {
+                WhereLiteral::Keyword(upper)
+            } else {
+                WhereLiteral::Value(val_raw.to_string())
+            }
         };
-        preds.push((col, value));
+        preds.push((col, Some(value)));
     }
     preds
 }
@@ -1368,21 +1397,24 @@ fn score_filter_selectivity(
                 .find(|f| f.field.eq_ignore_ascii_case(col_upper))
             {
                 // Look up the literal in the frequency cache. SQL keyword
-                // literals need normalization:
-                //   - `NULL`  -> `qsv frequency` writes nulls as the empty string, so match
-                //     `fv.value == ""`
-                //   - `TRUE` / `FALSE` -> match case-insensitively against the stringified CSV cell
-                //     ("True", "true", "TRUE", ...)
-                // Other literals fall back to exact string equality.
+                // literals get normalization, but only when they came from
+                // the *unquoted* form (`WHERE col = NULL`) — quoted strings
+                // (`WHERE col = 'NULL'`) keep exact-equality semantics.
+                //   - `NULL`  -> qsv frequency writes nulls as the empty string, so match
+                //     `fv.value.is_empty()`
+                //   - `TRUE`/`FALSE` -> match case-insensitively against the stringified CSV cell
+                //     ("True", "true", ...)
                 let matched_pct = val_opt
                     .as_ref()
-                    .and_then(|v| {
-                        let upper = v.to_ascii_uppercase();
-                        freq.frequencies.iter().find(|fv| match upper.as_str() {
-                            "NULL" => fv.value.is_empty(),
-                            "TRUE" | "FALSE" => fv.value.eq_ignore_ascii_case(v),
-                            _ => fv.value == *v,
-                        })
+                    .and_then(|lit| match lit {
+                        WhereLiteral::Keyword(k) if k == "NULL" => {
+                            freq.frequencies.iter().find(|fv| fv.value.is_empty())
+                        },
+                        WhereLiteral::Keyword(k) => freq
+                            .frequencies
+                            .iter()
+                            .find(|fv| fv.value.eq_ignore_ascii_case(k)),
+                        WhereLiteral::Value(v) => freq.frequencies.iter().find(|fv| fv.value == *v),
                     })
                     .map(|fv| fv.percentage);
 

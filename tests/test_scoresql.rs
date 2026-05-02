@@ -531,3 +531,59 @@ fn scoresql_filter_on_rare_value_not_penalized() {
         "filter on a rare value should not trigger the low-selectivity penalty: {suggestions:?}"
     );
 }
+
+
+/// Regression: a quoted-string filter `WHERE col = 'NULL'` must NOT collapse
+/// into the SQL keyword `NULL` lookup (which matches empty cells). The two
+/// forms are tagged differently at extraction time so they keep distinct
+/// frequency-cache lookup semantics.
+#[test]
+fn scoresql_quoted_null_distinct_from_keyword_null() {
+    // Build a fixture where the *string* "NULL" is the dominant value but
+    // there are no actual nulls. If quoted-vs-keyword tagging is broken,
+    // the keyword normalization (`NULL` -> empty cell) would make the
+    // quoted lookup spuriously match the empty-cell branch instead.
+    let wrk = Workdir::new("scoresql_quoted_null_distinct_from_keyword_null");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "label"],
+            svec!["1", "NULL"],
+            svec!["2", "NULL"],
+            svec!["3", "NULL"],
+            svec!["4", "NULL"],
+            svec!["5", "NULL"],
+            svec!["6", "NULL"],
+            svec!["7", "NULL"],
+            svec!["8", "NULL"],
+            svec!["9", "active"],
+            svec!["10", "active"],
+        ],
+    );
+
+    let mut cmd = wrk.command("scoresql");
+    cmd.arg("--json");
+    cmd.arg("data.csv");
+    // Quoted-string `'NULL'` should match the literal string "NULL" in the
+    // frequency cache (80% of rows) and trigger the low-selectivity warning.
+    cmd.arg("SELECT id FROM data WHERE label = 'NULL'");
+
+    let got = wrk.output(&mut cmd);
+    assert!(
+        got.status.success(),
+        "scoresql failed: {}",
+        String::from_utf8_lossy(&got.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&got.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let suggestions = parsed["suggestions"].as_array().unwrap();
+    let has_unselective_warning = suggestions.iter().any(|s| {
+        let txt = s.as_str().unwrap_or_default();
+        txt.contains("filter matches") && txt.contains("selective predicate")
+    });
+    assert!(
+        has_unselective_warning,
+        "filter on quoted string 'NULL' (80% of rows) should trigger low-selectivity \
+         warning — got: {suggestions:?}"
+    );
+}

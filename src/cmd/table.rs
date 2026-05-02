@@ -25,12 +25,12 @@ table options:
     -p, --pad <arg>        The minimum number of spaces between each column.
                            [default: 2]
     -a, --align <arg>      How entries should be aligned in a column.
-                           Options: "left", "right", "center". "leftendtab" & "leftfwf"
+                           Options: "left", "right", "center", "leftendtab", "leftfwf".
                            "leftendtab" is a special alignment that similar to "left"
                            but with whitespace padding ending with a tab character.
                            The resulting output still validates as a valid TSV file,
                            while also being more human-readable (aka "aligned" TSV).
-                           "leftfwf" is similar to "left" with Fixed Width Format allgnment.
+                           "leftfwf" is similar to "left" with Fixed Width Format alignment.
                            The first line is a comment (prefixed with "#") that enumerates
                            the position (1-based, comma-separated) of each column.
                            [default: left]

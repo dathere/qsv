@@ -675,26 +675,21 @@ fn mask_string_literals(sql: &str) -> String {
     out
 }
 
-/// Extract `(column, optional_literal_value)` predicates from the WHERE clause
-/// of `sql`. Recognizes `col OP literal` patterns where OP is `=`, `<>`, `!=`,
-/// `<=`, `>=`, `<`, or `>`, and `literal` is a single-quoted string (with `''`
-/// escapes), a number, or an identifier. The original (un-masked) SQL is
-/// required so quoted literal values are preserved.
-///
-/// This list is consumed by `score_filter_selectivity` to look up the actual
-/// filter value in the frequency cache, instead of penalizing any column whose
-/// most-common value happens to dominate.
 fn extract_where_predicates(sql: &str) -> Vec<(String, Option<String>)> {
-    let upper = sql.to_ascii_uppercase();
-    let Some(start) = upper.find("WHERE") else {
+    // Locate the WHERE clause boundary on the *masked* SQL so a literal
+    // `WHERE` inside a string (`SELECT 'WHERE foo' AS x FROM t WHERE col = 'bar'`)
+    // doesn't shift the start position. The masked version preserves byte
+    // offsets, so positions found on it are valid byte indices into `sql`.
+    let masked = mask_string_literals(sql);
+    let upper_masked = masked.to_ascii_uppercase();
+    let Some(start) = upper_masked.find("WHERE") else {
         return Vec::new();
     };
     let after_start = start + "WHERE".len();
-    let after = &sql[after_start..];
-    let upper_after = &upper[after_start..];
+    let upper_after = &upper_masked[after_start..];
 
     // Bound the WHERE clause by the next stop keyword.
-    let mut end = after.len();
+    let mut end = upper_after.len();
     for kw in [
         " ORDER BY ",
         " GROUP BY ",
@@ -709,23 +704,32 @@ fn extract_where_predicates(sql: &str) -> Vec<(String, Option<String>)> {
             end = end.min(p);
         }
     }
-    let where_clause = &after[..end];
+    // Use raw `sql` for the actual scan so quoted literal values survive.
+    let where_clause = &sql[after_start..after_start + end];
 
-    static WHERE_PRED_REGEX: std::sync::LazyLock<regex::Regex> =
+    static WHERE_PATTERN: std::sync::LazyLock<regex::Regex> =
         std::sync::LazyLock::new(|| {
-            // (column[.qualified])  OP  (string-literal | number | identifier)
-            // Operator alternation lists multi-char operators first so they aren't
-            // greedily split into single-char ones.
+            // Either a string literal (consumed but ignored — group 1 is None),
+            // or a predicate `col OP literal`. The RHS is restricted to literal
+            // forms only; bare identifiers like `b.y` are intentionally not
+            // matched so we never confuse a column reference with a literal value.
+            // Operator alternation lists multi-char operators first.
             regex::Regex::new(
-                r"(\w+(?:\.\w+)?)\s*(?:<=|>=|<>|!=|=|<|>)\s*('(?:[^']|'')*'|-?\d+(?:\.\d+)?|\w+)",
+                r"'(?:[^']|'')*'|(\w+(?:\.\w+)?)\s*(?:<=|>=|<>|!=|=|<|>)\s*('(?:[^']|'')*'|-?\d+(?:\.\d+)?|(?i:TRUE|FALSE|NULL))",
             )
             .unwrap()
         });
 
     let mut preds = Vec::new();
-    for cap in WHERE_PRED_REGEX.captures_iter(where_clause) {
-        let col_full = cap.get(1).unwrap().as_str();
+    for cap in WHERE_PATTERN.captures_iter(where_clause) {
+        // String-literal-only matches have no group 1 — they're swallowed by
+        // the alternation so we advance past them without false-extracting
+        // predicates from inside.
+        let Some(col_match) = cap.get(1) else {
+            continue;
+        };
         let val_raw = cap.get(2).unwrap().as_str();
+        let col_full = col_match.as_str();
 
         // Skip purely numeric LHS (e.g. `1 = 1` tautologies)
         if col_full.parse::<f64>().is_ok() {
@@ -1330,18 +1334,26 @@ fn score_filter_selectivity(
     // expressions), fall back to a soft "high-skew" note without penalizing —
     // the old "top value > 70%" heuristic over-penalized selective filters
     // that happened to target rare values in skewed columns.
-    let mut handled: foldhash::HashSet<(String, String)> = foldhash::HashSet::default();
+    //
+    // Dedup key uses borrowed (cache_idx, &str) so we don't clone two Strings
+    // per (predicate, cache) iteration in this hot scoring path. The owned
+    // `String` for the upper-case column is built once outside the cache loop.
+    let mut handled: foldhash::HashSet<(usize, &str)> = foldhash::HashSet::default();
+    let upper_cols: Vec<String> = sql_info
+        .where_predicates
+        .iter()
+        .map(|(c, _)| c.to_ascii_uppercase())
+        .collect();
 
-    for (col, val_opt) in &sql_info.where_predicates {
-        let col_upper = col.to_ascii_uppercase();
-        for cache in caches {
-            if !handled.insert((cache.table_name.clone(), col_upper.clone())) {
+    for ((_, val_opt), col_upper) in sql_info.where_predicates.iter().zip(upper_cols.iter()) {
+        for (cache_idx, cache) in caches.iter().enumerate() {
+            if !handled.insert((cache_idx, col_upper.as_str())) {
                 continue;
             }
             if let Some(freq) = cache
                 .freq_entries
                 .iter()
-                .find(|f| f.field.to_ascii_uppercase() == col_upper)
+                .find(|f| f.field.eq_ignore_ascii_case(col_upper))
             {
                 let matched_pct = val_opt
                     .as_ref()
@@ -1383,16 +1395,20 @@ fn score_filter_selectivity(
     // Columns referenced in WHERE without an extractable predicate value
     // (e.g. `col IS NULL`, function calls): only emit a soft note for high-skew
     // columns; never penalize.
-    for col in &sql_info.where_columns {
-        let col_upper = col.to_ascii_uppercase();
-        for cache in caches {
-            if handled.contains(&(cache.table_name.clone(), col_upper.clone())) {
+    let upper_where_cols: Vec<String> = sql_info
+        .where_columns
+        .iter()
+        .map(|c| c.to_ascii_uppercase())
+        .collect();
+    for col_upper in &upper_where_cols {
+        for (cache_idx, cache) in caches.iter().enumerate() {
+            if handled.contains(&(cache_idx, col_upper.as_str())) {
                 continue;
             }
             if let Some(freq) = cache
                 .freq_entries
                 .iter()
-                .find(|f| f.field.to_ascii_uppercase() == col_upper)
+                .find(|f| f.field.eq_ignore_ascii_case(col_upper))
                 && let Some(top) = freq.frequencies.first()
                 && top.percentage > 70.0
                 && top.value != "<ALL_UNIQUE>"

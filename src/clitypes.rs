@@ -103,7 +103,7 @@ macro_rules! fail_encoding_clierror {
 }
 
 /// write to stderr and log::error, using CliError::OutOfMemory
-macro_rules! fail_OOM_clierror {
+macro_rules! fail_oom_clierror {
     ($($t:tt)*) => {{
         use log::error;
         use crate::CliError;

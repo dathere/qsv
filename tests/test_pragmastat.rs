@@ -923,7 +923,6 @@ fn pragmastat_twosample_ratio_populated_for_numeric() {
         .expect("ratio should be a numeric value for positive numeric pair");
 }
 
-
 #[test]
 fn pragmastat_compare2_ratio_empty_for_dates() {
     // Regression: --compare2 with a `ratio:N` threshold on Date/DateTime pairs

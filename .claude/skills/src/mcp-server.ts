@@ -695,7 +695,9 @@ class QsvMcpServer {
         runQsvSimple(config.qsvBinPath, ["log", name, `s-${invocationId}`, startMsg], {
           timeoutMs: 5_000,
           cwd: this.filesystemProvider.getWorkingDirectory(),
-        }).catch(() => {});
+        }).catch((err) => {
+          console.error(`[audit-log] start entry for ${name} failed: ${getErrorMessage(err)}`);
+        });
       }
 
       // First-tool-use working directory prompt: if the working directory has not
@@ -744,7 +746,9 @@ class QsvMcpServer {
           runQsvSimple(config.qsvBinPath, ["log", name, `e-${invocationId}`, endMsg], {
             timeoutMs: 5_000,
             cwd: this.filesystemProvider.getWorkingDirectory(),
-          }).catch(() => {});
+          }).catch((err) => {
+            console.error(`[audit-log] end entry for ${name} failed: ${getErrorMessage(err)}`);
+          });
         }
 
         // Record pipeline step for reproducibility manifest
@@ -809,7 +813,9 @@ class QsvMcpServer {
           runQsvSimple(config.qsvBinPath, ["log", name, `e-${invocationId}`, `error(${elapsedSecs}s): ${truncatedErr}`], {
             timeoutMs: 5_000,
             cwd: this.filesystemProvider.getWorkingDirectory(),
-          }).catch(() => {});
+          }).catch((err) => {
+            console.error(`[audit-log] error entry for ${name} failed: ${getErrorMessage(err)}`);
+          });
         }
 
         console.error(`Error executing tool ${name}:`, error);

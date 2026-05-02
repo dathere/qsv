@@ -21,7 +21,7 @@ The QSV MCP Server now supports **direct access to local tabular data files** (C
 
 This directory contains:
 
-1. **53 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
+1. **54 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
 2. **TypeScript Executor** - Complete implementation for running qsv skills
 3. **MCP Server with Filesystem Access** - Model Context Protocol server for Claude Desktop integration
 4. **Working Demos** - Practical demonstrations of the system
@@ -123,7 +123,7 @@ npm test
 npm run mcpb:package
 ```
 
-## Generated Skills (53)
+## Generated Skills (54)
 
 | Category | Count | Skills |
 |----------|-------|--------|
@@ -139,7 +139,7 @@ npm run mcpb:package
 | **documentation** | 1 | describegpt |
 
 **Total Statistics:**
-- **Skills**: 53 commands
+- **Skills**: 54 commands
 - **Usage Examples**: 174 from documentation
 - **Options**: 604 command-line options
 - **Arguments**: 87 positional arguments
@@ -148,11 +148,11 @@ npm run mcpb:package
 
 ```
 .claude/skills/
-├── qsv/                    # 53 skill JSON definitions
+├── qsv/                    # 54 skill JSON definitions
 │   ├── qsv-select.json
 │   ├── qsv-stats.json
 │   ├── qsv-moarstats.json
-│   └── ... (50 more)
+│   └── ... (51 more)
 ├── src/                    # TypeScript source
 │   ├── types.ts           # Type definitions
 │   ├── loader.ts          # Skill loading
@@ -201,7 +201,7 @@ npm run mcpb:package
 ```typescript
 import { SkillLoader, SkillExecutor } from './dist/index.js';
 
-// Load all 53 skills
+// Load all 54 skills
 const loader = new SkillLoader();
 await loader.loadAll();
 
@@ -341,7 +341,7 @@ await agent.chat("Remove duplicates from sales.csv");
 
 ## Integration with Claude Desktop (MCP Server)
 
-The QSV MCP Server exposes all 53 qsv skill-based commands to Claude Desktop through the Model Context Protocol.
+The QSV MCP Server exposes all 54 qsv skill-based commands to Claude Desktop through the Model Context Protocol.
 
 ### Quick Start
 
@@ -450,7 +450,7 @@ MIT
 **Updated**: 2026-03-22
 **Version**: 18.0.5
 **Generator**: `qsv --update-mcp-skills`
-**Skills**: 53 commands
+**Skills**: 54 commands
 **Usage Examples**: 174 from documentation
 **Parsing**: qsv-docopt (robust, accurate)
 **Features**: MCP server, filesystem access, type-safe execution

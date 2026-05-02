@@ -8,6 +8,12 @@ const { execFile } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { findQsvMcpBinary, truncateMessage, readStdin } = require('./qsv-utils.cjs');
 
+// Hard wall-clock cap: this hook runs on every UserPromptSubmit, so a hung
+// binary lookup or stalled stdin must never block the user's next turn.
+const HOOK_HARD_TIMEOUT_MS = 7_000;
+const hardTimer = setTimeout(() => process.exit(0), HOOK_HARD_TIMEOUT_MS);
+hardTimer.unref();
+
 readStdin().then((input) => {
   // Respect QSV_MCP_LOG_LEVEL — skip logging when audit logging is disabled
   const logLevel = (process.env.QSV_MCP_LOG_LEVEL || 'info').toLowerCase();

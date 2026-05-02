@@ -700,6 +700,7 @@ fn mask_string_literals(sql: &str) -> String {
     out
 }
 
+#[allow(clippy::items_after_statements)]
 fn extract_where_predicates(sql: &str) -> Vec<(String, Option<WhereLiteral>)> {
     // Locate the WHERE clause boundary on the *masked* SQL so a literal
     // `WHERE` inside a string (`SELECT 'WHERE foo' AS x FROM t WHERE col = 'bar'`)

@@ -10,8 +10,16 @@ const { findQsvMcpBinary, truncateMessage, readStdin } = require('./qsv-utils.cj
 
 // Hard wall-clock cap: this hook runs on every UserPromptSubmit, so a hung
 // binary lookup or stalled stdin must never block the user's next turn.
+// Track any spawned child so we can kill it before exit — otherwise the
+// process can be orphaned past execFile's own `timeout`.
 const HOOK_HARD_TIMEOUT_MS = 7_000;
-const hardTimer = setTimeout(() => process.exit(0), HOOK_HARD_TIMEOUT_MS);
+let activeChild = null;
+const hardTimer = setTimeout(() => {
+  if (activeChild && !activeChild.killed) {
+    try { activeChild.kill('SIGKILL'); } catch { /* already gone */ }
+  }
+  process.exit(0);
+}, HOOK_HARD_TIMEOUT_MS);
 hardTimer.unref();
 
 readStdin().then((input) => {
@@ -43,7 +51,8 @@ readStdin().then((input) => {
   // Truncate AFTER building the full message (including prefix)
   const message = truncateMessage(`[user_prompt] ${prompt}`);
 
-  execFile(bin, ['log', 'user_prompt', logId, message], { timeout: 5000, cwd }, (err) => {
+  activeChild = execFile(bin, ['log', 'user_prompt', logId, message], { timeout: 5000, cwd }, (err) => {
+    activeChild = null;
     if (err) {
       process.stderr.write(`[log-user-prompt] qsv log failed: ${err.message}\n`);
     }

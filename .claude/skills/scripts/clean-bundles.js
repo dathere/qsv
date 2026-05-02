@@ -19,21 +19,36 @@ const candidates = readdirSync(rootDir).filter(
   (f) => f.endsWith('.mcpb') || f.endsWith('.plugin'),
 );
 
+const presentKeep = [...keep].filter((f) => candidates.includes(f));
+if (presentKeep.length === 0 && candidates.length > 0) {
+  console.error(
+    `Refusing to clean: no v${version} bundle present yet — would delete every historical bundle.\n` +
+      `  Build the current version first (npm run mcpb:package / plugin:package), then re-run.`,
+  );
+  process.exit(1);
+}
+
 let removed = 0;
 let removedBytes = 0;
+let failed = 0;
 for (const f of candidates) {
   if (keep.has(f)) continue;
   const p = join(rootDir, f);
-  const size = statSync(p).size;
-  unlinkSync(p);
-  removedBytes += size;
-  removed += 1;
-  console.log(`  removed ${f} (${(size / 1024 / 1024).toFixed(1)} MB)`);
+  try {
+    const size = statSync(p).size;
+    unlinkSync(p);
+    removedBytes += size;
+    removed += 1;
+    console.log(`  removed ${f} (${(size / 1024 / 1024).toFixed(1)} MB)`);
+  } catch (err) {
+    failed += 1;
+    console.error(`  skipped ${f}: ${err.message}`);
+  }
 }
 
 console.log(
-  removed === 0
+  removed === 0 && failed === 0
     ? 'No old bundles to remove.'
-    : `Removed ${removed} bundle(s), freed ${(removedBytes / 1024 / 1024).toFixed(1)} MB.`,
+    : `Removed ${removed} bundle(s), freed ${(removedBytes / 1024 / 1024).toFixed(1)} MB${failed ? ` (${failed} skipped)` : ''}.`,
 );
-console.log(`Kept: ${[...keep].filter((f) => candidates.includes(f)).join(', ') || '(none — current version not built yet)'}`);
+console.log(`Kept: ${presentKeep.join(', ') || '(none)'}`);

@@ -95,6 +95,13 @@ impl From<gzp::GzpError> for CliError {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
+    // reject stdin for `validate` early, before any reader setup
+    if args.cmd_validate && args.arg_input.is_none() {
+        return fail_incorrectusage_clierror!(
+            "stdin is not supported by the snappy validate subcommand."
+        );
+    }
+
     let input_bytes;
 
     // create a temporary file to write the download file to
@@ -174,35 +181,47 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else if args.cmd_decompress {
         let decompressed_bytes = decompress(input_reader, output_writer)?;
         if !args.flag_quiet {
-            let compression_ratio = decompressed_bytes as f64 / input_bytes as f64;
-            winfo!(
-                "Decompression successful. Compressed bytes: {}, Decompressed bytes: {}, \
-                 Compression ratio: {:.3}:1",
-                indicatif::HumanBytes(input_bytes),
-                indicatif::HumanBytes(decompressed_bytes),
-                compression_ratio,
-            );
+            // input_bytes is 0 when reading from stdin; avoid div-by-zero (+inf)
+            if input_bytes > 0 {
+                let compression_ratio = decompressed_bytes as f64 / input_bytes as f64;
+                winfo!(
+                    "Decompression successful. Compressed bytes: {}, Decompressed bytes: {}, \
+                     Compression ratio: {:.3}:1",
+                    indicatif::HumanBytes(input_bytes),
+                    indicatif::HumanBytes(decompressed_bytes),
+                    compression_ratio,
+                );
+            } else {
+                winfo!(
+                    "Decompression successful. Decompressed bytes: {}",
+                    indicatif::HumanBytes(decompressed_bytes),
+                );
+            }
         }
     } else if args.cmd_validate {
-        if args.arg_input.is_none() {
-            return fail_incorrectusage_clierror!(
-                "stdin is not supported by the snappy validate subcommand."
-            );
-        }
-        let Ok(decompressed_bytes) = validate(input_reader) else {
-            return fail_clierror!("Not a valid snappy file.");
-        };
+        // propagate validate()'s error verbatim — it carries the underlying
+        // FrameDecoder reason (truncated, bad magic, checksum mismatch, ...)
+        let decompressed_bytes = validate(input_reader)?;
         if !args.flag_quiet {
-            let compression_ratio = decompressed_bytes as f64 / input_bytes as f64;
-            winfo!(
-                "Valid snappy file. Compressed bytes: {}, Decompressed bytes: {}, Compression \
-                 ratio: {:.3}:1, Space savings: {} - {:.2}%",
-                indicatif::HumanBytes(input_bytes),
-                indicatif::HumanBytes(decompressed_bytes),
-                compression_ratio,
-                indicatif::HumanBytes(decompressed_bytes.saturating_sub(input_bytes)),
-                (1.0 - (input_bytes as f64 / decompressed_bytes as f64)) * 100.0
-            );
+            // mirror the decompress branch: a 0-byte input file would
+            // produce 0/0 = NaN ratios, so guard symmetrically.
+            if input_bytes > 0 {
+                let compression_ratio = decompressed_bytes as f64 / input_bytes as f64;
+                winfo!(
+                    "Valid snappy file. Compressed bytes: {}, Decompressed bytes: {}, Compression \
+                     ratio: {:.3}:1, Space savings: {} - {:.2}%",
+                    indicatif::HumanBytes(input_bytes),
+                    indicatif::HumanBytes(decompressed_bytes),
+                    compression_ratio,
+                    indicatif::HumanBytes(decompressed_bytes.saturating_sub(input_bytes)),
+                    (1.0 - (input_bytes as f64 / decompressed_bytes as f64)) * 100.0
+                );
+            } else {
+                winfo!(
+                    "Valid snappy file. Decompressed bytes: {}",
+                    indicatif::HumanBytes(decompressed_bytes),
+                );
+            }
         }
     } else if args.cmd_check {
         let check_ok = check(input_reader);
@@ -272,6 +291,6 @@ fn validate<R: Read>(src: R) -> CliResult<u64> {
     let mut sink = io::sink();
     match io::copy(&mut src, &mut sink) {
         Ok(decompressed_bytes) => Ok(decompressed_bytes),
-        Err(err) => fail_clierror!("Error validating snappy file: {err:?}"),
+        Err(err) => fail_clierror!("Error validating snappy file: {err}"),
     }
 }

@@ -887,8 +887,8 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                     Some(m) => {
                         let created_at = util::format_systemtime(m.created_at, "%+");
                         eprintln!("Created at: {created_at}");
-                        if updater.has_updates(&m).await.map_err(|_| {
-                            CliError::Network("Geonames update check failed.".to_string())
+                        if updater.has_updates(&m).await.map_err(|e| {
+                            CliError::Network(format!("Geonames update check failed: {e}"))
                         })? {
                             winfo!(
                                 "Updates available at Geonames.org. Use `qsv geocode \
@@ -927,8 +927,8 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                     let Some(m) = metadata else {
                         return fail_incorrectusage_clierror!("Invalid Geonames index file.");
                     };
-                    if updater.has_updates(&m).await.map_err(|_| {
-                        CliError::Network("Geonames update check failed.".to_string())
+                    if updater.has_updates(&m).await.map_err(|e| {
+                        CliError::Network(format!("Geonames update check failed: {e}"))
                     })? {
                         winfo!("Updates available at Geonames.org.");
                         display_rebuild_instructions(

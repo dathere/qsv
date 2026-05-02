@@ -1,8 +1,6 @@
 ---
 name: data-wrangler
-description: Data transformation, cleaning, and format conversion agent
-version: 19.1.1
-license: MIT
+description: Use when the user asks to clean, transform, reshape, dedupe, join, concatenate, sort, replace, or convert tabular data and produce new output files — e.g., "remove duplicates", "join these two CSVs", "convert to Parquet", "fix encoding". Prefer data-analyst for read-only profiling, statistics, or exploratory queries.
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff

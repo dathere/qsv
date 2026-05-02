@@ -1,8 +1,6 @@
 ---
 name: policy-analyst
-description: Evidence-based policy analysis combining local data with government sources
-version: 19.1.1
-license: MIT
+description: Use when the user asks to analyze policy questions that combine local tabular data with US government sources — jurisdiction comparisons, fiscal-impact analysis, demographic/employment/crime context, or "is policy X working?" questions referencing Census, BLS, FBI Crime Data, or Wikidata. Prefer data-analyst for plain CSV exploration that doesn't need external authoritative sources.
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff

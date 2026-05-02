@@ -1,8 +1,6 @@
 ---
 name: data-analyst
-description: Read-only data exploration, statistical analysis, and reporting agent
-version: 19.1.1
-license: MIT
+description: Use when the user asks to describe, profile, summarize, explore, or query tabular data without producing modified output files — e.g., "what's in this CSV", "show distributions", "what columns correlate", or ad-hoc SQL questions. Prefer data-wrangler when the user wants to clean, reshape, dedupe, join, or convert data.
 allowed-tools:
   # Discovery
   - mcp__qsv__qsv_sniff

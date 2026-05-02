@@ -3,7 +3,7 @@
 // qsv-utils.cjs — Shared utilities for qsv hook scripts.
 // Uses CommonJS so it works standalone without package.json declaring "type": "module".
 
-const { execFileSync } = require('node:child_process');
+const { execFile, execFileSync } = require('node:child_process');
 
 /** Maximum message length to log (matches MAX_LOG_MESSAGE_LEN in mcp-tools.ts). */
 const MAX_LOG_MESSAGE_LEN = 4096;
@@ -30,6 +30,38 @@ function findQsvMcpBinary() {
     // Not found
   }
   return null;
+}
+
+/**
+ * Async variant of findQsvMcpBinary. Use this in hooks that enforce a wall-clock
+ * cap via setTimeout — execFileSync blocks the event loop and would prevent the
+ * timer from firing. The optional `onSpawn` callback exposes the spawned child
+ * so the caller can SIGKILL it if its own hard timer trips.
+ *
+ * @param {(child: import('node:child_process').ChildProcess) => void} [onSpawn]
+ * @returns {Promise<string | null>}
+ */
+function findQsvMcpBinaryAsync(onSpawn) {
+  const envPath = process.env.QSV_MCP_BIN_PATH;
+  if (envPath) return Promise.resolve(envPath);
+
+  const command = process.platform === 'win32' ? 'where' : 'which';
+  return new Promise((resolve) => {
+    const child = execFile(
+      command,
+      ['qsvmcp'],
+      { encoding: 'utf-8', timeout: 5000 },
+      (err, stdout) => {
+        if (err) {
+          resolve(null);
+          return;
+        }
+        const binPath = String(stdout).trim().split('\n')[0].trim();
+        resolve(binPath || null);
+      },
+    );
+    if (typeof onSpawn === 'function') onSpawn(child);
+  });
 }
 
 /**
@@ -97,4 +129,4 @@ function readStdin() {
   });
 }
 
-module.exports = { findQsvMcpBinary, truncateMessage, readStdin, MAX_LOG_MESSAGE_LEN };
+module.exports = { findQsvMcpBinary, findQsvMcpBinaryAsync, truncateMessage, readStdin, MAX_LOG_MESSAGE_LEN };

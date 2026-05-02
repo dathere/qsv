@@ -349,6 +349,22 @@ const PS_COLUMNS: [&str; 7] = [
     "ps_spread_upper",
 ];
 
+/// Append `suffix` to the FULL filename of `path`. Unlike `Path::with_extension`
+/// (which only replaces the last extension and would mangle multi-dot stems
+/// such as `data.stats.csv`), this preserves all existing extensions:
+/// `data.stats.csv` + `.bak` → `data.stats.csv.bak`. If `path` has no
+/// filename, falls back to the literal "stats.csv" stem.
+fn append_to_filename(path: &std::path::Path, suffix: &str) -> std::path::PathBuf {
+    let mut name = path.file_name().map_or_else(
+        || std::ffi::OsString::from("stats.csv"),
+        std::ffi::OsString::from,
+    );
+    name.push(suffix);
+    let mut out = path.to_path_buf();
+    out.set_file_name(name);
+    out
+}
+
 /// Append pragmastat one-sample columns to the .stats.csv cache file.
 fn run_cache_append(args: &Args) -> CliResult<()> {
     use csv::{ReaderBuilder, WriterBuilder};
@@ -446,15 +462,8 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
         .map_or_else(|| stats_csv_path.clone(), std::path::PathBuf::from);
     let writing_in_place = output_path == stats_csv_path;
     let write_target = if writing_in_place {
-        // Append ".tmp" to the full filename (e.g. "data.stats.csv" -> "data.stats.csv.tmp")
-        let mut tmp_name = output_path.file_name().map_or_else(
-            || std::ffi::OsString::from("stats.csv"),
-            std::ffi::OsString::from,
-        );
-        tmp_name.push(".tmp");
-        let mut tmp_path = output_path.clone();
-        tmp_path.set_file_name(tmp_name);
-        tmp_path
+        // e.g. "data.stats.csv" -> "data.stats.csv.tmp"
+        append_to_filename(&output_path, ".tmp")
     } else {
         output_path.clone()
     };
@@ -525,22 +534,25 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
     if writing_in_place {
         #[cfg(windows)]
         {
-            // On Windows, std::fs::rename will not overwrite an existing file.
-            // Use a backup strategy: rename original to .bak, rename .tmp to target,
-            // then delete .bak. If we crash after removing .bak but before renaming
-            // .tmp, the .bak file still exists as a recovery point.
+            // On Windows, std::fs::rename will not overwrite an existing destination.
+            // Use a backup strategy: rename original -> .bak, rename .tmp -> target,
+            // then delete .bak.
+            //
+            // Crash recovery: if a previous run was interrupted between the orig→bak
+            // and tmp→orig renames, the original is preserved at .bak (the half-written
+            // new content was still in .tmp and gets overwritten on retry). The user
+            // can recover manually by renaming .bak back to the target. To keep the
+            // current run unblocked, any stale .bak left behind by such a crash is
+            // removed before the new orig→bak rename below — otherwise that rename
+            // would fail because Windows refuses to overwrite an existing file.
             //
             // Build the backup path by appending ".bak" to the FULL filename
             // (e.g. "data.stats.csv" -> "data.stats.csv.bak"). Don't use
             // Path::with_extension — it only replaces the LAST extension, which
             // would yield "data.stats.stats.csv.bak" for a multi-dot stem.
-            let mut bak_name = output_path.file_name().map_or_else(
-                || std::ffi::OsString::from("stats.csv"),
-                std::ffi::OsString::from,
-            );
-            bak_name.push(".bak");
-            let mut bak_path = output_path.clone();
-            bak_path.set_file_name(bak_name);
+            let bak_path = append_to_filename(&output_path, ".bak");
+            // Remove stale .bak from a prior interrupted run; non-fatal if absent.
+            let _ = std::fs::remove_file(&bak_path);
             if output_path.exists() {
                 std::fs::rename(&output_path, &bak_path)?;
             }
@@ -1751,4 +1763,46 @@ fn write_compare2_results(
         }
     }
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::append_to_filename;
+
+    #[test]
+    fn append_to_filename_preserves_multi_dot_stem() {
+        // Regression test for the Windows .bak path bug: Path::with_extension
+        // would replace only the last extension, producing "data.stats.stats.csv.bak".
+        let p = std::path::Path::new("/tmp/data.stats.csv");
+        assert_eq!(
+            append_to_filename(p, ".bak"),
+            std::path::PathBuf::from("/tmp/data.stats.csv.bak"),
+        );
+        assert_eq!(
+            append_to_filename(p, ".tmp"),
+            std::path::PathBuf::from("/tmp/data.stats.csv.tmp"),
+        );
+    }
+
+    #[test]
+    fn append_to_filename_handles_simple_filename() {
+        let p = std::path::Path::new("data.csv");
+        assert_eq!(
+            append_to_filename(p, ".bak"),
+            std::path::PathBuf::from("data.csv.bak"),
+        );
+    }
+
+    #[test]
+    fn append_to_filename_falls_back_when_no_filename() {
+        // Pathological path with no file_name component falls back to the
+        // historical "stats.csv" stem.
+        let p = std::path::Path::new("/");
+        let got = append_to_filename(p, ".bak");
+        assert!(
+            got.file_name() == Some(std::ffi::OsStr::new("stats.csv.bak")),
+            "expected fallback filename, got {got:?}",
+        );
+    }
 }

@@ -540,3 +540,97 @@ fn tojsonl_output_dash_stdout() {
         "A file named '-' should not be created when using -o -"
     );
 }
+
+#[test]
+#[serial]
+fn tojsonl_number_empty_field_is_null() {
+    // a column inferred as Number (Float) with an empty value should emit `null`,
+    // matching how empty String/Integer fields are rendered.
+    let wrk = Workdir::new("tojsonl_number_empty_field_is_null");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["id", "weight"],
+            svec!["1", "150.2"],
+            svec!["2", ""],
+            svec!["3", "199.5"],
+        ],
+    );
+
+    let mut cmd = wrk.command("tojsonl");
+    cmd.arg("in.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"id":1,"weight":150.2}
+{"id":2,"weight":null}
+{"id":3,"weight":199.5}"#;
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[serial]
+fn tojsonl_number_non_finite_is_null() {
+    // a column inferred as Number containing a value that parses to a non-finite f64
+    // (overflow → ±Infinity from fast_float2) must emit `null` rather than panic
+    // (the previous `Number::from_f64(...).unwrap()` would have aborted the run) and
+    // rather than silently coerce to 0 (which would fabricate data).
+    let wrk = Workdir::new("tojsonl_number_non_finite_is_null");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["id", "magnitude"],
+            svec!["1", "1.5"],
+            svec!["2", "1e400"],
+            svec!["3", "-1e400"],
+            svec!["4", "2.5"],
+        ],
+    );
+
+    let mut cmd = wrk.command("tojsonl");
+    cmd.arg("in.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"id":1,"magnitude":1.5}
+{"id":2,"magnitude":null}
+{"id":3,"magnitude":null}
+{"id":4,"magnitude":2.5}"#;
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[serial]
+fn tojsonl_number_nan_infinity_literal_is_null() {
+    // qsv stats classifies "NaN" / "Infinity" / "-Infinity" as Float, so the column is
+    // inferred as Number. fast_float2 parses them as the non-finite IEEE-754 values,
+    // which Number::from_f64 rejects — they must come out as `null`, not as
+    // "NaN"/"Infinity" (invalid JSON) or panics.
+    let wrk = Workdir::new("tojsonl_number_nan_infinity_literal_is_null");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["id", "score"],
+            svec!["1", "1.5"],
+            svec!["2", "NaN"],
+            svec!["3", "Infinity"],
+            svec!["4", "-Infinity"],
+            svec!["5", "2.5"],
+        ],
+    );
+
+    let mut cmd = wrk.command("tojsonl");
+    cmd.arg("in.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"id":1,"score":1.5}
+{"id":2,"score":null}
+{"id":3,"score":null}
+{"id":4,"score":null}
+{"id":5,"score":2.5}"#;
+    assert_eq!(got, expected);
+}

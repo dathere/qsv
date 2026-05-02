@@ -282,6 +282,6 @@ fn validate<R: Read>(src: R) -> CliResult<u64> {
     let mut sink = io::sink();
     match io::copy(&mut src, &mut sink) {
         Ok(decompressed_bytes) => Ok(decompressed_bytes),
-        Err(err) => fail_clierror!("Error validating snappy file: {err:?}"),
+        Err(err) => fail_clierror!("Error validating snappy file: {err}"),
     }
 }

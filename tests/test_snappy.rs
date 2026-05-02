@@ -144,6 +144,77 @@ fn snappy_validate() {
 }
 
 #[test]
+fn snappy_validate_stdin_rejected() {
+    // `snappy validate` requires a file/URL <input>; passing stdin must
+    // fail with an "incorrect usage" error before any reader setup.
+    let wrk = Workdir::new("snappy_validate_stdin_rejected");
+
+    let mut cmd = wrk.command("snappy");
+    cmd.arg("validate")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().unwrap();
+    // write nothing; just close stdin so the child sees EOF
+    drop(child.stdin.take());
+
+    let output = child.wait_with_output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("stdin is not supported by the snappy validate subcommand"),
+        "expected stdin-not-supported error, got stderr: {stderr}"
+    );
+}
+
+#[test]
+fn snappy_decompress_stdin_no_inf_ratio() {
+    // When decompressing from stdin, input_bytes is unknown (0). The status
+    // message must NOT print an infinite/NaN compression ratio.
+    use std::io::Write as _;
+
+    let wrk = Workdir::new("snappy_decompress_stdin_no_inf");
+
+    // Get a real .sz file, then pipe its bytes through stdin.
+    let sz_path = wrk.load_test_file("boston311-100.csv.sz");
+    let sz_bytes = std::fs::read(&sz_path).unwrap();
+
+    let mut cmd = wrk.command("snappy");
+    cmd.arg("decompress")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    std::thread::spawn(move || {
+        stdin.write_all(&sz_bytes).unwrap();
+    });
+
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // No infinite or NaN ratio should leak into the user-visible status line.
+    assert!(
+        !stderr.contains("inf") && !stderr.contains("NaN"),
+        "decompress-from-stdin emitted a non-finite ratio in stderr: {stderr}"
+    );
+    // The fallback message should be used instead.
+    if !stderr.is_empty() {
+        assert!(
+            stderr.contains("Decompression successful"),
+            "expected fallback decompress-success message, got stderr: {stderr}"
+        );
+        assert!(
+            !stderr.contains("Compression ratio"),
+            "stdin path should skip the Compression ratio line, got stderr: {stderr}"
+        );
+    }
+}
+
+#[test]
 fn snappy_validate_invalid() {
     let wrk = Workdir::new("snappy_validate_invalid");
 

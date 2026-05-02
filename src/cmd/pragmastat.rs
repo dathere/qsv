@@ -529,7 +529,18 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
             // Use a backup strategy: rename original to .bak, rename .tmp to target,
             // then delete .bak. If we crash after removing .bak but before renaming
             // .tmp, the .bak file still exists as a recovery point.
-            let bak_path = output_path.with_extension("stats.csv.bak");
+            //
+            // Build the backup path by appending ".bak" to the FULL filename
+            // (e.g. "data.stats.csv" -> "data.stats.csv.bak"). Don't use
+            // Path::with_extension — it only replaces the LAST extension, which
+            // would yield "data.stats.stats.csv.bak" for a multi-dot stem.
+            let mut bak_name = output_path.file_name().map_or_else(
+                || std::ffi::OsString::from("stats.csv"),
+                std::ffi::OsString::from,
+            );
+            bak_name.push(".bak");
+            let mut bak_path = output_path.clone();
+            bak_path.set_file_name(bak_name);
             if output_path.exists() {
                 std::fs::rename(&output_path, &bak_path)?;
             }
@@ -678,6 +689,9 @@ fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usi
 
     let mut result = Vec::new();
     for (i, curr_line) in lines.iter().enumerate() {
+        // `mut` is only required by simd_json on little-endian; serde_json's
+        // from_slice takes &[u8].
+        #[cfg_attr(target_endian = "big", allow(unused_mut))]
         let mut s_slice = curr_line.as_bytes().to_vec();
 
         #[cfg(target_endian = "big")]
@@ -833,9 +847,17 @@ fn write_twosample_results(
 
     // Pre-compute log-transformed arrays for ratio computation.
     // Each column participates in k-1 pairs, so this avoids redundant O(n) ln() passes.
+    // Skip the log transform for Date/DateTime columns: ratio depends on the arbitrary
+    // 1970 epoch origin (post-1970 timestamps are positive and would yield a near-1.0
+    // ratio; pre-1970 are negative and rejected by the positivity guard anyway), so
+    // emitting any value is misleading regardless of sign.
     let log_values: Vec<Option<Vec<f64>>> = col_values
         .par_iter()
-        .map(|vals| {
+        .enumerate()
+        .map(|(i, vals)| {
+            if matches!(col_types[i], ColType::Date | ColType::DateTime) {
+                return None;
+            }
             if vals.iter().all(|&v| v > 0.0) {
                 Some(vals.iter().map(|v| v.ln()).collect())
             } else {

@@ -843,6 +843,152 @@ fn pragmastat_twosample_date_shift_as_days() {
 }
 
 #[test]
+fn pragmastat_twosample_ratio_empty_for_dates() {
+    // Regression: ratio depends on the arbitrary 1970 epoch origin and isn't
+    // meaningful for dates. The ratio / ratio_lower / ratio_upper columns
+    // must be empty for Date/DateTime pairs while shift/disparity remain populated.
+    let wrk = Workdir::new("pragmastat_ratio_empty_for_dates");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // Generate stats cache with date inference so pragmastat sees Date columns.
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--infer-dates", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--twosample")
+        .arg("--select")
+        .arg("open_dt,closed_dt")
+        .arg(&test_file);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert_eq!(got.len(), 2, "header + 1 date pair");
+    // Header: field_x, field_y, n_x, n_y, shift, ratio, disparity,
+    //         shift_lower, shift_upper, ratio_lower, ratio_upper,
+    //         disparity_lower, disparity_upper
+    let row = &got[1];
+    assert_eq!(row[0], "open_dt");
+    assert_eq!(row[1], "closed_dt");
+    assert!(
+        row[5].is_empty(),
+        "ratio must be empty for date pair, got {:?}",
+        row[5]
+    );
+    assert!(
+        row[9].is_empty(),
+        "ratio_lower must be empty for date pair, got {:?}",
+        row[9]
+    );
+    assert!(
+        row[10].is_empty(),
+        "ratio_upper must be empty for date pair, got {:?}",
+        row[10]
+    );
+    // shift should still be a numeric days value
+    let _shift_days: f64 = row[4]
+        .parse()
+        .expect("shift should be a numeric days value for date pair");
+}
+
+#[test]
+fn pragmastat_twosample_ratio_populated_for_numeric() {
+    // Companion test: confirm ratio is still emitted for plain numeric pairs
+    // with all-positive values (so we don't regress that path).
+    let wrk = Workdir::new("pragmastat_ratio_populated_for_numeric");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["latency_ms", "price"],
+            svec!["10", "1.0"],
+            svec!["12", "1.2"],
+            svec!["15", "1.5"],
+            svec!["18", "1.8"],
+            svec!["20", "2.0"],
+            svec!["22", "2.2"],
+            svec!["25", "2.5"],
+            svec!["28", "2.8"],
+            svec!["30", "3.0"],
+            svec!["35", "3.5"],
+        ],
+    );
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--twosample").arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert_eq!(got.len(), 2, "header + 1 numeric pair");
+    let row = &got[1];
+    let _ratio: f64 = row[5]
+        .parse()
+        .expect("ratio should be a numeric value for positive numeric pair");
+}
+
+#[test]
+fn pragmastat_compare2_ratio_empty_for_dates() {
+    // Regression: --compare2 with a `ratio:N` threshold on Date/DateTime pairs
+    // must suppress the meaningless epoch-dependent ratio (matching --twosample).
+    // Other thresholds in the same call (e.g. shift) must still compute normally.
+    let wrk = Workdir::new("pragmastat_compare2_ratio_empty_for_dates");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--infer-dates", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Mix ratio + shift thresholds so we can assert both suppression (ratio)
+    // and continued correctness (shift) in one run.
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare2")
+        .arg("ratio:1.0,shift:0")
+        .arg("--select")
+        .arg("open_dt,closed_dt")
+        .arg(&test_file);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Header + 2 thresholds × 1 date pair
+    assert_eq!(got.len(), 3, "header + 2 threshold rows");
+    // Header: field_x, field_y, n_x, n_y, metric, threshold, estimate, lower, upper, verdict
+    let ratio_row = got
+        .iter()
+        .skip(1)
+        .find(|r| r[4] == "ratio")
+        .expect("ratio row missing");
+    let shift_row = got
+        .iter()
+        .skip(1)
+        .find(|r| r[4] == "shift")
+        .expect("shift row missing");
+
+    // Ratio row: estimate / lower / upper / verdict all blank for date pair.
+    assert!(
+        ratio_row[6].is_empty(),
+        "ratio estimate must be empty for date pair, got {:?}",
+        ratio_row[6]
+    );
+    assert!(
+        ratio_row[7].is_empty(),
+        "ratio lower must be empty for date pair, got {:?}",
+        ratio_row[7]
+    );
+    assert!(
+        ratio_row[8].is_empty(),
+        "ratio upper must be empty for date pair, got {:?}",
+        ratio_row[8]
+    );
+    assert!(
+        ratio_row[9].is_empty(),
+        "ratio verdict must be empty for date pair, got {:?}",
+        ratio_row[9]
+    );
+
+    // Shift row: still populated as a numeric days value (proves we didn't
+    // accidentally blank out non-ratio metrics on date pairs).
+    let _shift_estimate: f64 = shift_row[6]
+        .parse()
+        .expect("shift estimate should be a numeric days value");
+}
+
+#[test]
 fn pragmastat_parallel_reading() {
     // Generate a CSV with >10k rows to trigger the indexed parallel reading path
     let wrk = Workdir::new("pragmastat_parallel_reading");

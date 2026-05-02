@@ -52,6 +52,9 @@ TWO-SAMPLE OUTPUT (--twosample, per unordered column pair)
 When values are blank
   * Column has no numeric data (n=0).
   * Positivity required: ratio, ratio_* need all values > 0.
+  * Date/DateTime pairs: ratio is suppressed for --twosample and --compare2
+    because it depends on the arbitrary 1970 epoch origin and isn't meaningful
+    for dates. shift, disparity, and their bounds remain populated.
   * Sparity required: spread/spread_*/disparity/disparity_* need real variability (not tie-dominant).
   * Bounds require enough data for requested misrate; try higher misrate or more data.
 
@@ -349,6 +352,22 @@ const PS_COLUMNS: [&str; 7] = [
     "ps_spread_upper",
 ];
 
+/// Append `suffix` to the FULL filename of `path`. Unlike `Path::with_extension`
+/// (which only replaces the last extension and would mangle multi-dot stems
+/// such as `data.stats.csv`), this preserves all existing extensions:
+/// `data.stats.csv` + `.bak` → `data.stats.csv.bak`. If `path` has no
+/// filename, falls back to the literal "stats.csv" stem.
+fn append_to_filename(path: &std::path::Path, suffix: &str) -> std::path::PathBuf {
+    let mut name = path.file_name().map_or_else(
+        || std::ffi::OsString::from("stats.csv"),
+        std::ffi::OsString::from,
+    );
+    name.push(suffix);
+    let mut out = path.to_path_buf();
+    out.set_file_name(name);
+    out
+}
+
 /// Append pragmastat one-sample columns to the .stats.csv cache file.
 fn run_cache_append(args: &Args) -> CliResult<()> {
     use csv::{ReaderBuilder, WriterBuilder};
@@ -446,15 +465,8 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
         .map_or_else(|| stats_csv_path.clone(), std::path::PathBuf::from);
     let writing_in_place = output_path == stats_csv_path;
     let write_target = if writing_in_place {
-        // Append ".tmp" to the full filename (e.g. "data.stats.csv" -> "data.stats.csv.tmp")
-        let mut tmp_name = output_path.file_name().map_or_else(
-            || std::ffi::OsString::from("stats.csv"),
-            std::ffi::OsString::from,
-        );
-        tmp_name.push(".tmp");
-        let mut tmp_path = output_path.clone();
-        tmp_path.set_file_name(tmp_name);
-        tmp_path
+        // e.g. "data.stats.csv" -> "data.stats.csv.tmp"
+        append_to_filename(&output_path, ".tmp")
     } else {
         output_path.clone()
     };
@@ -525,17 +537,40 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
     if writing_in_place {
         #[cfg(windows)]
         {
-            // On Windows, std::fs::rename will not overwrite an existing file.
-            // Use a backup strategy: rename original to .bak, rename .tmp to target,
-            // then delete .bak. If we crash after removing .bak but before renaming
-            // .tmp, the .bak file still exists as a recovery point.
-            let bak_path = output_path.with_extension("stats.csv.bak");
-            if output_path.exists() {
+            // On Windows, std::fs::rename will not overwrite an existing destination.
+            // Use a backup strategy: rename original -> .bak, rename .tmp -> target,
+            // then delete .bak.
+            //
+            // Crash recovery: if a previous run was interrupted between the orig→bak
+            // and tmp→orig renames, the original is preserved at .bak — and orig is
+            // missing. We MUST NOT touch .bak in that state: it's the only surviving
+            // copy of the cache and the user's manual recovery point (rename .bak
+            // back to the target). We only clear the .bak slot when orig still
+            // exists (the prior run completed cleanly or crashed before orig→bak),
+            // because then .bak is just stale and would block our own orig→bak
+            // rename — Windows refuses to overwrite.
+            //
+            // Build the backup path by appending ".bak" to the FULL filename
+            // (e.g. "data.stats.csv" -> "data.stats.csv.bak"). Don't use
+            // Path::with_extension — it only replaces the LAST extension, which
+            // would yield "data.stats.stats.csv.bak" for a multi-dot stem.
+            let bak_path = append_to_filename(&output_path, ".bak");
+            let did_create_bak = if output_path.exists() {
+                // Live original present — safe to clear any stale .bak so the
+                // orig→bak rename below succeeds, then rotate orig -> .bak.
+                let _ = std::fs::remove_file(&bak_path);
                 std::fs::rename(&output_path, &bak_path)?;
-            }
+                true
+            } else {
+                // Orig missing — preserve any pre-existing .bak as the user's
+                // recovery point. Don't touch it now or in the cleanup below.
+                false
+            };
             std::fs::rename(&write_target, &output_path)?;
-            // Clean up backup; non-fatal if this fails
-            let _ = std::fs::remove_file(&bak_path);
+            if did_create_bak {
+                // Only clean up the .bak we just created. Non-fatal if this fails.
+                let _ = std::fs::remove_file(&bak_path);
+            }
         }
         #[cfg(not(windows))]
         {
@@ -678,6 +713,9 @@ fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usi
 
     let mut result = Vec::new();
     for (i, curr_line) in lines.iter().enumerate() {
+        // `mut` is only required by simd_json on little-endian; serde_json's
+        // from_slice takes &[u8].
+        #[cfg_attr(target_endian = "big", allow(unused_mut))]
         let mut s_slice = curr_line.as_bytes().to_vec();
 
         #[cfg(target_endian = "big")]
@@ -833,9 +871,17 @@ fn write_twosample_results(
 
     // Pre-compute log-transformed arrays for ratio computation.
     // Each column participates in k-1 pairs, so this avoids redundant O(n) ln() passes.
+    // Skip the log transform for Date/DateTime columns: ratio depends on the arbitrary
+    // 1970 epoch origin (post-1970 timestamps are positive and would yield a near-1.0
+    // ratio; pre-1970 are negative and rejected by the positivity guard anyway), so
+    // emitting any value is misleading regardless of sign.
     let log_values: Vec<Option<Vec<f64>>> = col_values
         .par_iter()
-        .map(|vals| {
+        .enumerate()
+        .map(|(i, vals)| {
+            if matches!(col_types[i], ColType::Date | ColType::DateTime) {
+                return None;
+            }
             if vals.iter().all(|&v| v > 0.0) {
                 Some(vals.iter().map(|v| v.ln()).collect())
             } else {
@@ -1493,6 +1539,7 @@ fn compute_compare2<'a>(
     x: &[f64],
     y: &[f64],
     thresholds: &[pragmastat::Threshold],
+    suppress_ratio: bool,
 ) -> Vec<Compare2Result<'a>> {
     let n_x = x.len();
     let n_y = y.len();
@@ -1514,18 +1561,48 @@ fn compute_compare2<'a>(
         return thresholds.iter().map(fallback).collect();
     }
 
-    let (Ok(sample_x), Ok(sample_y)) = (
-        pragmastat::Sample::new(x.to_vec()),
-        pragmastat::Sample::new(y.to_vec()),
-    ) else {
-        return thresholds.iter().map(fallback).collect();
+    // Partition thresholds: when `suppress_ratio` is set (Date/DateTime pairs),
+    // ratio metrics aren't meaningful — they depend on the arbitrary 1970 epoch
+    // origin — so they get fallback rows. Non-ratio metrics are computed
+    // normally. We filter BEFORE calling pragmastat::compare2 so that a
+    // Ratio threshold on negative epoch-ms (pre-1970 dates) doesn't error
+    // the whole call and blank out the other metrics.
+    let active: Vec<pragmastat::Threshold> = if suppress_ratio {
+        thresholds
+            .iter()
+            .filter(|t| !matches!(t.metric(), pragmastat::Metric::Ratio))
+            .cloned()
+            .collect()
+    } else {
+        thresholds.to_vec()
     };
 
-    match pragmastat::compare2(&sample_x, &sample_y, thresholds) {
-        Ok(projections) => projections
-            .iter()
-            .map(|p| {
-                let est = p.estimate().value;
+    let projections = if active.is_empty() {
+        // All thresholds were suppressed — nothing to compute.
+        Vec::new()
+    } else {
+        let (Ok(sample_x), Ok(sample_y)) = (
+            pragmastat::Sample::new(x.to_vec()),
+            pragmastat::Sample::new(y.to_vec()),
+        ) else {
+            return thresholds.iter().map(fallback).collect();
+        };
+
+        match pragmastat::compare2(&sample_x, &sample_y, &active) {
+            Ok(p) => p,
+            Err(_) => return thresholds.iter().map(fallback).collect(),
+        }
+    };
+
+    // Walk the user's original threshold order; suppressed ones get a fallback
+    // row, others pull the next projection (pragmastat preserves input order).
+    let mut proj_iter = projections.into_iter();
+    thresholds
+        .iter()
+        .map(|t| {
+            if suppress_ratio && matches!(t.metric(), pragmastat::Metric::Ratio) {
+                fallback(t)
+            } else if let Some(p) = proj_iter.next() {
                 Compare2Result {
                     field_x: name_x,
                     field_y: name_y,
@@ -1533,15 +1610,16 @@ fn compute_compare2<'a>(
                     n_y,
                     metric: p.threshold().metric().as_str(),
                     threshold: p.threshold().value().value,
-                    estimate: Some(est),
+                    estimate: Some(p.estimate().value),
                     lower: Some(p.bounds().lower),
                     upper: Some(p.bounds().upper),
                     verdict: p.verdict().as_str(),
                 }
-            })
-            .collect(),
-        Err(_) => thresholds.iter().map(fallback).collect(),
-    }
+            } else {
+                fallback(t)
+            }
+        })
+        .collect()
 }
 
 fn write_compare1_header(
@@ -1696,12 +1774,22 @@ fn write_compare2_results(
     let all_results: Vec<Vec<Compare2Result>> = pairs
         .par_iter()
         .map(|&(i, j)| {
+            // Mirrors the --twosample suppression: ratio is meaningless for
+            // date pairs (epoch-dependent), so suppress it here too.
+            let is_date_pair = matches!(
+                (col_types[i], col_types[j]),
+                (
+                    ColType::Date | ColType::DateTime,
+                    ColType::Date | ColType::DateTime
+                )
+            );
             compute_compare2(
                 &col_names[i],
                 &col_names[j],
                 &col_values[i],
                 &col_values[j],
                 thresholds,
+                is_date_pair,
             )
         })
         .collect();
@@ -1729,4 +1817,45 @@ fn write_compare2_results(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::append_to_filename;
+
+    #[test]
+    fn append_to_filename_preserves_multi_dot_stem() {
+        // Regression test for the Windows .bak path bug: Path::with_extension
+        // would replace only the last extension, producing "data.stats.stats.csv.bak".
+        let p = std::path::Path::new("/tmp/data.stats.csv");
+        assert_eq!(
+            append_to_filename(p, ".bak"),
+            std::path::PathBuf::from("/tmp/data.stats.csv.bak"),
+        );
+        assert_eq!(
+            append_to_filename(p, ".tmp"),
+            std::path::PathBuf::from("/tmp/data.stats.csv.tmp"),
+        );
+    }
+
+    #[test]
+    fn append_to_filename_handles_simple_filename() {
+        let p = std::path::Path::new("data.csv");
+        assert_eq!(
+            append_to_filename(p, ".bak"),
+            std::path::PathBuf::from("data.csv.bak"),
+        );
+    }
+
+    #[test]
+    fn append_to_filename_falls_back_when_no_filename() {
+        // Pathological path with no file_name component falls back to the
+        // historical "stats.csv" stem.
+        let p = std::path::Path::new("/");
+        let got = append_to_filename(p, ".bak");
+        assert!(
+            got.file_name() == Some(std::ffi::OsStr::new("stats.csv.bak")),
+            "expected fallback filename, got {got:?}",
+        );
+    }
 }

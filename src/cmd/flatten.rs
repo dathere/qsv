@@ -76,10 +76,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let separator = args.flag_separator;
     // Treat an empty --field-separator the same as omitted, mirroring the way
     // --separator special-cases empty above.
-    let field_separator = args
-        .flag_field_separator
-        .unwrap_or_default()
-        .into_bytes();
+    let field_separator = args.flag_field_separator.unwrap_or_default().into_bytes();
     let field_separator_flag = !field_separator.is_empty();
 
     while rdr.read_byte_record(&mut record)? {

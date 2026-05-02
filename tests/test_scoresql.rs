@@ -532,7 +532,6 @@ fn scoresql_filter_on_rare_value_not_penalized() {
     );
 }
 
-
 /// Regression: a quoted-string filter `WHERE col = 'NULL'` must NOT collapse
 /// into the SQL keyword `NULL` lookup (which matches empty cells). The two
 /// forms are tagged differently at extraction time so they keep distinct
@@ -583,7 +582,7 @@ fn scoresql_quoted_null_distinct_from_keyword_null() {
     });
     assert!(
         has_unselective_warning,
-        "filter on quoted string 'NULL' (80% of rows) should trigger low-selectivity \
-         warning — got: {suggestions:?}"
+        "filter on quoted string 'NULL' (80% of rows) should trigger low-selectivity warning — \
+         got: {suggestions:?}"
     );
 }

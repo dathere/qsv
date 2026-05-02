@@ -156,15 +156,20 @@ struct CacheStatus {
 // ── Parsed SQL info ────────────────────────────────────────────────────────
 
 struct SqlInfo {
-    has_select_star: bool,
-    has_order_by:    bool,
-    has_limit:       bool,
-    has_join:        bool,
-    has_where:       bool,
-    has_subquery:    bool,
-    where_columns:   Vec<String>,
-    join_columns:    Vec<String>,
-    order_columns:   Vec<String>,
+    has_select_star:  bool,
+    has_order_by:     bool,
+    has_limit:        bool,
+    has_join:         bool,
+    has_where:        bool,
+    has_subquery:     bool,
+    where_columns:    Vec<String>,
+    /// `(column, optional_literal)` pairs from `col OP literal` predicates in
+    /// the WHERE clause. The literal is `Some` when the right-hand side is a
+    /// quoted string, a number, or an identifier; `None` is reserved for
+    /// future predicate types where no literal can be extracted.
+    where_predicates: Vec<(String, Option<String>)>,
+    join_columns:     Vec<String>,
+    order_columns:    Vec<String>,
 }
 
 // ── Cache data per input file ──────────────────────────────────────────────
@@ -230,6 +235,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 lossy_table_name = table.to_string_lossy();
                 &lossy_table_name
             });
+        // Reject duplicate file stems — otherwise the second registration silently
+        // overwrites the first in `table_aliases` / `SQLContext::register`, and the
+        // user gets a confusing "table not found" error from polars/duckdb later.
+        if let Some(prev_idx) = table_names.iter().position(|t| t == table_name) {
+            return fail_incorrectusage_clierror!(
+                "Duplicate table name '{table_name}' from inputs #{a} and #{b}. Inputs must \
+                 have unique file stems (the part of the file name before the extension).",
+                a = prev_idx + 1,
+                b = idx + 1,
+            );
+        }
         table_aliases.insert(table_name.to_string(), format!("_t_{}", idx + 1));
         table_names.push(table_name.to_string());
     }
@@ -401,7 +417,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 // ════════════════════════════════════════════════════════════════════════════
 
 fn parse_sql(sql: &str) -> SqlInfo {
-    let upper = sql.to_ascii_uppercase();
+    // Mask string-literal contents with spaces (preserving byte positions) so that
+    // keyword/column scanners don't pick up SQL syntax from inside literals like
+    // `WHERE col = 'WHERE' OR ...`. Predicate extraction below uses the *raw* SQL
+    // because it needs to recover the literal values.
+    let masked = mask_string_literals(sql);
+    let upper = masked.to_ascii_uppercase();
     let tokens: Vec<&str> = upper.split_whitespace().collect();
 
     #[allow(clippy::missing_asserts_for_indexing)]
@@ -441,10 +462,12 @@ fn parse_sql(sql: &str) -> SqlInfo {
                 depth -= 1;
             } else if depth > 0
                 && b == b'S'
-                && (i == 0 || !bytes[i - 1].is_ascii_alphanumeric())
+                && (i == 0
+                    || (!bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_'))
                 && bytes.get(i..i + select_bytes.len()) == Some(select_bytes)
             {
-                // Check word boundary before and after SELECT
+                // Check word boundary before and after SELECT — exclude '_' too
+                // so that identifiers like `_SELECT(` aren't mistaken for a subquery.
                 let after = i + select_bytes.len();
                 if after >= bytes.len()
                     || bytes[after].is_ascii_whitespace()
@@ -458,10 +481,13 @@ fn parse_sql(sql: &str) -> SqlInfo {
         found
     };
 
-    // Extract columns from WHERE clause (simplified)
-    let where_columns = extract_columns_after_keyword(sql, "WHERE");
-    let join_columns = extract_join_columns(sql);
-    let order_columns = extract_columns_after_keyword(sql, "ORDER BY");
+    // Extract columns/predicates. Pattern-based scanners run on `masked`
+    // (string-literal-safe); predicate extraction needs the raw SQL so the
+    // literal values inside quotes are preserved.
+    let where_columns = extract_columns_after_keyword(&masked, "WHERE");
+    let where_predicates = extract_where_predicates(sql);
+    let join_columns = extract_join_columns(&masked);
+    let order_columns = extract_columns_after_keyword(&masked, "ORDER BY");
 
     SqlInfo {
         has_select_star,
@@ -471,6 +497,7 @@ fn parse_sql(sql: &str) -> SqlInfo {
         has_where,
         has_subquery,
         where_columns,
+        where_predicates,
         join_columns,
         order_columns,
     }
@@ -593,9 +620,12 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
     // Look for USING clause
     for (i, _) in upper.match_indices("USING") {
         let after = &sql[i + 5..];
+        // Search for the closing paren only after the opening one to avoid a
+        // panic on malformed SQL where ')' appears before '(' in `after`.
         if let Some(paren_start) = after.find('(')
-            && let Some(paren_end) = after.find(')')
+            && let Some(rel_end) = after[paren_start + 1..].find(')')
         {
+            let paren_end = paren_start + 1 + rel_end;
             let cols = &after[paren_start + 1..paren_end];
             for col in cols.split(',') {
                 let col = col.trim();
@@ -610,6 +640,120 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
     columns.sort_unstable_by_key(|a| a.to_lowercase());
     columns.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
     columns
+}
+
+
+/// Replace the contents of single-quoted string literals with spaces, preserving
+/// byte positions. Used so that keyword-based parsers (`extract_columns_after_keyword`,
+/// `extract_join_columns`, etc.) don't pick up SQL syntax from inside literals.
+/// SQL-escaped quotes (`''`) are preserved as two spaces. Multi-byte UTF-8 chars
+/// inside a literal are replaced with N spaces (N = byte length) so subsequent
+/// byte-offset slicing remains valid.
+fn mask_string_literals(sql: &str) -> String {
+    let mut out = String::with_capacity(sql.len());
+    let mut chars = sql.chars().peekable();
+    let mut in_quote = false;
+    while let Some(c) = chars.next() {
+        if c == '\'' {
+            if in_quote && chars.peek() == Some(&'\'') {
+                // SQL-escaped quote inside a string — mask both
+                out.push(' ');
+                out.push(' ');
+                chars.next();
+                continue;
+            }
+            in_quote = !in_quote;
+            out.push('\'');
+        } else if in_quote {
+            for _ in 0..c.len_utf8() {
+                out.push(' ');
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Extract `(column, optional_literal_value)` predicates from the WHERE clause
+/// of `sql`. Recognizes `col OP literal` patterns where OP is `=`, `<>`, `!=`,
+/// `<=`, `>=`, `<`, or `>`, and `literal` is a single-quoted string (with `''`
+/// escapes), a number, or an identifier. The original (un-masked) SQL is
+/// required so quoted literal values are preserved.
+///
+/// This list is consumed by `score_filter_selectivity` to look up the actual
+/// filter value in the frequency cache, instead of penalizing any column whose
+/// most-common value happens to dominate.
+fn extract_where_predicates(sql: &str) -> Vec<(String, Option<String>)> {
+    let upper = sql.to_ascii_uppercase();
+    let Some(start) = upper.find("WHERE") else {
+        return Vec::new();
+    };
+    let after_start = start + "WHERE".len();
+    let after = &sql[after_start..];
+    let upper_after = &upper[after_start..];
+
+    // Bound the WHERE clause by the next stop keyword.
+    let mut end = after.len();
+    for kw in [
+        " ORDER BY ",
+        " GROUP BY ",
+        " HAVING ",
+        " LIMIT ",
+        " UNION ",
+        " EXCEPT ",
+        " INTERSECT ",
+        " WINDOW ",
+    ] {
+        if let Some(p) = upper_after.find(kw) {
+            end = end.min(p);
+        }
+    }
+    let where_clause = &after[..end];
+
+    static WHERE_PRED_REGEX: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| {
+            // (column[.qualified])  OP  (string-literal | number | identifier)
+            // Operator alternation lists multi-char operators first so they aren't
+            // greedily split into single-char ones.
+            regex::Regex::new(
+                r"(\w+(?:\.\w+)?)\s*(?:<=|>=|<>|!=|=|<|>)\s*('(?:[^']|'')*'|-?\d+(?:\.\d+)?|\w+)",
+            )
+            .unwrap()
+        });
+
+    let mut preds = Vec::new();
+    for cap in WHERE_PRED_REGEX.captures_iter(where_clause) {
+        let col_full = cap.get(1).unwrap().as_str();
+        let val_raw = cap.get(2).unwrap().as_str();
+
+        // Skip purely numeric LHS (e.g. `1 = 1` tautologies)
+        if col_full.parse::<f64>().is_ok() {
+            continue;
+        }
+
+        // Strip table prefix (`a.id` -> `id`)
+        let col = col_full.rsplit('.').next().unwrap_or(col_full).to_string();
+        let upper_col = col.to_ascii_uppercase();
+
+        // Skip SQL keywords that the regex might pick up as identifiers
+        if [
+            "AND", "OR", "NOT", "IS", "NULL", "IN", "BETWEEN", "LIKE", "TRUE", "FALSE",
+        ]
+        .contains(&upper_col.as_str())
+        {
+            continue;
+        }
+
+        // Strip surrounding quotes from string literals; un-escape ''
+        let value = if val_raw.starts_with('\'') && val_raw.ends_with('\'') && val_raw.len() >= 2 {
+            Some(val_raw[1..val_raw.len() - 1].replace("''", "'"))
+        } else {
+            Some(val_raw.to_string())
+        };
+        preds.push((col, value));
+    }
+    preds
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -705,12 +849,16 @@ fn load_stats_cache(stats_path: &Path) -> CliResult<Vec<crate::cmd::stats::Stats
 fn load_freq_cache(freq_path: &Path) -> CliResult<Vec<FreqEntry>> {
     let content = std::fs::read_to_string(freq_path)?;
     let mut entries = Vec::new();
-    for (i, line) in content.lines().enumerate() {
+    // The first non-empty line is metadata — skip it.
+    // Tracking via a flag (rather than `i == 0`) handles a leading blank line
+    // robustly, so the metadata is never misparsed as data.
+    let mut metadata_seen = false;
+    for line in content.lines() {
         if line.is_empty() {
             continue;
         }
-        if i == 0 {
-            // First line is metadata, skip
+        if !metadata_seen {
+            metadata_seen = true;
             continue;
         }
         // Deserialize using serde_json into a generic value
@@ -833,6 +981,9 @@ fn get_polars_plan(
 
     // Replace _t_N aliases with quoted table names using a single combined regex.
     // Alternation is longest-first so _t_10 is matched before _t_1.
+    // The pattern also matches single-quoted string literals (with SQL-escaped quotes)
+    // so we can leave them untouched — otherwise an alias appearing inside a string
+    // literal (e.g. `SELECT '_t_1' AS label FROM _t_1`) would be silently corrupted.
     let mut alias_pairs: Vec<_> = table_aliases.iter().collect();
     alias_pairs.sort_by_key(|(_, alias)| std::cmp::Reverse(alias.len()));
 
@@ -844,7 +995,7 @@ fn get_polars_plan(
             .map(|(_, alias)| regex::escape(alias))
             .collect::<Vec<_>>()
             .join("|");
-        let pattern = format!(r"\b(?:{alternatives})\b");
+        let pattern = format!(r"'(?:[^'\\]|\\'|''|\\\\)*'|\b(?:{alternatives})\b");
         let re = regex::Regex::new(&pattern)
             .map_err(|e| format!("Failed to compile alias regex: {e}"))?;
 
@@ -855,7 +1006,12 @@ fn get_polars_plan(
 
         re.replace_all(&args.arg_sql, |caps: &regex::Captures| {
             let matched = caps.get(0).unwrap().as_str();
-            format!(r#""{}""#, alias_lookup[matched])
+            // Leave string literals untouched
+            if matched.starts_with('\'') {
+                matched.to_string()
+            } else {
+                format!(r#""{}""#, alias_lookup[matched])
+            }
         })
         .into_owned()
     };
@@ -1168,32 +1324,85 @@ fn score_filter_selectivity(
     let mut score = WEIGHT_FILTER_SEL;
     let mut details = Vec::new();
 
-    // Check selectivity from frequency cache
-    for col in &sql_info.where_columns {
+    // For each WHERE column, prefer to look up the *actual filter value* in the
+    // frequency cache. If we can match it, we know the selectivity. If the
+    // filter has no extractable literal (e.g. `col IS NULL`, complex
+    // expressions), fall back to a soft "high-skew" note without penalizing —
+    // the old "top value > 70%" heuristic over-penalized selective filters
+    // that happened to target rare values in skewed columns.
+    let mut handled: foldhash::HashSet<(String, String)> = foldhash::HashSet::default();
+
+    for (col, val_opt) in &sql_info.where_predicates {
         let col_upper = col.to_ascii_uppercase();
         for cache in caches {
+            if !handled.insert((cache.table_name.clone(), col_upper.clone())) {
+                continue;
+            }
             if let Some(freq) = cache
                 .freq_entries
                 .iter()
                 .find(|f| f.field.to_ascii_uppercase() == col_upper)
             {
-                // If the most common value accounts for > 70% of rows, selectivity is low
-                if let Some(top) = freq.frequencies.first()
+                let matched_pct = val_opt
+                    .as_ref()
+                    .and_then(|v| freq.frequencies.iter().find(|fv| fv.value == *v))
+                    .map(|fv| fv.percentage);
+
+                if let Some(pct) = matched_pct {
+                    if pct > 70.0 {
+                        score = score.saturating_sub(5);
+                        details.push(format!(
+                            "{}.{} filter value matches {:.0}% of rows (low selectivity)",
+                            cache.table_name, freq.field, pct
+                        ));
+                        suggestions.push(format!(
+                            "Column '{}.{}' filter matches ~{:.0}% of rows — consider a more \
+                             selective predicate",
+                            cache.table_name, freq.field, pct
+                        ));
+                    }
+                    // Otherwise the filter is selective: no penalty.
+                } else if let Some(top) = freq.frequencies.first()
                     && top.percentage > 70.0
                     && top.value != "<ALL_UNIQUE>"
                     && top.value != "<HIGH_CARDINALITY>"
                 {
-                    score = score.saturating_sub(5);
+                    // Could not match the filter value (e.g. literal not in the top-N
+                    // sample, or compared against another column). Note the skew, but
+                    // do not penalize — the filter may well be selecting a rare value.
                     details.push(format!(
-                        "{}.{} top value '{}' is {:.0}% of rows (low selectivity)",
+                        "{}.{} is highly skewed (top value '{}' = {:.0}%) — selectivity \
+                         depends on filter value",
                         cache.table_name, freq.field, top.value, top.percentage
                     ));
-                    suggestions.push(format!(
-                        "Column '{}.{}' filter may match {:.0}% of rows — consider a more \
-                         selective filter",
-                        cache.table_name, freq.field, top.percentage
-                    ));
                 }
+            }
+        }
+    }
+
+    // Columns referenced in WHERE without an extractable predicate value
+    // (e.g. `col IS NULL`, function calls): only emit a soft note for high-skew
+    // columns; never penalize.
+    for col in &sql_info.where_columns {
+        let col_upper = col.to_ascii_uppercase();
+        for cache in caches {
+            if handled.contains(&(cache.table_name.clone(), col_upper.clone())) {
+                continue;
+            }
+            if let Some(freq) = cache
+                .freq_entries
+                .iter()
+                .find(|f| f.field.to_ascii_uppercase() == col_upper)
+                && let Some(top) = freq.frequencies.first()
+                && top.percentage > 70.0
+                && top.value != "<ALL_UNIQUE>"
+                && top.value != "<HIGH_CARDINALITY>"
+            {
+                details.push(format!(
+                    "{}.{} is highly skewed (top value '{}' = {:.0}%) — selectivity depends \
+                     on filter value",
+                    cache.table_name, freq.field, top.value, top.percentage
+                ));
             }
         }
     }

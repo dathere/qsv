@@ -183,9 +183,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // precompute JSON-escaped header keys (with surrounding quotes) once,
     // so the per-row hot loop doesn't re-allocate them for every record.
+    // serde_json::to_string of a &str is infallible — Serializer only fails on
+    // non-finite f64 / map keys / IO errors, none of which apply here.
     let header_keys: Vec<String> = headers
         .iter()
-        .map(|h| serde_json::to_string(h).unwrap_or_else(|_| "\"\"".to_string()))
+        .map(|h| {
+            serde_json::to_string(h).expect("serializing a CSV header &str to JSON is infallible")
+        })
         .collect();
 
     // if there are less than 3 records, we can't infer boolean fields
@@ -353,14 +357,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                     "null"
                                 } else {
                                     // round-trip thru serde_json to parse the number per the json
-                                    // spec. Guard against non-finite f64 (NaN/±Infinity), which
-                                    // serde_json::Number::from_f64 rejects with None — fall back
-                                    // to 0 so a stray "Infinity"/"NaN"/overflow doesn't panic.
+                                    // spec. Non-finite f64 (NaN/±Infinity, including overflow
+                                    // results from fast_float2) are not representable in JSON
+                                    // (`Number::from_f64` returns None) — emit `null` rather
+                                    // than fabricate a zero, since `null` is the truthful signal
+                                    // and is consistent with how empty fields are rendered.
                                     let parsed = fast_float2::parse(field).unwrap_or(0.0);
-                                    temp_numval = serde_json::Number::from_f64(parsed)
-                                        .unwrap_or_else(|| serde_json::Number::from(0));
-                                    temp_string2 = temp_numval.to_string();
-                                    &temp_string2
+                                    if let Some(n) = serde_json::Number::from_f64(parsed) {
+                                        temp_numval = n;
+                                        temp_string2 = temp_numval.to_string();
+                                        &temp_string2
+                                    } else {
+                                        "null"
+                                    }
                                 }
                             },
                             JsonlType::Boolean => {

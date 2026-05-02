@@ -842,7 +842,6 @@ fn pragmastat_twosample_date_shift_as_days() {
     }
 }
 
-
 #[test]
 fn pragmastat_twosample_ratio_empty_for_dates() {
     // Regression: ratio depends on the arbitrary 1970 epoch origin and isn't

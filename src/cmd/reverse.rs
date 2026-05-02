@@ -55,12 +55,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // we're reading the file in reverse streaming
         rconfig.write_headers(&mut rdr, &mut wtr)?;
         let mut record = csv::ByteRecord::new();
-        let mut pos = idx_file.count().saturating_sub(1);
-
-        while idx_file.seek(pos).is_ok() {
+        // iterate record indices from last to first; using a bounded reverse
+        // range avoids u64 underflow when pos reaches 0 (which panics in
+        // debug builds with overflow checks enabled).
+        for pos in (0..idx_file.count()).rev() {
+            idx_file.seek(pos)?;
             idx_file.read_byte_record(&mut record)?;
             wtr.write_byte_record(&record)?;
-            pos -= 1;
         }
     } else {
         // we don't have an index, we need to read the entire file into memory

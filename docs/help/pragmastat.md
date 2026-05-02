@@ -64,6 +64,9 @@ If bounds exclude 0, the disparity is reliable.
 When values are blank
 * Column has no numeric data (n=0).
 * Positivity required: ratio, ratio_* need all values > 0.
+* Date/DateTime pairs: ratio is suppressed for --twosample and --compare2
+because it depends on the arbitrary 1970 epoch origin and isn't meaningful
+for dates. shift, disparity, and their bounds remain populated.
 * Sparity required: spread/spread_*/disparity/disparity_* need real variability (not tie-dominant).
 * Bounds require enough data for requested misrate; try higher misrate or more data.
 

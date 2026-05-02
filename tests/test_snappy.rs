@@ -196,22 +196,20 @@ fn snappy_decompress_stdin_no_inf_ratio() {
     assert!(output.status.success());
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // No infinite or NaN ratio should leak into the user-visible status line.
+    // The fallback message must always appear on the stdin path; the test is
+    // pointless if we let an empty stderr pass.
     assert!(
-        !stderr.contains("inf") && !stderr.contains("NaN"),
-        "decompress-from-stdin emitted a non-finite ratio in stderr: {stderr}"
+        stderr.contains("Decompression successful"),
+        "expected fallback decompress-success message, got stderr: {stderr}"
     );
-    // The fallback message should be used instead.
-    if !stderr.is_empty() {
-        assert!(
-            stderr.contains("Decompression successful"),
-            "expected fallback decompress-success message, got stderr: {stderr}"
-        );
-        assert!(
-            !stderr.contains("Compression ratio"),
-            "stdin path should skip the Compression ratio line, got stderr: {stderr}"
-        );
-    }
+    // The fallback path must skip the "Compression ratio" line entirely —
+    // that's exactly how we avoid emitting a non-finite ratio. Asserting the
+    // line is absent is precise; substring-matching "inf" is fragile (would
+    // collide with words like "info"/"infile") and only worked by accident.
+    assert!(
+        !stderr.contains("Compression ratio"),
+        "stdin path should skip the Compression ratio line, got stderr: {stderr}"
+    );
 }
 
 #[test]

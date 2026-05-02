@@ -203,16 +203,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // FrameDecoder reason (truncated, bad magic, checksum mismatch, ...)
         let decompressed_bytes = validate(input_reader)?;
         if !args.flag_quiet {
-            let compression_ratio = decompressed_bytes as f64 / input_bytes as f64;
-            winfo!(
-                "Valid snappy file. Compressed bytes: {}, Decompressed bytes: {}, Compression \
-                 ratio: {:.3}:1, Space savings: {} - {:.2}%",
-                indicatif::HumanBytes(input_bytes),
-                indicatif::HumanBytes(decompressed_bytes),
-                compression_ratio,
-                indicatif::HumanBytes(decompressed_bytes.saturating_sub(input_bytes)),
-                (1.0 - (input_bytes as f64 / decompressed_bytes as f64)) * 100.0
-            );
+            // mirror the decompress branch: a 0-byte input file would
+            // produce 0/0 = NaN ratios, so guard symmetrically.
+            if input_bytes > 0 {
+                let compression_ratio = decompressed_bytes as f64 / input_bytes as f64;
+                winfo!(
+                    "Valid snappy file. Compressed bytes: {}, Decompressed bytes: {}, Compression \
+                     ratio: {:.3}:1, Space savings: {} - {:.2}%",
+                    indicatif::HumanBytes(input_bytes),
+                    indicatif::HumanBytes(decompressed_bytes),
+                    compression_ratio,
+                    indicatif::HumanBytes(decompressed_bytes.saturating_sub(input_bytes)),
+                    (1.0 - (input_bytes as f64 / decompressed_bytes as f64)) * 100.0
+                );
+            } else {
+                winfo!(
+                    "Valid snappy file. Decompressed bytes: {}",
+                    indicatif::HumanBytes(decompressed_bytes),
+                );
+            }
         }
     } else if args.cmd_check {
         let check_ok = check(input_reader);

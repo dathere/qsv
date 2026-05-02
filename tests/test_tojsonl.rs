@@ -541,7 +541,6 @@ fn tojsonl_output_dash_stdout() {
     );
 }
 
-
 #[test]
 #[serial]
 fn tojsonl_number_empty_field_is_null() {
@@ -601,7 +600,6 @@ fn tojsonl_number_non_finite_is_null() {
 {"id":4,"magnitude":2.5}"#;
     assert_eq!(got, expected);
 }
-
 
 #[test]
 #[serial]

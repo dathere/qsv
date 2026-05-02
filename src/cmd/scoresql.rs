@@ -240,8 +240,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // user gets a confusing "table not found" error from polars/duckdb later.
         if let Some(prev_idx) = table_names.iter().position(|t| t == table_name) {
             return fail_incorrectusage_clierror!(
-                "Duplicate table name '{table_name}' from inputs #{a} and #{b}. Inputs must \
-                 have unique file stems (the part of the file name before the extension).",
+                "Duplicate table name '{table_name}' from inputs #{a} and #{b}. Inputs must have \
+                 unique file stems (the part of the file name before the extension).",
                 a = prev_idx + 1,
                 b = idx + 1,
             );
@@ -462,8 +462,7 @@ fn parse_sql(sql: &str) -> SqlInfo {
                 depth -= 1;
             } else if depth > 0
                 && b == b'S'
-                && (i == 0
-                    || (!bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_'))
+                && (i == 0 || (!bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_'))
                 && bytes.get(i..i + select_bytes.len()) == Some(select_bytes)
             {
                 // Check word boundary before and after SELECT — exclude '_' too
@@ -642,7 +641,6 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
     columns
 }
 
-
 /// Replace the contents of single-quoted string literals with spaces, preserving
 /// byte positions. Used so that keyword-based parsers (`extract_columns_after_keyword`,
 /// `extract_join_columns`, etc.) don't pick up SQL syntax from inside literals.
@@ -707,23 +705,22 @@ fn extract_where_predicates(sql: &str) -> Vec<(String, Option<String>)> {
     // Use raw `sql` for the actual scan so quoted literal values survive.
     let where_clause = &sql[after_start..after_start + end];
 
-    static WHERE_PATTERN: std::sync::LazyLock<regex::Regex> =
-        std::sync::LazyLock::new(|| {
-            // Either a string literal (consumed but ignored — group 1 is None),
-            // or a predicate `col OP literal`. The RHS is restricted to literal
-            // forms only; bare identifiers like `b.y` are intentionally not
-            // matched so we never confuse a column reference with a literal value.
-            // Operator alternation lists multi-char operators first.
-            //
-            // NOTE: only standard SQL `''` quote-escaping is recognized — same
-            // assumption `mask_string_literals` makes. PostgreSQL `E'...'` strings
-            // and backslash escapes (`\'`) inside literals are NOT supported; if
-            // future dialects need them, update both this regex and the masker.
-            regex::Regex::new(
+    static WHERE_PATTERN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        // Either a string literal (consumed but ignored — group 1 is None),
+        // or a predicate `col OP literal`. The RHS is restricted to literal
+        // forms only; bare identifiers like `b.y` are intentionally not
+        // matched so we never confuse a column reference with a literal value.
+        // Operator alternation lists multi-char operators first.
+        //
+        // NOTE: only standard SQL `''` quote-escaping is recognized — same
+        // assumption `mask_string_literals` makes. PostgreSQL `E'...'` strings
+        // and backslash escapes (`\'`) inside literals are NOT supported; if
+        // future dialects need them, update both this regex and the masker.
+        regex::Regex::new(
                 r"'(?:[^']|'')*'|(\w+(?:\.\w+)?)\s*(?:<=|>=|<>|!=|=|<|>)\s*('(?:[^']|'')*'|-?\d+(?:\.\d+)?|(?i:TRUE|FALSE|NULL))",
             )
             .unwrap()
-        });
+    });
 
     let mut preds = Vec::new();
     for cap in WHERE_PATTERN.captures_iter(where_clause) {
@@ -1388,8 +1385,8 @@ fn score_filter_selectivity(
                     // sample, or compared against another column). Note the skew, but
                     // do not penalize — the filter may well be selecting a rare value.
                     details.push(format!(
-                        "{}.{} is highly skewed (top value '{}' = {:.0}%) — selectivity \
-                         depends on filter value",
+                        "{}.{} is highly skewed (top value '{}' = {:.0}%) — selectivity depends \
+                         on filter value",
                         cache.table_name, freq.field, top.value, top.percentage
                     ));
                 }
@@ -1420,8 +1417,8 @@ fn score_filter_selectivity(
                 && top.value != "<HIGH_CARDINALITY>"
             {
                 details.push(format!(
-                    "{}.{} is highly skewed (top value '{}' = {:.0}%) — selectivity depends \
-                     on filter value",
+                    "{}.{} is highly skewed (top value '{}' = {:.0}%) — selectivity depends on \
+                     filter value",
                     cache.table_name, freq.field, top.value, top.percentage
                 ));
             }

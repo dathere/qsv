@@ -338,7 +338,6 @@ SELECT name, score FROM data WHERE age > 30 LIMIT 5;
     );
 }
 
-
 // ─── Regression tests for scoresql review-fix commit ────────────────────────
 
 /// Regression: a malformed `USING` clause where `)` precedes `(` used to panic
@@ -471,11 +470,9 @@ fn scoresql_underscore_select_not_subquery() {
     let stdout = String::from_utf8_lossy(&got.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let suggestions = parsed["suggestions"].as_array().unwrap();
-    let has_subquery_suggestion = suggestions.iter().any(|s| {
-        s.as_str()
-            .unwrap_or_default()
-            .contains("nested subqueries")
-    });
+    let has_subquery_suggestion = suggestions
+        .iter()
+        .any(|s| s.as_str().unwrap_or_default().contains("nested subqueries"));
     assert!(
         !has_subquery_suggestion,
         "_SELECT(...) inside a string literal must not be treated as a subquery"

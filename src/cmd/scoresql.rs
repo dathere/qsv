@@ -714,6 +714,11 @@ fn extract_where_predicates(sql: &str) -> Vec<(String, Option<String>)> {
             // forms only; bare identifiers like `b.y` are intentionally not
             // matched so we never confuse a column reference with a literal value.
             // Operator alternation lists multi-char operators first.
+            //
+            // NOTE: only standard SQL `''` quote-escaping is recognized — same
+            // assumption `mask_string_literals` makes. PostgreSQL `E'...'` strings
+            // and backslash escapes (`\'`) inside literals are NOT supported; if
+            // future dialects need them, update both this regex and the masker.
             regex::Regex::new(
                 r"'(?:[^']|'')*'|(\w+(?:\.\w+)?)\s*(?:<=|>=|<>|!=|=|<|>)\s*('(?:[^']|'')*'|-?\d+(?:\.\d+)?|(?i:TRUE|FALSE|NULL))",
             )

@@ -386,11 +386,21 @@ fn scoresql_alias_inside_string_literal() {
     assert!(parsed["score"].is_number());
 }
 
-/// Regression: SQL syntax inside a string literal must not influence
-/// pattern-based detection (`SELECT *`, WHERE columns, etc.).
 #[test]
 fn scoresql_keyword_inside_string_literal() {
-    let wrk = setup("scoresql_keyword_inside_string_literal");
+    // Use a self-contained fixture so this test doesn't depend on the shared
+    // `setup()` schema (it only needs *a* string column to project out).
+    let wrk = Workdir::new("scoresql_keyword_inside_string_literal");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "Alice"],
+            svec!["2", "Bob"],
+            svec!["3", "Carol"],
+        ],
+    );
+
     let mut cmd = wrk.command("scoresql");
     cmd.arg("--json");
     cmd.arg("data.csv");
@@ -400,6 +410,11 @@ fn scoresql_keyword_inside_string_literal() {
     cmd.arg("SELECT 'SELECT * WHERE x' AS note, name FROM data LIMIT 5");
 
     let got = wrk.output(&mut cmd);
+    assert!(
+        got.status.success(),
+        "scoresql failed: {}",
+        String::from_utf8_lossy(&got.stderr)
+    );
     let stdout = String::from_utf8_lossy(&got.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let suggestions = parsed["suggestions"].as_array().unwrap();
@@ -437,9 +452,6 @@ fn scoresql_duplicate_file_stem_rejected() {
     );
 }
 
-/// Regression: an identifier like `_SELECT(...)` inside parens should not be
-/// classified as a subquery. Use `--json` and inspect the breakdown so a
-/// future change to the human-readable layout doesn't break this test.
 #[test]
 fn scoresql_underscore_select_not_subquery() {
     let wrk = setup("scoresql_underscore_select_not_subquery");
@@ -451,6 +463,11 @@ fn scoresql_underscore_select_not_subquery() {
     cmd.arg("SELECT name FROM data WHERE name = '_SELECT(x)' LIMIT 1");
 
     let got = wrk.output(&mut cmd);
+    assert!(
+        got.status.success(),
+        "scoresql failed: {}",
+        String::from_utf8_lossy(&got.stderr)
+    );
     let stdout = String::from_utf8_lossy(&got.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let suggestions = parsed["suggestions"].as_array().unwrap();
@@ -465,22 +482,40 @@ fn scoresql_underscore_select_not_subquery() {
     );
 }
 
-/// Regression: a filter targeting a *rare* value of a skewed column should
-/// not be penalized by `score_filter_selectivity`. Previously, any column
-/// whose top frequency exceeded 70% incurred a 5-point penalty regardless of
-/// what value the filter actually compared against.
 #[test]
 fn scoresql_filter_on_rare_value_not_penalized() {
-    let wrk = setup("scoresql_filter_on_rare_value_not_penalized");
+    // Self-contained fixture with an explicitly skewed `status` column:
+    // 7 'active' rows + 3 'inactive' rows -> 70% / 30%. Filtering on the
+    // rare value must NOT trigger the low-selectivity penalty.
+    let wrk = Workdir::new("scoresql_filter_on_rare_value_not_penalized");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "status"],
+            svec!["1", "Alice", "active"],
+            svec!["2", "Bob", "active"],
+            svec!["3", "Carol", "active"],
+            svec!["4", "Dave", "active"],
+            svec!["5", "Eve", "active"],
+            svec!["6", "Frank", "active"],
+            svec!["7", "Grace", "active"],
+            svec!["8", "Heidi", "inactive"],
+            svec!["9", "Ivan", "inactive"],
+            svec!["10", "Judy", "inactive"],
+        ],
+    );
+
     let mut cmd = wrk.command("scoresql");
     cmd.arg("--json");
     cmd.arg("data.csv");
-    // `status` has 'active' at 70% and 'inactive' at 30%. Filtering on
-    // 'inactive' is selective and should not trigger the low-selectivity
-    // penalty/suggestion.
     cmd.arg("SELECT name FROM data WHERE status = 'inactive'");
 
     let got = wrk.output(&mut cmd);
+    assert!(
+        got.status.success(),
+        "scoresql failed: {}",
+        String::from_utf8_lossy(&got.stderr)
+    );
     let stdout = String::from_utf8_lossy(&got.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let suggestions = parsed["suggestions"].as_array().unwrap();

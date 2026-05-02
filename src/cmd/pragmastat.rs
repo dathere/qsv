@@ -52,6 +52,9 @@ TWO-SAMPLE OUTPUT (--twosample, per unordered column pair)
 When values are blank
   * Column has no numeric data (n=0).
   * Positivity required: ratio, ratio_* need all values > 0.
+  * Date/DateTime pairs: ratio is suppressed for --twosample and --compare2
+    because it depends on the arbitrary 1970 epoch origin and isn't meaningful
+    for dates. shift, disparity, and their bounds remain populated.
   * Sparity required: spread/spread_*/disparity/disparity_* need real variability (not tie-dominant).
   * Bounds require enough data for requested misrate; try higher misrate or more data.
 
@@ -1536,6 +1539,7 @@ fn compute_compare2<'a>(
     x: &[f64],
     y: &[f64],
     thresholds: &[pragmastat::Threshold],
+    suppress_ratio: bool,
 ) -> Vec<Compare2Result<'a>> {
     let n_x = x.len();
     let n_y = y.len();
@@ -1557,18 +1561,48 @@ fn compute_compare2<'a>(
         return thresholds.iter().map(fallback).collect();
     }
 
-    let (Ok(sample_x), Ok(sample_y)) = (
-        pragmastat::Sample::new(x.to_vec()),
-        pragmastat::Sample::new(y.to_vec()),
-    ) else {
-        return thresholds.iter().map(fallback).collect();
+    // Partition thresholds: when `suppress_ratio` is set (Date/DateTime pairs),
+    // ratio metrics aren't meaningful — they depend on the arbitrary 1970 epoch
+    // origin — so they get fallback rows. Non-ratio metrics are computed
+    // normally. We filter BEFORE calling pragmastat::compare2 so that a
+    // Ratio threshold on negative epoch-ms (pre-1970 dates) doesn't error
+    // the whole call and blank out the other metrics.
+    let active: Vec<pragmastat::Threshold> = if suppress_ratio {
+        thresholds
+            .iter()
+            .filter(|t| !matches!(t.metric(), pragmastat::Metric::Ratio))
+            .cloned()
+            .collect()
+    } else {
+        thresholds.to_vec()
     };
 
-    match pragmastat::compare2(&sample_x, &sample_y, thresholds) {
-        Ok(projections) => projections
-            .iter()
-            .map(|p| {
-                let est = p.estimate().value;
+    let projections = if active.is_empty() {
+        // All thresholds were suppressed — nothing to compute.
+        Vec::new()
+    } else {
+        let (Ok(sample_x), Ok(sample_y)) = (
+            pragmastat::Sample::new(x.to_vec()),
+            pragmastat::Sample::new(y.to_vec()),
+        ) else {
+            return thresholds.iter().map(fallback).collect();
+        };
+
+        match pragmastat::compare2(&sample_x, &sample_y, &active) {
+            Ok(p) => p,
+            Err(_) => return thresholds.iter().map(fallback).collect(),
+        }
+    };
+
+    // Walk the user's original threshold order; suppressed ones get a fallback
+    // row, others pull the next projection (pragmastat preserves input order).
+    let mut proj_iter = projections.into_iter();
+    thresholds
+        .iter()
+        .map(|t| {
+            if suppress_ratio && matches!(t.metric(), pragmastat::Metric::Ratio) {
+                fallback(t)
+            } else if let Some(p) = proj_iter.next() {
                 Compare2Result {
                     field_x: name_x,
                     field_y: name_y,
@@ -1576,15 +1610,16 @@ fn compute_compare2<'a>(
                     n_y,
                     metric: p.threshold().metric().as_str(),
                     threshold: p.threshold().value().value,
-                    estimate: Some(est),
+                    estimate: Some(p.estimate().value),
                     lower: Some(p.bounds().lower),
                     upper: Some(p.bounds().upper),
                     verdict: p.verdict().as_str(),
                 }
-            })
-            .collect(),
-        Err(_) => thresholds.iter().map(fallback).collect(),
-    }
+            } else {
+                fallback(t)
+            }
+        })
+        .collect()
 }
 
 fn write_compare1_header(
@@ -1739,12 +1774,22 @@ fn write_compare2_results(
     let all_results: Vec<Vec<Compare2Result>> = pairs
         .par_iter()
         .map(|&(i, j)| {
+            // Mirrors the --twosample suppression: ratio is meaningless for
+            // date pairs (epoch-dependent), so suppress it here too.
+            let is_date_pair = matches!(
+                (col_types[i], col_types[j]),
+                (
+                    ColType::Date | ColType::DateTime,
+                    ColType::Date | ColType::DateTime
+                )
+            );
             compute_compare2(
                 &col_names[i],
                 &col_names[j],
                 &col_values[i],
                 &col_values[j],
                 thresholds,
+                is_date_pair,
             )
         })
         .collect();

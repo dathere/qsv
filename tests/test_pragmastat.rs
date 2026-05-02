@@ -923,6 +923,72 @@ fn pragmastat_twosample_ratio_populated_for_numeric() {
         .expect("ratio should be a numeric value for positive numeric pair");
 }
 
+
+#[test]
+fn pragmastat_compare2_ratio_empty_for_dates() {
+    // Regression: --compare2 with a `ratio:N` threshold on Date/DateTime pairs
+    // must suppress the meaningless epoch-dependent ratio (matching --twosample).
+    // Other thresholds in the same call (e.g. shift) must still compute normally.
+    let wrk = Workdir::new("pragmastat_compare2_ratio_empty_for_dates");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([&test_file, "-E", "--infer-dates", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    // Mix ratio + shift thresholds so we can assert both suppression (ratio)
+    // and continued correctness (shift) in one run.
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("--compare2")
+        .arg("ratio:1.0,shift:0")
+        .arg("--select")
+        .arg("open_dt,closed_dt")
+        .arg(&test_file);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // Header + 2 thresholds × 1 date pair
+    assert_eq!(got.len(), 3, "header + 2 threshold rows");
+    // Header: field_x, field_y, n_x, n_y, metric, threshold, estimate, lower, upper, verdict
+    let ratio_row = got
+        .iter()
+        .skip(1)
+        .find(|r| r[4] == "ratio")
+        .expect("ratio row missing");
+    let shift_row = got
+        .iter()
+        .skip(1)
+        .find(|r| r[4] == "shift")
+        .expect("shift row missing");
+
+    // Ratio row: estimate / lower / upper / verdict all blank for date pair.
+    assert!(
+        ratio_row[6].is_empty(),
+        "ratio estimate must be empty for date pair, got {:?}",
+        ratio_row[6]
+    );
+    assert!(
+        ratio_row[7].is_empty(),
+        "ratio lower must be empty for date pair, got {:?}",
+        ratio_row[7]
+    );
+    assert!(
+        ratio_row[8].is_empty(),
+        "ratio upper must be empty for date pair, got {:?}",
+        ratio_row[8]
+    );
+    assert!(
+        ratio_row[9].is_empty(),
+        "ratio verdict must be empty for date pair, got {:?}",
+        ratio_row[9]
+    );
+
+    // Shift row: still populated as a numeric days value (proves we didn't
+    // accidentally blank out non-ratio metrics on date pairs).
+    let _shift_estimate: f64 = shift_row[6]
+        .parse()
+        .expect("shift estimate should be a numeric days value");
+}
+
 #[test]
 fn pragmastat_parallel_reading() {
     // Generate a CSV with >10k rows to trigger the indexed parallel reading path

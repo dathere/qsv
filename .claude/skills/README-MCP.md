@@ -606,7 +606,7 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-04-14
+**Updated**: 2026-05-02
 **Version**: 19.1.1
 **Tools**: 10 core tools initially (+1 app-only), 54 when discovered via search
 **Skills**: 54 qsv commands

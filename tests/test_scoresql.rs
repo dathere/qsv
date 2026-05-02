@@ -337,3 +337,252 @@ SELECT name, score FROM data WHERE age > 30 LIMIT 5;
         "Last query uses specific columns, should NOT have SELECT * warning"
     );
 }
+
+// ─── Regression tests for scoresql review-fix commit ────────────────────────
+
+/// Regression: a malformed `USING` clause where `)` precedes `(` used to panic
+/// inside `extract_join_columns` (slice index out-of-order).
+#[test]
+fn scoresql_malformed_using_no_panic() {
+    let wrk = setup("scoresql_malformed_using_no_panic");
+    let mut cmd = wrk.command("scoresql");
+    cmd.arg("data.csv");
+    // The pathological substring "USING ) ... (" will not be syntactically valid
+    // SQL, but it must not panic our parser.
+    cmd.arg(
+        "SELECT * FROM data WHERE name = 'a USING ) WHERE x = (1)' AND status = 'active' LIMIT 5",
+    );
+
+    // We don't care whether the score query succeeds — just that we exit
+    // cleanly and don't abort with a Rust panic.
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        !got.contains("panicked") && !got.contains("slice index"),
+        "unexpected panic: {got}"
+    );
+}
+
+/// Regression: an alias inside a string literal (`'_t_1'`) used to be
+/// rewritten by the polars alias-replacement pass, corrupting the literal.
+#[test]
+fn scoresql_alias_inside_string_literal() {
+    let wrk = setup("scoresql_alias_inside_string_literal");
+    let mut cmd = wrk.command("scoresql");
+    cmd.arg("--json");
+    cmd.arg("data.csv");
+    cmd.arg("SELECT '_t_1' AS label, name FROM _t_1 LIMIT 1");
+
+    let got = wrk.output(&mut cmd);
+    assert!(
+        got.status.success(),
+        "scoresql failed: {}",
+        String::from_utf8_lossy(&got.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&got.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    // We mainly want a clean exit and a parseable score; the literal should
+    // not have caused a "table not found" error from polars.
+    assert!(parsed["score"].is_number());
+}
+
+#[test]
+fn scoresql_keyword_inside_string_literal() {
+    // Use a self-contained fixture so this test doesn't depend on the shared
+    // `setup()` schema (it only needs *a* string column to project out).
+    let wrk = Workdir::new("scoresql_keyword_inside_string_literal");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["1", "Alice"],
+            svec!["2", "Bob"],
+            svec!["3", "Carol"],
+        ],
+    );
+
+    let mut cmd = wrk.command("scoresql");
+    cmd.arg("--json");
+    cmd.arg("data.csv");
+    // The literal contains "SELECT *" and "WHERE", but the actual query has
+    // explicit columns and no WHERE — the score should reflect the actual
+    // query, not the contents of the string.
+    cmd.arg("SELECT 'SELECT * WHERE x' AS note, name FROM data LIMIT 5");
+
+    let got = wrk.output(&mut cmd);
+    assert!(
+        got.status.success(),
+        "scoresql failed: {}",
+        String::from_utf8_lossy(&got.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&got.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let suggestions = parsed["suggestions"].as_array().unwrap();
+    let has_select_star_warning = suggestions
+        .iter()
+        .any(|s| s.as_str().unwrap_or_default().contains("SELECT *"));
+    assert!(
+        !has_select_star_warning,
+        "SELECT * appearing only inside a string literal should not trigger the warning"
+    );
+}
+
+#[test]
+fn scoresql_duplicate_file_stem_rejected() {
+    let wrk = setup("scoresql_duplicate_file_stem_rejected");
+    // Create a second `data.csv` under a subdirectory so its file stem
+    // collides with the top-level one.
+    std::fs::create_dir_all(wrk.path("nested")).unwrap();
+    wrk.create(
+        "nested/data.csv",
+        vec![svec!["id", "x"], svec!["1", "a"], svec!["2", "b"]],
+    );
+
+    let mut cmd = wrk.command("scoresql");
+    cmd.arg("data.csv");
+    cmd.arg("nested/data.csv");
+    cmd.arg("SELECT * FROM data LIMIT 1");
+
+    // Use `output()` so we can also assert non-zero exit — a future regression
+    // that downgrades duplicate-stem detection to a warning would otherwise
+    // slip through if we only matched stderr text.
+    let got = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&got.stderr);
+    assert!(
+        !got.status.success(),
+        "scoresql should fail on duplicate stems but succeeded; stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("Duplicate table name"),
+        "expected duplicate-stem error, got: {stderr}"
+    );
+}
+
+#[test]
+fn scoresql_underscore_select_not_subquery() {
+    let wrk = setup("scoresql_underscore_select_not_subquery");
+    let mut cmd = wrk.command("scoresql");
+    cmd.arg("--json");
+    cmd.arg("data.csv");
+    // The token `_SELECT` inside the literal must not flip `has_subquery`,
+    // and the literal-skipping mask should keep the bare WHERE clause clean.
+    cmd.arg("SELECT name FROM data WHERE name = '_SELECT(x)' LIMIT 1");
+
+    let got = wrk.output(&mut cmd);
+    assert!(
+        got.status.success(),
+        "scoresql failed: {}",
+        String::from_utf8_lossy(&got.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&got.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let suggestions = parsed["suggestions"].as_array().unwrap();
+    let has_subquery_suggestion = suggestions
+        .iter()
+        .any(|s| s.as_str().unwrap_or_default().contains("nested subqueries"));
+    assert!(
+        !has_subquery_suggestion,
+        "_SELECT(...) inside a string literal must not be treated as a subquery"
+    );
+}
+
+#[test]
+fn scoresql_filter_on_rare_value_not_penalized() {
+    // Self-contained fixture with an explicitly skewed `status` column:
+    // 7 'active' rows + 3 'inactive' rows -> 70% / 30%. Filtering on the
+    // rare value must NOT trigger the low-selectivity penalty.
+    let wrk = Workdir::new("scoresql_filter_on_rare_value_not_penalized");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name", "status"],
+            svec!["1", "Alice", "active"],
+            svec!["2", "Bob", "active"],
+            svec!["3", "Carol", "active"],
+            svec!["4", "Dave", "active"],
+            svec!["5", "Eve", "active"],
+            svec!["6", "Frank", "active"],
+            svec!["7", "Grace", "active"],
+            svec!["8", "Heidi", "inactive"],
+            svec!["9", "Ivan", "inactive"],
+            svec!["10", "Judy", "inactive"],
+        ],
+    );
+
+    let mut cmd = wrk.command("scoresql");
+    cmd.arg("--json");
+    cmd.arg("data.csv");
+    cmd.arg("SELECT name FROM data WHERE status = 'inactive'");
+
+    let got = wrk.output(&mut cmd);
+    assert!(
+        got.status.success(),
+        "scoresql failed: {}",
+        String::from_utf8_lossy(&got.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&got.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let suggestions = parsed["suggestions"].as_array().unwrap();
+    let has_unselective_warning = suggestions.iter().any(|s| {
+        let txt = s.as_str().unwrap_or_default();
+        txt.contains("filter matches") && txt.contains("selective predicate")
+    });
+    assert!(
+        !has_unselective_warning,
+        "filter on a rare value should not trigger the low-selectivity penalty: {suggestions:?}"
+    );
+}
+
+/// Regression: a quoted-string filter `WHERE col = 'NULL'` must NOT collapse
+/// into the SQL keyword `NULL` lookup (which matches empty cells). The two
+/// forms are tagged differently at extraction time so they keep distinct
+/// frequency-cache lookup semantics.
+#[test]
+fn scoresql_quoted_null_distinct_from_keyword_null() {
+    // Build a fixture where the *string* "NULL" is the dominant value but
+    // there are no actual nulls. If quoted-vs-keyword tagging is broken,
+    // the keyword normalization (`NULL` -> empty cell) would make the
+    // quoted lookup spuriously match the empty-cell branch instead.
+    let wrk = Workdir::new("scoresql_quoted_null_distinct_from_keyword_null");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "label"],
+            svec!["1", "NULL"],
+            svec!["2", "NULL"],
+            svec!["3", "NULL"],
+            svec!["4", "NULL"],
+            svec!["5", "NULL"],
+            svec!["6", "NULL"],
+            svec!["7", "NULL"],
+            svec!["8", "NULL"],
+            svec!["9", "active"],
+            svec!["10", "active"],
+        ],
+    );
+
+    let mut cmd = wrk.command("scoresql");
+    cmd.arg("--json");
+    cmd.arg("data.csv");
+    // Quoted-string `'NULL'` should match the literal string "NULL" in the
+    // frequency cache (80% of rows) and trigger the low-selectivity warning.
+    cmd.arg("SELECT id FROM data WHERE label = 'NULL'");
+
+    let got = wrk.output(&mut cmd);
+    assert!(
+        got.status.success(),
+        "scoresql failed: {}",
+        String::from_utf8_lossy(&got.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&got.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let suggestions = parsed["suggestions"].as_array().unwrap();
+    let has_unselective_warning = suggestions.iter().any(|s| {
+        let txt = s.as_str().unwrap_or_default();
+        txt.contains("filter matches") && txt.contains("selective predicate")
+    });
+    assert!(
+        has_unselective_warning,
+        "filter on quoted string 'NULL' (80% of rows) should trigger low-selectivity warning — \
+         got: {suggestions:?}"
+    );
+}

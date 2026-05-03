@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [20.0.0] - 2026-05-03 🧹 The "Spring Cleaning" Release 🌱
 
-Using Claude Code, [roborev](https://www.roborev.io/), [Serena](https://oraios.github.io/serena), [Context7](https://context7.com) and GitHub Copilot orchestrated using an adversarial review workflow — we systematically audited every command for correctness, safety, and performance. Over the past four weeks, we did the first end-to-end pass over the qsv codebase. The result is the largest correctness-and-safety sweep in qsv's history: ALL commands were touched by review-driven cleanups, with dozens of latent bugs, panic paths, and performance cliffs swept out, while adding more than 250 new tests across the board.
+Over the past four weeks, we did the first end-to-end pass over the qsv codebase using Claude Code, [roborev](https://www.roborev.io/), [Serena](https://oraios.github.io/serena), [Context7](https://context7.com) and GitHub Copilot orchestrated using a multi-agent, adversarial review workflow - systematically auditing every command for correctness, safety, and performance.  The result is the largest correctness-and-safety sweep in qsv's history: ALL commands were touched by review-driven cleanups, with dozens of latent bugs, panic paths, and performance cliffs swept out, while adding more than 250 new tests across the board.
 
 This is a major version bump because that sweep also surfaced four user-visible behaviors that were demonstrably wrong and could not be fixed without breaking compatibility:
 

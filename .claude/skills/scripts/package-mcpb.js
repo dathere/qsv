@@ -15,7 +15,7 @@
  * - icon.png (if exists)
  */
 
-import { createWriteStream, existsSync, mkdirSync, rmSync, readFileSync } from 'fs';
+import { createWriteStream, existsSync, mkdirSync, rmSync, readFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import archiver from 'archiver';
@@ -254,7 +254,8 @@ function displaySummary() {
   console.log('   1. Test locally: Drag .mcpb file into Claude Desktop settings');
   console.log('   2. Configure qsv binary path in extension settings');
   console.log('   3. Restart Claude Desktop');
-  console.log('   4. Verify all 54 qsv skills are available');
+  const skillCount = readdirSync(join(rootDir, 'qsv')).filter(f => f.startsWith('qsv-') && f.endsWith('.json')).length;
+  console.log(`   4. Verify all ${skillCount} qsv skills are available`);
   console.log('\n📚 Documentation:');
   console.log('   - Getting Started Guide: docs/guides/START_HERE.md');
   console.log('   - Installation Guide: README.md');

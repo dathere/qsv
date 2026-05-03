@@ -13,9 +13,9 @@ This is a major version bump because that sweep also surfaced four user-visible 
 - `safenames` verify-mode now correctly counts duplicate-suffix renames as unsafe (previously under-reported).
 - `enum --hash` is now collision-resistant across multi-column inputs (previously ["ab","c"] and ["a","bc"] hashed identically).
 - `excel --metadata csv` column ordering now actually matches its header row (previously the type, visible, and headers columns held each other's values).
-- `util::safe_header_names` now enforces its 60-char cap in bytes end-to-end (previously chars-based, allowing UTF-8 names up to 240 bytes — past Postgres' NAMEDATALEN).
+- `util::safe_header_names` now enforces its 60-byte cap end-to-end (previously chars-based, allowing UTF-8 names up to 240 bytes — past Postgres' NAMEDATALEN).
 
-Plus a few smaller but breaking corrections: `headers --intersect` is renamed to `--union` (the flag never computed an intersection), `luau qsv_loadcsv headersvare` now 1-indexed per Lua convention, and MSRV is bumped to Rust 1.95.
+Plus a few smaller but breaking corrections: `headers --intersect` is renamed to `--union` (the flag never computed an intersection), `luau qsv_loadcsv` headers are now 1-indexed per Lua convention, and MSRV is bumped to Rust 1.95.
 
 Beyond the cleanup, this release adds one new top-level command:
 

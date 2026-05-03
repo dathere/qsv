@@ -1320,12 +1320,6 @@ dependencies = [
 
 [[package]]
 name = "cmov"
-version = "0.4.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d5ce5728ecb5285a5dd35f02a6a8e34e0828e0b38e8e632e249a3fe3f320211"
-
-[[package]]
-name = "cmov"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f88a43d011fc4a6876cb7344703e297c71dda42494fee094d5f7c76bf13f746"
@@ -1876,7 +1870,7 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
 dependencies = [
- "cmov 0.5.3",
+ "cmov",
 ]
 
 [[package]]
@@ -3829,13 +3823,14 @@ dependencies = [
 
 [[package]]
 name = "kiddo"
-version = "5.2.1"
-source = "git+https://github.com/sdd/kiddo?rev=2056051#20560517c7e06d71a6887a7662b89b70091ef8db"
+version = "5.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5053bc2cb3ed5739b2ef170e00d40ecca487612fa0ee1535a912424ac18d2bb2"
 dependencies = [
  "aligned-vec",
  "array-init",
  "az",
- "cmov 0.4.6",
+ "cmov",
  "divrem",
  "generator",
  "num-traits",

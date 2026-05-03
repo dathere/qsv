@@ -12,7 +12,7 @@ Generate shell completions for qsv including the following shells:
 
 Completions are **auto-generated** from qsv's `static USAGE` text in `src/cmd/*.rs`, so they stay in sync with the CLI automatically. No manual command definition files to maintain.
 
-> Status as of qsv release 16.0.0: Completions for 66 commands (all qsv commands except `applydp` and `generate` -- `applydp` is specific to DataPusher+ and `generate` is not usually distributed with qsv anymore) are auto-generated with short and long flags, subcommands, and value-taking hints. Completions may not account for file paths (you may need to explicitly use a relative path for example starting with `./` to begin file completions). Not all shells have been verified to work with the generated completions.
+> Completions are auto-generated for every command in `src/cmd/` except files listed in `SKIP_FILES` in `src/usage_parser.rs` (currently `mod.rs`, `python.pyo3-23.rs`, and `applydp.rs` — the latter is DataPusher+ specific). Generation covers short and long flags, subcommands, and value-taking hints. Completions may not account for file paths (you may need to explicitly use a relative path starting with `./` to begin file completions). Not all shells have been verified to work with the generated completions.
 
 ## Usage
 

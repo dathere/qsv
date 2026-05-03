@@ -143,7 +143,25 @@ fn build_command_from_usage(command_name: &str, usage_text: &str) -> Result<Comm
     let mut subcommands: Vec<String> = Vec::new();
     let mut used_shorts: Vec<char> = Vec::new();
 
-    for (atom, opts) in parser.descs.iter() {
+    // Collect and sort descs entries so the resulting clap Command is built
+    // in a deterministic order. SynonymMap's iter() does not guarantee
+    // stability across runs, which previously caused noisy diffs in the
+    // generated completion files (e.g., when two long flags compete for the
+    // same short alias, the "winner" could flip between regenerations).
+    let mut descs: Vec<_> = parser.descs.iter().collect();
+    descs.sort_by(|(a, _), (b, _)| {
+        fn key(atom: &Atom) -> (u8, &str) {
+            match atom {
+                Atom::Long(name) => (0, name.as_str()),
+                Atom::Command(name) => (1, name.as_str()),
+                Atom::Positional(name) => (2, name.as_str()),
+                Atom::Short(_) => (3, ""),
+            }
+        }
+        key(a).cmp(&key(b))
+    });
+
+    for (atom, opts) in descs {
         match atom {
             Atom::Short(_) => {
                 // Short flags are handled via the short_flags map when

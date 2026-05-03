@@ -4,7 +4,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [20.0.0] - 2026-05-02
+
+### Added
+- `implode`: new command — inverse of `explode` [#3733](https://github.com/dathere/qsv/pull/3733) (closes [#917](https://github.com/dathere/qsv/issues/917))
+- `generators`: mark required options in help markdown and MCP skills [#3734](https://github.com/dathere/qsv/pull/3734)
+- `sortcheck`: add `--numeric` and `--natural` flags; allocation-free streaming loop [#3756](https://github.com/dathere/qsv/pull/3756)
+- `exclude`: add stdin support and memcheck [#3749](https://github.com/dathere/qsv/pull/3749)
+
+### Changed
+- **BREAKING** `excel`: `--metadata csv` column ordering for `type`, `visible`, and `headers` is corrected. Previously the CSV header row declared `type, visible, headers` but the data rows pushed values in the order `headers, typ, visible`, so under each named column the wrong values appeared (the `type` column held the headers list, `visible` held the type, and `headers` held the visibility). The CSV output now matches the `--metadata json` (`SheetMetadata` struct) field order: `index, sheet_name, type, visible, headers, column_count, …`. Pipelines that consumed `qsv excel --metadata csv` and indexed by column position must shift those three columns; consumers that indexed by header name see corrected values automatically.
+- **BREAKING** `enum`: `--hash` digest values change. The hashed input now carries a `u64` length prefix per field (to fix the multi-column collision bug above), so every `--hash` digest differs from earlier qsv versions — single-column hashes change identity values too, and stored hashes from earlier qsv versions will not match. Same input still hashes deterministically across rows and runs in ≥ this version.
+- **BREAKING** `luau`: `qsv_loadcsv` now returns the headers table 1-indexed (per Lua convention). Scripts that accessed `headers[0]` or iterated `for i = 0, #headers - 1` must shift to `headers[1]` and `for i = 1, #headers` (or `ipairs(headers)`). Previously `headers[1]` returned the *second* header.
+- **BREAKING** `headers`: rename `--intersect` to `--union`. The flag has always computed a deduplicated union of headers across inputs, not a true set intersection — the name was a long-standing misnomer. `--intersect` is removed entirely (no alias) given the surrounding breaking-change window. Migration: replace `qsv headers --intersect …` with `qsv headers --union …`; output is unchanged.
+- **BREAKING** `safenames`: verify-mode (`--mode v / V / j / J`) outputs change. (1) Verify counts now include header positions that would be renamed by the duplicate-suffix pass — inputs containing duplicate column names will report higher unsafe counts than earlier qsv versions; the count now matches what `--mode a` would actually rewrite. (2) `--mode V / j / J` displays unsafe-header strings with leading/trailing whitespace and surrounding `"` already trimmed (matching what the safe-rename pass actually evaluates), and `duplicate_headers` is now sorted alphabetically rather than appearing in undefined HashMap iteration order. Pipelines that parsed verbose/JSON output and depended on the old ordering or untrimmed strings must update.
+- **BREAKING** `util::safe_header_names`: the 60-length cap is now enforced in **bytes** on the *final* name, including any duplicate-disambiguation suffix. Previously the truncation was chars-based (`take(60).sum()`) and only applied to the base, so non-ASCII headers could produce up to ~240-byte names and duplicate-disambiguated headers added `_<n>` *after* truncation, pushing past Postgres' `NAMEDATALEN` (63 bytes). Now the rewrite path lowercases and prepends the leading-`_` prefix *before* truncating, then snaps to a UTF-8 char boundary at ≤60 bytes. ASCII-only inputs see the same output as before for non-suffixed cases. Long ASCII headers that previously generated 61–63-char suffixed variants will be 1–2 chars shorter at the boundary. Headers containing multibyte UTF-8 (CJK, accented chars, emoji) that previously produced names >60 bytes will now be aggressively trimmed to fit. Affects every caller (`safenames`, `applydp`, `apply`, `fetch`, `python`); stored mappings keyed on the old over-long forms will not match.
+- **BREAKING** Default allocator changed from `mimalloc` to `jemallocator` — runtime memory-use characteristics may differ for memory-bound workloads
+- **BREAKING** MSRV bumped to Rust 1.95
+- `describegpt`: split `process_phase_output` into per-branch helpers (dictionary context-only, full dictionary, JSON, TSV, TOON, Markdown). No behavior change — same output, smaller functions.
+- `luau`: `qsv_coalesce` now stringifies non-string values (numbers and booleans render via `to_string`; nil / arrays / objects are skipped). Previously, numbers and booleans were silently treated as missing values via `as_str().unwrap_or_default()`. Scripts relying on `qsv_coalesce(some_bool, fallback)` to skip booleans will now return `"true"`/`"false"` for the boolean.
+- `describegpt`: per-phase helper split, widened cache key, ~21% LOC reduction [#3720](https://github.com/dathere/qsv/pull/3720) [#3721](https://github.com/dathere/qsv/pull/3721) [#3722](https://github.com/dathere/qsv/pull/3722)
+- `frequency`: parallel tree-reduce of partial FTables (~1.3x speedup) [#3728](https://github.com/dathere/qsv/pull/3728)
+- `moarstats`: collapse duplicated outlier bivariate scan; safety/perf cleanup, unit tests [#3718](https://github.com/dathere/qsv/pull/3718) [#3719](https://github.com/dathere/qsv/pull/3719)
+- `validate`: use `cold_hint` (stabilized in Rust 1.95) [#3717](https://github.com/dathere/qsv/pull/3717); correctness, perf cleanup [#3743](https://github.com/dathere/qsv/pull/3743) [#3779](https://github.com/dathere/qsv/pull/3779)
+- `frequency`: correctness, perf, refactor cleanup [#3745](https://github.com/dathere/qsv/pull/3745)
+- `apply`: review-driven cleanup, perf [#3741](https://github.com/dathere/qsv/pull/3741)
+- `template`: subdir bug fix, lookup perf, render-error visibility, helper extraction [#3740](https://github.com/dathere/qsv/pull/3740)
+- `dedup`: allocation-free ignore-case [#3754](https://github.com/dathere/qsv/pull/3754)
+- `datefmt`: ~9% perf [#3753](https://github.com/dathere/qsv/pull/3753)
+- `fill`: ~22% faster hot path [#3762](https://github.com/dathere/qsv/pull/3762)
+- `replace`: streaming parallel write; dead match-flag tracking [#3777](https://github.com/dathere/qsv/pull/3777)
+- `search`/`searchset`: parallel memory streaming; `--quick` fixes; USAGE alignment [#3776](https://github.com/dathere/qsv/pull/3776)
+- `cat`: rowskey speedup [#3750](https://github.com/dathere/qsv/pull/3750)
+- `transpose`: correctness, perf cleanup, polish [#3781](https://github.com/dathere/qsv/pull/3781)
+- `cleanup`: rename `fail_oom_clierror`; surface `geocode` update-check error [#3806](https://github.com/dathere/qsv/pull/3806)
+- applied select clippy lints
 
 ### Fixed
 - `excel`: review-driven cleanup of `src/cmd/excel.rs` — fix four correctness bugs. (1) Negative `--sheet` indices that overshot the sheet count silently selected a wrong sheet because the `abs_diff` clamp "bounced" past zero (e.g. `--sheet -4` on a 3-sheet workbook returned the 2nd sheet); now errors with `usage error: negative sheet index N is out of range for K sheets`. (2) `get_requested_range` lower-cased the sheet name into the caller's `sheet` variable and never restored it, so `--range 'Sheet2!A1:B2' --error-format formula|both` failed because calamine's `worksheet_formula` is case-sensitive, and the success message printed the wrong case; now the canonical name from the workbook's sheet list is preserved. (3) The float-to-i64 conversion guard used `*float_val > i64::MAX as f64`, but `i64::MAX as f64` rounds *up* past `i64::MAX`, so a value of `2^63` slipped through, saturating-cast to `i64::MAX`, and was emitted as `9223372036854775807` (off by one). Replaced with `is_finite() && val >= i64::MIN as f64 && val < i64::MAX as f64 && fract() == 0.0`, with a NaN/Inf fallback to `Display` (the previous code would have hit `zmij::format_finite` UB on non-finite floats). (4) `--range` against an empty sheet reported "larger than sheet" because the bounds check used a `(0, 0)` fallback that swallowed the empty-sheet case; now reports "sheet is empty" distinctly. Also: hoisted `to_lowercase()` allocations out of the table-name and named-range search loops, fixed two USAGE typos (`3nd` → `3rd`, stray paren in the negative-index example), removed a stray blank line in `NamesMetadata`'s derive, and dropped the now-unused `cmp` import.
@@ -15,16 +49,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `headers`: review-driven cleanup of `src/cmd/headers.rs`. The docopt USAGE for `--intersect` claimed it computed a set intersection, but the implementation (and the test fixtures) have always emitted a deduplicated *union* across inputs — see the BREAKING `--union` rename in *Changed*. Tightened the multi-input path: now actually sets `flag_just_names` when more than one input is given (previously the docopt promised this but the code only suppressed the index prefix), removing a redundant `num_inputs == 1` guard and the wasted `TabWriter` wrap on that path. `--trim` now operates on raw bytes (no `String::from_utf8_lossy` round-trip, so non-UTF-8 header bytes pass through untouched) and additionally strips leading/trailing tab characters in addition to spaces and double-quotes.
 - `safenames`: review-driven cleanup of `src/cmd/safenames.rs` — fix two correctness bugs in verify modes (`--mode v / V / j / J`). (1) Headers that the rename pass changed only via the duplicate-suffix step (e.g. `col1, col1` → `col1, col1_2`) were counted as *safe* because the verify loop checked membership against the rewritten list rather than comparing positionally; the count now agrees with always-mode's `changed_count` for the same input. See BREAKING note in *Changed* for output impact. (2) The verify loop iterated the *original* (untrimmed, quote-included) headers but compared against the quote-and-space-trimmed list that was actually passed to `safe_header_names`, so a literally-quoted header like `"col"` was wrongly flagged unsafe; now compares trimmed-to-trimmed. Also: replaced two `simd_json::to_string{,_pretty}(...).unwrap()` calls with `?` propagation (a serialize failure now surfaces a CLI error instead of panicking); collapsed the verify-mode body into a single pass (replaces O(N²) `Vec::contains` lookups + four `String` allocations per header with a `HashSet` dedup and `entry().or_insert(0)` count update); sorted `duplicate_headers` for deterministic output (previously `foldhash::HashMap` iteration order leaked into stderr/JSON, forcing tests to accept two orderings); write `safe_headers` directly in the always/conditional path instead of clearing a `StringRecord` and re-pushing each field; rewrote the `--mode` docopt block to make case sensitivity explicit (the parser keys off only the first character, with case-sensitive `v`/`V` and `j`/`J` distinctions previously buried) and dropped a misleading "verify does not count quoted identifiers as unsafe" note that contradicted the actual implementation and the in-tree example output. Tightened the `Some(reserved_names_vec).as_ref()` call to `Some(&reserved_names_vec)`.
 - `util`: `safe_header_names` now enforces the length limit in **bytes** (≤60, snapped to a UTF-8 char boundary) end-to-end, including any disambiguation suffix. Previously the truncation was a hybrid: `is_safe_name` rejected names >60 *bytes*, but the rewrite path used `chars().map(char::len_utf8).take(60).sum()` (chars-based, up to 240 bytes for 4-byte UTF-8) and the duplicate-suffix step appended `_2`/`_3` *after* truncation, so a non-ASCII or duplicate-disambiguated header could land at 62–240+ bytes — past the documented bound and Postgres' default `NAMEDATALEN` of 63 bytes. The function now lowercases and prepends the leading-`_` prefix *before* truncation (case-folding can change byte length, prefixing adds bytes) and snaps the truncation to a char boundary via `str::floor_char_boundary`. Affects every caller (`safenames`, `applydp`, `apply`, `fetch`, `python`); see BREAKING note in *Changed*.
+- `apply`: malformed CSV, init bugs, doc typos, perf [#3741](https://github.com/dathere/qsv/pull/3741)
+- `blake3`: check-mode interop fixes, parser polish [#3782](https://github.com/dathere/qsv/pull/3782)
+- `cat`: `--no-headers` fix [#3750](https://github.com/dathere/qsv/pull/3750)
+- `clipboard`: surface error details, use `?` for clipboard ops [#3783](https://github.com/dathere/qsv/pull/3783)
+- `color`: drop dead clones, mark in-memory [#3785](https://github.com/dathere/qsv/pull/3785)
+- `config`: HumanCount overflow, env-var unwrap panics, sniff UTF-8 panic [#3770](https://github.com/dathere/qsv/pull/3770)
+- `count`: quoting fix, stdin temp-file leak [#3751](https://github.com/dathere/qsv/pull/3751)
+- `datefmt`: strict tz/flag validation [#3753](https://github.com/dathere/qsv/pull/3753)
+- `dedup`: edge-case fixes [#3754](https://github.com/dathere/qsv/pull/3754)
+- `diff`: surface builder error, dedupe index/colname parsing [#3784](https://github.com/dathere/qsv/pull/3784)
+- `edit`: `--in-place`, bounds checks, silent no-ops [#3786](https://github.com/dathere/qsv/pull/3786)
+- `explode`: validate separator and column selection [#3787](https://github.com/dathere/qsv/pull/3787)
+- `extdedup`: key-collision and dupes-writer issues [#3759](https://github.com/dathere/qsv/pull/3759)
+- `extsort`: CRLF off-by-one fix (line→record) [#3790](https://github.com/dathere/qsv/pull/3790); error propagation, temp-file handle release [#3789](https://github.com/dathere/qsv/pull/3789)
+- `fetch`/`fetchpost`: cache, panic, safety fixes [#3747](https://github.com/dathere/qsv/pull/3747)
+- `fixlengths`: `--remove-empty` crash on flexible rows; widen insert arithmetic [#3764](https://github.com/dathere/qsv/pull/3764)
+- `fmt`: `--no-final-newline` bugs, tempfile leak [#3767](https://github.com/dathere/qsv/pull/3767)
+- `foreach`: dry-run truncation, panic, multi-column drop, child-failure propagation [#3757](https://github.com/dathere/qsv/pull/3757)
+- `geocode`: remove latent panics, fix FIPS JSON shape, perf [#3739](https://github.com/dathere/qsv/pull/3739)
+- `geoconvert`: lat/lon swap, tempfile leak, UTF-8 panic [#3768](https://github.com/dathere/qsv/pull/3768)
+- `input`: panic, validation, clarity fixes [#3791](https://github.com/dathere/qsv/pull/3791)
+- `join`: unify key transform; fix silent `--keys-output` drop [#3769](https://github.com/dathere/qsv/pull/3769)
+- `joinp`: correctness, validation, schema-handling [#3731](https://github.com/dathere/qsv/pull/3731)
+- `json`: preserve BigInt precision, surface `jaq` runtime errors [#3794](https://github.com/dathere/qsv/pull/3794); clarify `--jaq` numeric precision in USAGE; defer BigInt `to_string` allocation [#3795](https://github.com/dathere/qsv/pull/3795)
+- `jsonl`: honor `--ignore-errors` for header inference; fix line-number reporting [#3796](https://github.com/dathere/qsv/pull/3796)
+- `lens`: fix `--streaming-stdin`; reject invalid `--wrap-mode` [#3797](https://github.com/dathere/qsv/pull/3797)
+- `lookup`: harden cache, download errors, CKAN auth handling [#3803](https://github.com/dathere/qsv/pull/3803)
+- `luau`: correctness and consistency [#3742](https://github.com/dathere/qsv/pull/3742)
+- `moarstats`: Atkinson re-population bug; harden test coverage [#3799](https://github.com/dathere/qsv/pull/3799)
+- `partition`: UTF-8 panic, O(N) collision check [#3771](https://github.com/dathere/qsv/pull/3771)
+- `pivotp`: correctness, clarity, cleanup [#3732](https://github.com/dathere/qsv/pull/3732)
+- `pragmastat`: Windows backup path; suppress meaningless date ratios [#3805](https://github.com/dathere/qsv/pull/3805)
+- `prompt`: stream file I/O; avoid unnecessary clone [#3798](https://github.com/dathere/qsv/pull/3798)
+- `pseudo`: reject `--increment 0`; preserve last-valid-counter row on overflow [#3792](https://github.com/dathere/qsv/pull/3792)
+- `py`: hoist Python module setup; jagged-row panic [#3758](https://github.com/dathere/qsv/pull/3758)
+- `reverse`: avoid u64 underflow on indexed reverse [#3808](https://github.com/dathere/qsv/pull/3808)
+- `sample`: streaming bernoulli header bug; dead retry loop; cluster pre-alloc [#3774](https://github.com/dathere/qsv/pull/3774); add integration tests for streaming Bernoulli URL path [#3775](https://github.com/dathere/qsv/pull/3775)
+- `schema`: correctness, panic-safety [#3746](https://github.com/dathere/qsv/pull/3746)
+- `scoresql`: USING panic, string-literal handling, filter heuristic + tests [#3810](https://github.com/dathere/qsv/pull/3810)
+- `select`: review-driven cleanup, fix `/` panic, quoted-name CSV-escape, empty-name silent fall-through [#3772](https://github.com/dathere/qsv/pull/3772); `--sort` round-trip (quotes, non-UTF-8, dup names) [#3773](https://github.com/dathere/qsv/pull/3773)
+- `slice`: panic and underflow fixes [#3748](https://github.com/dathere/qsv/pull/3748)
+- `snappy`: preserve validate error; guard decompress ratio on stdin [#3809](https://github.com/dathere/qsv/pull/3809)
+- `sort`: `--numeric --natural --unique` consistency [#3755](https://github.com/dathere/qsv/pull/3755)
+- `split`: correctness fixes, error propagation, tests [#3780](https://github.com/dathere/qsv/pull/3780); Windows `--filter` quoted-arg corruption fix via `raw_arg` [#3788](https://github.com/dathere/qsv/pull/3788)
+- `sqlp`: word-boundary alias replacement [#3730](https://github.com/dathere/qsv/pull/3730)
+- `stats`: cache & boolean-pattern fixes [#3744](https://github.com/dathere/qsv/pull/3744); close cache short-circuit gaps for select/round/typesonly/infer-boolean [#3800](https://github.com/dathere/qsv/pull/3800)
+- `tojsonl`: guard non-finite Number; hoist header escaping; drop unused `unused_assignments` allows [#3807](https://github.com/dathere/qsv/pull/3807)
 
-### Changed
-- `describegpt`: split `process_phase_output` into per-branch helpers (dictionary context-only, full dictionary, JSON, TSV, TOON, Markdown). No behavior change — same output, smaller functions.
-- `luau`: `qsv_coalesce` now stringifies non-string values (numbers and booleans render via `to_string`; nil / arrays / objects are skipped). Previously, numbers and booleans were silently treated as missing values via `as_str().unwrap_or_default()`. Scripts relying on `qsv_coalesce(some_bool, fallback)` to skip booleans will now return `"true"`/`"false"` for the boolean.
-- **BREAKING** `excel`: `--metadata csv` column ordering for `type`, `visible`, and `headers` is corrected. Previously the CSV header row declared `type, visible, headers` but the data rows pushed values in the order `headers, typ, visible`, so under each named column the wrong values appeared (the `type` column held the headers list, `visible` held the type, and `headers` held the visibility). The CSV output now matches the `--metadata json` (`SheetMetadata` struct) field order: `index, sheet_name, type, visible, headers, column_count, …`. Pipelines that consumed `qsv excel --metadata csv` and indexed by column position must shift those three columns; consumers that indexed by header name see corrected values automatically.
-- **BREAKING** `enum`: `--hash` digest values change. The hashed input now carries a `u64` length prefix per field (to fix the multi-column collision bug above), so every `--hash` digest differs from earlier qsv versions — single-column hashes change identity values too, and stored hashes from earlier qsv versions will not match. Same input still hashes deterministically across rows and runs in ≥ this version.
-- **BREAKING** `luau`: `qsv_loadcsv` now returns the headers table 1-indexed (per Lua convention). Scripts that accessed `headers[0]` or iterated `for i = 0, #headers - 1` must shift to `headers[1]` and `for i = 1, #headers` (or `ipairs(headers)`). Previously `headers[1]` returned the *second* header.
-- **BREAKING** `headers`: rename `--intersect` to `--union`. The flag has always computed a deduplicated union of headers across inputs, not a true set intersection — the name was a long-standing misnomer. `--intersect` is removed entirely (no alias) given the surrounding breaking-change window. Migration: replace `qsv headers --intersect …` with `qsv headers --union …`; output is unchanged.
-- **BREAKING** `safenames`: verify-mode (`--mode v / V / j / J`) outputs change. (1) Verify counts now include header positions that would be renamed by the duplicate-suffix pass — inputs containing duplicate column names will report higher unsafe counts than earlier qsv versions; the count now matches what `--mode a` would actually rewrite. (2) `--mode V / j / J` displays unsafe-header strings with leading/trailing whitespace and surrounding `"` already trimmed (matching what the safe-rename pass actually evaluates), and `duplicate_headers` is now sorted alphabetically rather than appearing in undefined HashMap iteration order. Pipelines that parsed verbose/JSON output and depended on the old ordering or untrimmed strings must update.
-- **BREAKING** `util::safe_header_names`: the 60-length cap is now enforced in **bytes** on the *final* name, including any duplicate-disambiguation suffix. Previously the truncation was chars-based (`take(60).sum()`) and only applied to the base, so non-ASCII headers could produce up to ~240-byte names and duplicate-disambiguated headers added `_<n>` *after* truncation, pushing past Postgres' `NAMEDATALEN` (63 bytes). Now the rewrite path lowercases and prepends the leading-`_` prefix *before* truncating, then snaps to a UTF-8 char boundary at ≤60 bytes. ASCII-only inputs see the same output as before for non-suffixed cases. Long ASCII headers that previously generated 61–63-char suffixed variants will be 1–2 chars shorter at the boundary. Headers containing multibyte UTF-8 (CJK, accented chars, emoji) that previously produced names >60 bytes will now be aggressively trimmed to fit. Affects every caller (`safenames`, `applydp`, `apply`, `fetch`, `python`); stored mappings keyed on the old over-long forms will not match.
+### Removed
+- **BREAKING** `headers`: removed `--intersect` flag (use `--union` instead) [#3763](https://github.com/dathere/qsv/pull/3763)
+
+### Dependencies
+- Bump polars to 0.53.0 (multiple bumps; latest tracks py-1.40.1)
+- Bump `mlua` from 0.10.0 to 0.11.0-rc.1; Luau from 709 to 716
+- Bump `zip` from 7 to 8
+- Switch csv crate to qsv-tuned fork (replaces ryu with zmij)
+- Bump `jsonschema` from 0.46.1 to 0.46.4 [#3723](https://github.com/dathere/qsv/pull/3723) [#3778](https://github.com/dathere/qsv/pull/3778) [#3804](https://github.com/dathere/qsv/pull/3804)
+- Bump `mimalloc` from 0.1.49 to 0.1.50 [#3729](https://github.com/dathere/qsv/pull/3729)
+- Bump `rayon` from 1.11.0 to 1.12.0 [#3710](https://github.com/dathere/qsv/pull/3710)
+- Bump `tokio` from 1.51.1 to 1.52.0 [#3712](https://github.com/dathere/qsv/pull/3712)
+- Bump `libc` from 0.2.184 to 0.2.186 [#3709](https://github.com/dathere/qsv/pull/3709) [#3736](https://github.com/dathere/qsv/pull/3736)
+- Bump `reqwest` from 0.13.2 to 0.13.3 [#3766](https://github.com/dathere/qsv/pull/3766)
+- Bump `blake3` from 1.8.4 to 1.8.5 [#3738](https://github.com/dathere/qsv/pull/3738)
+- Bump `magika` from 1.0.1 to 1.1.0 [#3737](https://github.com/dathere/qsv/pull/3737)
+- Bump `robinraju/release-downloader` from 1.12 to 1.13 [#3726](https://github.com/dathere/qsv/pull/3726)
+- Bump `qsv-stats` from 0.49.0 to 0.50.0 [#3727](https://github.com/dathere/qsv/pull/3727)
+- Bump `qsv_docopt` from 1.9.0 to 1.10.0 [#3724](https://github.com/dathere/qsv/pull/3724)
+- Update `self_update` to latest upstream (qsv PR merged)
+- Update `geosuggest` to 0.8.3
+- Update `csvs_convert`
+- Removed `kiddo` patch fork now that 0.5.3 is released with our PR merged
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/19.1.0...20.0.0
 
 ## [19.1.0] - 2026-04-12
 

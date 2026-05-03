@@ -302,10 +302,10 @@ elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
   # Windows 11 / Server 2025 builds. Fall back to wmic on legacy systems.
   # TotalPhysicalMemory is reported in bytes.
   if command -v powershell &>/dev/null; then
-    num_cores=$(powershell -NoProfile -Command "(Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum" | tr -d '\r')
+    num_cores=$(powershell -NoProfile -Command "(Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfLogicalProcessors -Sum).Sum" | tr -d '\r')
     mem_size=$(powershell -NoProfile -Command "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory" | tr -d '\r')
   else
-    num_cores=$(wmic cpu get NumberOfCores | grep -Eo '^[0-9]+')
+    num_cores=$(wmic cpu get NumberOfLogicalProcessors | grep -Eo '^[0-9]+')
     mem_size=$(wmic computersystem get TotalPhysicalMemory | grep -Eo '[0-9]+')
   fi
 else
@@ -348,6 +348,7 @@ if [[ "$arg_pat" == "reset" ]]; then
   rm -f benchmark_data.xlsx
   rm -f benchmark_data.jsonl
   rm -f benchmark_data.json
+  rm -f benchmark_data.snappy
   rm -f benchmark_data.csv.schema.json
   rm -f searchset_patterns.txt
   rm -f searchset_patterns_unicode.txt
@@ -375,7 +376,11 @@ if [ ! -r "$data" ]; then
     rm -f "$datazip"
     exit 1
   fi
-  "$sevenz_bin" e -y "$datazip"
+  if ! "$sevenz_bin" e -y "$datazip"; then
+    echo "ERROR: Failed to extract benchmark data from $datazip"
+    rm -f "$datazip"
+    exit 1
+  fi
   echo ""
 fi
 
@@ -765,7 +770,6 @@ run validate_no_schema "$qsv_bin" validate "$data"
 run validate_valid_output "$qsv_bin" validate "$data" "$schema" --valid-output -
 run validate_dynenum "$qsv_bin" validate "$data" "$dynenum_schema"
 run validate_dynenum_batchall "$qsv_bin" validate --batch 0 "$data" "$dynenum_schema"
-run validate_dynenum_no_schema "$qsv_bin" validate "$data"
 run validate_dynenum_valid_output "$qsv_bin" validate "$data" "$dynenum_schema" --valid-output -
 run --index validate_index "$qsv_bin" validate "$data" "$schema"
 run --index validate_batchall_index "$qsv_bin" validate --batch 0 "$data" "$schema"
@@ -773,7 +777,6 @@ run --index validate_no_schema_index "$qsv_bin" validate "$data"
 run --index validate_valid_output_index "$qsv_bin" validate "$data" "$schema" --valid-output -
 run --index validate_dynenum_index "$qsv_bin" validate "$data" "$dynenum_schema"
 run --index validate_dynenum_batchall_index "$qsv_bin" validate --batch 0 "$data" "$dynenum_schema"
-run --index validate_dynenum_no_schema_index "$qsv_bin" validate "$data"
 run --index validate_dynenum_valid_output_index "$qsv_bin" validate "$data" "$dynenum_schema" --valid-output -
 
 # show count of commands to be benchmarked

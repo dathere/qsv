@@ -254,7 +254,7 @@ function displaySummary() {
   console.log('   1. Test locally: Drag .mcpb file into Claude Desktop settings');
   console.log('   2. Configure qsv binary path in extension settings');
   console.log('   3. Restart Claude Desktop');
-  console.log('   4. Verify all 55 qsv skills are available');
+  console.log('   4. Verify all 54 qsv skills are available');
   console.log('\n📚 Documentation:');
   console.log('   - Getting Started Guide: docs/guides/START_HERE.md');
   console.log('   - Installation Guide: README.md');

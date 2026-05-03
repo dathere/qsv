@@ -5,6 +5,24 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.0.0] - 2026-05-03
+
+### Added
+- **`implode` command skill** — inverse of `explode`; auto-regenerated from qsv 20.0.0 USAGE text (#3733)
+
+### Changed
+- **MCP server version synced to qsv binary** — going forward, MCP server and qsv binary versions advance together starting at 20.0.0
+- **Minimum qsv version raised to 20.0.0** across all three enforcement points (`src/config.ts`, `manifest.json`, `scripts/cowork-setup.cjs`); required for the `implode` command and other 20.0.0 features
+- **Hardened MCP loader, executor, concurrency, and audit logging** (#3801) — pre-abort signal to avoid unrefed-timer hang in CI, async binary lookup so hook hard-timeout actually fires, child-process kill on hook timeout
+- **Sharpened agent definitions and unbroken plugin marketplace install** (#3811) — fixes fresh marketplace installs and reconciles command counts
+- **Command counts updated** for qsv 20.0.0 — `qsv` 71→72, `qsvmcp` 62→63 in README-MCP.md and manifest.json (skill-based count remains 54)
+- **README category table rebuilt** from skill JSON categories (#3716 follow-up); doc-drift fixes in MCP guidance
+- **Guidance made data-driven** with truncated-log markers (#3716)
+
+### Fixed
+- **Examples parser alignment and pipe-prefixed commands** (#3802) — corrects `extract_examples` parsing of multi-line examples and pipe chains; shell-escapes the apostrophe in the sqlp dollar-quoting example
+- **Notification buffering** until handlers attach (#3711 follow-up)
+
 ## [19.1.1] - 2026-04-14
 
 ### Changed

@@ -1,6 +1,6 @@
 {
   "name": "qsv-stats",
-  "version": "19.1.0",
+  "version": "20.0.0",
   "description": "Compute summary statistics & make GUARANTEED data type inferences (Null, String, Float, Integer, Date, DateTime, Boolean) for each column in a CSV (Example). Uses multithreading to go faster if an index is present. With an index, can compile \"streaming\" stats on a 1M row sample of NYC's 311 data in less than 0.25 seconds vs 2.24 seconds without one.",
   "category": "aggregation",
   "command": {

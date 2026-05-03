@@ -1,6 +1,6 @@
 {
   "name": "qsv-partition",
-  "version": "19.1.0",
+  "version": "20.0.0",
   "description": "Partition a CSV based on a column value.",
   "category": "utility",
   "command": {

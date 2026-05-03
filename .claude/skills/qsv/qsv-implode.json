@@ -1,6 +1,6 @@
 {
   "name": "qsv-implode",
-  "version": "19.1.0",
+  "version": "20.0.0",
   "description": "Implode rows by grouping on key column(s) and joining a value column with a given separator. The inverse of `explode`.",
   "category": "utility",
   "command": {

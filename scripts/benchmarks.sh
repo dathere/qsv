@@ -76,7 +76,7 @@ filestem="${data_filename%.*}"
 if ! command -v "$qsv_bin" &>/dev/null; then
   echo "qsv could not be found"
   echo "Please install qsv from https://qsv.dathere.com"
-  exit
+  exit 1
 fi
 
 # get current version of qsv
@@ -203,11 +203,11 @@ if [[ "$arg_pat" == "setup" ]]; then
       ;;
     n | N)
       echo "Not installing brew. Review https://brew.sh/"
-      exit
+      exit 1
       ;;
     *)
       echo 'Invalid entry (only y/n)'
-      exit
+      exit 1
       ;;
     esac
   fi
@@ -250,35 +250,35 @@ fi
 if ! command -v "$sevenz_bin" &>/dev/null; then
   echo "ERROR: $sevenz_bin could not be found."
   echo "Please install 7-Zip v23.01 and above or run \"./benchmarks.sh setup\" to install it."
-  exit
+  exit 1
 fi
 
 # check if hyperfine is installed
 if ! command -v hyperfine &>/dev/null; then
   echo "ERROR: hyperfine could not be found"
   echo "Please install hyperfine v1.18.0 and above or run \"./benchmarks.sh setup\" to install it."
-  exit
+  exit 1
 fi
 
 # check if awk is installed
 if ! command -v awk &>/dev/null; then
   echo "ERROR: awk could not be found"
   echo "Please install awk or run \"./benchmarks.sh setup\" to install it."
-  exit
+  exit 1
 fi
 
 # check if sed is installed
 if ! command -v sed &>/dev/null; then
   echo "ERROR: sed could not be found"
   echo "Please install sed or run \"./benchmarks.sh setup\" to install it."
-  exit
+  exit 1
 fi
 
 # check if duckdb is installed
 if ! command -v duckdb &>/dev/null; then
   echo "ERROR: duckdb could not be found"
   echo "Please install duckdb or run \"./benchmarks.sh setup\" to install it."
-  exit
+  exit 1
 fi
 
 # qsv version metadata ----------------
@@ -288,20 +288,19 @@ platform=$(echo "$raw_version" | sed 's/.*(\([a-z0-9_-]*\) compiled with Rust.*/
 # get qsv kind
 kind=$(echo "$raw_version" | sed 's/.* \([a-zA-Z-]*\)$/\1/')
 
-# get num cores & memory size
+# get num cores & memory size (mem_size is total physical memory in bytes on every platform)
 if [[ "$OSTYPE" == "darwin"* ]]; then
   # macOS
   num_cores=$(sysctl -n hw.ncpu)
   mem_size=$(sysctl -n hw.memsize)
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-  # Linux
+  # Linux - column 2 of /Mem/ in `free -b` is total memory in bytes
   num_cores=$(nproc)
-  mem_size=$(free -b | awk '/Mem/ {print $7}')
+  mem_size=$(free -b | awk '/Mem/ {print $2}')
 elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-  # Windows
+  # Windows - TotalPhysicalMemory is reported in bytes
   num_cores=$(wmic cpu get NumberOfCores | grep -Eo '^[0-9]+')
-  mem_size=$(wmic OS get FreePhysicalMemory | grep -Eo '[0-9]+')
-  mem_size=$((mem_size * 1024))
+  mem_size=$(wmic computersystem get TotalPhysicalMemory | grep -Eo '[0-9]+')
 else
   echo "Unsupported operating system: $OSTYPE"
   exit 1
@@ -327,6 +326,7 @@ function cleanup_files {
   rm -f benchmark_work.*
   rm -r -f benchmark_work
   rm -f extsort_sorted.csv
+  rm -r -f /tmp/partitioned
 }
 
 # if arg_pat is equal to "reset", download and prepare the benchmark data again
@@ -341,7 +341,7 @@ if [[ "$arg_pat" == "reset" ]]; then
   rm -f benchmark_data.xlsx
   rm -f benchmark_data.jsonl
   rm -f benchmark_data.json
-  rm -f benchmark_data.schema.json
+  rm -f benchmark_data.csv.schema.json
   rm -f searchset_patterns.txt
   rm -f searchset_patterns_unicode.txt
   echo "> Benchmark data reset..."
@@ -363,7 +363,11 @@ cleanup_files
 
 if [ ! -r "$data" ]; then
   echo "> Downloading Benchmark data..."
-  curl -sS "$benchmark_data_url" >"$datazip"
+  if ! curl --fail -sS "$benchmark_data_url" -o "$datazip"; then
+    echo "ERROR: Failed to download benchmark data from $benchmark_data_url"
+    rm -f "$datazip"
+    exit 1
+  fi
   "$sevenz_bin" e -y "$datazip"
   echo ""
 fi
@@ -381,7 +385,11 @@ echo ""
 
 if [ ! -r communityboards.csv ]; then
   echo "> Downloading community board data..."
-  curl -sS https://raw.githubusercontent.com/wiki/dathere/qsv/files/communityboards.csv >communityboards.csv
+  if ! curl --fail -sS https://raw.githubusercontent.com/wiki/dathere/qsv/files/communityboards.csv -o communityboards.csv; then
+    echo "ERROR: Failed to download communityboards.csv"
+    rm -f communityboards.csv
+    exit 1
+  fi
   echo ""
 fi
 
@@ -422,7 +430,7 @@ if [ ! -r benchmark_data.json ]; then
 fi
 
 if [ ! -r benchmark_data.csv.schema.json ]; then
-  echo "   benchmark_data.schema.json..."
+  echo "   benchmark_data.csv.schema.json..."
   "$qsv_benchmarker_bin" schema "$data" --stdout >benchmark_data.csv.schema.json
 fi
 
@@ -444,6 +452,9 @@ fi
 echo ""
 
 schema=benchmark_data.csv.schema.json
+# dynenum_schema is a hand-curated fixture checked into scripts/. Unlike $schema above, it
+# is NOT auto-regenerated during prep — it tweaks the auto-generated schema with dynamicEnum
+# constraints to exercise that validate code path. Edit the file by hand if the dataset changes.
 dynenum_schema=benchmark_data-dynenum.csv.schema.json
 
 commands_without_index=()
@@ -605,7 +616,6 @@ run luau_filter_no_globals "$qsv_bin" luau filter --no-globals \"Location == \'\
 run luau_filter_no_globals_colidx "$qsv_bin" luau filter --no-globals --colindex \"Location == \'\'\" "$data"
 run luau_multi "$qsv_bin" luau map dow,hourday,weekno "file:dt_format.luau" "$data"
 run luau_multi_colidx "$qsv_bin" luau map dow,hourday,weekno "file:dt_format.luau" --colindex "$data"
-run luau_filter_no_globals_no_colidx "$qsv_bin" luau filter --no-globals \"Location == \'\'\" "$data"
 run luau_multi_no_globals "$qsv_bin" luau map dow,hourday,weekno --no-globals "file:dt_format.luau" "$data"
 run luau_multi_no_globals_colidx "$qsv_bin" luau map dow,hourday,weekno --no-globals --colindex "file:dt_format.luau" "$data"
 run luau_script "$qsv_bin" luau map turnaround_time "file:turnaround_time.luau" "$data"
@@ -690,7 +700,7 @@ run split_kbsize "$qsv_bin" split --kb-size 10000 split_tempdir_kbs "$data"
 run --index split_index "$qsv_bin" split --size 50000 split_tempdir_idx "$data"
 run --index split_index_j1 "$qsv_bin" split --size 50000 -j 1 split_tempdir_idx_j1 "$data"
 run --index split_chunks_index "$qsv_bin" split --chunks 20 split_tempdir_chunks_idx "$data"
-run --index split_chunks_index_j1 "$qsv_bin" split --chunks 20 -j 1 split_tempdir_chunks_idx_j1
+run --index split_chunks_index_j1 "$qsv_bin" split --chunks 20 -j 1 split_tempdir_chunks_idx_j1 "$data"
 run sqlp "$qsv_bin" sqlp "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
 run sqlp_aggregations "$qsv_bin" sqlp "$data" -q --infer-len 100000 '"select Borough, count(*) from _t_1 where \"Complaint Type\"='\''Noise'\'' group by Borough"'
 run sqlp_aggregations_use_schema_cache "$qsv_bin" sqlp "$data" -q --infer-len 100000 --cache-schema '"select Borough, count(*) from _t_1 where \"Complaint Type\"='\''Noise'\'' group by Borough"'
@@ -748,7 +758,7 @@ run validate_no_schema "$qsv_bin" validate "$data"
 run validate_valid_output "$qsv_bin" validate "$data" "$schema" --valid-output -
 run validate_dynenum "$qsv_bin" validate "$data" "$dynenum_schema"
 run validate_dynenum_batchall "$qsv_bin" validate --batch 0 "$data" "$dynenum_schema"
-run validate_dynenum_no_schema "$qsv_bin" validate "$data" "$dynenum_schema"
+run validate_dynenum_no_schema "$qsv_bin" validate "$data"
 run validate_dynenum_valid_output "$qsv_bin" validate "$data" "$dynenum_schema" --valid-output -
 run --index validate_index "$qsv_bin" validate "$data" "$schema"
 run --index validate_batchall_index "$qsv_bin" validate --batch 0 "$data" "$schema"
@@ -756,7 +766,7 @@ run --index validate_no_schema_index "$qsv_bin" validate "$data"
 run --index validate_valid_output_index "$qsv_bin" validate "$data" "$schema" --valid-output -
 run --index validate_dynenum_index "$qsv_bin" validate "$data" "$dynenum_schema"
 run --index validate_dynenum_batchall_index "$qsv_bin" validate --batch 0 "$data" "$dynenum_schema"
-run --index validate_dynenum_no_schema_index "$qsv_bin" validate "$data" "$dynenum_schema"
+run --index validate_dynenum_no_schema_index "$qsv_bin" validate "$data"
 run --index validate_dynenum_valid_output_index "$qsv_bin" validate "$data" "$dynenum_schema" --valid-output -
 
 # show count of commands to be benchmarked

@@ -8,7 +8,7 @@
 // synonyms through iteration).
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -95,8 +95,15 @@ fn is_valid_long_flag(name: &str) -> bool {
 ///   `-H, --human-readable   Description`
 ///
 /// Returns a map of long-flag-name → short-char (e.g., "delimiter" → 'd').
+///
+/// Conflict resolution: when the same short character appears against more
+/// than one long in a single USAGE block (e.g., `qsv to` documents
+/// `-d, --drop` and then later `-d, --delimiter`), the *first textual
+/// occurrence* wins. This matches the per-command author intent and is
+/// independent of the iteration order used by `build_command_from_usage`.
 fn extract_short_flags(usage_text: &str) -> HashMap<String, char> {
     let mut map = HashMap::new();
+    let mut taken_shorts: HashSet<char> = HashSet::new();
 
     for line in usage_text.lines() {
         let trimmed = line.trim();
@@ -119,7 +126,12 @@ fn extract_short_flags(usage_text: &str) -> HashMap<String, char> {
                         .chars()
                         .take_while(|c| *c != ' ' && *c != '=' && *c != '<' && *c != '\t')
                         .collect();
-                    if !long_name.is_empty() && is_valid_long_flag(&long_name) {
+                    if !long_name.is_empty()
+                        && is_valid_long_flag(&long_name)
+                        && !map.contains_key(&long_name)
+                        && !taken_shorts.contains(&short_char)
+                    {
+                        taken_shorts.insert(short_char);
                         map.insert(long_name, short_char);
                     }
                 }
@@ -143,7 +155,25 @@ fn build_command_from_usage(command_name: &str, usage_text: &str) -> Result<Comm
     let mut subcommands: Vec<String> = Vec::new();
     let mut used_shorts: Vec<char> = Vec::new();
 
-    for (atom, opts) in parser.descs.iter() {
+    // Collect and sort descs entries so the resulting clap Command is built
+    // in a deterministic order. SynonymMap's iter() does not guarantee
+    // stability across runs, which previously caused noisy diffs in the
+    // generated completion files (e.g., when two long flags compete for the
+    // same short alias, the "winner" could flip between regenerations).
+    let mut descs: Vec<_> = parser.descs.iter().collect();
+    descs.sort_by(|(a, _), (b, _)| {
+        fn key(atom: &Atom) -> (u8, &str) {
+            match atom {
+                Atom::Long(name) => (0, name.as_str()),
+                Atom::Command(name) => (1, name.as_str()),
+                Atom::Positional(name) => (2, name.as_str()),
+                Atom::Short(_) => (3, ""),
+            }
+        }
+        key(a).cmp(&key(b))
+    });
+
+    for (atom, opts) in descs {
         match atom {
             Atom::Short(_) => {
                 // Short flags are handled via the short_flags map when

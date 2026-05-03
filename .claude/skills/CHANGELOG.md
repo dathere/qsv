@@ -11,8 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`implode` command skill** — inverse of `explode`; auto-regenerated from qsv 20.0.0 USAGE text (#3733)
 
 ### Changed
-- **MCP server version synced to qsv binary** — going forward, MCP server and qsv binary versions advance together starting at 20.0.0
+- **BREAKING: MCP server version synced to qsv binary** — versioning policy change. MCP server and qsv binary versions now advance together starting at 20.0.0. Consumers pinning the MCP server independently (e.g., `^19.1.0`) will see a major-version jump from 19.1.1 → 20.0.0.
 - **Minimum qsv version raised to 20.0.0** across all three enforcement points (`src/config.ts`, `manifest.json`, `scripts/cowork-setup.cjs`); required for the `implode` command and other 20.0.0 features
+- **Regenerated all skill JSONs from qsv 20.0.0 USAGE text** — beyond adding `implode`, the regeneration also picked up examples-parser fixes (#3802) for `qsv-sqlp`, `qsv-split`, `qsv-exclude` and minor description/argument refinements across other skills (#3793, #3734)
 - **Hardened MCP loader, executor, concurrency, and audit logging** (#3801) — pre-abort signal to avoid unrefed-timer hang in CI, async binary lookup so hook hard-timeout actually fires, child-process kill on hook timeout
 - **Sharpened agent definitions and unbroken plugin marketplace install** (#3811) — fixes fresh marketplace installs and reconciles command counts
 - **Command counts updated** for qsv 20.0.0 — `qsv` 71→72, `qsvmcp` 62→63 in README-MCP.md and manifest.json (skill-based count remains 54)

@@ -8,7 +8,7 @@
 // synonyms through iteration).
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -95,8 +95,15 @@ fn is_valid_long_flag(name: &str) -> bool {
 ///   `-H, --human-readable   Description`
 ///
 /// Returns a map of long-flag-name → short-char (e.g., "delimiter" → 'd').
+///
+/// Conflict resolution: when the same short character appears against more
+/// than one long in a single USAGE block (e.g., `qsv to` documents
+/// `-d, --drop` and then later `-d, --delimiter`), the *first textual
+/// occurrence* wins. This matches the per-command author intent and is
+/// independent of the iteration order used by `build_command_from_usage`.
 fn extract_short_flags(usage_text: &str) -> HashMap<String, char> {
     let mut map = HashMap::new();
+    let mut taken_shorts: HashSet<char> = HashSet::new();
 
     for line in usage_text.lines() {
         let trimmed = line.trim();
@@ -119,7 +126,12 @@ fn extract_short_flags(usage_text: &str) -> HashMap<String, char> {
                         .chars()
                         .take_while(|c| *c != ' ' && *c != '=' && *c != '<' && *c != '\t')
                         .collect();
-                    if !long_name.is_empty() && is_valid_long_flag(&long_name) {
+                    if !long_name.is_empty()
+                        && is_valid_long_flag(&long_name)
+                        && !map.contains_key(&long_name)
+                        && !taken_shorts.contains(&short_char)
+                    {
+                        taken_shorts.insert(short_char);
                         map.insert(long_name, short_char);
                     }
                 }

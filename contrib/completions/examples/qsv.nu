@@ -1689,8 +1689,8 @@ module completions {
     --all-strings(-A)
     --compress-level: string
     --compression: string
-    --delimiter(-d): string
-    --drop
+    --delimiter: string
+    --drop(-d)
     --dump(-u)
     --evolve(-e)
     --infer-len: string
@@ -1711,8 +1711,8 @@ module completions {
     --all-strings(-A)
     --compress-level: string
     --compression: string
-    --delimiter(-d): string
-    --drop
+    --delimiter: string
+    --drop(-d)
     --dump(-u)
     --evolve(-e)
     --infer-len: string
@@ -1733,8 +1733,8 @@ module completions {
     --all-strings(-A)
     --compress-level: string
     --compression: string
-    --delimiter(-d): string
-    --drop
+    --delimiter: string
+    --drop(-d)
     --dump(-u)
     --evolve(-e)
     --infer-len: string
@@ -1755,8 +1755,8 @@ module completions {
     --all-strings(-A)
     --compress-level: string
     --compression: string
-    --delimiter(-d): string
-    --drop
+    --delimiter: string
+    --drop(-d)
     --dump(-u)
     --evolve(-e)
     --infer-len: string
@@ -1777,8 +1777,8 @@ module completions {
     --all-strings(-A)
     --compress-level: string
     --compression: string
-    --delimiter(-d): string
-    --drop
+    --delimiter: string
+    --drop(-d)
     --dump(-u)
     --evolve(-e)
     --infer-len: string
@@ -1799,8 +1799,8 @@ module completions {
     --all-strings(-A)
     --compress-level: string
     --compression: string
-    --delimiter(-d): string
-    --drop
+    --delimiter: string
+    --drop(-d)
     --dump(-u)
     --evolve(-e)
     --infer-len: string
@@ -1821,8 +1821,8 @@ module completions {
     --all-strings(-A)
     --compress-level: string
     --compression: string
-    --delimiter(-d): string
-    --drop
+    --delimiter: string
+    --drop(-d)
     --dump(-u)
     --evolve(-e)
     --infer-len: string

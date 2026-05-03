@@ -2695,7 +2695,6 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--compress-level=[]: :_default' \
 '--compression=[]: :_default' \
-'-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '--infer-len=[]: :_default' \
 '-j+[]: :_default' \
@@ -2710,6 +2709,7 @@ _arguments "${_arguments_options[@]}" : \
 '--table=[]: :_default' \
 '-A[]' \
 '--all-strings[]' \
+'-d[]' \
 '--drop[]' \
 '-u[]' \
 '--dump[]' \
@@ -2740,7 +2740,6 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--compress-level=[]: :_default' \
 '--compression=[]: :_default' \
-'-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '--infer-len=[]: :_default' \
 '-j+[]: :_default' \
@@ -2755,6 +2754,7 @@ _arguments "${_arguments_options[@]}" : \
 '--table=[]: :_default' \
 '-A[]' \
 '--all-strings[]' \
+'-d[]' \
 '--drop[]' \
 '-u[]' \
 '--dump[]' \
@@ -2777,7 +2777,6 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--compress-level=[]: :_default' \
 '--compression=[]: :_default' \
-'-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '--infer-len=[]: :_default' \
 '-j+[]: :_default' \
@@ -2792,6 +2791,7 @@ _arguments "${_arguments_options[@]}" : \
 '--table=[]: :_default' \
 '-A[]' \
 '--all-strings[]' \
+'-d[]' \
 '--drop[]' \
 '-u[]' \
 '--dump[]' \
@@ -2814,7 +2814,6 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--compress-level=[]: :_default' \
 '--compression=[]: :_default' \
-'-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '--infer-len=[]: :_default' \
 '-j+[]: :_default' \
@@ -2829,6 +2828,7 @@ _arguments "${_arguments_options[@]}" : \
 '--table=[]: :_default' \
 '-A[]' \
 '--all-strings[]' \
+'-d[]' \
 '--drop[]' \
 '-u[]' \
 '--dump[]' \
@@ -2851,7 +2851,6 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--compress-level=[]: :_default' \
 '--compression=[]: :_default' \
-'-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '--infer-len=[]: :_default' \
 '-j+[]: :_default' \
@@ -2866,6 +2865,7 @@ _arguments "${_arguments_options[@]}" : \
 '--table=[]: :_default' \
 '-A[]' \
 '--all-strings[]' \
+'-d[]' \
 '--drop[]' \
 '-u[]' \
 '--dump[]' \
@@ -2888,7 +2888,6 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--compress-level=[]: :_default' \
 '--compression=[]: :_default' \
-'-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '--infer-len=[]: :_default' \
 '-j+[]: :_default' \
@@ -2903,6 +2902,7 @@ _arguments "${_arguments_options[@]}" : \
 '--table=[]: :_default' \
 '-A[]' \
 '--all-strings[]' \
+'-d[]' \
 '--drop[]' \
 '-u[]' \
 '--dump[]' \
@@ -2925,7 +2925,6 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--compress-level=[]: :_default' \
 '--compression=[]: :_default' \
-'-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '--infer-len=[]: :_default' \
 '-j+[]: :_default' \
@@ -2940,6 +2939,7 @@ _arguments "${_arguments_options[@]}" : \
 '--table=[]: :_default' \
 '-A[]' \
 '--all-strings[]' \
+'-d[]' \
 '--drop[]' \
 '-u[]' \
 '--dump[]' \

@@ -1421,7 +1421,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand template" -s p -l progressbar
 complete -c qsv -n "__fish_qsv_using_subcommand template" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -l compress-level -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -l compression -r
-complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -l infer-len -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -s j -l jobs -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -s s -l schema -r
@@ -1429,7 +1429,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcomma
 complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -s c -l stats-csv -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -s t -l table -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -s A -l all-strings
-complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -l drop
+complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -s d -l drop
 complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -s u -l dump
 complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -s e -l evolve
 complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -s i -l pipe
@@ -1447,7 +1447,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcomma
 complete -c qsv -n "__fish_qsv_using_subcommand to; and not __fish_seen_subcommand_from datapackage ods parquet postgres sqlite xlsx help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -l compress-level -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -l compression -r
-complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -l infer-len -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -s j -l jobs -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -s s -l schema -r
@@ -1455,7 +1455,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_f
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -s c -l stats-csv -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -s t -l table -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -s A -l all-strings
-complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -l drop
+complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -s d -l drop
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -s u -l dump
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -s e -l evolve
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -s i -l pipe
@@ -1466,7 +1466,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_f
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from datapackage" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -l compress-level -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -l compression -r
-complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -l infer-len -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -s j -l jobs -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -s s -l schema -r
@@ -1474,7 +1474,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_f
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -s c -l stats-csv -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -s t -l table -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -s A -l all-strings
-complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -l drop
+complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -s d -l drop
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -s u -l dump
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -s e -l evolve
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -s i -l pipe
@@ -1485,7 +1485,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_f
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from ods" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -l compress-level -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -l compression -r
-complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -l infer-len -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -s j -l jobs -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -s s -l schema -r
@@ -1493,7 +1493,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_f
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -s c -l stats-csv -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -s t -l table -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -s A -l all-strings
-complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -l drop
+complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -s d -l drop
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -s u -l dump
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -s e -l evolve
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -s i -l pipe
@@ -1504,7 +1504,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_f
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from parquet" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -l compress-level -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -l compression -r
-complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -l infer-len -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -s j -l jobs -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -s s -l schema -r
@@ -1512,7 +1512,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_f
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -s c -l stats-csv -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -s t -l table -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -s A -l all-strings
-complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -l drop
+complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -s d -l drop
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -s u -l dump
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -s e -l evolve
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -s i -l pipe
@@ -1523,7 +1523,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_f
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from postgres" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -l compress-level -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -l compression -r
-complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -l infer-len -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -s j -l jobs -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -s s -l schema -r
@@ -1531,7 +1531,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_f
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -s c -l stats-csv -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -s t -l table -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -s A -l all-strings
-complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -l drop
+complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -s d -l drop
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -s u -l dump
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -s e -l evolve
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -s i -l pipe
@@ -1542,7 +1542,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_f
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from sqlite" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -l compress-level -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -l compression -r
-complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -l infer-len -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -s j -l jobs -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -s s -l schema -r
@@ -1550,7 +1550,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_f
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -s c -l stats-csv -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -s t -l table -r
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -s A -l all-strings
-complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -l drop
+complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -s d -l drop
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -s u -l dump
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -s e -l evolve
 complete -c qsv -n "__fish_qsv_using_subcommand to; and __fish_seen_subcommand_from xlsx" -s i -l pipe

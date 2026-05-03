@@ -8237,7 +8237,7 @@ const completion: Fig.Spec = {
               },
             },
             {
-              name: ["-d", "--delimiter"],
+              name: "--delimiter",
               isRepeatable: true,
               args: {
                 name: "delimiter",
@@ -8296,7 +8296,7 @@ const completion: Fig.Spec = {
               name: ["-A", "--all-strings"],
             },
             {
-              name: "--drop",
+              name: ["-d", "--drop"],
             },
             {
               name: ["-u", "--dump"],
@@ -8345,7 +8345,7 @@ const completion: Fig.Spec = {
               },
             },
             {
-              name: ["-d", "--delimiter"],
+              name: "--delimiter",
               isRepeatable: true,
               args: {
                 name: "delimiter",
@@ -8404,7 +8404,7 @@ const completion: Fig.Spec = {
               name: ["-A", "--all-strings"],
             },
             {
-              name: "--drop",
+              name: ["-d", "--drop"],
             },
             {
               name: ["-u", "--dump"],
@@ -8453,7 +8453,7 @@ const completion: Fig.Spec = {
               },
             },
             {
-              name: ["-d", "--delimiter"],
+              name: "--delimiter",
               isRepeatable: true,
               args: {
                 name: "delimiter",
@@ -8512,7 +8512,7 @@ const completion: Fig.Spec = {
               name: ["-A", "--all-strings"],
             },
             {
-              name: "--drop",
+              name: ["-d", "--drop"],
             },
             {
               name: ["-u", "--dump"],
@@ -8561,7 +8561,7 @@ const completion: Fig.Spec = {
               },
             },
             {
-              name: ["-d", "--delimiter"],
+              name: "--delimiter",
               isRepeatable: true,
               args: {
                 name: "delimiter",
@@ -8620,7 +8620,7 @@ const completion: Fig.Spec = {
               name: ["-A", "--all-strings"],
             },
             {
-              name: "--drop",
+              name: ["-d", "--drop"],
             },
             {
               name: ["-u", "--dump"],
@@ -8669,7 +8669,7 @@ const completion: Fig.Spec = {
               },
             },
             {
-              name: ["-d", "--delimiter"],
+              name: "--delimiter",
               isRepeatable: true,
               args: {
                 name: "delimiter",
@@ -8728,7 +8728,7 @@ const completion: Fig.Spec = {
               name: ["-A", "--all-strings"],
             },
             {
-              name: "--drop",
+              name: ["-d", "--drop"],
             },
             {
               name: ["-u", "--dump"],
@@ -8777,7 +8777,7 @@ const completion: Fig.Spec = {
               },
             },
             {
-              name: ["-d", "--delimiter"],
+              name: "--delimiter",
               isRepeatable: true,
               args: {
                 name: "delimiter",
@@ -8836,7 +8836,7 @@ const completion: Fig.Spec = {
               name: ["-A", "--all-strings"],
             },
             {
-              name: "--drop",
+              name: ["-d", "--drop"],
             },
             {
               name: ["-u", "--dump"],
@@ -8912,7 +8912,7 @@ const completion: Fig.Spec = {
           },
         },
         {
-          name: ["-d", "--delimiter"],
+          name: "--delimiter",
           isRepeatable: true,
           args: {
             name: "delimiter",
@@ -8971,7 +8971,7 @@ const completion: Fig.Spec = {
           name: ["-A", "--all-strings"],
         },
         {
-          name: "--drop",
+          name: ["-d", "--drop"],
         },
         {
           name: ["-u", "--dump"],

@@ -8977,10 +8977,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --infer-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -9048,10 +9044,6 @@ _qsv() {
                     return 0
                     ;;
                 --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9237,10 +9229,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --infer-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -9308,10 +9296,6 @@ _qsv() {
                     return 0
                     ;;
                 --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -9385,10 +9369,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --infer-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -9459,10 +9439,6 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                -d)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
                 --infer-len)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -9530,10 +9506,6 @@ _qsv() {
                     return 0
                     ;;
                 --delimiter)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                -d)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

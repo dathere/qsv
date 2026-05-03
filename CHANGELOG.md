@@ -4,7 +4,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [20.0.0] - 2026-05-02
+## [20.0.0] - 2026-05-03 🧹 The "Spring Cleaning" Release 🌱
+
+Using Claude Code, [roborev](https://www.roborev.io/), [Serena](https://oraios.github.io/serena), [Context7](https://context7.com) and GitHub Copilot orchestrated using an adversarial review workflow — we systematically audited every command for correctness, safety, and performance. Over the past four weeks, we did the first end-to-end pass over the qsv codebase. The result is the largest correctness-and-safety sweep in qsv's history: ALL commands were touched by review-driven cleanups, with dozens of latent bugs, panic paths, and performance cliffs swept out, while adding more than 250 new tests across the board.
+
+This is a major version bump because that sweep also surfaced four user-visible behaviors that were demonstrably wrong and could not be fixed without breaking compatibility:
+
+- `safenames` verify-mode now correctly counts duplicate-suffix renames as unsafe (previously under-reported).
+- `enum --hash` is now collision-resistant across multi-column inputs (previously ["ab","c"] and ["a","bc"] hashed identically).
+- `excel --metadata csv` column ordering now actually matches its header row (previously the type, visible, and headers columns held each other's values).
+- `util::safe_header_names` now enforces its 60-char cap in bytes end-to-end (previously chars-based, allowing UTF-8 names up to 240 bytes — past Postgres' NAMEDATALEN).
+
+Plus a few smaller but breaking corrections: `headers --intersect` is renamed to `--union` (the flag never computed an intersection), `luau qsv_loadcsv headersvare` now 1-indexed per Lua convention, and MSRV is bumped to Rust 1.95.
+
+Beyond the cleanup, this release adds one new top-level command:
+
+- NEW `implode` command: the inverse of `explode`. Groups rows by key column(s) and joins a value column into a single delimited string per group — useful for collapsing normalized output back into compact form.
+
+And a notable performance win:
+
+- `frequency`: parallel tree-reduce of partial frequency tables delivers a ~1.3x speedup on multi-core machines. Smaller per-command perf wins also landed in `fill` (+22%), `datefmt` (+9%), `cat`, `dedup`, `replace`, `search/searchset`, and `transpose`.
+
+Detailed MCP Server and Cowork Plugin changes are documented in the MCP Server/Cowork Plugin CHANGELOG.
+
+> [!IMPORTANT]
+> This is a major release with breaking changes. Pipelines that consume `qsv excel --metadata csv` by column position, store `qsv enum --hash` digests across versions, parse `qsv safenames` verify-mode output, or invoke `qsv headers --intersect` will need updates. See the Changed and Removed sections below for migration notes.
+
+---
 
 ### Added
 - `implode`: new command — inverse of `explode` [#3733](https://github.com/dathere/qsv/pull/3733) (closes [#917](https://github.com/dathere/qsv/issues/917))
@@ -19,7 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING** `headers`: rename `--intersect` to `--union`. The flag has always computed a deduplicated union of headers across inputs, not a true set intersection — the name was a long-standing misnomer. `--intersect` is removed entirely (no alias) given the surrounding breaking-change window. Migration: replace `qsv headers --intersect …` with `qsv headers --union …`; output is unchanged.
 - **BREAKING** `safenames`: verify-mode (`--mode v / V / j / J`) outputs change. (1) Verify counts now include header positions that would be renamed by the duplicate-suffix pass — inputs containing duplicate column names will report higher unsafe counts than earlier qsv versions; the count now matches what `--mode a` would actually rewrite. (2) `--mode V / j / J` displays unsafe-header strings with leading/trailing whitespace and surrounding `"` already trimmed (matching what the safe-rename pass actually evaluates), and `duplicate_headers` is now sorted alphabetically rather than appearing in undefined HashMap iteration order. Pipelines that parsed verbose/JSON output and depended on the old ordering or untrimmed strings must update.
 - **BREAKING** `util::safe_header_names`: the 60-length cap is now enforced in **bytes** on the *final* name, including any duplicate-disambiguation suffix. Previously the truncation was chars-based (`take(60).sum()`) and only applied to the base, so non-ASCII headers could produce up to ~240-byte names and duplicate-disambiguated headers added `_<n>` *after* truncation, pushing past Postgres' `NAMEDATALEN` (63 bytes). Now the rewrite path lowercases and prepends the leading-`_` prefix *before* truncating, then snaps to a UTF-8 char boundary at ≤60 bytes. ASCII-only inputs see the same output as before for non-suffixed cases. Long ASCII headers that previously generated 61–63-char suffixed variants will be 1–2 chars shorter at the boundary. Headers containing multibyte UTF-8 (CJK, accented chars, emoji) that previously produced names >60 bytes will now be aggressively trimmed to fit. Affects every caller (`safenames`, `applydp`, `apply`, `fetch`, `python`); stored mappings keyed on the old over-long forms will not match.
-- **BREAKING** Default allocator changed from `mimalloc` to `jemallocator` — runtime memory-use characteristics may differ for memory-bound workloads
 - **BREAKING** MSRV bumped to Rust 1.95
 - `describegpt`: split `process_phase_output` into per-branch helpers (dictionary context-only, full dictionary, JSON, TSV, TOON, Markdown). No behavior change — same output, smaller functions.
 - `luau`: `qsv_coalesce` now stringifies non-string values (numbers and booleans render via `to_string`; nil / arrays / objects are skipped). Previously, numbers and booleans were silently treated as missing values via `as_str().unwrap_or_default()`. Scripts relying on `qsv_coalesce(some_bool, fallback)` to skip booleans will now return `"true"`/`"false"` for the boolean.
@@ -102,7 +127,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Dependencies
 - Bump polars to 0.53.0 (multiple bumps; latest tracks py-1.40.1)
-- Bump `mlua` from 0.10.0 to 0.11.0-rc.1; Luau from 709 to 716
+- Bump `mlua` to 0.12.0-rc.1; Luau from 709 to 716
 - Bump `zip` from 7 to 8
 - Switch csv crate to qsv-tuned fork (replaces ryu with zmij)
 - Bump `jsonschema` from 0.46.1 to 0.46.4 [#3723](https://github.com/dathere/qsv/pull/3723) [#3778](https://github.com/dathere/qsv/pull/3778) [#3804](https://github.com/dathere/qsv/pull/3804)

@@ -8,6 +8,8 @@ When unsure how to use a project tool or publish workflow, check existing docs f
 
 When counting items in documentation (tools, commands, features), always verify counts by explicitly listing and numbering each item. Never estimate counts.
 
+Help files (e.g., command help docs, ToC entries) are auto-generated. Do NOT manually create or edit them — run the help generator instead and verify output.
+
 ## Tools & commands
 
 - Build qsv: `cargo build --locked --bin qsv -F all_features`
@@ -22,6 +24,7 @@ When counting items in documentation (tools, commands, features), always verify 
 - Test single command: `cargo t stats -F all_features`
 - Test specific function: `cargo t test_stats::stats_cache -F all_features`
 - Regenerate MCP skill JSONs: `qsv --update-mcp-skills`
+- Regenerate Help and ToC entries: `qsv --generate-help-md`
 
 ## Workflow requirements
 
@@ -45,3 +48,8 @@ For Copilot/code review responses: apply the fix, run tests, commit, and reply t
 ## Debugging
 
 When debugging, state your hypothesis explicitly before investigating. If the first hypothesis fails, don't try variations of the same idea — step back and consider fundamentally different root causes.
+
+## MCP Tool Usage
+
+Always use Serena MCP tools (find_symbol, etc.) for code navigation and Context7 MCP for library documentation lookups. These tools are configured and should be preferred over Grep/Read for symbol-level exploration.
+

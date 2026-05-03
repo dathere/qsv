@@ -88,3 +88,7 @@ Before publishing, packaging, or releasing plugins, always read the relevant doc
 ## Debugging Guidelines
 
 When debugging, form a hypothesis and verify it before moving to the next. Do not cycle through multiple wrong hypotheses (version mismatch, PATH issues, settings files) without evidence. State your reasoning before each investigation step.
+
+## MCP Tool Usage
+
+Always use Serena MCP tools (find_symbol, etc.) for code navigation and Context7 MCP for library documentation lookups. These tools are configured and should be preferred over Grep/Read for symbol-level exploration.

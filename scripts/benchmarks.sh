@@ -298,9 +298,16 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
   num_cores=$(nproc)
   mem_size=$(free -b | awk '/Mem/ {print $2}')
 elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-  # Windows - TotalPhysicalMemory is reported in bytes
-  num_cores=$(wmic cpu get NumberOfCores | grep -Eo '^[0-9]+')
-  mem_size=$(wmic computersystem get TotalPhysicalMemory | grep -Eo '[0-9]+')
+  # Windows - prefer PowerShell since wmic is deprecated/removed on recent
+  # Windows 11 / Server 2025 builds. Fall back to wmic on legacy systems.
+  # TotalPhysicalMemory is reported in bytes.
+  if command -v powershell &>/dev/null; then
+    num_cores=$(powershell -NoProfile -Command "(Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum" | tr -d '\r')
+    mem_size=$(powershell -NoProfile -Command "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory" | tr -d '\r')
+  else
+    num_cores=$(wmic cpu get NumberOfCores | grep -Eo '^[0-9]+')
+    mem_size=$(wmic computersystem get TotalPhysicalMemory | grep -Eo '[0-9]+')
+  fi
 else
   echo "Unsupported operating system: $OSTYPE"
   exit 1
@@ -326,7 +333,7 @@ function cleanup_files {
   rm -f benchmark_work.*
   rm -r -f benchmark_work
   rm -f extsort_sorted.csv
-  rm -r -f /tmp/partitioned
+  rm -r -f partitioned
 }
 
 # if arg_pat is equal to "reset", download and prepare the benchmark data again
@@ -629,7 +636,7 @@ run --index moarstats_bivariate_index "$qsv_bin" moarstats --bivariate "$data"
 run --index moarstats_bivariate_all_index "$qsv_bin" moarstats --bivariate --bivariate-stats all "$data"
 run --index moarstats_advanced_bivariate_index "$qsv_bin" moarstats --advanced --bivariate "$data"
 run --index moarstats_advanced_bivariate_all_index "$qsv_bin" moarstats --advanced --bivariate --bivariate-stats all "$data"
-run partition "$qsv_bin" partition \'Community Board\' /tmp/partitioned "$data"
+run partition "$qsv_bin" partition \'Community Board\' partitioned "$data"
 run pivotp_basic "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" "$data"
 run pivotp_smart "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" --agg smart "$data"
 run pivotp_dates "$qsv_bin" pivotp \"Created Date\" --index "Borough" --values \"Complaint Type\" --try-parsedates "$data"

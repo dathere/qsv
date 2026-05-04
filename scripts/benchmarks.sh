@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=7.2.0
+bm_version=8.0.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads

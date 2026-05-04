@@ -240,6 +240,7 @@ Common options:
                            CSV into memory using CONSERVATIVE heuristics.
 "#;
 
+use core::hint::cold_path;
 use std::{fs, io, str::FromStr, sync::OnceLock};
 
 use crossbeam_channel;
@@ -2711,6 +2712,7 @@ impl Args {
                             field_buffer.extend_from_slice(string_buf.as_bytes());
                             weighted_add(map, field_buffer, weight);
                         } else {
+                            cold_path();
                             weighted_add(map, field, weight);
                         }
                     }
@@ -2723,6 +2725,7 @@ impl Args {
                             field_buffer.extend_from_slice(string_buf.as_bytes());
                             weighted_add(map, field_buffer, weight);
                         } else {
+                            cold_path();
                             weighted_add(map, trim_bs_whitespace(field), weight);
                         }
                     }
@@ -2858,6 +2861,7 @@ impl Args {
                             field_buffer.extend_from_slice(string_buf.as_bytes());
                             ftab.add_borrowed(field_buffer);
                         } else {
+                            cold_path();
                             ftab.add_borrowed(field);
                         }
                     }
@@ -2870,6 +2874,7 @@ impl Args {
                             field_buffer.extend_from_slice(string_buf.as_bytes());
                             ftab.add_borrowed(field_buffer);
                         } else {
+                            cold_path();
                             ftab.add_borrowed(trim_bs_whitespace(field));
                         }
                     }

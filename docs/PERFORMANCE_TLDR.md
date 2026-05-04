@@ -37,11 +37,12 @@ qsv is designed to handle large files efficiently, but some operations need to l
 
 **Commands that need full memory loading (marked with 🤯):**
 - `dedup` (unless using --sorted)
+- `pragmastat`
 - `reverse`
 - `sort`
 - `stats` (for advanced statistics)
 - `table`
-- `transpose`
+- `transpose` (unless using --multipass)
 
 **Memory-intensive commands (marked with 😣):**
 - `frequency`

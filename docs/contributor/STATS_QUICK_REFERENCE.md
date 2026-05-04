@@ -10,7 +10,7 @@ The `stats` command in qsv is a high-performance CSV statistics engine that:
 - **Supports 44+ output columns** with detailed statistics
 
 ## File Location
-`src/cmd/stats.rs` (~4,716 lines)
+`src/cmd/stats.rs` (~4,873 lines)
 
 ## Key Entry Points
 
@@ -174,7 +174,7 @@ Bob,25,87.2" | ./target/release/qsv stats
 - Full technical guide: `STATS_TECHNICAL_GUIDE.md` (this repo)
 - qsv wiki: https://github.com/dathere/qsv/wiki
 - stats command docs: `/docs/PERFORMANCE.md`
-- Test cases: `/tests/test_stats.rs` (~5,481 lines)
+- Test cases: `/tests/test_stats.rs` (~6,054 lines)
 
 ## Quick Debugging
 
@@ -199,11 +199,11 @@ cat file.stats.csv.data.jsonl | jq . | head
 
 | File | Purpose |
 |------|---------|
-| `src/cmd/stats.rs` | Main implementation (~4,694 lines) |
+| `src/cmd/stats.rs` | Main implementation (~4,873 lines) |
 | `src/config.rs` | CSV reader configuration |
 | `src/select.rs` | Column selection logic |
 | `src/util.rs` | Utility functions |
-| `tests/test_stats.rs` | Comprehensive test suite (~5,481 lines) |
+| `tests/test_stats.rs` | Comprehensive test suite (~6,054 lines) |
 | `Cargo.toml` | Dependencies (see `stats` and `csv` crates) |
 
 ---

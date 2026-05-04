@@ -177,7 +177,7 @@ The same is true with the write buffer (default: 512k) with the `QSV_WTR_BUFFER_
 
 ## Multithreading
 
-Several commands support multithreading - `count`, `frequency`, `sample`, `schema`, `split`, `stats` and `tojsonl` (when an index is available); `apply`, `applydp`, `blake3`, `datefmt`, `dedup`, `diff`, `excel`, `extsort`, `geocode`, `joinp`, `jsonl`, `moarstats`, `pivotp`, `pragmastat`, `replace`, `search`, `searchset`, `snappy`, `sort`, `sqlp`, `template`, `to` and `validate` (no index required).
+Several commands support multithreading - `frequency`, `sample`, `schema`, `split`, `stats` and `tojsonl` (when an index is available); `apply`, `applydp`, `blake3`, `count` (when built with the `polars` feature; an index short-circuits to an O(1) single-threaded read), `datefmt`, `dedup`, `diff`, `excel`, `extsort`, `geocode`, `joinp`, `jsonl`, `moarstats`, `pivotp`, `pragmastat`, `replace`, `search`, `searchset`, `snappy`, `sort`, `sqlp`, `template`, `to` and `validate` (no index required).
 
 qsv will automatically spawn parallel jobs equal to the detected number of logical processors. Should you want to manually override this, use the `--jobs` command-line option or the `QSV_MAX_JOBS` environment variable.
 
@@ -187,7 +187,7 @@ To find out your jobs setting, call `qsv --version`.
 The `--version` option shows a lot of information about qsv. It displays:
 * qsv version
 * the memory allocator (`standard`, `mimalloc` or `jemalloc`)
-* all enabled features (e.g., `apply`, `clipboard`, `color`, `fetch`, `foreach`, `geocode`, `lens`, `luau`, `magika`, `mcp`, `polars`, `prompt`, `python`, `self_update`, `to` & `ui`)
+* all enabled features that `util::version()` reports (`apply`, `fetch`, `foreach`, `geocode`, `luau`, `magika`, `prompt`, `python`, `to`, `polars` and `self_update`)
 * Python version linked if the `python` feature was enabled
 * Luau version embedded if the `luau` feature was enabled
 * the number of processors to use for multi-threading commands

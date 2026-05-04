@@ -42,7 +42,7 @@ qsv is designed to handle large files efficiently, but some operations need to l
 - `sort`
 - `stats` (for advanced statistics)
 - `table`
-- `transpose` (unless using --multipass)
+- `transpose` (unless using --multipass or --long)
 
 **Memory-intensive commands (marked with 😣):**
 - `frequency`

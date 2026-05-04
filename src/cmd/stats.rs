@@ -318,6 +318,7 @@ validation, skip bounds checks, cache results, etc.) that may result in undefine
 if the CSV is not well-formed. See "safety:" comments in the code for more details.
 */
 
+use core::hint::cold_path;
 use std::{
     fmt, fs,
     io::{self, BufRead, Seek, Write},
@@ -4505,7 +4506,9 @@ impl FieldType {
             return (FieldType::TString, 0, 0.0);
         }
 
-        // Check if valid UTF-8 first, return early if not
+        // Check if valid UTF-8 first, return early if not.
+        // On real data the Ok arm dominates; mark the Err arm cold so LLVM keeps the
+        // hot date-parse path contiguous in the instruction cache.
         if let Ok(s) = simdutf8::basic::from_utf8(sample) {
             // Try date parsing
             if let Ok(parsed_date) = parse_with_preference(s, prefer_dmy) {
@@ -4519,6 +4522,7 @@ impl FieldType {
                 };
             }
         } else {
+            cold_path();
             // If not valid UTF-8, it's a binary string, return as TString
             return (FieldType::TString, 0, 0.0);
         }

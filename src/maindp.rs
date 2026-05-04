@@ -54,53 +54,6 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-static COMMAND_LIST: &str = r#"
-    applydp     Apply series of transformations to a column
-    blake3      Compute BLAKE3 cryptographic hashes of files
-    count       Count records
-    datefmt     Format date/datetime strings
-    describegpt Infer extended metadata or chat with your data using a LLM
-    diff        Find the difference between two CSVs
-    dedup       Remove redundant rows
-    excel       Exports an Excel sheet to a CSV
-    exclude     Excludes the records in one CSV from another
-    extdedup    Remove duplicates rows from an arbitrarily large text file
-    frequency   Show frequency tables
-    geocode     Geocodes a location against the Geonames cities database
-    geoconvert  Convert between spatial formats & CSV, including GeoJSON, SHP & more
-    headers     Show header names
-    help        Show this usage message
-    index       Create CSV index for faster access
-    input       Read CSVs w/ special quoting, skipping, trimming & transcoding rules
-    join        Join CSV files
-    joinp       Join CSV files using the Pola.rs engine 🐻‍❄️
-    luau        Execute Luau script on CSV data 👑
-    moarstats   Add "moar" statistics to existing stats CSV
-    pivotp      Pivot CSV data 🐻‍❄️
-    pragmastat  Pragmatic statistical toolkit
-    pseudo      Pseudonymise the values of a column
-    rename      Rename the columns of CSV data efficiently
-    replace     Replace patterns in CSV data
-    reverse     Reverse rows of CSV data
-    safenames   Modify a CSV's header names to db-safe names
-    sample      Randomly sample CSV data
-    search      Search CSV data with a regex
-    searchset   Search CSV data with a regex set
-    select      Select, re-order, duplicate or drop columns
-    slice       Slice records from CSV
-    snappy      Compress/decompress data using the Snappy algorithm
-    sniff       Quickly sniff CSV metadata
-    sort        Sort CSV data in alphabetical, numerical, reverse or random order
-    sortcheck   Check if a CSV is sorted
-    sqlp        Run a SQL query against several CSVs using the Pola.rs engine 🐻‍❄️
-    stats       Infer data types and compute summary statistics
-    template    Render templates using CSV data
-    validate    Validate CSV data for RFC4180-compliance or with JSON Schema
-
-    NOTE: qsvdp ignores the --progressbar option for all commands.
-          🐻‍❄️ - requires polars feature
-          👑 - requires luau feature"#;
-
 mod clitypes;
 mod cmd;
 mod config;
@@ -133,6 +86,85 @@ struct Args {
     flag_updatenow: bool,
 }
 
+/// Build the "Installed commands:" listing dynamically so feature-gated commands
+/// (joinp/pivotp/sqlp under `polars`, luau under `luau`) only appear when
+/// actually compiled in. The `Command` enum and dispatch already gate these;
+/// the help text must match.
+fn build_command_list() -> String {
+    let mut enabled_commands = String::from("\n");
+    enabled_commands.push_str(
+        "    applydp     Apply series of transformations to a column
+    blake3      Compute BLAKE3 cryptographic hashes of files
+    count       Count records
+    datefmt     Format date/datetime strings
+    describegpt Infer extended metadata or chat with your data using a LLM
+    diff        Find the difference between two CSVs
+    dedup       Remove redundant rows
+    excel       Exports an Excel sheet to a CSV
+    exclude     Excludes the records in one CSV from another
+    extdedup    Remove duplicates rows from an arbitrarily large text file
+    frequency   Show frequency tables
+    geocode     Geocodes a location against the Geonames cities database
+    geoconvert  Convert between spatial formats & CSV, including GeoJSON, SHP & more
+    headers     Show header names
+    help        Show this usage message
+    index       Create CSV index for faster access
+    input       Read CSVs w/ special quoting, skipping, trimming & transcoding rules
+    join        Join CSV files\n",
+    );
+
+    #[cfg(feature = "polars")]
+    enabled_commands.push_str("    joinp       Join CSV files using the Pola.rs engine 🐻‍❄️\n");
+
+    #[cfg(feature = "luau")]
+    enabled_commands.push_str("    luau        Execute Luau script on CSV data 👑\n");
+
+    enabled_commands.push_str("    moarstats   Add \"moar\" statistics to existing stats CSV\n");
+
+    #[cfg(feature = "polars")]
+    enabled_commands.push_str("    pivotp      Pivot CSV data 🐻‍❄️\n");
+
+    enabled_commands.push_str(
+        "    pragmastat  Pragmatic statistical toolkit
+    pseudo      Pseudonymise the values of a column
+    rename      Rename the columns of CSV data efficiently
+    replace     Replace patterns in CSV data
+    reverse     Reverse rows of CSV data
+    safenames   Modify a CSV's header names to db-safe names
+    sample      Randomly sample CSV data
+    search      Search CSV data with a regex
+    searchset   Search CSV data with a regex set
+    select      Select, re-order, duplicate or drop columns
+    slice       Slice records from CSV
+    snappy      Compress/decompress data using the Snappy algorithm
+    sniff       Quickly sniff CSV metadata
+    sort        Sort CSV data in alphabetical, numerical, reverse or random order
+    sortcheck   Check if a CSV is sorted\n",
+    );
+
+    #[cfg(feature = "polars")]
+    enabled_commands.push_str(
+        "    sqlp        Run a SQL query against several CSVs using the Pola.rs engine 🐻‍❄️\n",
+    );
+
+    enabled_commands.push_str(
+        "    stats       Infer data types and compute summary statistics
+    template    Render templates using CSV data
+    validate    Validate CSV data for RFC4180-compliance or with JSON Schema\n",
+    );
+
+    enabled_commands
+        .push_str("\n    NOTE: qsvdp ignores the --progressbar option for all commands.");
+
+    #[cfg(feature = "polars")]
+    enabled_commands.push_str("\n          🐻‍❄️ - requires polars feature");
+
+    #[cfg(feature = "luau")]
+    enabled_commands.push_str("\n          👑 - requires luau feature");
+
+    enabled_commands
+}
+
 fn main() -> QsvExitCode {
     util::qsv_custom_panic();
     util::reset_sigpipe();
@@ -160,7 +192,11 @@ fn main() -> QsvExitCode {
     }
 
     if args.flag_list {
-        wout!("Installed commands:{}\n\n{}", COMMAND_LIST, SPONSOR_MESSAGE);
+        wout!(
+            "Installed commands:{}\n\n{}",
+            build_command_list(),
+            SPONSOR_MESSAGE
+        );
         util::log_end(qsv_args, now);
         return QsvExitCode::Good;
     } else if args.flag_envlist {
@@ -178,10 +214,11 @@ fn main() -> QsvExitCode {
     }
     match args.arg_command {
         None => {
+            let command_list = build_command_list();
             werr!(
                 "qsvdp is a suite of CSV command line utilities optimized for \
                  Datapusher+.\n\nPlease choose one of the following \
-                 commands:\n{COMMAND_LIST}\n\n{SPONSOR_MESSAGE}",
+                 commands:\n{command_list}\n\n{SPONSOR_MESSAGE}",
             );
 
             util::log_end(qsv_args, now);

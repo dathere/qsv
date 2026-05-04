@@ -197,8 +197,8 @@ qsv is also distributed by several package managers and distros.
 
 Here are the relevant commands for installing qsv using the various package managers and distros:
 ```bash
-# Arch Linux AUR (https://aur.archlinux.org/packages/qsv)
-yay -S qsv
+# Arch Linux Extra Repository (https://archlinux.org/packages/extra/x86_64/qsv/)
+pacman -S qsv
 
 # Homebrew on macOS/Linux (https://formulae.brew.sh/formula/qsv#default)
 brew install qsv

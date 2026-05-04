@@ -10,7 +10,7 @@ If you’re new to Rust, this overview highlights the specific language patterns
 
 qsv is a high-performance command-line toolkit for working with CSV and other tabular data. It focuses on speed, predictable behavior, and pragmatic ergonomics for data engineering tasks (profiling, selection, joins, transforms, validation, format conversion, indexing, and more).
 
-- Language: Rust (edition 2024; minimum Rust 1.94)
+- Language: Rust (edition 2024; minimum Rust 1.95)
 - Binaries: `qsv` (full-featured), `qsvmcp` (MCP server optimized), `qsvlite` (reduced feature set), `qsvdp` (Datapusher+ oriented)
 - Philosophy: modern Rust, aggressive performance optimizations (including optional unsafe with documented “safety:” comments), comprehensive tests, and frequent dependency updates.
 
@@ -54,7 +54,7 @@ qsv uses Cargo features to conditionally include commands and dependencies. Some
 
 Binaries:
 - `qsv` (full-featured): requires `feature_capable` and additional features as needed
-- `qsvmcp` (MCP server optimized): built with `qsvmcp` feature (geocode, luau, mcp, polars, self_update); shares `main.rs` with `qsv`
+- `qsvmcp` (MCP server optimized): built with `qsvmcp` feature (geocode, luau, mcp, polars, self_update, to); shares `main.rs` with `qsv`
 - `qsvlite`: built with `lite` feature
 - `qsvdp`: built with `datapusher_plus`
 

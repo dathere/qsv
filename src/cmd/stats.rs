@@ -2152,8 +2152,8 @@ impl Args {
             mode:            self.flag_everything || self.flag_mode,
             typesonly:       self.flag_typesonly,
             percentiles:     self.flag_everything || self.flag_percentiles,
-            percentile_list: self.flag_percentile_list.clone().into_boxed_str(),
             use_weights:     self.flag_weight.is_some(),
+            percentile_list: self.flag_percentile_list.clone().into_boxed_str(),
         }
     }
 
@@ -2652,8 +2652,8 @@ struct WhichStats {
     mode:            bool,
     typesonly:       bool,
     percentiles:     bool,
-    percentile_list: Box<str>,
     use_weights:     bool,
+    percentile_list: Box<str>,
 }
 
 impl Commute for WhichStats {

@@ -376,7 +376,7 @@ impl WriterGenerator {
         }
 
         loop {
-            let candidate = format!("{}_{}", &base, self.counter);
+            let candidate = format!("{}_{}", base, self.counter);
             // We'll run out of other things long before we ever
             // get a panic with strict_add
             self.counter = self.counter.strict_add(1);

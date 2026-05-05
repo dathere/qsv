@@ -1393,7 +1393,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file."#, json_sche
     if log::log_enabled!(log::Level::Debug) {
         // only log if debug is enabled
         // as it can be quite large and expensive to deserialize the schema
-        debug!("schema json: {:?}", &schema_json);
+        debug!("schema json: {schema_json:?}");
     }
 
     // set this once, as this is used repeatedly in a hot loop.

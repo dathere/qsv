@@ -1149,7 +1149,7 @@ fn apply_operations(
                     if formatstr == "strict" {
                         // Process ISO currency values
                         let currency_coins = currency_val.value();
-                        let coins = format!("{:03}", &currency_coins);
+                        let coins = format!("{currency_coins:03}");
 
                         if currency_val.is_iso_currency() {
                             if coins == "000" {
@@ -1182,7 +1182,7 @@ fn apply_operations(
 
                             if let Ok(extracted_currency) = Currency::from_str(&numparts_val) {
                                 let currency_coins = extracted_currency.value();
-                                let coins = format!("{:03}", &currency_coins);
+                                let coins = format!("{currency_coins:03}");
 
                                 if coins == "000" {
                                     *cell = "0.00".to_string();

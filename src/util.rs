@@ -1257,7 +1257,7 @@ impl FilenameTemplate {
     /// Generate a new filename using `unique_value` to replace the `"{}"`
     /// in the template.
     pub fn filename(&self, unique_value: &str) -> String {
-        format!("{}{unique_value}{}", &self.prefix, &self.suffix)
+        format!("{}{unique_value}{}", self.prefix, self.suffix)
     }
 
     /// Create a new, writable file in directory `path` with a filename
@@ -1547,7 +1547,7 @@ fn send_hwsurvey(
             .send()
         {
             Ok(resp) => {
-                log::debug!("hw_survey response sent: {:?}", &resp);
+                log::debug!("hw_survey response sent: {resp:?}");
                 status = resp.status();
                 survey_done = status.is_success();
             },

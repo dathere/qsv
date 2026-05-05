@@ -338,6 +338,7 @@ Common options:
     -o, --output <file>    Write output to <file> instead of overwriting the stats CSV file.
 "#;
 
+use core::hint::cold_path;
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -354,8 +355,6 @@ use indicatif::{HumanCount, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use qsv_dateparser::parse_with_preference;
 use rayon::prelude::*;
 use serde::Deserialize;
-use core::hint::cold_path;
-
 use simdutf8::basic::from_utf8;
 use stats::{atkinson, gini, kurtosis};
 use threadpool::ThreadPool;

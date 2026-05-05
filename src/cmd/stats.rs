@@ -2152,7 +2152,7 @@ impl Args {
             mode:            self.flag_everything || self.flag_mode,
             typesonly:       self.flag_typesonly,
             percentiles:     self.flag_everything || self.flag_percentiles,
-            percentile_list: self.flag_percentile_list.clone(),
+            percentile_list: self.flag_percentile_list.clone().into_boxed_str(),
             use_weights:     self.flag_weight.is_some(),
         }
     }
@@ -2652,7 +2652,7 @@ struct WhichStats {
     mode:            bool,
     typesonly:       bool,
     percentiles:     bool,
-    percentile_list: String,
+    percentile_list: Box<str>,
     use_weights:     bool,
 }
 
@@ -2693,7 +2693,7 @@ struct Stats {
     total_weight: f64, // 8 bytes - frequently updated for weighted stats
 
     // Configuration flags (accessed once during initialization, cold after init)
-    which: WhichStats, // 40 bytes - read-only after initialization
+    which: WhichStats, // 32 bytes - read-only after initialization
 
     // CACHE LINE 2+: Less frequently accessed but still important
     // Large Option types that may be None, grouped by usage pattern

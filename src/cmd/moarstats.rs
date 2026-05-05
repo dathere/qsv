@@ -338,6 +338,7 @@ Common options:
     -o, --output <file>    Write output to <file> instead of overwriting the stats CSV file.
 "#;
 
+use core::hint::cold_path;
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -1970,10 +1971,12 @@ where
 
             // Parse the value based on field type
             numeric_value = if field_info.field_type.is_date_or_datetime() {
-                // Convert bytes to string for date parsing
+                // Convert bytes to string for date parsing. UTF-8 decode failure
+                // is exceptional in CSV data — mark as cold for branch prediction.
                 if let Ok(value_str) = from_utf8(value_bytes) {
                     parse_date_to_days(value_str, prefer_dmy)
                 } else {
+                    cold_path();
                     None
                 }
             } else {
@@ -1987,6 +1990,7 @@ where
             // Get mutable reference to stats for this field
             // safety: chunk_stats is pre-populated with all field names
             let Some(stats) = chunk_stats.get_mut(field_name) else {
+                cold_path();
                 debug_assert!(false, "chunk_stats missing expected key: {field_name}");
                 continue;
             };
@@ -2303,6 +2307,7 @@ where
 
             // safety: chunk_stats is pre-populated with all field pair indices
             let Some(stats) = chunk_stats.get_mut(&(*idx1, *idx2)) else {
+                cold_path();
                 debug_assert!(false, "chunk_stats missing expected key: ({idx1}, {idx2})");
                 continue;
             };
@@ -2313,6 +2318,7 @@ where
             // columns into a per-record HashMap.
             let numeric_value_x = if field1_info.field_type.is_date_or_datetime() {
                 let Ok(x_str) = from_utf8(value_bytes_x) else {
+                    cold_path();
                     continue;
                 };
                 if let Some(cached) = date_cache.get(x_str) {
@@ -2328,6 +2334,7 @@ where
 
             let numeric_value_y = if field2_info.field_type.is_date_or_datetime() {
                 let Ok(y_str) = from_utf8(value_bytes_y) else {
+                    cold_path();
                     continue;
                 };
                 if let Some(cached) = date_cache.get(y_str) {
@@ -2357,6 +2364,7 @@ where
                 let (Ok(x_str_ref), Ok(y_str_ref)) =
                     (from_utf8(value_bytes_x), from_utf8(value_bytes_y))
                 else {
+                    cold_path();
                     continue;
                 };
                 // NOTE: this is not true string interning — each lookup still yields

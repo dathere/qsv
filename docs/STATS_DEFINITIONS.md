@@ -253,7 +253,7 @@ When stats are cached, the `.stats.csv.json` file includes file-level metadata t
 | `date_generated` | When the stats were generated. | RFC3339 timestamp (UTC). |
 | `compute_duration_ms` | Time taken to compute stats. | Elapsed wall-clock time in milliseconds. |
 | `qsv_version` | Version of qsv used to generate stats. | `CARGO_PKG_VERSION` at compile time. Used for cache invalidation when qsv is upgraded. |
-| `hash.blake3` | BLAKE3 fingerprint hash of the dataset's stats. | BLAKE3 hash of the first 26 streaming-stats columns (i.e. all streaming columns except the trailing `n_positive`, `max_precision`, and `sparsity`) plus dataset metadata (record_count, field_count, filesize_bytes). Controlled by the `FINGERPRINT_HASH_COLUMNS` constant in `src/cmd/stats.rs`. This allows users to quickly detect duplicate files without having to load the entire file to compute the hash. Especially useful for detecting duplicates of very large files with pre-existing stats cache metadata. |
+| `hash.blake3` | BLAKE3 fingerprint hash of the dataset's stats. | BLAKE3 hash of all 29 streaming-stats columns plus dataset metadata (record_count, field_count, filesize_bytes). Controlled by the `FINGERPRINT_HASH_COLUMNS` constant in `src/cmd/stats.rs`, which is kept in sync with the streaming-column count in `stats_headers()`. This allows users to quickly detect duplicate files without having to load the entire file to compute the hash. Especially useful for detecting duplicates of very large files with pre-existing stats cache metadata. |
 
 ### Whitespace Visualization
 

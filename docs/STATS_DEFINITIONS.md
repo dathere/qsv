@@ -253,7 +253,7 @@ When stats are cached, the `.stats.csv.json` file includes file-level metadata t
 | `date_generated` | When the stats were generated. | RFC3339 timestamp (UTC). |
 | `compute_duration_ms` | Time taken to compute stats. | Elapsed wall-clock time in milliseconds. |
 | `qsv_version` | Version of qsv used to generate stats. | `CARGO_PKG_VERSION` at compile time. Used for cache invalidation when qsv is upgraded. |
-| `hash.blake3` | BLAKE3 fingerprint hash of the dataset's stats. | BLAKE3 hash of the first 26 columns ("streaming" stats) + dataset stats (record_count, field_count, filesize_bytes). This allows users to quickly detect duplicate files without having to load the entire file to compute the hash. Especially useful for detecting duplicates of very large files with pre-existing stats cache metadata. |
+| `hash.blake3` | BLAKE3 fingerprint hash of the dataset's stats. | BLAKE3 hash of the first 26 streaming-stats columns (i.e. all streaming columns except the trailing `n_positive`, `max_precision`, and `sparsity`) plus dataset metadata (record_count, field_count, filesize_bytes). Controlled by the `FINGERPRINT_HASH_COLUMNS` constant in `src/cmd/stats.rs`. This allows users to quickly detect duplicate files without having to load the entire file to compute the hash. Especially useful for detecting duplicates of very large files with pre-existing stats cache metadata. |
 
 ### Whitespace Visualization
 
@@ -268,6 +268,7 @@ The following whitespace markers are used (as defined in the [Rust reference](ht
 | `\r` | `《⏎》` | Carriage return |
 | `\u{000B}` | `《⋮》` | Vertical tab |
 | `\u{000C}` | `《␌》` | Form feed |
+| `\u{0009}` | `《↹》` | Horizontal tab (alternate; same code point as `\t`, retained as a fallback marker) |
 | `\u{0085}` | `《␤》` | Next line |
 | `\u{200E}` | `《␎》` | Left-to-right mark |
 | `\u{200F}` | `《␏》` | Right-to-left mark |
@@ -771,7 +772,11 @@ The `--json` or `--pretty-json` flags output frequency tables as nested JSON. Th
         {"name": "max", "value": "Z"},
         {"name": "range", "value": null},
         {"name": "sort_order", "value": "UNSORTED"},
+        {"name": "min_length", "value": 1},
+        {"name": "max_length", "value": 1},
+        {"name": "avg_length", "value": 1},
         {"name": "mean", "value": null},
+        {"name": "stddev", "value": null},
         ...
       ],
       "frequencies": [
@@ -785,27 +790,32 @@ The `--json` or `--pretty-json` flags output frequency tables as nested JSON. Th
 ```
 
 **Additional Stats in JSON Output:**
-When `--no-stats` is NOT set, JSON output includes 17 additional statistics per field:
-1. `sum` - Sum of numeric values
-2. `min` - Minimum value
-3. `max` - Maximum value
-4. `range` - Range (max - min)
-5. `sort_order` - ASCENDING, DESCENDING, or UNSORTED
-6. `mean` - Arithmetic mean
-7. `sem` - Standard error of the mean
-8. `geometric_mean` - Geometric mean
-9. `harmonic_mean` - Harmonic mean
-10. `stddev` - Standard deviation
-11. `variance` - Variance
-12. `cv` - Coefficient of variation
-13. String length stats (for String types): `min_length`, `max_length`, `avg_length`, `stddev_length`
-14. `nullcount` - Count of NULL values
-15. `sparsity` - Fraction of NULL values
-16. `max_precision` - Maximum decimal precision (for Float types)
+
+When `--no-stats` is NOT set and the column type is not empty, NULL, or Boolean, the per-field `stats` array contains up to 17 statistics (only those present in the underlying stats record are emitted):
+
+1. `sum` — Sum of numeric values
+2. `min` — Minimum value
+3. `max` — Maximum value
+4. `range` — Range (max - min)
+5. `sort_order` — ASCENDING, DESCENDING, or UNSORTED
+6. `min_length` — Shortest string length (String types)
+7. `max_length` — Longest string length (String types)
+8. `sum_length` — Total of all string lengths (String types)
+9. `avg_length` — Average string length (String types)
+10. `stddev_length` — Standard deviation of string lengths (String types)
+11. `variance_length` — Variance of string lengths (String types)
+12. `cv_length` — Coefficient of variation of string lengths (String types)
+13. `mean` — Arithmetic mean
+14. `sem` — Standard error of the mean
+15. `stddev` — Standard deviation
+16. `variance` — Variance
+17. `cv` — Coefficient of variation
+
+> **Note:** `cardinality`, `nullcount`, `sparsity`, and `uniqueness_ratio` are emitted as **top-level properties of each `FrequencyField`** (see the JSON Structure example above), not inside the per-field `stats` array. `geometric_mean`, `harmonic_mean`, and `max_precision` are *not* included in `frequency` JSON output even when present in the stats cache — use `qsv stats` directly if you need them.
 
 ### Memory-Aware Processing
 
-The frequency command defaults to memory-aware chunking for large datasets to avoid out-of-memory errors. Unlike `stats` (which may default to CPU-based chunking), frequency’s default strategy is memory-aware because it builds hash tables that benefit from predictable memory usage. However, it can be explicitly configured to use CPU-based chunking via `QSV_FREQ_CHUNK_MEMORY_MB = -1`.
+The frequency command defaults to dynamic, memory-aware chunking for large datasets to avoid out-of-memory errors. Both `stats` and `frequency` default to memory-aware sizing; `frequency` is documented separately here because it builds hash tables and therefore benefits from predictable per-chunk memory budgeting. CPU-based chunking can be requested explicitly via `QSV_FREQ_CHUNK_MEMORY_MB = -1` (the same convention `stats` uses with `QSV_STATS_CHUNK_MEMORY_MB`).
 
 **Chunking Behavior:**
 - Automatically enabled for indexed files

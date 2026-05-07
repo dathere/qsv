@@ -2,7 +2,7 @@
 
 > Replace CSV data using a regex. Applies the regex to each field individually.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/replace.rs](https://github.com/dathere/qsv/blob/master/src/cmd/replace.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/replace.rs](https://github.com/dathere/qsv/blob/master/src/cmd/replace.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Replace Options](#replace-options) | [Common Options](#common-options)

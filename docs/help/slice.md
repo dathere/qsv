@@ -2,7 +2,7 @@
 
 > Slice rows from any part of a CSV. When an index is present, this only has to parse the rows in the slice (instead of all rows leading up to the start of the slice).
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/slice.rs](https://github.com/dathere/qsv/blob/master/src/cmd/slice.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")[🗃️](TableOfContents.md#legend "Limited Extended input support.")
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/slice.rs](https://github.com/dathere/qsv/blob/master/src/cmd/slice.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🗃️](TableOfContents.md#legend "Limited Extended input support.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Slice Options](#slice-options) | [Common Options](#common-options)

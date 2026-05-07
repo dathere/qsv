@@ -2,7 +2,7 @@
 
 > Smartly converts CSV to a newline-delimited JSON ([JSONL](https://jsonlines.org/)/[NDJSON](http://ndjson.org/)). By scanning the CSV first, it "smartly" infers the appropriate JSON data type for each column. See `jsonl` command to convert JSONL to CSV.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/tojsonl.rs](https://github.com/dathere/qsv/blob/master/src/cmd/tojsonl.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[😣](TableOfContents.md#legend "uses additional memory proportional to the cardinality of the columns in the CSV.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")[🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")[🗃️](TableOfContents.md#legend "Limited Extended input support.")
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/tojsonl.rs](https://github.com/dathere/qsv/blob/master/src/cmd/tojsonl.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[😣](TableOfContents.md#legend "uses additional memory proportional to the cardinality of the columns in the CSV.")[🗃️](TableOfContents.md#legend "Limited Extended input support.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")[🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")
 
 <a name="nav"></a>
 [Description](#description) | [Usage](#usage) | [Tojsonl Options](#tojsonl-options) | [Common Options](#common-options)

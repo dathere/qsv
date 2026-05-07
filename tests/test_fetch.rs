@@ -900,9 +900,7 @@ fn fetch_ratelimit() {
     // svec! only accepts &'static str, so we need a String-based row helper
     // for any row that contains a runtime-built URL.
     let url_row = |path: &str| vec![format!("http://{addr}/{path}")];
-    let url_pair = |path: &str, name: &str| {
-        vec![format!("http://{addr}/{path}"), name.to_string()]
-    };
+    let url_pair = |path: &str, name: &str| vec![format!("http://{addr}/{path}"), name.to_string()];
 
     // proceed with usual unit test
     let wrk = Workdir::new("fetch");
@@ -930,9 +928,7 @@ fn fetch_ratelimit() {
             url_row("user/Farmer"),
             url_row("user/Natural"),
             url_row("user/Snappy"),
-            url_row(
-                "user/The quick brown fox jumped over the lazy dog by the zigzag quarry site",
-            ),
+            url_row("user/The quick brown fox jumped over the lazy dog by the zigzag quarry site"),
         ],
     );
 

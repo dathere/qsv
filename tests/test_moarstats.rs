@@ -79,6 +79,48 @@ fn assert_bivariate_n_pairs(
     );
 }
 
+/// Assert every name in `expected_fields` appears at least once across the
+/// `field1` or `field2` columns of the bivariate output. Catches the silent
+/// "primary-only" join corruption mode loudly: if the join failed to merge
+/// secondary columns, this fires with a clear "missing columns" message
+/// instead of letting the downstream `assert_bivariate_n_pairs` produce a
+/// confusing "no row found for (X, Y)" error.
+fn assert_bivariate_columns_present(
+    wrk: &Workdir,
+    path: &str,
+    expected_fields: &[&str],
+    msg: &str,
+) {
+    let content = wrk.read_to_string(path).unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(content.as_bytes());
+    let headers = rdr.headers().unwrap().clone();
+    let f1_idx = get_column_index(&headers, "field1").expect("field1 column missing");
+    let f2_idx = get_column_index(&headers, "field2").expect("field2 column missing");
+
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for record in rdr.records() {
+        let record = record.unwrap();
+        if let Some(v) = get_field_value(&record, f1_idx) {
+            seen.insert(v.to_string());
+        }
+        if let Some(v) = get_field_value(&record, f2_idx) {
+            seen.insert(v.to_string());
+        }
+    }
+
+    let missing: Vec<&&str> = expected_fields
+        .iter()
+        .filter(|f| !seen.contains(**f))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "{msg}: bivariate output is missing expected columns {missing:?} (saw {seen:?}); likely \
+         silent join corruption — full bivariate output:\n{content}",
+    );
+}
+
 #[test]
 fn moarstats_basic_with_existing_stats() {
     let wrk = Workdir::new("moarstats_basic");
@@ -4458,6 +4500,16 @@ fn moarstats_join_type_left_runs_and_writes_bivariate() {
         .arg("primary.csv");
     wrk.assert_success(&mut cmd);
 
+    // Pre-check: secondary columns must be in the joined bivariate output.
+    // Catches silent join corruption (primary-only output) before the
+    // n_pairs assertion produces a confusing diagnostic.
+    assert_bivariate_columns_present(
+        &wrk,
+        "primary.stats.bivariate.joined.csv",
+        &["value1", "value2"],
+        "left join must merge primary+secondary numeric columns into bivariate output",
+    );
+
     assert_bivariate_n_pairs(
         &wrk,
         "primary.stats.bivariate.joined.csv",
@@ -4514,6 +4566,15 @@ fn moarstats_join_type_right_runs_and_writes_bivariate() {
         .arg("right")
         .arg("primary.csv");
     wrk.assert_success(&mut cmd);
+
+    // Pre-check: catch silent primary-only join corruption before the
+    // n_pairs assertion produces a confusing diagnostic.
+    assert_bivariate_columns_present(
+        &wrk,
+        "primary.stats.bivariate.joined.csv",
+        &["value1", "value2a", "value2b"],
+        "right join must merge primary+secondary numeric columns into bivariate output",
+    );
 
     assert_bivariate_n_pairs(
         &wrk,
@@ -4576,6 +4637,20 @@ fn moarstats_join_type_full_runs_and_writes_bivariate() {
     // unmatched primary id=4 -> (value1, value1b) gets 4 valid rows; full
     // adds unmatched secondary id=3 -> (value2a, value2b) gets 4 valid rows.
     let path = "primary.stats.bivariate.joined.csv";
+
+    // Pre-check: every primary AND secondary numeric column must appear in
+    // the bivariate output. This is the precise diagnostic for the macOS
+    // CI flake on this test (https://github.com/dathere/qsv/actions/runs/25488066023):
+    // the failure mode was secondary columns silently missing, which made
+    // the n_pairs(value2a, value2b) assertion below fire with a confusing
+    // "no row found" message instead of pointing at the join.
+    assert_bivariate_columns_present(
+        &wrk,
+        path,
+        &["value1", "value1b", "value2a", "value2b"],
+        "full join must merge primary+secondary numeric columns into bivariate output",
+    );
+
     assert_bivariate_n_pairs(
         &wrk,
         path,
@@ -4646,6 +4721,17 @@ fn moarstats_join_three_datasets_runs() {
         .arg("id,id,id")
         .arg("primary.csv");
     wrk.assert_success(&mut cmd);
+
+    // Pre-check: every primary, secondary, AND tertiary numeric column must
+    // appear in the bivariate output, proving the chained join merged all
+    // three datasets and not just primary (or primary+secondary).
+    assert_bivariate_columns_present(
+        &wrk,
+        "primary.stats.bivariate.joined.csv",
+        &["value1", "value2", "value3"],
+        "three-way join must merge primary+secondary+tertiary numeric columns into bivariate \
+         output",
+    );
 
     // Inner-chain on matching keys yields 4 rows (primary's 4 rows all match
     // through secondary and tertiary). The (value1, value3) pair proves

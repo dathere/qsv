@@ -235,6 +235,9 @@ describegpt options:
                            and custom_prompt_md_template - plus a dictionary_md_body_template
                            that drives the per-field dictionary table that fills the
                            dictionary wrapper's {{ llm_response }}.
+                           All template fields are optional; any omitted field falls back to
+                           the embedded default, so a minimal TOML can override just the
+                           templates you want to change.
                            Custom Mini Jinja filters (pipe_escape, br_replace, human_count,
                            dict_cell, humanize_examples) and template variables are documented
                            inline in the default TOML referenced below.
@@ -521,18 +524,14 @@ struct PromptFile {
 #[derive(Debug, Deserialize)]
 struct MarkdownTemplateFile {
     // Metadata fields are deserialized for round-tripping but never read by code.
-    // `#[serde(default)]` lets users supply a minimal --markdown-template TOML without
-    // copying the boilerplate metadata header from the default file.
-    #[serde(default)]
+    // (No `#[serde(default)]` needed here — the embedded default TOML always supplies them,
+    //  and user overrides go through `MarkdownTemplateOverride` which IS optional.)
     #[allow(dead_code)]
     name:                        String,
-    #[serde(default)]
     #[allow(dead_code)]
     description:                 String,
-    #[serde(default)]
     #[allow(dead_code)]
     author:                      String,
-    #[serde(default)]
     #[allow(dead_code)]
     version:                     String,
     dictionary_md_body_template: String,
@@ -540,6 +539,60 @@ struct MarkdownTemplateFile {
     description_md_template:     String,
     tags_md_template:            String,
     custom_prompt_md_template:   String,
+}
+
+/// User-supplied `--markdown-template` overrides. Every field is optional so a user can
+/// drop in a TOML containing just the one template they want to change — the rest fall
+/// back to the embedded defaults. Errors only surface for genuinely malformed TOML or
+/// fields whose declared type doesn't match (e.g. a number where a string is expected).
+#[derive(Debug, Default, Deserialize)]
+struct MarkdownTemplateOverride {
+    #[serde(default)]
+    name:                        Option<String>,
+    #[serde(default)]
+    description:                 Option<String>,
+    #[serde(default)]
+    author:                      Option<String>,
+    #[serde(default)]
+    version:                     Option<String>,
+    #[serde(default)]
+    dictionary_md_body_template: Option<String>,
+    #[serde(default)]
+    dictionary_md_template:      Option<String>,
+    #[serde(default)]
+    description_md_template:     Option<String>,
+    #[serde(default)]
+    tags_md_template:            Option<String>,
+    #[serde(default)]
+    custom_prompt_md_template:   Option<String>,
+}
+
+impl MarkdownTemplateOverride {
+    /// Per-field overlay: any `Some` field replaces the corresponding `base` field;
+    /// `None` keeps the base (embedded default) value.
+    fn apply_to(self, base: MarkdownTemplateFile) -> MarkdownTemplateFile {
+        MarkdownTemplateFile {
+            name:                        self.name.unwrap_or(base.name),
+            description:                 self.description.unwrap_or(base.description),
+            author:                      self.author.unwrap_or(base.author),
+            version:                     self.version.unwrap_or(base.version),
+            dictionary_md_body_template: self
+                .dictionary_md_body_template
+                .unwrap_or(base.dictionary_md_body_template),
+            dictionary_md_template:      self
+                .dictionary_md_template
+                .unwrap_or(base.dictionary_md_template),
+            description_md_template:     self
+                .description_md_template
+                .unwrap_or(base.description_md_template),
+            tags_md_template:            self
+                .tags_md_template
+                .unwrap_or(base.tags_md_template),
+            custom_prompt_md_template:   self
+                .custom_prompt_md_template
+                .unwrap_or(base.custom_prompt_md_template),
+        }
+    }
 }
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -1040,25 +1093,28 @@ fn get_md_template_file(args: &Args) -> CliResult<&MarkdownTemplateFile> {
     if let Some(file) = MD_TEMPLATE_FILE.get() {
         return Ok(file);
     }
-    let owned_content;
-    let (content, source_label): (&str, &str) =
-        if let Some(ref path) = args.flag_markdown_template {
-            owned_content = fs::read_to_string(path).map_err(|e| {
-                CliError::Other(format!(
-                    "Could not read --markdown-template file '{path}': {e}"
-                ))
-            })?;
-            (&owned_content, path.as_str())
-        } else {
-            (get_default_md_template_content(), "<default embedded TOML>")
-        };
-    let parsed: MarkdownTemplateFile = toml::from_str(content).map_err(|e| {
-        CliError::Other(format!(
-            "Markdown template parsing error in '{source_label}': {e}"
-        ))
-    })?;
+    // Always parse the embedded default first — it serves as the per-field fallback for
+    // any field a user-supplied --markdown-template TOML omits, so users can drop in a
+    // TOML containing only the templates they want to change.
+    let base: MarkdownTemplateFile = toml::from_str(get_default_md_template_content())
+        .expect("embedded default markdown template TOML must parse");
+
+    let resolved = if let Some(ref path) = args.flag_markdown_template {
+        let content = fs::read_to_string(path).map_err(|e| {
+            CliError::Other(format!(
+                "Could not read --markdown-template file '{path}': {e}"
+            ))
+        })?;
+        let overlay: MarkdownTemplateOverride = toml::from_str(&content).map_err(|e| {
+            CliError::Other(format!("Markdown template parsing error in '{path}': {e}"))
+        })?;
+        overlay.apply_to(base)
+    } else {
+        base
+    };
+
     // Ignore Err: another thread may have set it concurrently; that's fine.
-    let _ = MD_TEMPLATE_FILE.set(parsed);
+    let _ = MD_TEMPLATE_FILE.set(resolved);
     Ok(MD_TEMPLATE_FILE.get().unwrap())
 }
 
@@ -5325,5 +5381,32 @@ mod tests {
             parsed.tags_md_template, parsed.custom_prompt_md_template,
             "tags and custom_prompt wrapper templates diverged"
         );
+    }
+
+    /// Verifies the partial-override fallback in MarkdownTemplateOverride::apply_to:
+    /// any field a user TOML omits falls back to the embedded default, so a minimal
+    /// override (one template field set, all others omitted) Just Works.
+    #[test]
+    fn markdown_template_override_falls_back_per_field() {
+        let base: MarkdownTemplateFile =
+            toml::from_str(get_default_md_template_content()).unwrap();
+        let base_dict_md = base.dictionary_md_template.clone();
+        let base_tags_md = base.tags_md_template.clone();
+        let base_dict_body = base.dictionary_md_body_template.clone();
+        let base_custom_md = base.custom_prompt_md_template.clone();
+
+        // Minimal user TOML: override only `description_md_template`.
+        let user_toml = r#"
+description_md_template = "OVERRIDDEN: {{ llm_response }}"
+"#;
+        let overlay: MarkdownTemplateOverride = toml::from_str(user_toml).unwrap();
+        let merged = overlay.apply_to(base);
+
+        assert_eq!(merged.description_md_template, "OVERRIDDEN: {{ llm_response }}");
+        // All other template fields keep the embedded default value.
+        assert_eq!(merged.dictionary_md_template, base_dict_md);
+        assert_eq!(merged.tags_md_template, base_tags_md);
+        assert_eq!(merged.dictionary_md_body_template, base_dict_body);
+        assert_eq!(merged.custom_prompt_md_template, base_custom_md);
     }
 }

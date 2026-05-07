@@ -515,15 +515,15 @@ struct PromptFile {
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct MarkdownTemplateFile {
-    name:                       String,
-    description:                String,
-    author:                     String,
-    version:                    String,
+    name: String,
+    description: String,
+    author: String,
+    version: String,
     dictionary_md_body_template: String,
-    dictionary_md_template:     String,
-    description_md_template:    String,
-    tags_md_template:           String,
-    custom_prompt_md_template:  String,
+    dictionary_md_template: String,
+    description_md_template: String,
+    tags_md_template: String,
+    custom_prompt_md_template: String,
 }
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -5274,15 +5274,9 @@ mod tests {
         );
 
         let addl_col_names = formatters::extract_ordered_addl_cols(&entries);
-        let rendered = render_dictionary_md_body(
-            &args,
-            &entries,
-            &addl_col_names,
-            model,
-            base_url,
-            &shared,
-        )
-        .unwrap();
+        let rendered =
+            render_dictionary_md_body(&args, &entries, &addl_col_names, model, base_url, &shared)
+                .unwrap();
 
         assert_eq!(
             rendered, expected,
@@ -5296,8 +5290,8 @@ mod tests {
     /// without updating the others, this test catches the drift before it ships.
     #[test]
     fn default_wrapper_templates_are_byte_identical() {
-        // Read the embedded default TOML directly so this test is independent of get_md_template_file's
-        // OnceLock cache and any test-ordering effects.
+        // Read the embedded default TOML directly so this test is independent of
+        // get_md_template_file's OnceLock cache and any test-ordering effects.
         let toml_text = get_default_md_template_content();
         let parsed: MarkdownTemplateFile = toml::from_str(toml_text).unwrap();
 

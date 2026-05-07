@@ -22,8 +22,6 @@ pub(super) fn extract_ordered_addl_cols(entries: &[DictionaryEntry]) -> Vec<Stri
         .unwrap_or_default()
 }
 
-
-
 /// Format dictionary entries as JSON.
 ///
 /// The three numeric parameters (`enum_threshold`, `num_examples`, `truncate_str`)

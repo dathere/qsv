@@ -34,4 +34,5 @@ To check if your qsv build will have the option to self-update, run `qsv --versi
 * `nightly` - enable to turn on nightly-only features when building with Rust nightly/unstable. Specifically: `crc32fast/nightly`, `pyo3/nightly`, `rand/simd_support`, `simd-json/hints` and `foldhash/nightly`. Note that Polars has its own separate `nightly-polars` feature.
 * `distrib_features` - enable to build `qsv` binary variant with the core distribution features enabled (apply, fetch, foreach, geocode, luau, mcp, polars, python, to) - i.e. all features except `self_update`, `ui` and `magika`. This should make it easier for distro packagers to build `qsv` as qsv removes and adds features over time.
 
-> ℹ️ **NOTE:** `qsvlite`, as the name implies, always has **non-default features disabled**. `qsv` can be built with any combination of the above features using the cargo `--features` & `--no-default-features` flags. The prebuilt `qsv` binaries has **all applicable features valid for the target platform**.
+> [!NOTE]
+> `qsvlite`, as the name implies, always has **non-default features disabled**. `qsv` can be built with any combination of the above features using the cargo `--features` & `--no-default-features` flags. The prebuilt `qsv` binaries has **all applicable features valid for the target platform**.

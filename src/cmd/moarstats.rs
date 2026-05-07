@@ -580,11 +580,17 @@ fn join_datasets_internal(
         .to_string_lossy()
         .to_string();
 
-    // Hold intermediate temp files alive in a Vec<TempPath>. TempPath does
-    // NOT hold a writable handle (so `qsv join`'s O_CREAT|O_TRUNC works
-    // fine), but it does delete the path on Drop. Storing them here means
-    // intermediate temp files are auto-cleaned when this function returns,
-    // rather than accumulating in TEMP_FILE_DIR for the life of the process.
+    // Drop-guard collection: this Vec is intentionally never read — its
+    // ONLY purpose is to keep each intermediate `TempPath` alive until the
+    // function returns, at which point each entry's `Drop` removes its
+    // file from disk. `TempPath` holds no writable handle (so `qsv join`'s
+    // `O_CREAT|O_TRUNC` open still works) but it does own the path's
+    // lifetime. Without this Vec, intermediate temp files would either be
+    // deleted mid-loop (if we let `TempPath` drop after each iteration) or
+    // accumulate forever in `TEMP_FILE_DIR` (if we called `.keep()`).
+    // DO NOT remove the Vec to silence `collection_is_never_read` — the
+    // Drop side-effect is load-bearing.
+    #[allow(clippy::collection_is_never_read)]
     let mut intermediate_temps: Vec<TempPath> =
         Vec::with_capacity(additional_inputs.len().saturating_sub(1));
 

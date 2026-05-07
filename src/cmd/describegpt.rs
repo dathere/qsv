@@ -527,18 +527,18 @@ struct MarkdownTemplateFile {
     // (No `#[serde(default)]` needed here — the embedded default TOML always supplies them,
     //  and user overrides go through `MarkdownTemplateOverride` which IS optional.)
     #[allow(dead_code)]
-    name:                        String,
+    name: String,
     #[allow(dead_code)]
-    description:                 String,
+    description: String,
     #[allow(dead_code)]
-    author:                      String,
+    author: String,
     #[allow(dead_code)]
-    version:                     String,
+    version: String,
     dictionary_md_body_template: String,
-    dictionary_md_template:      String,
-    description_md_template:     String,
-    tags_md_template:            String,
-    custom_prompt_md_template:   String,
+    dictionary_md_template: String,
+    description_md_template: String,
+    tags_md_template: String,
+    custom_prompt_md_template: String,
 }
 
 /// User-supplied `--markdown-template` overrides. Every field is optional so a user can
@@ -548,23 +548,23 @@ struct MarkdownTemplateFile {
 #[derive(Debug, Default, Deserialize)]
 struct MarkdownTemplateOverride {
     #[serde(default)]
-    name:                        Option<String>,
+    name: Option<String>,
     #[serde(default)]
-    description:                 Option<String>,
+    description: Option<String>,
     #[serde(default)]
-    author:                      Option<String>,
+    author: Option<String>,
     #[serde(default)]
-    version:                     Option<String>,
+    version: Option<String>,
     #[serde(default)]
     dictionary_md_body_template: Option<String>,
     #[serde(default)]
-    dictionary_md_template:      Option<String>,
+    dictionary_md_template: Option<String>,
     #[serde(default)]
-    description_md_template:     Option<String>,
+    description_md_template: Option<String>,
     #[serde(default)]
-    tags_md_template:            Option<String>,
+    tags_md_template: Option<String>,
     #[serde(default)]
-    custom_prompt_md_template:   Option<String>,
+    custom_prompt_md_template: Option<String>,
 }
 
 impl MarkdownTemplateOverride {
@@ -572,23 +572,21 @@ impl MarkdownTemplateOverride {
     /// `None` keeps the base (embedded default) value.
     fn apply_to(self, base: MarkdownTemplateFile) -> MarkdownTemplateFile {
         MarkdownTemplateFile {
-            name:                        self.name.unwrap_or(base.name),
-            description:                 self.description.unwrap_or(base.description),
-            author:                      self.author.unwrap_or(base.author),
-            version:                     self.version.unwrap_or(base.version),
+            name: self.name.unwrap_or(base.name),
+            description: self.description.unwrap_or(base.description),
+            author: self.author.unwrap_or(base.author),
+            version: self.version.unwrap_or(base.version),
             dictionary_md_body_template: self
                 .dictionary_md_body_template
                 .unwrap_or(base.dictionary_md_body_template),
-            dictionary_md_template:      self
+            dictionary_md_template: self
                 .dictionary_md_template
                 .unwrap_or(base.dictionary_md_template),
-            description_md_template:     self
+            description_md_template: self
                 .description_md_template
                 .unwrap_or(base.description_md_template),
-            tags_md_template:            self
-                .tags_md_template
-                .unwrap_or(base.tags_md_template),
-            custom_prompt_md_template:   self
+            tags_md_template: self.tags_md_template.unwrap_or(base.tags_md_template),
+            custom_prompt_md_template: self
                 .custom_prompt_md_template
                 .unwrap_or(base.custom_prompt_md_template),
         }
@@ -5388,8 +5386,7 @@ mod tests {
     /// override (one template field set, all others omitted) Just Works.
     #[test]
     fn markdown_template_override_falls_back_per_field() {
-        let base: MarkdownTemplateFile =
-            toml::from_str(get_default_md_template_content()).unwrap();
+        let base: MarkdownTemplateFile = toml::from_str(get_default_md_template_content()).unwrap();
         let base_dict_md = base.dictionary_md_template.clone();
         let base_tags_md = base.tags_md_template.clone();
         let base_dict_body = base.dictionary_md_body_template.clone();
@@ -5402,7 +5399,10 @@ description_md_template = "OVERRIDDEN: {{ llm_response }}"
         let overlay: MarkdownTemplateOverride = toml::from_str(user_toml).unwrap();
         let merged = overlay.apply_to(base);
 
-        assert_eq!(merged.description_md_template, "OVERRIDDEN: {{ llm_response }}");
+        assert_eq!(
+            merged.description_md_template,
+            "OVERRIDDEN: {{ llm_response }}"
+        );
         // All other template fields keep the embedded default value.
         assert_eq!(merged.dictionary_md_template, base_dict_md);
         assert_eq!(merged.tags_md_template, base_tags_md);

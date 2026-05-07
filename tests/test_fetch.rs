@@ -786,7 +786,7 @@ fn fetchpost_custom_user_agent() {
     wrk.assert_success(&mut cmd);
 }
 
-use std::{sync::mpsc, thread};
+use std::{net::SocketAddr, sync::mpsc, thread};
 
 use actix_web::{
     App, HttpRequest, HttpServer, Responder, Result, dev::ServerHandle, middleware, rt, web,
@@ -813,21 +813,19 @@ async fn get_fullname(req: HttpRequest, name: web::Path<String>) -> Result<impl 
     Ok(web::Json(obj))
 }
 
-// convenience macros for changing test ip/port to use
-macro_rules! test_server {
-    () => {
-        "127.0.0.1:8081"
-    };
-}
+// Bind to 127.0.0.1 with an OS-assigned ephemeral port. Hardcoded ports
+// (this suite previously used 8081) collide on macOS CI runners with peer
+// integration-test binaries / lingering TIME_WAIT sockets and produce flaky
+// "Address already in use" failures. Each test reads the actual SocketAddr
+// from the channel and builds URLs against it via a local closure.
+const FETCH_TEST_BIND_HOST: &str = "127.0.0.1";
 
-macro_rules! test_url {
-    ($api_param:expr_2021) => {
-        concat!("http://", test_server!(), "/", $api_param)
-    };
-}
-
-/// start an Actix Webserver with Rate Limiting via Governor
-async fn run_webserver(tx: mpsc::Sender<ServerHandle>) -> std::io::Result<()> {
+/// start an Actix Webserver with Rate Limiting via Governor.
+/// Sends `Ok((handle, addr))` on success or `Err(msg)` on bind failure so
+/// tests fail fast with a clear error instead of timing out on `recv`.
+async fn run_webserver(
+    tx: mpsc::Sender<std::result::Result<(ServerHandle, SocketAddr), String>>,
+) -> std::io::Result<()> {
     use actix_governor::{Governor, GovernorConfigBuilder};
 
     // Allow bursts with up to five requests per IP address
@@ -839,7 +837,7 @@ async fn run_webserver(tx: mpsc::Sender<ServerHandle>) -> std::io::Result<()> {
         .unwrap();
 
     // server is server controller type, `dev::ServerHandle`
-    let server = HttpServer::new(move || {
+    let server_builder = HttpServer::new(move || {
         App::new()
             // enable logger
             .wrap(middleware::Logger::default())
@@ -847,30 +845,64 @@ async fn run_webserver(tx: mpsc::Sender<ServerHandle>) -> std::io::Result<()> {
             .wrap(Governor::new(&governor_conf))
             .service(web::resource("/user/{name}").route(web::get().to(get_fullname)))
             .service(web::resource("/").to(index))
-    })
-    .bind(test_server!())?
-    .run();
+    });
 
-    // send server controller to main thread
-    let _ = tx.send(server.handle());
+    // Port 0 -> OS picks an unused ephemeral port; addrs() then reports it.
+    let bound = match server_builder.bind((FETCH_TEST_BIND_HOST, 0)) {
+        Ok(b) => b,
+        Err(e) => {
+            let _ = tx.send(Err(format!("bind failed: {e}")));
+            return Err(e);
+        },
+    };
+
+    let addr = match bound.addrs().into_iter().next() {
+        Some(a) => a,
+        None => {
+            let _ = tx.send(Err("bind succeeded but no address was reported".to_string()));
+            return Err(std::io::Error::other(
+                "actix HttpServer::addrs() returned empty",
+            ));
+        },
+    };
+
+    let server = bound.run();
+
+    // send server controller + actual bound addr to main thread
+    let _ = tx.send(Ok((server.handle(), addr)));
 
     // run future
     server.await
 }
 
-#[test]
-#[serial]
-fn fetch_ratelimit() {
-    // start webserver with rate limiting
+/// Helper for `fetch_ratelimit` / `fetch_complex_url_template`: spawn the
+/// webserver thread, wait up to 10s for the bind to either succeed (returning
+/// `(handle, addr)`) or fail, panicking with a clear message otherwise.
+fn start_fetch_webserver() -> (ServerHandle, SocketAddr) {
     let (tx, rx) = mpsc::channel();
-
     println!("START Webserver ");
     thread::spawn(move || {
         let server_future = run_webserver(tx);
         rt::System::new().block_on(server_future)
     });
+    match rx.recv_timeout(std::time::Duration::from_secs(10)) {
+        Ok(Ok(payload)) => payload,
+        Ok(Err(msg)) => panic!("test webserver failed to bind: {msg}"),
+        Err(e) => panic!("test webserver did not start within 10s ({e:?})"),
+    }
+}
 
-    let server_handle = rx.recv().expect("test webserver error");
+#[test]
+#[serial]
+fn fetch_ratelimit() {
+    // start webserver with rate limiting (OS-assigned ephemeral port)
+    let (server_handle, addr) = start_fetch_webserver();
+    // svec! only accepts &'static str, so we need a String-based row helper
+    // for any row that contains a runtime-built URL.
+    let url_row = |path: &str| vec![format!("http://{addr}/{path}")];
+    let url_pair = |path: &str, name: &str| {
+        vec![format!("http://{addr}/{path}"), name.to_string()]
+    };
 
     // proceed with usual unit test
     let wrk = Workdir::new("fetch");
@@ -878,29 +910,29 @@ fn fetch_ratelimit() {
         "data.csv",
         vec![
             svec!["URL"],
-            svec![test_url!("user/Smurfette")],
-            svec![test_url!("user/Papa")],
-            svec![test_url!("user/Clumsy")],
-            svec![test_url!("user/Brainy")],
-            svec![test_url!("user/Grouchy")],
-            svec![test_url!("user/Hefty")],
-            svec![test_url!("user/Greedy")],
-            svec![test_url!("user/Jokey")],
-            svec![test_url!("user/Chef")],
-            svec![test_url!("user/Vanity")],
-            svec![test_url!("user/Handy")],
-            svec![test_url!("user/Scaredy")],
-            svec![test_url!("user/Tracker")],
-            svec![test_url!("user/Sloppy")],
-            svec![test_url!("user/Harmony")],
-            svec![test_url!("user/Painter")],
-            svec![test_url!("user/Poet")],
-            svec![test_url!("user/Farmer")],
-            svec![test_url!("user/Natural")],
-            svec![test_url!("user/Snappy")],
-            svec![test_url!(
-                "user/The quick brown fox jumped over the lazy dog by the zigzag quarry site"
-            )],
+            url_row("user/Smurfette"),
+            url_row("user/Papa"),
+            url_row("user/Clumsy"),
+            url_row("user/Brainy"),
+            url_row("user/Grouchy"),
+            url_row("user/Hefty"),
+            url_row("user/Greedy"),
+            url_row("user/Jokey"),
+            url_row("user/Chef"),
+            url_row("user/Vanity"),
+            url_row("user/Handy"),
+            url_row("user/Scaredy"),
+            url_row("user/Tracker"),
+            url_row("user/Sloppy"),
+            url_row("user/Harmony"),
+            url_row("user/Painter"),
+            url_row("user/Poet"),
+            url_row("user/Farmer"),
+            url_row("user/Natural"),
+            url_row("user/Snappy"),
+            url_row(
+                "user/The quick brown fox jumped over the lazy dog by the zigzag quarry site",
+            ),
         ],
     );
 
@@ -917,32 +949,30 @@ fn fetch_ratelimit() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["URL", "Fullname"],
-        svec![test_url!("user/Smurfette"), "Smurfette Smurf"],
-        svec![test_url!("user/Papa"), "Papa Smurf"],
-        svec![test_url!("user/Clumsy"), "Clumsy Smurf"],
-        svec![test_url!("user/Brainy"), "Brainy Smurf"],
-        svec![test_url!("user/Grouchy"), "Grouchy Smurf"],
-        svec![test_url!("user/Hefty"), "Hefty Smurf"],
-        svec![test_url!("user/Greedy"), "Greedy Smurf"],
-        svec![test_url!("user/Jokey"), "Jokey Smurf"],
-        svec![test_url!("user/Chef"), "Chef Smurf"],
-        svec![test_url!("user/Vanity"), "Vanity Smurf"],
-        svec![test_url!("user/Handy"), "Handy Smurf"],
-        svec![test_url!("user/Scaredy"), "Scaredy Smurf"],
-        svec![test_url!("user/Tracker"), "Tracker Smurf"],
-        svec![test_url!("user/Sloppy"), "Sloppy Smurf"],
-        svec![test_url!("user/Harmony"), "Harmony Smurf"],
-        svec![test_url!("user/Painter"), "Painter Smurf"],
-        svec![test_url!("user/Poet"), "Poet Smurf"],
-        svec![test_url!("user/Farmer"), "Farmer Smurf"],
-        svec![test_url!("user/Natural"), "Natural Smurf"],
-        svec![test_url!("user/Snappy"), "Snappy Smurf"],
-        svec![
-            test_url!(
-                "user/The quick brown fox jumped over the lazy dog by the zigzag quarry site"
-            ),
-            "The quick brown fox jumped over the lazy dog by the zigzag quarry site Smurf"
-        ],
+        url_pair("user/Smurfette", "Smurfette Smurf"),
+        url_pair("user/Papa", "Papa Smurf"),
+        url_pair("user/Clumsy", "Clumsy Smurf"),
+        url_pair("user/Brainy", "Brainy Smurf"),
+        url_pair("user/Grouchy", "Grouchy Smurf"),
+        url_pair("user/Hefty", "Hefty Smurf"),
+        url_pair("user/Greedy", "Greedy Smurf"),
+        url_pair("user/Jokey", "Jokey Smurf"),
+        url_pair("user/Chef", "Chef Smurf"),
+        url_pair("user/Vanity", "Vanity Smurf"),
+        url_pair("user/Handy", "Handy Smurf"),
+        url_pair("user/Scaredy", "Scaredy Smurf"),
+        url_pair("user/Tracker", "Tracker Smurf"),
+        url_pair("user/Sloppy", "Sloppy Smurf"),
+        url_pair("user/Harmony", "Harmony Smurf"),
+        url_pair("user/Painter", "Painter Smurf"),
+        url_pair("user/Poet", "Poet Smurf"),
+        url_pair("user/Farmer", "Farmer Smurf"),
+        url_pair("user/Natural", "Natural Smurf"),
+        url_pair("user/Snappy", "Snappy Smurf"),
+        url_pair(
+            "user/The quick brown fox jumped over the lazy dog by the zigzag quarry site",
+            "The quick brown fox jumped over the lazy dog by the zigzag quarry site Smurf",
+        ),
     ];
     assert_eq!(got, expected);
 
@@ -954,16 +984,8 @@ fn fetch_ratelimit() {
 #[test]
 #[serial]
 fn fetch_complex_url_template() {
-    // start webserver with rate limiting
-    let (tx, rx) = mpsc::channel();
-
-    println!("START Webserver ");
-    thread::spawn(move || {
-        let server_future = run_webserver(tx);
-        rt::System::new().block_on(server_future)
-    });
-
-    let server_handle = rx.recv().unwrap();
+    // start webserver with rate limiting (OS-assigned ephemeral port)
+    let (server_handle, addr) = start_fetch_webserver();
 
     // proceed with usual unit test
     let wrk = Workdir::new("fetch_complex_template");
@@ -995,11 +1017,7 @@ fn fetch_complex_url_template() {
     );
     let mut cmd = wrk.command("fetch");
     cmd.arg("--url-template")
-        .arg(concat!(
-            "http://",
-            test_server!(),
-            "/user/{first_name}%20{color}"
-        ))
+        .arg(format!("http://{addr}/user/{{first_name}}%20{{color}}"))
         .arg("--new-column")
         .arg("Fullname")
         .arg("--jaq")

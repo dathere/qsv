@@ -2046,20 +2046,18 @@ fn sample_timeseries_adaptive_both() {
 //   * --delimiter is honored on the streaming path.
 // =============================================================================
 
-use std::{sync::mpsc, thread};
+use std::{net::SocketAddr, sync::mpsc, thread};
 
 use actix_web::{App, HttpResponse, HttpServer, dev::ServerHandle, rt, web};
 use serial_test::serial;
 
-// Single source of truth: the bind host literal and port. Distinct from
-// test_fetch.rs (which uses 8081) so the two suites don't clash when run in
-// parallel across integration-test binaries.
+// Bind to 127.0.0.1 with an OS-assigned ephemeral port (port 0). Hardcoded
+// ports collide on macOS CI runners (TIME_WAIT after teardown, peer
+// integration-test binaries holding the port) and produce flaky
+// "Address already in use" failures in the sample suite. The actual bound
+// SocketAddr is captured via HttpServer::addrs() and threaded back to each
+// test through SampleWebServer so URLs can be built against it.
 const SAMPLE_TEST_BIND_HOST: &str = "127.0.0.1";
-const SAMPLE_TEST_PORT: u16 = 8082;
-
-fn sample_test_url(path: &str) -> String {
-    format!("http://{SAMPLE_TEST_BIND_HOST}:{SAMPLE_TEST_PORT}/{path}")
-}
 
 // Header field 0 contains a quoted newline (per RFC 4180). The OLD streaming
 // header parser split on the first raw `\n`, which would land INSIDE the
@@ -2102,12 +2100,12 @@ async fn serve_large_csv() -> HttpResponse {
         .body(large_csv_body())
 }
 
-// Channel payload: Ok(handle) on a successful bind, Err(msg) if bind() failed
-// (e.g. "Address already in use"). Sending Result instead of just the handle
-// means a failed bind surfaces a real error to start() instead of leaving the
-// receiver to time out.
+// Channel payload: Ok((handle, addr)) on a successful bind (addr carries the
+// OS-assigned ephemeral port), Err(msg) if bind() failed. Sending Result
+// instead of just the handle means a failed bind surfaces a real error to
+// start() instead of leaving the receiver to time out.
 async fn run_sample_webserver(
-    tx: mpsc::Sender<Result<ServerHandle, String>>,
+    tx: mpsc::Sender<Result<(ServerHandle, SocketAddr), String>>,
 ) -> std::io::Result<()> {
     let server_builder = HttpServer::new(|| {
         App::new()
@@ -2117,7 +2115,9 @@ async fn run_sample_webserver(
         // anything else -> 404 (handled by actix-web default)
     });
 
-    let bound = match server_builder.bind((SAMPLE_TEST_BIND_HOST, SAMPLE_TEST_PORT)) {
+    // Port 0 -> OS picks an unused ephemeral port; addrs() then reports the
+    // actual SocketAddr we landed on.
+    let bound = match server_builder.bind((SAMPLE_TEST_BIND_HOST, 0)) {
         Ok(b) => b,
         Err(e) => {
             let _ = tx.send(Err(format!("bind failed: {e}")));
@@ -2125,8 +2125,18 @@ async fn run_sample_webserver(
         },
     };
 
+    let addr = match bound.addrs().into_iter().next() {
+        Some(a) => a,
+        None => {
+            let _ = tx.send(Err("bind succeeded but no address was reported".to_string()));
+            return Err(std::io::Error::other(
+                "actix HttpServer::addrs() returned empty",
+            ));
+        },
+    };
+
     let server = bound.run();
-    let _ = tx.send(Ok(server.handle()));
+    let _ = tx.send(Ok((server.handle(), addr)));
     server.await
 }
 
@@ -2136,6 +2146,7 @@ async fn run_sample_webserver(
 // test, producing confusing follow-on failures.
 struct SampleWebServer {
     handle: Option<ServerHandle>,
+    addr:   SocketAddr,
 }
 
 impl SampleWebServer {
@@ -2149,14 +2160,23 @@ impl SampleWebServer {
         // recv_timeout (rather than recv) so a failed bind that the server
         // thread can't surface in time doesn't hang the test forever.
         match rx.recv_timeout(std::time::Duration::from_secs(10)) {
-            Ok(Ok(handle)) => Self {
+            Ok(Ok((handle, addr))) => Self {
                 handle: Some(handle),
+                addr,
             },
             Ok(Err(msg)) => panic!("test webserver failed to bind: {msg}"),
             Err(e) => {
                 panic!("test webserver did not start within 10s ({e:?})")
             },
         }
+    }
+
+    /// Build a URL against the actual bound (ephemeral) port. The leading
+    /// slash on the path is optional — both `"foo.csv"` and `"/foo.csv"`
+    /// produce the same URL.
+    fn url(&self, path: &str) -> String {
+        let path = path.strip_prefix('/').unwrap_or(path);
+        format!("http://{}/{path}", self.addr)
     }
 }
 
@@ -2207,13 +2227,13 @@ fn parse_csv_stdout(stdout: &[u8]) -> Vec<Vec<String>> {
 #[serial]
 fn sample_bernoulli_url_quoted_newline_header() {
     // RAII guard: server is torn down even if the test panics below.
-    let _server = SampleWebServer::start();
+    let server = SampleWebServer::start();
 
     let wrk = Workdir::new("sample_bernoulli_url_quoted_nl");
     let mut cmd = wrk.command("sample");
     cmd.args(["--bernoulli", "--seed", "42"])
         .arg("0.999")
-        .arg(sample_test_url("quoted_nl_header.csv"));
+        .arg(server.url("quoted_nl_header.csv"));
 
     // Run once, assert success, and parse stdout from the same execution
     // — surfaces qsv's stderr on failure and doesn't double-hit the fixture.
@@ -2248,14 +2268,14 @@ fn sample_bernoulli_url_quoted_newline_header() {
 #[test]
 #[serial]
 fn sample_bernoulli_url_max_size_truncation() {
-    let _server = SampleWebServer::start();
+    let server = SampleWebServer::start();
 
     let wrk = Workdir::new("sample_bernoulli_url_max_size");
     let mut cmd = wrk.command("sample");
     cmd.args(["--bernoulli", "--seed", "42"])
         .args(["--max-size", "1"])
         .arg("0.5")
-        .arg(sample_test_url("large.csv"));
+        .arg(server.url("large.csv"));
 
     // Single run — the previous double-run pattern doubled the ~1.2 MiB
     // download AND meant the stdout we parsed was from a different execution
@@ -2303,13 +2323,13 @@ fn sample_bernoulli_url_max_size_truncation() {
 #[test]
 #[serial]
 fn sample_bernoulli_url_404_fails_fast() {
-    let _server = SampleWebServer::start();
+    let server = SampleWebServer::start();
 
     let wrk = Workdir::new("sample_bernoulli_url_404");
     let mut cmd = wrk.command("sample");
     cmd.args(["--bernoulli", "--seed", "42"])
         .arg("0.5")
-        .arg(sample_test_url("does_not_exist.csv"));
+        .arg(server.url("does_not_exist.csv"));
 
     // .error_for_status() should turn the 404 into an Err in the streaming
     // path, so qsv exits with non-zero. Without that, the HTML 404 body
@@ -2320,14 +2340,14 @@ fn sample_bernoulli_url_404_fails_fast() {
 #[test]
 #[serial]
 fn sample_bernoulli_url_custom_delimiter() {
-    let _server = SampleWebServer::start();
+    let server = SampleWebServer::start();
 
     let wrk = Workdir::new("sample_bernoulli_url_tsv");
     let mut cmd = wrk.command("sample");
     cmd.args(["--bernoulli", "--seed", "42"])
         .args(["--delimiter", "\t"])
         .arg("0.999")
-        .arg(sample_test_url("data.tsv"));
+        .arg(server.url("data.tsv"));
 
     // qsv's writer also honors --delimiter, so output is tab-separated.
     // read_stdout()'s CSV parser would treat that as a single comma-field, so

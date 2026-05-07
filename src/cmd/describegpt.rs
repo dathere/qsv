@@ -229,9 +229,15 @@ describegpt options:
                            If no file is provided, default prompts will be used.
                            The prompt file uses the Mini Jinja template engine (https://docs.rs/minijinja)
                            See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml
-    --markdown-template <file>  TOML file with Mini Jinja templates for Markdown output, with
-                           per-inference-type templates: dictionary_md_template, description_md_template,
-                           tags_md_template and custom_prompt_md_template.
+    --markdown-template <file>  TOML file with Mini Jinja templates for Markdown output. The TOML
+                           contains four wrapper templates - one per inference kind:
+                           dictionary_md_template, description_md_template, tags_md_template
+                           and custom_prompt_md_template - plus a dictionary_md_body_template
+                           that drives the per-field dictionary table that fills the
+                           dictionary wrapper's {{ llm_response }}.
+                           Custom Mini Jinja filters (pipe_escape, br_replace, human_count,
+                           dict_cell, humanize_examples) and template variables are documented
+                           inline in the default TOML referenced below.
                            If no file is provided, built-in defaults are used (matching legacy output).
                            See https://github.com/dathere/qsv/blob/master/resources/describegpt_md_defaults.toml
     --sample-size <n>      The number of rows to randomly sample from the input file for the sample data.
@@ -512,18 +518,28 @@ struct PromptFile {
     p_fewshot_examples:     String, //Polars SQL few-shot examples
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct MarkdownTemplateFile {
-    name: String,
-    description: String,
-    author: String,
-    version: String,
+    // Metadata fields are deserialized for round-tripping but never read by code.
+    // `#[serde(default)]` lets users supply a minimal --markdown-template TOML without
+    // copying the boilerplate metadata header from the default file.
+    #[serde(default)]
+    #[allow(dead_code)]
+    name:                        String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    description:                 String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    author:                      String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    version:                     String,
     dictionary_md_body_template: String,
-    dictionary_md_template: String,
-    description_md_template: String,
-    tags_md_template: String,
-    custom_prompt_md_template: String,
+    dictionary_md_template:      String,
+    description_md_template:     String,
+    tags_md_template:            String,
+    custom_prompt_md_template:   String,
 }
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -1020,25 +1036,27 @@ const fn get_default_md_template_content() -> &'static str {
     include_str!("../../resources/describegpt_md_defaults.toml")
 }
 
-/// Loads the markdown template file (custom via --markdown-template, or the embedded default).
-/// Parses it as TOML and caches the result in `MD_TEMPLATE_FILE`.
 fn get_md_template_file(args: &Args) -> CliResult<&MarkdownTemplateFile> {
     if let Some(file) = MD_TEMPLATE_FILE.get() {
         return Ok(file);
     }
     let owned_content;
-    let content: &str = if let Some(ref path) = args.flag_markdown_template {
-        owned_content = fs::read_to_string(path).map_err(|e| {
-            CliError::Other(format!(
-                "Could not read --markdown-template file '{path}': {e}"
-            ))
-        })?;
-        &owned_content
-    } else {
-        get_default_md_template_content()
-    };
-    let parsed: MarkdownTemplateFile = toml::from_str(content)
-        .map_err(|e| CliError::Other(format!("Markdown template parsing error: {e}")))?;
+    let (content, source_label): (&str, &str) =
+        if let Some(ref path) = args.flag_markdown_template {
+            owned_content = fs::read_to_string(path).map_err(|e| {
+                CliError::Other(format!(
+                    "Could not read --markdown-template file '{path}': {e}"
+                ))
+            })?;
+            (&owned_content, path.as_str())
+        } else {
+            (get_default_md_template_content(), "<default embedded TOML>")
+        };
+    let parsed: MarkdownTemplateFile = toml::from_str(content).map_err(|e| {
+        CliError::Other(format!(
+            "Markdown template parsing error in '{source_label}': {e}"
+        ))
+    })?;
     // Ignore Err: another thread may have set it concurrently; that's fine.
     let _ = MD_TEMPLATE_FILE.set(parsed);
     Ok(MD_TEMPLATE_FILE.get().unwrap())

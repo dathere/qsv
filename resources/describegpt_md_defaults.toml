@@ -1,0 +1,84 @@
+name = "qsv Default Markdown Template File"
+description = "Default Mini Jinja templates for describegpt's Markdown output."
+author = "qsv team"
+version = "1.0.0"
+
+### NOTE: The following VARIABLES are available in Mini Jinja templates (use {{ variable }} syntax):
+# Wrapper templates (dictionary_md_template / description_md_template / tags_md_template /
+# custom_prompt_md_template) receive:
+#   {{ llm_response }}      - the unescaped LLM response (post SQL-rewrite for Prompt mode,
+#                             with {GENERATED_BY_SIGNATURE} placeholder already substituted;
+#                             for the Dictionary kind this is the rendered body template below)
+#   {{ kind }}              - "Dictionary" | "Description" | "Tags" | "Prompt"
+#   {{ reasoning }}         - LLM reasoning trace (may be empty)
+#   {{ token_usage }}       - Debug-formatted token usage string (matches legacy output)
+#   {{ token_usage_struct }} - structured access: .prompt, .completion, .total, .elapsed
+#   {{ generated_by_signature }} - rendered attribution block (Markdown format)
+#   {{ model }}, {{ base_url }}, {{ input_filename }}, {{ timestamp }}
+#
+# The dictionary body template (dictionary_md_body_template) additionally receives:
+#   {{ entries }}           - list of records, each with: name, type, label, description,
+#                             min, max, cardinality, enumeration, null_count, addl_cols, examples
+#   {{ addl_col_names }}    - list of additional column names (in display order)
+#
+### Custom Mini Jinja filters available in all describegpt markdown templates:
+#   pipe_escape       - replaces "|" with "\|" (escapes pipe for markdown tables)
+#   br_replace        - replaces newlines with "<br>"
+#   human_count       - thousands-separator formatting (1234 -> "1,234")
+#   dict_cell(col)    - addl-cols cell formatting; for the special "percentiles" column
+#                       both pipes and newlines become "<br>", otherwise pipes are escaped
+#                       and newlines become "<br>"
+#   humanize_examples - reproduces legacy "value [count]" line humanization, joined with "<br>";
+#                       the special sentinel "<ALL_UNIQUE>" is passed through unchanged
+
+dictionary_md_body_template = """| Name | Type | Label | Description | Min | Max | Cardinality | Enumeration | Null Count{% for col in addl_col_names %} | {{ col }}{% endfor %} | Examples |
+|------|------|-------|-------------|-----|-----|-------------|-------------|------------{% for col in addl_col_names %}|----------{% endfor %}|----------|
+{% for entry in entries -%}
+| **{{ entry.name | pipe_escape }}** | {{ entry.type | pipe_escape }} | {{ entry.label | pipe_escape }} | {{ entry.description | pipe_escape | br_replace }} | {{ entry.min | pipe_escape }} | {{ entry.max | pipe_escape }} | {{ entry.cardinality | human_count }} | {{ entry.enumeration | pipe_escape | br_replace }} | {{ entry.null_count | human_count }}{% for col in addl_col_names %} | {{ entry.addl_cols[col] | default("") | dict_cell(col) }}{% endfor %} | {{ entry.examples | pipe_escape | humanize_examples }} |
+{% endfor %}
+*Attribution: {{ generated_by_signature }}*
+"""
+
+dictionary_md_template = """# {{ kind }}
+{{ llm_response }}
+## REASONING
+
+{{ reasoning }}
+## TOKEN USAGE
+
+{{ token_usage }}
+---
+"""
+
+description_md_template = """# {{ kind }}
+{{ llm_response }}
+## REASONING
+
+{{ reasoning }}
+## TOKEN USAGE
+
+{{ token_usage }}
+---
+"""
+
+tags_md_template = """# {{ kind }}
+{{ llm_response }}
+## REASONING
+
+{{ reasoning }}
+## TOKEN USAGE
+
+{{ token_usage }}
+---
+"""
+
+custom_prompt_md_template = """# {{ kind }}
+{{ llm_response }}
+## REASONING
+
+{{ reasoning }}
+## TOKEN USAGE
+
+{{ token_usage }}
+---
+"""

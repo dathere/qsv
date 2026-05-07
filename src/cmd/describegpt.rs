@@ -229,6 +229,11 @@ describegpt options:
                            If no file is provided, default prompts will be used.
                            The prompt file uses the Mini Jinja template engine (https://docs.rs/minijinja)
                            See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml
+    --markdown-template <file>  TOML file with Mini Jinja templates for Markdown output, with
+                           per-inference-type templates: dictionary_md_template, description_md_template,
+                           tags_md_template and custom_prompt_md_template.
+                           If no file is provided, built-in defaults are used (matching legacy output).
+                           See https://github.com/dathere/qsv/blob/master/resources/describegpt_md_defaults.toml
     --sample-size <n>      The number of rows to randomly sample from the input file for the sample data.
                            Uses the INDEXED sampling method with the qsv sample command.
                            [default: 100]
@@ -450,6 +455,7 @@ struct Args {
     flag_prompt:            Option<String>,
     flag_sql_results:       Option<String>,
     flag_prompt_file:       Option<String>,
+    flag_markdown_template: Option<String>,
     flag_sample_size:       u16,
     flag_fewshot_examples:  bool,
     flag_base_url:          Option<String>,
@@ -504,6 +510,20 @@ struct PromptFile {
     polars_sql_guidance:    String,
     dd_fewshot_examples:    String, //DuckDB few-shot examples
     p_fewshot_examples:     String, //Polars SQL few-shot examples
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct MarkdownTemplateFile {
+    name:                       String,
+    description:                String,
+    author:                     String,
+    version:                    String,
+    dictionary_md_body_template: String,
+    dictionary_md_template:     String,
+    description_md_template:    String,
+    tags_md_template:           String,
+    custom_prompt_md_template:  String,
 }
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -677,6 +697,7 @@ impl DiskCacheConfig {
 
 static FILE_HASH: OnceLock<String> = OnceLock::new();
 static PROMPT_FILE: OnceLock<PromptFile> = OnceLock::new();
+static MD_TEMPLATE_FILE: OnceLock<MarkdownTemplateFile> = OnceLock::new();
 static PROMPT_VALIDITY_FLAGS: std::sync::LazyLock<std::sync::Mutex<HashMap<String, String>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
@@ -980,10 +1001,184 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
             .system_prompt
             .replace("{TOP_N}", &args.flag_enum_threshold.to_string());
 
-        // Set the global prompt file
-        PROMPT_FILE.set(prompt_file).unwrap();
+        // Set the global prompt file. Ignore Err: another thread may have set it
+        // concurrently; that's fine — the value is the same and we just use the winner.
+        let _ = PROMPT_FILE.set(prompt_file);
         Ok(PROMPT_FILE.get().unwrap())
     }
+}
+
+/// Returns the embedded default markdown template TOML content.
+const fn get_default_md_template_content() -> &'static str {
+    include_str!("../../resources/describegpt_md_defaults.toml")
+}
+
+/// Loads the markdown template file (custom via --markdown-template, or the embedded default).
+/// Parses it as TOML and caches the result in `MD_TEMPLATE_FILE`.
+fn get_md_template_file(args: &Args) -> CliResult<&MarkdownTemplateFile> {
+    if let Some(file) = MD_TEMPLATE_FILE.get() {
+        return Ok(file);
+    }
+    let owned_content;
+    let content: &str = if let Some(ref path) = args.flag_markdown_template {
+        owned_content = fs::read_to_string(path).map_err(|e| {
+            CliError::Other(format!(
+                "Could not read --markdown-template file '{path}': {e}"
+            ))
+        })?;
+        &owned_content
+    } else {
+        get_default_md_template_content()
+    };
+    let parsed: MarkdownTemplateFile = toml::from_str(content)
+        .map_err(|e| CliError::Other(format!("Markdown template parsing error: {e}")))?;
+    // Ignore Err: another thread may have set it concurrently; that's fine.
+    let _ = MD_TEMPLATE_FILE.set(parsed);
+    Ok(MD_TEMPLATE_FILE.get().unwrap())
+}
+
+/// Builds a Mini Jinja [`Environment`] preconfigured with describegpt's markdown filters.
+/// Centralized so both wrapper templates and the dictionary body template see the same
+/// filter set:
+///   pipe_escape       - "|" -> "\|"
+///   br_replace        - "\n" -> "<br>"
+///   human_count       - 1234 -> "1,234" (thousands separator)
+///   dict_cell(col)    - addl-cols cell formatting; "percentiles" gets pipes-as-<br>,
+///                       other columns get pipe-escape + newline-as-<br>
+///   humanize_examples - reproduces legacy "value [count]" line humanization, joined with
+///                       "<br>"; the "<ALL_UNIQUE>" sentinel passes through unchanged
+fn make_describegpt_md_env() -> Environment<'static> {
+    use indicatif::HumanCount;
+
+    let mut env = Environment::new();
+    minijinja_contrib::add_to_environment(&mut env);
+    // Preserve trailing newlines so default templates byte-match the legacy `format!()` output.
+    env.set_keep_trailing_newline(true);
+
+    env.add_filter("pipe_escape", |v: String| v.replace('|', "\\|"));
+    env.add_filter("br_replace", |v: String| v.replace('\n', "<br>"));
+    env.add_filter("human_count", |v: u64| HumanCount(v).to_string());
+    env.add_filter("dict_cell", |v: String, col: String| -> String {
+        if col == "percentiles" {
+            v.replace(['|', '\n'], "<br>")
+        } else {
+            v.replace('|', "\\|").replace('\n', "<br>")
+        }
+    });
+    env.add_filter("humanize_examples", |examples: String| -> String {
+        if examples == "<ALL_UNIQUE>" {
+            return examples;
+        }
+        examples
+            .lines()
+            .map(|line| {
+                if let Some(pos) = line.rfind(" [") {
+                    let (value_part, count_part) = line.split_at(pos + 2);
+                    if let Some(end_pos) = count_part.find(']')
+                        && let Ok(count) = count_part[..end_pos].parse::<u64>()
+                    {
+                        return format!(
+                            "{} [{}]",
+                            value_part.trim_end_matches(" ["),
+                            HumanCount(count)
+                        );
+                    }
+                }
+                line.to_string()
+            })
+            .collect::<Vec<String>>()
+            .join("<br>")
+    });
+
+    env
+}
+
+/// Renders the dictionary body template (the per-field table that fills `{{ llm_response }}`
+/// in the dictionary wrapper). Receives the structured `entries` and `addl_col_names` so users
+/// can re-shape the layout entirely from the TOML — change the table columns, switch to a
+/// per-field section layout, drop the attribution footer, etc.
+fn render_dictionary_md_body(
+    args: &Args,
+    entries: &[dictionary::DictionaryEntry],
+    addl_col_names: &[String],
+    model: &str,
+    base_url: &str,
+) -> CliResult<String> {
+    let md_file = get_md_template_file(args)?;
+    let env = make_describegpt_md_env();
+
+    let attribution = replace_attribution_placeholder(
+        "{GENERATED_BY_SIGNATURE}",
+        args,
+        model,
+        base_url,
+        AttributionFormat::Markdown,
+        PromptType::Dictionary,
+    );
+
+    let ctx = context! {
+        entries => entries,
+        addl_col_names => addl_col_names,
+        kind => PromptType::Dictionary.to_string(),
+        generated_by_signature => attribution,
+        model => model,
+        base_url => base_url,
+        input_filename => args.arg_input.as_deref().unwrap_or("stdin"),
+        timestamp => chrono::Utc::now().to_rfc3339(),
+    };
+
+    env.render_str(&md_file.dictionary_md_body_template, &ctx)
+        .map_err(|e| CliError::Other(format!("Dictionary body template render error: {e}")))
+}
+
+fn render_markdown_template(
+    kind: PromptType,
+    args: &Args,
+    response_body: &str,
+    reasoning: &str,
+    token_usage: &TokenUsage,
+    model: &str,
+    base_url: &str,
+) -> CliResult<String> {
+    let md_file = get_md_template_file(args)?;
+    let template_str: &str = match kind {
+        PromptType::Dictionary => &md_file.dictionary_md_template,
+        PromptType::Description => &md_file.description_md_template,
+        PromptType::Tags => &md_file.tags_md_template,
+        PromptType::Prompt => &md_file.custom_prompt_md_template,
+    };
+
+    let env = make_describegpt_md_env();
+
+    // Pre-format token_usage with Debug to preserve byte-identical legacy default output.
+    // Users who want structured access can use {{ token_usage_struct.prompt }}, etc.
+    let token_usage_debug = format!("{token_usage:?}");
+
+    // Pre-render the attribution block in Markdown form so templates can place it anywhere.
+    let attribution = replace_attribution_placeholder(
+        "{GENERATED_BY_SIGNATURE}",
+        args,
+        model,
+        base_url,
+        AttributionFormat::Markdown,
+        kind,
+    );
+
+    let ctx = context! {
+        llm_response => response_body,
+        kind => kind.to_string(),
+        reasoning => reasoning,
+        token_usage => token_usage_debug,
+        token_usage_struct => token_usage,
+        generated_by_signature => attribution,
+        model => model,
+        base_url => base_url,
+        input_filename => args.arg_input.as_deref().unwrap_or("stdin"),
+        timestamp => chrono::Utc::now().to_rfc3339(),
+    };
+
+    env.render_str(template_str, &ctx)
+        .map_err(|e| CliError::Other(format!("Markdown template render error: {e}")))
 }
 
 /// Extract a single JSON value from an LLM response.
@@ -2252,7 +2447,11 @@ fn format_dictionary_phase(
             print!("{tsv_output}");
         }
     } else {
-        let mut markdown_output = formatters::format_dictionary_markdown(&combined_entries);
+        let addl_col_names = formatters::extract_ordered_addl_cols(&combined_entries);
+        let mut markdown_output =
+            render_dictionary_md_body(args, &combined_entries, &addl_col_names, model, base_url)?;
+        // Belt-and-suspenders: also substitute any literal {GENERATED_BY_SIGNATURE} that may
+        // have leaked through from a custom dictionary prompt or template.
         markdown_output = replace_attribution_placeholder(
             &markdown_output,
             args,
@@ -2261,10 +2460,15 @@ fn format_dictionary_phase(
             AttributionFormat::Markdown,
             PromptType::Dictionary,
         );
-        let formatted_output = format!(
-            "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
-            kind, markdown_output, completion_response.reasoning, completion_response.token_usage
-        );
+        let formatted_output = render_markdown_template(
+            kind,
+            args,
+            &markdown_output,
+            &completion_response.reasoning,
+            &completion_response.token_usage,
+            model,
+            base_url,
+        )?;
         let dictionary_json = formatters::format_dictionary_json(
             &combined_entries,
             args.flag_enum_threshold,
@@ -2449,14 +2653,13 @@ fn format_phase_toon(
     };
 }
 
-/// Non-dictionary phase output to Markdown / plaintext.
-/// Also handles the SQL-response fallthrough when `is_sql_response` is true for the Prompt kind.
-/// `is_sql_response` can only be true when `kind == Prompt` — enforced via `debug_assert!`.
 fn format_phase_markdown(
     kind: PromptType,
     args: &Args,
     completion_response: &CompletionResponse,
     is_sql_response: bool,
+    model: &str,
+    base_url: &str,
 ) -> CliResult<()> {
     debug_assert!(
         !is_sql_response || kind == PromptType::Prompt,
@@ -2479,18 +2682,23 @@ fn format_phase_markdown(
             }
         };
     }
-    formatted_output = format!(
-        "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
-        kind, formatted_output, completion_response.reasoning, completion_response.token_usage
-    );
+    let rendered = render_markdown_template(
+        kind,
+        args,
+        &formatted_output,
+        &completion_response.reasoning,
+        &completion_response.token_usage,
+        model,
+        base_url,
+    )?;
     if let Some(output) = &args.flag_output {
         fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(output)?
-            .write_all(formatted_output.as_bytes())?;
+            .write_all(rendered.as_bytes())?;
     } else {
-        println!("{formatted_output}");
+        println!("{rendered}");
     }
     Ok(())
 }
@@ -2560,7 +2768,14 @@ fn process_phase_output(
         },
         (OutputFormat::Markdown, _)
         | (OutputFormat::Json | OutputFormat::Tsv | OutputFormat::Toon, true) => {
-            format_phase_markdown(kind, args, completion_response, is_sql_response)
+            format_phase_markdown(
+                kind,
+                args,
+                completion_response,
+                is_sql_response,
+                model,
+                base_url,
+            )
         },
     }
 }
@@ -4876,6 +5091,7 @@ mod tests {
             flag_prompt:            None,
             flag_sql_results:       None,
             flag_prompt_file:       None,
+            flag_markdown_template: None,
             flag_sample_size:       0,
             flag_fewshot_examples:  false,
             flag_base_url:          None,
@@ -4906,5 +5122,169 @@ mod tests {
             flag_score_threshold:   0,
             flag_score_max_retries: 0,
         }
+    }
+
+    /// Verifies that the default `describegpt_md_defaults.toml` produces byte-identical
+    /// output to the legacy hardcoded `format!("# {}\n{}\n## REASONING\n\n{}\n## TOKEN \
+    /// USAGE\n\n{:?}\n---\n", ...)` wrapper for every PromptType. If this test breaks,
+    /// the default template was edited in a way that changes legacy output — either
+    /// fix the template or bump the major version and document the change.
+    #[test]
+    fn markdown_default_template_byte_identical_to_legacy() {
+        let mut args = default_args_for_test();
+        // get_prompt_file (called transitively via replace_attribution_placeholder)
+        // expects these to be populated as docopt would at runtime.
+        args.flag_base_url = Some(DEFAULT_BASE_URL.to_string());
+        args.flag_model = Some(DEFAULT_MODEL.to_string());
+        let response_body = "Hello, *world*.";
+        let reasoning = "Some reasoning here.";
+        let token_usage = TokenUsage {
+            prompt:     12,
+            completion: 34,
+            total:      46,
+            elapsed:    789,
+        };
+        let model = "openai/gpt-oss-20b";
+        let base_url = "http://localhost:11434/v1";
+
+        for kind in [
+            PromptType::Dictionary,
+            PromptType::Description,
+            PromptType::Tags,
+            PromptType::Prompt,
+        ] {
+            let legacy = format!(
+                "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
+                kind, response_body, reasoning, token_usage
+            );
+            let rendered = render_markdown_template(
+                kind,
+                &args,
+                response_body,
+                reasoning,
+                &token_usage,
+                model,
+                base_url,
+            )
+            .unwrap();
+            assert_eq!(
+                rendered, legacy,
+                "default markdown template diverged from legacy output for kind={kind:?}"
+            );
+            // Reset cached template between iterations is unnecessary because the same
+            // default templates are used for all kinds; OnceLock is set once and reused.
+        }
+    }
+
+    /// Locks in that the default `dictionary_md_body_template` reproduces the legacy
+    /// `formatters::format_dictionary_markdown` output for a representative fixture
+    /// (with addl_cols including the special "percentiles" column, pipe escaping, the
+    /// "<ALL_UNIQUE>" examples sentinel, and a humanized count).
+    /// If this test fails, the default body template diverged from the legacy table — either
+    /// fix the template or bump the major version and document the change.
+    #[test]
+    fn dictionary_body_default_template_byte_identical_to_legacy() {
+        use indexmap::IndexMap;
+
+        let mut args = default_args_for_test();
+        args.flag_base_url = Some(DEFAULT_BASE_URL.to_string());
+        args.flag_model = Some(DEFAULT_MODEL.to_string());
+        let model = "openai/gpt-oss-20b";
+        let base_url = "http://localhost:11434/v1";
+
+        // Fixture: two entries, with a "percentiles" addl_col and a regular "mean" addl_col.
+        let mut addl1 = IndexMap::new();
+        addl1.insert("mean".to_string(), "12.5".to_string());
+        addl1.insert(
+            "percentiles".to_string(),
+            "p25: 10\np50: 12\np75: 15".to_string(),
+        );
+        let mut addl2 = IndexMap::new();
+        addl2.insert("mean".to_string(), "0".to_string());
+        addl2.insert("percentiles".to_string(), String::new());
+
+        let entries = vec![
+            dictionary::DictionaryEntry {
+                name:        "id".to_string(),
+                r#type:      "Integer".to_string(),
+                label:       "ID".to_string(),
+                description: "Unique identifier\nfor the row.".to_string(),
+                min:         "1".to_string(),
+                max:         "1000".to_string(),
+                cardinality: 1000,
+                enumeration: String::new(),
+                null_count:  0,
+                addl_cols:   addl1,
+                examples:    "<ALL_UNIQUE>".to_string(),
+            },
+            dictionary::DictionaryEntry {
+                name:        "category|raw".to_string(),
+                r#type:      "String".to_string(),
+                label:       "Category".to_string(),
+                description: "Top-level grouping.".to_string(),
+                min:         String::new(),
+                max:         String::new(),
+                cardinality: 3,
+                enumeration: "alpha\nbeta\ngamma".to_string(),
+                null_count:  12_345,
+                addl_cols:   addl2,
+                examples:    "alpha [9000]\nbeta [1234]".to_string(),
+            },
+        ];
+
+        // Hand-rolled expected output that mirrors the legacy table format precisely:
+        //   - pipe in "category|raw" escaped to "\|"
+        //   - newlines in description and enumeration become "<br>"
+        //   - cardinality and null_count humanized via thousands separator
+        //   - percentiles column collapses pipes AND newlines to "<br>"
+        //   - "<ALL_UNIQUE>" passes through unchanged
+        //   - "alpha [9000]" gets count humanized to "alpha [9,000]"
+        //   - row-count separator pieces match column count
+        //   - footer is "*Attribution: <rendered attribution block>*"
+        let attribution = replace_attribution_placeholder(
+            "{GENERATED_BY_SIGNATURE}",
+            &args,
+            model,
+            base_url,
+            AttributionFormat::Markdown,
+            PromptType::Dictionary,
+        );
+        let expected = format!(
+            "| Name | Type | Label | Description | Min | Max | Cardinality | Enumeration | Null \
+             Count | mean | percentiles | Examples |\n|------|------|-------|-------------|-----|-\
+             ----|-------------|-------------|------------|----------|----------|----------|\n| \
+             **id** | Integer | ID | Unique identifier<br>for the row. | 1 | 1000 | 1,000 |  | 0 \
+             | 12.5 | p25: 10<br>p50: 12<br>p75: 15 | <ALL_UNIQUE> |\n| **category\\|raw** | \
+             String | Category | Top-level grouping. |  |  | 3 | alpha<br>beta<br>gamma | 12,345 \
+             | 0 |  | alpha [9,000]<br>beta [1,234] |\n\n*Attribution: {attribution}*\n",
+        );
+
+        let addl_col_names = formatters::extract_ordered_addl_cols(&entries);
+        let rendered =
+            render_dictionary_md_body(&args, &entries, &addl_col_names, model, base_url).unwrap();
+
+        // The attribution block embeds chrono::Utc::now(), so the two `replace_attribution_\
+        // placeholder` calls (one in this test, one inside render_dictionary_md_body) produce
+        // different timestamps. Mask the timestamp line before comparing so the test is
+        // deterministic — the structural format is what we're locking in here.
+        let mask_ts = |s: &str| {
+            let mut out = String::with_capacity(s.len());
+            for line in s.split_inclusive('\n') {
+                if let Some(rest) = line.strip_prefix("Timestamp: ") {
+                    out.push_str("Timestamp: <TS>");
+                    if rest.ends_with('\n') {
+                        out.push('\n');
+                    }
+                } else {
+                    out.push_str(line);
+                }
+            }
+            out
+        };
+        assert_eq!(
+            mask_ts(&rendered),
+            mask_ts(&expected),
+            "default dictionary_md_body_template diverged from legacy table output"
+        );
     }
 }

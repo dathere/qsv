@@ -39,6 +39,10 @@ dictionary_md_body_template = """| Name | Type | Label | Description | Min | Max
 *Attribution: {{ generated_by_signature }}*
 """
 
+# NOTE: by default the four wrapper templates below are byte-identical — they only differ on
+# the `{{ kind }}` substitution at runtime. The `default_wrapper_templates_are_byte_identical`
+# test asserts this; if you intentionally specialize one wrapper, update that test too.
+
 dictionary_md_template = """# {{ kind }}
 {{ llm_response }}
 ## REASONING

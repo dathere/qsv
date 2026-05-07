@@ -363,7 +363,7 @@ use std::{
     env, fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::{LazyLock, OnceLock},
     time::{Duration, Instant},
 };
 
@@ -696,6 +696,13 @@ impl DiskCacheConfig {
 }
 
 static FILE_HASH: OnceLock<String> = OnceLock::new();
+// NOTE: PROMPT_FILE and MD_TEMPLATE_FILE are process-wide singletons whose content is derived
+// from `args.flag_prompt_file` / `args.flag_markdown_template`. In the CLI process this is a
+// non-issue (there is exactly one Args). In the test binary the FIRST test to call
+// `get_prompt_file` / `get_md_template_file` pins the value for the rest of the binary, so any
+// future test that exercises a CUSTOM template must run in its own process (e.g. via
+// `#[test_with::process]` or by running with `--test-threads=1` *and* a separate test binary)
+// or refactor the loaders to thread the parsed templates through call sites instead of caching.
 static PROMPT_FILE: OnceLock<PromptFile> = OnceLock::new();
 static MD_TEMPLATE_FILE: OnceLock<MarkdownTemplateFile> = OnceLock::new();
 static PROMPT_VALIDITY_FLAGS: std::sync::LazyLock<std::sync::Mutex<HashMap<String, String>>> =
@@ -1037,94 +1044,104 @@ fn get_md_template_file(args: &Args) -> CliResult<&MarkdownTemplateFile> {
     Ok(MD_TEMPLATE_FILE.get().unwrap())
 }
 
-/// Builds a Mini Jinja [`Environment`] preconfigured with describegpt's markdown filters.
-/// Centralized so both wrapper templates and the dictionary body template see the same
-/// filter set:
-///   pipe_escape       - "|" -> "\|"
-///   br_replace        - "\n" -> "<br>"
-///   human_count       - 1234 -> "1,234" (thousands separator)
-///   dict_cell(col)    - addl-cols cell formatting; "percentiles" gets pipes-as-<br>,
-///                       other columns get pipe-escape + newline-as-<br>
-///   humanize_examples - reproduces legacy "value [count]" line humanization, joined with
-///                       "<br>"; the "<ALL_UNIQUE>" sentinel passes through unchanged
-fn make_describegpt_md_env() -> Environment<'static> {
-    use indicatif::HumanCount;
-
-    let mut env = Environment::new();
-    minijinja_contrib::add_to_environment(&mut env);
-    // Preserve trailing newlines so default templates byte-match the legacy `format!()` output.
-    env.set_keep_trailing_newline(true);
-
-    env.add_filter("pipe_escape", |v: String| v.replace('|', "\\|"));
-    env.add_filter("br_replace", |v: String| v.replace('\n', "<br>"));
-    env.add_filter("human_count", |v: u64| HumanCount(v).to_string());
-    env.add_filter("dict_cell", |v: String, col: String| -> String {
-        if col == "percentiles" {
-            v.replace(['|', '\n'], "<br>")
-        } else {
-            v.replace('|', "\\|").replace('\n', "<br>")
-        }
-    });
-    env.add_filter("humanize_examples", |examples: String| -> String {
-        if examples == "<ALL_UNIQUE>" {
-            return examples;
-        }
-        examples
-            .lines()
-            .map(|line| {
-                if let Some(pos) = line.rfind(" [") {
-                    let (value_part, count_part) = line.split_at(pos + 2);
-                    if let Some(end_pos) = count_part.find(']')
-                        && let Ok(count) = count_part[..end_pos].parse::<u64>()
-                    {
-                        return format!(
-                            "{} [{}]",
-                            value_part.trim_end_matches(" ["),
-                            HumanCount(count)
-                        );
-                    }
-                }
-                line.to_string()
-            })
-            .collect::<Vec<String>>()
-            .join("<br>")
-    });
-
-    env
+/// Per-phase render context shared across the dictionary body template and the wrapper
+/// template. Computed once per `process_phase_output` call so the body footer's attribution
+/// timestamp matches the wrapper's `{{ timestamp }}` and `{{ generated_by_signature }}`
+/// timestamps in the same rendered document.
+struct SharedRenderCtx {
+    /// Rendered Markdown attribution block (already substituted for `{GENERATED_BY_SIGNATURE}`).
+    attribution: String,
+    /// RFC3339 UTC timestamp string, captured once per phase.
+    timestamp:   String,
 }
 
-/// Renders the dictionary body template (the per-field table that fills `{{ llm_response }}`
-/// in the dictionary wrapper). Receives the structured `entries` and `addl_col_names` so users
-/// can re-shape the layout entirely from the TOML — change the table columns, switch to a
-/// per-field section layout, drop the attribution footer, etc.
+impl SharedRenderCtx {
+    fn new(args: &Args, model: &str, base_url: &str, kind: PromptType) -> Self {
+        Self {
+            attribution: replace_attribution_placeholder(
+                "{GENERATED_BY_SIGNATURE}",
+                args,
+                model,
+                base_url,
+                AttributionFormat::Markdown,
+                kind,
+            ),
+            timestamp:   chrono::Utc::now().to_rfc3339(),
+        }
+    }
+}
+
+fn make_describegpt_md_env() -> &'static Environment<'static> {
+    use indicatif::HumanCount;
+
+    static ENV: LazyLock<Environment<'static>> = LazyLock::new(|| {
+        let mut env = Environment::new();
+        minijinja_contrib::add_to_environment(&mut env);
+        // Preserve trailing newlines so default templates byte-match the legacy
+        // `format!()` output.
+        env.set_keep_trailing_newline(true);
+
+        env.add_filter("pipe_escape", |v: String| v.replace('|', "\\|"));
+        env.add_filter("br_replace", |v: String| v.replace('\n', "<br>"));
+        env.add_filter("human_count", |v: u64| HumanCount(v).to_string());
+        env.add_filter("dict_cell", |v: String, col: String| -> String {
+            if col == "percentiles" {
+                v.replace(['|', '\n'], "<br>")
+            } else {
+                v.replace('|', "\\|").replace('\n', "<br>")
+            }
+        });
+        env.add_filter("humanize_examples", |examples: String| -> String {
+            if examples == "<ALL_UNIQUE>" {
+                return examples;
+            }
+            examples
+                .lines()
+                .map(|line| {
+                    if let Some(pos) = line.rfind(" [") {
+                        let (value_part, count_part) = line.split_at(pos + 2);
+                        if let Some(end_pos) = count_part.find(']')
+                            && let Ok(count) = count_part[..end_pos].parse::<u64>()
+                        {
+                            return format!(
+                                "{} [{}]",
+                                value_part.trim_end_matches(" ["),
+                                HumanCount(count)
+                            );
+                        }
+                    }
+                    line.to_string()
+                })
+                .collect::<Vec<String>>()
+                .join("<br>")
+        });
+
+        env
+    });
+
+    &ENV
+}
+
 fn render_dictionary_md_body(
     args: &Args,
     entries: &[dictionary::DictionaryEntry],
     addl_col_names: &[String],
     model: &str,
     base_url: &str,
+    shared: &SharedRenderCtx,
 ) -> CliResult<String> {
     let md_file = get_md_template_file(args)?;
     let env = make_describegpt_md_env();
-
-    let attribution = replace_attribution_placeholder(
-        "{GENERATED_BY_SIGNATURE}",
-        args,
-        model,
-        base_url,
-        AttributionFormat::Markdown,
-        PromptType::Dictionary,
-    );
 
     let ctx = context! {
         entries => entries,
         addl_col_names => addl_col_names,
         kind => PromptType::Dictionary.to_string(),
-        generated_by_signature => attribution,
+        generated_by_signature => &shared.attribution,
         model => model,
         base_url => base_url,
         input_filename => args.arg_input.as_deref().unwrap_or("stdin"),
-        timestamp => chrono::Utc::now().to_rfc3339(),
+        timestamp => &shared.timestamp,
     };
 
     env.render_str(&md_file.dictionary_md_body_template, &ctx)
@@ -1139,6 +1156,7 @@ fn render_markdown_template(
     token_usage: &TokenUsage,
     model: &str,
     base_url: &str,
+    shared: &SharedRenderCtx,
 ) -> CliResult<String> {
     let md_file = get_md_template_file(args)?;
     let template_str: &str = match kind {
@@ -1154,27 +1172,17 @@ fn render_markdown_template(
     // Users who want structured access can use {{ token_usage_struct.prompt }}, etc.
     let token_usage_debug = format!("{token_usage:?}");
 
-    // Pre-render the attribution block in Markdown form so templates can place it anywhere.
-    let attribution = replace_attribution_placeholder(
-        "{GENERATED_BY_SIGNATURE}",
-        args,
-        model,
-        base_url,
-        AttributionFormat::Markdown,
-        kind,
-    );
-
     let ctx = context! {
         llm_response => response_body,
         kind => kind.to_string(),
         reasoning => reasoning,
         token_usage => token_usage_debug,
         token_usage_struct => token_usage,
-        generated_by_signature => attribution,
+        generated_by_signature => &shared.attribution,
         model => model,
         base_url => base_url,
         input_filename => args.arg_input.as_deref().unwrap_or("stdin"),
-        timestamp => chrono::Utc::now().to_rfc3339(),
+        timestamp => &shared.timestamp,
     };
 
     env.render_str(template_str, &ctx)
@@ -2448,8 +2456,17 @@ fn format_dictionary_phase(
         }
     } else {
         let addl_col_names = formatters::extract_ordered_addl_cols(&combined_entries);
-        let mut markdown_output =
-            render_dictionary_md_body(args, &combined_entries, &addl_col_names, model, base_url)?;
+        // Compute attribution + timestamp once per phase so the body footer's attribution
+        // matches the wrapper's `{{ generated_by_signature }}` / `{{ timestamp }}` byte for byte.
+        let shared = SharedRenderCtx::new(args, model, base_url, PromptType::Dictionary);
+        let mut markdown_output = render_dictionary_md_body(
+            args,
+            &combined_entries,
+            &addl_col_names,
+            model,
+            base_url,
+            &shared,
+        )?;
         // Belt-and-suspenders: also substitute any literal {GENERATED_BY_SIGNATURE} that may
         // have leaked through from a custom dictionary prompt or template.
         markdown_output = replace_attribution_placeholder(
@@ -2468,6 +2485,7 @@ fn format_dictionary_phase(
             &completion_response.token_usage,
             model,
             base_url,
+            &shared,
         )?;
         let dictionary_json = formatters::format_dictionary_json(
             &combined_entries,
@@ -2682,6 +2700,7 @@ fn format_phase_markdown(
             }
         };
     }
+    let shared = SharedRenderCtx::new(args, model, base_url, kind);
     let rendered = render_markdown_template(
         kind,
         args,
@@ -2690,6 +2709,7 @@ fn format_phase_markdown(
         &completion_response.token_usage,
         model,
         base_url,
+        &shared,
     )?;
     if let Some(output) = &args.flag_output {
         fs::OpenOptions::new()
@@ -5157,6 +5177,7 @@ mod tests {
                 "# {}\n{}\n## REASONING\n\n{}\n## TOKEN USAGE\n\n{:?}\n---\n",
                 kind, response_body, reasoning, token_usage
             );
+            let shared = SharedRenderCtx::new(&args, model, base_url, kind);
             let rendered = render_markdown_template(
                 kind,
                 &args,
@@ -5165,6 +5186,7 @@ mod tests {
                 &token_usage,
                 model,
                 base_url,
+                &shared,
             )
             .unwrap();
             assert_eq!(
@@ -5176,12 +5198,6 @@ mod tests {
         }
     }
 
-    /// Locks in that the default `dictionary_md_body_template` reproduces the legacy
-    /// `formatters::format_dictionary_markdown` output for a representative fixture
-    /// (with addl_cols including the special "percentiles" column, pipe escaping, the
-    /// "<ALL_UNIQUE>" examples sentinel, and a humanized count).
-    /// If this test fails, the default body template diverged from the legacy table — either
-    /// fix the template or bump the major version and document the change.
     #[test]
     fn dictionary_body_default_template_byte_identical_to_legacy() {
         use indexmap::IndexMap;
@@ -5232,6 +5248,11 @@ mod tests {
             },
         ];
 
+        // Build a single SharedRenderCtx (one attribution + timestamp). Threaded into
+        // render_dictionary_md_body AND used to construct the expected string, so
+        // byte-equality holds without timestamp masking.
+        let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
+
         // Hand-rolled expected output that mirrors the legacy table format precisely:
         //   - pipe in "category|raw" escaped to "\|"
         //   - newlines in description and enumeration become "<br>"
@@ -5241,14 +5262,6 @@ mod tests {
         //   - "alpha [9000]" gets count humanized to "alpha [9,000]"
         //   - row-count separator pieces match column count
         //   - footer is "*Attribution: <rendered attribution block>*"
-        let attribution = replace_attribution_placeholder(
-            "{GENERATED_BY_SIGNATURE}",
-            &args,
-            model,
-            base_url,
-            AttributionFormat::Markdown,
-            PromptType::Dictionary,
-        );
         let expected = format!(
             "| Name | Type | Label | Description | Min | Max | Cardinality | Enumeration | Null \
              Count | mean | percentiles | Examples |\n|------|------|-------|-------------|-----|-\
@@ -5256,35 +5269,49 @@ mod tests {
              **id** | Integer | ID | Unique identifier<br>for the row. | 1 | 1000 | 1,000 |  | 0 \
              | 12.5 | p25: 10<br>p50: 12<br>p75: 15 | <ALL_UNIQUE> |\n| **category\\|raw** | \
              String | Category | Top-level grouping. |  |  | 3 | alpha<br>beta<br>gamma | 12,345 \
-             | 0 |  | alpha [9,000]<br>beta [1,234] |\n\n*Attribution: {attribution}*\n",
+             | 0 |  | alpha [9,000]<br>beta [1,234] |\n\n*Attribution: {}*\n",
+            shared.attribution,
         );
 
         let addl_col_names = formatters::extract_ordered_addl_cols(&entries);
-        let rendered =
-            render_dictionary_md_body(&args, &entries, &addl_col_names, model, base_url).unwrap();
+        let rendered = render_dictionary_md_body(
+            &args,
+            &entries,
+            &addl_col_names,
+            model,
+            base_url,
+            &shared,
+        )
+        .unwrap();
 
-        // The attribution block embeds chrono::Utc::now(), so the two `replace_attribution_\
-        // placeholder` calls (one in this test, one inside render_dictionary_md_body) produce
-        // different timestamps. Mask the timestamp line before comparing so the test is
-        // deterministic — the structural format is what we're locking in here.
-        let mask_ts = |s: &str| {
-            let mut out = String::with_capacity(s.len());
-            for line in s.split_inclusive('\n') {
-                if let Some(rest) = line.strip_prefix("Timestamp: ") {
-                    out.push_str("Timestamp: <TS>");
-                    if rest.ends_with('\n') {
-                        out.push('\n');
-                    }
-                } else {
-                    out.push_str(line);
-                }
-            }
-            out
-        };
         assert_eq!(
-            mask_ts(&rendered),
-            mask_ts(&expected),
+            rendered, expected,
             "default dictionary_md_body_template diverged from legacy table output"
+        );
+    }
+
+    /// Locks in that the four default wrapper templates are byte-identical to each other.
+    /// They render the same `# {kind}` header and the same REASONING / TOKEN USAGE sections,
+    /// only differing on the `{{ kind }}` substitution. If a future tweak edits one of them
+    /// without updating the others, this test catches the drift before it ships.
+    #[test]
+    fn default_wrapper_templates_are_byte_identical() {
+        // Read the embedded default TOML directly so this test is independent of get_md_template_file's
+        // OnceLock cache and any test-ordering effects.
+        let toml_text = get_default_md_template_content();
+        let parsed: MarkdownTemplateFile = toml::from_str(toml_text).unwrap();
+
+        assert_eq!(
+            parsed.dictionary_md_template, parsed.description_md_template,
+            "dictionary and description wrapper templates diverged"
+        );
+        assert_eq!(
+            parsed.description_md_template, parsed.tags_md_template,
+            "description and tags wrapper templates diverged"
+        );
+        assert_eq!(
+            parsed.tags_md_template, parsed.custom_prompt_md_template,
+            "tags and custom_prompt wrapper templates diverged"
         );
     }
 }

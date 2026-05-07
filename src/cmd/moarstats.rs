@@ -518,6 +518,10 @@ fn join_datasets_internal(
     join_keys: &[String],
     join_type: &str,
 ) -> CliResult<PathBuf> {
+    use std::collections::HashSet;
+
+    use tempfile::TempPath;
+
     if additional_inputs.is_empty() {
         return fail_clierror!("No additional datasets provided for joining");
     }
@@ -576,6 +580,15 @@ fn join_datasets_internal(
         .to_string_lossy()
         .to_string();
 
+    // Hold intermediate temp files alive in a Vec<TempPath>. TempPath does
+    // NOT hold a writable handle (so `qsv join`'s O_CREAT|O_TRUNC works
+    // fine), but it does delete the path on Drop. Storing them here means
+    // intermediate temp files are auto-cleaned when this function returns,
+    // rather than accumulating in TEMP_FILE_DIR for the life of the process.
+    let mut intermediate_temps: Vec<TempPath> = Vec::with_capacity(
+        additional_inputs.len().saturating_sub(1),
+    );
+
     for (i, (additional_input, next_key)) in additional_inputs
         .iter()
         .zip(join_keys[1..].iter())
@@ -594,25 +607,23 @@ fn join_datasets_internal(
         args.push(additional_input);
 
         let output_path_str = if i == additional_inputs.len() - 1 {
-            // Last join - use final temp path
+            // Last join - use final temp path (kept; caller owns lifetime).
             temp_path_str.clone()
         } else {
-            // Intermediate join - create another temp file with .csv extension.
-            // Use into_temp_path().keep() for the same reason as the final
-            // temp_path above: the path is owned by output_path_str and the
-            // file is consumed (re-created) by `qsv join` in this iteration,
-            // then read by the next iteration.
-            tempfile::Builder::new()
+            // Intermediate join - create another temp file with .csv
+            // extension. We retain the TempPath (not .keep()) in
+            // intermediate_temps so the file is auto-deleted when this
+            // function returns, preventing accumulation in TEMP_FILE_DIR.
+            let intermediate = tempfile::Builder::new()
                 .suffix(".csv")
                 .tempfile_in(temp_dir)?
-                .into_temp_path()
-                .keep()
-                .map_err(|e| {
-                    CliError::Other(format!("Failed to persist intermediate temp path: {e}"))
-                })?
+                .into_temp_path();
+            let s = intermediate
                 .to_str()
                 .ok_or_else(|| CliError::Other("Invalid intermediate temp path".to_string()))?
-                .to_string()
+                .to_string();
+            intermediate_temps.push(intermediate);
+            s
         };
         args.push("--output");
         args.push(&output_path_str);
@@ -683,8 +694,11 @@ fn join_datasets_internal(
             .collect();
         drop(additional_rdr);
 
+        // O(1) membership check via HashSet — for wide CSVs and multi-join
+        // chains this avoids an O(n*m) scan per iteration.
+        let joined_set: HashSet<&str> = joined_headers.iter().map(String::as_str).collect();
         for h in &additional_headers {
-            if !joined_headers.iter().any(|j| j == h) {
+            if !joined_set.contains(h.as_str()) {
                 return fail_clierror!(
                     "Joined output header missing column from {additional_input}: expected to \
                      find {h:?} among {additional_headers:?}, got {joined_headers:?}"
@@ -693,10 +707,14 @@ fn join_datasets_internal(
         }
 
         let size = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
+        // Keep info-level output compact (column count + size). The full
+        // header vector can be very large/noisy on wide CSVs and is also
+        // slow to format — log it at debug only.
         log::info!(
-            "Join step {i}: produced {} cols (header={joined_headers:?}), {size} bytes",
+            "Join step {i}: produced {} cols, {size} bytes",
             joined_headers.len()
         );
+        log::debug!("Join step {i} header: {joined_headers:?}");
 
         // Update for next iteration
         current_input = output_path_str;

@@ -304,16 +304,16 @@ It was the primary reason I created the qsv fork as I needed to do GUARANTEED da
 inferencing & to compile smart Data Dictionaries in the most performant way possible
 for Datapusher+ (https://github.com/dathere/datapusher-plus).
 
-It underpins the `schema` and `validate` commands - enabling the automatic creation of
-a JSON Schema based on a CSV's summary statistics; and use the generated JSON Schema
-to quickly validate complex CSVs hundreds of thousands of records/sec.
+It underpins the `schema` command, which derives a JSON Schema from a CSV's summary
+statistics. That generated schema is then consumed by the `validate` command to
+validate complex CSVs at hundreds of thousands of records/sec.
 
-It's type inferences are also used by the "smart" commands (see
+Its type inferences are also used by the "smart" commands (see
 https://github.com/dathere/qsv/blob/master/docs/PERFORMANCE.md#stats-cache)
 to make them work smarter & faster.
 
 To safeguard against undefined behavior, `stats` is the most extensively tested command,
-with ~625 tests. It also employs numerous performance optimizations (skip repetitive UTF-8
+with ~680 tests. It also employs numerous performance optimizations (skip repetitive UTF-8
 validation, skip bounds checks, cache results, etc.) that may result in undefined behavior
 if the CSV is not well-formed. See "safety:" comments in the code for more details.
 */

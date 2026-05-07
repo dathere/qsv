@@ -3833,12 +3833,17 @@ pub fn run_qsv_cmd(
 /// noticeable on macOS APFS under heavy parallel test load and has produced
 /// silent "primary-only" join output in CI.
 ///
-/// This helper opens the file read-only, calls `sync_all()` to force a
-/// flush, then verifies the resulting file is non-empty. On Linux the
-/// fsync is nearly free; on macOS it is the load-bearing barrier.
+/// Opens the file with WRITE access (no truncate, no create — just a writable
+/// handle), calls `sync_all()` to force a flush, then verifies the resulting
+/// file is non-empty.
+///
+/// Why write access: on Windows, `sync_all()` is implemented via
+/// `FlushFileBuffers`, which rejects read-only handles with "Access is
+/// denied" (os error 5). Opening with `.write(true)` works on Linux/macOS too
+/// and doesn't modify the file as long as `truncate`/`create` are not set.
 pub fn sync_subprocess_output(path: &Path) -> CliResult<()> {
     let f = std::fs::OpenOptions::new()
-        .read(true)
+        .write(true)
         .open(path)
         .map_err(|e| {
             CliError::Other(format!(

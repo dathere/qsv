@@ -512,14 +512,15 @@ fn get_bivariate_csv_path(input_path: &Path, is_joined: bool) -> CliResult<PathB
     }
 }
 
-/// Join multiple datasets internally using join
 fn join_datasets_internal(
     primary_input: &Path,
     additional_inputs: &[String],
     join_keys: &[String],
     join_type: &str,
 ) -> CliResult<PathBuf> {
-    use tempfile::NamedTempFile;
+    use std::collections::HashSet;
+
+    use tempfile::TempPath;
 
     if additional_inputs.is_empty() {
         return fail_clierror!("No additional datasets provided for joining");
@@ -533,14 +534,22 @@ fn join_datasets_internal(
         );
     }
 
-    // Create temporary file for joined output with .csv extension
+    // Create temporary file for joined output with .csv extension.
+    //
+    // We use `into_temp_path().keep()` instead of holding a `NamedTempFile`
+    // and `drop`ping it. NamedTempFile's `Drop` deletes the file from disk,
+    // which leaves a dangling reservation that the spawned `qsv join`
+    // re-creates with O_CREAT. The previous "drop to close" pattern was
+    // misleading — the path was free, not just closed. `keep()` persists the
+    // path as a normal file so the caller owns its lifetime.
     let temp_dir =
         crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep());
-    let temp_file = tempfile::Builder::new()
+    let temp_path = tempfile::Builder::new()
         .suffix(".csv")
-        .tempfile_in(temp_dir)?;
-    let temp_path = temp_file.path().to_path_buf();
-    drop(temp_file); // Close the file so join can write to it
+        .tempfile_in(temp_dir)?
+        .into_temp_path()
+        .keep()
+        .map_err(|e| CliError::Other(format!("Failed to persist join temp path: {e}")))?;
 
     let temp_path_str = temp_path
         .to_str()
@@ -571,11 +580,19 @@ fn join_datasets_internal(
         .to_string_lossy()
         .to_string();
 
-    // These are never read, but we need to declare them to avoid compiler errors
+    // Drop-guard collection: this Vec is intentionally never read — its
+    // ONLY purpose is to keep each intermediate `TempPath` alive until the
+    // function returns, at which point each entry's `Drop` removes its
+    // file from disk. `TempPath` holds no writable handle (so `qsv join`'s
+    // `O_CREAT|O_TRUNC` open still works) but it does own the path's
+    // lifetime. Without this Vec, intermediate temp files would either be
+    // deleted mid-loop (if we let `TempPath` drop after each iteration) or
+    // accumulate forever in `TEMP_FILE_DIR` (if we called `.keep()`).
+    // DO NOT remove the Vec to silence `collection_is_never_read` — the
+    // Drop side-effect is load-bearing.
     #[allow(clippy::collection_is_never_read)]
-    let mut intermediate_temps: Vec<NamedTempFile> = Vec::new();
-    #[allow(clippy::collection_is_never_read)]
-    let mut intermediate_path_strs: Vec<String> = Vec::new();
+    let mut intermediate_temps: Vec<TempPath> =
+        Vec::with_capacity(additional_inputs.len().saturating_sub(1));
 
     for (i, (additional_input, next_key)) in additional_inputs
         .iter()
@@ -595,21 +612,23 @@ fn join_datasets_internal(
         args.push(additional_input);
 
         let output_path_str = if i == additional_inputs.len() - 1 {
-            // Last join - use final temp path
+            // Last join - use final temp path (kept; caller owns lifetime).
             temp_path_str.clone()
         } else {
-            // Intermediate join - create another temp file with .csv extension
-            let intermediate_temp = tempfile::Builder::new()
+            // Intermediate join - create another temp file with .csv
+            // extension. We retain the TempPath (not .keep()) in
+            // intermediate_temps so the file is auto-deleted when this
+            // function returns, preventing accumulation in TEMP_FILE_DIR.
+            let intermediate = tempfile::Builder::new()
                 .suffix(".csv")
-                .tempfile_in(temp_dir)?;
-            let intermediate_path = intermediate_temp.path().to_path_buf();
-            intermediate_temps.push(intermediate_temp); // Keep temp file alive
-            let intermediate_path_str = intermediate_path
+                .tempfile_in(temp_dir)?
+                .into_temp_path();
+            let s = intermediate
                 .to_str()
                 .ok_or_else(|| CliError::Other("Invalid intermediate temp path".to_string()))?
                 .to_string();
-            intermediate_path_strs.push(intermediate_path_str.clone());
-            intermediate_path_str
+            intermediate_temps.push(intermediate);
+            s
         };
         args.push("--output");
         args.push(&output_path_str);
@@ -632,7 +651,75 @@ fn join_datasets_internal(
             );
         }
 
-        log::info!("Joining datasets...");
+        // After the child exits successfully, force the OS to flush its
+        // dirty pages and validate the file is non-empty. Without this,
+        // macOS APFS under heavy parallel test load has been observed to
+        // hand a follow-up `qsv stats` subprocess a short/empty file,
+        // causing silent "primary-only" bivariate output.
+        let output_path = Path::new(&output_path_str);
+        util::sync_subprocess_output(output_path)?;
+
+        // Validate that the joined output's header contains every column
+        // from the secondary input. qsv's `join` (without --cross or merge
+        // flags, which join_datasets_internal never passes — it only uses
+        // --left/--right/--full or default inner) preserves the union of
+        // both inputs' columns. If a column from the secondary is missing,
+        // the join produced silently corrupt output and we must fail loudly
+        // rather than feeding it to downstream stats/bivariate computation.
+        let mut joined_rdr = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .from_path(output_path)
+            .map_err(|e| {
+                CliError::Other(format!(
+                    "Failed to open joined output to validate header ({}): {e}",
+                    output_path.display()
+                ))
+            })?;
+        let joined_headers: Vec<String> = joined_rdr
+            .headers()
+            .map_err(|e| CliError::Other(format!("Failed to read joined header: {e}")))?
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
+        drop(joined_rdr);
+
+        let mut additional_rdr = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .from_path(Path::new(additional_input))
+            .map_err(|e| {
+                CliError::Other(format!(
+                    "Failed to open secondary input to validate header ({additional_input}): {e}"
+                ))
+            })?;
+        let additional_headers: Vec<String> = additional_rdr
+            .headers()
+            .map_err(|e| CliError::Other(format!("Failed to read secondary header: {e}")))?
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
+        drop(additional_rdr);
+
+        // O(1) membership check via HashSet — for wide CSVs and multi-join
+        // chains this avoids an O(n*m) scan per iteration.
+        let joined_set: HashSet<&str> = joined_headers.iter().map(String::as_str).collect();
+        for h in &additional_headers {
+            if !joined_set.contains(h.as_str()) {
+                return fail_clierror!(
+                    "Joined output header missing column from {additional_input}: expected to \
+                     find {h:?} among {additional_headers:?}, got {joined_headers:?}"
+                );
+            }
+        }
+
+        let size = std::fs::metadata(output_path).map_or(0, |m| m.len());
+        // Keep info-level output compact (column count + size). The full
+        // header vector can be very large/noisy on wide CSVs and is also
+        // slow to format — log it at debug only.
+        log::info!(
+            "Join step {i}: produced {} cols, {size} bytes",
+            joined_headers.len()
+        );
+        log::debug!("Join step {i} header: {joined_headers:?}");
 
         // Update for next iteration
         current_input = output_path_str;
@@ -3270,11 +3357,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .to_str()
             .ok_or_else(|| CliError::Other("Invalid joined path".to_string()))?
             .to_string();
-        let temp_stats_file = tempfile::Builder::new().suffix(".stats.csv").tempfile_in(
-            crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep()),
-        )?;
-        let temp_stats_path = temp_stats_file.path().to_path_buf();
-        drop(temp_stats_file); // Close so stats can write to it
+        // Use into_temp_path().keep() rather than NamedTempFile + drop, for
+        // the same reason as in `join_datasets_internal`: NamedTempFile's
+        // Drop deletes the file from disk. We want the path reserved as a
+        // normal file so the spawned `qsv stats` writes into a known slot.
+        let temp_stats_path = tempfile::Builder::new()
+            .suffix(".stats.csv")
+            .tempfile_in(
+                crate::config::TEMP_FILE_DIR
+                    .get_or_init(|| tempfile::TempDir::new().unwrap().keep()),
+            )?
+            .into_temp_path()
+            .keep()
+            .map_err(|e| CliError::Other(format!("Failed to persist temp stats path: {e}")))?;
 
         // Generate stats for joined dataset
         let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
@@ -3305,6 +3400,36 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             );
         }
 
+        // Force a flush of the stats subprocess output to disk before any
+        // follow-up read. Same rationale as in join_datasets_internal:
+        // macOS APFS under heavy parallel load has been observed to hand
+        // back a short/empty file to the next open() without this fsync.
+        util::sync_subprocess_output(&temp_stats_path)?;
+
+        // Validate that the stats CSV has the expected `field` column header
+        // so a silently truncated file fails loudly here rather than later.
+        let mut stats_hdr_rdr = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .from_path(&temp_stats_path)
+            .map_err(|e| {
+                CliError::Other(format!(
+                    "Failed to open joined-stats output to validate header ({}): {e}",
+                    temp_stats_path.display()
+                ))
+            })?;
+        let stats_headers: Vec<String> = stats_hdr_rdr
+            .headers()
+            .map_err(|e| CliError::Other(format!("Failed to read joined-stats header: {e}")))?
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
+        drop(stats_hdr_rdr);
+        if !stats_headers.iter().any(|h| h == "field") {
+            return fail_clierror!(
+                "Joined-stats output missing 'field' column: got headers {stats_headers:?}"
+            );
+        }
+
         temp_stats_path
     } else {
         // For single dataset, use normal stats CSV path
@@ -3332,6 +3457,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             if !path.exists() {
                 return fail_clierror!("Stats CSV file was not created: {}", path.display());
             }
+            // Force the freshly-written stats CSV's bytes to disk so a
+            // subsequent read sees the full file (defensive fsync; same
+            // rationale as the joined-stats path above).
+            util::sync_subprocess_output(&path)?;
         }
 
         path

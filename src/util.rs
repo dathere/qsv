@@ -3825,6 +3825,49 @@ pub fn run_qsv_cmd(
     Ok((stdout_str.to_string(), stderr_str.to_string()))
 }
 
+/// Sync subprocess output to disk and validate it is non-empty.
+///
+/// After a child `qsv` subprocess writes its output via `--output <path>` and
+/// exits, the file's bytes may still be in the kernel page cache and not yet
+/// visible to follow-up `open()` calls in another process. This is especially
+/// noticeable on macOS APFS under heavy parallel test load and has produced
+/// silent "primary-only" join output in CI.
+///
+/// This helper opens the file read-only, calls `sync_all()` to force a
+/// flush, then verifies the resulting file is non-empty. On Linux the
+/// fsync is nearly free; on macOS it is the load-bearing barrier.
+pub fn sync_subprocess_output(path: &Path) -> CliResult<()> {
+    let f = std::fs::OpenOptions::new()
+        .read(true)
+        .open(path)
+        .map_err(|e| {
+            CliError::Other(format!(
+                "Unable to open subprocess output for fsync ({}): {e}",
+                path.display()
+            ))
+        })?;
+    f.sync_all().map_err(|e| {
+        CliError::Other(format!(
+            "Failed to sync subprocess output ({}): {e}",
+            path.display()
+        ))
+    })?;
+    drop(f);
+
+    let size = std::fs::metadata(path)
+        .map_err(|e| {
+            CliError::Other(format!(
+                "Unable to stat subprocess output ({}): {e}",
+                path.display()
+            ))
+        })?
+        .len();
+    if size == 0 {
+        return fail_clierror!("Subprocess output is empty after sync: {}", path.display());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Write;

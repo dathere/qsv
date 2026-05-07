@@ -26,6 +26,12 @@ jobs:
     steps:
       - name: Checkout qsv repository
         uses: actions/checkout@v6
+        with:
+          # Fetch full history + tags so `git describe --tags` works as a
+          # fallback when the workflow is dispatched without an explicit
+          # version input and outside of a release event.
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Resolve version string
         id: version
@@ -38,11 +44,25 @@ jobs:
           elif [[ -n "${TAG_NAME}" ]]; then
             VERSION="${TAG_NAME}"
           else
-            VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '0.0.0')"
+            VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo '')"
           fi
 
           # Strip leading 'v' so both "v19.1.0" and "19.1.0" work
           VERSION="${VERSION#v}"
+
+          # Refuse to proceed without a real version. Publishing a "0.0.0"
+          # branch to the apt repo would clobber metadata and create a
+          # nonsense release.
+          if [[ -z "${VERSION}" || "${VERSION}" == "0.0.0" ]]; then
+            echo "::error::Could not resolve a real version (no workflow input, no release tag, no git tag). Aborting."
+            exit 1
+          fi
+
+          # Basic sanity check: must look like SemVer (X.Y.Z, optional pre-release/build).
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+].+)?$ ]]; then
+            echo "::error::Resolved version '${VERSION}' does not look like SemVer (expected X.Y.Z). Aborting."
+            exit 1
+          fi
 
           echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Resolved version: ${VERSION}"

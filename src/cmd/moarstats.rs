@@ -585,9 +585,8 @@ fn join_datasets_internal(
     // fine), but it does delete the path on Drop. Storing them here means
     // intermediate temp files are auto-cleaned when this function returns,
     // rather than accumulating in TEMP_FILE_DIR for the life of the process.
-    let mut intermediate_temps: Vec<TempPath> = Vec::with_capacity(
-        additional_inputs.len().saturating_sub(1),
-    );
+    let mut intermediate_temps: Vec<TempPath> =
+        Vec::with_capacity(additional_inputs.len().saturating_sub(1));
 
     for (i, (additional_input, next_key)) in additional_inputs
         .iter()

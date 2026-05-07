@@ -705,7 +705,7 @@ fn join_datasets_internal(
             }
         }
 
-        let size = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
+        let size = std::fs::metadata(output_path).map_or(0, |m| m.len());
         // Keep info-level output compact (column count + size). The full
         // header vector can be very large/noisy on wide CSVs and is also
         // slow to format — log it at debug only.

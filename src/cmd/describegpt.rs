@@ -1091,11 +1091,22 @@ fn get_md_template_file(args: &Args) -> CliResult<&MarkdownTemplateFile> {
     if let Some(file) = MD_TEMPLATE_FILE.get() {
         return Ok(file);
     }
+    // Normalize CRLF -> LF so rendered output is byte-identical across platforms. Windows
+    // checkouts bundle the embedded default TOML with CRLF (via include_str!), and a
+    // user's --markdown-template file may also have CRLF — without normalization, every
+    // template line break in the rendered Markdown would carry the platform line ending,
+    // diverging from the legacy LF-only `format!()` output and breaking the byte-identity
+    // tests on Windows.
+    fn normalize_line_endings(s: &str) -> String {
+        s.replace("\r\n", "\n")
+    }
+
     // Always parse the embedded default first — it serves as the per-field fallback for
     // any field a user-supplied --markdown-template TOML omits, so users can drop in a
     // TOML containing only the templates they want to change.
-    let base: MarkdownTemplateFile = toml::from_str(get_default_md_template_content())
-        .expect("embedded default markdown template TOML must parse");
+    let base: MarkdownTemplateFile =
+        toml::from_str(&normalize_line_endings(get_default_md_template_content()))
+            .expect("embedded default markdown template TOML must parse");
 
     let resolved = if let Some(ref path) = args.flag_markdown_template {
         let content = fs::read_to_string(path).map_err(|e| {
@@ -1103,7 +1114,8 @@ fn get_md_template_file(args: &Args) -> CliResult<&MarkdownTemplateFile> {
                 "Could not read --markdown-template file '{path}': {e}"
             ))
         })?;
-        let overlay: MarkdownTemplateOverride = toml::from_str(&content).map_err(|e| {
+        let overlay: MarkdownTemplateOverride = toml::from_str(&normalize_line_endings(&content))
+            .map_err(|e| {
             CliError::Other(format!("Markdown template parsing error in '{path}': {e}"))
         })?;
         overlay.apply_to(base)

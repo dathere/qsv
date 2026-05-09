@@ -3873,6 +3873,58 @@ pub fn sync_subprocess_output(path: &Path) -> CliResult<()> {
     Ok(())
 }
 
+/// Best-effort fsync of the directory at `path` so its directory entry
+/// metadata is durable.
+///
+/// `fsync(file)` on Linux does NOT flush the parent directory's metadata.
+/// While that primarily matters for crash safety, some FS configurations
+/// (overlayfs, fuse, network mounts) and edge-case timing have been seen
+/// to affect read-after-write visibility for newly-created files when a
+/// follow-up process opens them via path lookup. This helper is layered
+/// on top of the file-level `sync_subprocess_output` and exists purely
+/// as a belt-and-suspenders guard.
+///
+/// Errors are intentionally NOT propagated:
+/// - Directory fsync is not supported uniformly across Linux filesystems (FAT, some
+///   FUSE/overlay/network mounts return `EINVAL`/`EOPNOTSUPP`).
+/// - Even when supported, the caller has already gone through the file-level fsync; failing the
+///   whole operation because the directory fsync errored would punish environments that don't
+///   support it.
+///
+/// Errors are logged at debug level. No-op on non-unix targets (on Windows,
+/// `FlushFileBuffers` does not accept directory handles).
+pub fn sync_directory(path: &Path) {
+    #[cfg(unix)]
+    {
+        // Best-effort: directory fsync is not supported uniformly across
+        // Linux filesystems (FAT, some FUSE/overlay/network mounts return
+        // EINVAL/EOPNOTSUPP). Since this is a defensive guard layered on
+        // top of the file-level fsync, an error here must NOT fail the
+        // caller — log at debug and continue.
+        match std::fs::File::open(path) {
+            Ok(f) => {
+                if let Err(e) = f.sync_all() {
+                    log::debug!(
+                        "sync_directory: fsync of {} returned {e} (continuing — not all FS \
+                         configurations support directory fsync)",
+                        path.display()
+                    );
+                }
+            },
+            Err(e) => {
+                log::debug!(
+                    "sync_directory: open of {} returned {e} (continuing — best-effort guard)",
+                    path.display()
+                );
+            },
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path; // suppress unused-variable warning on Windows
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Write;
@@ -3880,6 +3932,24 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn test_sync_directory_smoke() {
+        // sync_directory is best-effort by design: success paths must
+        // return normally, and error paths (missing dir, FS that doesn't
+        // support directory fsync) must NOT panic or propagate. This
+        // smoke test covers both branches.
+        let dir = tempfile::TempDir::new().unwrap();
+
+        // Existing directory: should succeed (or silently no-op if the
+        // backing FS doesn't support it).
+        sync_directory(dir.path());
+
+        // Non-existent path: should still return without panicking;
+        // the open() error is logged and swallowed.
+        sync_directory(&dir.path().join("definitely_does_not_exist"));
+    }
 
     #[test]
     fn test_hash_blake3_file() {

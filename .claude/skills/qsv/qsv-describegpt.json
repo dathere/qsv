@@ -85,6 +85,11 @@
         "description": "The output language/dialect/tone to use for the response. (e.g., \"Spanish\", \"French\", \"Hindi\", \"Mandarin\", \"Italian\", \"Castilian\", \"Franglais\", \"Taglish\", \"Pig Latin\", \"Valley Girl\", \"Pirate\", \"Shakespearean English\", \"Chavacano\", \"Gen Z\", \"Yoda\", etc.)"
       },
       {
+        "flag": "--markdown-template",
+        "type": "string",
+        "description": "TOML file with Mini Jinja templates for Markdown output. The TOML contains four wrapper templates - one per inference kind: dictionary_md_template, description_md_template, tags_md_template and custom_prompt_md_template - plus a dictionary_md_body_template that drives the per-field dictionary table that fills the dictionary wrapper's {{ llm_response }}. All template fields are optional; any omitted field falls back to the embedded default, so a minimal TOML can override just the templates you want to change. Custom Mini Jinja filters (pipe_escape, br_replace, human_count, dict_cell, humanize_examples) and template variables are documented inline in the default TOML referenced below. If no file is provided, built-in defaults are used (matching legacy output). See https://github.com/dathere/qsv/blob/master/resources/describegpt_md_defaults.toml"
+      },
+      {
         "flag": "--no-cache",
         "type": "flag",
         "description": "Disable default disk cache."

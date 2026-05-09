@@ -3873,6 +3873,39 @@ pub fn sync_subprocess_output(path: &Path) -> CliResult<()> {
     Ok(())
 }
 
+/// Fsync the directory at `path` so its directory entry metadata is durable.
+///
+/// `fsync(file)` on Linux does NOT flush the parent directory's metadata.
+/// While this primarily matters for crash safety, some FS configurations
+/// (overlayfs, fuse, network mounts) and edge-case timing have been seen
+/// to affect read-after-write visibility for newly-created files when a
+/// follow-up process opens them via path lookup. Belt-and-suspenders.
+///
+/// No-op on non-unix targets: on Windows, `FlushFileBuffers` does not
+/// accept directory handles, so calling it would error.
+pub fn sync_directory(path: &Path) -> CliResult<()> {
+    #[cfg(unix)]
+    {
+        let f = std::fs::File::open(path).map_err(|e| {
+            CliError::Other(format!(
+                "Unable to open directory for fsync ({}): {e}",
+                path.display()
+            ))
+        })?;
+        f.sync_all().map_err(|e| {
+            CliError::Other(format!(
+                "Failed to fsync directory ({}): {e}",
+                path.display()
+            ))
+        })?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path; // suppress unused-variable warning on Windows
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Write;

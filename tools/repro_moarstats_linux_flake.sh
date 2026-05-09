@@ -68,6 +68,8 @@ echo
 # pressure the page cache. Mimics the heavy parallel I/O load CI sees when
 # many tests run together. Disabled by default; enable with DD_LOAD=1.
 DD_PIDS=()
+LOAD_DIR=""
+FIFO_DIR=""
 cleanup() {
     if [ "${#DD_PIDS[@]}" -gt 0 ]; then
         for pid in "${DD_PIDS[@]}"; do
@@ -75,6 +77,13 @@ cleanup() {
         done
     fi
     wait 2>/dev/null || true
+    # Remove any temp resources we created. Guarded so we never rm -rf "".
+    if [ -n "$LOAD_DIR" ] && [ -d "$LOAD_DIR" ]; then
+        rm -rf "$LOAD_DIR"
+    fi
+    if [ -n "$FIFO_DIR" ] && [ -d "$FIFO_DIR" ]; then
+        rm -rf "$FIFO_DIR"
+    fi
 }
 trap cleanup EXIT INT TERM
 
@@ -177,8 +186,22 @@ EOF
         # Concatenate the field1 and field2 columns from the bivariate
         # output and check that value2a + value2b appear at least once.
         # awk is used to avoid pulling in csvlens/qsv for the check.
-        if ! awk -F, '
-                NR == 1 { for (i=1; i<=NF; i++) if ($i=="field1") f1=i; else if ($i=="field2") f2=i; next }
+        # Distinct exit codes:
+        #   0  -> coverage OK
+        #   2  -> bivariate header is malformed (missing field1/field2);
+        #         classified as FAIL_OTHER, not FAIL_OLD_BIVARIATE, since
+        #         it points at a different bug than column-drop.
+        #   1  -> coverage check failed (value2a or value2b absent).
+        awk -F, '
+                NR == 1 {
+                    for (i=1; i<=NF; i++)
+                        if ($i=="field1") f1=i; else if ($i=="field2") f2=i
+                    if (!f1 || !f2) {
+                        printf "biv header malformed: f1=%s f2=%s headers=%s\n", f1, f2, $0 > "/dev/stderr"
+                        exit 2
+                    }
+                    next
+                }
                 { seen[$f1]=1; seen[$f2]=1 }
                 END {
                     if (!("value2a" in seen) || !("value2b" in seen)) {
@@ -187,12 +210,23 @@ EOF
                         exit 1
                     }
                 }
-            ' "$biv" >/dev/null 2>"$wd/biv_check.stderr"; then
-            echo "FAIL_OLD_BIVARIATE worker=$worker_id iter=$iter wd=$wd"
-            cp -r "$wd" "$OUT_DIR/fail_old_biv_w${worker_id}_i${iter}_$(date +%s)"
-            rm -rf "$wd"
-            continue
-        fi
+            ' "$biv" >/dev/null 2>"$wd/biv_check.stderr"
+        awk_rc=$?
+        case "$awk_rc" in
+            0) ;; # pass
+            2)
+                echo "FAIL_OTHER worker=$worker_id iter=$iter step=biv_header_malformed wd=$wd"
+                cp -r "$wd" "$OUT_DIR/fail_other_w${worker_id}_i${iter}_$(date +%s)"
+                rm -rf "$wd"
+                continue
+                ;;
+            *)
+                echo "FAIL_OLD_BIVARIATE worker=$worker_id iter=$iter wd=$wd"
+                cp -r "$wd" "$OUT_DIR/fail_old_biv_w${worker_id}_i${iter}_$(date +%s)"
+                rm -rf "$wd"
+                continue
+                ;;
+        esac
 
         echo "PASS worker=$worker_id iter=$iter"
         if [ "$KEEP_PASSING_LOGS" != "1" ]; then
@@ -201,8 +235,12 @@ EOF
     done
 }
 
-# Spawn workers in parallel and aggregate results.
-RESULTS_FIFO="$(mktemp -u -t qsv_repro_fifo_XXXXXX)"
+# Spawn workers in parallel and aggregate results. Use a real tempdir for
+# the FIFO (avoiding `mktemp -u`, which is inherently racy — the name can
+# be claimed between allocation and `mkfifo`). The dir is cleaned up by
+# the EXIT trap.
+FIFO_DIR="$(mktemp -d -t qsv_repro_fifo_XXXXXX)"
+RESULTS_FIFO="$FIFO_DIR/results"
 mkfifo "$RESULTS_FIFO"
 
 (
@@ -237,7 +275,7 @@ while IFS= read -r line; do
     fi
 done <"$RESULTS_FIFO"
 
-rm -f "$RESULTS_FIFO"
+# FIFO_DIR is removed by the cleanup trap.
 
 echo
 echo "=== Summary ==="

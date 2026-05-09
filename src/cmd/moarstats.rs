@@ -3314,7 +3314,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // FS/timing edge cases have correlated with the subprocess seeing a
         // partial view of the joined CSV (CI run 25545197594).
         if let Some(parent) = joined_path.parent() {
-            util::sync_directory(parent)?;
+            util::sync_directory(parent);
         }
         temp_joined_path = Some(joined_path);
         temp_joined_path.as_ref().unwrap()
@@ -3439,11 +3439,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     "Joined-stats output missing 'field' column: got headers {hdrs:?}"
                 ))
             })?;
-            Ok(rdr
-                .records()
-                .filter_map(std::result::Result::ok)
-                .filter_map(|r| r.get(field_idx).map(ToString::to_string))
-                .collect())
+            // Propagate CSV parse errors instead of silently dropping
+            // them — a malformed/truncated stats row must surface as
+            // "failed to parse row N" rather than as a downstream
+            // "missing columns" assertion (which is exactly the
+            // confusing diagnostic mode this fix is trying to eliminate).
+            let mut field_values: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            for (row_idx, rec) in rdr.records().enumerate() {
+                let rec = rec.map_err(|e| {
+                    CliError::Other(format!(
+                        "Failed to parse joined-stats row {row} from {path}: {e}",
+                        row = row_idx + 1, /* +1 so row numbering matches a human reader (header
+                                            * is row 0) */
+                        path = temp_stats_path.display()
+                    ))
+                })?;
+                if let Some(v) = rec.get(field_idx) {
+                    field_values.insert(v.to_string());
+                }
+            }
+            Ok(field_values)
         };
 
         // Read the joined CSV's column names so we can verify the stats

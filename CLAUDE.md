@@ -53,3 +53,6 @@ When debugging, state your hypothesis explicitly before investigating. If the fi
 
 Always use Serena MCP tools (find_symbol, etc.) for code navigation and Context7 MCP for library documentation lookups. These tools are configured and should be preferred over Grep/Read for symbol-level exploration.
 
+- Prefer `mcp__serena__replace_symbol_body` for whole-symbol replacement; verify the file after edit to catch duplicated tails or lost function bodies.
+- Avoid `sed` with backreferences (`\1`) for multi-line edits — use the Edit tool instead.
+

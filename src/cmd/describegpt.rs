@@ -1097,6 +1097,7 @@ fn get_md_template_file(args: &Args) -> CliResult<&MarkdownTemplateFile> {
     // template line break in the rendered Markdown would carry the platform line ending,
     // diverging from the legacy LF-only `format!()` output and breaking the byte-identity
     // tests on Windows.
+    #[allow(clippy::items_after_statements)]
     fn normalize_line_endings(s: &str) -> String {
         s.replace("\r\n", "\n")
     }

@@ -3044,6 +3044,25 @@ fn weighted_mad(data: &[(f64, f64)], total_weight: f64, median: f64) -> Option<f
     weighted_median(&abs_deviations, total_weight)
 }
 
+/// Converts a byte slice to a `Cow<str>` for output formatting.
+///
+/// Uses SIMD-accelerated UTF-8 validation via `simdutf8::basic::from_utf8` on the
+/// happy path (returns a borrowed `&str` with no allocation on valid UTF-8, which
+/// is the overwhelming common case including all-ASCII).
+///
+/// Falls back to `String::from_utf8_lossy` only when the bytes are not valid
+/// UTF-8 (replacement characters substituted, allocates).
+///
+/// This is faster than `String::from_utf8_lossy` alone, which always uses scalar
+/// UTF-8 validation and pre-allocates a `String` of the input length.
+#[inline]
+fn bytes_to_cow_str(c: &[u8]) -> std::borrow::Cow<'_, str> {
+    match simdutf8::basic::from_utf8(c) {
+        Ok(s) => std::borrow::Cow::Borrowed(s),
+        Err(_) => String::from_utf8_lossy(c),
+    }
+}
+
 /// Formats a list of antimodes into a display string with optional preview prefix,
 /// NULL handling, and length truncation.
 ///
@@ -3065,7 +3084,7 @@ fn format_antimodes(
 
     let antimodes_vals = &antimodes
         .iter()
-        .map(|c| String::from_utf8_lossy(c.as_ref()))
+        .map(|c| bytes_to_cow_str(c.as_ref()))
         .join(separator);
 
     // if the antimodes result starts with the separator,
@@ -3708,12 +3727,12 @@ impl Stats {
                         let modes_list = if visualize_ws {
                             modes_keys
                                 .iter()
-                                .map(|c| util::visualize_whitespace(&String::from_utf8_lossy(c)))
+                                .map(|c| util::visualize_whitespace(&bytes_to_cow_str(c)))
                                 .join(stats_separator)
                         } else {
                             modes_keys
                                 .iter()
-                                .map(|c| String::from_utf8_lossy(c))
+                                .map(|c| bytes_to_cow_str(c))
                                 .join(stats_separator)
                         };
 
@@ -3810,13 +3829,13 @@ impl Stats {
                                 modes_result
                                     .iter()
                                     .map(|c| {
-                                        util::visualize_whitespace(&String::from_utf8_lossy(c))
+                                        util::visualize_whitespace(&bytes_to_cow_str(c))
                                     })
                                     .join(stats_separator)
                             } else {
                                 modes_result
                                     .iter()
-                                    .map(|c| String::from_utf8_lossy(c))
+                                    .map(|c| bytes_to_cow_str(c))
                                     .join(stats_separator)
                             };
 
@@ -4764,8 +4783,8 @@ impl TypedMinMax {
                     self.strings.sort_order(),
                     self.strings.sortiness(),
                 ) {
-                    let min_str = String::from_utf8_lossy(min).to_string();
-                    let max_str = String::from_utf8_lossy(max).to_string();
+                    let min_str = bytes_to_cow_str(min).into_owned();
+                    let max_str = bytes_to_cow_str(max).into_owned();
 
                     let max_length = STATS_STRING_MAX_LENGTH.get_or_init(|| {
                         std::env::var("QSV_STATS_STRING_MAX_LENGTH")

@@ -6632,11 +6632,18 @@ fn frequency_sketch_method_frequent_items_other_row_emission() {
         })
         .collect();
 
-    // Find the Other row.
-    let other_row = parsed.iter().find(|(v, _, _, _)| v == "Other").expect(
-        "Other row must be emitted by default (no --no-other given) — current rows: \
-         {parsed:?}",
-    );
+    // Find the Other row. Use unwrap_or_else+panic! so the {parsed:?} format
+    // string is actually interpolated on failure — `expect` takes a plain &str
+    // and would print the placeholder verbatim, hiding the diagnostic context.
+    let other_row = parsed
+        .iter()
+        .find(|(v, _, _, _)| v == "Other")
+        .unwrap_or_else(|| {
+            panic!(
+                "Other row must be emitted by default (no --no-other given) — current rows: \
+                 {parsed:?}"
+            )
+        });
     let other_count: u64 = other_row
         .1
         .parse()

@@ -3750,6 +3750,14 @@ impl Args {
         // by the time run() dispatches here. Reading it directly avoids depending
         // on NULL_VAL.set() ordering (the FI dispatch happens before that init in
         // run()) and guarantees exact↔FI label parity.
+        //
+        // Invariant: the only `NULL_VAL.set(...)` site in this module is at the top
+        // of `run()` (a single setter — verifiable by grepping `NULL_VAL\.set` in
+        // this file), and it sets `NULL_VAL` from
+        // `args.flag_null_text.as_bytes().to_vec()` — the same bytes we read here.
+        // So `NULL_VAL` and `self.flag_null_text` are byte-identical once
+        // `NULL_VAL` is populated. If a future change adds another `NULL_VAL.set`
+        // site that uses a different source, revisit this comment.
         let null_label: Vec<u8> = self.flag_null_text.as_bytes().to_vec();
 
         let mut row_buffer: csv::ByteRecord = csv::ByteRecord::with_capacity(200, sel_len);

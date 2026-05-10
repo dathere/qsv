@@ -131,7 +131,9 @@ fn cols_to_exprs(cols: &[String]) -> Vec<Expr> {
 
 /// Parse `quantile@<p>` or `q@<p>` -> Some(p) iff p ∈ [0, 1]; else None.
 fn parse_quantile_agg(s: &str) -> Option<f64> {
-    let suffix = s.strip_prefix("quantile@").or_else(|| s.strip_prefix("q@"))?;
+    let suffix = s
+        .strip_prefix("quantile@")
+        .or_else(|| s.strip_prefix("q@"))?;
     let p: f64 = suffix.parse().ok()?;
     (p.is_finite() && (0.0..=1.0).contains(&p)).then_some(p)
 }

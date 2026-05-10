@@ -164,6 +164,18 @@
         "description": "Select a subset of columns to compute frequencies for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv frequency' will disable the use of indexing."
       },
       {
+        "flag": "--sketch-map-size",
+        "type": "string",
+        "description": "Maximum map size for the Frequent Items sketch. Must be a power of two and at least 8. Larger values tighten error bounds at the cost of more memory. Only used when sketch-method is frequent_items.",
+        "default": "4096"
+      },
+      {
+        "flag": "--sketch-method",
+        "type": "string",
+        "description": "Algorithm used to compute the frequency table. Choices: 'exact' (default) tracks every distinct value in a HashMap; 'frequent_items' uses the Apache DataSketches Frequent Items (Misra-Gries) sketch to track top-K heavy hitters with bounded error and constant memory. The frequent_items mode rejects asc, weight, ignore-case, no-trim, other-sorted, null-sorted, frequency-jsonl, stats-filter, and json/pretty-json/toon output; the frequency cache is bypassed. Counts are estimates. The flags rank-strategy, lmt-threshold, and unq-limit are silently ignored under this mode (the sketch's natural ordering is top-K by estimate descending; tied counts use the sketch's hash-table iteration order). The 'Other' row format diverges from exact: label is the bare other-text (no unique-count suffix since the sketch cannot recover the true count of items not in the top-K); rank is 0 to match the exact convention.",
+        "default": "exact"
+      },
+      {
         "flag": "--stats-filter",
         "type": "string",
         "description": "Filter columns based on their statistics using a Luau expression. Columns where the expression evaluates to `true` are EXCLUDED. Available fields: field, type, is_ascii, cardinality, nullcount, sum, min, max, range, sort_order, min_length, max_length, mean, stddev, variance, cv, sparsity, q1, q2_median, q3, iqr, mad, skewness, mode, antimode, n_negative, n_zero, n_positive, etc. e.g. \"nullcount > 1000\" - exclude columns with many nulls \"type == 'Float'\" - exclude Float columns \"cardinality > 500 and nullcount > 0\" - compound expression Requires stats cache and the \"luau\" feature."

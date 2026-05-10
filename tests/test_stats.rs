@@ -6398,3 +6398,141 @@ fn stats_mode_cardinality_cap_preserves_low_cardinality_column() {
         "no row should contain the HIGH_CARDINALITY sentinel when cap is not tripped: {row:?}"
     );
 }
+
+#[test]
+fn stats_mode_cardinality_cap_weighted_path() {
+    // Exercises the cap's weighted-modes branch (HashMap::len() bound). With cap=3 and a
+    // column whose unique-value count exceeds 3, the weighted tracker is dropped and
+    // the sentinels fire — same as the unweighted path.
+    let wrk = Workdir::new("stats_mode_cardinality_cap_weighted_path");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["a", "1"],
+            svec!["b", "1"],
+            svec!["c", "1"],
+            svec!["d", "1"],
+            svec!["e", "1"],
+            svec!["f", "1"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--mode")
+        .arg("--weight")
+        .arg("weight")
+        .arg("--mode-cardinality-cap")
+        .arg("3")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let row = &got[1];
+    let card_idx = headers
+        .iter()
+        .position(|h| h == "cardinality")
+        .expect("cardinality column should exist");
+    let mode_idx = headers
+        .iter()
+        .position(|h| h == "mode")
+        .expect("mode column should exist");
+
+    assert_eq!(
+        row[card_idx], ">=3",
+        "weighted-mode cap should produce >=<cap> cardinality, got: {:?}",
+        row[card_idx]
+    );
+    assert_eq!(
+        row[mode_idx], "*HIGH_CARDINALITY",
+        "weighted-mode cap should produce *HIGH_CARDINALITY mode, got: {:?}",
+        row[mode_idx]
+    );
+}
+
+#[test]
+fn stats_mode_cardinality_cap_multi_chunk_post_merge_check() {
+    // Exercises the post-merge cap re-check: when individual chunks each stay below the
+    // cap but the merged result crosses it. Forces parallel chunking by indexing the
+    // file (parallel_stats requires an index) and using the default --jobs.
+    let wrk = Workdir::new("stats_mode_cardinality_cap_multi_chunk_post_merge_check");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string()]];
+    for i in 1..=200_usize {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("data.csv", rows);
+
+    // Build the index so parallel_stats kicks in (qsv routes to sequential_stats when
+    // the index is missing, even at default --jobs).
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg("data.csv");
+    wrk.assert_success(&mut idx_cmd);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--mode")
+        .arg("--mode-cardinality-cap")
+        .arg("50")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let row = &got[1];
+    let headers = &got[0];
+    let card_idx = headers.iter().position(|h| h == "cardinality").unwrap();
+
+    // 200 rows, cap=50: even if parallel chunks each stay near the cap individually,
+    // the merged total must trip the post-merge re-check and emit the sentinel.
+    assert_eq!(
+        row[card_idx], ">=50",
+        "post-merge cap re-check should fire across chunks, got: {:?}",
+        row[card_idx]
+    );
+}
+
+#[test]
+fn stats_mode_cardinality_cap_cardinality_only_emits_two_fields() {
+    // When --cardinality is set but --mode is not, the dropped path must emit exactly
+    // two sentinel fields (cardinality + uniqueness_ratio) and NOT the six mode/antimode
+    // fields. Locks the field-count contract.
+    let wrk = Workdir::new("stats_mode_cardinality_cap_cardinality_only_emits_two_fields");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string()]];
+    for i in 1..=10_usize {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--mode-cardinality-cap")
+        .arg("3")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let row = &got[1];
+
+    // cardinality should be present and = ">=3"
+    let card_idx = headers
+        .iter()
+        .position(|h| h == "cardinality")
+        .expect("cardinality column should exist");
+    assert_eq!(
+        row[card_idx], ">=3",
+        "cardinality should be the sentinel, got: {:?}",
+        row[card_idx]
+    );
+
+    // mode columns should NOT be in the headers when --mode is omitted (and --everything
+    // is not set). This guards against the dropped path accidentally emitting 8 fields
+    // instead of 2.
+    assert!(
+        !headers.iter().any(|h| h == "mode"),
+        "mode column should not be present when --mode is not set: {headers:?}"
+    );
+    assert!(
+        !headers.iter().any(|h| h == "antimode"),
+        "antimode column should not be present when --mode is not set: {headers:?}"
+    );
+}

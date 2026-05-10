@@ -217,10 +217,15 @@ stats options:
                                              different --jobs values.
                               [default: exact]
     --mode-cardinality-cap <n>  Bound mode-tracking memory on high-cardinality columns.
-                              When > 0, if a column accumulates more than <n> mode samples
-                              (~ row count for unique-per-row "ID" columns), qsv drops the
-                              mode tracker for that column and emits sentinel values
-                              instead of exact modes/cardinality:
+                              When > 0, if a column's mode tracker grows past <n>, qsv
+                              drops it and emits sentinel values instead of exact modes
+                              and cardinality. The cap measures:
+                                * unweighted: total samples added (~ row count, since
+                                  every cell is pushed onto the underlying Vec).
+                                * weighted (--weight): number of unique values seen (the
+                                  HashMap's len(), == true cardinality).
+                              Both are direct memory bounds on their respective tracker.
+                              Sentinel output:
                                 * mode columns: "*HIGH_CARDINALITY"
                                 * cardinality column: ">=<n>" (the ">=" prefix DOES break
                                   downstream parsers expecting a plain integer; cap is
@@ -3818,11 +3823,7 @@ impl Stats {
                     EMPTY_STRING,
                 ]);
             }
-            // Skip the rest of the cardinality / modes / antimodes machinery; jump to the
-            // record.push_field() loop at the bottom by using an early-exit pattern.
-            // We do this by faking the "no tracker" path: leave weighted_modes and modes
-            // both as None (already true here), then fall through. The if/else below
-            // handles the empty case cleanly.
+            // Sentinels emitted; the else-if chain below is skipped.
         } else if let Some(ref weighted_modes_map) = self.weighted_modes {
             // Weighted modes/antimodes computation
             mc_pieces.reserve(8);
@@ -4643,10 +4644,11 @@ impl Commute for Stats {
         self.typ.merge(other.typ);
         self.is_ascii &= other.is_ascii;
         // modes_dropped is sticky: if either chunk gave up on mode-tracking, the merged
-        // result also gives up (we can't recover what was dropped). We clear modes /
-        // weighted_modes AFTER the standard merges below to keep the Commute trait happy.
-        let modes_dropped_now = self.modes_dropped || other.modes_dropped;
-        self.modes_dropped = modes_dropped_now;
+        // result also gives up (we can't recover what was dropped). The actual clearing
+        // of `modes` / `weighted_modes` happens AFTER the standard `Option::merge` calls
+        // below so we don't have to special-case the merge plumbing — the post-merge
+        // block at the bottom of this function nukes both fields when modes_dropped fires.
+        self.modes_dropped |= other.modes_dropped;
         self.max_precision = self.max_precision.max(other.max_precision);
         self.which.merge(other.which);
         self.nullcount += other.nullcount;

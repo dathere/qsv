@@ -4207,7 +4207,7 @@ impl Stats {
             #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
             let est = hll_sketch.estimate().round() as u64;
             cardinality = est;
-            mc_pieces[0] = itoa_buf.format(est).to_owned();
+            itoa_buf.format(est).clone_into(&mut mc_pieces[0]);
             #[allow(clippy::cast_precision_loss)]
             let ratio = (est as f64) / (record_count as f64);
             mc_pieces[1] = util::round_num(ratio, round_places);

@@ -337,8 +337,8 @@ pivotp_test!(
         );
 
         // Out-of-range low (negative)
-        let mut cmd2 = wrk.command("pivotp");
-        cmd2.args(&[
+        let cmd_2 = wrk.command("pivotp");
+        cmd_2.args(&[
             "product",
             "--index",
             "region",
@@ -348,8 +348,8 @@ pivotp_test!(
             "q@-0.1",
             "sales.csv",
         ]);
-        wrk.assert_err(&mut cmd2);
-        let stderr2 = wrk.output_stderr(&mut cmd2);
+        wrk.assert_err(&mut cmd_2);
+        let stderr2 = wrk.output_stderr(&mut cmd_2);
         assert!(
             stderr2.contains("Invalid quantile probability"),
             "expected 'Invalid quantile probability' in stderr, got: {stderr2}"

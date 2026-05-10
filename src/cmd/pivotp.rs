@@ -1151,10 +1151,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         "mean" => c.mean().alias(PlSmallStr::from_str(vc)),
                         "median" => c.median().alias(PlSmallStr::from_str(vc)),
                         "len" | "smart" => len().alias(PlSmallStr::from_str(vc)),
-                        s if let Some(p) = parse_quantile_agg(s) => {
-                            c.quantile(lit(p), QuantileMethod::Linear)
-                                .alias(PlSmallStr::from_str(vc))
-                        },
+                        s if let Some(p) = parse_quantile_agg(s) => c
+                            .quantile(lit(p), QuantileMethod::Linear)
+                            .alias(PlSmallStr::from_str(vc)),
                         // Unreachable because:
                         //   - "none" and "item" are rejected in the group-by validation block in
                         //     `run` (see the `is_groupby_mode` checks).

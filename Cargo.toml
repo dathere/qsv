@@ -118,6 +118,7 @@ csvlens = { version = "0.15", optional = true, default-features = false, feature
 csvs_convert = { version = "0.12", default-features = false, features = [
     "converters",
 ], optional = true }
+datasketches = "0.2"
 dns-lookup = { version = "3", optional = true }
 directories = "6.0"
 dotenvy = "0.15"

@@ -6052,3 +6052,173 @@ fn stats_jsonl_tsv_delimiter() {
         );
     }
 }
+
+// --- --quantile-method approx (t-digest) tests --------------------------------------
+
+/// Build a uniform 1..=N column. With enough rows, t-digest's rank error stays small
+/// (~1%), so we can assert tighter envelopes than the small-N smoke test.
+fn approx_quartiles_fixture(n: usize) -> Vec<Vec<String>> {
+    let mut rows: Vec<Vec<String>> = Vec::with_capacity(n + 1);
+    rows.push(vec!["value".to_string()]);
+    for i in 1..=n {
+        rows.push(vec![i.to_string()]);
+    }
+    rows
+}
+
+#[test]
+fn stats_quantile_method_approx_quartiles_within_envelope() {
+    // With N=10_000 uniform integers 1..=10_000 the exact quartiles are q1=2500,
+    // q2=5000, q3=7500. T-digest with default k=200 should land inside ±2% of those.
+    let wrk = Workdir::new("stats_quantile_method_approx_quartiles_within_envelope");
+    wrk.create("data.csv", approx_quartiles_fixture(10_000));
+
+    let mut cmd = wrk.command("stats");
+    // Pin --jobs 1 because t-digest merge is associative but not chunk-count-invariant;
+    // CI runs with arbitrary thread counts would otherwise produce flaky digests.
+    cmd.arg("--quartiles")
+        .arg("--quantile-method")
+        .arg("approx")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let value_row = &got[1];
+    let q1: f64 = value_row[headers.iter().position(|h| h == "q1").unwrap()]
+        .parse()
+        .unwrap();
+    let q2: f64 = value_row[headers.iter().position(|h| h == "q2_median").unwrap()]
+        .parse()
+        .unwrap();
+    let q3: f64 = value_row[headers.iter().position(|h| h == "q3").unwrap()]
+        .parse()
+        .unwrap();
+
+    // ~1% rank error per t-digest; allow 2% on values for safety. Approx error is
+    // typically much smaller in the tails than the middle.
+    let tol = 0.02_f64;
+    assert!(
+        (q1 - 2500.0).abs() / 2500.0 < tol,
+        "approx q1 = {q1} not within 2% of 2500"
+    );
+    assert!(
+        (q2 - 5000.0).abs() / 5000.0 < tol,
+        "approx q2 = {q2} not within 2% of 5000"
+    );
+    assert!(
+        (q3 - 7500.0).abs() / 7500.0 < tol,
+        "approx q3 = {q3} not within 2% of 7500"
+    );
+}
+
+#[test]
+fn stats_quantile_method_approx_with_weight_is_rejected() {
+    let wrk = Workdir::new("stats_quantile_method_approx_with_weight_is_rejected");
+    wrk.create(
+        "data.csv",
+        vec![svec!["value", "weight"], svec!["1", "1"], svec!["2", "1"]],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--quartiles")
+        .arg("--quantile-method")
+        .arg("approx")
+        .arg("--weight")
+        .arg("weight")
+        .arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "Should fail when --quantile-method approx is combined with --weight"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("approx") && stderr.contains("--weight"),
+        "Error should explain the approx+weight incompatibility, got: {stderr}"
+    );
+}
+
+#[test]
+fn stats_quantile_method_approx_disables_mad() {
+    // --mad with --quantile-method approx should print a warning and drop the MAD column
+    // from the output (MAD is not computable from a t-digest).
+    let wrk = Workdir::new("stats_quantile_method_approx_disables_mad");
+    wrk.create("data.csv", approx_quartiles_fixture(100));
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--mad")
+        .arg("--quantile-method")
+        .arg("approx")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "approx + --mad should still succeed"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("does not support MAD"),
+        "Should warn that MAD is disabled under approx, got: {stderr}"
+    );
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    assert!(
+        !headers.iter().any(|h| h == "mad"),
+        "mad column should be omitted when approx disables MAD, got headers: {headers:?}"
+    );
+}
+
+#[test]
+fn stats_quantile_method_invalid_value_is_rejected() {
+    let wrk = Workdir::new("stats_quantile_method_invalid_value_is_rejected");
+    wrk.create("data.csv", vec![svec!["value"], svec!["1"]]);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--quantile-method").arg("nonsense").arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "Should fail on invalid --quantile-method"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Invalid --quantile-method"),
+        "Error should mention invalid --quantile-method, got: {stderr}"
+    );
+}
+
+#[test]
+fn stats_quantile_method_exact_is_default_and_byte_identical() {
+    // Sanity: omitting --quantile-method should produce the same output as
+    // explicitly passing --quantile-method exact. This guards against a
+    // regression where the default ever silently changes.
+    let wrk = Workdir::new("stats_quantile_method_exact_is_default_and_byte_identical");
+    wrk.create("data.csv", approx_quartiles_fixture(50));
+
+    let mut cmd_default = wrk.command("stats");
+    cmd_default.arg("--quartiles").arg("data.csv");
+    let default_out: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_default);
+
+    let mut cmd_exact = wrk.command("stats");
+    cmd_exact
+        .arg("--quartiles")
+        .arg("--quantile-method")
+        .arg("exact")
+        .arg("data.csv");
+    let exact_out: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_exact);
+
+    assert_eq!(
+        default_out, exact_out,
+        "Default --quantile-method must match explicit 'exact'"
+    );
+}

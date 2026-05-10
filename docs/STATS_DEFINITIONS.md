@@ -63,7 +63,7 @@ The command supports various caching options to improve performance on subsequen
 
 ### Streaming vs Non-Streaming Statistics
 
-**Streaming Statistics** (computed in constant memory, always emitted alongside the `field`/`type` identifier columns) — **27 stats**:
+**Streaming Statistics** (computed in constant memory, always emitted alongside the `field` and `type` identifier columns; those two identifier columns are always present in the output but are *not* counted as statistics here) — **27 stats**:
 
 | #  | Identifier | Group |
 |---:|:---|:---|
@@ -120,7 +120,7 @@ The command supports various caching options to improve performance on subsequen
 | 46 | `antimode_occurrences` | `--mode` |
 | 47 | `percentiles` | `--percentiles` (single column containing the comma-separated values listed in `--percentile-list`) |
 
-**Total: 47 statistics** (27 streaming + 20 non-streaming, beyond the `field`/`type` identifiers). When `--quartiles` (or `--everything`) is set, the standalone `median` column is omitted because `q2_median` already supplies it; this keeps the union of emitted stats at 47. Non-streaming statistics use memory-aware chunking for large files, dynamically calculating chunk size based on available memory and record sampling. The enumeration above is the source-of-truth for the "47 summary statistics" count quoted in `README.md` and `docs/help/stats.md`; it is sourced from the `Stats::stat_headers` builder in [`src/cmd/stats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs).
+**Total: 47 statistics** (27 streaming + 20 non-streaming, beyond the `field`/`type` identifiers). 47 is the *maximum* — it's the size of the union across all flag combinations. The actual emitted column count for any particular run depends on which flags are set: any single run emits at most 47 stats columns because `median` (#28) and `q2_median` (#33) are mutually exclusive — `median` is only emitted under `--median` alone, while `q2_median` replaces it whenever `--quartiles` or `--everything` is set. Runs without `--everything` emit fewer columns (only the streaming 27 plus whichever opt-in groups are enabled). Non-streaming statistics use memory-aware chunking for large files, dynamically calculating chunk size based on available memory and record sampling. The enumeration above is the source-of-truth for the "47 summary statistics" count quoted in `README.md` and `docs/help/stats.md`; it is sourced from the `Stats::stat_headers` builder in [`src/cmd/stats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs).
 
 ### Weighted Statistics
 
@@ -383,6 +383,24 @@ The `moarstats` command extends an existing stats CSV file (created by the `stat
 `moarstats` documentation cites "up to an additional 55 statistical measures." That figure is
 the union of the three groups below; each is enumerated explicitly in this document so the
 total can be audited against the source-of-truth in [`src/cmd/moarstats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/moarstats.rs).
+
+**Counting convention.** Each conceptual statistical *measure* counts once even when it
+emits multiple companion columns; the count is therefore over distinct concepts, not over
+output column names. Three grouping rules are applied below:
+
+- **Jarque-Bera** (#17) counts as one measure even though it emits two columns
+  (`jarque_bera` plus its `jarque_bera_pvalue`); the p-value is a derived companion of the
+  test statistic, not an independent measure.
+- **Winsorized Mean + Trimmed Mean** (#25) count together as a single robust-mean *pair*
+  (one measure entry) even though they emit 12 columns combined (each mean plus 5
+  companion stddev/variance/cv/range/stddev_ratio columns). They share a single robust-mean
+  pipeline driven by `--use-percentiles`/`--pct-thresholds` and are conceptually the same
+  measure under two different boundary policies.
+- **Covariance** (bivariate #4) counts as one measure even though it emits two columns
+  (`covariance_sample` and `covariance_population`); they differ only in the divisor.
+
+A reader regenerating the count by tallying named output columns in `src/cmd/moarstats.rs`
+will arrive at a higher number; arrive at 55 by collapsing the three groups above.
 
 **Univariate measures (25)** — see [Derived Statistics](#derived-statistics), [Advanced Statistics](#advanced-statistics) and [Robust Statistics (Winsorized & Trimmed Means)](#robust-statistics-winsorized--trimmed-means):
 

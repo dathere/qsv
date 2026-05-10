@@ -88,6 +88,21 @@ frequency options:
                             e.g. --limit -2 will only return values with an
                             occurrence count >= 2.
                             [default: 10]
+    --sketch-method <m>     Algorithm used to compute the frequency table.
+                            Choices: 'exact' (default) tracks every distinct value
+                            in a HashMap; 'frequent_items' uses the Apache
+                            DataSketches Frequent Items (Misra-Gries) sketch to
+                            track top-K heavy hitters with bounded error and
+                            constant memory. The frequent_items mode rejects
+                            asc, weight, ignore-case, no-trim, frequency-jsonl,
+                            stats-filter, and json/pretty-json/toon output; the
+                            frequency cache is bypassed. Counts are estimates.
+                            [default: exact]
+    --sketch-map-size <n>   Maximum map size for the Frequent Items sketch.
+                            Must be a power of two and at least 8. Larger values
+                            tighten error bounds at the cost of more memory.
+                            Only used when sketch-method is frequent_items.
+                            [default: 4096]
     -u, --unq-limit <arg>   If a column has all unique values, limit the
                             frequency table to a sample of N unique items.
                             Set to '0' to disable a unique_limit.
@@ -329,6 +344,8 @@ pub struct Args {
     pub flag_toon:                bool,
     pub flag_no_stats:            bool,
     pub flag_weight:              Option<String>,
+    pub flag_sketch_method:       String,
+    pub flag_sketch_map_size:     usize,
 }
 
 const NON_UTF8_ERR: &str = "<Non-UTF8 ERROR>";
@@ -654,6 +671,71 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         io::copy(&mut io::stdin(), &mut stdin_temp_file)?;
         args.arg_input = Some(stdin_temp_file.path().to_string_lossy().to_string());
         rconfig = args.rconfig();
+    }
+
+    // --sketch-method: dispatch to the Frequent Items path when requested. The FI
+    // path is intentionally narrow — many existing flags don't compose with a
+    // streaming sketch that only tracks heavy hitters. Reject the unsupported
+    // combinations early so users get a clear error instead of silently-wrong
+    // output.
+    args.flag_sketch_method = args.flag_sketch_method.to_lowercase();
+    match args.flag_sketch_method.as_str() {
+        "exact" => {},
+        "frequent_items" => {
+            if args.flag_asc {
+                return fail_incorrectusage_clierror!(
+                    "--sketch-method frequent_items tracks heavy hitters only — least-frequent \
+                     items are not recoverable. Remove --asc or use --sketch-method exact."
+                );
+            }
+            if args.flag_weight.is_some() {
+                return fail_incorrectusage_clierror!(
+                    "--sketch-method frequent_items operates on unit-weight streams. Use \
+                     --sketch-method exact for weighted frequencies."
+                );
+            }
+            if args.flag_ignore_case {
+                return fail_incorrectusage_clierror!(
+                    "--sketch-method frequent_items does not support --ignore-case. Use \
+                     --sketch-method exact."
+                );
+            }
+            if args.flag_no_trim {
+                return fail_incorrectusage_clierror!(
+                    "--sketch-method frequent_items does not support --no-trim. Use \
+                     --sketch-method exact."
+                );
+            }
+            if args.flag_frequency_jsonl {
+                return fail_incorrectusage_clierror!(
+                    "--sketch-method frequent_items is not supported with --frequency-jsonl."
+                );
+            }
+            if is_json {
+                return fail_incorrectusage_clierror!(
+                    "--sketch-method frequent_items does not support --json/--pretty-json/--toon \
+                     output. Use --sketch-method exact."
+                );
+            }
+            #[cfg(feature = "luau")]
+            if args.flag_stats_filter.is_some() {
+                return fail_incorrectusage_clierror!(
+                    "--sketch-method frequent_items is not supported with --stats-filter."
+                );
+            }
+            let n = args.flag_sketch_map_size;
+            if n < 8 || !n.is_power_of_two() {
+                return fail_incorrectusage_clierror!(
+                    "--sketch-map-size must be a power of two and >= 8, got {n}."
+                );
+            }
+            return args.run_frequent_items(&rconfig);
+        },
+        other => {
+            return fail_incorrectusage_clierror!(
+                "Invalid --sketch-method: {other}. Choose 'exact' or 'frequent_items'."
+            );
+        },
     }
 
     // Check if we have an index and will use parallel processing
@@ -3617,6 +3699,214 @@ impl Args {
             .map_err(|_| "Cannot set UNIQUE_COLUMNS")?;
 
         Ok((final_headers, final_sel, weight_col_idx))
+    }
+
+    /// Self-contained Frequent Items (Misra-Gries) processing path.
+    ///
+    /// Streams the input CSV once, maintaining one
+    /// `datasketches::frequencies::FrequentItemsSketch<Vec<u8>>` per selected column,
+    /// then emits the same CSV schema as the exact path
+    /// (`field,value,count,percentage,rank`) using the sketch's heavy-hitter list.
+    ///
+    /// This path is intentionally narrow:
+    ///   * Always unweighted, single-threaded — `run()` rejects `--weight` and the parallel/index
+    ///     dispatch is bypassed (FI sketches merge cleanly via `FrequentItemsSketch::merge`, but
+    ///     the MVP keeps everything sequential to limit blast radius).
+    ///   * No frequency cache — caller skips `try_output_from_cache` since the cache stores exact
+    ///     `Frequencies` state, not sketch state.
+    ///   * Unicode trim is the only normalization applied (matches the default exact path);
+    ///     `--ignore-case` and `--no-trim` are rejected upstream.
+    ///   * Counts are estimates. The `count` column carries the FI point estimate; its error is
+    ///     bounded by `sketch.maximum_error()` (which equals the stream length minus the active
+    ///     threshold). The "Other" row's count is `total_weight - sum(top_k_estimates)` and is
+    ///     therefore approximate.
+    fn run_frequent_items(&self, rconfig: &Config) -> CliResult<()> {
+        use datasketches::frequencies::{ErrorType, FrequentItemsSketch};
+
+        let mut rdr = rconfig.reader()?;
+        let (headers, sel, weight_col_idx) = self.sel_headers(&mut rdr)?;
+        debug_assert!(
+            weight_col_idx.is_none(),
+            "run_frequent_items reached with a weight column — run() should reject --weight"
+        );
+
+        let sel_len = sel.len();
+        let map_size = self.flag_sketch_map_size;
+        let mut sketches: Vec<FrequentItemsSketch<Vec<u8>>> = (0..sel_len)
+            .map(|_| FrequentItemsSketch::<Vec<u8>>::new(map_size))
+            .collect();
+
+        // Per-column non-null observation count, used as the percentage denominator
+        // when --pct-nulls is false (the default — null cells are excluded from the
+        // valid-percentage base). We track it ourselves rather than calling
+        // sketch.total_weight() because total_weight folds nulls in.
+        let mut nonnull_counts: Vec<u64> = vec![0; sel_len];
+        // Per-column null observation count (only populated when nulls are tracked).
+        let mut null_counts: Vec<u64> = vec![0; sel_len];
+
+        let flag_no_nulls = self.flag_no_nulls;
+        let null_label: Vec<u8> = NULL_VAL
+            .get()
+            .cloned()
+            .unwrap_or_else(|| b"(NULL)".to_vec());
+
+        let mut row_buffer: csv::ByteRecord = csv::ByteRecord::with_capacity(200, sel_len);
+        for row in rdr.byte_records() {
+            row_buffer.clone_from(&row?);
+            for (i, field) in sel.select(&row_buffer).enumerate() {
+                if field.is_empty() {
+                    if !flag_no_nulls {
+                        // Track empty cells as a sentinel value so they can show up as
+                        // a heavy hitter row labelled with --null-text. Use the empty
+                        // Vec<u8> as the sketch key — distinct from any real value.
+                        // safety: i < sel_len by construction.
+                        unsafe { sketches.get_unchecked_mut(i) }.update(Vec::new());
+                        unsafe { *null_counts.get_unchecked_mut(i) += 1 };
+                    }
+                    continue;
+                }
+                // Default trim (ignore-case + no-trim are rejected upstream).
+                let trimmed = trim_bs_whitespace(field);
+                if trimmed.is_empty() {
+                    if !flag_no_nulls {
+                        unsafe { sketches.get_unchecked_mut(i) }.update(Vec::new());
+                        unsafe { *null_counts.get_unchecked_mut(i) += 1 };
+                    }
+                    continue;
+                }
+                // safety: i < sel_len by construction; sketches/nonnull_counts
+                // are allocated with sel_len entries above.
+                unsafe { sketches.get_unchecked_mut(i) }.update(trimmed.to_vec());
+                unsafe { *nonnull_counts.get_unchecked_mut(i) += 1 };
+            }
+        }
+
+        // Build the writer and emit.
+        let mut wtr = Config::new(self.flag_output.as_ref()).writer()?;
+        wtr.write_record([
+            b"field".as_slice(),
+            b"value",
+            b"count",
+            b"percentage",
+            b"rank",
+        ])?;
+
+        // For percentage, mirror the default exact behavior: --pct-nulls=false uses
+        // the non-null count as the denominator (so the null row's percentage is
+        // empty), --pct-nulls=true folds nulls in.
+        let pct_nulls = self.flag_pct_nulls;
+        let abs_dec_places = self.flag_pct_dec_places.unsigned_abs() as u32;
+
+        // --limit semantics:
+        //   limit > 0   → keep first `limit` rows (top-K)
+        //   limit == 0  → keep everything the sketch returns
+        //   limit < 0   → keep rows with estimate >= |limit|
+        let limit = self.flag_limit;
+
+        // --no-other / --other-text "<NONE>" controls Other emission.
+        let emit_other = !self.flag_no_other && self.flag_other_text != "<NONE>";
+        let other_label = self.flag_other_text.as_bytes().to_vec();
+
+        let mut itoa_buf = itoa::Buffer::new();
+        let mut zmij_buf = zmij::Buffer::new();
+        let mut rank_buf = String::with_capacity(20);
+        let mut value_str = String::with_capacity(64);
+
+        let vis_whitespace = self.flag_vis_whitespace;
+        let no_headers = rconfig.no_headers;
+
+        for (i, header) in headers.iter().enumerate() {
+            let header_vec: Vec<u8> = if no_headers {
+                (i + 1).to_string().into_bytes()
+            } else {
+                header.to_vec()
+            };
+            // safety: sketches has sel_len entries, headers has sel_len after sel_headers.
+            let sketch = unsafe { sketches.get_unchecked(i) };
+            let nonnull_count = unsafe { *nonnull_counts.get_unchecked(i) };
+            let null_count = unsafe { *null_counts.get_unchecked(i) };
+            let pct_denom: f64 = if pct_nulls {
+                (nonnull_count + null_count) as f64
+            } else {
+                nonnull_count as f64
+            };
+
+            // NoFalsePositives ensures every emitted item's true count is >= lower_bound,
+            // so we never report a value that wasn't actually a heavy hitter.
+            let mut rows = sketch.frequent_items(ErrorType::NoFalsePositives);
+            // Already sorted by estimate descending.
+            // Apply --limit semantics on top of the sketch's natural ordering.
+            if limit > 0 {
+                rows.truncate(limit as usize);
+            } else if limit < 0 {
+                let min_count = limit.unsigned_abs() as u64;
+                rows.retain(|r| r.estimate() >= min_count);
+            }
+
+            let kept_estimate_sum: u64 = rows.iter().map(|r| r.estimate()).sum();
+
+            for (rank_idx, r) in rows.iter().enumerate() {
+                let item: &[u8] = r.item();
+                let display_bytes: Vec<u8> = if item.is_empty() {
+                    null_label.clone()
+                } else if vis_whitespace {
+                    value_str.clear();
+                    value_str.push_str(&util::visualize_whitespace(&String::from_utf8_lossy(item)));
+                    value_str.as_bytes().to_vec()
+                } else {
+                    item.to_vec()
+                };
+
+                let count = r.estimate();
+                let pct: f64 = if item.is_empty() && !pct_nulls {
+                    -1.0
+                } else if pct_denom > 0.0 {
+                    100.0 * (count as f64) / pct_denom
+                } else {
+                    0.0
+                };
+                let pct_str = self.format_percentage(pct, abs_dec_places);
+
+                rank_buf.clear();
+                if !item.is_empty() || pct_nulls {
+                    let rank_val = (rank_idx as u64) + 1;
+                    rank_buf.push_str(itoa_buf.format(rank_val));
+                }
+
+                wtr.write_record([
+                    header_vec.as_slice(),
+                    &display_bytes,
+                    itoa_buf.format(count).as_bytes(),
+                    pct_str.as_bytes(),
+                    rank_buf.as_bytes(),
+                ])?;
+            }
+
+            if emit_other {
+                let total = sketch.total_weight();
+                if total > kept_estimate_sum {
+                    let other_count = total - kept_estimate_sum;
+                    let pct: f64 = if pct_denom > 0.0 {
+                        100.0 * (other_count as f64) / pct_denom
+                    } else {
+                        0.0
+                    };
+                    let pct_str = self.format_percentage(pct, abs_dec_places);
+                    rank_buf.clear();
+                    let rank_val = (rows.len() as u64) + 1;
+                    rank_buf.push_str(zmij_buf.format(rank_val as f64));
+                    wtr.write_record([
+                        header_vec.as_slice(),
+                        other_label.as_slice(),
+                        itoa_buf.format(other_count).as_bytes(),
+                        pct_str.as_bytes(),
+                        rank_buf.as_bytes(),
+                    ])?;
+                }
+            }
+        }
+
+        Ok(wtr.flush()?)
     }
 }
 

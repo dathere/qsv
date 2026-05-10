@@ -2875,6 +2875,7 @@ pub fn get_stats_records(
             flag_percentiles:          false,
             flag_percentile_list:      "5,10,40,60,90,95".to_string(),
             flag_quantile_method:      "exact".to_string(),
+            flag_cardinality_method:   "exact".to_string(),
             flag_mode_cardinality_cap: 0,
             flag_nulls:                false,
             flag_round:                4,

@@ -3742,6 +3742,7 @@ impl Args {
     ///     bounded by `sketch.maximum_error()` (which equals the stream length minus the active
     ///     threshold). The "Other" row's count is `total_weight - sum(top_k_estimates)` and is
     ///     therefore approximate.
+    #[allow(clippy::cast_precision_loss)]
     fn run_frequent_items(&self, rconfig: &Config) -> CliResult<()> {
         use datasketches::frequencies::{ErrorType, FrequentItemsSketch};
 

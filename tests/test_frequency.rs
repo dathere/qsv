@@ -6721,28 +6721,16 @@ fn frequency_sketch_method_frequent_items_with_null_sorted_is_rejected() {
 // in addition to the existing auto-index fallback. These tests need a
 // multi-GB file to deterministically trigger OOM and are #[ignore]'d by
 // default; run with `--ignored` to exercise them.
-
-fn build_large_oom_csv(name: &str) -> (Workdir, std::path::PathBuf) {
-    let wrk = Workdir::new(name);
-    let mut data = vec![svec!["col1", "col2", "col3", "col4", "col5"]];
-    for i in 0..10_000_000 {
-        data.push(vec![
-            format!("value_{}_with_some_padding_to_make_it_larger", i),
-            format!("another_value_{}_with_more_data", i),
-            format!("data_{}", i),
-            format!("field_{}_content", i),
-            format!("final_field_{}_with_additional_text", i),
-        ]);
-    }
-    let path = wrk.path("large_data.csv");
-    wrk.create("large_data.csv", data);
-    (wrk, path)
-}
+//
+// The shared `build_large_oom_csv` helper lives in `tests/workdir.rs` so the
+// row count, column shape, and padding stay in sync with the parallel stats
+// tests; see `stats_oom_*` in tests/test_stats.rs.
 
 #[test]
 #[ignore = "Requires a multi-GB file to trigger OOM via mem_file_check"]
 fn frequency_oom_auto_enables_frequent_items() {
-    let (wrk, test_file) = build_large_oom_csv("frequency_oom_auto_enables_frequent_items");
+    let (wrk, test_file) =
+        crate::workdir::build_large_oom_csv("frequency_oom_auto_enables_frequent_items");
     let mut cmd = wrk.command("frequency");
     cmd.arg("--memcheck")
         .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
@@ -6761,7 +6749,7 @@ fn frequency_oom_auto_enables_frequent_items() {
 #[test]
 #[ignore = "Requires a multi-GB file to trigger OOM via mem_file_check"]
 fn frequency_oom_skips_when_asc_set() {
-    let (wrk, test_file) = build_large_oom_csv("frequency_oom_skips_when_asc_set");
+    let (wrk, test_file) = crate::workdir::build_large_oom_csv("frequency_oom_skips_when_asc_set");
     let mut cmd = wrk.command("frequency");
     cmd.arg("--memcheck")
         .arg("--asc")
@@ -6777,7 +6765,8 @@ fn frequency_oom_skips_when_asc_set() {
 #[test]
 #[ignore = "Requires a multi-GB file to trigger OOM via mem_file_check"]
 fn frequency_oom_skips_when_json_output() {
-    let (wrk, test_file) = build_large_oom_csv("frequency_oom_skips_when_json_output");
+    let (wrk, test_file) =
+        crate::workdir::build_large_oom_csv("frequency_oom_skips_when_json_output");
     let mut cmd = wrk.command("frequency");
     cmd.arg("--memcheck")
         .arg("--json")

@@ -363,7 +363,7 @@ By default, `stats` produces **exact, deterministic** results. Three opt-in flag
    - `--quantile-method` auto-enables unless `--weight` is set; if `--mad` or `--everything` is also set, MAD is auto-disabled (mirroring the existing `--quantile-method approx` guard).
    - `--cardinality-method` auto-enables unless `--infer-boolean` is set.
 
-A `wwarn!` is emitted listing each auto-enabled estimator. The original OOM error is only propagated when **neither** fallback engages. Users can override by passing `--quantile-method exact` or `--cardinality-method exact` explicitly (the auto-enable only flips fields that were left at their `exact` default).
+A `wwarn!` is emitted listing each auto-enabled estimator. The original OOM error is only propagated when **neither** fallback engages. The sketch fallback can fire even when an index is already present and the OOM check still trips (e.g., with `--jobs 1` on a pre-indexed file) — that is a behavior change from the previous "error out" path in this narrow case. Users can disable the auto-enable by passing `--quantile-method exact` or `--cardinality-method exact` explicitly (the auto-enable only flips fields that were left at their `exact` default).
 
 **See also:** [t-digest paper (Dunning, 2019)](https://arxiv.org/abs/1902.04023), [HyperLogLog (Flajolet et al., 2007)](https://en.wikipedia.org/wiki/HyperLogLog), [Apache DataSketches](https://datasketches.apache.org/).
 

@@ -263,12 +263,15 @@ Common options:
                            Must be a single character. (default: ,)
     --memcheck             Check if there is enough memory to load the entire
                            CSV into memory using CONSERVATIVE heuristics.
-                           On OOM, qsv auto-creates an index when possible and
-                           also switches to the Frequent Items sketch
-                           (Apache DataSketches Misra-Gries, equivalent to
-                           sketch-method frequent_items) where compatible,
-                           before failing. A wwarn is emitted when the sketch
-                           fallback engages.
+                           On OOM, qsv auto-creates an index when no index
+                           exists (skipped for stdin) and ALSO switches to the
+                           Frequent Items sketch (Apache DataSketches
+                           Misra-Gries, equivalent to sketch-method
+                           frequent_items) where compatible. The sketch
+                           fallback can also fire when an index is already
+                           present and the OOM still trips (e.g., when jobs is
+                           pinned to 1 on a pre-indexed file). A wwarn is
+                           emitted when the sketch fallback engages.
 "#;
 
 use core::hint::cold_path;
@@ -852,14 +855,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // Sketch fallback: only for OOM (not other CliErrors).
                 // The Frequent Items dispatch at frequency.rs:787 normally fires before
                 // mem_file_check runs, so we re-route into run_frequent_items() directly
-                // from here rather than just flipping the flag and falling through.
+                // here rather than mutating flag_sketch_method and falling through —
+                // run_frequent_items doesn't consult flag_sketch_method, so the field
+                // stays at "exact" and that's fine (cache key / diagnostics use other
+                // paths). Verified via grep over run_frequent_items's body.
                 if matches!(e, crate::CliError::OutOfMemory(_)) && can_enable_frequent_items(&args)
                 {
-                    args.flag_sketch_method = "frequent_items".to_string();
                     wwarn!(
                         "OOM during memory check: auto-enabling --sketch-method frequent_items \
                          (Misra-Gries, map size {n}). Re-run with explicit --sketch-method exact \
-                         to override.",
+                         to disable the auto-enable.",
                         n = args.flag_sketch_map_size,
                     );
                     return args.run_frequent_items(&rconfig);

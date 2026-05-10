@@ -282,7 +282,7 @@ qsv stats --help
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will NOT be interpreted as column names. i.e., They will be included in statistics. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for READING CSV data. Must be a single character. (default: ,) |  |
-| &nbsp;`‑‑memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. This option is ignored when computing default, streaming statistics, as it is not needed. On OOM, qsv auto-creates an index when possible and also switches to approx quantile + approx cardinality methods (DataSketches t-digest and HyperLogLog) where compatible, before failing. A wwarn is emitted listing the auto-enabled estimators. |  |
+| &nbsp;`‑‑memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. This option is ignored when computing default, streaming statistics, as it is not needed. On OOM, qsv auto-creates an index when no index exists (skipped for stdin) and ALSO switches to approx quantile + approx cardinality methods (DataSketches t-digest and HyperLogLog) where compatible. The sketch fallback can also fire when an index is already present and the OOM still trips (e.g., when jobs is pinned to 1 on a pre-indexed file). A wwarn is emitted listing the auto-enabled estimators. |  |
 
 ---
 **Source:** [`src/cmd/stats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs)

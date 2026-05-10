@@ -342,3 +342,30 @@ pub fn is_same_file(file1: &Path, file2: &Path) -> Result<bool, std::io::Error> 
 
     return Ok(true);
 }
+
+/// Build a multi-GB CSV (10M rows × 5 columns of padded strings) for tests
+/// that need to deterministically trigger `util::mem_file_check` OOM via
+/// `QSV_FREEMEMORY_HEADROOM_PCT=90 --memcheck`. Returns the `Workdir` and the
+/// absolute path to the created file. Shared so the row count, column shape,
+/// and padding stay in sync between `test_stats.rs` and `test_frequency.rs`.
+pub fn build_large_oom_csv(name: &str) -> (Workdir, std::path::PathBuf) {
+    let wrk = Workdir::new(name);
+    let mut data: Vec<Vec<String>> = vec![
+        vec!["col1", "col2", "col3", "col4", "col5"]
+            .into_iter()
+            .map(ToOwned::to_owned)
+            .collect(),
+    ];
+    for i in 0..10_000_000 {
+        data.push(vec![
+            format!("value_{}_with_some_padding_to_make_it_larger", i),
+            format!("another_value_{}_with_more_data", i),
+            format!("data_{}", i),
+            format!("field_{}_content", i),
+            format!("final_field_{}_with_additional_text", i),
+        ]);
+    }
+    let path = wrk.path("large_data.csv");
+    wrk.create("large_data.csv", data);
+    (wrk, path)
+}

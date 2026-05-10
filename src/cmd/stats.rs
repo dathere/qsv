@@ -355,11 +355,15 @@ Common options:
                            CSV into memory using CONSERVATIVE heuristics.
                            This option is ignored when computing default, streaming
                            statistics, as it is not needed.
-                           On OOM, qsv auto-creates an index when possible and
-                           also switches to approx quantile + approx cardinality
-                           methods (DataSketches t-digest and HyperLogLog) where
-                           compatible, before failing. A wwarn is emitted listing
-                           the auto-enabled estimators.
+                           On OOM, qsv auto-creates an index when no index
+                           exists (skipped for stdin) and ALSO switches to
+                           approx quantile + approx cardinality methods
+                           (DataSketches t-digest and HyperLogLog) where
+                           compatible. The sketch fallback can also fire when
+                           an index is already present and the OOM still trips
+                           (e.g., when jobs is pinned to 1 on a pre-indexed
+                           file). A wwarn is emitted listing the auto-enabled
+                           estimators.
 "#;
 
 /*
@@ -1542,8 +1546,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             if !enabled.is_empty() {
                                 wwarn!(
                                     "OOM during memory check: auto-enabling DataSketches \
-                                     estimators ({}). Re-run with explicit \
-                                     --quantile-method/--cardinality-method to override.",
+                                     estimators ({}). Re-run with explicit --quantile-method \
+                                     exact / --cardinality-method exact to disable the \
+                                     auto-enable.",
                                     enabled.join(", ")
                                 );
                             } else if !index_succeeded {

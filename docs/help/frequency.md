@@ -155,7 +155,7 @@ qsv frequency --help
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will NOT be included in the frequency table. Additionally, the 'field' column will be 1-based indices instead of header names. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| &nbsp;`‑‑memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. On OOM, qsv auto-creates an index when possible and also switches to the Frequent Items sketch (Apache DataSketches Misra-Gries, equivalent to sketch-method frequent_items) where compatible, before failing. A wwarn is emitted when the sketch fallback engages. |  |
+| &nbsp;`‑‑memcheck`&nbsp; | flag | Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. On OOM, qsv auto-creates an index when no index exists (skipped for stdin) and ALSO switches to the Frequent Items sketch (Apache DataSketches Misra-Gries, equivalent to sketch-method frequent_items) where compatible. The sketch fallback can also fire when an index is already present and the OOM still trips (e.g., when jobs is pinned to 1 on a pre-indexed file). A wwarn is emitted when the sketch fallback engages. |  |
 
 ---
 **Source:** [`src/cmd/frequency.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/frequency.rs)

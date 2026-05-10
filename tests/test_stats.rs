@@ -4206,28 +4206,16 @@ fn stats_auto_index_creation_on_oom() {
 // the existing auto-index fallback. Like stats_auto_index_creation_on_oom
 // above, these need a multi-GB file to deterministically trigger OOM, so
 // they are #[ignore]'d by default and must be run with `--ignored`.
-
-fn build_large_oom_csv(name: &str) -> (Workdir, std::path::PathBuf) {
-    let wrk = Workdir::new(name);
-    let mut data = vec![svec!["col1", "col2", "col3", "col4", "col5"]];
-    for i in 0..10_000_000 {
-        data.push(vec![
-            format!("value_{}_with_some_padding_to_make_it_larger", i),
-            format!("another_value_{}_with_more_data", i),
-            format!("data_{}", i),
-            format!("field_{}_content", i),
-            format!("final_field_{}_with_additional_text", i),
-        ]);
-    }
-    let path = wrk.path("large_data.csv");
-    wrk.create("large_data.csv", data);
-    (wrk, path)
-}
+//
+// The shared `build_large_oom_csv` helper lives in `tests/workdir.rs` so the
+// row count, column shape, and padding stay in sync with the parallel
+// frequency tests; see `frequency_oom_*` in tests/test_frequency.rs.
 
 #[test]
 #[ignore = "Requires a multi-GB file to trigger OOM via mem_file_check"]
 fn stats_oom_auto_enables_approx_sketches() {
-    let (wrk, test_file) = build_large_oom_csv("stats_oom_auto_enables_approx_sketches");
+    let (wrk, test_file) =
+        crate::workdir::build_large_oom_csv("stats_oom_auto_enables_approx_sketches");
     let mut cmd = wrk.command("stats");
     cmd.arg("--everything")
         .arg("--memcheck")
@@ -4251,7 +4239,8 @@ fn stats_oom_auto_enables_approx_sketches() {
 #[test]
 #[ignore = "Requires a multi-GB file to trigger OOM via mem_file_check"]
 fn stats_oom_skips_approx_quantiles_with_weight() {
-    let (wrk, test_file) = build_large_oom_csv("stats_oom_skips_approx_quantiles_with_weight");
+    let (wrk, test_file) =
+        crate::workdir::build_large_oom_csv("stats_oom_skips_approx_quantiles_with_weight");
     // Weight column is col1 (all distinct strings — qsv will treat parse failures
     // as default weight 1.0; this is acceptable for the test because we only care
     // that --weight is *set*, which is what suppresses the quantile auto-enable).
@@ -4276,8 +4265,9 @@ fn stats_oom_skips_approx_quantiles_with_weight() {
 #[test]
 #[ignore = "Requires a multi-GB file to trigger OOM via mem_file_check"]
 fn stats_oom_skips_approx_cardinality_with_infer_boolean() {
-    let (wrk, test_file) =
-        build_large_oom_csv("stats_oom_skips_approx_cardinality_with_infer_boolean");
+    let (wrk, test_file) = crate::workdir::build_large_oom_csv(
+        "stats_oom_skips_approx_cardinality_with_infer_boolean",
+    );
     let mut cmd = wrk.command("stats");
     cmd.arg("--everything")
         .arg("--memcheck")

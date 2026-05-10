@@ -200,6 +200,39 @@ stats options:
                               Special values "deciles" and "quintiles" are automatically expanded
                               to "10,20,30,40,50,60,70,80,90" and "20,40,60,80" respectively.
                               [default: 5,10,40,60,90,95]
+    --quantile-method <m>     Algorithm used to compute the median, quartiles and custom
+                              percentiles. Choices:
+                                exact  - load all values into memory and sort (current behavior).
+                                         O(N) memory per numeric column, exact deterministic
+                                         results.
+                                approx - use t-digest (Apache DataSketches port, based on
+                                         Dunning's MergingDigest). O(K) memory per numeric column
+                                         (K~200 centroids), O(1) quantile reads. Approximate
+                                         (~1% rank error, more accurate at the tails).
+                                         Restrictions:
+                                           * --mad is disabled with a warning under approx.
+                                           * --weight is rejected; the upstream datasketches
+                                             crate does not expose weighted-update.
+                                           * Results may differ slightly across runs with
+                                             different --jobs values.
+                              [default: exact]
+    --mode-cardinality-cap <n>  Bound mode-tracking memory on high-cardinality columns.
+                              When > 0, if a column's mode tracker grows past <n>, qsv
+                              drops it and emits sentinel values instead of exact modes
+                              and cardinality. The cap measures:
+                                * unweighted: total samples added (~ row count, since
+                                  every cell is pushed onto the underlying Vec).
+                                * weighted (--weight): number of unique values seen (the
+                                  HashMap's len(), == true cardinality).
+                              Both are direct memory bounds on their respective tracker.
+                              Sentinel output:
+                                * mode columns: "*HIGH_CARDINALITY"
+                                * cardinality column: ">=<n>" (the ">=" prefix DOES break
+                                  downstream parsers expecting a plain integer; cap is
+                                  opt-in only).
+                              Useful on wide tables with many ID/UUID/timestamp columns
+                              where tracking exact cardinality is wasted work.
+                              [default: 0]
 
     --round <decimal_places>  Round statistics to <decimal_places>. Rounding is done following
                               Midpoint Nearest Even (aka "Bankers Rounding") rule.
@@ -355,34 +388,36 @@ use crate::{
 #[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Deserialize)]
 pub struct Args {
-    pub arg_input:             Option<String>,
-    pub flag_select:           SelectColumns,
-    pub flag_everything:       bool,
-    pub flag_typesonly:        bool,
-    pub flag_infer_boolean:    bool,
-    pub flag_boolean_patterns: String,
-    pub flag_mode:             bool,
-    pub flag_cardinality:      bool,
-    pub flag_median:           bool,
-    pub flag_mad:              bool,
-    pub flag_quartiles:        bool,
-    pub flag_percentiles:      bool,
-    pub flag_percentile_list:  String,
-    pub flag_round:            u32,
-    pub flag_nulls:            bool,
-    pub flag_infer_dates:      bool,
-    pub flag_dates_whitelist:  String,
-    pub flag_prefer_dmy:       bool,
-    pub flag_force:            bool,
-    pub flag_jobs:             Option<usize>,
-    pub flag_stats_jsonl:      bool,
-    pub flag_cache_threshold:  isize,
-    pub flag_output:           Option<String>,
-    pub flag_no_headers:       bool,
-    pub flag_delimiter:        Option<Delimiter>,
-    pub flag_memcheck:         bool,
-    pub flag_vis_whitespace:   bool,
-    pub flag_weight:           Option<String>,
+    pub arg_input:                 Option<String>,
+    pub flag_select:               SelectColumns,
+    pub flag_everything:           bool,
+    pub flag_typesonly:            bool,
+    pub flag_infer_boolean:        bool,
+    pub flag_boolean_patterns:     String,
+    pub flag_mode:                 bool,
+    pub flag_cardinality:          bool,
+    pub flag_median:               bool,
+    pub flag_mad:                  bool,
+    pub flag_quartiles:            bool,
+    pub flag_percentiles:          bool,
+    pub flag_percentile_list:      String,
+    pub flag_quantile_method:      String,
+    pub flag_mode_cardinality_cap: u64,
+    pub flag_round:                u32,
+    pub flag_nulls:                bool,
+    pub flag_infer_dates:          bool,
+    pub flag_dates_whitelist:      String,
+    pub flag_prefer_dmy:           bool,
+    pub flag_force:                bool,
+    pub flag_jobs:                 Option<usize>,
+    pub flag_stats_jsonl:          bool,
+    pub flag_cache_threshold:      isize,
+    pub flag_output:               Option<String>,
+    pub flag_no_headers:           bool,
+    pub flag_delimiter:            Option<Delimiter>,
+    pub flag_memcheck:             bool,
+    pub flag_vis_whitespace:       bool,
+    pub flag_weight:               Option<String>,
 }
 
 // this struct is used to serialize/deserialize the stats to
@@ -390,38 +425,40 @@ pub struct Args {
 // if we can skip recomputing stats.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Default)]
 struct StatsArgs {
-    arg_input:             String,
-    flag_select:           String,
-    flag_everything:       bool,
-    flag_typesonly:        bool,
-    flag_infer_boolean:    bool,
-    flag_mode:             bool,
-    flag_cardinality:      bool,
-    flag_median:           bool,
-    flag_mad:              bool,
-    flag_quartiles:        bool,
-    flag_percentiles:      bool,
-    flag_percentile_list:  String,
-    flag_round:            u32,
-    flag_nulls:            bool,
-    flag_infer_dates:      bool,
-    flag_dates_whitelist:  String,
-    flag_prefer_dmy:       bool,
-    flag_no_headers:       bool,
-    flag_delimiter:        String,
-    flag_output_snappy:    bool,
-    canonical_input_path:  String,
-    canonical_stats_path:  String,
-    record_count:          u64,
-    date_generated:        String,
-    compute_duration_ms:   u64,
-    qsv_version:           String,
-    flag_weight:           String,
+    arg_input: String,
+    flag_select: String,
+    flag_everything: bool,
+    flag_typesonly: bool,
+    flag_infer_boolean: bool,
+    flag_mode: bool,
+    flag_cardinality: bool,
+    flag_median: bool,
+    flag_mad: bool,
+    flag_quartiles: bool,
+    flag_percentiles: bool,
+    flag_percentile_list: String,
+    flag_quantile_method: String,
+    flag_mode_cardinality_cap: u64,
+    flag_round: u32,
+    flag_nulls: bool,
+    flag_infer_dates: bool,
+    flag_dates_whitelist: String,
+    flag_prefer_dmy: bool,
+    flag_no_headers: bool,
+    flag_delimiter: String,
+    flag_output_snappy: bool,
+    canonical_input_path: String,
+    canonical_stats_path: String,
+    record_count: u64,
+    date_generated: String,
+    compute_duration_ms: u64,
+    qsv_version: String,
+    flag_weight: String,
     flag_boolean_patterns: String,
-    flag_vis_whitespace:   bool,
-    field_count:           u64,
-    filesize_bytes:        u64,
-    hash:                  FileHash,
+    flag_vis_whitespace: bool,
+    field_count: u64,
+    filesize_bytes: u64,
+    hash: FileHash,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -477,38 +514,40 @@ impl StatsArgs {
         };
 
         Ok(Self {
-            arg_input:             get_str("arg_input"),
-            flag_select:           get_str("flag_select"),
-            flag_everything:       get_bool("flag_everything"),
-            flag_typesonly:        get_bool("flag_typesonly"),
-            flag_infer_boolean:    get_bool("flag_infer_boolean"),
-            flag_mode:             get_bool("flag_mode"),
-            flag_cardinality:      get_bool("flag_cardinality"),
-            flag_median:           get_bool("flag_median"),
-            flag_mad:              get_bool("flag_mad"),
-            flag_quartiles:        get_bool("flag_quartiles"),
-            flag_percentiles:      get_bool("flag_percentiles"),
-            flag_percentile_list:  get_str_or("flag_percentile_list", "5,10,40,60,90,95"),
-            flag_round:            get_u64("flag_round") as u32,
-            flag_nulls:            get_bool("flag_nulls"),
-            flag_infer_dates:      get_bool("flag_infer_dates"),
-            flag_dates_whitelist:  get_str("flag_dates_whitelist"),
-            flag_prefer_dmy:       get_bool("flag_prefer_dmy"),
-            flag_no_headers:       get_bool("flag_no_headers"),
-            flag_delimiter:        get_str("flag_delimiter"),
-            flag_output_snappy:    get_bool("flag_output_snappy"),
-            canonical_input_path:  get_str("canonical_input_path"),
-            canonical_stats_path:  get_str("canonical_stats_path"),
-            record_count:          get_u64("record_count"),
-            date_generated:        get_str("date_generated"),
-            compute_duration_ms:   get_u64("compute_duration_ms"),
-            qsv_version:           get_str("qsv_version"),
-            flag_weight:           get_str("flag_weight"),
+            arg_input: get_str("arg_input"),
+            flag_select: get_str("flag_select"),
+            flag_everything: get_bool("flag_everything"),
+            flag_typesonly: get_bool("flag_typesonly"),
+            flag_infer_boolean: get_bool("flag_infer_boolean"),
+            flag_mode: get_bool("flag_mode"),
+            flag_cardinality: get_bool("flag_cardinality"),
+            flag_median: get_bool("flag_median"),
+            flag_mad: get_bool("flag_mad"),
+            flag_quartiles: get_bool("flag_quartiles"),
+            flag_percentiles: get_bool("flag_percentiles"),
+            flag_percentile_list: get_str_or("flag_percentile_list", "5,10,40,60,90,95"),
+            flag_quantile_method: get_str_or("flag_quantile_method", "exact"),
+            flag_mode_cardinality_cap: get_u64("flag_mode_cardinality_cap"),
+            flag_round: get_u64("flag_round") as u32,
+            flag_nulls: get_bool("flag_nulls"),
+            flag_infer_dates: get_bool("flag_infer_dates"),
+            flag_dates_whitelist: get_str("flag_dates_whitelist"),
+            flag_prefer_dmy: get_bool("flag_prefer_dmy"),
+            flag_no_headers: get_bool("flag_no_headers"),
+            flag_delimiter: get_str("flag_delimiter"),
+            flag_output_snappy: get_bool("flag_output_snappy"),
+            canonical_input_path: get_str("canonical_input_path"),
+            canonical_stats_path: get_str("canonical_stats_path"),
+            record_count: get_u64("record_count"),
+            date_generated: get_str("date_generated"),
+            compute_duration_ms: get_u64("compute_duration_ms"),
+            qsv_version: get_str("qsv_version"),
+            flag_weight: get_str("flag_weight"),
             flag_boolean_patterns: get_str("flag_boolean_patterns"),
-            flag_vis_whitespace:   get_bool("flag_vis_whitespace"),
-            field_count:           get_u64("field_count"),
-            filesize_bytes:        get_u64("filesize_bytes"),
-            hash:                  get_hash(),
+            flag_vis_whitespace: get_bool("flag_vis_whitespace"),
+            field_count: get_u64("field_count"),
+            filesize_bytes: get_u64("filesize_bytes"),
+            hash: get_hash(),
         })
     }
 }
@@ -956,6 +995,37 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
+    // validate --quantile-method (default "exact"; canonicalize to lowercase).
+    args.flag_quantile_method = args.flag_quantile_method.to_lowercase();
+    let approx_quantiles = match args.flag_quantile_method.as_str() {
+        "exact" => false,
+        "approx" => true,
+        other => {
+            return fail_incorrectusage_clierror!(
+                "Invalid --quantile-method: {other}. Choose 'exact' or 'approx'."
+            );
+        },
+    };
+
+    // approx quantiles are not yet supported with --weight: the upstream
+    // datasketches::tdigest crate does not expose a weighted-update API.
+    if approx_quantiles && args.flag_weight.is_some() {
+        return fail_incorrectusage_clierror!(
+            "--quantile-method approx does not yet support weighted statistics. Use \
+             --quantile-method exact when --weight is set."
+        );
+    }
+
+    // approx quantiles cannot compute MAD (median(|x - median|) needs a second pass over
+    // the absolute deviations from the median, which a t-digest cannot provide). Disable
+    // MAD with a one-time warning rather than emitting a wrong value.
+    if approx_quantiles && (args.flag_everything || args.flag_mad) {
+        wwarn!("--quantile-method approx does not support MAD; disabling MAD for this run.");
+        args.flag_mad = false;
+        // which_stats() also clears mad when approx is set, so flag_everything OR flag_mad
+        // cannot re-enable it.
+    }
+
     // inferring boolean requires inferring cardinality
     if args.flag_infer_boolean {
         if !args.flag_cardinality {
@@ -976,25 +1046,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // save the current args, we'll use it to generate
     // the stats.csv.json file
     let mut current_stats_args = StatsArgs {
-        arg_input:             args.arg_input.clone().unwrap_or_default(),
-        flag_select:           format!("{:?}", args.flag_select),
-        flag_everything:       args.flag_everything,
-        flag_typesonly:        args.flag_typesonly,
-        flag_infer_boolean:    args.flag_infer_boolean,
-        flag_mode:             args.flag_mode,
-        flag_cardinality:      args.flag_cardinality,
-        flag_median:           args.flag_median,
-        flag_mad:              args.flag_mad,
-        flag_quartiles:        args.flag_quartiles,
-        flag_percentiles:      args.flag_percentiles,
-        flag_percentile_list:  args.flag_percentile_list.clone(),
-        flag_round:            args.flag_round,
-        flag_nulls:            args.flag_nulls,
-        flag_infer_dates:      args.flag_infer_dates,
-        flag_dates_whitelist:  args.flag_dates_whitelist.clone(),
-        flag_prefer_dmy:       args.flag_prefer_dmy,
-        flag_no_headers:       args.flag_no_headers,
-        flag_delimiter:        args
+        arg_input: args.arg_input.clone().unwrap_or_default(),
+        flag_select: format!("{:?}", args.flag_select),
+        flag_everything: args.flag_everything,
+        flag_typesonly: args.flag_typesonly,
+        flag_infer_boolean: args.flag_infer_boolean,
+        flag_mode: args.flag_mode,
+        flag_cardinality: args.flag_cardinality,
+        flag_median: args.flag_median,
+        flag_mad: args.flag_mad,
+        flag_quartiles: args.flag_quartiles,
+        flag_percentiles: args.flag_percentiles,
+        flag_percentile_list: args.flag_percentile_list.clone(),
+        flag_quantile_method: args.flag_quantile_method.clone(),
+        flag_mode_cardinality_cap: args.flag_mode_cardinality_cap,
+        flag_round: args.flag_round,
+        flag_nulls: args.flag_nulls,
+        flag_infer_dates: args.flag_infer_dates,
+        flag_dates_whitelist: args.flag_dates_whitelist.clone(),
+        flag_prefer_dmy: args.flag_prefer_dmy,
+        flag_no_headers: args.flag_no_headers,
+        flag_delimiter: args
             .flag_delimiter
             .as_ref()
             .map(|d| (d.as_byte() as char).to_string())
@@ -1002,27 +1074,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // when we write to stdout, we don't use snappy compression
         // when we write to a file with the --output option, we use
         // snappy compression if the file ends with ".sz"
-        flag_output_snappy:    if stdout_output_flag {
+        flag_output_snappy: if stdout_output_flag {
             false
         } else {
             let p = args.flag_output.clone().unwrap();
             p.to_ascii_lowercase().ends_with(".sz")
         },
-        canonical_input_path:  String::new(),
-        canonical_stats_path:  String::new(),
-        record_count:          0,
-        date_generated:        String::new(),
-        compute_duration_ms:   0,
+        canonical_input_path: String::new(),
+        canonical_stats_path: String::new(),
+        record_count: 0,
+        date_generated: String::new(),
+        compute_duration_ms: 0,
         // save the qsv version in the stats.csv.json file
         // so cached stats are automatically invalidated
         // when the qsv version changes
-        qsv_version:           env!("CARGO_PKG_VERSION").to_string(),
-        flag_weight:           args.flag_weight.clone().unwrap_or_default(),
+        qsv_version: env!("CARGO_PKG_VERSION").to_string(),
+        flag_weight: args.flag_weight.clone().unwrap_or_default(),
         flag_boolean_patterns: args.flag_boolean_patterns.clone(),
-        flag_vis_whitespace:   args.flag_vis_whitespace,
-        field_count:           0,
-        filesize_bytes:        0,
-        hash:                  FileHash::default(),
+        flag_vis_whitespace: args.flag_vis_whitespace,
+        field_count: 0,
+        filesize_bytes: 0,
+        hash: FileHash::default(),
     };
 
     // create a temporary file to store the <FILESTEM>.stats.csv file
@@ -2149,19 +2221,26 @@ impl Args {
     /// Creates a WhichStats configuration from the current arguments.
     #[inline]
     fn which_stats(&self) -> WhichStats {
+        // approx_quantiles selects the t-digest engine for median/quartiles/percentiles.
+        // run() validates this is mutually exclusive with --weight and forces mad off,
+        // but we double-guard mad here in case which_stats is called from a path that
+        // skipped run()'s validation (e.g. tests).
+        let approx_quantiles = self.flag_quantile_method.eq_ignore_ascii_case("approx");
         WhichStats {
-            include_nulls:   self.flag_nulls,
-            sum:             !self.flag_typesonly,
-            range:           !self.flag_typesonly || self.flag_infer_boolean,
-            dist:            !self.flag_typesonly,
-            cardinality:     self.flag_everything || self.flag_cardinality,
-            median:          !self.flag_everything && self.flag_median && !self.flag_quartiles,
-            mad:             self.flag_everything || self.flag_mad,
-            quartiles:       self.flag_everything || self.flag_quartiles,
-            mode:            self.flag_everything || self.flag_mode,
-            typesonly:       self.flag_typesonly,
-            percentiles:     self.flag_everything || self.flag_percentiles,
-            use_weights:     self.flag_weight.is_some(),
+            include_nulls: self.flag_nulls,
+            sum: !self.flag_typesonly,
+            range: !self.flag_typesonly || self.flag_infer_boolean,
+            dist: !self.flag_typesonly,
+            cardinality: self.flag_everything || self.flag_cardinality,
+            median: !self.flag_everything && self.flag_median && !self.flag_quartiles,
+            mad: !approx_quantiles && (self.flag_everything || self.flag_mad),
+            quartiles: self.flag_everything || self.flag_quartiles,
+            mode: self.flag_everything || self.flag_mode,
+            typesonly: self.flag_typesonly,
+            percentiles: self.flag_everything || self.flag_percentiles,
+            use_weights: self.flag_weight.is_some(),
+            approx_quantiles,
+            mode_cardinality_cap: self.flag_mode_cardinality_cap,
             percentile_list: self.flag_percentile_list.clone().into_boxed_str(),
         }
     }
@@ -2650,19 +2729,29 @@ fn resolve_sniff_whitelist(input_path: &std::path::Path) -> CliResult<String> {
 
 #[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
 struct WhichStats {
-    include_nulls:   bool,
-    sum:             bool,
-    range:           bool,
-    dist:            bool,
-    cardinality:     bool,
-    median:          bool,
-    mad:             bool,
-    quartiles:       bool,
-    mode:            bool,
-    typesonly:       bool,
-    percentiles:     bool,
-    use_weights:     bool,
-    percentile_list: Box<str>,
+    include_nulls:        bool,
+    sum:                  bool,
+    range:                bool,
+    dist:                 bool,
+    cardinality:          bool,
+    median:               bool,
+    mad:                  bool,
+    quartiles:            bool,
+    mode:                 bool,
+    typesonly:            bool,
+    percentiles:          bool,
+    use_weights:          bool,
+    /// When true, use the Apache DataSketches t-digest engine for median, quartiles, and
+    /// custom percentiles instead of the exact (sort-based) `Unsorted<f64>` engine. Mutually
+    /// exclusive with `mad` and `use_weights`; validation in the module-level `run(argv: ...)`
+    /// function rejects the bad combinations.
+    approx_quantiles:     bool,
+    /// When > 0, drop mode-tracking once a column accumulates more than this many samples
+    /// (Unsorted::len() for unweighted modes, HashMap::len() for weighted). 0 = unbounded
+    /// (today's behavior). When the cap fires, output emits `*HIGH_CARDINALITY` for mode
+    /// fields and `>=<cap>` for cardinality.
+    mode_cardinality_cap: u64,
+    percentile_list:      Box<str>,
 }
 
 impl Commute for WhichStats {
@@ -2683,6 +2772,35 @@ impl WhichStats {
     }
 }
 
+/// Wrapper around `datasketches::tdigest::TDigestMut` so the `Stats` struct can keep its
+/// derived `Clone` and `PartialEq` impls without forcing the upstream `TDigestMut`
+/// (which only derives `Clone`/`Debug`) to grow them.
+///
+/// Equality between two t-digests is not meaningful (different ingestion orders can produce
+/// different centroid layouts even for identical input multisets), so `PartialEq` is a
+/// constant `true` — Stats's `PartialEq` is used only in tests for non-quantile fields.
+///
+/// Serde is intentionally NOT implemented: the field is annotated `#[serde(skip)]` on
+/// `Stats::tdigest`, so the derived `Serialize`/`Deserialize` on `Stats` skip this field
+/// entirely. T-digest state is intermediate; cache invalidation on `--quantile-method`
+/// change rides on `StatsArgs` serialization instead.
+#[derive(Default)]
+struct TDigestSlot(Option<datasketches::tdigest::TDigestMut>);
+
+impl Clone for TDigestSlot {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl PartialEq for TDigestSlot {
+    #[inline]
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
 #[allow(clippy::unsafe_derive_deserialize)]
 #[allow(clippy::struct_field_names)]
 #[repr(C, align(64))] // Align to cache line size for better performance
@@ -2692,6 +2810,9 @@ struct Stats {
     // Group small, frequently accessed fields together
     typ:           FieldType, // 1 byte - accessed in every add() call
     is_ascii:      bool,      // 1 byte - accessed for strings
+    /// Set when --mode-cardinality-cap fires and this column's `modes`/`weighted_modes`
+    /// tracker is dropped mid-pass. Output uses `*HIGH_CARDINALITY` / `>=<cap>` sentinels.
+    modes_dropped: bool, // 1 byte
     max_precision: u16,       // 2 bytes - accessed for floats
 
     // 4 bytes padding (automatic with repr(C) for 8-byte alignment)
@@ -2723,6 +2844,11 @@ struct Stats {
     weighted_unsorted_stats: Option<Vec<(f64, f64)>>, /* 24 bytes - (value, weight) tuples for
                                                        * weighted
                                                        * quantiles */
+    // Approximate-quantile engine. Mutually exclusive with `unsorted_stats` for a given
+    // numeric column: when `which.approx_quantiles` is true and quantiles are requested,
+    // values flow into `tdigest` instead of `unsorted_stats`.
+    #[serde(skip)]
+    tdigest:                 TDigestSlot,
 
     // CACHE LINE 6+: Min/Max tracking (largest field, least cache-friendly)
     minmax: Option<TypedMinMax>, // 432 bytes - largest field, accessed less frequently
@@ -3044,6 +3170,25 @@ fn weighted_mad(data: &[(f64, f64)], total_weight: f64, median: f64) -> Option<f
     weighted_median(&abs_deviations, total_weight)
 }
 
+/// Converts a byte slice to a `Cow<str>` for output formatting.
+///
+/// Uses SIMD-accelerated UTF-8 validation via `simdutf8::basic::from_utf8` on the
+/// happy path (returns a borrowed `&str` with no allocation on valid UTF-8, which
+/// is the overwhelming common case including all-ASCII).
+///
+/// Falls back to `String::from_utf8_lossy` only when the bytes are not valid
+/// UTF-8 (replacement characters substituted, allocates).
+///
+/// This is faster than `String::from_utf8_lossy` alone, which always uses scalar
+/// UTF-8 validation and pre-allocates a `String` of the input length.
+#[inline]
+fn bytes_to_cow_str(c: &[u8]) -> std::borrow::Cow<'_, str> {
+    match simdutf8::basic::from_utf8(c) {
+        Ok(s) => std::borrow::Cow::Borrowed(s),
+        Err(_) => String::from_utf8_lossy(c),
+    }
+}
+
 /// Formats a list of antimodes into a display string with optional preview prefix,
 /// NULL handling, and length truncation.
 ///
@@ -3065,7 +3210,7 @@ fn format_antimodes(
 
     let antimodes_vals = &antimodes
         .iter()
-        .map(|c| String::from_utf8_lossy(c.as_ref()))
+        .map(|c| bytes_to_cow_str(c.as_ref()))
         .join(separator);
 
     // if the antimodes result starts with the separator,
@@ -3241,16 +3386,27 @@ impl Stats {
                 modes = Some(stats::Unsorted::with_capacity(record_count));
             }
         }
-        // we use the same Unsorted struct for median, mad, quartiles & percentiles
-        if which.quartiles || which.median || which.mad || which.percentiles {
-            unsorted_stats = Some(stats::Unsorted::with_capacity(record_count));
-            if use_weights {
-                weighted_unsorted_stats = Some(Vec::with_capacity(record_count));
+        // we use the same Unsorted struct for median, mad, quartiles & percentiles —
+        // unless --quantile-method approx is set, in which case we route values to a
+        // t-digest instead. The two engines are mutually exclusive for a given Stats
+        // instance.
+        let needs_quantiles = which.quartiles || which.median || which.mad || which.percentiles;
+        let mut tdigest = TDigestSlot::default();
+        if needs_quantiles {
+            if which.approx_quantiles {
+                // k=200 is the upstream default; ~1% rank error, more accurate at the tails.
+                tdigest = TDigestSlot(Some(datasketches::tdigest::TDigestMut::new(200)));
+            } else {
+                unsorted_stats = Some(stats::Unsorted::with_capacity(record_count));
+                if use_weights {
+                    weighted_unsorted_stats = Some(Vec::with_capacity(record_count));
+                }
             }
         }
         Stats {
             typ: FieldType::default(),
             is_ascii: true,
+            modes_dropped: false,
             max_precision: 0,
             nullcount: 0,
             sum_stotlen: 0,
@@ -3264,6 +3420,7 @@ impl Stats {
             weighted_modes,
             unsorted_stats,
             weighted_unsorted_stats,
+            tdigest,
             minmax,
         }
     }
@@ -3315,15 +3472,32 @@ impl Stats {
     #[allow(clippy::inline_always)]
     #[inline(always)]
     fn update_modes(&mut self, sample: &[u8], weight: f64) {
+        // --mode-cardinality-cap: when set, drop the tracker once it grows past the cap
+        // and surface the abandonment via `modes_dropped` so to_record() can emit
+        // sentinels. cap == 0 (default) means unbounded — preserves today's behavior.
+        let cap = self.which.mode_cardinality_cap;
         if let Some(ref mut wm) = self.weighted_modes {
-            // Weighted modes: accumulate weights per value
-            // Use get_mut first to avoid heap-allocating sample.to_vec() when key already exists
+            // Weighted modes: HashMap::len() == unique-values seen (true cardinality).
+            // Existing-key updates don't grow the map, so check the cap only on the
+            // new-key branch — this preserves the get_mut fast path AND ensures the
+            // tracker never exceeds `cap` entries (peak == cap exactly).
             if let Some(val) = wm.get_mut(sample) {
                 *val += weight;
+            } else if cap > 0 && wm.len() as u64 >= cap {
+                // Adding a new key would push len to cap + 1; drop instead.
+                self.weighted_modes = None;
+                self.modes_dropped = true;
             } else {
                 wm.insert(sample.to_vec(), weight);
             }
         } else if let Some(v) = self.modes.as_mut() {
+            // Unweighted modes: Unsorted::len() == total samples added (memory cost).
+            // `>= cap` before add_bytes() bounds peak at exactly `cap` entries.
+            if cap > 0 && v.len() as u64 >= cap {
+                self.modes = None;
+                self.modes_dropped = true;
+                return;
+            }
             v.add_bytes(sample);
         }
     }
@@ -3486,6 +3660,11 @@ impl Stats {
         if let Some(v) = self.unsorted_stats.as_mut() {
             v.add(value);
         }
+        // approx-quantile engine: only one of unsorted_stats / tdigest is Some by
+        // construction in Stats::new, so this is a no-op when exact mode is in use.
+        if let Some(ref mut td) = self.tdigest.0 {
+            td.update(value);
+        }
         // safety: online is always enabled
         unsafe {
             self.online.as_mut().unwrap_unchecked().add_f64(value);
@@ -3622,8 +3801,31 @@ impl Stats {
         let mut cardinality = 0;
         let mut mc_pieces: Vec<String> = Vec::new();
 
-        // Check if we should use weighted modes/antimodes
-        if let Some(ref weighted_modes_map) = self.weighted_modes {
+        // --mode-cardinality-cap: if this column's mode tracker was dropped during
+        // ingestion (or merge), emit sentinels instead of the normal cardinality / mode /
+        // antimode fields. cap == 0 (default) means modes_dropped is never set, so this
+        // branch is dead code on the default path.
+        if self.modes_dropped {
+            let cap = self.which.mode_cardinality_cap;
+            // Cardinality is unknown; emit ">=cap" so downstream parsers can detect that
+            // the value is approximate (a leading ">=" trips integer parsers cleanly).
+            if self.which.cardinality {
+                mc_pieces.push(format!(">={cap}"));
+                // uniqueness_ratio is also unknown.
+                mc_pieces.push(EMPTY_STRING);
+            }
+            if self.which.mode {
+                mc_pieces.extend_from_slice(&[
+                    "*HIGH_CARDINALITY".to_string(),
+                    EMPTY_STRING,
+                    EMPTY_STRING,
+                    "*HIGH_CARDINALITY".to_string(),
+                    EMPTY_STRING,
+                    EMPTY_STRING,
+                ]);
+            }
+            // Sentinels emitted; the else-if chain below is skipped.
+        } else if let Some(ref weighted_modes_map) = self.weighted_modes {
             // Weighted modes/antimodes computation
             mc_pieces.reserve(8);
 
@@ -3708,12 +3910,12 @@ impl Stats {
                         let modes_list = if visualize_ws {
                             modes_keys
                                 .iter()
-                                .map(|c| util::visualize_whitespace(&String::from_utf8_lossy(c)))
+                                .map(|c| util::visualize_whitespace(&bytes_to_cow_str(c)))
                                 .join(stats_separator)
                         } else {
                             modes_keys
                                 .iter()
-                                .map(|c| String::from_utf8_lossy(c))
+                                .map(|c| bytes_to_cow_str(c))
                                 .join(stats_separator)
                         };
 
@@ -3809,14 +4011,12 @@ impl Stats {
                             let modes_list = if visualize_ws {
                                 modes_result
                                     .iter()
-                                    .map(|c| {
-                                        util::visualize_whitespace(&String::from_utf8_lossy(c))
-                                    })
+                                    .map(|c| util::visualize_whitespace(&bytes_to_cow_str(c)))
                                     .join(stats_separator)
                             } else {
                                 modes_result
                                     .iter()
-                                    .map(|c| String::from_utf8_lossy(c))
+                                    .map(|c| bytes_to_cow_str(c))
                                     .join(stats_separator)
                             };
 
@@ -4158,8 +4358,21 @@ impl Stats {
                 },
                 _ => None,
             }
+        } else if let Some(ref mut td) = self.tdigest.0 {
+            // Approx quartiles via t-digest. q1=p25, q2=p50, q3=p75. Returns None if the
+            // digest is empty (which it will be for non-numeric columns even when the
+            // engine is allocated).
+            match typ {
+                TInteger | TFloat | TDate | TDateTime if self.which.quartiles => {
+                    match (td.quantile(0.25), td.quantile(0.50), td.quantile(0.75)) {
+                        (Some(q1), Some(q2), Some(q3)) => Some((q1, q2, q3)),
+                        _ => None,
+                    }
+                },
+                _ => None,
+            }
         } else {
-            // Use unweighted quartiles
+            // Use unweighted exact quartiles
             self.unsorted_stats.as_mut().and_then(|v| match typ {
                 TInteger | TFloat | TDate | TDateTime => {
                     if self.which.quartiles {
@@ -4253,8 +4466,15 @@ impl Stats {
                     TNull | TString => None,
                     _ => weighted_median(weighted_data, self.total_weight),
                 }
+            } else if let Some(ref mut td) = self.tdigest.0 {
+                // Approx median via t-digest.
+                if let TNull | TString = typ {
+                    None
+                } else {
+                    td.quantile(0.50)
+                }
             } else {
-                // Use unweighted median
+                // Use unweighted exact median
                 self.unsorted_stats.as_mut().and_then(|v| {
                     if let TNull | TString = typ {
                         None
@@ -4356,8 +4576,28 @@ impl Stats {
                         if let Some(weighted_data) = sorted_weighted_data.as_ref() {
                             // Use weighted percentiles
                             weighted_percentiles(weighted_data, self.total_weight, &percentile_list)
+                        } else if let Some(ref mut td) = self.tdigest.0 {
+                            // Approx percentiles via t-digest. Empty-check up front so the
+                            // semantics match the exact path: `Unsorted::custom_percentiles`
+                            // returns None only when there's no data, never partial output.
+                            // For a non-empty digest, `quantile()` returns `Some` for every
+                            // valid rank in [0.0, 1.0], so the loop below cannot land in the
+                            // partial state that would have made the old `all_some` check fire.
+                            if td.is_empty() {
+                                None
+                            } else {
+                                let mut out = Vec::with_capacity(percentile_list.len());
+                                for p in &percentile_list {
+                                    let rank = f64::from(*p) / 100.0;
+                                    // `unwrap_or(f64::NAN)` is defensive only: a non-empty
+                                    // digest should never return None here. If it ever does,
+                                    // a NaN cell propagates through util::round_num cleanly.
+                                    out.push(td.quantile(rank).unwrap_or(f64::NAN));
+                                }
+                                Some(out)
+                            }
                         } else {
-                            // Use unweighted percentiles
+                            // Use unweighted exact percentiles
                             self.unsorted_stats
                                 .as_mut()
                                 .and_then(|v| v.custom_percentiles(&percentile_list))
@@ -4404,6 +4644,12 @@ impl Commute for Stats {
     fn merge(&mut self, other: Stats) {
         self.typ.merge(other.typ);
         self.is_ascii &= other.is_ascii;
+        // modes_dropped is sticky: if either chunk gave up on mode-tracking, the merged
+        // result also gives up (we can't recover what was dropped). The actual clearing
+        // of `modes` / `weighted_modes` happens AFTER the standard `Option::merge` calls
+        // below so we don't have to special-case the merge plumbing — the post-merge
+        // block at the bottom of this function nukes both fields when modes_dropped fires.
+        self.modes_dropped |= other.modes_dropped;
         self.max_precision = self.max_precision.max(other.max_precision);
         self.which.merge(other.which);
         self.nullcount += other.nullcount;
@@ -4411,6 +4657,19 @@ impl Commute for Stats {
         self.sum.merge(other.sum);
         self.modes.merge(other.modes);
         self.unsorted_stats.merge(other.unsorted_stats);
+        // Merge t-digest engines: TDigestMut::merge(&other) is associative and does not
+        // modify the input. Note: it is NOT chunk-count-invariant nor merge-order-invariant
+        // — outputs may differ by ~1% across runs with different --jobs values, and
+        // theoretically across runs with the same --jobs >= 2 if chunk completion order
+        // differs. Tests pin --jobs 1, which routes through `sequential_stats` (no merge
+        // at all — see the dispatch in run() around line 1456) and is therefore exactly
+        // reproducible. Determinism for --jobs >= 2 is intentionally not guaranteed; the
+        // --quantile-method help text documents the caveat for users.
+        match (&mut self.tdigest.0, other.tdigest.0) {
+            (Some(s), Some(o)) => s.merge(&o),
+            (slot @ None, Some(o)) => *slot = Some(o),
+            _ => {},
+        }
         self.online.merge(other.online);
         self.online_len.merge(other.online_len);
         self.minmax.merge(other.minmax);
@@ -4441,6 +4700,29 @@ impl Commute for Stats {
             }
         } else if other.weighted_modes.is_some() {
             self.weighted_modes = other.weighted_modes;
+        }
+
+        // --mode-cardinality-cap: if either chunk dropped its tracker, the post-merge
+        // result must also be empty (we can't reconstruct the lost samples). Also re-check
+        // the cap on the merged result, since two chunks below the cap can together
+        // cross it.
+        if self.modes_dropped {
+            self.modes = None;
+            self.weighted_modes = None;
+        } else {
+            let cap = self.which.mode_cardinality_cap;
+            if cap > 0 {
+                let over = self.modes.as_ref().is_some_and(|m| m.len() as u64 > cap)
+                    || self
+                        .weighted_modes
+                        .as_ref()
+                        .is_some_and(|m| m.len() as u64 > cap);
+                if over {
+                    self.modes = None;
+                    self.weighted_modes = None;
+                    self.modes_dropped = true;
+                }
+            }
         }
 
         self.total_weight += other.total_weight;
@@ -4764,8 +5046,8 @@ impl TypedMinMax {
                     self.strings.sort_order(),
                     self.strings.sortiness(),
                 ) {
-                    let min_str = String::from_utf8_lossy(min).to_string();
-                    let max_str = String::from_utf8_lossy(max).to_string();
+                    let min_str = bytes_to_cow_str(min).into_owned();
+                    let max_str = bytes_to_cow_str(max).into_owned();
 
                     let max_length = STATS_STRING_MAX_LENGTH.get_or_init(|| {
                         std::env::var("QSV_STATS_STRING_MAX_LENGTH")

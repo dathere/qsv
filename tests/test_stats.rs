@@ -6052,3 +6052,517 @@ fn stats_jsonl_tsv_delimiter() {
         );
     }
 }
+
+// --- --quantile-method approx (t-digest) tests --------------------------------------
+
+/// Build a uniform 1..=N column. With enough rows, t-digest's rank error stays small
+/// (~1%), so we can assert tighter envelopes than the small-N smoke test.
+fn approx_quartiles_fixture(n: usize) -> Vec<Vec<String>> {
+    let mut rows: Vec<Vec<String>> = Vec::with_capacity(n + 1);
+    rows.push(vec!["value".to_string()]);
+    for i in 1..=n {
+        rows.push(vec![i.to_string()]);
+    }
+    rows
+}
+
+#[test]
+fn stats_quantile_method_approx_quartiles_within_envelope() {
+    // With N=10_000 uniform integers 1..=10_000 the exact quartiles are q1=2500,
+    // q2=5000, q3=7500. T-digest with default k=200 should land inside ±2% of those.
+    let wrk = Workdir::new("stats_quantile_method_approx_quartiles_within_envelope");
+    wrk.create("data.csv", approx_quartiles_fixture(10_000));
+
+    let mut cmd = wrk.command("stats");
+    // Pin --jobs 1 because t-digest merge is associative but not chunk-count-invariant;
+    // CI runs with arbitrary thread counts would otherwise produce flaky digests.
+    cmd.arg("--quartiles")
+        .arg("--quantile-method")
+        .arg("approx")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+
+    // Single-invocation capture: avoids the wrk.assert_success + wrk.read_stdout
+    // double-run pattern (the second run's exit status would not be asserted).
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "stats command failed: stderr = {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let headers: Vec<&str> = lines
+        .next()
+        .expect("stats output should have a header row")
+        .split(',')
+        .collect();
+    let value_row: Vec<&str> = lines
+        .next()
+        .expect("stats output should have at least one data row")
+        .split(',')
+        .collect();
+    let q1: f64 = value_row[headers.iter().position(|h| *h == "q1").unwrap()]
+        .parse()
+        .unwrap();
+    let q2: f64 = value_row[headers.iter().position(|h| *h == "q2_median").unwrap()]
+        .parse()
+        .unwrap();
+    let q3: f64 = value_row[headers.iter().position(|h| *h == "q3").unwrap()]
+        .parse()
+        .unwrap();
+
+    // ~1% rank error per t-digest; allow 2% on values for safety. Approx error is
+    // typically much smaller in the tails than the middle.
+    let tol = 0.02_f64;
+    assert!(
+        (q1 - 2500.0).abs() / 2500.0 < tol,
+        "approx q1 = {q1} not within 2% of 2500"
+    );
+    assert!(
+        (q2 - 5000.0).abs() / 5000.0 < tol,
+        "approx q2 = {q2} not within 2% of 5000"
+    );
+    assert!(
+        (q3 - 7500.0).abs() / 7500.0 < tol,
+        "approx q3 = {q3} not within 2% of 7500"
+    );
+}
+
+#[test]
+fn stats_quantile_method_approx_with_weight_is_rejected() {
+    let wrk = Workdir::new("stats_quantile_method_approx_with_weight_is_rejected");
+    wrk.create(
+        "data.csv",
+        vec![svec!["value", "weight"], svec!["1", "1"], svec!["2", "1"]],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--quartiles")
+        .arg("--quantile-method")
+        .arg("approx")
+        .arg("--weight")
+        .arg("weight")
+        .arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "Should fail when --quantile-method approx is combined with --weight"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("approx") && stderr.contains("--weight"),
+        "Error should explain the approx+weight incompatibility, got: {stderr}"
+    );
+}
+
+#[test]
+fn stats_quantile_method_approx_disables_mad() {
+    // --mad with --quantile-method approx should print a warning and drop the MAD column
+    // from the output (MAD is not computable from a t-digest).
+    let wrk = Workdir::new("stats_quantile_method_approx_disables_mad");
+    wrk.create("data.csv", approx_quartiles_fixture(100));
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--mad")
+        .arg("--quantile-method")
+        .arg("approx")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+
+    // Capture both stdout and stderr from a single invocation so the warning we assert on
+    // and the headers we assert on are guaranteed to come from the same run (avoids
+    // running the command twice — `wrk.read_stdout(&mut cmd)` would re-execute it).
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "approx + --mad should still succeed"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("does not support MAD"),
+        "Should warn that MAD is disabled under approx, got: {stderr}"
+    );
+
+    // Parse stdout from the captured bytes (no second invocation).
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let headers: Vec<&str> = stdout
+        .lines()
+        .next()
+        .expect("stats output should have a header row")
+        .split(',')
+        .collect();
+    assert!(
+        !headers.iter().any(|h| *h == "mad"),
+        "mad column should be omitted when approx disables MAD, got headers: {headers:?}"
+    );
+}
+
+#[test]
+fn stats_quantile_method_invalid_value_is_rejected() {
+    let wrk = Workdir::new("stats_quantile_method_invalid_value_is_rejected");
+    wrk.create("data.csv", vec![svec!["value"], svec!["1"]]);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--quantile-method").arg("nonsense").arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "Should fail on invalid --quantile-method"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Invalid --quantile-method"),
+        "Error should mention invalid --quantile-method, got: {stderr}"
+    );
+}
+
+#[test]
+fn stats_quantile_method_exact_is_default_and_byte_identical() {
+    // Sanity: omitting --quantile-method should produce the same output as
+    // explicitly passing --quantile-method exact. This guards against a
+    // regression where the default ever silently changes.
+    let wrk = Workdir::new("stats_quantile_method_exact_is_default_and_byte_identical");
+    wrk.create("data.csv", approx_quartiles_fixture(50));
+
+    let mut cmd_default = wrk.command("stats");
+    cmd_default.arg("--quartiles").arg("data.csv");
+    let default_out: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_default);
+
+    let mut cmd_exact = wrk.command("stats");
+    cmd_exact
+        .arg("--quartiles")
+        .arg("--quantile-method")
+        .arg("exact")
+        .arg("data.csv");
+    let exact_out: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_exact);
+
+    assert_eq!(
+        default_out, exact_out,
+        "Default --quantile-method must match explicit 'exact'"
+    );
+}
+
+#[test]
+fn stats_quantile_method_approx_percentiles_empty_numeric_column() {
+    // Locks the contract that an all-string column under --percentiles + --quantile-method
+    // approx produces an empty `percentiles` cell (no numeric values were ever fed to the
+    // t-digest, so it stays empty and the reader returns None — matching the exact path).
+    let wrk = Workdir::new("stats_quantile_method_approx_percentiles_empty_numeric_column");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value"],
+            svec!["alpha"],
+            svec!["beta"],
+            svec!["gamma"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--percentiles")
+        .arg("--quantile-method")
+        .arg("approx")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+
+    // Single-invocation capture: avoids the wrk.assert_success + wrk.read_stdout
+    // double-run pattern (the second run's exit status would not be asserted).
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "stats command failed: stderr = {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let headers: Vec<&str> = lines
+        .next()
+        .expect("stats output should have a header row")
+        .split(',')
+        .collect();
+    let row: Vec<&str> = lines
+        .next()
+        .expect("stats output should have at least one data row")
+        .split(',')
+        .collect();
+    let pct_idx = headers
+        .iter()
+        .position(|h| *h == "percentiles")
+        .expect("percentiles column should exist");
+    assert_eq!(
+        row[pct_idx], "",
+        "percentiles cell should be empty for an all-string column under approx, got: {:?}",
+        row[pct_idx]
+    );
+}
+
+// --- --mode-cardinality-cap tests ---------------------------------------------------
+
+#[test]
+fn stats_mode_cardinality_cap_default_is_unbounded() {
+    // The default (cap=0) must produce byte-identical output to omitting the flag.
+    let wrk = Workdir::new("stats_mode_cardinality_cap_default_is_unbounded");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id"],
+            svec!["1"],
+            svec!["1"],
+            svec!["2"],
+            svec!["2"],
+            svec!["3"],
+        ],
+    );
+
+    let mut cmd_default = wrk.command("stats");
+    cmd_default
+        .arg("--cardinality")
+        .arg("--mode")
+        .arg("data.csv");
+    let default_out: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_default);
+
+    let mut cmd_zero = wrk.command("stats");
+    cmd_zero
+        .arg("--cardinality")
+        .arg("--mode")
+        .arg("--mode-cardinality-cap")
+        .arg("0")
+        .arg("data.csv");
+    let zero_out: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_zero);
+
+    assert_eq!(
+        default_out, zero_out,
+        "Default behavior must be byte-identical to --mode-cardinality-cap 0"
+    );
+}
+
+#[test]
+fn stats_mode_cardinality_cap_drops_high_cardinality_column() {
+    // Cap at 3 with 10 rows must trip the dropper. Output should contain the
+    // sentinel values and NOT the normal mode/cardinality fields.
+    let wrk = Workdir::new("stats_mode_cardinality_cap_drops_high_cardinality_column");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string()]];
+    for i in 1..=10_usize {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--mode")
+        .arg("--mode-cardinality-cap")
+        .arg("3")
+        .arg("--jobs")
+        .arg("1") // pin to deterministic single-thread merge for the assertion
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let row = &got[1];
+    let card_idx = headers
+        .iter()
+        .position(|h| h == "cardinality")
+        .expect("cardinality column should exist");
+    let mode_idx = headers
+        .iter()
+        .position(|h| h == "mode")
+        .expect("mode column should exist");
+    let antimode_idx = headers
+        .iter()
+        .position(|h| h == "antimode")
+        .expect("antimode column should exist");
+
+    assert_eq!(
+        row[card_idx], ">=3",
+        "cardinality should be the sentinel >=<cap>"
+    );
+    assert_eq!(
+        row[mode_idx], "*HIGH_CARDINALITY",
+        "mode should be the *HIGH_CARDINALITY sentinel"
+    );
+    assert_eq!(
+        row[antimode_idx], "*HIGH_CARDINALITY",
+        "antimode should be the *HIGH_CARDINALITY sentinel"
+    );
+}
+
+#[test]
+fn stats_mode_cardinality_cap_preserves_low_cardinality_column() {
+    // Cap large enough that a low-cardinality column does NOT trip the dropper.
+    let wrk = Workdir::new("stats_mode_cardinality_cap_preserves_low_cardinality_column");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["category"],
+            svec!["A"],
+            svec!["A"],
+            svec!["B"],
+            svec!["B"],
+            svec!["C"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--mode")
+        .arg("--mode-cardinality-cap")
+        .arg("1000")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let row = &got[1];
+    let card_idx = headers.iter().position(|h| h == "cardinality").unwrap();
+
+    assert_eq!(
+        row[card_idx], "3",
+        "cardinality should be exact (3) when cap is not tripped, got {:?}",
+        row[card_idx]
+    );
+    assert!(
+        !row.iter().any(|c| c.contains("HIGH_CARDINALITY")),
+        "no row should contain the HIGH_CARDINALITY sentinel when cap is not tripped: {row:?}"
+    );
+}
+
+#[test]
+fn stats_mode_cardinality_cap_weighted_path() {
+    // Exercises the cap's weighted-modes branch (HashMap::len() bound). With cap=3 and a
+    // column whose unique-value count exceeds 3, the weighted tracker is dropped and
+    // the sentinels fire — same as the unweighted path.
+    let wrk = Workdir::new("stats_mode_cardinality_cap_weighted_path");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value", "weight"],
+            svec!["a", "1"],
+            svec!["b", "1"],
+            svec!["c", "1"],
+            svec!["d", "1"],
+            svec!["e", "1"],
+            svec!["f", "1"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--mode")
+        .arg("--weight")
+        .arg("weight")
+        .arg("--mode-cardinality-cap")
+        .arg("3")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let row = &got[1];
+    let card_idx = headers
+        .iter()
+        .position(|h| h == "cardinality")
+        .expect("cardinality column should exist");
+    let mode_idx = headers
+        .iter()
+        .position(|h| h == "mode")
+        .expect("mode column should exist");
+
+    assert_eq!(
+        row[card_idx], ">=3",
+        "weighted-mode cap should produce >=<cap> cardinality, got: {:?}",
+        row[card_idx]
+    );
+    assert_eq!(
+        row[mode_idx], "*HIGH_CARDINALITY",
+        "weighted-mode cap should produce *HIGH_CARDINALITY mode, got: {:?}",
+        row[mode_idx]
+    );
+}
+
+#[test]
+fn stats_mode_cardinality_cap_multi_chunk_post_merge_check() {
+    // Exercises the post-merge cap re-check: when individual chunks each stay below the
+    // cap but the merged result crosses it. Forces parallel chunking by indexing the
+    // file (parallel_stats requires an index) and using the default --jobs.
+    let wrk = Workdir::new("stats_mode_cardinality_cap_multi_chunk_post_merge_check");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string()]];
+    for i in 1..=200_usize {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("data.csv", rows);
+
+    // Build the index so parallel_stats kicks in (qsv routes to sequential_stats when
+    // the index is missing, even at default --jobs).
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg("data.csv");
+    wrk.assert_success(&mut idx_cmd);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--mode")
+        .arg("--mode-cardinality-cap")
+        .arg("50")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let row = &got[1];
+    let headers = &got[0];
+    let card_idx = headers.iter().position(|h| h == "cardinality").unwrap();
+
+    // 200 rows, cap=50: even if parallel chunks each stay near the cap individually,
+    // the merged total must trip the post-merge re-check and emit the sentinel.
+    assert_eq!(
+        row[card_idx], ">=50",
+        "post-merge cap re-check should fire across chunks, got: {:?}",
+        row[card_idx]
+    );
+}
+
+#[test]
+fn stats_mode_cardinality_cap_cardinality_only_emits_two_fields() {
+    // When --cardinality is set but --mode is not, the dropped path must emit exactly
+    // two sentinel fields (cardinality + uniqueness_ratio) and NOT the six mode/antimode
+    // fields. Locks the field-count contract.
+    let wrk = Workdir::new("stats_mode_cardinality_cap_cardinality_only_emits_two_fields");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string()]];
+    for i in 1..=10_usize {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--mode-cardinality-cap")
+        .arg("3")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let row = &got[1];
+
+    // cardinality should be present and = ">=3"
+    let card_idx = headers
+        .iter()
+        .position(|h| h == "cardinality")
+        .expect("cardinality column should exist");
+    assert_eq!(
+        row[card_idx], ">=3",
+        "cardinality should be the sentinel, got: {:?}",
+        row[card_idx]
+    );
+
+    // mode columns should NOT be in the headers when --mode is omitted (and --everything
+    // is not set). This guards against the dropped path accidentally emitting 8 fields
+    // instead of 2.
+    assert!(
+        !headers.iter().any(|h| h == "mode"),
+        "mode column should not be present when --mode is not set: {headers:?}"
+    );
+    assert!(
+        !headers.iter().any(|h| h == "antimode"),
+        "antimode column should not be present when --mode is not set: {headers:?}"
+    );
+}

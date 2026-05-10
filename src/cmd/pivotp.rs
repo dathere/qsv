@@ -991,9 +991,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "median" => Expr::Element.median(),
             "len" => Expr::Element.len(),
             "item" => Expr::Element.item(true),
-            s if parse_quantile_agg(s).is_some() => {
-                // safe: guard above already validated the suffix
-                let p = parse_quantile_agg(s).unwrap();
+            s if let Some(p) = parse_quantile_agg(s) => {
                 Expr::Element.quantile(lit(p), QuantileMethod::Linear)
             },
             "smart" => {
@@ -1153,9 +1151,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         "mean" => c.mean().alias(PlSmallStr::from_str(vc)),
                         "median" => c.median().alias(PlSmallStr::from_str(vc)),
                         "len" | "smart" => len().alias(PlSmallStr::from_str(vc)),
-                        s if parse_quantile_agg(s).is_some() => {
-                            // safe: guard above already validated the suffix
-                            let p = parse_quantile_agg(s).unwrap();
+                        s if let Some(p) = parse_quantile_agg(s) => {
                             c.quantile(lit(p), QuantileMethod::Linear)
                                 .alias(PlSmallStr::from_str(vc))
                         },

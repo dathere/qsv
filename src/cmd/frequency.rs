@@ -3870,7 +3870,10 @@ impl Args {
                 rows.retain(|r| r.estimate() >= min_count);
             }
 
-            let kept_estimate_sum: u64 = rows.iter().map(|r| r.estimate()).sum();
+            let kept_estimate_sum: u64 = rows
+                .iter()
+                .map(datasketches::frequencies::Row::estimate)
+                .sum();
 
             for (rank_idx, r) in rows.iter().enumerate() {
                 let item: &[u8] = r.item();

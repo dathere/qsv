@@ -1,6 +1,6 @@
 # explode
 
-> Explode rows into multiple ones by splitting a column value based on the given separator.
+> Explode rows into multiple ones by splitting a column value based on the given separator. The inverse of `implode`.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/explode.rs](https://github.com/dathere/qsv/blob/master/src/cmd/explode.rs)** | [🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 

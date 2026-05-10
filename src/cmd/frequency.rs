@@ -94,9 +94,19 @@ frequency options:
                             DataSketches Frequent Items (Misra-Gries) sketch to
                             track top-K heavy hitters with bounded error and
                             constant memory. The frequent_items mode rejects
-                            asc, weight, ignore-case, no-trim, frequency-jsonl,
-                            stats-filter, and json/pretty-json/toon output; the
-                            frequency cache is bypassed. Counts are estimates.
+                            asc, weight, ignore-case, no-trim, other-sorted,
+                            null-sorted, frequency-jsonl, stats-filter, and
+                            json/pretty-json/toon output; the frequency cache is
+                            bypassed. Counts are estimates. The flags
+                            rank-strategy, lmt-threshold, and unq-limit are
+                            silently ignored under this mode (the sketch's
+                            natural ordering is top-K by estimate descending;
+                            tied counts use the sketch's hash-table iteration
+                            order). The 'Other' row format diverges from exact:
+                            label is the bare other-text (no unique-count suffix
+                            since the sketch cannot recover the true count of
+                            items not in the top-K); rank is 0 to match the
+                            exact convention.
                             [default: exact]
     --sketch-map-size <n>   Maximum map size for the Frequent Items sketch.
                             Must be a power of two and at least 8. Larger values
@@ -704,6 +714,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 return fail_incorrectusage_clierror!(
                     "--sketch-method frequent_items does not support --no-trim. Use \
                      --sketch-method exact."
+                );
+            }
+            if args.flag_other_sorted {
+                return fail_incorrectusage_clierror!(
+                    "--sketch-method frequent_items does not support --other-sorted. The sketch \
+                     always emits the Other row at the end. Use --sketch-method exact."
+                );
+            }
+            if args.flag_null_sorted {
+                return fail_incorrectusage_clierror!(
+                    "--sketch-method frequent_items does not support --null-sorted. The sketch \
+                     ranks NULL alongside other values by estimate. Use --sketch-method exact."
                 );
             }
             if args.flag_frequency_jsonl {
@@ -3898,12 +3920,17 @@ impl Args {
                     };
                     let pct_str = self.format_percentage(pct, abs_dec_places);
                     rank_buf.clear();
-                    // Match the per-item path: integer rank rendered via itoa, not
-                    // a float formatter. Otherwise the Other row's rank could
-                    // differ in format (trailing decimals, scientific notation)
-                    // from the rows above it.
-                    let rank_val = (rows.len() as u64) + 1;
-                    rank_buf.push_str(itoa_buf.format(rank_val));
+                    // Match the exact path's Other-row convention: rank is "0"
+                    // (sentinel for synthetic rows like Other / *ALL_UNIQUE).
+                    // The exact path renders rank 0.0 as the integer "0" via
+                    // itoa (see emit_unweighted_csv_rows), so we do the same
+                    // here. The label intentionally diverges from exact —
+                    // the exact path emits "<other-text> (<unique_count>)" but
+                    // FI cannot recover the count of distinct items not in the
+                    // top-K (purged items aren't tracked), so we emit the bare
+                    // --other-text. This divergence is documented in the
+                    // --sketch-method help.
+                    rank_buf.push_str(itoa_buf.format(0_u64));
                     wtr.write_record([
                         header_vec.as_slice(),
                         other_label.as_slice(),

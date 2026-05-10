@@ -234,8 +234,10 @@ stats options:
                                            * --infer-boolean forces exact (boolean
                                              inference needs cardinality == 2 exactness);
                                              a one-time warning is emitted.
-                                           * Results may differ slightly across runs with
-                                             different --jobs values.
+                                           * Reproducible across --jobs values: the
+                                             HLL union used at merge time is associative
+                                             and order-invariant, so chunk completion
+                                             order does not affect the final estimate.
                               [default: exact]
     --mode-cardinality-cap <n>  Bound mode-tracking memory on high-cardinality columns.
                               When > 0, if a column's mode tracker grows past <n>, qsv
@@ -252,8 +254,9 @@ stats options:
                                   downstream parsers expecting a plain integer; cap is
                                   opt-in only).
                               Under --cardinality-method approx, the cardinality column
-                              ignores this cap (HLL gives a precise estimate at fixed
-                              memory) — only mode/antimode columns are gated.
+                              ignores this cap (HLL gives an approximate estimate at
+                              fixed memory, ~1.5% RSE) — only mode/antimode columns
+                              are gated.
                               Useful on wide tables with many ID/UUID/timestamp columns
                               where tracking exact cardinality is wasted work.
                               [default: 0]

@@ -6650,12 +6650,15 @@ fn frequency_sketch_method_frequent_items_other_row_emission() {
         .expect("Other count must be a plain integer (no decimals/scientific notation)");
     let other_rank_str = &other_row.3;
 
-    // Rank must be the integer "4" (3 kept top-K rows + 1) — NOT "4.0" or "4e0",
-    // matching the per-item rank rendering. Regression guard for the Medium
-    // finding from the review.
+    // Rank must be the integer "0" (sentinel for synthetic rows like Other and
+    // *ALL_UNIQUE) — matching the exact path's Other-row convention. Regression
+    // guard for both review findings: the Medium float-formatter bug (would have
+    // emitted "4.0"/"4e0") and the divergence from exact's rank-0 sentinel
+    // (would have emitted "4").
     assert_eq!(
-        other_rank_str, "4",
-        "Other rank must render as integer '4' to match per-item rows, got '{other_rank_str}'"
+        other_rank_str, "0",
+        "Other rank must render as integer '0' to match the exact path's synthetic-row \
+         convention, got '{other_rank_str}'"
     );
 
     // Other count = total_weight - kept_top3_estimates ≈ 1250 + 625 + 1000 noise = 2875.
@@ -6666,5 +6669,47 @@ fn frequency_sketch_method_frequent_items_other_row_emission() {
     assert!(
         (lo..=hi).contains(&other_count),
         "Other count {other_count} not within 5% of expected ~{true_other} (total={total})"
+    );
+}
+
+#[test]
+fn frequency_sketch_method_frequent_items_with_other_sorted_is_rejected() {
+    let wrk = Workdir::new("frequency_sketch_method_frequent_items_with_other_sorted_is_rejected");
+    wrk.create("data.csv", vec![svec!["v"], svec!["a"], svec!["b"]]);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--sketch-method")
+        .arg("frequent_items")
+        .arg("--other-sorted")
+        .arg("data.csv");
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "frequent_items + --other-sorted should be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--other-sorted") && stderr.contains("frequent_items"),
+        "error should mention both --other-sorted and frequent_items, got: {stderr}"
+    );
+}
+
+#[test]
+fn frequency_sketch_method_frequent_items_with_null_sorted_is_rejected() {
+    let wrk = Workdir::new("frequency_sketch_method_frequent_items_with_null_sorted_is_rejected");
+    wrk.create("data.csv", vec![svec!["v"], svec!["a"], svec!["b"]]);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--sketch-method")
+        .arg("frequent_items")
+        .arg("--null-sorted")
+        .arg("data.csv");
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "frequent_items + --null-sorted should be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--null-sorted") && stderr.contains("frequent_items"),
+        "error should mention both --null-sorted and frequent_items, got: {stderr}"
     );
 }

@@ -2767,16 +2767,18 @@ impl WhichStats {
     }
 }
 
-/// Wrapper around `datasketches::tdigest::TDigestMut` so we can derive `Clone`,
-/// `PartialEq`, `Serialize`, and `Deserialize` for the `Stats` struct without forcing
-/// the upstream `TDigestMut` (which only derives `Clone`/`Debug`) to grow those impls.
+/// Wrapper around `datasketches::tdigest::TDigestMut` so the `Stats` struct can keep its
+/// derived `Clone` and `PartialEq` impls without forcing the upstream `TDigestMut`
+/// (which only derives `Clone`/`Debug`) to grow them.
 ///
 /// Equality between two t-digests is not meaningful (different ingestion orders can produce
 /// different centroid layouts even for identical input multisets), so `PartialEq` is a
 /// constant `true` — Stats's `PartialEq` is used only in tests for non-quantile fields.
 ///
-/// Serialization is skipped: t-digest state is intermediate, not persisted across runs.
-/// Cache invalidation on `--quantile-method` change is handled by `StatsArgs` serialization.
+/// Serde is intentionally NOT implemented: the field is annotated `#[serde(skip)]` on
+/// `Stats::tdigest`, so the derived `Serialize`/`Deserialize` on `Stats` skip this field
+/// entirely. T-digest state is intermediate; cache invalidation on `--quantile-method`
+/// change rides on `StatsArgs` serialization instead.
 #[derive(Default)]
 struct TDigestSlot(Option<datasketches::tdigest::TDigestMut>);
 
@@ -2791,20 +2793,6 @@ impl PartialEq for TDigestSlot {
     #[inline]
     fn eq(&self, _other: &Self) -> bool {
         true
-    }
-}
-
-impl Serialize for TDigestSlot {
-    #[inline]
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_unit()
-    }
-}
-
-impl<'de> Deserialize<'de> for TDigestSlot {
-    #[inline]
-    fn deserialize<D: serde::Deserializer<'de>>(_d: D) -> Result<Self, D::Error> {
-        Ok(Self::default())
     }
 }
 
@@ -4587,25 +4575,24 @@ impl Stats {
                             // Use weighted percentiles
                             weighted_percentiles(weighted_data, self.total_weight, &percentile_list)
                         } else if let Some(ref mut td) = self.tdigest.0 {
-                            // Approx percentiles via t-digest. Map each integer percentile in
-                            // [0, 100] to a rank in [0.0, 1.0]; collect the resulting values.
-                            // If any quantile() returns None (e.g. empty digest) we propagate
-                            // None, matching the exact path semantics.
-                            let mut out = Vec::with_capacity(percentile_list.len());
-                            let mut all_some = true;
-                            for p in &percentile_list {
-                                let rank = f64::from(*p) / 100.0;
-                                if let Some(v) = td.quantile(rank) {
-                                    out.push(v);
-                                } else {
-                                    all_some = false;
-                                    break;
-                                }
-                            }
-                            if all_some && !out.is_empty() {
-                                Some(out)
-                            } else {
+                            // Approx percentiles via t-digest. Empty-check up front so the
+                            // semantics match the exact path: `Unsorted::custom_percentiles`
+                            // returns None only when there's no data, never partial output.
+                            // For a non-empty digest, `quantile()` returns `Some` for every
+                            // valid rank in [0.0, 1.0], so the loop below cannot land in the
+                            // partial state that would have made the old `all_some` check fire.
+                            if td.is_empty() {
                                 None
+                            } else {
+                                let mut out = Vec::with_capacity(percentile_list.len());
+                                for p in &percentile_list {
+                                    let rank = f64::from(*p) / 100.0;
+                                    // `unwrap_or(f64::NAN)` is defensive only: a non-empty
+                                    // digest should never return None here. If it ever does,
+                                    // a NaN cell propagates through util::round_num cleanly.
+                                    out.push(td.quantile(rank).unwrap_or(f64::NAN));
+                                }
+                                Some(out)
                             }
                         } else {
                             // Use unweighted exact percentiles
@@ -4668,9 +4655,13 @@ impl Commute for Stats {
         self.modes.merge(other.modes);
         self.unsorted_stats.merge(other.unsorted_stats);
         // Merge t-digest engines: TDigestMut::merge(&other) is associative and does not
-        // modify the input. Note: it is NOT chunk-count-invariant — outputs may differ
-        // by ~1% across runs with different --jobs values. This is documented in the
-        // --quantile-method help text.
+        // modify the input. Note: it is NOT chunk-count-invariant nor merge-order-invariant
+        // — outputs may differ by ~1% across runs with different --jobs values, and
+        // theoretically across runs with the same --jobs >= 2 if chunk completion order
+        // differs. Tests pin --jobs 1, which routes through `sequential_stats` (no merge
+        // at all — see the dispatch in run() around line 1456) and is therefore exactly
+        // reproducible. Determinism for --jobs >= 2 is intentionally not guaranteed; the
+        // --quantile-method help text documents the caveat for users.
         match (&mut self.tdigest.0, other.tdigest.0) {
             (Some(s), Some(o)) => s.merge(&o),
             (slot @ None, Some(o)) => *slot = Some(o),

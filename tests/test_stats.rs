@@ -6158,6 +6158,9 @@ fn stats_quantile_method_approx_disables_mad() {
         .arg("1")
         .arg("data.csv");
 
+    // Capture both stdout and stderr from a single invocation so the warning we assert on
+    // and the headers we assert on are guaranteed to come from the same run (avoids
+    // running the command twice — `wrk.read_stdout(&mut cmd)` would re-execute it).
     let output = cmd.output().unwrap();
     assert!(
         output.status.success(),
@@ -6169,10 +6172,16 @@ fn stats_quantile_method_approx_disables_mad() {
         "Should warn that MAD is disabled under approx, got: {stderr}"
     );
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    let headers = &got[0];
+    // Parse stdout from the captured bytes (no second invocation).
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let headers: Vec<&str> = stdout
+        .lines()
+        .next()
+        .expect("stats output should have a header row")
+        .split(',')
+        .collect();
     assert!(
-        !headers.iter().any(|h| h == "mad"),
+        !headers.iter().any(|h| *h == "mad"),
         "mad column should be omitted when approx disables MAD, got headers: {headers:?}"
     );
 }
@@ -6220,6 +6229,46 @@ fn stats_quantile_method_exact_is_default_and_byte_identical() {
     assert_eq!(
         default_out, exact_out,
         "Default --quantile-method must match explicit 'exact'"
+    );
+}
+
+#[test]
+fn stats_quantile_method_approx_percentiles_empty_numeric_column() {
+    // Locks the contract that an all-string column under --percentiles + --quantile-method
+    // approx produces an empty `percentiles` cell (no numeric values were ever fed to the
+    // t-digest, so it stays empty and the reader returns None — matching the exact path).
+    let wrk = Workdir::new("stats_quantile_method_approx_percentiles_empty_numeric_column");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["value"],
+            svec!["alpha"],
+            svec!["beta"],
+            svec!["gamma"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--percentiles")
+        .arg("--quantile-method")
+        .arg("approx")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let row = &got[1];
+    let pct_idx = headers
+        .iter()
+        .position(|h| h == "percentiles")
+        .expect("percentiles column should exist");
+    assert_eq!(
+        row[pct_idx], "",
+        "percentiles cell should be empty for an all-string column under approx, got: {:?}",
+        row[pct_idx]
     );
 }
 

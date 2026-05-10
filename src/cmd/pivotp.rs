@@ -52,6 +52,9 @@ pivotp options:
                               max - Maximum value
                               mean - Average value
                               median - Median value
+                              quantile@<p> - Quantile at probability p in [0, 1] using linear interpolation.
+                                             Alias: q@<p>. Examples: quantile@0.95, q@0.5
+                                             (q@0.5 is equivalent to median for even-length groups).
                               len - Count of values
                               item - Get single value from group. Raises error if there are multiple values.
                               smart - use value column data type & statistics to pick an aggregation.
@@ -124,6 +127,13 @@ static STATS_RECORDS: OnceLock<(ByteRecord, Vec<StatsData>)> = OnceLock::new();
 /// Helper function to convert a Vec<String> to a vector of Expr for column selection
 fn cols_to_exprs(cols: &[String]) -> Vec<Expr> {
     cols.iter().map(col).collect()
+}
+
+/// Parse `quantile@<p>` or `q@<p>` -> Some(p) iff p ∈ [0, 1]; else None.
+fn parse_quantile_agg(s: &str) -> Option<f64> {
+    let suffix = s.strip_prefix("quantile@").or_else(|| s.strip_prefix("q@"))?;
+    let p: f64 = suffix.parse().ok()?;
+    (p.is_finite() && (0.0..=1.0).contains(&p)).then_some(p)
 }
 
 /// Build the SchemaArgs used for stats/frequency lookups.
@@ -952,6 +962,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!("--agg \"none\" is not supported in group-by mode.");
     }
 
+    // Reject malformed quantile probabilities with a precise error so users see *why*
+    // their probability is bad rather than the generic "Invalid pivot aggregation function".
+    // Works in both pivot and group-by mode; no mode-conditional check needed.
+    if (agg_name.starts_with("quantile@") || agg_name.starts_with("q@"))
+        && parse_quantile_agg(&agg_name).is_none()
+    {
+        return fail_incorrectusage_clierror!(
+            "Invalid quantile probability in --agg {agg_name}: must be a float in [0, 1] (e.g. \
+             quantile@0.95)"
+        );
+    }
+
     // Get aggregation function - using generic expressions that pivot will apply to value columns
     // NOTE: This match must stay in sync with the group-by agg_exprs match below.
     let agg_expr = if agg_name == "none" {
@@ -967,6 +989,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "median" => Expr::Element.median(),
             "len" => Expr::Element.len(),
             "item" => Expr::Element.item(true),
+            s if parse_quantile_agg(s).is_some() => {
+                // safe: guard above already validated the suffix
+                let p = parse_quantile_agg(s).unwrap();
+                Expr::Element.quantile(lit(p), QuantileMethod::Linear)
+            },
             "smart" => {
                 if is_groupby_mode {
                     // In group-by mode, smart defaults to len (count)
@@ -1124,9 +1151,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         "mean" => c.mean().alias(PlSmallStr::from_str(vc)),
                         "median" => c.median().alias(PlSmallStr::from_str(vc)),
                         "len" | "smart" => len().alias(PlSmallStr::from_str(vc)),
+                        s if parse_quantile_agg(s).is_some() => {
+                            // safe: guard above already validated the suffix
+                            let p = parse_quantile_agg(s).unwrap();
+                            c.quantile(lit(p), QuantileMethod::Linear)
+                                .alias(PlSmallStr::from_str(vc))
+                        },
                         // Unreachable because:
                         //   - "none" and "item" are rejected in the group-by validation block in
                         //     `run` (see the `is_groupby_mode` checks).
+                        //   - malformed quantile@/q@ names are rejected in the same validation
+                        //     block.
                         //   - any other unknown name is rejected in the pivot `agg_expr` match
                         //     above, where `agg_expr` is first constructed.
                         _ => unreachable!(

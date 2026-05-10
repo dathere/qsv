@@ -255,6 +255,155 @@ pivotp_test!(
     }
 );
 
+// Test pivot with quantile@0.95 aggregation (linear interpolation)
+// Fixture: North/A=[100,300] -> q95 = 100 + 0.95*200 = 290.0
+//          North/B=[150,350] -> q95 = 150 + 0.95*200 = 340.0
+//          South/A=[200], South/B=[250] -> single-element groups return that value
+pivotp_test!(
+    pivotp_quantile_p95_agg,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "product",
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            "quantile@0.95",
+            "sales.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["region", "A", "B"],
+            svec!["North", "290.0", "340.0"],
+            svec!["South", "200.0", "250.0"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// Test that q@0.5 alias produces the same output as median for the sales fixture.
+// For 2-element sorted groups, Polars' median() == linear quantile(0.5) == midpoint.
+pivotp_test!(
+    pivotp_q_alias_p50_equals_median,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "product",
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            "q@0.5",
+            "sales.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        // Same expected output as pivotp_median_agg above.
+        let expected = vec![
+            svec!["region", "A", "B"],
+            svec!["North", "200.0", "250.0"],
+            svec!["South", "200.0", "250.0"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
+// Test that malformed quantile probabilities are rejected with a precise error.
+pivotp_test!(
+    pivotp_quantile_invalid_p_rejected,
+    |wrk: Workdir, mut cmd: process::Command| {
+        // Out-of-range high
+        cmd.args(&[
+            "product",
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            "quantile@1.5",
+            "sales.csv",
+        ]);
+        wrk.assert_err(&mut cmd);
+        let stderr = wrk.output_stderr(&mut cmd);
+        assert!(
+            stderr.contains("Invalid quantile probability"),
+            "expected 'Invalid quantile probability' in stderr, got: {stderr}"
+        );
+
+        // Out-of-range low (negative)
+        let mut cmd2 = wrk.command("pivotp");
+        cmd2.args(&[
+            "product",
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            "q@-0.1",
+            "sales.csv",
+        ]);
+        wrk.assert_err(&mut cmd2);
+        let stderr2 = wrk.output_stderr(&mut cmd2);
+        assert!(
+            stderr2.contains("Invalid quantile probability"),
+            "expected 'Invalid quantile probability' in stderr, got: {stderr2}"
+        );
+
+        // Non-numeric suffix
+        let mut cmd3 = wrk.command("pivotp");
+        cmd3.args(&[
+            "product",
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            "quantile@abc",
+            "sales.csv",
+        ]);
+        wrk.assert_err(&mut cmd3);
+        let stderr3 = wrk.output_stderr(&mut cmd3);
+        assert!(
+            stderr3.contains("Invalid quantile probability"),
+            "expected 'Invalid quantile probability' in stderr, got: {stderr3}"
+        );
+    }
+);
+
+// Test quantile in group-by mode (no <on-cols>).
+// North sales sorted = [100, 150, 300, 350] -> q25 linear at index 0.75 = 100 + 0.75*50 = 137.5
+// South sales sorted = [200, 250]           -> q25 linear at index 0.25 = 200 + 0.25*50 = 212.5
+pivotp_test!(
+    pivotp_quantile_groupby_mode,
+    |wrk: Workdir, mut cmd: process::Command| {
+        cmd.args(&[
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            "q@0.25",
+            "sales.csv",
+        ]);
+
+        wrk.assert_success(&mut cmd);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["region", "sales"],
+            svec!["North", "137.5"],
+            svec!["South", "212.5"],
+        ];
+        assert_eq!(got, expected);
+    }
+);
+
 // Test pivot with len aggregation
 pivotp_test!(pivotp_len_agg, |wrk: Workdir, mut cmd: process::Command| {
     cmd.args(&[

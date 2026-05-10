@@ -4198,6 +4198,103 @@ fn stats_auto_index_creation_on_oom() {
     );
 }
 
+// --- OOM auto-fallback to DataSketches estimators ---
+//
+// The following tests verify the layered OOM-fallback behavior: when
+// mem_file_check returns OutOfMemory, stats automatically enables approx
+// quantile/cardinality methods (where flag conflicts allow) in addition to
+// the existing auto-index fallback. Like stats_auto_index_creation_on_oom
+// above, these need a multi-GB file to deterministically trigger OOM, so
+// they are #[ignore]'d by default and must be run with `--ignored`.
+
+fn build_large_oom_csv(name: &str) -> (Workdir, std::path::PathBuf) {
+    let wrk = Workdir::new(name);
+    let mut data = vec![svec!["col1", "col2", "col3", "col4", "col5"]];
+    for i in 0..10_000_000 {
+        data.push(vec![
+            format!("value_{}_with_some_padding_to_make_it_larger", i),
+            format!("another_value_{}_with_more_data", i),
+            format!("data_{}", i),
+            format!("field_{}_content", i),
+            format!("final_field_{}_with_additional_text", i),
+        ]);
+    }
+    let path = wrk.path("large_data.csv");
+    wrk.create("large_data.csv", data);
+    (wrk, path)
+}
+
+#[test]
+#[ignore = "Requires a multi-GB file to trigger OOM via mem_file_check"]
+fn stats_oom_auto_enables_approx_sketches() {
+    let (wrk, test_file) = build_large_oom_csv("stats_oom_auto_enables_approx_sketches");
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--memcheck")
+        .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
+        .arg(test_file);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("auto-enabling DataSketches estimators"),
+        "stderr should mention the auto-enable wwarn, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("--quantile-method approx"),
+        "stderr should mention quantile auto-enable, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("--cardinality-method approx"),
+        "stderr should mention cardinality auto-enable, got: {stderr}"
+    );
+}
+
+#[test]
+#[ignore = "Requires a multi-GB file to trigger OOM via mem_file_check"]
+fn stats_oom_skips_approx_quantiles_with_weight() {
+    let (wrk, test_file) = build_large_oom_csv("stats_oom_skips_approx_quantiles_with_weight");
+    // Weight column is col1 (all distinct strings — qsv will treat parse failures
+    // as default weight 1.0; this is acceptable for the test because we only care
+    // that --weight is *set*, which is what suppresses the quantile auto-enable).
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--memcheck")
+        .arg("--weight")
+        .arg("col1")
+        .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
+        .arg(test_file);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        !stderr.contains("--quantile-method approx"),
+        "quantile sketch should be suppressed when --weight is set, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("--cardinality-method approx"),
+        "cardinality sketch should still auto-enable, got: {stderr}"
+    );
+}
+
+#[test]
+#[ignore = "Requires a multi-GB file to trigger OOM via mem_file_check"]
+fn stats_oom_skips_approx_cardinality_with_infer_boolean() {
+    let (wrk, test_file) =
+        build_large_oom_csv("stats_oom_skips_approx_cardinality_with_infer_boolean");
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--memcheck")
+        .arg("--infer-boolean")
+        .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
+        .arg(test_file);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        !stderr.contains("--cardinality-method approx"),
+        "cardinality sketch should be suppressed under --infer-boolean, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("--quantile-method approx"),
+        "quantile sketch should still auto-enable, got: {stderr}"
+    );
+}
+
 #[test]
 fn stats_auto_index_creation_skipped_if_indexed() {
     use std::path::Path;

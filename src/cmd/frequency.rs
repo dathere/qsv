@@ -263,6 +263,12 @@ Common options:
                            Must be a single character. (default: ,)
     --memcheck             Check if there is enough memory to load the entire
                            CSV into memory using CONSERVATIVE heuristics.
+                           On OOM, qsv auto-creates an index when possible and
+                           also switches to the Frequent Items sketch
+                           (Apache DataSketches Misra-Gries, equivalent to
+                           sketch-method frequent_items) where compatible,
+                           before failing. A wwarn is emitted when the sketch
+                           fallback engages.
 "#;
 
 use core::hint::cold_path;
@@ -647,6 +653,39 @@ fn calculate_memory_aware_chunk_size_for_frequency(
     }
 }
 
+/// Check whether `--sketch-method frequent_items` can be auto-enabled given
+/// the current flag configuration. Mirrors the explicit rejection guards at
+/// frequency.rs:691-760 so an auto-enable only flips the method when the user
+/// could have set it by hand without hitting any of those errors.
+///
+/// Returns `false` if any conflicting flag is set, if the method is already
+/// non-exact (don't override an explicit user choice), or if --sketch-map-size
+/// is invalid.
+fn can_enable_frequent_items(args: &Args) -> bool {
+    if args.flag_sketch_method != "exact" {
+        return false;
+    }
+    if args.flag_asc
+        || args.flag_weight.is_some()
+        || args.flag_ignore_case
+        || args.flag_no_trim
+        || args.flag_other_sorted
+        || args.flag_null_sorted
+        || args.flag_frequency_jsonl
+        || args.flag_json
+        || args.flag_pretty_json
+        || args.flag_toon
+    {
+        return false;
+    }
+    #[cfg(feature = "luau")]
+    if args.flag_stats_filter.is_some() {
+        return false;
+    }
+    // sketch-map-size validity (mirrors the validator at frequency.rs:751).
+    args.flag_sketch_map_size >= 8 && args.flag_sketch_map_size.is_power_of_two()
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
@@ -783,38 +822,48 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // Memory check passed, proceed with sequential processing
             },
             Err(e) => {
-                // Memory check failed - if we don't have an index, try creating one
+                // Memory check failed. We have two fallbacks that can stack:
+                //   1. auto-create an index to switch to parallel/indexed mode
+                //   2. auto-enable the Frequent Items sketch (Misra-Gries) to bound per-column
+                //      memory regardless of sequential vs. parallel
+                // Only propagate the original OOM error if NEITHER fallback engages.
+                let mut index_succeeded = false;
                 if indexed_result.is_none() && !rconfig.is_stdin() {
                     log::info!(
                         "File too large for sequential processing. Auto-creating index to enable \
                          parallel processing..."
                     );
-
-                    // Create index and retry
                     match util::create_index_for_file(&path, &rconfig) {
                         Ok(()) => {
-                            // Re-check for index after creation
                             indexed_result = args.rconfig().indexed()?;
-                            if indexed_result.is_some() {
+                            index_succeeded = indexed_result.is_some();
+                            if index_succeeded {
                                 log::info!(
                                     "Index created successfully. Switching to parallel processing."
                                 );
-                                // Continue - the match statement below will use
-                                // indexed_result to determine parallel/sequential
-                            } else {
-                                // Index creation succeeded but we still can't get it
-                                // Return the original memory error
-                                return Err(e);
                             }
                         },
                         Err(index_err) => {
-                            // Index creation failed, return the original memory error
                             log::warn!("Failed to auto-create index: {index_err}");
-                            return Err(e);
                         },
                     }
-                } else {
-                    // Either we already have an index or it's stdin - return the error
+                }
+
+                // Sketch fallback: only for OOM (not other CliErrors).
+                // The Frequent Items dispatch at frequency.rs:787 normally fires before
+                // mem_file_check runs, so we re-route into run_frequent_items() directly
+                // from here rather than just flipping the flag and falling through.
+                if matches!(e, crate::CliError::OutOfMemory(_)) && can_enable_frequent_items(&args)
+                {
+                    args.flag_sketch_method = "frequent_items".to_string();
+                    wwarn!(
+                        "OOM during memory check: auto-enabling --sketch-method frequent_items \
+                         (Misra-Gries, map size {n}). Re-run with explicit --sketch-method exact \
+                         to override.",
+                        n = args.flag_sketch_map_size,
+                    );
+                    return args.run_frequent_items(&rconfig);
+                } else if !index_succeeded {
                     return Err(e);
                 }
             },

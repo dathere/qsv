@@ -355,6 +355,11 @@ Common options:
                            CSV into memory using CONSERVATIVE heuristics.
                            This option is ignored when computing default, streaming
                            statistics, as it is not needed.
+                           On OOM, qsv auto-creates an index when possible and
+                           also switches to approx quantile + approx cardinality
+                           methods (DataSketches t-digest and HyperLogLog) where
+                           compatible, before failing. A wwarn is emitted listing
+                           the auto-enabled estimators.
 "#;
 
 /*
@@ -957,6 +962,42 @@ fn parse_boolean_patterns(boolean_patterns: &str) -> CliResult<Vec<BooleanPatter
     Ok(patterns)
 }
 
+/// Auto-enable approx DataSketches estimators when an OOM hit on `--memcheck`
+/// forces a memory budget cut. Returns the list of method names that were
+/// switched, in user-facing form. Caller is responsible for emitting the
+/// `wwarn!` message and for verifying that this was actually invoked from the
+/// OOM branch.
+///
+/// Conflict guards mirror the explicit validation guards at stats.rs:1049
+/// (`--quantile-method approx` rejects `--weight`) and stats.rs:1088
+/// (`--cardinality-method approx` cannot be used with `--infer-boolean`),
+/// so the auto-enable only flips methods that would have passed validation
+/// if the user had set them by hand.
+fn try_enable_approx_sketches(args: &mut Args) -> Vec<&'static str> {
+    let mut enabled = Vec::new();
+
+    // t-digest: blocked by --weight; auto-disables MAD (mirrors existing
+    // guard at stats.rs:1059).
+    if args.flag_quantile_method == "exact" && args.flag_weight.is_none() {
+        args.flag_quantile_method = "approx".to_string();
+        if args.flag_mad || args.flag_everything {
+            args.flag_mad = false;
+            enabled.push("--quantile-method approx (MAD disabled)");
+        } else {
+            enabled.push("--quantile-method approx");
+        }
+    }
+
+    // HLL: blocked by --infer-boolean (needs cardinality==2 exactness;
+    // mirrors guard at stats.rs:1088).
+    if args.flag_cardinality_method == "exact" && !args.flag_infer_boolean {
+        args.flag_cardinality_method = "approx".to_string();
+        enabled.push("--cardinality-method approx");
+    }
+
+    enabled
+}
+
 /// Main entry point for the stats command.
 ///
 /// This function orchestrates the entire CSV statistics computation process, including
@@ -1467,39 +1508,48 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         // Memory check passed, proceed with sequential processing
                     },
                     Err(e) => {
-                        // Memory check failed - if we don't have an index, try creating one
+                        // Memory check failed. We have two fallbacks that can stack:
+                        //   1. auto-create an index to switch to parallel/indexed mode
+                        //   2. auto-enable DataSketches estimators (t-digest, HLL) to reduce
+                        //      per-column memory regardless of sequential vs. parallel
+                        // Only propagate the original OOM error if NEITHER fallback engages.
+                        let mut index_succeeded = false;
                         if indexed_result.is_none() && !rconfig.is_stdin() {
                             log::info!(
                                 "File too large for sequential processing. Auto-creating index to \
                                  enable parallel processing..."
                             );
-
-                            // Create index and retry
                             match util::create_index_for_file(&path, &rconfig) {
                                 Ok(()) => {
-                                    // Re-check for index after creation
                                     indexed_result = rconfig.indexed()?;
-                                    if indexed_result.is_some() {
+                                    index_succeeded = indexed_result.is_some();
+                                    if index_succeeded {
                                         log::info!(
                                             "Index created successfully. Switching to parallel \
                                              processing."
                                         );
-                                        // Continue - the match statement below will use
-                                        // indexed_result to determine parallel/sequential
-                                    } else {
-                                        // Index creation succeeded but we still can't get it
-                                        // Return the original memory error
-                                        return Err(e);
                                     }
                                 },
                                 Err(index_err) => {
-                                    // Index creation failed, return the original memory error
                                     log::warn!("Failed to auto-create index: {index_err}");
-                                    return Err(e);
                                 },
                             }
-                        } else {
-                            // Either we already have an index or it's stdin - return the error
+                        }
+
+                        // Sketch fallback: only for OOM (not other CliErrors)
+                        if matches!(e, CliError::OutOfMemory(_)) {
+                            let enabled = try_enable_approx_sketches(&mut args);
+                            if !enabled.is_empty() {
+                                wwarn!(
+                                    "OOM during memory check: auto-enabling DataSketches \
+                                     estimators ({}). Re-run with explicit \
+                                     --quantile-method/--cardinality-method to override.",
+                                    enabled.join(", ")
+                                );
+                            } else if !index_succeeded {
+                                return Err(e);
+                            }
+                        } else if !index_succeeded {
                             return Err(e);
                         }
                     },

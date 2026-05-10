@@ -302,7 +302,7 @@ The `stats` command is central to qsv and underpins other "smart" commands (`des
 
 ### Approximate Algorithms (Opt-In)
 
-By default, `stats` produces **exact, deterministic** results. Three opt-in flags swap exact accumulators for [Apache DataSketches](https://datasketches.apache.org/) ports — Rust ports of streaming sketches — that trade a small, bounded error for **constant (or near-constant) memory** and faster compute on very-large columns.
+By default, `stats` produces **exact, deterministic** results. Three opt-in flags swap exact accumulators for [Apache DataSketches](https://datasketches.apache.org/) ports — Rust ports of [streaming sketches](https://datasketches.apache.org/docs/Community/Research.html) — that trade a small, bounded error for **constant (or near-constant) memory** and faster compute on very-large columns.
 
 | Flag | Default | Sketch | Memory | Error | Restrictions / Notes |
 |:---|:---|:---|:---|:---|:---|

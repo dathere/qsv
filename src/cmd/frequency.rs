@@ -3745,10 +3745,12 @@ impl Args {
         let mut null_counts: Vec<u64> = vec![0; sel_len];
 
         let flag_no_nulls = self.flag_no_nulls;
-        let null_label: Vec<u8> = NULL_VAL
-            .get()
-            .cloned()
-            .unwrap_or_else(|| b"(NULL)".to_vec());
+        // Reuse the same default-resolution path as the exact code: --null-text has
+        // its docopt default of "(NULL)", so self.flag_null_text is always populated
+        // by the time run() dispatches here. Reading it directly avoids depending
+        // on NULL_VAL.set() ordering (the FI dispatch happens before that init in
+        // run()) and guarantees exact↔FI label parity.
+        let null_label: Vec<u8> = self.flag_null_text.as_bytes().to_vec();
 
         let mut row_buffer: csv::ByteRecord = csv::ByteRecord::with_capacity(200, sel_len);
         for row in rdr.byte_records() {
@@ -3759,9 +3761,8 @@ impl Args {
                         // Track empty cells as a sentinel value so they can show up as
                         // a heavy hitter row labelled with --null-text. Use the empty
                         // Vec<u8> as the sketch key — distinct from any real value.
-                        // safety: i < sel_len by construction.
-                        unsafe { sketches.get_unchecked_mut(i) }.update(Vec::new());
-                        unsafe { *null_counts.get_unchecked_mut(i) += 1 };
+                        sketches[i].update(Vec::new());
+                        null_counts[i] += 1;
                     }
                     continue;
                 }
@@ -3769,15 +3770,13 @@ impl Args {
                 let trimmed = trim_bs_whitespace(field);
                 if trimmed.is_empty() {
                     if !flag_no_nulls {
-                        unsafe { sketches.get_unchecked_mut(i) }.update(Vec::new());
-                        unsafe { *null_counts.get_unchecked_mut(i) += 1 };
+                        sketches[i].update(Vec::new());
+                        null_counts[i] += 1;
                     }
                     continue;
                 }
-                // safety: i < sel_len by construction; sketches/nonnull_counts
-                // are allocated with sel_len entries above.
-                unsafe { sketches.get_unchecked_mut(i) }.update(trimmed.to_vec());
-                unsafe { *nonnull_counts.get_unchecked_mut(i) += 1 };
+                sketches[i].update(trimmed.to_vec());
+                nonnull_counts[i] += 1;
             }
         }
 
@@ -3808,7 +3807,6 @@ impl Args {
         let other_label = self.flag_other_text.as_bytes().to_vec();
 
         let mut itoa_buf = itoa::Buffer::new();
-        let mut zmij_buf = zmij::Buffer::new();
         let mut rank_buf = String::with_capacity(20);
         let mut value_str = String::with_capacity(64);
 
@@ -3821,10 +3819,9 @@ impl Args {
             } else {
                 header.to_vec()
             };
-            // safety: sketches has sel_len entries, headers has sel_len after sel_headers.
-            let sketch = unsafe { sketches.get_unchecked(i) };
-            let nonnull_count = unsafe { *nonnull_counts.get_unchecked(i) };
-            let null_count = unsafe { *null_counts.get_unchecked(i) };
+            let sketch = &sketches[i];
+            let nonnull_count = nonnull_counts[i];
+            let null_count = null_counts[i];
             let pct_denom: f64 = if pct_nulls {
                 (nonnull_count + null_count) as f64
             } else {
@@ -3893,8 +3890,12 @@ impl Args {
                     };
                     let pct_str = self.format_percentage(pct, abs_dec_places);
                     rank_buf.clear();
+                    // Match the per-item path: integer rank rendered via itoa, not
+                    // a float formatter. Otherwise the Other row's rank could
+                    // differ in format (trailing decimals, scientific notation)
+                    // from the rows above it.
                     let rank_val = (rows.len() as u64) + 1;
-                    rank_buf.push_str(zmij_buf.format(rank_val as f64));
+                    rank_buf.push_str(itoa_buf.format(rank_val));
                     wtr.write_record([
                         header_vec.as_slice(),
                         other_label.as_slice(),

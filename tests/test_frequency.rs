@@ -6577,3 +6577,87 @@ fn frequency_sketch_method_invalid_map_size_is_rejected() {
         "error should mention --sketch-map-size and power of two, got: {stderr}"
     );
 }
+
+#[test]
+fn frequency_sketch_method_frequent_items_other_row_emission() {
+    // Exercise the "Other" row: 5 heavy hitters [10000, 5000, 2500, 1250, 625]
+    // plus 1000 noise singletons, asking for top-3. Other should aggregate the
+    // remaining heavy hitters (h4, h5) plus the noise stream length.
+    let wrk = Workdir::new("frequency_sketch_method_frequent_items_other_row_emission");
+    let mut rows: Vec<Vec<String>> = vec![vec!["v".to_string()]];
+    let heavy = [
+        ("h1", 10000usize),
+        ("h2", 5000),
+        ("h3", 2500),
+        ("h4", 1250),
+        ("h5", 625),
+    ];
+    for (label, n) in &heavy {
+        for _ in 0..*n {
+            rows.push(vec![(*label).to_string()]);
+        }
+    }
+    for i in 0..1000 {
+        rows.push(vec![format!("noise{i}")]);
+    }
+    let total: u64 = heavy.iter().map(|(_, n)| *n as u64).sum::<u64>() + 1000;
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--sketch-method")
+        .arg("frequent_items")
+        .arg("--limit")
+        .arg("3")
+        .arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "frequency command failed: stderr = {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let _header = lines.next().unwrap();
+
+    let parsed: Vec<(String, String, String, String)> = lines
+        .map(|line| {
+            let cols: Vec<&str> = line.split(',').collect();
+            (
+                cols[1].to_string(),
+                cols[2].to_string(),
+                cols[3].to_string(),
+                cols[4].to_string(),
+            )
+        })
+        .collect();
+
+    // Find the Other row.
+    let other_row = parsed.iter().find(|(v, _, _, _)| v == "Other").expect(
+        "Other row must be emitted by default (no --no-other given) — current rows: \
+         {parsed:?}",
+    );
+    let other_count: u64 = other_row
+        .1
+        .parse()
+        .expect("Other count must be a plain integer (no decimals/scientific notation)");
+    let other_rank_str = &other_row.3;
+
+    // Rank must be the integer "4" (3 kept top-K rows + 1) — NOT "4.0" or "4e0",
+    // matching the per-item rank rendering. Regression guard for the Medium
+    // finding from the review.
+    assert_eq!(
+        other_rank_str, "4",
+        "Other rank must render as integer '4' to match per-item rows, got '{other_rank_str}'"
+    );
+
+    // Other count = total_weight - kept_top3_estimates ≈ 1250 + 625 + 1000 noise = 2875.
+    // FI estimates can be slightly off; allow a 5% slack.
+    let true_other: u64 = heavy[3..].iter().map(|(_, n)| *n as u64).sum::<u64>() + 1000;
+    let lo = ((true_other as f64) * 0.95) as u64;
+    let hi = ((true_other as f64) * 1.05) as u64;
+    assert!(
+        (lo..=hi).contains(&other_count),
+        "Other count {other_count} not within 5% of expected ~{true_other} (total={total})"
+    );
+}

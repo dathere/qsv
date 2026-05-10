@@ -744,6 +744,13 @@ const DAY_DECIMAL_PLACES: u32 = 5;
 // maximum number of output columns
 const MAX_STAT_COLUMNS: usize = 47;
 
+// HyperLogLog precision parameter for `--cardinality-method approx`. lg_k=12
+// gives ~1.5% relative standard error and ~5KB per column at the dense Hll8
+// representation. Used in `Stats::new` (per-row sketch construction) and in
+// `Commute::merge` (the transient `HllUnion` used to combine two sketches);
+// keep both call sites in lock-step by reading from this constant.
+const HLL_LG_K: u8 = 12;
+
 // the first N columns of each full stats record are used for the dataset
 // fingerprint hash. For the normal (non-`--typesonly`) output, N must equal
 // the number of "streaming" stats columns emitted by `stats_headers()`
@@ -3510,13 +3517,13 @@ impl Stats {
             }
         }
         // HyperLogLog cardinality engine: allocate when --cardinality-method approx
-        // is selected AND cardinality output is enabled. lg_k=12 gives ~1.5% RSE with
-        // ~5KB per column. Hll8 stores 8 bits per register (no decode work on update);
-        // memory is the same order whether sparse or dense.
+        // is selected AND cardinality output is enabled. HLL_LG_K (12) gives ~1.5%
+        // RSE with ~5KB per column. Hll8 stores 8 bits per register (no decode work
+        // on update); memory is the same order whether sparse or dense.
         let mut hll = HllSlot::default();
         if which.cardinality && which.approx_cardinality {
             hll = HllSlot(Some(datasketches::hll::HllSketch::new(
-                12,
+                HLL_LG_K,
                 datasketches::hll::HllType::Hll8,
             )));
         }
@@ -4818,10 +4825,12 @@ impl Commute for Stats {
         // Merge HLL sketches via a transient HllUnion. Unlike t-digest, HLL union is
         // associative and order-invariant — the merged estimate is bit-identical
         // regardless of chunk completion order, so --jobs >= 2 is fully reproducible
-        // for the cardinality column under --cardinality-method approx.
+        // for the cardinality column under --cardinality-method approx. The lg_k
+        // here MUST match the HLL_LG_K used in `Stats::new`; reading from the same
+        // constant prevents a silent precision downgrade if one site is bumped.
         match (&mut self.hll.0, other.hll.0) {
             (Some(s), Some(o)) => {
-                let mut union = datasketches::hll::HllUnion::new(12);
+                let mut union = datasketches::hll::HllUnion::new(HLL_LG_K);
                 union.update(s);
                 union.update(&o);
                 *s = union.get_result(datasketches::hll::HllType::Hll8);

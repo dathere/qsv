@@ -6566,3 +6566,164 @@ fn stats_mode_cardinality_cap_cardinality_only_emits_two_fields() {
         "antimode column should not be present when --mode is not set: {headers:?}"
     );
 }
+
+/// Build a fixture with `unique` distinct strings each repeated `reps` times. The true
+/// cardinality is exactly `unique`; we use this to gauge HLL's relative error.
+fn approx_cardinality_fixture(unique: usize, reps: usize) -> Vec<Vec<String>> {
+    let mut rows: Vec<Vec<String>> = Vec::with_capacity(unique * reps + 1);
+    rows.push(vec!["value".to_string()]);
+    for _ in 0..reps {
+        for i in 0..unique {
+            rows.push(vec![format!("v{i}")]);
+        }
+    }
+    rows
+}
+
+#[test]
+fn stats_cardinality_method_approx_within_envelope() {
+    // 10_000 distinct strings × 10 reps = 100_000 rows, true cardinality = 10_000.
+    // HLL with lg_k=12 has ~1.5% RSE; allow 3% slack for safety.
+    let wrk = Workdir::new("stats_cardinality_method_approx_within_envelope");
+    wrk.create("data.csv", approx_cardinality_fixture(10_000, 10));
+
+    let mut cmd = wrk.command("stats");
+    // Pin --jobs 1 for reproducibility (HLL union is associative + order-invariant,
+    // but we want exact reproducibility regardless).
+    cmd.arg("--cardinality")
+        .arg("--cardinality-method")
+        .arg("approx")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "stats command failed: stderr = {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let headers: Vec<&str> = lines
+        .next()
+        .expect("stats output should have a header row")
+        .split(',')
+        .collect();
+    let value_row: Vec<&str> = lines
+        .next()
+        .expect("stats output should have at least one data row")
+        .split(',')
+        .collect();
+    let card: f64 = value_row[headers.iter().position(|h| *h == "cardinality").unwrap()]
+        .parse()
+        .expect("cardinality should be a plain integer under approx (no '>=' sentinel)");
+
+    let tol = 0.03_f64;
+    assert!(
+        (card - 10_000.0).abs() / 10_000.0 < tol,
+        "approx cardinality = {card} not within 3% of 10_000"
+    );
+}
+
+#[test]
+fn stats_cardinality_method_approx_no_cap_sentinel() {
+    // Under approx, the --mode-cardinality-cap should NOT cause the cardinality column
+    // to emit ">=<cap>" — HLL provides an estimate at fixed memory regardless of cap.
+    let wrk = Workdir::new("stats_cardinality_method_approx_no_cap_sentinel");
+    wrk.create("data.csv", approx_cardinality_fixture(10_000, 2));
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--cardinality-method")
+        .arg("approx")
+        .arg("--mode-cardinality-cap")
+        .arg("100")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let headers: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let row: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let card_str = row[headers.iter().position(|h| *h == "cardinality").unwrap()];
+    assert!(
+        !card_str.starts_with(">="),
+        "approx cardinality should never emit '>=cap' sentinel, got: {card_str}"
+    );
+    let card: f64 = card_str.parse().expect("cardinality should be numeric");
+    assert!(
+        card > 5_000.0,
+        "approx cardinality should reflect true ~10_000 unique values, got: {card}"
+    );
+}
+
+#[test]
+fn stats_cardinality_method_approx_with_infer_boolean_falls_back_to_exact() {
+    // --infer-boolean needs cardinality == 2 to be exact, so run() forces exact mode
+    // and emits a warning. The cardinality output for a known boolean column must be
+    // exactly 2, with no '>=' sentinel and no approximation.
+    let wrk = Workdir::new("stats_cardinality_method_approx_with_infer_boolean_falls_back");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["flag"],
+            svec!["yes"],
+            svec!["no"],
+            svec!["yes"],
+            svec!["no"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean")
+        .arg("--cardinality-method")
+        .arg("approx")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "stats command failed: stderr = {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let headers: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let row: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let card: u64 = row[headers.iter().position(|h| *h == "cardinality").unwrap()]
+        .parse()
+        .unwrap();
+    assert_eq!(card, 2, "boolean column should report exact cardinality 2");
+    let typ = row[headers.iter().position(|h| *h == "type").unwrap()];
+    assert_eq!(typ, "Boolean", "type should infer as Boolean, got: {typ}");
+}
+
+#[test]
+fn stats_cardinality_method_invalid_value_is_rejected() {
+    let wrk = Workdir::new("stats_cardinality_method_invalid_value_is_rejected");
+    wrk.create("data.csv", vec![svec!["value"], svec!["1"], svec!["2"]]);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--cardinality-method")
+        .arg("bogus")
+        .arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "should fail on invalid --cardinality-method value"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--cardinality-method") && stderr.contains("bogus"),
+        "error should mention the bad flag and value, got: {stderr}"
+    );
+}

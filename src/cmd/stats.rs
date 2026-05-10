@@ -216,6 +216,29 @@ stats options:
                                            * Results may differ slightly across runs with
                                              different --jobs values.
                               [default: exact]
+    --cardinality-method <m>  Algorithm used to compute the --cardinality column. Choices:
+                                exact  - track every unique value in a HashMap/Unsorted
+                                         (current behavior). O(cardinality) memory per
+                                         column. Subject to --mode-cardinality-cap, which
+                                         emits the ">=<n>" sentinel on overflow.
+                                approx - use HyperLogLog (Apache DataSketches port,
+                                         lg_k=12). O(1) memory per column (~5KB),
+                                         ~1.5% relative standard error.
+                                         Notes:
+                                           * --mode-cardinality-cap no longer affects the
+                                             cardinality column under approx; the ">=<n>"
+                                             sentinel is never emitted.
+                                           * The cap STILL governs mode/antimode tracking
+                                             (mode columns still emit "*HIGH_CARDINALITY"
+                                             on overflow).
+                                           * --infer-boolean forces exact (boolean
+                                             inference needs cardinality == 2 exactness);
+                                             a one-time warning is emitted.
+                                           * Reproducible across --jobs values: the
+                                             HLL union used at merge time is associative
+                                             and order-invariant, so chunk completion
+                                             order does not affect the final estimate.
+                              [default: exact]
     --mode-cardinality-cap <n>  Bound mode-tracking memory on high-cardinality columns.
                               When > 0, if a column's mode tracker grows past <n>, qsv
                               drops it and emits sentinel values instead of exact modes
@@ -230,6 +253,10 @@ stats options:
                                 * cardinality column: ">=<n>" (the ">=" prefix DOES break
                                   downstream parsers expecting a plain integer; cap is
                                   opt-in only).
+                              Under --cardinality-method approx, the cardinality column
+                              ignores this cap (HLL gives an approximate estimate at
+                              fixed memory, ~1.5% RSE) — only mode/antimode columns
+                              are gated.
                               Useful on wide tables with many ID/UUID/timestamp columns
                               where tracking exact cardinality is wasted work.
                               [default: 0]
@@ -402,6 +429,7 @@ pub struct Args {
     pub flag_percentiles:          bool,
     pub flag_percentile_list:      String,
     pub flag_quantile_method:      String,
+    pub flag_cardinality_method:   String,
     pub flag_mode_cardinality_cap: u64,
     pub flag_round:                u32,
     pub flag_nulls:                bool,
@@ -438,6 +466,7 @@ struct StatsArgs {
     flag_percentiles: bool,
     flag_percentile_list: String,
     flag_quantile_method: String,
+    flag_cardinality_method: String,
     flag_mode_cardinality_cap: u64,
     flag_round: u32,
     flag_nulls: bool,
@@ -527,6 +556,7 @@ impl StatsArgs {
             flag_percentiles: get_bool("flag_percentiles"),
             flag_percentile_list: get_str_or("flag_percentile_list", "5,10,40,60,90,95"),
             flag_quantile_method: get_str_or("flag_quantile_method", "exact"),
+            flag_cardinality_method: get_str_or("flag_cardinality_method", "exact"),
             flag_mode_cardinality_cap: get_u64("flag_mode_cardinality_cap"),
             flag_round: get_u64("flag_round") as u32,
             flag_nulls: get_bool("flag_nulls"),
@@ -716,6 +746,13 @@ const DAY_DECIMAL_PLACES: u32 = 5;
 
 // maximum number of output columns
 const MAX_STAT_COLUMNS: usize = 47;
+
+// HyperLogLog precision parameter for `--cardinality-method approx`. lg_k=12
+// gives ~1.5% relative standard error and ~5KB per column at the dense Hll8
+// representation. Used in `Stats::new` (per-row sketch construction) and in
+// `Commute::merge` (the transient `HllUnion` used to combine two sketches);
+// keep both call sites in lock-step by reading from this constant.
+const HLL_LG_K: u8 = 12;
 
 // the first N columns of each full stats record are used for the dataset
 // fingerprint hash. For the normal (non-`--typesonly`) output, N must equal
@@ -1026,10 +1063,34 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // cannot re-enable it.
     }
 
+    // validate --cardinality-method (default "exact"; canonicalize to lowercase).
+    // The match is value-only; which_stats() reads flag_cardinality_method directly,
+    // so no local boolean is needed here — we only need to reject invalid input
+    // and mutate the field for canonical comparison downstream.
+    args.flag_cardinality_method = args.flag_cardinality_method.to_lowercase();
+    match args.flag_cardinality_method.as_str() {
+        "exact" | "approx" => {},
+        other => {
+            return fail_incorrectusage_clierror!(
+                "Invalid --cardinality-method: {other}. Choose 'exact' or 'approx'."
+            );
+        },
+    }
+
     // inferring boolean requires inferring cardinality
     if args.flag_infer_boolean {
         if !args.flag_cardinality {
             args.flag_cardinality = true;
+        }
+
+        // boolean inference checks cardinality == 2 exactly; HLL's ~1.5% relative error
+        // would corrupt that comparison. Force exact and warn.
+        if args.flag_cardinality_method == "approx" {
+            wwarn!(
+                "--infer-boolean requires exact cardinality; forcing --cardinality-method exact \
+                 for this run."
+            );
+            args.flag_cardinality_method = "exact".to_string();
         }
 
         // validate boolean patterns
@@ -1059,6 +1120,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         flag_percentiles: args.flag_percentiles,
         flag_percentile_list: args.flag_percentile_list.clone(),
         flag_quantile_method: args.flag_quantile_method.clone(),
+        flag_cardinality_method: args.flag_cardinality_method.clone(),
         flag_mode_cardinality_cap: args.flag_mode_cardinality_cap,
         flag_round: args.flag_round,
         flag_nulls: args.flag_nulls,
@@ -2226,6 +2288,10 @@ impl Args {
         // but we double-guard mad here in case which_stats is called from a path that
         // skipped run()'s validation (e.g. tests).
         let approx_quantiles = self.flag_quantile_method.eq_ignore_ascii_case("approx");
+        // approx_cardinality selects the HyperLogLog engine for the cardinality column.
+        // run() forces this off when --infer-boolean is set (boolean inference needs
+        // cardinality == 2 exactness), so the flag is safe to read directly here.
+        let approx_cardinality = self.flag_cardinality_method.eq_ignore_ascii_case("approx");
         WhichStats {
             include_nulls: self.flag_nulls,
             sum: !self.flag_typesonly,
@@ -2240,6 +2306,7 @@ impl Args {
             percentiles: self.flag_everything || self.flag_percentiles,
             use_weights: self.flag_weight.is_some(),
             approx_quantiles,
+            approx_cardinality,
             mode_cardinality_cap: self.flag_mode_cardinality_cap,
             percentile_list: self.flag_percentile_list.clone().into_boxed_str(),
         }
@@ -2746,6 +2813,11 @@ struct WhichStats {
     /// exclusive with `mad` and `use_weights`; validation in the module-level `run(argv: ...)`
     /// function rejects the bad combinations.
     approx_quantiles:     bool,
+    /// When true, use the Apache DataSketches HyperLogLog engine for the cardinality
+    /// column instead of the exact `Unsorted<Vec<u8>>` / `HashMap<Vec<u8>, f64>` tracker.
+    /// `--infer-boolean` forces this off in `run()` (HLL's ~1.5% RSE breaks
+    /// `cardinality == 2` checks). Independent of `approx_quantiles`.
+    approx_cardinality:   bool,
     /// When > 0, drop mode-tracking once a column accumulates more than this many samples
     /// (Unsorted::len() for unweighted modes, HashMap::len() for weighted). 0 = unbounded
     /// (today's behavior). When the cap fires, output emits `*HIGH_CARDINALITY` for mode
@@ -2801,6 +2873,36 @@ impl PartialEq for TDigestSlot {
     }
 }
 
+/// Wrapper around `datasketches::hll::HllSketch` so the `Stats` struct can keep its
+/// derived `Clone`, `PartialEq`, `Serialize`, `Deserialize` impls without forcing the
+/// upstream `HllSketch` (which only derives `Clone`/`Debug`) to grow them.
+///
+/// `PartialEq` is a constant `true` for the same reason as `TDigestSlot`: two HLL sketches
+/// over the same multiset can yield slightly different internal states depending on
+/// register collisions, but their estimates converge — equality between sketches is not
+/// a useful test (Stats's `PartialEq` is used only in tests for non-sketch fields).
+///
+/// Serde is intentionally NOT implemented: the field is annotated `#[serde(skip)]` on
+/// `Stats::hll`, so the derived `Serialize`/`Deserialize` on `Stats` skip this field
+/// entirely. HLL state is intermediate; cache invalidation on `--cardinality-method`
+/// change rides on `StatsArgs` serialization instead.
+#[derive(Default)]
+struct HllSlot(Option<datasketches::hll::HllSketch>);
+
+impl Clone for HllSlot {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl PartialEq for HllSlot {
+    #[inline]
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
 #[allow(clippy::unsafe_derive_deserialize)]
 #[allow(clippy::struct_field_names)]
 #[repr(C, align(64))] // Align to cache line size for better performance
@@ -2849,6 +2951,14 @@ struct Stats {
     // values flow into `tdigest` instead of `unsorted_stats`.
     #[serde(skip)]
     tdigest:                 TDigestSlot,
+
+    // Approximate-cardinality engine. Independent of modes: when
+    // `which.approx_cardinality && which.cardinality`, every sample is fed to the HLL
+    // sketch (regardless of `--mode-cardinality-cap`), and `to_record` emits the HLL
+    // estimate in the cardinality column. Mode/antimode tracking is unaffected — they
+    // still come from `modes` / `weighted_modes` and obey the cap.
+    #[serde(skip)]
+    hll: HllSlot,
 
     // CACHE LINE 6+: Min/Max tracking (largest field, least cache-friendly)
     minmax: Option<TypedMinMax>, // 432 bytes - largest field, accessed less frequently
@@ -3376,7 +3486,13 @@ impl Stats {
         // if we dont't have a record count, we use a default of 10,000
         // to avoid allocating too much memory
         let record_count = *RECORD_COUNT.get().unwrap_or(&10_000) as usize;
-        if which.mode || which.cardinality {
+        // Under --cardinality-method approx with mode tracking off, the HLL sketch
+        // alone covers the cardinality column — skip allocating the exact modes
+        // tracker (Unsorted/HashMap) entirely. When mode/antimode are also requested
+        // we still need the exact tracker for those columns.
+        let need_exact_modes_tracker =
+            which.mode || (which.cardinality && !which.approx_cardinality);
+        if need_exact_modes_tracker {
             if use_weights {
                 // When using weights, weighted_modes handles both mode/antimode and cardinality
                 // computation, so we don't need the separate modes (Unsorted) tracker
@@ -3403,6 +3519,17 @@ impl Stats {
                 }
             }
         }
+        // HyperLogLog cardinality engine: allocate when --cardinality-method approx
+        // is selected AND cardinality output is enabled. HLL_LG_K (12) gives ~1.5%
+        // RSE with ~5KB per column. Hll8 stores 8 bits per register (no decode work
+        // on update); memory is the same order whether sparse or dense.
+        let mut hll = HllSlot::default();
+        if which.cardinality && which.approx_cardinality {
+            hll = HllSlot(Some(datasketches::hll::HllSketch::new(
+                HLL_LG_K,
+                datasketches::hll::HllType::Hll8,
+            )));
+        }
         Stats {
             typ: FieldType::default(),
             is_ascii: true,
@@ -3421,6 +3548,7 @@ impl Stats {
             unsorted_stats,
             weighted_unsorted_stats,
             tdigest,
+            hll,
             minmax,
         }
     }
@@ -3472,6 +3600,13 @@ impl Stats {
     #[allow(clippy::inline_always)]
     #[inline(always)]
     fn update_modes(&mut self, sample: &[u8], weight: f64) {
+        // HLL is independent of the mode-cardinality cap: feed every sample regardless
+        // of whether the exact mode tracker has been dropped. This is what lets us
+        // surface a precise cardinality estimate even when modes/antimodes are gated.
+        if let Some(hll_sketch) = self.hll.0.as_mut() {
+            hll_sketch.update(sample);
+        }
+
         // --mode-cardinality-cap: when set, drop the tracker once it grows past the cap
         // and surface the abandonment via `modes_dropped` so to_record() can emit
         // sentinels. cap == 0 (default) means unbounded — preserves today's behavior.
@@ -4056,6 +4191,26 @@ impl Stats {
                     }
                 },
             }
+        }
+
+        // --cardinality-method approx: override the cardinality and uniqueness_ratio
+        // slots with the HyperLogLog estimate. The mode/antimode slots (positions 2-7
+        // when present) are untouched — modes still come from the exact tracker,
+        // gated by --mode-cardinality-cap. Stats::new guarantees mc_pieces has
+        // positions 0 and 1 reserved when which.cardinality is true (every reachable
+        // branch above either pushes 2 cardinality fields or starts with EMPTY_STRING
+        // placeholders).
+        if self.which.cardinality
+            && let Some(hll_sketch) = self.hll.0.as_ref()
+            && mc_pieces.len() >= 2
+        {
+            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+            let est = hll_sketch.estimate().round() as u64;
+            cardinality = est;
+            mc_pieces[0] = itoa_buf.format(est).to_owned();
+            #[allow(clippy::cast_precision_loss)]
+            let ratio = (est as f64) / (record_count as f64);
+            mc_pieces[1] = util::round_num(ratio, round_places);
         }
 
         // type
@@ -4667,6 +4822,22 @@ impl Commute for Stats {
         // --quantile-method help text documents the caveat for users.
         match (&mut self.tdigest.0, other.tdigest.0) {
             (Some(s), Some(o)) => s.merge(&o),
+            (slot @ None, Some(o)) => *slot = Some(o),
+            _ => {},
+        }
+        // Merge HLL sketches via a transient HllUnion. Unlike t-digest, HLL union is
+        // associative and order-invariant — the merged estimate is bit-identical
+        // regardless of chunk completion order, so --jobs >= 2 is fully reproducible
+        // for the cardinality column under --cardinality-method approx. The lg_k
+        // here MUST match the HLL_LG_K used in `Stats::new`; reading from the same
+        // constant prevents a silent precision downgrade if one site is bumped.
+        match (&mut self.hll.0, other.hll.0) {
+            (Some(s), Some(o)) => {
+                let mut union = datasketches::hll::HllUnion::new(HLL_LG_K);
+                union.update(s);
+                union.update(&o);
+                *s = union.get_result(datasketches::hll::HllType::Hll8);
+            },
             (slot @ None, Some(o)) => *slot = Some(o),
             _ => {},
         }

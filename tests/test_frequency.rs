@@ -6422,3 +6422,294 @@ fn param_prop_frequency_desc_order(name: &str, rows: CsvData) -> bool {
     }
     true
 }
+
+#[test]
+fn frequency_sketch_method_frequent_items_top_k_within_envelope() {
+    // Build a Zipfian-ish fixture: 5 heavy hitters with counts [10000, 5000, 2500,
+    // 1250, 625] plus 1000 noise singletons. The FI sketch should rank the heavy
+    // hitters in the same order as the exact path; counts should be within ~5%.
+    let wrk = Workdir::new("frequency_sketch_method_frequent_items_top_k_within_envelope");
+    let mut rows: Vec<Vec<String>> = vec![vec!["v".to_string()]];
+    let heavy = [
+        ("h1", 10000usize),
+        ("h2", 5000),
+        ("h3", 2500),
+        ("h4", 1250),
+        ("h5", 625),
+    ];
+    for (label, n) in &heavy {
+        for _ in 0..*n {
+            rows.push(vec![(*label).to_string()]);
+        }
+    }
+    for i in 0..1000 {
+        rows.push(vec![format!("noise{i}")]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--sketch-method")
+        .arg("frequent_items")
+        .arg("--limit")
+        .arg("5")
+        .arg("--no-other")
+        .arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "frequency command failed: stderr = {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let _header = lines.next().unwrap();
+
+    // Parse: field,value,count,percentage,rank
+    let mut got: Vec<(String, u64)> = Vec::new();
+    for line in lines {
+        let cols: Vec<&str> = line.split(',').collect();
+        let value = cols[1].to_string();
+        let count: u64 = cols[2].parse().unwrap();
+        got.push((value, count));
+    }
+
+    assert_eq!(
+        got.len(),
+        5,
+        "FI top-5 should produce exactly 5 rows, got {got:?}"
+    );
+
+    // Top-K identity: the first 5 rows should be the 5 heavy hitters in count order.
+    for (i, (label, true_count)) in heavy.iter().enumerate() {
+        assert_eq!(
+            got[i].0,
+            *label,
+            "rank {} should be {label}, got {got:?}",
+            i + 1
+        );
+        let est = got[i].1;
+        let lo = ((*true_count as f64) * 0.95) as u64;
+        let hi = ((*true_count as f64) * 1.05) as u64;
+        assert!(
+            (lo..=hi).contains(&est),
+            "{label}: estimate {est} not within 5% of true count {true_count}"
+        );
+    }
+}
+
+#[test]
+fn frequency_sketch_method_frequent_items_with_asc_is_rejected() {
+    let wrk = Workdir::new("frequency_sketch_method_frequent_items_with_asc_is_rejected");
+    wrk.create("data.csv", vec![svec!["v"], svec!["a"], svec!["b"]]);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--sketch-method")
+        .arg("frequent_items")
+        .arg("--asc")
+        .arg("data.csv");
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "frequent_items + --asc should be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--asc") && stderr.contains("frequent_items"),
+        "error should mention both --asc and frequent_items, got: {stderr}"
+    );
+}
+
+#[test]
+fn frequency_sketch_method_frequent_items_with_weight_is_rejected() {
+    let wrk = Workdir::new("frequency_sketch_method_frequent_items_with_weight_is_rejected");
+    wrk.create(
+        "data.csv",
+        vec![svec!["v", "w"], svec!["a", "1"], svec!["b", "1"]],
+    );
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--sketch-method")
+        .arg("frequent_items")
+        .arg("--weight")
+        .arg("w")
+        .arg("data.csv");
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "frequent_items + --weight should be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--weight") || stderr.contains("weight"),
+        "error should mention weight rejection, got: {stderr}"
+    );
+}
+
+#[test]
+fn frequency_sketch_method_invalid_value_is_rejected() {
+    let wrk = Workdir::new("frequency_sketch_method_invalid_value_is_rejected");
+    wrk.create("data.csv", vec![svec!["v"], svec!["a"]]);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--sketch-method").arg("bogus").arg("data.csv");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--sketch-method") && stderr.contains("bogus"),
+        "error should mention bad flag and value, got: {stderr}"
+    );
+}
+
+#[test]
+fn frequency_sketch_method_invalid_map_size_is_rejected() {
+    let wrk = Workdir::new("frequency_sketch_method_invalid_map_size_is_rejected");
+    wrk.create("data.csv", vec![svec!["v"], svec!["a"]]);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--sketch-method")
+        .arg("frequent_items")
+        .arg("--sketch-map-size")
+        .arg("100")
+        .arg("data.csv");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--sketch-map-size") && stderr.contains("power of two"),
+        "error should mention --sketch-map-size and power of two, got: {stderr}"
+    );
+}
+
+#[test]
+fn frequency_sketch_method_frequent_items_other_row_emission() {
+    // Exercise the "Other" row: 5 heavy hitters [10000, 5000, 2500, 1250, 625]
+    // plus 1000 noise singletons, asking for top-3. Other should aggregate the
+    // remaining heavy hitters (h4, h5) plus the noise stream length.
+    let wrk = Workdir::new("frequency_sketch_method_frequent_items_other_row_emission");
+    let mut rows: Vec<Vec<String>> = vec![vec!["v".to_string()]];
+    let heavy = [
+        ("h1", 10000usize),
+        ("h2", 5000),
+        ("h3", 2500),
+        ("h4", 1250),
+        ("h5", 625),
+    ];
+    for (label, n) in &heavy {
+        for _ in 0..*n {
+            rows.push(vec![(*label).to_string()]);
+        }
+    }
+    for i in 0..1000 {
+        rows.push(vec![format!("noise{i}")]);
+    }
+    let total: u64 = heavy.iter().map(|(_, n)| *n as u64).sum::<u64>() + 1000;
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--sketch-method")
+        .arg("frequent_items")
+        .arg("--limit")
+        .arg("3")
+        .arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "frequency command failed: stderr = {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let _header = lines.next().unwrap();
+
+    let parsed: Vec<(String, String, String, String)> = lines
+        .map(|line| {
+            let cols: Vec<&str> = line.split(',').collect();
+            (
+                cols[1].to_string(),
+                cols[2].to_string(),
+                cols[3].to_string(),
+                cols[4].to_string(),
+            )
+        })
+        .collect();
+
+    // Find the Other row. Use unwrap_or_else+panic! so the {parsed:?} format
+    // string is actually interpolated on failure — `expect` takes a plain &str
+    // and would print the placeholder verbatim, hiding the diagnostic context.
+    let other_row = parsed
+        .iter()
+        .find(|(v, _, _, _)| v == "Other")
+        .unwrap_or_else(|| {
+            panic!(
+                "Other row must be emitted by default (no --no-other given) — current rows: \
+                 {parsed:?}"
+            )
+        });
+    let other_count: u64 = other_row
+        .1
+        .parse()
+        .expect("Other count must be a plain integer (no decimals/scientific notation)");
+    let other_rank_str = &other_row.3;
+
+    // Rank must be the integer "0" (sentinel for synthetic rows like Other and
+    // *ALL_UNIQUE) — matching the exact path's Other-row convention. Regression
+    // guard for both review findings: the Medium float-formatter bug (would have
+    // emitted "4.0"/"4e0") and the divergence from exact's rank-0 sentinel
+    // (would have emitted "4").
+    assert_eq!(
+        other_rank_str, "0",
+        "Other rank must render as integer '0' to match the exact path's synthetic-row \
+         convention, got '{other_rank_str}'"
+    );
+
+    // Other count = total_weight - kept_top3_estimates ≈ 1250 + 625 + 1000 noise = 2875.
+    // FI estimates can be slightly off; allow a 5% slack.
+    let true_other: u64 = heavy[3..].iter().map(|(_, n)| *n as u64).sum::<u64>() + 1000;
+    let lo = ((true_other as f64) * 0.95) as u64;
+    let hi = ((true_other as f64) * 1.05) as u64;
+    assert!(
+        (lo..=hi).contains(&other_count),
+        "Other count {other_count} not within 5% of expected ~{true_other} (total={total})"
+    );
+}
+
+#[test]
+fn frequency_sketch_method_frequent_items_with_other_sorted_is_rejected() {
+    let wrk = Workdir::new("frequency_sketch_method_frequent_items_with_other_sorted_is_rejected");
+    wrk.create("data.csv", vec![svec!["v"], svec!["a"], svec!["b"]]);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--sketch-method")
+        .arg("frequent_items")
+        .arg("--other-sorted")
+        .arg("data.csv");
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "frequent_items + --other-sorted should be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--other-sorted") && stderr.contains("frequent_items"),
+        "error should mention both --other-sorted and frequent_items, got: {stderr}"
+    );
+}
+
+#[test]
+fn frequency_sketch_method_frequent_items_with_null_sorted_is_rejected() {
+    let wrk = Workdir::new("frequency_sketch_method_frequent_items_with_null_sorted_is_rejected");
+    wrk.create("data.csv", vec![svec!["v"], svec!["a"], svec!["b"]]);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--sketch-method")
+        .arg("frequent_items")
+        .arg("--null-sorted")
+        .arg("data.csv");
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "frequent_items + --null-sorted should be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--null-sorted") && stderr.contains("frequent_items"),
+        "error should mention both --null-sorted and frequent_items, got: {stderr}"
+    );
+}

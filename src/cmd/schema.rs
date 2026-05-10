@@ -695,6 +695,8 @@ fn get_unique_values(
         flag_no_stats: false,
         flag_toon: false,
         flag_weight: None,
+        flag_sketch_method: "exact".to_string(),
+        flag_sketch_map_size: 4096,
     };
 
     // Bypass the stats cache while running our nested frequency pass.

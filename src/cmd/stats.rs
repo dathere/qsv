@@ -216,6 +216,18 @@ stats options:
                                            * Results may differ slightly across runs with
                                              different --jobs values.
                               [default: exact]
+    --mode-cardinality-cap <n>  Bound mode-tracking memory on high-cardinality columns.
+                              When > 0, if a column accumulates more than <n> mode samples
+                              (~ row count for unique-per-row "ID" columns), qsv drops the
+                              mode tracker for that column and emits sentinel values
+                              instead of exact modes/cardinality:
+                                * mode columns: "*HIGH_CARDINALITY"
+                                * cardinality column: ">=<n>" (the ">=" prefix DOES break
+                                  downstream parsers expecting a plain integer; cap is
+                                  opt-in only).
+                              Useful on wide tables with many ID/UUID/timestamp columns
+                              where tracking exact cardinality is wasted work.
+                              [default: 0]
 
     --round <decimal_places>  Round statistics to <decimal_places>. Rounding is done following
                               Midpoint Nearest Even (aka "Bankers Rounding") rule.
@@ -371,35 +383,36 @@ use crate::{
 #[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Deserialize)]
 pub struct Args {
-    pub arg_input:             Option<String>,
-    pub flag_select:           SelectColumns,
-    pub flag_everything:       bool,
-    pub flag_typesonly:        bool,
-    pub flag_infer_boolean:    bool,
-    pub flag_boolean_patterns: String,
-    pub flag_mode:             bool,
-    pub flag_cardinality:      bool,
-    pub flag_median:           bool,
-    pub flag_mad:              bool,
-    pub flag_quartiles:        bool,
-    pub flag_percentiles:      bool,
-    pub flag_percentile_list:  String,
-    pub flag_quantile_method:  String,
-    pub flag_round:            u32,
-    pub flag_nulls:            bool,
-    pub flag_infer_dates:      bool,
-    pub flag_dates_whitelist:  String,
-    pub flag_prefer_dmy:       bool,
-    pub flag_force:            bool,
-    pub flag_jobs:             Option<usize>,
-    pub flag_stats_jsonl:      bool,
-    pub flag_cache_threshold:  isize,
-    pub flag_output:           Option<String>,
-    pub flag_no_headers:       bool,
-    pub flag_delimiter:        Option<Delimiter>,
-    pub flag_memcheck:         bool,
-    pub flag_vis_whitespace:   bool,
-    pub flag_weight:           Option<String>,
+    pub arg_input:                 Option<String>,
+    pub flag_select:               SelectColumns,
+    pub flag_everything:           bool,
+    pub flag_typesonly:            bool,
+    pub flag_infer_boolean:        bool,
+    pub flag_boolean_patterns:     String,
+    pub flag_mode:                 bool,
+    pub flag_cardinality:          bool,
+    pub flag_median:               bool,
+    pub flag_mad:                  bool,
+    pub flag_quartiles:            bool,
+    pub flag_percentiles:          bool,
+    pub flag_percentile_list:      String,
+    pub flag_quantile_method:      String,
+    pub flag_mode_cardinality_cap: u64,
+    pub flag_round:                u32,
+    pub flag_nulls:                bool,
+    pub flag_infer_dates:          bool,
+    pub flag_dates_whitelist:      String,
+    pub flag_prefer_dmy:           bool,
+    pub flag_force:                bool,
+    pub flag_jobs:                 Option<usize>,
+    pub flag_stats_jsonl:          bool,
+    pub flag_cache_threshold:      isize,
+    pub flag_output:               Option<String>,
+    pub flag_no_headers:           bool,
+    pub flag_delimiter:            Option<Delimiter>,
+    pub flag_memcheck:             bool,
+    pub flag_vis_whitespace:       bool,
+    pub flag_weight:               Option<String>,
 }
 
 // this struct is used to serialize/deserialize the stats to
@@ -407,39 +420,40 @@ pub struct Args {
 // if we can skip recomputing stats.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Default)]
 struct StatsArgs {
-    arg_input:             String,
-    flag_select:           String,
-    flag_everything:       bool,
-    flag_typesonly:        bool,
-    flag_infer_boolean:    bool,
-    flag_mode:             bool,
-    flag_cardinality:      bool,
-    flag_median:           bool,
-    flag_mad:              bool,
-    flag_quartiles:        bool,
-    flag_percentiles:      bool,
-    flag_percentile_list:  String,
-    flag_quantile_method:  String,
-    flag_round:            u32,
-    flag_nulls:            bool,
-    flag_infer_dates:      bool,
-    flag_dates_whitelist:  String,
-    flag_prefer_dmy:       bool,
-    flag_no_headers:       bool,
-    flag_delimiter:        String,
-    flag_output_snappy:    bool,
-    canonical_input_path:  String,
-    canonical_stats_path:  String,
-    record_count:          u64,
-    date_generated:        String,
-    compute_duration_ms:   u64,
-    qsv_version:           String,
-    flag_weight:           String,
+    arg_input: String,
+    flag_select: String,
+    flag_everything: bool,
+    flag_typesonly: bool,
+    flag_infer_boolean: bool,
+    flag_mode: bool,
+    flag_cardinality: bool,
+    flag_median: bool,
+    flag_mad: bool,
+    flag_quartiles: bool,
+    flag_percentiles: bool,
+    flag_percentile_list: String,
+    flag_quantile_method: String,
+    flag_mode_cardinality_cap: u64,
+    flag_round: u32,
+    flag_nulls: bool,
+    flag_infer_dates: bool,
+    flag_dates_whitelist: String,
+    flag_prefer_dmy: bool,
+    flag_no_headers: bool,
+    flag_delimiter: String,
+    flag_output_snappy: bool,
+    canonical_input_path: String,
+    canonical_stats_path: String,
+    record_count: u64,
+    date_generated: String,
+    compute_duration_ms: u64,
+    qsv_version: String,
+    flag_weight: String,
     flag_boolean_patterns: String,
-    flag_vis_whitespace:   bool,
-    field_count:           u64,
-    filesize_bytes:        u64,
-    hash:                  FileHash,
+    flag_vis_whitespace: bool,
+    field_count: u64,
+    filesize_bytes: u64,
+    hash: FileHash,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -495,39 +509,40 @@ impl StatsArgs {
         };
 
         Ok(Self {
-            arg_input:             get_str("arg_input"),
-            flag_select:           get_str("flag_select"),
-            flag_everything:       get_bool("flag_everything"),
-            flag_typesonly:        get_bool("flag_typesonly"),
-            flag_infer_boolean:    get_bool("flag_infer_boolean"),
-            flag_mode:             get_bool("flag_mode"),
-            flag_cardinality:      get_bool("flag_cardinality"),
-            flag_median:           get_bool("flag_median"),
-            flag_mad:              get_bool("flag_mad"),
-            flag_quartiles:        get_bool("flag_quartiles"),
-            flag_percentiles:      get_bool("flag_percentiles"),
-            flag_percentile_list:  get_str_or("flag_percentile_list", "5,10,40,60,90,95"),
-            flag_quantile_method:  get_str_or("flag_quantile_method", "exact"),
-            flag_round:            get_u64("flag_round") as u32,
-            flag_nulls:            get_bool("flag_nulls"),
-            flag_infer_dates:      get_bool("flag_infer_dates"),
-            flag_dates_whitelist:  get_str("flag_dates_whitelist"),
-            flag_prefer_dmy:       get_bool("flag_prefer_dmy"),
-            flag_no_headers:       get_bool("flag_no_headers"),
-            flag_delimiter:        get_str("flag_delimiter"),
-            flag_output_snappy:    get_bool("flag_output_snappy"),
-            canonical_input_path:  get_str("canonical_input_path"),
-            canonical_stats_path:  get_str("canonical_stats_path"),
-            record_count:          get_u64("record_count"),
-            date_generated:        get_str("date_generated"),
-            compute_duration_ms:   get_u64("compute_duration_ms"),
-            qsv_version:           get_str("qsv_version"),
-            flag_weight:           get_str("flag_weight"),
+            arg_input: get_str("arg_input"),
+            flag_select: get_str("flag_select"),
+            flag_everything: get_bool("flag_everything"),
+            flag_typesonly: get_bool("flag_typesonly"),
+            flag_infer_boolean: get_bool("flag_infer_boolean"),
+            flag_mode: get_bool("flag_mode"),
+            flag_cardinality: get_bool("flag_cardinality"),
+            flag_median: get_bool("flag_median"),
+            flag_mad: get_bool("flag_mad"),
+            flag_quartiles: get_bool("flag_quartiles"),
+            flag_percentiles: get_bool("flag_percentiles"),
+            flag_percentile_list: get_str_or("flag_percentile_list", "5,10,40,60,90,95"),
+            flag_quantile_method: get_str_or("flag_quantile_method", "exact"),
+            flag_mode_cardinality_cap: get_u64("flag_mode_cardinality_cap"),
+            flag_round: get_u64("flag_round") as u32,
+            flag_nulls: get_bool("flag_nulls"),
+            flag_infer_dates: get_bool("flag_infer_dates"),
+            flag_dates_whitelist: get_str("flag_dates_whitelist"),
+            flag_prefer_dmy: get_bool("flag_prefer_dmy"),
+            flag_no_headers: get_bool("flag_no_headers"),
+            flag_delimiter: get_str("flag_delimiter"),
+            flag_output_snappy: get_bool("flag_output_snappy"),
+            canonical_input_path: get_str("canonical_input_path"),
+            canonical_stats_path: get_str("canonical_stats_path"),
+            record_count: get_u64("record_count"),
+            date_generated: get_str("date_generated"),
+            compute_duration_ms: get_u64("compute_duration_ms"),
+            qsv_version: get_str("qsv_version"),
+            flag_weight: get_str("flag_weight"),
             flag_boolean_patterns: get_str("flag_boolean_patterns"),
-            flag_vis_whitespace:   get_bool("flag_vis_whitespace"),
-            field_count:           get_u64("field_count"),
-            filesize_bytes:        get_u64("filesize_bytes"),
-            hash:                  get_hash(),
+            flag_vis_whitespace: get_bool("flag_vis_whitespace"),
+            field_count: get_u64("field_count"),
+            filesize_bytes: get_u64("filesize_bytes"),
+            hash: get_hash(),
         })
     }
 }
@@ -1026,26 +1041,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // save the current args, we'll use it to generate
     // the stats.csv.json file
     let mut current_stats_args = StatsArgs {
-        arg_input:             args.arg_input.clone().unwrap_or_default(),
-        flag_select:           format!("{:?}", args.flag_select),
-        flag_everything:       args.flag_everything,
-        flag_typesonly:        args.flag_typesonly,
-        flag_infer_boolean:    args.flag_infer_boolean,
-        flag_mode:             args.flag_mode,
-        flag_cardinality:      args.flag_cardinality,
-        flag_median:           args.flag_median,
-        flag_mad:              args.flag_mad,
-        flag_quartiles:        args.flag_quartiles,
-        flag_percentiles:      args.flag_percentiles,
-        flag_percentile_list:  args.flag_percentile_list.clone(),
-        flag_quantile_method:  args.flag_quantile_method.clone(),
-        flag_round:            args.flag_round,
-        flag_nulls:            args.flag_nulls,
-        flag_infer_dates:      args.flag_infer_dates,
-        flag_dates_whitelist:  args.flag_dates_whitelist.clone(),
-        flag_prefer_dmy:       args.flag_prefer_dmy,
-        flag_no_headers:       args.flag_no_headers,
-        flag_delimiter:        args
+        arg_input: args.arg_input.clone().unwrap_or_default(),
+        flag_select: format!("{:?}", args.flag_select),
+        flag_everything: args.flag_everything,
+        flag_typesonly: args.flag_typesonly,
+        flag_infer_boolean: args.flag_infer_boolean,
+        flag_mode: args.flag_mode,
+        flag_cardinality: args.flag_cardinality,
+        flag_median: args.flag_median,
+        flag_mad: args.flag_mad,
+        flag_quartiles: args.flag_quartiles,
+        flag_percentiles: args.flag_percentiles,
+        flag_percentile_list: args.flag_percentile_list.clone(),
+        flag_quantile_method: args.flag_quantile_method.clone(),
+        flag_mode_cardinality_cap: args.flag_mode_cardinality_cap,
+        flag_round: args.flag_round,
+        flag_nulls: args.flag_nulls,
+        flag_infer_dates: args.flag_infer_dates,
+        flag_dates_whitelist: args.flag_dates_whitelist.clone(),
+        flag_prefer_dmy: args.flag_prefer_dmy,
+        flag_no_headers: args.flag_no_headers,
+        flag_delimiter: args
             .flag_delimiter
             .as_ref()
             .map(|d| (d.as_byte() as char).to_string())
@@ -1053,27 +1069,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // when we write to stdout, we don't use snappy compression
         // when we write to a file with the --output option, we use
         // snappy compression if the file ends with ".sz"
-        flag_output_snappy:    if stdout_output_flag {
+        flag_output_snappy: if stdout_output_flag {
             false
         } else {
             let p = args.flag_output.clone().unwrap();
             p.to_ascii_lowercase().ends_with(".sz")
         },
-        canonical_input_path:  String::new(),
-        canonical_stats_path:  String::new(),
-        record_count:          0,
-        date_generated:        String::new(),
-        compute_duration_ms:   0,
+        canonical_input_path: String::new(),
+        canonical_stats_path: String::new(),
+        record_count: 0,
+        date_generated: String::new(),
+        compute_duration_ms: 0,
         // save the qsv version in the stats.csv.json file
         // so cached stats are automatically invalidated
         // when the qsv version changes
-        qsv_version:           env!("CARGO_PKG_VERSION").to_string(),
-        flag_weight:           args.flag_weight.clone().unwrap_or_default(),
+        qsv_version: env!("CARGO_PKG_VERSION").to_string(),
+        flag_weight: args.flag_weight.clone().unwrap_or_default(),
         flag_boolean_patterns: args.flag_boolean_patterns.clone(),
-        flag_vis_whitespace:   args.flag_vis_whitespace,
-        field_count:           0,
-        filesize_bytes:        0,
-        hash:                  FileHash::default(),
+        flag_vis_whitespace: args.flag_vis_whitespace,
+        field_count: 0,
+        filesize_bytes: 0,
+        hash: FileHash::default(),
     };
 
     // create a temporary file to store the <FILESTEM>.stats.csv file
@@ -2219,6 +2235,7 @@ impl Args {
             percentiles: self.flag_everything || self.flag_percentiles,
             use_weights: self.flag_weight.is_some(),
             approx_quantiles,
+            mode_cardinality_cap: self.flag_mode_cardinality_cap,
             percentile_list: self.flag_percentile_list.clone().into_boxed_str(),
         }
     }
@@ -2707,24 +2724,29 @@ fn resolve_sniff_whitelist(input_path: &std::path::Path) -> CliResult<String> {
 
 #[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
 struct WhichStats {
-    include_nulls:    bool,
-    sum:              bool,
-    range:            bool,
-    dist:             bool,
-    cardinality:      bool,
-    median:           bool,
-    mad:              bool,
-    quartiles:        bool,
-    mode:             bool,
-    typesonly:        bool,
-    percentiles:      bool,
-    use_weights:      bool,
+    include_nulls:        bool,
+    sum:                  bool,
+    range:                bool,
+    dist:                 bool,
+    cardinality:          bool,
+    median:               bool,
+    mad:                  bool,
+    quartiles:            bool,
+    mode:                 bool,
+    typesonly:            bool,
+    percentiles:          bool,
+    use_weights:          bool,
     /// When true, use the Apache DataSketches t-digest engine for median, quartiles, and
     /// custom percentiles instead of the exact (sort-based) `Unsorted<f64>` engine. Mutually
     /// exclusive with `mad` and `use_weights`; validation in `Args::run()` rejects the bad
     /// combinations.
-    approx_quantiles: bool,
-    percentile_list:  Box<str>,
+    approx_quantiles:     bool,
+    /// When > 0, drop mode-tracking once a column accumulates more than this many samples
+    /// (Unsorted::len() for unweighted modes, HashMap::len() for weighted). 0 = unbounded
+    /// (today's behavior). When the cap fires, output emits `*HIGH_CARDINALITY` for mode
+    /// fields and `>=<cap>` for cardinality.
+    mode_cardinality_cap: u64,
+    percentile_list:      Box<str>,
 }
 
 impl Commute for WhichStats {
@@ -2795,6 +2817,9 @@ struct Stats {
     // Group small, frequently accessed fields together
     typ:           FieldType, // 1 byte - accessed in every add() call
     is_ascii:      bool,      // 1 byte - accessed for strings
+    /// Set when --mode-cardinality-cap fires and this column's `modes`/`weighted_modes`
+    /// tracker is dropped mid-pass. Output uses `*HIGH_CARDINALITY` / `>=<cap>` sentinels.
+    modes_dropped: bool, // 1 byte
     max_precision: u16,       // 2 bytes - accessed for floats
 
     // 4 bytes padding (automatic with repr(C) for 8-byte alignment)
@@ -3388,6 +3413,7 @@ impl Stats {
         Stats {
             typ: FieldType::default(),
             is_ascii: true,
+            modes_dropped: false,
             max_precision: 0,
             nullcount: 0,
             sum_stotlen: 0,
@@ -3453,8 +3479,17 @@ impl Stats {
     #[allow(clippy::inline_always)]
     #[inline(always)]
     fn update_modes(&mut self, sample: &[u8], weight: f64) {
+        // --mode-cardinality-cap: when set, drop the tracker once it grows past the cap
+        // and surface the abandonment via `modes_dropped` so to_record() can emit
+        // sentinels. cap == 0 (default) means unbounded — preserves today's behavior.
+        let cap = self.which.mode_cardinality_cap;
         if let Some(ref mut wm) = self.weighted_modes {
-            // Weighted modes: accumulate weights per value
+            // Weighted modes: HashMap::len() == unique-values seen (true cardinality).
+            if cap > 0 && wm.len() as u64 > cap {
+                self.weighted_modes = None;
+                self.modes_dropped = true;
+                return;
+            }
             // Use get_mut first to avoid heap-allocating sample.to_vec() when key already exists
             if let Some(val) = wm.get_mut(sample) {
                 *val += weight;
@@ -3462,6 +3497,13 @@ impl Stats {
                 wm.insert(sample.to_vec(), weight);
             }
         } else if let Some(v) = self.modes.as_mut() {
+            // Unweighted modes: Unsorted::len() == total samples added (memory cost). This
+            // bounds memory exactly; the resulting cardinality is also bounded by len.
+            if cap > 0 && v.len() as u64 > cap {
+                self.modes = None;
+                self.modes_dropped = true;
+                return;
+            }
             v.add_bytes(sample);
         }
     }
@@ -3765,8 +3807,35 @@ impl Stats {
         let mut cardinality = 0;
         let mut mc_pieces: Vec<String> = Vec::new();
 
-        // Check if we should use weighted modes/antimodes
-        if let Some(ref weighted_modes_map) = self.weighted_modes {
+        // --mode-cardinality-cap: if this column's mode tracker was dropped during
+        // ingestion (or merge), emit sentinels instead of the normal cardinality / mode /
+        // antimode fields. cap == 0 (default) means modes_dropped is never set, so this
+        // branch is dead code on the default path.
+        if self.modes_dropped {
+            let cap = self.which.mode_cardinality_cap;
+            // Cardinality is unknown; emit ">=cap" so downstream parsers can detect that
+            // the value is approximate (a leading ">=" trips integer parsers cleanly).
+            if self.which.cardinality {
+                mc_pieces.push(format!(">={cap}"));
+                // uniqueness_ratio is also unknown.
+                mc_pieces.push(EMPTY_STRING);
+            }
+            if self.which.mode {
+                mc_pieces.extend_from_slice(&[
+                    "*HIGH_CARDINALITY".to_string(),
+                    EMPTY_STRING,
+                    EMPTY_STRING,
+                    "*HIGH_CARDINALITY".to_string(),
+                    EMPTY_STRING,
+                    EMPTY_STRING,
+                ]);
+            }
+            // Skip the rest of the cardinality / modes / antimodes machinery; jump to the
+            // record.push_field() loop at the bottom by using an early-exit pattern.
+            // We do this by faking the "no tracker" path: leave weighted_modes and modes
+            // both as None (already true here), then fall through. The if/else below
+            // handles the empty case cleanly.
+        } else if let Some(ref weighted_modes_map) = self.weighted_modes {
             // Weighted modes/antimodes computation
             mc_pieces.reserve(8);
 
@@ -4586,6 +4655,11 @@ impl Commute for Stats {
     fn merge(&mut self, other: Stats) {
         self.typ.merge(other.typ);
         self.is_ascii &= other.is_ascii;
+        // modes_dropped is sticky: if either chunk gave up on mode-tracking, the merged
+        // result also gives up (we can't recover what was dropped). We clear modes /
+        // weighted_modes AFTER the standard merges below to keep the Commute trait happy.
+        let modes_dropped_now = self.modes_dropped || other.modes_dropped;
+        self.modes_dropped = modes_dropped_now;
         self.max_precision = self.max_precision.max(other.max_precision);
         self.which.merge(other.which);
         self.nullcount += other.nullcount;
@@ -4632,6 +4706,29 @@ impl Commute for Stats {
             }
         } else if other.weighted_modes.is_some() {
             self.weighted_modes = other.weighted_modes;
+        }
+
+        // --mode-cardinality-cap: if either chunk dropped its tracker, the post-merge
+        // result must also be empty (we can't reconstruct the lost samples). Also re-check
+        // the cap on the merged result, since two chunks below the cap can together
+        // cross it.
+        if self.modes_dropped {
+            self.modes = None;
+            self.weighted_modes = None;
+        } else {
+            let cap = self.which.mode_cardinality_cap;
+            if cap > 0 {
+                let over = self.modes.as_ref().is_some_and(|m| m.len() as u64 > cap)
+                    || self
+                        .weighted_modes
+                        .as_ref()
+                        .is_some_and(|m| m.len() as u64 > cap);
+                if over {
+                    self.modes = None;
+                    self.weighted_modes = None;
+                    self.modes_dropped = true;
+                }
+            }
         }
 
         self.total_weight += other.total_weight;

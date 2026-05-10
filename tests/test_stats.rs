@@ -6222,3 +6222,130 @@ fn stats_quantile_method_exact_is_default_and_byte_identical() {
         "Default --quantile-method must match explicit 'exact'"
     );
 }
+
+// --- --mode-cardinality-cap tests ---------------------------------------------------
+
+#[test]
+fn stats_mode_cardinality_cap_default_is_unbounded() {
+    // The default (cap=0) must produce byte-identical output to omitting the flag.
+    let wrk = Workdir::new("stats_mode_cardinality_cap_default_is_unbounded");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id"],
+            svec!["1"],
+            svec!["1"],
+            svec!["2"],
+            svec!["2"],
+            svec!["3"],
+        ],
+    );
+
+    let mut cmd_default = wrk.command("stats");
+    cmd_default
+        .arg("--cardinality")
+        .arg("--mode")
+        .arg("data.csv");
+    let default_out: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_default);
+
+    let mut cmd_zero = wrk.command("stats");
+    cmd_zero
+        .arg("--cardinality")
+        .arg("--mode")
+        .arg("--mode-cardinality-cap")
+        .arg("0")
+        .arg("data.csv");
+    let zero_out: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_zero);
+
+    assert_eq!(
+        default_out, zero_out,
+        "Default behavior must be byte-identical to --mode-cardinality-cap 0"
+    );
+}
+
+#[test]
+fn stats_mode_cardinality_cap_drops_high_cardinality_column() {
+    // Cap at 3 with 10 rows must trip the dropper. Output should contain the
+    // sentinel values and NOT the normal mode/cardinality fields.
+    let wrk = Workdir::new("stats_mode_cardinality_cap_drops_high_cardinality_column");
+    let mut rows: Vec<Vec<String>> = vec![vec!["id".to_string()]];
+    for i in 1..=10_usize {
+        rows.push(vec![i.to_string()]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--mode")
+        .arg("--mode-cardinality-cap")
+        .arg("3")
+        .arg("--jobs")
+        .arg("1") // pin to deterministic single-thread merge for the assertion
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let row = &got[1];
+    let card_idx = headers
+        .iter()
+        .position(|h| h == "cardinality")
+        .expect("cardinality column should exist");
+    let mode_idx = headers
+        .iter()
+        .position(|h| h == "mode")
+        .expect("mode column should exist");
+    let antimode_idx = headers
+        .iter()
+        .position(|h| h == "antimode")
+        .expect("antimode column should exist");
+
+    assert_eq!(
+        row[card_idx], ">=3",
+        "cardinality should be the sentinel >=<cap>"
+    );
+    assert_eq!(
+        row[mode_idx], "*HIGH_CARDINALITY",
+        "mode should be the *HIGH_CARDINALITY sentinel"
+    );
+    assert_eq!(
+        row[antimode_idx], "*HIGH_CARDINALITY",
+        "antimode should be the *HIGH_CARDINALITY sentinel"
+    );
+}
+
+#[test]
+fn stats_mode_cardinality_cap_preserves_low_cardinality_column() {
+    // Cap large enough that a low-cardinality column does NOT trip the dropper.
+    let wrk = Workdir::new("stats_mode_cardinality_cap_preserves_low_cardinality_column");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["category"],
+            svec!["A"],
+            svec!["A"],
+            svec!["B"],
+            svec!["B"],
+            svec!["C"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--mode")
+        .arg("--mode-cardinality-cap")
+        .arg("1000")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let row = &got[1];
+    let card_idx = headers.iter().position(|h| h == "cardinality").unwrap();
+
+    assert_eq!(
+        row[card_idx], "3",
+        "cardinality should be exact (3) when cap is not tripped, got {:?}",
+        row[card_idx]
+    );
+    assert!(
+        !row.iter().any(|c| c.contains("HIGH_CARDINALITY")),
+        "no row should contain the HIGH_CARDINALITY sentinel when cap is not tripped: {row:?}"
+    );
+}

@@ -20,6 +20,7 @@
   - [Performance & Caching](#performance--caching)
   - [Approximate Algorithms (Opt-In)](#approximate-algorithms-opt-in)
 - [moarstats](#moarstats)
+  - [Count Reference](#count-reference)
   - [Derived Statistics](#derived-statistics)
   - [Advanced Statistics](#advanced-statistics)
   - [Bivariate Statistics](#bivariate-statistics)
@@ -62,21 +63,64 @@ The command supports various caching options to improve performance on subsequen
 
 ### Streaming vs Non-Streaming Statistics
 
-**Streaming Statistics** (computed in constant memory, always included by default):
-- Metadata: `field`, `type`, `is_ascii`
-- Descriptive: `sum`, `min`, `max`, `range`, `sort_order`, `sortiness`
-- String length: `min_length`, `max_length`, `sum_length`, `avg_length`, `stddev_length`, `variance_length`, `cv_length`
-- Central tendency: `mean`, `sem`, `geometric_mean`, `harmonic_mean`, `stddev`, `variance`, `cv`
-- Quality: `nullcount`, `n_negative`, `n_zero`, `n_positive`, `max_precision`, `sparsity`
+**Streaming Statistics** (computed in constant memory, always emitted alongside the `field`/`type` identifier columns) — **27 stats**:
 
-**Non-Streaming Statistics** (require loading data into memory, must be enabled explicitly):
-- `cardinality`, `uniqueness_ratio`
-- `mode`, `mode_count`, `mode_occurrences`, `antimode`, `antimode_count`, `antimode_occurrences`
-- `median`, `mad`
-- `q1`, `q2_median`, `q3`, `iqr`, `lower_outer_fence`, `lower_inner_fence`, `upper_inner_fence`, `upper_outer_fence`, `skewness`
-- `percentiles`
+| #  | Identifier | Group |
+|---:|:---|:---|
+|  1 | `is_ascii` | Metadata |
+|  2 | `sum` | Descriptive |
+|  3 | `min` | Descriptive |
+|  4 | `max` | Descriptive |
+|  5 | `range` | Descriptive |
+|  6 | `sort_order` | Descriptive |
+|  7 | `sortiness` | Descriptive |
+|  8 | `min_length` | String length |
+|  9 | `max_length` | String length |
+| 10 | `sum_length` | String length |
+| 11 | `avg_length` | String length |
+| 12 | `stddev_length` | String length |
+| 13 | `variance_length` | String length |
+| 14 | `cv_length` | String length |
+| 15 | `mean` | Central tendency |
+| 16 | `sem` | Central tendency |
+| 17 | `geometric_mean` | Central tendency |
+| 18 | `harmonic_mean` | Central tendency |
+| 19 | `stddev` | Central tendency |
+| 20 | `variance` | Central tendency |
+| 21 | `cv` | Central tendency |
+| 22 | `nullcount` | Quality |
+| 23 | `n_negative` | Quality |
+| 24 | `n_zero` | Quality |
+| 25 | `n_positive` | Quality |
+| 26 | `max_precision` | Quality |
+| 27 | `sparsity` | Quality |
 
-Non-streaming statistics use memory-aware chunking for large files, dynamically calculating chunk size based on available memory and record sampling.
+**Non-Streaming Statistics** (require loading data into memory, opt-in via flag or `--everything`) — **20 stats**:
+
+| #  | Identifier | Flag |
+|---:|:---|:---|
+| 28 | `median` | `--median` (suppressed when `--quartiles` is also on; supplied by `q2_median` instead) |
+| 29 | `mad` | `--mad` |
+| 30 | `lower_outer_fence` | `--quartiles` |
+| 31 | `lower_inner_fence` | `--quartiles` |
+| 32 | `q1` | `--quartiles` |
+| 33 | `q2_median` | `--quartiles` |
+| 34 | `q3` | `--quartiles` |
+| 35 | `iqr` | `--quartiles` |
+| 36 | `upper_inner_fence` | `--quartiles` |
+| 37 | `upper_outer_fence` | `--quartiles` |
+| 38 | `skewness` | `--quartiles` |
+| 39 | `cardinality` | `--cardinality` |
+| 40 | `uniqueness_ratio` | `--cardinality` |
+| 41 | `mode` | `--mode` |
+| 42 | `mode_count` | `--mode` |
+| 43 | `mode_occurrences` | `--mode` |
+| 44 | `antimode` | `--mode` |
+| 45 | `antimode_count` | `--mode` |
+| 46 | `antimode_occurrences` | `--mode` |
+| 47 | `percentiles` | `--percentiles` (single column containing the comma-separated values listed in `--percentile-list`) |
+
+**Total: 47 statistics** (27 streaming + 20 non-streaming, beyond the `field`/`type` identifiers). When `--quartiles` (or `--everything`) is set, the standalone `median` column is omitted because `q2_median` already supplies it; this keeps the union of emitted stats at 47. Non-streaming statistics use memory-aware chunking for large files, dynamically calculating chunk size based on available memory and record sampling. The enumeration above is the source-of-truth for the "47 summary statistics" count quoted in `README.md` and `docs/help/stats.md`; it is sourced from the `Stats::stat_headers` builder in [`src/cmd/stats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs).
 
 ### Weighted Statistics
 
@@ -333,6 +377,65 @@ The `moarstats` command extends an existing stats CSV file (created by the `stat
 - Advanced statistics require `--advanced` flag and reading the entire CSV file
 - Outlier statistics require quartiles (and thus fences) to be computed in the baseline stats
 - Winsorized/trimmed means require either Q1/Q3 or percentiles to be available
+
+### Count Reference
+
+`moarstats` documentation cites "up to an additional 55 statistical measures." That figure is
+the union of the three groups below; each is enumerated explicitly in this document so the
+total can be audited against the source-of-truth in [`src/cmd/moarstats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/moarstats.rs).
+
+**Univariate measures (25)** — see [Derived Statistics](#derived-statistics), [Advanced Statistics](#advanced-statistics) and [Robust Statistics (Winsorized & Trimmed Means)](#robust-statistics-winsorized--trimmed-means):
+
+|  # | Measure | Section / Flag |
+|---:|:---|:---|
+|  1 | Pearson's Second Skewness Coefficient (`pearson_skewness`) | Derived |
+|  2 | Range to StdDev Ratio (`range_stddev_ratio`) | Derived |
+|  3 | Quartile Coefficient of Dispersion (`quartile_coefficient_dispersion`) | Derived |
+|  4 | Z-Score of Mode (`mode_zscore`) | Derived |
+|  5 | Relative Standard Error (`relative_standard_error`) | Derived |
+|  6 | Z-Score of Min (`min_zscore`) | Derived |
+|  7 | Z-Score of Max (`max_zscore`) | Derived |
+|  8 | Median-to-Mean Ratio (`median_mean_ratio`) | Derived |
+|  9 | IQR-to-Range Ratio (`iqr_range_ratio`) | Derived |
+| 10 | MAD-to-StdDev Ratio (`mad_stddev_ratio`) | Derived |
+| 11 | Trimean (`trimean`) | Derived |
+| 12 | Midhinge (`midhinge`) | Derived |
+| 13 | Robust CV (`robust_cv`) | Derived |
+| 14 | XSD type (`xsd_type`) | Derived |
+| 15 | Kurtosis (`kurtosis`) | `--advanced` |
+| 16 | Bimodality Coefficient (`bimodality_coefficient`) | `--advanced` |
+| 17 | Jarque-Bera test (`jarque_bera` + `jarque_bera_pvalue`) | `--advanced` (emits 2 columns) |
+| 18 | Gini Coefficient (`gini_coefficient`) | `--advanced` |
+| 19 | Atkinson Index (`atkinson_index_(ε)`) | `--advanced --epsilon` |
+| 20 | Theil Index (`theil_index`) | `--advanced` |
+| 21 | Mean Absolute Deviation from mean (`mean_ad`) | `--advanced` |
+| 22 | Shannon Entropy (`shannon_entropy`) | `--advanced` |
+| 23 | Normalized Entropy (`normalized_entropy`) | `--advanced` (when `cardinality` is present) |
+| 24 | Simpson's Diversity Index (`simpsons_diversity_index`) | `--advanced` |
+| 25 | Winsorized Mean (`winsorized_mean` + 5 companion columns) and Trimmed Mean (`trimmed_mean` + 5 companion columns) | Robust (counted as one measure pair, emits 12 columns) |
+
+**Outlier measures (24)** — see [Outlier Statistics](#outlier-statistics):
+
+| # | Group | Identifiers |
+|---:|:---|:---|
+| 1–7 | Outlier counts | `outliers_extreme_lower_cnt`, `outliers_mild_lower_cnt`, `outliers_normal_cnt`, `outliers_mild_upper_cnt`, `outliers_extreme_upper_cnt`, `outliers_total_cnt`, `outliers_percentage` |
+| 8–13 | Outlier descriptive | `outliers_mean`, `non_outliers_mean`, `outliers_to_normal_mean_ratio`, `outliers_min`, `outliers_max`, `outliers_range` |
+| 14–20 | Outlier variance / spread | `outliers_stddev`, `outliers_variance`, `non_outliers_stddev`, `non_outliers_variance`, `outliers_cv`, `non_outliers_cv`, `outliers_normal_stddev_ratio` |
+| 21–22 | Outlier impact | `outlier_impact`, `outlier_impact_ratio` |
+| 23–24 | Outlier boundary | `lower_outer_fence_zscore`, `upper_outer_fence_zscore` |
+
+**Bivariate measures (6, written to `<FILESTEM>.stats.bivariate.csv` under `--bivariate`)** — see [Bivariate Statistics](#bivariate-statistics):
+
+| # | Measure |
+|---:|:---|
+| 1 | Pearson's correlation (`pearson_correlation`) |
+| 2 | Spearman's rank correlation (`spearman_correlation`) |
+| 3 | Kendall's tau (`kendall_tau`) |
+| 4 | Covariance (`covariance_sample` + `covariance_population` — counted as one measure, emits 2 columns) |
+| 5 | Mutual Information (`mutual_information`) |
+| 6 | Normalized Mutual Information (`normalized_mutual_information`) |
+
+**Total: 25 + 24 + 6 = 55 statistical measures.** Note that several measures expand into more than one output column (e.g. Jarque-Bera → 2 columns, Winsorized/Trimmed Means → 12 columns combined, Covariance → 2 columns), so the actual column count in a `<FILESTEM>.stats.csv` extended by `moarstats --advanced` plus its bivariate sidecar is higher than 55.
 
 ### Derived Statistics
 

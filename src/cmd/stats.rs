@@ -2743,8 +2743,8 @@ struct WhichStats {
     use_weights:          bool,
     /// When true, use the Apache DataSketches t-digest engine for median, quartiles, and
     /// custom percentiles instead of the exact (sort-based) `Unsorted<f64>` engine. Mutually
-    /// exclusive with `mad` and `use_weights`; validation in `Args::run()` rejects the bad
-    /// combinations.
+    /// exclusive with `mad` and `use_weights`; validation in the module-level `run(argv: ...)`
+    /// function rejects the bad combinations.
     approx_quantiles:     bool,
     /// When > 0, drop mode-tracking once a column accumulates more than this many samples
     /// (Unsorted::len() for unweighted modes, HashMap::len() for weighted). 0 = unbounded
@@ -3478,21 +3478,22 @@ impl Stats {
         let cap = self.which.mode_cardinality_cap;
         if let Some(ref mut wm) = self.weighted_modes {
             // Weighted modes: HashMap::len() == unique-values seen (true cardinality).
-            if cap > 0 && wm.len() as u64 > cap {
-                self.weighted_modes = None;
-                self.modes_dropped = true;
-                return;
-            }
-            // Use get_mut first to avoid heap-allocating sample.to_vec() when key already exists
+            // Existing-key updates don't grow the map, so check the cap only on the
+            // new-key branch — this preserves the get_mut fast path AND ensures the
+            // tracker never exceeds `cap` entries (peak == cap exactly).
             if let Some(val) = wm.get_mut(sample) {
                 *val += weight;
+            } else if cap > 0 && wm.len() as u64 >= cap {
+                // Adding a new key would push len to cap + 1; drop instead.
+                self.weighted_modes = None;
+                self.modes_dropped = true;
             } else {
                 wm.insert(sample.to_vec(), weight);
             }
         } else if let Some(v) = self.modes.as_mut() {
-            // Unweighted modes: Unsorted::len() == total samples added (memory cost). This
-            // bounds memory exactly; the resulting cardinality is also bounded by len.
-            if cap > 0 && v.len() as u64 > cap {
+            // Unweighted modes: Unsorted::len() == total samples added (memory cost).
+            // `>= cap` before add_bytes() bounds peak at exactly `cap` entries.
+            if cap > 0 && v.len() as u64 >= cap {
                 self.modes = None;
                 self.modes_dropped = true;
                 return;

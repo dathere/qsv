@@ -6083,18 +6083,33 @@ fn stats_quantile_method_approx_quartiles_within_envelope() {
         .arg("1")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    let headers = &got[0];
-    let value_row = &got[1];
-    let q1: f64 = value_row[headers.iter().position(|h| h == "q1").unwrap()]
+    // Single-invocation capture: avoids the wrk.assert_success + wrk.read_stdout
+    // double-run pattern (the second run's exit status would not be asserted).
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "stats command failed: stderr = {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let headers: Vec<&str> = lines
+        .next()
+        .expect("stats output should have a header row")
+        .split(',')
+        .collect();
+    let value_row: Vec<&str> = lines
+        .next()
+        .expect("stats output should have at least one data row")
+        .split(',')
+        .collect();
+    let q1: f64 = value_row[headers.iter().position(|h| *h == "q1").unwrap()]
         .parse()
         .unwrap();
-    let q2: f64 = value_row[headers.iter().position(|h| h == "q2_median").unwrap()]
+    let q2: f64 = value_row[headers.iter().position(|h| *h == "q2_median").unwrap()]
         .parse()
         .unwrap();
-    let q3: f64 = value_row[headers.iter().position(|h| h == "q3").unwrap()]
+    let q3: f64 = value_row[headers.iter().position(|h| *h == "q3").unwrap()]
         .parse()
         .unwrap();
 
@@ -6256,14 +6271,29 @@ fn stats_quantile_method_approx_percentiles_empty_numeric_column() {
         .arg("1")
         .arg("data.csv");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    let headers = &got[0];
-    let row = &got[1];
+    // Single-invocation capture: avoids the wrk.assert_success + wrk.read_stdout
+    // double-run pattern (the second run's exit status would not be asserted).
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "stats command failed: stderr = {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let headers: Vec<&str> = lines
+        .next()
+        .expect("stats output should have a header row")
+        .split(',')
+        .collect();
+    let row: Vec<&str> = lines
+        .next()
+        .expect("stats output should have at least one data row")
+        .split(',')
+        .collect();
     let pct_idx = headers
         .iter()
-        .position(|h| h == "percentiles")
+        .position(|h| *h == "percentiles")
         .expect("percentiles column should exist");
     assert_eq!(
         row[pct_idx], "",

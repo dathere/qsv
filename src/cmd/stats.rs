@@ -3523,13 +3523,14 @@ impl Stats {
         // is selected AND cardinality output is enabled. HLL_LG_K (12) gives ~1.5%
         // RSE with ~5KB per column. Hll8 stores 8 bits per register (no decode work
         // on update); memory is the same order whether sparse or dense.
-        let mut hll = HllSlot::default();
-        if which.cardinality && which.approx_cardinality {
-            hll = HllSlot(Some(datasketches::hll::HllSketch::new(
+        let hll = if which.cardinality && which.approx_cardinality {
+            HllSlot(Some(datasketches::hll::HllSketch::new(
                 HLL_LG_K,
                 datasketches::hll::HllType::Hll8,
-            )));
-        }
+            )))
+        } else {
+            HllSlot::default()
+        };
         Stats {
             typ: FieldType::default(),
             is_ascii: true,

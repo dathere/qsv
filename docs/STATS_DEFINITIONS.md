@@ -18,6 +18,7 @@
   - [File-Level Metadata (JSON Cache)](#file-level-metadata-json-cache)
   - [Whitespace Visualization](#whitespace-visualization)
   - [Performance & Caching](#performance--caching)
+  - [Approximate Algorithms (Opt-In)](#approximate-algorithms-opt-in)
 - [moarstats](#moarstats)
   - [Derived Statistics](#derived-statistics)
   - [Advanced Statistics](#advanced-statistics)
@@ -43,6 +44,7 @@
   - [Weighted Frequencies](#weighted-frequencies)
   - [Stats Cache Integration](#stats-cache-integration)
   - [JSON/TOON Output](#jsontoon-output)
+  - [Frequent Items Sketch (Approximate Top-K)](#frequent-items-sketch-approximate-top-k)
   - [Memory-Aware Processing](#memory-aware-processing)
 
 ---
@@ -191,6 +193,7 @@ Requires loading data into memory and sorting. When `--weight <column>` is speci
 - `median` requires `--median` or `--everything` (unless `--quartiles` is specified, in which case `median` is not returned separately as it's the same as `q2_median`)
 - `mad` requires `--mad` or `--everything`
 - Quartile statistics require `--quartiles` or `--everything`
+- When `--quantile-method approx` is set, `median`, `q1`, `q2_median`, `q3`, `iqr`, the four fences, `skewness`, and `percentiles` are computed from a t-digest sketch (Apache DataSketches port of Dunning's MergingDigest, ~200 centroids, ~1% rank error — more accurate at the tails). See [Approximate Algorithms (Opt-In)](#approximate-algorithms-opt-in). Under that mode, `--mad` is auto-disabled with a warning, `--weight` is rejected, and results may differ slightly across runs with different `--jobs` values (pin `--jobs 1` for run-to-run determinism).
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
@@ -211,6 +214,8 @@ Requires loading data into memory and sorting. When `--weight <column>` is speci
 **Requirements:**
 - `cardinality` and `uniqueness_ratio` require `--cardinality` or `--everything`
 - `mode`, `mode_count`, `mode_occurrences`, `antimode`, `antimode_count`, `antimode_occurrences` require `--mode` or `--everything`
+- By default, `cardinality` is computed exactly (via the same HashMap that backs mode tracking). Pass `--cardinality-method approx` to swap in a HyperLogLog sketch (Apache DataSketches port, lg_k=12, ~5KB/column, ~1.5% relative standard error) — useful on very-high-cardinality columns where exact counting is wasted work. See [Approximate Algorithms (Opt-In)](#approximate-algorithms-opt-in). `--infer-boolean` forces exact (boolean inference needs `cardinality == 2` exactness); a one-time warning is emitted.
+- The `--mode-cardinality-cap <n>` option (default `0` = unbounded) bounds the per-column memory used to track modes/antimodes on high-cardinality columns. When the cap fires, `mode`/`antimode` columns emit the sentinel `*HIGH_CARDINALITY`, and (under `--cardinality-method exact` only) the `cardinality` column emits `>=<n>`. The `>=` prefix DOES break downstream parsers expecting a plain integer, so the cap is opt-in. Under `--cardinality-method approx`, the cap does **not** affect the `cardinality` column (HLL emits its own ~1.5%-RSE estimate at fixed memory); only mode/antimode tracking is gated. The cap measures total samples added under unweighted mode (~ row count) and number of unique values under `--weight` (HashMap `len()`, == true cardinality).
 
 When `--weight <column>` is specified, weighted versions are computed. For weighted modes, `mode_occurrences` is the maximum weight (rounded). For weighted antimodes, `antimode_occurrences` is the minimum weight (rounded).
 
@@ -218,7 +223,7 @@ Multiple modes/antimodes are separated by the `QSV_STATS_SEPARATOR` environment 
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
-| `cardinality` | Variable | Count of unique values. | Count of distinct entries in the column. Weighted: count of unique values (weights are not considered for uniqueness). |
+| `cardinality` | Variable | Count of unique values. | Count of distinct entries in the column. Weighted: count of unique values (weights are not considered for uniqueness). Use `--cardinality-method approx` for a HyperLogLog estimate (~1.5% RSE, fixed ~5KB memory) — see [Approximate Algorithms (Opt-In)](#approximate-algorithms-opt-in). When `--mode-cardinality-cap <n>` fires under exact mode, this column emits the sentinel `>=<n>`. |
 | `uniqueness_ratio` | Variable | Ratio of unique values to total records. | `cardinality / record_count`. **Interpretation:** 1.0 = All unique values (e.g., primary keys). Close to 1.0 = Mostly unique values (e.g., user IDs, timestamps). Close to 0.0 = Many repeated values (e.g., categorical labels like "Male/Female" or "Yes/No"). |
 | `mode` | Variable | The most frequent value(s) in the column. | Value(s) with the highest frequency count. Weighted: value(s) with the highest weight. Multimodal-aware. If there are multiple modes, they are separated by `QSV_STATS_SEPARATOR`. |
 | `mode_count` | Variable | Number of modes found. | Count of values tied for highest frequency. |
@@ -294,6 +299,20 @@ The `stats` command is central to qsv and underpins other "smart" commands (`des
 - For non-streaming statistics, dynamically calculate chunk size based on available memory and record sampling
 - Override with `QSV_STATS_CHUNK_MEMORY_MB` environment variable (0 for dynamic sizing, positive for fixed limit, -1 for CPU-based chunking)
 - Enables processing of arbitrarily large "real-world" files
+
+### Approximate Algorithms (Opt-In)
+
+By default, `stats` produces **exact, deterministic** results. Three opt-in flags swap exact accumulators for [Apache DataSketches](https://datasketches.apache.org/) ports — Rust ports of streaming sketches — that trade a small, bounded error for **constant (or near-constant) memory** and faster compute on very-large columns.
+
+| Flag | Default | Sketch | Memory | Error | Restrictions / Notes |
+|:---|:---|:---|:---|:---|:---|
+| `--quantile-method approx` | `exact` | t-digest (Apache DataSketches port of Dunning's [MergingDigest](https://arxiv.org/abs/1902.04023), ~200 centroids) | O(K) per numeric column | ~1% rank error (more accurate at the tails) | Replaces the sort-based `median`/`q1`/`q2_median`/`q3`/`iqr`/fences/`skewness`/`percentiles` pipeline. `--mad` is auto-disabled with a warning (MAD requires a second pass that t-digest does not support). `--weight` is rejected (the upstream `datasketches` crate does not expose a weighted-update API). Results may differ ~1% across runs with different `--jobs` values (`TDigestMut::merge` is associative but not chunk-count-invariant); pin `--jobs 1` for run-to-run determinism. |
+| `--cardinality-method approx` | `exact` | [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) (Apache DataSketches port, lg_k=12) | ~5KB per column | ~1.5% relative standard error | Replaces exact `cardinality`/`uniqueness_ratio`. Reproducible across `--jobs` values (the HLL union used at merge time is associative and order-invariant, so chunk completion order does not affect the final estimate). `--infer-boolean` forces `exact` (boolean inference needs `cardinality == 2` exactness); a one-time warning is emitted. The `--mode-cardinality-cap` `>=<n>` sentinel is **never** emitted under `approx` — only mode/antimode columns remain gated by the cap. |
+| `--mode-cardinality-cap <n>` | `0` (unbounded) | bounds the mode/antimode tracker | per-column cap on tracker entries | exact when ≤ cap; sentinels otherwise | When the tracker grows past `<n>`, qsv drops it and emits `*HIGH_CARDINALITY` for `mode`/`antimode` columns. Under `--cardinality-method exact`, the `cardinality` column emits `>=<n>` (the `>=` prefix breaks downstream integer parsers — that's why the cap is opt-in). Under `--cardinality-method approx`, the cap does not affect the cardinality column (HLL emits its estimate at fixed memory). The cap measures total samples added under unweighted mode (~ row count) and number of unique values under `--weight` (HashMap `len()`, == true cardinality). |
+
+**Output validation:** `stats` uses [simdutf8](https://crates.io/crates/simdutf8) for SIMD-accelerated UTF-8 validation on the output path — a perf detail with no behavioral change.
+
+**See also:** [t-digest paper (Dunning, 2019)](https://arxiv.org/abs/1902.04023), [HyperLogLog (Flajolet et al., 2007)](https://en.wikipedia.org/wiki/HyperLogLog), [Apache DataSketches](https://datasketches.apache.org/).
 
 ## `moarstats`
 Here are all the additional statistics produced by the `qsv moarstats` command, sourced from `src/cmd/moarstats.rs`.
@@ -585,10 +604,10 @@ See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/rele
 
 ## `frequency`
 
-The `frequency` command computes exact frequency distribution tables for CSV columns, with support for multiple output formats, ranking strategies, and weighted frequencies.
+The `frequency` command computes frequency distribution tables for CSV columns (exact by default, with an opt-in Frequent Items sketch for bounded-memory top-K), with support for multiple output formats, ranking strategies, and weighted frequencies.
 
 **Key Features:**
-- Computes exact frequency counts (unlike approximate sketches)
+- Computes exact frequency counts by default; opt into a Misra-Gries heavy-hitters sketch via `--sketch-method frequent_items` for bounded-memory top-K on very-high-cardinality streams (see [Frequent Items Sketch (Approximate Top-K)](#frequent-items-sketch-approximate-top-k))
 - Multiple ranking strategies for handling tied values
 - Weighted frequency support using a specified weight column
 - CSV and JSON/TOON output modes
@@ -745,6 +764,43 @@ The `--frequency-jsonl` flag produces an error when combined with:
 
 **Partial Cache Hits:**
 When the cache is valid, columns with full cached data are served directly from the cache. HIGH_CARDINALITY columns (which store only a sentinel) are recomputed via parallel processing against the original CSV.
+
+### Frequent Items Sketch (Approximate Top-K)
+
+By default, `frequency` computes **exact** counts by tracking every distinct value in a HashMap. For columns with very high cardinality, this can be memory-prohibitive. The `--sketch-method frequent_items` flag swaps the HashMap for the [Misra-Gries heavy-hitters sketch](https://en.wikipedia.org/wiki/Misra%E2%80%93Gries_summary) (Apache DataSketches port), which tracks the top-K most frequent values in **constant memory** with bounded additive error.
+
+| Option | Default | Description |
+|:---|:---|:---|
+| `--sketch-method <m>` | `exact` | Algorithm for the frequency table. Choices: `exact` (HashMap, exact counts) or `frequent_items` (Misra-Gries sketch, approximate top-K). |
+| `--sketch-map-size <n>` | `4096` | Maximum map size for the Frequent Items sketch. **Must be a power of two and ≥ 8.** Larger values tighten the error bound at the cost of more memory. Only used when `--sketch-method frequent_items`. |
+
+**Counts are estimates.** The sketch reports each item's upper-bound frequency estimate; tail items not retained in the sketch are aggregated into a single "Other" row (no unique-count suffix, since the sketch cannot recover the true number of distinct tail items). The sketch's natural ordering is top-K by estimate descending; tied counts use the sketch's hash-table iteration order. The frequency cache is bypassed under this mode.
+
+**Rejected flags** (the command errors out if any of these are combined with `--sketch-method frequent_items`):
+
+| Flag | Reason |
+|:---|:---|
+| `--asc` | The sketch tracks heavy hitters only — least-frequent items are not recoverable. |
+| `--weight` | The Apache DataSketches Frequent Items sketch operates on unit-weight streams. |
+| `--ignore-case` | Case folding changes computed values; not supported in streaming sketch mode. |
+| `--no-trim` | Whitespace handling changes computed values; not supported in streaming sketch mode. |
+| `--other-sorted` | The sketch always emits the "Other" row at the end. |
+| `--null-sorted` | The sketch ranks NULL alongside other values by estimate; no reordering support. |
+| `--frequency-jsonl` | The frequency cache is bypassed under sketch mode. |
+| `--stats-filter` | Incompatible with sketch-mode dispatch. |
+| `--json` / `--pretty-json` / `--toon` | Only CSV output is supported under sketch mode. |
+
+**Silently ignored flags** under `frequent_items` (no error, no effect):
+
+- `--rank-strategy` — the sketch's natural top-K-by-estimate ordering is used.
+- `--lmt-threshold` — the sketch always tracks at most `--sketch-map-size` candidates.
+- `--unq-limit` — the sketch's bounded map is itself the unique-limit.
+
+**"Other" row divergence:** Under `frequent_items`, the "Other" row label is the bare `--other-text` (no `(N)` unique-count suffix, since the sketch cannot recover the true count of items not in the top-K), and `rank` is `0` to match the existing convention for the exact mode's "Other" row.
+
+**When to use:** prefer `frequent_items` for streaming over wide tables with many high-cardinality string columns where you only care about the heavy hitters and want predictable, fixed memory. Prefer `exact` (default) for small/medium cardinality, weighted streams, or whenever you need a complete frequency distribution.
+
+**See also:** [Misra-Gries summary (Wikipedia)](https://en.wikipedia.org/wiki/Misra%E2%80%93Gries_summary), [Apache DataSketches Frequent Items](https://datasketches.apache.org/docs/Frequency/FrequentItemsOverview.html).
 
 ### JSON/TOON Output
 

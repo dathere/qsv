@@ -394,10 +394,10 @@ fn suggest_agg_function(
     on_cols: &[String],
     index_cols: Option<&[String]>,
     value_cols: &[String],
-) -> CliResult<Option<Expr>> {
+) -> std::option::Option<polars::prelude::Expr> {
     // If multiple value columns, default to First
     if value_cols.len() > 1 {
-        return Ok(Some(Expr::Element.first()));
+        return Some(Expr::Element.first());
     }
 
     let quiet = args.flag_quiet;
@@ -635,9 +635,9 @@ fn suggest_agg_function(
             },
         };
 
-        Ok(Some(suggested_agg))
+        Some(suggested_agg)
     } else {
-        Ok(None)
+        None
     }
 }
 
@@ -974,17 +974,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 } else if let Some(value_cols) = &value_cols {
                     // Try to suggest an appropriate aggregation function
                     let on_cols_ref = on_cols.as_ref().unwrap();
-                    match suggest_agg_function(
-                        &args,
-                        on_cols_ref,
-                        index_cols.as_deref(),
-                        value_cols,
-                    )? {
-                        Some(suggested_agg) => suggested_agg,
-                        _ => {
-                            // fallback to first, which always works
-                            Expr::Element.first()
-                        },
+                    if let Some(suggested_agg) =
+                        suggest_agg_function(&args, on_cols_ref, index_cols.as_deref(), value_cols)
+                    {
+                        suggested_agg
+                    } else {
+                        // fallback to first, which always works
+                        Expr::Element.first()
                     }
                 } else {
                     // Default to Len if no value columns specified

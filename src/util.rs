@@ -244,9 +244,10 @@ pub fn visualize_whitespace(s: &str) -> String {
 /// UTF-8 validation and pre-allocates a `String` of the input length.
 #[inline]
 pub fn bytes_to_cow_str(c: &[u8]) -> std::borrow::Cow<'_, str> {
-    match simdutf8::basic::from_utf8(c) {
-        Ok(s) => std::borrow::Cow::Borrowed(s),
-        Err(_) => String::from_utf8_lossy(c),
+    if let Ok(s) = simdutf8::basic::from_utf8(c) {
+        std::borrow::Cow::Borrowed(s)
+    } else {
+        String::from_utf8_lossy(c)
     }
 }
 

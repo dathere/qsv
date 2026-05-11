@@ -96,7 +96,7 @@ cached = { version = "0.59", features = [
     "disk_store",
     "redis_ahash",
 ] }
-calamine = { version = "0.34", features = ["chrono"] }
+calamine = { version = "0.35", features = ["chrono"] }
 censor = { version = "0.3", optional = true }
 chrono = { version = "0.4.44", default-features = false }
 chrono-tz = "0.10"
@@ -335,9 +335,6 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # csv = { path = "../rust-csv" }
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }
-
-# use latest upstream of calamine with unreleased fixes and improved performance
-calamine = { git = "https://github.com/tafia/calamine", rev = "c040bc9" }
 
 # use our patched fork of csvlens to bump dependencies until our PR is merged
 csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "bump_tui-input_crossterm_n_lock_file" }

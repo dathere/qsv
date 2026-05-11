@@ -630,7 +630,7 @@ fn render_row<W: std::io::Write>(
 
     let record = &color_struct.records[row_idx];
     for field in record {
-        let raw = String::from_utf8_lossy(field);
+        let raw = util::bytes_to_cow_str(field);
         render_cell(color_struct, &raw, row_idx, col_idx, fill_buffer, &mut line);
         col_idx += 1;
     }

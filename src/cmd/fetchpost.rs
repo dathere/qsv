@@ -846,7 +846,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let header_key_vec: Vec<String> = headers
         .iter()
-        .map(|x| String::from_utf8_lossy(x).to_string())
+        .map(|x| util::bytes_to_cow_str(x).into_owned())
         .collect();
 
     let debug_flag = log_enabled!(Debug);

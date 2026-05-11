@@ -231,6 +231,25 @@ pub fn visualize_whitespace(s: &str) -> String {
     result
 }
 
+/// Converts a byte slice to a `Cow<str>` for output formatting.
+///
+/// Uses SIMD-accelerated UTF-8 validation via `simdutf8::basic::from_utf8` on the
+/// happy path (returns a borrowed `&str` with no allocation on valid UTF-8, which
+/// is the overwhelming common case including all-ASCII).
+///
+/// Falls back to `String::from_utf8_lossy` only when the bytes are not valid
+/// UTF-8 (replacement characters substituted, allocates).
+///
+/// This is faster than `String::from_utf8_lossy` alone, which always uses scalar
+/// UTF-8 validation and pre-allocates a `String` of the input length.
+#[inline]
+pub fn bytes_to_cow_str(c: &[u8]) -> std::borrow::Cow<'_, str> {
+    match simdutf8::basic::from_utf8(c) {
+        Ok(s) => std::borrow::Cow::Borrowed(s),
+        Err(_) => String::from_utf8_lossy(c),
+    }
+}
+
 pub fn qsv_custom_panic() {
     setup_panic!(
         human_panic::Metadata::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
@@ -2621,10 +2640,8 @@ pub fn write_json(
         .map(|(col_idx, b)| {
             if no_headers {
                 col_idx.to_string()
-            } else if let Ok(val) = simdutf8::basic::from_utf8(b) {
-                val.to_owned()
             } else {
-                String::from_utf8_lossy(b).to_string()
+                bytes_to_cow_str(b).into_owned()
             }
         })
         .collect();
@@ -2655,11 +2672,7 @@ pub fn write_json(
             let Some(key) = header_vec.get(idx) else {
                 break;
             };
-            temp_val = if let Ok(val) = simdutf8::basic::from_utf8(b) {
-                val.to_owned()
-            } else {
-                String::from_utf8_lossy(b).to_string()
-            };
+            temp_val = bytes_to_cow_str(b).into_owned();
             if temp_val.is_empty() {
                 temp_val.clone_from(&null_val);
             } else {
@@ -2705,7 +2718,7 @@ pub fn write_json_record<W: std::io::Write>(
             if no_headers {
                 col_idx.to_string()
             } else {
-                String::from_utf8_lossy(b).to_string()
+                bytes_to_cow_str(b).into_owned()
             }
         })
         .collect();
@@ -2722,11 +2735,7 @@ pub fn write_json_record<W: std::io::Write>(
         write!(json_wtr, ",{{")?;
     }
     for (idx, b) in record.iter().enumerate() {
-        if let Ok(val) = simdutf8::basic::from_utf8(b) {
-            temp_val = val.to_owned();
-        } else {
-            temp_val = String::from_utf8_lossy(b).to_string();
-        }
+        temp_val = bytes_to_cow_str(b).into_owned();
         if temp_val.is_empty() {
             temp_val.clone_from(&null_val);
         } else {

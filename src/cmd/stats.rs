@@ -1668,7 +1668,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 for record in &stats_br_vec {
                     // Take FINGERPRINT_HASH_COLUMNS columns only
                     for field in record.iter().take(FINGERPRINT_HASH_COLUMNS) {
-                        let s = String::from_utf8_lossy(field);
+                        let s = util::bytes_to_cow_str(field);
                         // Standardize number format
                         if let Ok(f) = s.parse::<f64>() {
                             hash_input.extend_from_slice(format!("{f:.10}").as_bytes());
@@ -2306,7 +2306,7 @@ impl Args {
             let weight_idx = full_headers
                 .iter()
                 .position(|h| {
-                    let h_str = String::from_utf8_lossy(h);
+                    let h_str = util::bytes_to_cow_str(h);
                     h_str.trim().eq_ignore_ascii_case(weight_col.trim())
                 })
                 .ok_or_else(|| {
@@ -3375,25 +3375,6 @@ fn weighted_mad(data: &[(f64, f64)], total_weight: f64, median: f64) -> Option<f
     weighted_median(&abs_deviations, total_weight)
 }
 
-/// Converts a byte slice to a `Cow<str>` for output formatting.
-///
-/// Uses SIMD-accelerated UTF-8 validation via `simdutf8::basic::from_utf8` on the
-/// happy path (returns a borrowed `&str` with no allocation on valid UTF-8, which
-/// is the overwhelming common case including all-ASCII).
-///
-/// Falls back to `String::from_utf8_lossy` only when the bytes are not valid
-/// UTF-8 (replacement characters substituted, allocates).
-///
-/// This is faster than `String::from_utf8_lossy` alone, which always uses scalar
-/// UTF-8 validation and pre-allocates a `String` of the input length.
-#[inline]
-fn bytes_to_cow_str(c: &[u8]) -> std::borrow::Cow<'_, str> {
-    match simdutf8::basic::from_utf8(c) {
-        Ok(s) => std::borrow::Cow::Borrowed(s),
-        Err(_) => String::from_utf8_lossy(c),
-    }
-}
-
 /// Formats a list of antimodes into a display string with optional preview prefix,
 /// NULL handling, and length truncation.
 ///
@@ -3415,7 +3396,7 @@ fn format_antimodes(
 
     let antimodes_vals = &antimodes
         .iter()
-        .map(|c| bytes_to_cow_str(c.as_ref()))
+        .map(|c| util::bytes_to_cow_str(c.as_ref()))
         .join(separator);
 
     // if the antimodes result starts with the separator,
@@ -4141,12 +4122,12 @@ impl Stats {
                         let modes_list = if visualize_ws {
                             modes_keys
                                 .iter()
-                                .map(|c| util::visualize_whitespace(&bytes_to_cow_str(c)))
+                                .map(|c| util::visualize_whitespace(&util::bytes_to_cow_str(c)))
                                 .join(stats_separator)
                         } else {
                             modes_keys
                                 .iter()
-                                .map(|c| bytes_to_cow_str(c))
+                                .map(|c| util::bytes_to_cow_str(c))
                                 .join(stats_separator)
                         };
 
@@ -4242,12 +4223,12 @@ impl Stats {
                             let modes_list = if visualize_ws {
                                 modes_result
                                     .iter()
-                                    .map(|c| util::visualize_whitespace(&bytes_to_cow_str(c)))
+                                    .map(|c| util::visualize_whitespace(&util::bytes_to_cow_str(c)))
                                     .join(stats_separator)
                             } else {
                                 modes_result
                                     .iter()
-                                    .map(|c| bytes_to_cow_str(c))
+                                    .map(|c| util::bytes_to_cow_str(c))
                                     .join(stats_separator)
                             };
 
@@ -5313,8 +5294,8 @@ impl TypedMinMax {
                     self.strings.sort_order(),
                     self.strings.sortiness(),
                 ) {
-                    let min_str = bytes_to_cow_str(min).into_owned();
-                    let max_str = bytes_to_cow_str(max).into_owned();
+                    let min_str = util::bytes_to_cow_str(min).into_owned();
+                    let max_str = util::bytes_to_cow_str(max).into_owned();
 
                     let max_length = STATS_STRING_MAX_LENGTH.get_or_init(|| {
                         std::env::var("QSV_STATS_STRING_MAX_LENGTH")

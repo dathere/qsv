@@ -1635,7 +1635,7 @@ fn format_val(value: &Val) -> String {
             if std::str::from_utf8(s).is_err() {
                 log::warn!("TStr contains invalid UTF-8, using lossy conversion");
             }
-            String::from_utf8_lossy(s).into_owned()
+            util::bytes_to_cow_str(s).into_owned()
         },
         _ => format!("{value}"),
     }

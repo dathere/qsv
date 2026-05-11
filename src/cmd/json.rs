@@ -387,7 +387,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Convert byte headers to string headers for easier processing
     let actual_headers: Vec<String> = byteheaders
         .iter()
-        .map(|h| String::from_utf8_lossy(h).to_string())
+        .map(|h| util::bytes_to_cow_str(h).into_owned())
         .collect();
 
     // If --select is not specified, reorder the actual headers to match the first dict's key order
@@ -487,12 +487,12 @@ fn val_to_json_value(v: Val) -> Result<serde_json::Value, String> {
             },
         },
         Val::TStr(ref s) => Ok(serde_json::Value::String(
-            String::from_utf8_lossy(s).into_owned(),
+            util::bytes_to_cow_str(s).into_owned(),
         )),
         Val::BStr(ref s) => {
             warn!("byte string converted to lossy UTF-8 string for JSON");
             Ok(serde_json::Value::String(
-                String::from_utf8_lossy(s).into_owned(),
+                util::bytes_to_cow_str(s).into_owned(),
             ))
         },
         Val::Arr(a) => {
@@ -503,7 +503,7 @@ fn val_to_json_value(v: Val) -> Result<serde_json::Value, String> {
             let mut map = serde_json::Map::new();
             for (k, v) in o.iter() {
                 let key = match k {
-                    Val::TStr(s) => String::from_utf8_lossy(s).into_owned(),
+                    Val::TStr(s) => util::bytes_to_cow_str(s).into_owned(),
                     other => {
                         warn!("non-string object key converted to string: {other}");
                         format!("{other}")

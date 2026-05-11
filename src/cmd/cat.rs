@@ -333,7 +333,7 @@ impl Args {
                     } else {
                         wwarn!(
                             "Duplicate column `{}` name in file `{}`.",
-                            String::from_utf8_lossy(field),
+                            util::bytes_to_cow_str(field),
                             conf_pathbuf.display(),
                         );
                     }

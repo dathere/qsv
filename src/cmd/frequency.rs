@@ -1085,7 +1085,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                 let value_bytes: &[u8] = if vis_whitespace {
                     value_str =
-                        util::visualize_whitespace(&String::from_utf8_lossy(&processed_freq.value));
+                        util::visualize_whitespace(&util::bytes_to_cow_str(&processed_freq.value));
                     value_str.as_bytes()
                 } else {
                     &processed_freq.value
@@ -1568,7 +1568,7 @@ impl Args {
             if i > 0 {
                 s.push('\x1f');
             }
-            s.push_str(&String::from_utf8_lossy(field));
+            s.push_str(&util::bytes_to_cow_str(field));
         }
         s
     }
@@ -1613,7 +1613,7 @@ impl Args {
             let field_name = if rconfig.no_headers {
                 (i + 1).to_string()
             } else {
-                String::from_utf8_lossy(header).to_string()
+                util::bytes_to_cow_str(header).into_owned()
             };
 
             let cardinality = col_cardinality
@@ -1664,7 +1664,7 @@ impl Args {
                         let val_str = if value.is_empty() {
                             String::new()
                         } else {
-                            String::from_utf8_lossy(value).to_string()
+                            util::bytes_to_cow_str(value).into_owned()
                         };
                         FrequencyCacheValue {
                             value: val_str,
@@ -1916,7 +1916,7 @@ impl Args {
                 if rconfig.no_headers {
                     String::new() // handled by index below
                 } else {
-                    String::from_utf8_lossy(h).to_string()
+                    util::bytes_to_cow_str(h).into_owned()
                 }
             })
             .collect();
@@ -2295,7 +2295,7 @@ impl Args {
 
                 let value_bytes: &[u8] = if vis_whitespace {
                     value_str =
-                        util::visualize_whitespace(&String::from_utf8_lossy(&processed_freq.value));
+                        util::visualize_whitespace(&util::bytes_to_cow_str(&processed_freq.value));
                     value_str.as_bytes()
                 } else {
                     &processed_freq.value
@@ -3482,9 +3482,9 @@ impl Args {
                         };
                         FrequencyEntry {
                             value:      if self.flag_vis_whitespace {
-                                util::visualize_whitespace(&String::from_utf8_lossy(&pf.value))
+                                util::visualize_whitespace(&util::bytes_to_cow_str(&pf.value))
                             } else {
-                                String::from_utf8_lossy(&pf.value).into_owned()
+                                util::bytes_to_cow_str(&pf.value).into_owned()
                             },
                             count:      pf.count,
                             percentage: pct_opt,
@@ -3501,7 +3501,7 @@ impl Args {
                 let field_name = if rconfig.no_headers {
                     (i + 1).to_string()
                 } else {
-                    String::from_utf8_lossy(header).to_string()
+                    util::bytes_to_cow_str(header).into_owned()
                 };
 
                 let all_unique_header = unique_headers_vec.contains(&i);
@@ -3541,7 +3541,7 @@ impl Args {
                 let field_name = if rconfig.no_headers {
                     (i + 1).to_string()
                 } else {
-                    String::from_utf8_lossy(header).to_string()
+                    util::bytes_to_cow_str(header).into_owned()
                 };
 
                 let all_unique_header = unique_headers_vec.contains(&i);
@@ -3654,7 +3654,7 @@ impl Args {
             let weight_idx = full_headers
                 .iter()
                 .position(|h| {
-                    let h_str = String::from_utf8_lossy(h);
+                    let h_str = util::bytes_to_cow_str(h);
                     h_str.trim().eq_ignore_ascii_case(weight_col.trim())
                 })
                 .ok_or_else(|| {
@@ -3962,7 +3962,7 @@ impl Args {
                     null_label.clone()
                 } else if vis_whitespace {
                     value_str.clear();
-                    value_str.push_str(&util::visualize_whitespace(&String::from_utf8_lossy(item)));
+                    value_str.push_str(&util::visualize_whitespace(&util::bytes_to_cow_str(item)));
                     value_str.as_bytes().to_vec()
                 } else {
                     item.to_vec()

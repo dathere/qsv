@@ -363,7 +363,7 @@ impl WriterGenerator {
     fn unique_value(&mut self, key: &[u8]) -> String {
         // Sanitize our key.
         let safe = regex_oncelock!(r"\W")
-            .replace_all(&String::from_utf8_lossy(key), "")
+            .replace_all(&util::bytes_to_cow_str(key), "")
             .into_owned();
         let base = if safe.is_empty() {
             "empty".to_owned()

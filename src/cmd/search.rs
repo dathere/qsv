@@ -403,9 +403,9 @@ impl Args {
                     let key = if self.flag_no_headers {
                         i.to_string()
                     } else {
-                        String::from_utf8_lossy(&headers[i]).to_string()
+                        util::bytes_to_cow_str(&headers[i]).into_owned()
                     };
-                    let value = String::from_utf8_lossy(field);
+                    let value = util::bytes_to_cow_str(field);
                     let json_value = if value.is_empty() {
                         serde_json::Value::Null
                     } else {

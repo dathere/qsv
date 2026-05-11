@@ -229,7 +229,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         for field in &row {
             // we also trim excess quotes from the header, to be consistent with safenames
-            str_row.push_field(String::from_utf8_lossy(field).trim_matches('"'));
+            str_row.push_field(util::bytes_to_cow_str(field).trim_matches('"'));
         }
         wtr.write_record(&str_row)?;
         // The header was consumed/written outside the main loop. The loop's

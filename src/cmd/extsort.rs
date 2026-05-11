@@ -164,7 +164,7 @@ fn sort_csv(
             if let Ok(s_utf8) = simdutf8::basic::from_utf8(field) {
                 sort_key.push_str(s_utf8);
             } else {
-                sort_key.push_str(&String::from_utf8_lossy(field));
+                sort_key.push_str(&util::bytes_to_cow_str(field));
             }
         }
         let idx_position = curr_row.position().unwrap();

@@ -2053,15 +2053,7 @@ fn to_json_instance(
         }
 
         json_value = match json_type {
-            JSONtypes::String => {
-                if let Ok(v) = simdutf8::basic::from_utf8(value) {
-                    Value::String(v.to_owned())
-                } else {
-                    // don't return an error if the string fails utf8 validation
-                    // send the lossy utf8 value
-                    Value::String(String::from_utf8_lossy(value).into_owned())
-                }
-            },
+            JSONtypes::String => Value::String(util::bytes_to_cow_str(value).into_owned()),
             JSONtypes::Number => {
                 if let Ok(float) = fast_float2::parse::<f64, _>(value) {
                     match Number::from_f64(float) {
@@ -2069,14 +2061,14 @@ fn to_json_instance(
                         None => {
                             return fail_clierror!(
                                 "Non-finite Number. key: {key}, value: {}",
-                                String::from_utf8_lossy(value)
+                                util::bytes_to_cow_str(value)
                             );
                         },
                     }
                 } else {
                     return fail_clierror!(
                         "Can't cast to Number. key: {key}, value: {}",
-                        String::from_utf8_lossy(value)
+                        util::bytes_to_cow_str(value)
                     );
                 }
             },
@@ -2086,7 +2078,7 @@ fn to_json_instance(
                 } else {
                     return fail_clierror!(
                         "Can't cast to Integer. key: {key}, value: {}",
-                        String::from_utf8_lossy(value)
+                        util::bytes_to_cow_str(value)
                     );
                 }
             },
@@ -2096,7 +2088,7 @@ fn to_json_instance(
                 _ => {
                     return fail_clierror!(
                         "Can't cast to Boolean. key: {key}, value: {}",
-                        String::from_utf8_lossy(value)
+                        util::bytes_to_cow_str(value)
                     );
                 },
             },

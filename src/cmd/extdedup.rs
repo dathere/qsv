@@ -182,10 +182,7 @@ fn dedup_csv(args: Args, mem_limited_buffer: u64) -> Result<u64, crate::clitypes
             } else {
                 key.push('\x1F');
             }
-            match simdutf8::basic::from_utf8(field) {
-                Ok(s) => key.push_str(s),
-                Err(_) => key.push_str(&String::from_utf8_lossy(field)),
-            }
+            key.push_str(&util::bytes_to_cow_str(field));
         }
 
         // Single hash-table touch: insert returns true when the key is new.

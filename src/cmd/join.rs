@@ -579,7 +579,7 @@ impl<R> fmt::Debug for ValueIndex<R> {
             // This is just for debugging, so assume Unicode for now.
             let keys = keys
                 .iter()
-                .map(|k| String::from_utf8_lossy(k).into_owned())
+                .map(|k| util::bytes_to_cow_str(k).into_owned())
                 .collect::<Vec<_>>();
             writeln!(f, "({}) => {rows:?}", keys.join(", "))?;
         }

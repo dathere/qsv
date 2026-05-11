@@ -947,7 +947,7 @@ fn collect_numeric_values(
             if no_headers {
                 (i + 1).to_string()
             } else {
-                String::from_utf8_lossy(&headers[i]).into_owned()
+                util::bytes_to_cow_str(&headers[i]).into_owned()
             }
         })
         .collect();
@@ -1011,7 +1011,7 @@ fn collect_numeric_values_parallel(
             if rconfig.no_headers {
                 (i + 1).to_string()
             } else {
-                String::from_utf8_lossy(&headers[i]).into_owned()
+                util::bytes_to_cow_str(&headers[i]).into_owned()
             }
         })
         .collect();

@@ -682,16 +682,6 @@ fn calculate_memory_aware_chunk_size_for_frequency(
 ///
 /// Returns `false` if any conflicting flag is set, if the user explicitly set
 /// the method (regardless of value), or if --sketch-map-size is invalid.
-/// Returns `true` if `flag` appears in `argv` as either a standalone token
-/// (`--flag`) or in the `--flag=value` form. Used by the OOM auto-fallback to
-/// detect whether the user explicitly passed an option, since docopt fills in
-/// default values that are indistinguishable from explicit user input on the
-/// parsed `Args` struct.
-fn argv_has_flag(argv: &[&str], flag: &str) -> bool {
-    let eq_prefix = format!("{flag}=");
-    argv.iter().any(|a| *a == flag || a.starts_with(&eq_prefix))
-}
-
 fn can_enable_frequent_items(args: &Args, user_set_sketch_method: bool) -> bool {
     if args.flag_sketch_method != "exact" || user_set_sketch_method {
         return false;
@@ -716,6 +706,16 @@ fn can_enable_frequent_items(args: &Args, user_set_sketch_method: bool) -> bool 
     // sketch-map-size validity (mirrors the `must be a power of two and >= 8`
     // check in run()'s frequent_items dispatch).
     args.flag_sketch_map_size >= 8 && args.flag_sketch_map_size.is_power_of_two()
+}
+
+/// Returns `true` if `flag` appears in `argv` as either a standalone token
+/// (`--flag`) or in the `--flag=value` form. Used by the OOM auto-fallback to
+/// detect whether the user explicitly passed an option, since docopt fills in
+/// default values that are indistinguishable from explicit user input on the
+/// parsed `Args` struct.
+fn argv_has_flag(argv: &[&str], flag: &str) -> bool {
+    let eq_prefix = format!("{flag}=");
+    argv.iter().any(|a| *a == flag || a.starts_with(&eq_prefix))
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {

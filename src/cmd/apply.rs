@@ -665,8 +665,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         } else {
                             // multi-column (or single-column) in-place: rebuild the record
                             // once instead of once per selected column (replace_column_value
-                            // allocates a fresh StringRecord per call).
-                            let mut new_record = csv::StringRecord::new();
+                            // allocates a fresh StringRecord per call). Pre-size the new
+                            // record to the input's exact byte/field footprint to avoid
+                            // per-push growth reallocations on wide CSVs.
+                            let mut new_record = csv::StringRecord::with_capacity(
+                                record.as_byte_record().as_slice().len(),
+                                record.len(),
+                            );
                             for (i, field) in record.iter().enumerate() {
                                 if is_selected[i] {
                                     cell.clear();
@@ -701,8 +706,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             let new_field = new_field.to_owned();
                             record.push_field(&new_field);
                         } else {
-                            // rebuild once instead of once per selected column
-                            let mut new_record = csv::StringRecord::new();
+                            // rebuild once instead of once per selected column. Pre-size
+                            // to the input record's footprint to avoid push-growth reallocs.
+                            let mut new_record = csv::StringRecord::with_capacity(
+                                record.as_byte_record().as_slice().len(),
+                                record.len(),
+                            );
                             for (i, field) in record.iter().enumerate() {
                                 if is_selected[i] && field.trim().is_empty() {
                                     new_record.push_field(&flag_replacement);

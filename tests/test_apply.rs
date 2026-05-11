@@ -1201,6 +1201,47 @@ fn apply_ops_regex_replace() {
 }
 
 #[test]
+fn apply_ops_regex_replace_null_scoped_to_regex_replace() {
+    // Regression test: previously `--replacement <NULL>` was rewritten to "" globally
+    // whenever regex_replace appeared anywhere in the chain, which silently turned a
+    // chained `replace` into a deletion. The <NULL> sentinel must apply only to
+    // regex_replace; `replace` should still see the literal "<NULL>" string.
+    //
+    // The chain is `replace,regex_replace` and both ops share --comparand "KEEPME".
+    // `replace` runs first (literal-string match) and is what makes this test
+    // distinguish the buggy and fixed code paths:
+    //   - buggy:  "KEEPME" -> ""       (flag_replacement was globally cleared)
+    //   - fixed:  "KEEPME" -> "<NULL>" (flag_replacement preserved for `replace`)
+    // regex_replace then runs on the already-substituted text; "KEEPME" is no longer
+    // present, so the regex match is empty either way and the difference in output
+    // is attributable solely to `replace`.
+    let wrk = Workdir::new("apply");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["description"],
+            svec!["call 555-1212 and ask for KEEPME"],
+            svec!["no match here, just KEEPME"],
+        ],
+    );
+    let mut cmd = wrk.command("apply");
+    cmd.arg("operations")
+        .arg("replace,regex_replace")
+        .arg("description")
+        .args(["--comparand", "KEEPME"])
+        .args(["--replacement", "<NULL>"])
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["description"],
+        svec!["call 555-1212 and ask for <NULL>"],
+        svec!["no match here, just <NULL>"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn apply_ops_regex_replace_validation_error() {
     let wrk = Workdir::new("apply");
     wrk.create(
@@ -1251,7 +1292,9 @@ fn apply_ops_regex_replace_error() {
     wrk.assert_err(&mut cmd);
 
     let got: String = wrk.output_stderr(&mut cmd);
-    assert!(got.starts_with("regex_replace expression error"));
+    // invalid user-supplied regex is an IncorrectUsage error, so stderr is prefixed
+    // with "usage error: " (consistent with other validate_operations failures).
+    assert!(got.starts_with("usage error: regex_replace expression error"));
 }
 
 #[test]
@@ -1768,6 +1811,41 @@ fn apply_ops_thousands_eurostyle() {
         svec!["0"],
         svec!["5"],
         svec!["not a number, should be ignored"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn apply_ops_thousands_eurostyle_negative_fraction() {
+    // Regression test: previously the `> 0.0` check on f64::fract() skipped negative
+    // fractional numbers (since (-x.y).fract() is negative), so --replacement was
+    // ignored and the decimal separator stayed as '.' for negatives.
+    let wrk = Workdir::new("apply");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["number"],
+            svec!["-1234.5"],
+            svec!["-1234567.89"],
+            svec!["-0.25"],
+            svec!["1234.5"],
+        ],
+    );
+    let mut cmd = wrk.command("apply");
+    cmd.arg("operations")
+        .arg("thousands")
+        .arg("number")
+        .args(["--formatstr", "dot"])
+        .args(["--replacement", ","])
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["number"],
+        svec!["-1.234,5"],
+        svec!["-1.234.567,89"],
+        svec!["-0,25"],
+        svec!["1.234,5"],
     ];
     assert_eq!(got, expected);
 }

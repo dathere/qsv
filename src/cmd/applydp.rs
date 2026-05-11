@@ -369,19 +369,37 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         wtr.write_record(&headers)?;
     }
 
-    // <NULL> (case-insensitive) is recognized as "delete matches" when regex_replace is in
-    // the operation chain. Note this clears flag_replacement for ALL ops in the chain, so
-    // a chained `regex_replace,replace` with --replacement <NULL> deletes matches in both.
-    let flag_replacement = if applydp_cmd == ApplydpSubCmd::Operations
+    // <NULL> (case-insensitive) on --replacement is recognized as "delete matches" by
+    // regex_replace. Scope this rewrite to regex_replace only — chained ops (e.g. `replace`)
+    // still see the user's literal --replacement value, so they aren't silently turned into
+    // no-ops.
+    let flag_replacement = args.flag_replacement;
+    let regex_replace_replacement = if applydp_cmd == ApplydpSubCmd::Operations
         && ops_vec.contains(&Operations::Regex_Replace)
-        && args.flag_replacement.eq_ignore_ascii_case(NULL_VALUE)
+        && flag_replacement.eq_ignore_ascii_case(NULL_VALUE)
     {
         String::new()
     } else {
-        args.flag_replacement
+        flag_replacement.clone()
     };
     let flag_comparand = args.flag_comparand;
     let flag_new_column = args.flag_new_column;
+
+    // pre-compute a per-column selection mask so multi-column in-place transforms can
+    // rebuild each record once per row instead of once per selected column. Only built
+    // when --new-column is NOT set: the --new-column branch uses the single selected
+    // column index directly and never consults the mask, so allocating it there would
+    // be wasted, and skipping it also keeps the mask's len() == input-record width
+    // (avoiding any reliance on `headers` not having been extended yet).
+    let is_selected: Vec<bool> = if flag_new_column.is_some() {
+        Vec::new()
+    } else {
+        let mut mask = vec![false; headers.len()];
+        for col_index in &*sel {
+            mask[*col_index] = true;
+        }
+        mask
+    };
 
     // amortize memory allocation by reusing record
     #[allow(unused_assignments)]
@@ -432,33 +450,75 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 match applydp_cmd {
                     ApplydpSubCmd::Operations => {
                         let mut cell = String::new();
-                        for col_index in sel.iter() {
-                            record[*col_index].clone_into(&mut cell);
+                        if flag_new_column.is_some() {
+                            // single-column case (validated upstream: --new-column requires
+                            // sel.len() == 1 for operations/emptyreplace)
+                            let col_index = *sel.iter().next().unwrap();
+                            record[col_index].clone_into(&mut cell);
                             applydp_operations(
                                 &ops_vec,
                                 &mut cell,
                                 &flag_comparand,
                                 &flag_replacement,
+                                &regex_replace_replacement,
                             );
-                            if flag_new_column.is_some() {
-                                record.push_field(&cell);
-                            } else {
-                                record = replace_column_value(&record, *col_index, &cell);
+                            record.push_field(&cell);
+                        } else {
+                            // multi-column (or single-column) in-place: rebuild the record
+                            // once instead of once per selected column (replace_column_value
+                            // allocates a fresh StringRecord per call). Pre-size the new
+                            // record to the input's exact byte/field footprint to avoid
+                            // per-push growth reallocations on wide CSVs.
+                            let mut new_record = csv::StringRecord::with_capacity(
+                                record.as_byte_record().as_slice().len(),
+                                record.len(),
+                            );
+                            for (i, field) in record.iter().enumerate() {
+                                if is_selected[i] {
+                                    cell.clear();
+                                    cell.push_str(field);
+                                    applydp_operations(
+                                        &ops_vec,
+                                        &mut cell,
+                                        &flag_comparand,
+                                        &flag_replacement,
+                                        &regex_replace_replacement,
+                                    );
+                                    new_record.push_field(&cell);
+                                } else {
+                                    new_record.push_field(field);
+                                }
                             }
+                            record = new_record;
                         }
                     },
                     ApplydpSubCmd::EmptyReplace => {
-                        let mut cell = String::new();
-                        for col_index in sel.iter() {
-                            record[*col_index].clone_into(&mut cell);
-                            if cell.trim().is_empty() {
-                                cell = flag_replacement.clone();
-                            }
-                            if flag_new_column.is_some() {
-                                record.push_field(&cell);
+                        if flag_new_column.is_some() {
+                            // single-column case (validated upstream)
+                            let col_index = *sel.iter().next().unwrap();
+                            let field = &record[col_index];
+                            let new_field = if field.trim().is_empty() {
+                                flag_replacement.as_str()
                             } else {
-                                record = replace_column_value(&record, *col_index, &cell);
+                                field
+                            };
+                            let new_field = new_field.to_owned();
+                            record.push_field(&new_field);
+                        } else {
+                            // rebuild once instead of once per selected column. Pre-size
+                            // to the input record's footprint to avoid push-growth reallocs.
+                            let mut new_record = csv::StringRecord::with_capacity(
+                                record.as_byte_record().as_slice().len(),
+                                record.len(),
+                            );
+                            for (i, field) in record.iter().enumerate() {
+                                if is_selected[i] && field.trim().is_empty() {
+                                    new_record.push_field(&flag_replacement);
+                                } else {
+                                    new_record.push_field(field);
+                                }
                             }
+                            record = new_record;
                         }
                     },
                     ApplydpSubCmd::DynFmt => {
@@ -506,7 +566,9 @@ fn validate_operations(
     let mut replace_invokes = 0_u8;
     let mut strip_invokes = 0_u8;
 
-    let mut ops_vec = SmallVec::with_capacity(operations.len());
+    // SmallVec::new() preserves inline storage for the common case of <=4 ops;
+    // with_capacity(n) forces a heap allocation when n > 0, even when n <= 4.
+    let mut ops_vec = SmallVec::new();
 
     for op in operations {
         let Ok(operation) = Operations::from_str(op) else {
@@ -539,7 +601,9 @@ fn validate_operations(
                     let re = match regex::Regex::new(flag_comparand) {
                         Ok(re) => re,
                         Err(err) => {
-                            return fail_clierror!("regex_replace expression error: {err:?}");
+                            return fail_incorrectusage_clierror!(
+                                "regex_replace expression error: {err:?}"
+                            );
                         },
                     };
                     let _ = REGEX_REPLACE.set(re);
@@ -590,6 +654,7 @@ fn applydp_operations(
     cell: &mut String,
     comparand: &str,
     replacement: &str,
+    regex_replacement: &str,
 ) {
     for op in ops_vec {
         match op {
@@ -648,7 +713,9 @@ fn applydp_operations(
             Operations::Regex_Replace => {
                 // safety: we set REGEX_REPLACE in validate_operations()
                 let regexreplace = REGEX_REPLACE.get().unwrap();
-                *cell = regexreplace.replace_all(cell, replacement).into_owned();
+                *cell = regexreplace
+                    .replace_all(cell, regex_replacement)
+                    .into_owned();
             },
             Operations::Round => {
                 if let Ok(num) = cell.parse::<f64>() {

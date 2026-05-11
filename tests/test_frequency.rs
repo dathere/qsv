@@ -6735,7 +6735,7 @@ fn frequency_oom_auto_enables_frequent_items() {
     cmd.arg("--memcheck")
         .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
         .arg(test_file);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     assert!(
         stderr.contains("auto-enabling --sketch-method frequent_items"),
         "stderr should mention the auto-enable wwarn, got: {stderr}"
@@ -6755,7 +6755,7 @@ fn frequency_oom_skips_when_asc_set() {
         .arg("--asc")
         .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
         .arg(test_file);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     assert!(
         !stderr.contains("auto-enabling --sketch-method frequent_items"),
         "frequent_items sketch must NOT auto-enable when --asc is set, got: {stderr}"
@@ -6772,7 +6772,7 @@ fn frequency_oom_skips_when_json_output() {
         .arg("--json")
         .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
         .arg(test_file);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     assert!(
         !stderr.contains("auto-enabling --sketch-method frequent_items"),
         "frequent_items sketch must NOT auto-enable when --json is set, got: {stderr}"

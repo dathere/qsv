@@ -167,6 +167,31 @@ impl Workdir {
         }
     }
 
+    /// Run `cmd`, assert it exited successfully, and return its stderr as a
+    /// `String`. Use this when a test needs to inspect stderr text (e.g. a
+    /// `wwarn!` message) while also guaranteeing the command did not error
+    /// out — `output_stderr` alone returns stderr even on non-zero exit and
+    /// can mask command failures.
+    pub fn stderr_on_success(&self, cmd: &mut process::Command) -> String {
+        {
+            // ensures stderr has been flushed before we run our cmd
+            let mut _stderr = io::stderr();
+            _stderr.flush().unwrap();
+        }
+        let o = cmd.output().unwrap();
+        assert!(
+            o.status.success(),
+            "\n\n===== {:?} =====\ncommand failed but expected success!\n\ncwd: {}\n\nstatus: \
+             {}\n\nstdout: {}\n\nstderr: {}\n\n=====\n",
+            cmd,
+            self.dir.display(),
+            o.status,
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr)
+        );
+        String::from_utf8_lossy(&o.stderr).to_string()
+    }
+
     pub fn assert_success(&self, cmd: &mut process::Command) {
         let o = cmd.output().unwrap();
         assert!(

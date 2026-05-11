@@ -973,11 +973,19 @@ fn parse_boolean_patterns(boolean_patterns: &str) -> CliResult<Vec<BooleanPatter
     Ok(patterns)
 }
 
-/// Auto-enable approx DataSketches estimators when an OOM hit on `--memcheck`
-/// forces a memory budget cut. Returns the list of method names that were
-/// switched, in user-facing form. Caller is responsible for emitting the
-/// `wwarn!` message and for verifying that this was actually invoked from the
-/// OOM branch.
+/// Auto-enable approx DataSketches estimators when an OOM hit forces a memory
+/// budget cut. Returns the list of method names that were switched, in
+/// user-facing form. Caller is responsible for emitting the `wwarn!` message
+/// and for verifying that this was actually invoked from the OOM branch.
+///
+/// `user_set_quantile_method` / `user_set_cardinality_method` indicate whether
+/// the user passed `--quantile-method` / `--cardinality-method` on the command
+/// line (regardless of value). When `true`, the auto-enable is suppressed for
+/// that method even if its current value is `"exact"` — this honors the
+/// "Re-run with explicit `--quantile-method exact` to disable the auto-enable"
+/// contract surfaced in the wwarn and --memcheck docs. Without this guard, the
+/// docopt default of `"exact"` would make an explicit `exact` indistinguishable
+/// from omitting the flag, and the opt-out advice in the wwarn would be a no-op.
 ///
 /// Conflict guards mirror the explicit `--quantile-method` / `--cardinality-method`
 /// validation that runs in `run()` (search for the `fail_incorrectusage_clierror!`
@@ -985,13 +993,20 @@ fn parse_boolean_patterns(boolean_patterns: &str) -> CliResult<Vec<BooleanPatter
 /// auto-disables `--mad` under approx, and the `--infer-boolean` + approx-cardinality
 /// fallback that forces exact). The intent is that this auto-enable only flips
 /// methods that would have passed validation if the user had set them by hand.
-fn try_enable_approx_sketches(args: &mut Args) -> Vec<&'static str> {
+fn try_enable_approx_sketches(
+    args: &mut Args,
+    user_set_quantile_method: bool,
+    user_set_cardinality_method: bool,
+) -> Vec<&'static str> {
     let mut enabled = Vec::new();
 
     // t-digest: blocked by --weight (datasketches crate has no weighted-update API).
     // Mirrors the explicit `--quantile-method approx + --weight` rejection in run();
     // also mirrors the MAD auto-disable wwarn (t-digest can't do MAD's second pass).
-    if args.flag_quantile_method == "exact" && args.flag_weight.is_none() {
+    if args.flag_quantile_method == "exact"
+        && !user_set_quantile_method
+        && args.flag_weight.is_none()
+    {
         args.flag_quantile_method = "approx".to_string();
         if args.flag_mad || args.flag_everything {
             args.flag_mad = false;
@@ -1004,12 +1019,25 @@ fn try_enable_approx_sketches(args: &mut Args) -> Vec<&'static str> {
     // HLL: blocked by --infer-boolean (boolean inference requires cardinality == 2
     // exactness; HLL's ~1.5% RSE would corrupt the comparison). Mirrors the explicit
     // `--infer-boolean forces --cardinality-method exact` fallback in run().
-    if args.flag_cardinality_method == "exact" && !args.flag_infer_boolean {
+    if args.flag_cardinality_method == "exact"
+        && !user_set_cardinality_method
+        && !args.flag_infer_boolean
+    {
         args.flag_cardinality_method = "approx".to_string();
         enabled.push("--cardinality-method approx");
     }
 
     enabled
+}
+
+/// Returns `true` if `flag` appears in `argv` as either a standalone token
+/// (`--flag`) or in the `--flag=value` form. Used by the OOM auto-fallback to
+/// detect whether the user explicitly passed an option, since docopt fills in
+/// default values that are indistinguishable from explicit user input on the
+/// parsed `Args` struct.
+fn argv_has_flag(argv: &[&str], flag: &str) -> bool {
+    let eq_prefix = format!("{flag}=");
+    argv.iter().any(|a| *a == flag || a.starts_with(&eq_prefix))
 }
 
 /// Main entry point for the stats command.
@@ -1057,6 +1085,14 @@ fn try_enable_approx_sketches(args: &mut Args) -> Vec<&'static str> {
 /// * Provides detailed error messages for configuration issues
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // Detect whether the user explicitly passed --quantile-method /
+    // --cardinality-method on the command line. docopt fills in the default
+    // value ("exact") regardless, so without this scan we can't honor an
+    // explicit `--quantile-method exact` opt-out during the OOM auto-fallback.
+    let user_set_quantile_method = argv_has_flag(argv, "--quantile-method");
+    let user_set_cardinality_method = argv_has_flag(argv, "--cardinality-method");
+
     if args.flag_typesonly {
         args.flag_everything = false;
         args.flag_mode = false;
@@ -1552,7 +1588,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                         // Sketch fallback: only for OOM (not other CliErrors)
                         if matches!(e, CliError::OutOfMemory(_)) {
-                            let enabled = try_enable_approx_sketches(&mut args);
+                            let enabled = try_enable_approx_sketches(
+                                &mut args,
+                                user_set_quantile_method,
+                                user_set_cardinality_method,
+                            );
                             if !enabled.is_empty() {
                                 wwarn!(
                                     "OOM during memory check: auto-enabling DataSketches \

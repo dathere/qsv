@@ -672,11 +672,28 @@ fn calculate_memory_aware_chunk_size_for_frequency(
 /// when the user could have set it by hand without hitting any of those
 /// errors.
 ///
-/// Returns `false` if any conflicting flag is set, if the method is already
-/// non-exact (don't override an explicit user choice), or if --sketch-map-size
-/// is invalid.
-fn can_enable_frequent_items(args: &Args) -> bool {
-    if args.flag_sketch_method != "exact" {
+/// `user_set_sketch_method` indicates whether the user passed `--sketch-method`
+/// on the command line (regardless of value). When `true`, the auto-enable is
+/// suppressed even if `flag_sketch_method == "exact"` — this honors the
+/// "Re-run with explicit `--sketch-method exact` to disable the auto-enable"
+/// contract surfaced in the wwarn and `--memcheck` docs. Without this guard,
+/// the docopt default of `"exact"` would make an explicit `exact` indistinguishable
+/// from omitting the flag, and the opt-out advice in the wwarn would be a no-op.
+///
+/// Returns `false` if any conflicting flag is set, if the user explicitly set
+/// the method (regardless of value), or if --sketch-map-size is invalid.
+/// Returns `true` if `flag` appears in `argv` as either a standalone token
+/// (`--flag`) or in the `--flag=value` form. Used by the OOM auto-fallback to
+/// detect whether the user explicitly passed an option, since docopt fills in
+/// default values that are indistinguishable from explicit user input on the
+/// parsed `Args` struct.
+fn argv_has_flag(argv: &[&str], flag: &str) -> bool {
+    let eq_prefix = format!("{flag}=");
+    argv.iter().any(|a| *a == flag || a.starts_with(&eq_prefix))
+}
+
+fn can_enable_frequent_items(args: &Args, user_set_sketch_method: bool) -> bool {
+    if args.flag_sketch_method != "exact" || user_set_sketch_method {
         return false;
     }
     if args.flag_asc
@@ -703,6 +720,12 @@ fn can_enable_frequent_items(args: &Args) -> bool {
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // Detect whether the user explicitly passed --sketch-method on the command
+    // line. docopt fills in the default value ("exact") regardless, so without
+    // this scan we can't honor an explicit `--sketch-method exact` opt-out
+    // during the OOM auto-fallback.
+    let user_set_sketch_method = argv_has_flag(argv, "--sketch-method");
 
     // Handle --no-other flag (alias for --other-text "<NONE>")
     if args.flag_no_other {
@@ -871,7 +894,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // run_frequent_items doesn't consult flag_sketch_method, so the field
                 // stays at "exact" and that's fine (cache key / diagnostics use other
                 // paths). Verified via grep over run_frequent_items's body.
-                if matches!(e, crate::CliError::OutOfMemory(_)) && can_enable_frequent_items(&args)
+                if matches!(e, crate::CliError::OutOfMemory(_))
+                    && can_enable_frequent_items(&args, user_set_sketch_method)
                 {
                     wwarn!(
                         "OOM during memory check: auto-enabling --sketch-method frequent_items \

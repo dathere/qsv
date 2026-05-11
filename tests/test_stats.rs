@@ -4221,7 +4221,7 @@ fn stats_oom_auto_enables_approx_sketches() {
         .arg("--memcheck")
         .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
         .arg(test_file);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     assert!(
         stderr.contains("auto-enabling DataSketches estimators"),
         "stderr should mention the auto-enable wwarn, got: {stderr}"
@@ -4251,7 +4251,7 @@ fn stats_oom_skips_approx_quantiles_with_weight() {
         .arg("col1")
         .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
         .arg(test_file);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     assert!(
         !stderr.contains("--quantile-method approx"),
         "quantile sketch should be suppressed when --weight is set, got: {stderr}"
@@ -4274,7 +4274,7 @@ fn stats_oom_skips_approx_cardinality_with_infer_boolean() {
         .arg("--infer-boolean")
         .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
         .arg(test_file);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     assert!(
         !stderr.contains("--cardinality-method approx"),
         "cardinality sketch should be suppressed under --infer-boolean, got: {stderr}"

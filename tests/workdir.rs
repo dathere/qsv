@@ -348,24 +348,30 @@ pub fn is_same_file(file1: &Path, file2: &Path) -> Result<bool, std::io::Error> 
 /// `QSV_FREEMEMORY_HEADROOM_PCT=90 --memcheck`. Returns the `Workdir` and the
 /// absolute path to the created file. Shared so the row count, column shape,
 /// and padding stay in sync between `test_stats.rs` and `test_frequency.rs`.
+///
+/// Rows are streamed directly to a `csv::Writer` on disk rather than
+/// materialized into an in-memory `Vec<Vec<String>>` first — the latter would
+/// retain ~1.5 GB of `String`s in the test process before any write hits the
+/// disk, which is enough to OOM the test harness itself on memory-constrained
+/// hosts (defeating the point of these OOM-fallback tests).
 pub fn build_large_oom_csv(name: &str) -> (Workdir, std::path::PathBuf) {
     let wrk = Workdir::new(name);
-    let mut data: Vec<Vec<String>> = vec![
-        vec!["col1", "col2", "col3", "col4", "col5"]
-            .into_iter()
-            .map(ToOwned::to_owned)
-            .collect(),
-    ];
-    for i in 0..10_000_000 {
-        data.push(vec![
-            format!("value_{}_with_some_padding_to_make_it_larger", i),
-            format!("another_value_{}_with_more_data", i),
-            format!("data_{}", i),
-            format!("field_{}_content", i),
-            format!("final_field_{}_with_additional_text", i),
-        ]);
-    }
     let path = wrk.path("large_data.csv");
-    wrk.create("large_data.csv", data);
+    let mut wtr = csv::WriterBuilder::new().from_path(&path).unwrap();
+    wtr.write_record(["col1", "col2", "col3", "col4", "col5"])
+        .unwrap();
+    for i in 0..10_000_000_u64 {
+        wtr.write_record([
+            format!("value_{i}_with_some_padding_to_make_it_larger"),
+            format!("another_value_{i}_with_more_data"),
+            format!("data_{i}"),
+            format!("field_{i}_content"),
+            format!("final_field_{i}_with_additional_text"),
+        ])
+        .unwrap();
+    }
+    wtr.flush().unwrap();
+    drop(wtr);
+    let _ = fs::File::open(&path).unwrap().sync_all();
     (wrk, path)
 }

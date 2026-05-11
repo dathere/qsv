@@ -266,8 +266,8 @@ Common options:
                            On OOM, qsv auto-creates an index when no index
                            exists (skipped for stdin) and ALSO switches to the
                            Frequent Items sketch (Apache DataSketches
-                           Misra-Gries, equivalent to sketch-method
-                           frequent_items) where compatible. The sketch
+                           Misra-Gries, equivalent to `--sketch-method
+                           frequent_items`) where compatible. The sketch
                            fallback can also fire when an index is already
                            present and the OOM still trips (e.g., when jobs is
                            pinned to 1 on a pre-indexed file). A wwarn is
@@ -657,9 +657,12 @@ fn calculate_memory_aware_chunk_size_for_frequency(
 }
 
 /// Check whether `--sketch-method frequent_items` can be auto-enabled given
-/// the current flag configuration. Mirrors the explicit rejection guards at
-/// frequency.rs:691-760 so an auto-enable only flips the method when the user
-/// could have set it by hand without hitting any of those errors.
+/// the current flag configuration. Mirrors the explicit `frequent_items`
+/// rejection block in `run()` (the `match args.flag_sketch_method` arm that
+/// rejects each conflicting flag with `fail_incorrectusage_clierror!` and
+/// validates `--sketch-map-size`) so an auto-enable only flips the method
+/// when the user could have set it by hand without hitting any of those
+/// errors.
 ///
 /// Returns `false` if any conflicting flag is set, if the method is already
 /// non-exact (don't override an explicit user choice), or if --sketch-map-size
@@ -685,7 +688,8 @@ fn can_enable_frequent_items(args: &Args) -> bool {
     if args.flag_stats_filter.is_some() {
         return false;
     }
-    // sketch-map-size validity (mirrors the validator at frequency.rs:751).
+    // sketch-map-size validity (mirrors the `must be a power of two and >= 8`
+    // check in run()'s frequent_items dispatch).
     args.flag_sketch_map_size >= 8 && args.flag_sketch_map_size.is_power_of_two()
 }
 

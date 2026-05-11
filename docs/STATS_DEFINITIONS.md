@@ -356,7 +356,7 @@ By default, `stats` produces **exact, deterministic** results. Three opt-in flag
 
 **Output validation:** `stats` uses [simdutf8](https://crates.io/crates/simdutf8) for SIMD-accelerated UTF-8 validation on the output path — a perf detail with no behavioral change.
 
-**OOM auto-fallback (`--memcheck`):** When `--memcheck` is set and `util::mem_file_check` reports the file is too large to fit in memory, `stats` layers two fallbacks before propagating the OOM error:
+**OOM auto-fallback:** Whenever `stats` takes the non-parallel path with non-streaming columns, it runs an in-memory load check via `util::mem_file_check`. By default the check is **NORMAL mode** (file size vs. total memory − headroom). Passing `--memcheck` (or setting the `QSV_MEMORY_CHECK` env var) switches to **CONSERVATIVE mode** (file size vs. available + free_swap × platform_factor − headroom), which is stricter and trips OOM far more readily. If the check fails in either mode, `stats` layers two fallbacks before propagating the OOM error:
 
 1. **Auto-create an index** (when no index exists and input is not stdin) to switch to parallel/indexed processing.
 2. **Auto-enable approx DataSketches estimators** — flips `--quantile-method` and `--cardinality-method` from `exact` to `approx` where the explicit-validation guards would have accepted them. Specifically:

@@ -261,16 +261,24 @@ Common options:
                            names.
     -d, --delimiter <arg>  The field delimiter for reading CSV data.
                            Must be a single character. (default: ,)
-    --memcheck             Check if there is enough memory to load the entire
-                           CSV into memory using CONSERVATIVE heuristics.
-                           On OOM, qsv auto-creates an index when no index
-                           exists (skipped for stdin) and ALSO switches to the
-                           Frequent Items sketch (Apache DataSketches
+    --memcheck             Use CONSERVATIVE heuristics for the in-memory load
+                           check (file size vs. available + free_swap × platform
+                           factor − headroom), instead of the default NORMAL
+                           check (file size vs. total memory − headroom). The
+                           CONSERVATIVE check is stricter and trips OOM far
+                           more readily. (See also: QSV_MEMORY_CHECK env var,
+                           equivalent to passing --memcheck.)
+                           Independently of this flag, the in-memory load
+                           check runs whenever frequency takes the
+                           non-parallel path. On OOM (in either NORMAL or
+                           CONSERVATIVE mode), qsv auto-creates an index when
+                           no index exists (skipped for stdin) AND switches
+                           to the Frequent Items sketch (Apache DataSketches
                            Misra-Gries, equivalent to `--sketch-method
                            frequent_items`) where compatible. The sketch
                            fallback can also fire when an index is already
-                           present and the OOM still trips (e.g., when jobs is
-                           pinned to 1 on a pre-indexed file). A wwarn is
+                           present and the OOM still trips (e.g., when jobs
+                           is pinned to 1 on a pre-indexed file). A wwarn is
                            emitted when the sketch fallback engages.
 "#;
 

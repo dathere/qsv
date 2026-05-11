@@ -583,10 +583,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let flag_new_column = args.flag_new_column;
 
     // pre-compute a per-column selection mask so multi-column in-place transforms can
-    // rebuild each record once per row instead of once per selected column. Mask indices
-    // align with input-record field indices; the trailing `false` slot (if --new-column
-    // appended one to `headers`) is never read because that branch handles --new-column.
-    let is_selected: Vec<bool> = {
+    // rebuild each record once per row instead of once per selected column. Only built
+    // when --new-column is NOT set: the --new-column branch uses the single selected
+    // column index directly and never consults the mask, so allocating it there would
+    // be wasted, and skipping it also keeps the mask's len() == input-record width
+    // (avoiding any reliance on `headers` not having been extended yet).
+    let is_selected: Vec<bool> = if flag_new_column.is_some() {
+        Vec::new()
+    } else {
         let mut mask = vec![false; headers.len()];
         for col_index in &*sel {
             mask[*col_index] = true;

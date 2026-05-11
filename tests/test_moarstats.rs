@@ -1,4 +1,5 @@
 use csv::ReaderBuilder;
+use serial_test::serial;
 
 use crate::workdir::Workdir;
 

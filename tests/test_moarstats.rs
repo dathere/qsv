@@ -4316,6 +4316,7 @@ fn moarstats_bivariate_mixed_field_types() {
 }
 
 #[test]
+#[serial]
 fn moarstats_bivariate_with_join() {
     let wrk = Workdir::new("moarstats_bivariate_join");
 
@@ -4461,6 +4462,7 @@ fn moarstats_join_inputs_without_keys_errors() {
 /// — a regression silently coercing `left` to `inner` would drop the
 /// unmatched primary row and produce n_pairs=4 instead of 5.
 #[test]
+#[serial]
 fn moarstats_join_type_left_runs_and_writes_bivariate() {
     let wrk = Workdir::new("moarstats_join_left");
 
@@ -4529,6 +4531,7 @@ fn moarstats_join_type_left_runs_and_writes_bivariate() {
 /// secondary row, all with both secondary columns populated), but 5 under
 /// inner. A silent coercion to inner would yield 5.
 #[test]
+#[serial]
 fn moarstats_join_type_right_runs_and_writes_bivariate() {
     let wrk = Workdir::new("moarstats_join_right");
 
@@ -4595,6 +4598,7 @@ fn moarstats_join_type_right_runs_and_writes_bivariate() {
 /// only primary's; right would keep only secondary's. Only full satisfies
 /// both assertions simultaneously.
 #[test]
+#[serial]
 fn moarstats_join_type_full_runs_and_writes_bivariate() {
     let wrk = Workdir::new("moarstats_join_full");
 
@@ -4677,6 +4681,7 @@ fn moarstats_join_type_full_runs_and_writes_bivariate() {
 /// proves the chained join actually merged tertiary into the result rather
 /// than silently producing a primary-only dataset.
 #[test]
+#[serial]
 fn moarstats_join_three_datasets_runs() {
     let wrk = Workdir::new("moarstats_join_three");
 
@@ -4749,6 +4754,7 @@ fn moarstats_join_three_datasets_runs() {
 }
 
 #[test]
+#[serial]
 fn moarstats_bivariate_index_auto_creation() {
     let wrk = Workdir::new("moarstats_bivariate_index");
 
@@ -4800,6 +4806,7 @@ fn moarstats_bivariate_index_auto_creation() {
 
 // Test for --bivariate-stats flag with "pearson" only
 #[test]
+#[serial]
 fn moarstats_bivariate_stats_pearson_only() {
     let wrk = Workdir::new("moarstats_bivariate_stats_pearson");
 
@@ -4906,6 +4913,7 @@ fn moarstats_bivariate_stats_pearson_only() {
 
 // Test for --bivariate-stats flag with multiple stats
 #[test]
+#[serial]
 fn moarstats_bivariate_stats_multiple() {
     let wrk = Workdir::new("moarstats_bivariate_stats_multiple");
 
@@ -5024,6 +5032,7 @@ fn moarstats_bivariate_stats_multiple() {
 
 // Test for --bivariate-stats flag with "all" (default)
 #[test]
+#[serial]
 fn moarstats_bivariate_stats_all() {
     let wrk = Workdir::new("moarstats_bivariate_stats_all");
 
@@ -5286,6 +5295,7 @@ fn moarstats_xsd_gdate_scan_thorough_mode() {
 
 // Test --xsd-gdate-scan quick mode
 #[test]
+#[serial]
 fn moarstats_xsd_gdate_scan_quick_mode() {
     let wrk = Workdir::new("moarstats_xsd_gdate_quick");
 

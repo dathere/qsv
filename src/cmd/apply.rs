@@ -565,20 +565,34 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         wtr.write_record(&headers)?;
     }
 
-    // <NULL> (case-insensitive) is recognized as "delete matches" when regex_replace is in
-    // the operation chain. Note this clears flag_replacement for ALL ops in the chain, so
-    // a chained `regex_replace,replace` with --replacement <NULL> deletes matches in both.
-    let flag_replacement = if apply_cmd == ApplySubCmd::Operations
+    // <NULL> (case-insensitive) on --replacement is recognized as "delete matches" by
+    // regex_replace. Scope this rewrite to regex_replace only — other ops in the same chain
+    // (e.g. `replace`, `numtocurrency`) still see the user's literal --replacement value, so
+    // they aren't silently turned into no-ops.
+    let flag_replacement = args.flag_replacement;
+    let regex_replace_replacement = if apply_cmd == ApplySubCmd::Operations
         && ops_vec.contains(&Operations::Regex_Replace)
-        && args.flag_replacement.eq_ignore_ascii_case(NULL_VALUE)
+        && flag_replacement.eq_ignore_ascii_case(NULL_VALUE)
     {
         String::new()
     } else {
-        args.flag_replacement
+        flag_replacement.clone()
     };
     let flag_comparand = args.flag_comparand;
     let flag_formatstr = args.flag_formatstr;
     let flag_new_column = args.flag_new_column;
+
+    // pre-compute a per-column selection mask so multi-column in-place transforms can
+    // rebuild each record once per row instead of once per selected column. Mask indices
+    // align with input-record field indices; the trailing `false` slot (if --new-column
+    // appended one to `headers`) is never read because that branch handles --new-column.
+    let is_selected: Vec<bool> = {
+        let mut mask = vec![false; headers.len()];
+        for col_index in &*sel {
+            mask[*col_index] = true;
+        }
+        mask
+    };
 
     // prep progress bar
     let show_progress =
@@ -630,34 +644,69 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 match apply_cmd {
                     ApplySubCmd::Operations => {
                         let mut cell = String::new();
-                        for col_index in &*sel {
-                            record[*col_index].clone_into(&mut cell);
+                        if flag_new_column.is_some() {
+                            // single-column case (validated upstream: --new-column requires
+                            // sel.len() == 1 for operations/emptyreplace)
+                            let col_index = *sel.iter().next().unwrap();
+                            record[col_index].clone_into(&mut cell);
                             apply_operations(
                                 &ops_vec,
                                 &mut cell,
                                 &flag_comparand,
                                 &flag_replacement,
+                                &regex_replace_replacement,
                                 &flag_formatstr,
                             );
-                            if flag_new_column.is_some() {
-                                record.push_field(&cell);
-                            } else {
-                                record = replace_column_value(&record, *col_index, &cell);
+                            record.push_field(&cell);
+                        } else {
+                            // multi-column (or single-column) in-place: rebuild the record
+                            // once instead of once per selected column (replace_column_value
+                            // allocates a fresh StringRecord per call).
+                            let mut new_record = csv::StringRecord::new();
+                            for (i, field) in record.iter().enumerate() {
+                                if is_selected[i] {
+                                    cell.clear();
+                                    cell.push_str(field);
+                                    apply_operations(
+                                        &ops_vec,
+                                        &mut cell,
+                                        &flag_comparand,
+                                        &flag_replacement,
+                                        &regex_replace_replacement,
+                                        &flag_formatstr,
+                                    );
+                                    new_record.push_field(&cell);
+                                } else {
+                                    new_record.push_field(field);
+                                }
                             }
+                            record = new_record;
                         }
                     },
                     ApplySubCmd::EmptyReplace => {
-                        let mut cell = String::new();
-                        for col_index in &*sel {
-                            record[*col_index].clone_into(&mut cell);
-                            if cell.trim().is_empty() {
-                                cell.clone_from(&flag_replacement);
-                            }
-                            if flag_new_column.is_some() {
-                                record.push_field(&cell);
+                        if flag_new_column.is_some() {
+                            // single-column case (validated upstream)
+                            let col_index = *sel.iter().next().unwrap();
+                            let field = &record[col_index];
+                            let new_field = if field.trim().is_empty() {
+                                flag_replacement.as_str()
                             } else {
-                                record = replace_column_value(&record, *col_index, &cell);
+                                field
+                            };
+                            // borrow ends before push_field
+                            let new_field = new_field.to_owned();
+                            record.push_field(&new_field);
+                        } else {
+                            // rebuild once instead of once per selected column
+                            let mut new_record = csv::StringRecord::new();
+                            for (i, field) in record.iter().enumerate() {
+                                if is_selected[i] && field.trim().is_empty() {
+                                    new_record.push_field(&flag_replacement);
+                                } else {
+                                    new_record.push_field(field);
+                                }
                             }
+                            record = new_record;
                         }
                     },
                     ApplySubCmd::DynFmt => {
@@ -735,8 +784,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(wtr.flush()?)
 }
 
-// validate apply operations for required options
-// and prepare operations enum vec
 fn validate_operations(
     operations: &Vec<&str>,
     flag_comparand: &str,
@@ -754,7 +801,9 @@ fn validate_operations(
     let mut strip_invokes = 0_u8;
     let mut whatlang_invokes = 0_u8;
 
-    let mut ops_vec = SmallVec::with_capacity(operations.len());
+    // SmallVec::new() preserves inline storage for the common case of <=4 ops;
+    // with_capacity(n) forces a heap allocation when n > 0, even when n <= 4.
+    let mut ops_vec = SmallVec::new();
 
     for op in operations {
         let Ok(operation) = Operations::from_str(op) else {
@@ -767,18 +816,14 @@ fn validate_operations(
                         "--new-column (-c) is required for censor operations."
                     );
                 }
-                if censor_invokes == 0
-                    && CENSOR
-                        .set({
-                            let mut censored_words = Censor::Standard + Zealous + Sex;
-                            for word in flag_comparand.split(',') {
-                                censored_words += word.trim();
-                            }
-                            censored_words
-                        })
-                        .is_err()
-                {
-                    return fail!("Cannot initialize Censor engine.");
+                if censor_invokes == 0 {
+                    // OnceLock::set can only fail if already set; the invokes guard makes
+                    // that path unreachable here.
+                    let mut censored_words = Censor::Standard + Zealous + Sex;
+                    for word in flag_comparand.split(',') {
+                        censored_words += word.trim();
+                    }
+                    let _ = CENSOR.set(censored_words);
                 }
                 censor_invokes = censor_invokes.saturating_add(1);
             },
@@ -796,12 +841,8 @@ fn validate_operations(
                         "--comparand (-C) and --new-column (-c) are required for eudex."
                     );
                 }
-                if eudex_invokes == 0
-                    && EUDEX_COMPARAND_HASH
-                        .set(eudex::Hash::new(flag_comparand))
-                        .is_err()
-                {
-                    return fail!("Cannot initialize Eudex.");
+                if eudex_invokes == 0 {
+                    let _ = EUDEX_COMPARAND_HASH.set(eudex::Hash::new(flag_comparand));
                 }
                 eudex_invokes = eudex_invokes.saturating_add(1);
             },
@@ -823,10 +864,11 @@ fn validate_operations(
                     let re = match regex::Regex::new(flag_comparand) {
                         Ok(re) => re,
                         Err(err) => {
-                            return fail_clierror!("regex_replace expression error: {err:?}");
+                            return fail_incorrectusage_clierror!(
+                                "regex_replace expression error: {err:?}"
+                            );
                         },
                     };
-                    #[allow(clippy::let_underscore_untyped)]
                     let _ = REGEX_REPLACE.set(re);
                 }
                 regex_replace_invokes = regex_replace_invokes.saturating_add(1);
@@ -846,14 +888,9 @@ fn validate_operations(
                         "--new-column (-c) is required for sentiment operation."
                     );
                 }
-                if sentiment_invokes == 0
-                    && SENTIMENT_ANALYZER
-                        .set(SentimentIntensityAnalyzer::new())
-                        .is_err()
-                {
-                    return fail!("Cannot initialize Sentiment Analyzer.");
+                if sentiment_invokes == 0 {
+                    let _ = SENTIMENT_ANALYZER.set(SentimentIntensityAnalyzer::new());
                 }
-
                 sentiment_invokes = sentiment_invokes.saturating_add(1);
             },
             Operations::Simdl
@@ -872,7 +909,9 @@ fn validate_operations(
             },
             Operations::Strip_Prefix | Operations::Strip_Suffix => {
                 if flag_comparand.is_empty() {
-                    return fail!("--comparand (-C) is required for strip operations.");
+                    return fail_incorrectusage_clierror!(
+                        "--comparand (-C) is required for strip operations."
+                    );
                 }
                 strip_invokes = strip_invokes.saturating_add(1);
             },
@@ -900,39 +939,36 @@ fn validate_operations(
                     );
                 }
 
-                if whatlang_invokes == 0
-                    && WHATLANG_CONFIDENCE_THRESHOLD
-                        .set(if flag_comparand.is_empty() {
-                            DEFAULT_THRESHOLD
+                if whatlang_invokes == 0 {
+                    let threshold = if flag_comparand.is_empty() {
+                        DEFAULT_THRESHOLD
+                    } else {
+                        let preparsed_threshold;
+                        let show_confidence = if flag_comparand.ends_with('?') {
+                            preparsed_threshold = flag_comparand.trim_end_matches('?');
+                            true
                         } else {
-                            let preparsed_threshold;
-                            let show_confidence = if flag_comparand.ends_with('?') {
-                                preparsed_threshold = flag_comparand.trim_end_matches('?');
-                                true
-                            } else {
-                                preparsed_threshold = flag_comparand;
-                                false
-                            };
-                            let desired_threshold = preparsed_threshold
-                                .parse::<f64>()
-                                .unwrap_or(DEFAULT_THRESHOLD);
-                            // desired threshold can be 0.0 to 1.0
-                            let final_threshold = if (0.0..=1.0).contains(&desired_threshold) {
-                                desired_threshold
-                            } else {
-                                // its outside the valid range
-                                // just set it to the default threshold
-                                DEFAULT_THRESHOLD
-                            };
-                            if show_confidence {
-                                -final_threshold
-                            } else {
-                                final_threshold
-                            }
-                        })
-                        .is_err()
-                {
-                    return fail!("cannot initialize WhatLang language detection.");
+                            preparsed_threshold = flag_comparand;
+                            false
+                        };
+                        let desired_threshold = preparsed_threshold
+                            .parse::<f64>()
+                            .unwrap_or(DEFAULT_THRESHOLD);
+                        // desired threshold can be 0.0 to 1.0
+                        let final_threshold = if (0.0..=1.0).contains(&desired_threshold) {
+                            desired_threshold
+                        } else {
+                            // its outside the valid range
+                            // just set it to the default threshold
+                            DEFAULT_THRESHOLD
+                        };
+                        if show_confidence {
+                            -final_threshold
+                        } else {
+                            final_threshold
+                        }
+                    };
+                    let _ = WHATLANG_CONFIDENCE_THRESHOLD.set(threshold);
                 }
                 whatlang_invokes = whatlang_invokes.saturating_add(1);
             },
@@ -976,6 +1012,7 @@ fn apply_operations(
     cell: &mut String,
     comparand: &str,
     replacement: &str,
+    regex_replacement: &str,
     formatstr: &str,
 ) {
     for op in ops_vec {
@@ -1081,7 +1118,9 @@ fn apply_operations(
             Operations::Regex_Replace => {
                 // safety: we set REGEX_REPLACE in validate_operations()
                 let regexreplace = REGEX_REPLACE.get().unwrap();
-                *cell = regexreplace.replace_all(cell, replacement).into_owned();
+                *cell = regexreplace
+                    .replace_all(cell, regex_replacement)
+                    .into_owned();
             },
             Operations::Censor => {
                 // safety: we set CENSOR in validate_operations()
@@ -1105,9 +1144,12 @@ fn apply_operations(
                     //safety: we set THOUSANDS_POLICY in validate_operations()
                     let mut temp_string = num.separate_by_policy(*THOUSANDS_POLICY.get().unwrap());
 
-                    // if there is a decimal separator (fractional part > 0.0), use the requested
-                    // decimal separator in --replacement
-                    if num.fract() > 0.0 {
+                    // if there is a decimal separator (i.e. a non-zero fractional part), use
+                    // the requested decimal separator in --replacement. Compare against != 0.0
+                    // because f64::fract() preserves sign: (-1.5).fract() == -0.5, so a
+                    // `> 0.0` check would skip negative fractional numbers and leave their
+                    // decimal point as `.` regardless of --replacement.
+                    if num.fract() != 0.0 {
                         // if replacement is empty, use the default decimal separator (.)
                         *cell = if replacement.is_empty() {
                             temp_string

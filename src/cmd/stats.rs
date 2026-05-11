@@ -351,10 +351,26 @@ Common options:
                            in statistics.
     -d, --delimiter <arg>  The field delimiter for READING CSV data.
                            Must be a single character. (default: ,)
-    --memcheck             Check if there is enough memory to load the entire
-                           CSV into memory using CONSERVATIVE heuristics.
-                           This option is ignored when computing default, streaming
-                           statistics, as it is not needed.
+    --memcheck             Use CONSERVATIVE heuristics for the in-memory load
+                           check (file size vs. available + free_swap × platform
+                           factor − headroom), instead of the default NORMAL
+                           check (file size vs. total memory − headroom). The
+                           CONSERVATIVE check is stricter and trips OOM far
+                           more readily. Ignored when computing default,
+                           streaming statistics. (See also: QSV_MEMORY_CHECK
+                           env var, equivalent to passing --memcheck.)
+                           Independently of this flag, the in-memory load
+                           check runs whenever stats takes the non-parallel
+                           path with non-streaming columns. On OOM (in either
+                           NORMAL or CONSERVATIVE mode), qsv auto-creates an
+                           index when no index exists (skipped for stdin) AND
+                           switches to approx quantile + approx cardinality
+                           methods (DataSketches t-digest and HyperLogLog)
+                           where compatible. The sketch fallback can also
+                           fire when an index is already present and the OOM
+                           still trips (e.g., when jobs is pinned to 1 on a
+                           pre-indexed file). A wwarn is emitted listing the
+                           auto-enabled estimators.
 "#;
 
 /*
@@ -957,6 +973,73 @@ fn parse_boolean_patterns(boolean_patterns: &str) -> CliResult<Vec<BooleanPatter
     Ok(patterns)
 }
 
+/// Auto-enable approx DataSketches estimators when an OOM hit forces a memory
+/// budget cut. Returns the list of method names that were switched, in
+/// user-facing form. Caller is responsible for emitting the `wwarn!` message
+/// and for verifying that this was actually invoked from the OOM branch.
+///
+/// `user_set_quantile_method` / `user_set_cardinality_method` indicate whether
+/// the user passed `--quantile-method` / `--cardinality-method` on the command
+/// line (regardless of value). When `true`, the auto-enable is suppressed for
+/// that method even if its current value is `"exact"` — this honors the
+/// "Re-run with explicit `--quantile-method exact` to disable the auto-enable"
+/// contract surfaced in the wwarn and --memcheck docs. Without this guard, the
+/// docopt default of `"exact"` would make an explicit `exact` indistinguishable
+/// from omitting the flag, and the opt-out advice in the wwarn would be a no-op.
+///
+/// Conflict guards mirror the explicit `--quantile-method` / `--cardinality-method`
+/// validation that runs in `run()` (search for the `fail_incorrectusage_clierror!`
+/// guards that reject `--quantile-method approx` + `--weight`, the `wwarn!` that
+/// auto-disables `--mad` under approx, and the `--infer-boolean` + approx-cardinality
+/// fallback that forces exact). The intent is that this auto-enable only flips
+/// methods that would have passed validation if the user had set them by hand.
+fn try_enable_approx_sketches(
+    args: &mut Args,
+    user_set_quantile_method: bool,
+    user_set_cardinality_method: bool,
+) -> Vec<&'static str> {
+    let mut enabled = Vec::new();
+
+    // t-digest: blocked by --weight (datasketches crate has no weighted-update API).
+    // Mirrors the explicit `--quantile-method approx + --weight` rejection in run();
+    // also mirrors the MAD auto-disable wwarn (t-digest can't do MAD's second pass).
+    if args.flag_quantile_method == "exact"
+        && !user_set_quantile_method
+        && args.flag_weight.is_none()
+    {
+        args.flag_quantile_method = "approx".to_string();
+        if args.flag_mad || args.flag_everything {
+            args.flag_mad = false;
+            enabled.push("--quantile-method approx (MAD disabled)");
+        } else {
+            enabled.push("--quantile-method approx");
+        }
+    }
+
+    // HLL: blocked by --infer-boolean (boolean inference requires cardinality == 2
+    // exactness; HLL's ~1.5% RSE would corrupt the comparison). Mirrors the explicit
+    // `--infer-boolean forces --cardinality-method exact` fallback in run().
+    if args.flag_cardinality_method == "exact"
+        && !user_set_cardinality_method
+        && !args.flag_infer_boolean
+    {
+        args.flag_cardinality_method = "approx".to_string();
+        enabled.push("--cardinality-method approx");
+    }
+
+    enabled
+}
+
+/// Returns `true` if `flag` appears in `argv` as either a standalone token
+/// (`--flag`) or in the `--flag=value` form. Used by the OOM auto-fallback to
+/// detect whether the user explicitly passed an option, since docopt fills in
+/// default values that are indistinguishable from explicit user input on the
+/// parsed `Args` struct.
+fn argv_has_flag(argv: &[&str], flag: &str) -> bool {
+    let eq_prefix = format!("{flag}=");
+    argv.iter().any(|a| *a == flag || a.starts_with(&eq_prefix))
+}
+
 /// Main entry point for the stats command.
 ///
 /// This function orchestrates the entire CSV statistics computation process, including
@@ -1002,6 +1085,14 @@ fn parse_boolean_patterns(boolean_patterns: &str) -> CliResult<Vec<BooleanPatter
 /// * Provides detailed error messages for configuration issues
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // Detect whether the user explicitly passed --quantile-method /
+    // --cardinality-method on the command line. docopt fills in the default
+    // value ("exact") regardless, so without this scan we can't honor an
+    // explicit `--quantile-method exact` opt-out during the OOM auto-fallback.
+    let user_set_quantile_method = argv_has_flag(argv, "--quantile-method");
+    let user_set_cardinality_method = argv_has_flag(argv, "--cardinality-method");
+
     if args.flag_typesonly {
         args.flag_everything = false;
         args.flag_mode = false;
@@ -1467,39 +1558,53 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         // Memory check passed, proceed with sequential processing
                     },
                     Err(e) => {
-                        // Memory check failed - if we don't have an index, try creating one
+                        // Memory check failed. We have two fallbacks that can stack:
+                        //   1. auto-create an index to switch to parallel/indexed mode
+                        //   2. auto-enable DataSketches estimators (t-digest, HLL) to reduce
+                        //      per-column memory regardless of sequential vs. parallel
+                        // Only propagate the original OOM error if NEITHER fallback engages.
+                        let mut index_succeeded = false;
                         if indexed_result.is_none() && !rconfig.is_stdin() {
                             log::info!(
                                 "File too large for sequential processing. Auto-creating index to \
                                  enable parallel processing..."
                             );
-
-                            // Create index and retry
                             match util::create_index_for_file(&path, &rconfig) {
                                 Ok(()) => {
-                                    // Re-check for index after creation
                                     indexed_result = rconfig.indexed()?;
-                                    if indexed_result.is_some() {
+                                    index_succeeded = indexed_result.is_some();
+                                    if index_succeeded {
                                         log::info!(
                                             "Index created successfully. Switching to parallel \
                                              processing."
                                         );
-                                        // Continue - the match statement below will use
-                                        // indexed_result to determine parallel/sequential
-                                    } else {
-                                        // Index creation succeeded but we still can't get it
-                                        // Return the original memory error
-                                        return Err(e);
                                     }
                                 },
                                 Err(index_err) => {
-                                    // Index creation failed, return the original memory error
                                     log::warn!("Failed to auto-create index: {index_err}");
-                                    return Err(e);
                                 },
                             }
-                        } else {
-                            // Either we already have an index or it's stdin - return the error
+                        }
+
+                        // Sketch fallback: only for OOM (not other CliErrors)
+                        if matches!(e, CliError::OutOfMemory(_)) {
+                            let enabled = try_enable_approx_sketches(
+                                &mut args,
+                                user_set_quantile_method,
+                                user_set_cardinality_method,
+                            );
+                            if !enabled.is_empty() {
+                                wwarn!(
+                                    "OOM during memory check: auto-enabling DataSketches \
+                                     estimators ({}). Re-run with explicit --quantile-method \
+                                     exact / --cardinality-method exact to disable the \
+                                     auto-enable.",
+                                    enabled.join(", ")
+                                );
+                            } else if !index_succeeded {
+                                return Err(e);
+                            }
+                        } else if !index_succeeded {
                             return Err(e);
                         }
                     },

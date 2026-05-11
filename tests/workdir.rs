@@ -167,6 +167,31 @@ impl Workdir {
         }
     }
 
+    /// Run `cmd`, assert it exited successfully, and return its stderr as a
+    /// `String`. Use this when a test needs to inspect stderr text (e.g. a
+    /// `wwarn!` message) while also guaranteeing the command did not error
+    /// out — `output_stderr` alone returns stderr even on non-zero exit and
+    /// can mask command failures.
+    pub fn stderr_on_success(&self, cmd: &mut process::Command) -> String {
+        {
+            // ensures stderr has been flushed before we run our cmd
+            let mut _stderr = io::stderr();
+            _stderr.flush().unwrap();
+        }
+        let o = cmd.output().unwrap();
+        assert!(
+            o.status.success(),
+            "\n\n===== {:?} =====\ncommand failed but expected success!\n\ncwd: {}\n\nstatus: \
+             {}\n\nstdout: {}\n\nstderr: {}\n\n=====\n",
+            cmd,
+            self.dir.display(),
+            o.status,
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr)
+        );
+        String::from_utf8_lossy(&o.stderr).to_string()
+    }
+
     pub fn assert_success(&self, cmd: &mut process::Command) {
         let o = cmd.output().unwrap();
         assert!(
@@ -341,4 +366,37 @@ pub fn is_same_file(file1: &Path, file2: &Path) -> Result<bool, std::io::Error> 
     }
 
     return Ok(true);
+}
+
+/// Build a multi-GB CSV (10M rows × 5 columns of padded strings) for tests
+/// that need to deterministically trigger `util::mem_file_check` OOM via
+/// `QSV_FREEMEMORY_HEADROOM_PCT=90 --memcheck`. Returns the `Workdir` and the
+/// absolute path to the created file. Shared so the row count, column shape,
+/// and padding stay in sync between `test_stats.rs` and `test_frequency.rs`.
+///
+/// Rows are streamed directly to a `csv::Writer` on disk rather than
+/// materialized into an in-memory `Vec<Vec<String>>` first — the latter would
+/// retain ~1.5 GB of `String`s in the test process before any write hits the
+/// disk, which is enough to OOM the test harness itself on memory-constrained
+/// hosts (defeating the point of these OOM-fallback tests).
+pub fn build_large_oom_csv(name: &str) -> (Workdir, std::path::PathBuf) {
+    let wrk = Workdir::new(name);
+    let path = wrk.path("large_data.csv");
+    let mut wtr = csv::WriterBuilder::new().from_path(&path).unwrap();
+    wtr.write_record(["col1", "col2", "col3", "col4", "col5"])
+        .unwrap();
+    for i in 0..10_000_000_u64 {
+        wtr.write_record([
+            format!("value_{i}_with_some_padding_to_make_it_larger"),
+            format!("another_value_{i}_with_more_data"),
+            format!("data_{i}"),
+            format!("field_{i}_content"),
+            format!("final_field_{i}_with_additional_text"),
+        ])
+        .unwrap();
+    }
+    wtr.flush().unwrap();
+    drop(wtr);
+    let _ = fs::File::open(&path).unwrap().sync_all();
+    (wrk, path)
 }

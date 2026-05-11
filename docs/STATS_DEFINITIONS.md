@@ -356,6 +356,15 @@ By default, `stats` produces **exact, deterministic** results. Three opt-in flag
 
 **Output validation:** `stats` uses [simdutf8](https://crates.io/crates/simdutf8) for SIMD-accelerated UTF-8 validation on the output path — a perf detail with no behavioral change.
 
+**OOM auto-fallback:** Whenever `stats` takes the non-parallel path with non-streaming columns, it runs an in-memory load check via `util::mem_file_check`. By default the check is **NORMAL mode** (file size vs. total memory − headroom). Passing `--memcheck` (or setting the `QSV_MEMORY_CHECK` env var) switches to **CONSERVATIVE mode** (file size vs. available + free_swap × platform_factor − headroom), which is stricter and trips OOM far more readily. If the check fails in either mode, `stats` layers two fallbacks before propagating the OOM error:
+
+1. **Auto-create an index** (when no index exists and input is not stdin) to switch to parallel/indexed processing.
+2. **Auto-enable approx DataSketches estimators** — flips `--quantile-method` and `--cardinality-method` from `exact` to `approx` where the explicit-validation guards would have accepted them. Specifically:
+   - `--quantile-method` auto-enables unless `--weight` is set; if `--mad` or `--everything` is also set, MAD is auto-disabled (mirroring the existing `--quantile-method approx` guard).
+   - `--cardinality-method` auto-enables unless `--infer-boolean` is set.
+
+A `wwarn!` is emitted listing each auto-enabled estimator. The original OOM error is only propagated when **neither** fallback engages. The sketch fallback can fire even when an index is already present and the OOM check still trips (e.g., with `--jobs 1` on a pre-indexed file) — that is a behavior change from the previous "error out" path in this narrow case. Users can disable the auto-enable by passing `--quantile-method exact` or `--cardinality-method exact` explicitly; the OOM arm scans `argv` for these flag names (since docopt fills in the default `exact` value either way) and skips the auto-enable when either flag was explicitly provided.
+
 **See also:** [t-digest paper (Dunning, 2019)](https://arxiv.org/abs/1902.04023), [HyperLogLog (Flajolet et al., 2007)](https://en.wikipedia.org/wiki/HyperLogLog), [Apache DataSketches](https://datasketches.apache.org/).
 
 ## `moarstats`

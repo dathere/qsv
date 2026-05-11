@@ -6713,3 +6713,68 @@ fn frequency_sketch_method_frequent_items_with_null_sorted_is_rejected() {
         "error should mention both --null-sorted and frequent_items, got: {stderr}"
     );
 }
+
+// --- OOM auto-fallback to Frequent Items sketch ---
+//
+// When mem_file_check returns OutOfMemory, frequency automatically enables
+// --sketch-method frequent_items (Misra-Gries) where flag conflicts allow,
+// in addition to the existing auto-index fallback. These tests need a
+// multi-GB file to deterministically trigger OOM and are #[ignore]'d by
+// default; run with `--ignored` to exercise them.
+//
+// The shared `build_large_oom_csv` helper lives in `tests/workdir.rs` so the
+// row count, column shape, and padding stay in sync with the parallel stats
+// tests; see `stats_oom_*` in tests/test_stats.rs.
+
+#[test]
+#[ignore = "Requires a multi-GB file to trigger OOM via mem_file_check"]
+fn frequency_oom_auto_enables_frequent_items() {
+    let (wrk, test_file) =
+        crate::workdir::build_large_oom_csv("frequency_oom_auto_enables_frequent_items");
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--memcheck")
+        .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
+        .arg(test_file);
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        stderr.contains("auto-enabling --sketch-method frequent_items"),
+        "stderr should mention the auto-enable wwarn, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("Misra-Gries"),
+        "stderr should mention Misra-Gries, got: {stderr}"
+    );
+}
+
+#[test]
+#[ignore = "Requires a multi-GB file to trigger OOM via mem_file_check"]
+fn frequency_oom_skips_when_asc_set() {
+    let (wrk, test_file) = crate::workdir::build_large_oom_csv("frequency_oom_skips_when_asc_set");
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--memcheck")
+        .arg("--asc")
+        .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
+        .arg(test_file);
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        !stderr.contains("auto-enabling --sketch-method frequent_items"),
+        "frequent_items sketch must NOT auto-enable when --asc is set, got: {stderr}"
+    );
+}
+
+#[test]
+#[ignore = "Requires a multi-GB file to trigger OOM via mem_file_check"]
+fn frequency_oom_skips_when_json_output() {
+    let (wrk, test_file) =
+        crate::workdir::build_large_oom_csv("frequency_oom_skips_when_json_output");
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--memcheck")
+        .arg("--json")
+        .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
+        .arg(test_file);
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        !stderr.contains("auto-enabling --sketch-method frequent_items"),
+        "frequent_items sketch must NOT auto-enable when --json is set, got: {stderr}"
+    );
+}

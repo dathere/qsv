@@ -81,7 +81,7 @@
       {
         "flag": "--memcheck",
         "type": "flag",
-        "description": "Check if there is enough memory to load the entire CSV into memory using CONSERVATIVE heuristics. This option is ignored when computing default, streaming statistics, as it is not needed."
+        "description": "Use CONSERVATIVE heuristics for the in-memory load check (file size vs. available + free_swap × platform factor − headroom), instead of the default NORMAL check (file size vs. total memory − headroom). The CONSERVATIVE check is stricter and trips OOM far more readily. Ignored when computing default, streaming statistics. (See also: QSV_MEMORY_CHECK env var, equivalent to passing --memcheck.) Independently of this flag, the in-memory load check runs whenever stats takes the non-parallel path with non-streaming columns. On OOM (in either NORMAL or CONSERVATIVE mode), qsv auto-creates an index when no index exists (skipped for stdin) AND switches to approx quantile + approx cardinality methods (DataSketches t-digest and HyperLogLog) where compatible. The sketch fallback can also fire when an index is already present and the OOM still trips (e.g., when jobs is pinned to 1 on a pre-indexed file). A wwarn is emitted listing the auto-enabled estimators."
       },
       {
         "flag": "--mode",

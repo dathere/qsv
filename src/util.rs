@@ -2050,6 +2050,17 @@ pub fn get_envvar_flag(key: &str) -> bool {
     truthy
 }
 
+/// Returns `true` if `flag` appears in `argv` as either a standalone token
+/// (`--flag`) or in the `--flag=value` form. Used by the OOM auto-fallback in
+/// `stats` and `frequency` to detect whether the user explicitly passed an
+/// option, since docopt fills in default values that are indistinguishable
+/// from explicit user input on the parsed `Args` struct.
+#[inline]
+pub fn argv_has_flag(argv: &[&str], flag: &str) -> bool {
+    let eq_prefix = format!("{flag}=");
+    argv.iter().any(|a| *a == flag || a.starts_with(&eq_prefix))
+}
+
 /// Validates if a file is actually a Snappy-compressed file before attempting decompression
 pub fn is_valid_snappy_file(path: &PathBuf) -> Result<bool, CliError> {
     let mut file = std::fs::File::open(path)?;

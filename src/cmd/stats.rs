@@ -1030,16 +1030,6 @@ fn try_enable_approx_sketches(
     enabled
 }
 
-/// Returns `true` if `flag` appears in `argv` as either a standalone token
-/// (`--flag`) or in the `--flag=value` form. Used by the OOM auto-fallback to
-/// detect whether the user explicitly passed an option, since docopt fills in
-/// default values that are indistinguishable from explicit user input on the
-/// parsed `Args` struct.
-fn argv_has_flag(argv: &[&str], flag: &str) -> bool {
-    let eq_prefix = format!("{flag}=");
-    argv.iter().any(|a| *a == flag || a.starts_with(&eq_prefix))
-}
-
 /// Main entry point for the stats command.
 ///
 /// This function orchestrates the entire CSV statistics computation process, including
@@ -1090,8 +1080,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // --cardinality-method on the command line. docopt fills in the default
     // value ("exact") regardless, so without this scan we can't honor an
     // explicit `--quantile-method exact` opt-out during the OOM auto-fallback.
-    let user_set_quantile_method = argv_has_flag(argv, "--quantile-method");
-    let user_set_cardinality_method = argv_has_flag(argv, "--cardinality-method");
+    let user_set_quantile_method = util::argv_has_flag(argv, "--quantile-method");
+    let user_set_cardinality_method = util::argv_has_flag(argv, "--cardinality-method");
 
     if args.flag_typesonly {
         args.flag_everything = false;

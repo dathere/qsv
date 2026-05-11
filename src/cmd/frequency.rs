@@ -708,16 +708,6 @@ fn can_enable_frequent_items(args: &Args, user_set_sketch_method: bool) -> bool 
     args.flag_sketch_map_size >= 8 && args.flag_sketch_map_size.is_power_of_two()
 }
 
-/// Returns `true` if `flag` appears in `argv` as either a standalone token
-/// (`--flag`) or in the `--flag=value` form. Used by the OOM auto-fallback to
-/// detect whether the user explicitly passed an option, since docopt fills in
-/// default values that are indistinguishable from explicit user input on the
-/// parsed `Args` struct.
-fn argv_has_flag(argv: &[&str], flag: &str) -> bool {
-    let eq_prefix = format!("{flag}=");
-    argv.iter().any(|a| *a == flag || a.starts_with(&eq_prefix))
-}
-
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
@@ -725,7 +715,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // line. docopt fills in the default value ("exact") regardless, so without
     // this scan we can't honor an explicit `--sketch-method exact` opt-out
     // during the OOM auto-fallback.
-    let user_set_sketch_method = argv_has_flag(argv, "--sketch-method");
+    let user_set_sketch_method = util::argv_has_flag(argv, "--sketch-method");
 
     // Handle --no-other flag (alias for --other-text "<NONE>")
     if args.flag_no_other {

@@ -1162,7 +1162,9 @@ fn apply_operations(
                     // because f64::fract() preserves sign: (-1.5).fract() == -0.5, so a
                     // `> 0.0` check would skip negative fractional numbers and leave their
                     // decimal point as `.` regardless of --replacement.
-                    if num.fract() != 0.0 {
+                    if num.fract() == 0.0 {
+                        *cell = temp_string;
+                    } else {
                         // if replacement is empty, use the default decimal separator (.)
                         *cell = if replacement.is_empty() {
                             temp_string
@@ -1176,8 +1178,6 @@ fn apply_operations(
                                 None => temp_string,
                             }
                         };
-                    } else {
-                        *cell = temp_string;
                     }
                 }
             },

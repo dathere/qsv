@@ -87,7 +87,7 @@
 🧠: expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.  
 🗄️: [Extended input support](../../README.md#extended-input-support).  
 🗃️: [Limited Extended input support](../../README.md#limited-extended-input-support).  
-🐻‍❄️: command powered/accelerated by [![polars 0.53.0:py_1.40.1:a84168f](https://img.shields.io/badge/polars-0.53.0:py_1.40.1:a84168f-blue?logo=polars)](https://github.com/pola-rs/polars/releases/tag/py-1.40.1) vectorized query engine.  
+🐻‍❄️: command powered/accelerated by [![polars 0.53.0:py_1.40.1:c89ecf7](https://img.shields.io/badge/polars-0.53.0:py_1.40.1:c89ecf7-blue?logo=polars)](https://github.com/pola-rs/polars/releases/tag/py-1.40.1) vectorized query engine.  
 🤖: command uses Natural Language Processing or Generative AI.  
 🏎️: multithreaded and/or faster when an index (📇) is available.  
 🚀: multithreaded even without an index.  

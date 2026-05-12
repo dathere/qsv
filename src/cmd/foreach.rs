@@ -248,13 +248,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         };
 
         let prog_bytes = strip_outer_quotes(prog_match.as_bytes());
-        #[cfg(target_family = "unix")]
-        let prog = OsStr::from_bytes(prog_bytes);
-        #[cfg(target_family = "windows")]
-        let prog = match simdutf8::basic::from_utf8(prog_bytes) {
-            Ok(s) => OsString::from(s),
-            Err(_) => {
-                return fail_clierror!("foreach: program path contains invalid UTF-8");
+        let prog = cfg_select! {
+            target_family = "unix" => OsStr::from_bytes(prog_bytes),
+            target_family = "windows" => match simdutf8::basic::from_utf8(prog_bytes) {
+                Ok(s) => OsString::from(s),
+                Err(_) => return fail_clierror!("foreach: program path contains invalid UTF-8"),
             },
         };
 
@@ -267,10 +265,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .collect();
 
         if is_dry_run {
-            #[cfg(target_family = "unix")]
-            let prog_str = simdutf8::basic::from_utf8(prog.as_bytes()).unwrap_or_default();
-            #[cfg(target_family = "windows")]
-            let prog_str = simdutf8::basic::from_utf8(prog.as_encoded_bytes()).unwrap_or_default();
+            let prog_str = cfg_select! {
+                target_family = "unix" => simdutf8::basic::from_utf8(prog.as_bytes()).unwrap_or_default(),
+                target_family = "windows" => simdutf8::basic::from_utf8(prog.as_encoded_bytes()).unwrap_or_default(),
+            };
             let cmd_args_string = cmd_args.join(" ");
             dry_run_file.write_all(format!("{prog_str} {cmd_args_string}\n").as_bytes())?;
             continue;

@@ -718,10 +718,10 @@ fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usi
         #[cfg_attr(target_endian = "big", allow(unused_mut))]
         let mut s_slice = curr_line.as_bytes().to_vec();
 
-        #[cfg(target_endian = "big")]
-        let parse_result = serde_json::from_slice::<CacheRecord>(&s_slice);
-        #[cfg(target_endian = "little")]
-        let parse_result = simd_json::from_slice::<CacheRecord>(&mut s_slice);
+        let parse_result = cfg_select! {
+            target_endian = "little" => simd_json::from_slice::<CacheRecord>(&mut s_slice),
+            _ => serde_json::from_slice::<CacheRecord>(&s_slice),
+        };
 
         let Ok(record) = parse_result else {
             return None;

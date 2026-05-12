@@ -1157,12 +1157,15 @@ fn apply_operations(
                     //safety: we set THOUSANDS_POLICY in validate_operations()
                     let mut temp_string = num.separate_by_policy(*THOUSANDS_POLICY.get().unwrap());
 
-                    // if there is a decimal separator (i.e. a non-zero fractional part), use
-                    // the requested decimal separator in --replacement. Compare against != 0.0
-                    // because f64::fract() preserves sign: (-1.5).fract() == -0.5, so a
-                    // `> 0.0` check would skip negative fractional numbers and leave their
-                    // decimal point as `.` regardless of --replacement.
-                    if num.fract() != 0.0 {
+                    // If the number has no fractional part, use the formatted string as-is.
+                    // Otherwise, swap in the requested decimal separator from --replacement.
+                    // We compare against == 0.0 (rather than > 0.0 in the else branch) because
+                    // f64::fract() preserves sign: (-1.5).fract() == -0.5, so a `> 0.0` test
+                    // would skip negative fractional numbers and leave their decimal point as
+                    // `.` regardless of --replacement.
+                    if num.fract() == 0.0 {
+                        *cell = temp_string;
+                    } else {
                         // if replacement is empty, use the default decimal separator (.)
                         *cell = if replacement.is_empty() {
                             temp_string
@@ -1176,8 +1179,6 @@ fn apply_operations(
                                 None => temp_string,
                             }
                         };
-                    } else {
-                        *cell = temp_string;
                     }
                 }
             },

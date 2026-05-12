@@ -160,16 +160,15 @@ const WHITESPACE_MARKERS: &[(char, &str)] = &[
     ('\u{200B}', "《zwsp》"),  // zero width space
 ];
 
-#[cfg(unix)]
 pub fn reset_sigpipe() {
-    unsafe {
-        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    cfg_select! {
+        unix => {
+            unsafe {
+                libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+            }
+        }
+        _ => {}
     }
-}
-
-#[cfg(not(unix))]
-pub fn reset_sigpipe() {
-    // no-op
 }
 
 pub fn current_exe() -> CliResult<PathBuf> {
@@ -996,17 +995,16 @@ pub fn mem_file_check(
 
     // Platform-specific adjustment factors for conservative mode
     // These account for OS-specific memory management capabilities
-    #[cfg(target_os = "macos")]
-    let platform_factor = 1.3; // macOS has aggressive memory compression & dynamic swap                                                                                                    
-
-    #[cfg(target_os = "linux")]
-    let platform_factor = 1.15; // Linux page cache is reclaimable, but be conservative                                                                                                     
-
-    #[cfg(target_os = "windows")]
-    let platform_factor = 1.0; // Windows memory reporting is already conservative                                                                                                          
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    let platform_factor = 1.0; // Other platforms: no adjustment   
+    let platform_factor = cfg_select! {
+        // macOS has aggressive memory compression & dynamic swap
+        target_os = "macos" => 1.3,
+        // Linux page cache is reclaimable, but be conservative
+        target_os = "linux" => 1.15,
+        // Windows memory reporting is already conservative
+        target_os = "windows" => 1.0,
+        // Other platforms: no adjustment
+        _ => 1.0,
+    };
 
     // Calculate maximum available memory based on mode
     #[allow(clippy::cast_precision_loss)]
@@ -2862,10 +2860,10 @@ pub fn get_stats_records(
             s_slice = curr_line.as_bytes().to_vec();
 
             // Parse regular stats record
-            #[cfg(target_endian = "big")]
-            let parse_result = serde_json::from_slice::<StatsData>(&s_slice);
-            #[cfg(target_endian = "little")]
-            let parse_result = simd_json::from_slice::<StatsData>(&mut s_slice);
+            let parse_result = cfg_select! {
+                target_endian = "little" => simd_json::from_slice::<StatsData>(&mut s_slice),
+                _ => serde_json::from_slice::<StatsData>(&s_slice),
+            };
 
             if let Ok(stats) = parse_result {
                 csv_stats.push(stats);
@@ -3023,23 +3021,13 @@ pub fn get_stats_records(
                     "qsv stats exited with code: {code}"
                 )));
             }
-            #[cfg(target_family = "unix")]
-            {
-                if let Some(signal) = status.signal() {
-                    return Err(CliError::Other(format!(
-                        "qsv stats terminated with signal: {signal}"
-                    )));
-                }
-                return Err(CliError::Other(
-                    "qsv stats terminated by unknown cause".to_string(),
-                ));
-            }
-            #[cfg(not(target_family = "unix"))]
-            {
-                return Err(CliError::Other(
-                    "qsv stats terminated by unknown cause".to_string(),
-                ));
-            }
+            return Err(CliError::Other(cfg_select! {
+                target_family = "unix" => match status.signal() {
+                    Some(signal) => format!("qsv stats terminated with signal: {signal}"),
+                    None => "qsv stats terminated by unknown cause".to_string(),
+                },
+                _ => "qsv stats terminated by unknown cause".to_string(),
+            }));
         }
 
         // create a stats data jsonl from the output of the stats command
@@ -3062,10 +3050,10 @@ pub fn get_stats_records(
             s_slice = curr_line.as_bytes().to_vec();
 
             // Parse regular stats record
-            #[cfg(target_endian = "big")]
-            let parse_result = serde_json::from_slice::<StatsData>(&s_slice);
-            #[cfg(target_endian = "little")]
-            let parse_result = simd_json::from_slice::<StatsData>(&mut s_slice);
+            let parse_result = cfg_select! {
+                target_endian = "little" => simd_json::from_slice::<StatsData>(&mut s_slice),
+                _ => serde_json::from_slice::<StatsData>(&s_slice),
+            };
 
             match parse_result {
                 Ok(stats) => csv_stats.push(stats),
@@ -3183,14 +3171,10 @@ pub fn csv_to_jsonl(
         }
 
         // Use platform-appropriate JSON serialization
-        #[cfg(target_endian = "big")]
-        {
-            json_line = serde_json::to_string(&json_object)?;
-        }
-        #[cfg(target_endian = "little")]
-        {
-            json_line = simd_json::to_string(&json_object)?;
-        }
+        json_line = cfg_select! {
+            target_endian = "little" => simd_json::to_string(&json_object)?,
+            _ => serde_json::to_string(&json_object)?,
+        };
         writeln!(writer, "{json_line}")?;
     }
 
@@ -3749,24 +3733,25 @@ pub fn hash_blake3_file(path: &Path) -> CliResult<String> {
     Ok(hasher.finalize().to_hex().to_string())
 }
 
-#[cfg(unix)]
 pub fn is_executable(path: &str) -> std::io::Result<bool> {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    cfg_select! {
+        unix => {
+            use std::{fs, os::unix::fs::PermissionsExt};
 
-    let metadata = fs::metadata(path)?;
-    Ok(metadata.permissions().mode() & 0o111 != 0)
-}
-
-#[cfg(windows)]
-pub fn is_executable(path: &str) -> std::io::Result<bool> {
-    use std::path::Path;
-    let p = Path::new(path);
-    Ok(p.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
-        matches!(
-            ext.to_ascii_lowercase().as_str(),
-            "exe" | "bat" | "cmd" | "com"
-        )
-    }))
+            let metadata = fs::metadata(path)?;
+            Ok(metadata.permissions().mode() & 0o111 != 0)
+        }
+        windows => {
+            use std::path::Path;
+            let p = Path::new(path);
+            Ok(p.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
+                matches!(
+                    ext.to_ascii_lowercase().as_str(),
+                    "exe" | "bat" | "cmd" | "com"
+                )
+            }))
+        }
+    }
 }
 
 /// Print a status message with elapsed time if not in quiet mode

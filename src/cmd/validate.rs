@@ -1282,12 +1282,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             match load_json(&json_schema_path.to_string_lossy()) {
             Ok(s) => {
                 // parse JSON string - use platform-appropriate JSON deserialization
-                #[cfg(target_endian = "big")]
-                let json_result = serde_json::from_str::<Value>(&s);
+                // simd_json mutates its input buffer; serde_json reads from the str directly.
                 #[cfg(target_endian = "little")]
-                let json_result = {
-                    let mut s_slice = s.as_bytes().to_vec();
-                    simd_json::serde::from_slice::<Value>(&mut s_slice)
+                let mut s_slice = s.as_bytes().to_vec();
+                let json_result = cfg_select! {
+                    target_endian = "little" => simd_json::serde::from_slice::<Value>(&mut s_slice),
+                    _ => serde_json::from_str::<Value>(&s),
                 };
 
                 match json_result {

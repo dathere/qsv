@@ -128,10 +128,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // as the polars-powered count_rows is failing CI tests on Windows
     // I suspect there is an optimization in Polars that is causing this
     // CI test flakiness
-    #[cfg(windows)]
-    let record_count = util::count_rows_regular(&conf)?;
-    #[cfg(not(windows))]
-    let record_count = util::count_rows(&conf)?;
+    let record_count = cfg_select! {
+        windows => util::count_rows_regular(&conf)?,
+        _ => util::count_rows(&conf)?,
+    };
 
     // we're calling the schema command to infer data types and enums
     let schema_args = util::SchemaArgs {

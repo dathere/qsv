@@ -1748,10 +1748,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // save the stats args to "stdin.stats.csv.json"
         stats_pathbuf.set_extension("csv.json");
         // Use platform-appropriate JSON serialization
-        #[cfg(target_endian = "big")]
-        let json_string = serde_json::to_string_pretty(&current_stats_args)?;
-        #[cfg(target_endian = "little")]
-        let json_string = simd_json::to_string_pretty(&current_stats_args)?;
+        let json_string = cfg_select! {
+            target_endian = "little" => simd_json::to_string_pretty(&current_stats_args)?,
+            _ => serde_json::to_string_pretty(&current_stats_args)?,
+        };
         std::fs::write(stats_pathbuf, json_string)?;
     } else if let Some(path) = rconfig.path {
         // if we read from a file, copy the temp stats file to "<FILESTEM>.stats.csv" or
@@ -1816,10 +1816,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .unwrap()
                 .to_string();
             // Use platform-appropriate JSON serialization
-            #[cfg(target_endian = "big")]
-            let json_string = serde_json::to_string_pretty(&current_stats_args)?;
-            #[cfg(target_endian = "little")]
-            let json_string = simd_json::to_string_pretty(&current_stats_args)?;
+            let json_string = cfg_select! {
+                target_endian = "little" => simd_json::to_string_pretty(&current_stats_args)?,
+                _ => serde_json::to_string_pretty(&current_stats_args)?,
+            };
             std::fs::write(stats_pathbuf.clone(), json_string)?;
 
             // save the stats data to "<FILESTEM>.stats.csv.data.jsonl"
@@ -2849,16 +2849,15 @@ fn resolve_sniff_whitelist(input_path: &std::path::Path) -> CliResult<String> {
     }
 
     // Parse JSON output (platform-specific)
-    #[cfg(target_endian = "little")]
-    let sniff_result: SniffResult = {
-        let mut json_bytes = output.stdout;
-        simd_json::from_slice(&mut json_bytes)
-            .map_err(|e| CliError::Other(format!("Failed to parse sniff JSON: {e}")))?
+    // simd_json mutates its input buffer; serde_json doesn't care.
+    #[cfg_attr(target_endian = "big", allow(unused_mut))]
+    let mut json_bytes = output.stdout;
+    let sniff_result: SniffResult = cfg_select! {
+        target_endian = "little" => simd_json::from_slice(&mut json_bytes)
+            .map_err(|e| CliError::Other(format!("Failed to parse sniff JSON: {e}")))?,
+        _ => serde_json::from_slice(&json_bytes)
+            .map_err(|e| CliError::Other(format!("Failed to parse sniff JSON: {e}")))?,
     };
-
-    #[cfg(target_endian = "big")]
-    let sniff_result: SniffResult = serde_json::from_slice(&output.stdout)
-        .map_err(|e| CliError::Other(format!("Failed to parse sniff JSON: {e}")))?;
 
     // Extract column names where type is Date or DateTime
     let date_columns: Vec<&str> = sniff_result

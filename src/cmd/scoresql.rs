@@ -1182,10 +1182,10 @@ fn get_duckdb_path() -> CliResult<String> {
     } else {
         // Env var not set — try to find "duckdb" in PATH using a cross-platform approach.
         // On Unix we use "which", on Windows we use "where".
-        #[cfg(not(target_os = "windows"))]
-        let which_cmd = "which";
-        #[cfg(target_os = "windows")]
-        let which_cmd = "where";
+        let which_cmd = cfg_select! {
+            target_os = "windows" => "where",
+            _ => "which",
+        };
 
         if let Some(resolved) = Command::new(which_cmd)
             .arg("duckdb")

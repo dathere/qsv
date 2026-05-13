@@ -1,5 +1,14 @@
 name: Publish s390x
 
+# Apache DataSketches (datasketches crate) is target-conditional and excluded
+# on big-endian targets — see Cargo.toml's
+# `[target.'cfg(not(target_endian = "big"))'.dependencies]` block. As a result,
+# the s390x binaries built here do NOT include the t-digest / HyperLogLog /
+# Frequent Items code paths: `stats --quantile-method approx`,
+# `stats --cardinality-method approx`, and `frequency --sketch-method frequent_items`
+# all return a "requires a little-endian target" error on s390x. The exact-method
+# defaults are unaffected.
+
 on:
 #   push:
 #     tags:

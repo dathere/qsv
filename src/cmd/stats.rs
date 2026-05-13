@@ -215,6 +215,10 @@ stats options:
                                              crate does not expose weighted-update.
                                            * Results may differ slightly across runs with
                                              different --jobs values.
+                                           * Requires a little-endian target. Apache
+                                             DataSketches does not support big-endian
+                                             platforms (e.g., s390x); on those builds,
+                                             this choice is rejected.
                               [default: exact]
     --cardinality-method <m>  Algorithm used to compute the --cardinality column. Choices:
                                 exact  - track every unique value in a HashMap/Unsorted
@@ -238,6 +242,10 @@ stats options:
                                              HLL union used at merge time is associative
                                              and order-invariant, so chunk completion
                                              order does not affect the final estimate.
+                                           * Requires a little-endian target. Apache
+                                             DataSketches does not support big-endian
+                                             platforms (e.g., s390x); on those builds,
+                                             this choice is rejected.
                               [default: exact]
     --mode-cardinality-cap <n>  Bound mode-tracking memory on high-cardinality columns.
                               When > 0, if a column's mode tracker grows past <n>, qsv
@@ -768,6 +776,11 @@ const MAX_STAT_COLUMNS: usize = 47;
 // representation. Used in `Stats::new` (per-row sketch construction) and in
 // `Commute::merge` (the transient `HllUnion` used to combine two sketches);
 // keep both call sites in lock-step by reading from this constant.
+//
+// Gated to little-endian: the only consumers are `datasketches::hll` call sites,
+// which are themselves gated. Defining it unconditionally would trip an
+// `unused-const` lint on big-endian builds.
+#[cfg(not(target_endian = "big"))]
 const HLL_LG_K: u8 = 12;
 
 // the first N columns of each full stats record are used for the dataset
@@ -993,6 +1006,12 @@ fn parse_boolean_patterns(boolean_patterns: &str) -> CliResult<Vec<BooleanPatter
 /// auto-disables `--mad` under approx, and the `--infer-boolean` + approx-cardinality
 /// fallback that forces exact). The intent is that this auto-enable only flips
 /// methods that would have passed validation if the user had set them by hand.
+///
+/// On big-endian targets the Apache DataSketches port is unavailable, so this
+/// function compiles to a no-op stub that returns an empty `Vec`. The OOM
+/// branch in `run()` then falls through to returning the original error rather
+/// than auto-enabling an estimator that isn't compiled in.
+#[cfg(not(target_endian = "big"))]
 fn try_enable_approx_sketches(
     args: &mut Args,
     user_set_quantile_method: bool,
@@ -1028,6 +1047,18 @@ fn try_enable_approx_sketches(
     }
 
     enabled
+}
+
+/// Big-endian stub: Apache DataSketches is not available on big-endian targets,
+/// so we cannot auto-enable any approximate estimator. The OOM branch in `run()`
+/// receives an empty list and falls through to returning the original error.
+#[cfg(target_endian = "big")]
+fn try_enable_approx_sketches(
+    _args: &mut Args,
+    _user_set_quantile_method: bool,
+    _user_set_cardinality_method: bool,
+) -> Vec<&'static str> {
+    Vec::new()
 }
 
 /// Main entry point for the stats command.
@@ -1125,6 +1156,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         },
     };
 
+    // Apache DataSketches (t-digest) is unavailable on big-endian targets, so
+    // --quantile-method approx cannot be honored there. Reject up front so the
+    // downstream code can assume `approx_quantiles == false` on big-endian.
+    #[cfg(target_endian = "big")]
+    if approx_quantiles {
+        return fail_incorrectusage_clierror!(
+            "--quantile-method approx requires a little-endian target. Apache DataSketches is not \
+             available on big-endian platforms (e.g., s390x). Use --quantile-method exact."
+        );
+    }
+
     // approx quantiles are not yet supported with --weight: the upstream
     // datasketches::tdigest crate does not expose a weighted-update API.
     if approx_quantiles && args.flag_weight.is_some() {
@@ -1156,6 +1198,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "Invalid --cardinality-method: {other}. Choose 'exact' or 'approx'."
             );
         },
+    }
+
+    // Apache DataSketches (HyperLogLog) is unavailable on big-endian targets, so
+    // --cardinality-method approx cannot be honored there. Reject up front so the
+    // downstream code can assume `flag_cardinality_method != "approx"` on big-endian.
+    #[cfg(target_endian = "big")]
+    if args.flag_cardinality_method == "approx" {
+        return fail_incorrectusage_clierror!(
+            "--cardinality-method approx requires a little-endian target. Apache DataSketches is \
+             not available on big-endian platforms (e.g., s390x). Use --cardinality-method exact."
+        );
     }
 
     // inferring boolean requires inferring cardinality
@@ -2950,9 +3003,11 @@ impl WhichStats {
 /// `Stats::tdigest`, so the derived `Serialize`/`Deserialize` on `Stats` skip this field
 /// entirely. T-digest state is intermediate; cache invalidation on `--quantile-method`
 /// change rides on `StatsArgs` serialization instead.
+#[cfg(not(target_endian = "big"))]
 #[derive(Default)]
 struct TDigestSlot(Option<datasketches::tdigest::TDigestMut>);
 
+#[cfg(not(target_endian = "big"))]
 impl Clone for TDigestSlot {
     #[inline]
     fn clone(&self) -> Self {
@@ -2960,12 +3015,21 @@ impl Clone for TDigestSlot {
     }
 }
 
+#[cfg(not(target_endian = "big"))]
 impl PartialEq for TDigestSlot {
     #[inline]
     fn eq(&self, _other: &Self) -> bool {
         true
     }
 }
+
+/// Big-endian fallback for `TDigestSlot`. Apache DataSketches is unavailable on
+/// big-endian targets, so we substitute a zero-sized type. `Stats::tdigest` is
+/// still declared (and `#[serde(skip)]`) on those targets but is never read; the
+/// `--quantile-method approx` codepath is rejected upstream by `run()`.
+#[cfg(target_endian = "big")]
+#[derive(Default, Clone, PartialEq)]
+struct TDigestSlot;
 
 /// Wrapper around `datasketches::hll::HllSketch` so the `Stats` struct can keep its
 /// derived `Clone`, `PartialEq`, `Serialize`, `Deserialize` impls without forcing the
@@ -2980,9 +3044,11 @@ impl PartialEq for TDigestSlot {
 /// `Stats::hll`, so the derived `Serialize`/`Deserialize` on `Stats` skip this field
 /// entirely. HLL state is intermediate; cache invalidation on `--cardinality-method`
 /// change rides on `StatsArgs` serialization instead.
+#[cfg(not(target_endian = "big"))]
 #[derive(Default)]
 struct HllSlot(Option<datasketches::hll::HllSketch>);
 
+#[cfg(not(target_endian = "big"))]
 impl Clone for HllSlot {
     #[inline]
     fn clone(&self) -> Self {
@@ -2990,12 +3056,21 @@ impl Clone for HllSlot {
     }
 }
 
+#[cfg(not(target_endian = "big"))]
 impl PartialEq for HllSlot {
     #[inline]
     fn eq(&self, _other: &Self) -> bool {
         true
     }
 }
+
+/// Big-endian fallback for `HllSlot`. Apache DataSketches is unavailable on
+/// big-endian targets, so we substitute a zero-sized type. `Stats::hll` is
+/// still declared (and `#[serde(skip)]`) on those targets but is never read; the
+/// `--cardinality-method approx` codepath is rejected upstream by `run()`.
+#[cfg(target_endian = "big")]
+#[derive(Default, Clone, PartialEq)]
+struct HllSlot;
 
 #[allow(clippy::unsafe_derive_deserialize)]
 #[allow(clippy::struct_field_names)]
@@ -3586,7 +3661,13 @@ impl Stats {
         if needs_quantiles {
             if which.approx_quantiles {
                 // k=200 is the upstream default; ~1% rank error, more accurate at the tails.
-                tdigest = TDigestSlot(Some(datasketches::tdigest::TDigestMut::new(200)));
+                // Apache DataSketches is unavailable on big-endian targets; the
+                // `--quantile-method approx` flag is rejected upstream in `run()`
+                // for those builds, so the big-endian branch is unreachable here.
+                tdigest = cfg_select! {
+                    target_endian = "little" => TDigestSlot(Some(datasketches::tdigest::TDigestMut::new(200))),
+                    _ => unreachable!("--quantile-method approx is rejected on big-endian targets"),
+                };
             } else {
                 unsorted_stats = Some(stats::Unsorted::with_capacity(record_count));
                 if use_weights {
@@ -3598,11 +3679,18 @@ impl Stats {
         // is selected AND cardinality output is enabled. HLL_LG_K (12) gives ~1.5%
         // RSE with ~5KB per column. Hll8 stores 8 bits per register (no decode work
         // on update); memory is the same order whether sparse or dense.
+        //
+        // Apache DataSketches is unavailable on big-endian targets; the
+        // `--cardinality-method approx` flag is rejected upstream in `run()` for
+        // those builds, so the big-endian branch below is unreachable.
         let hll = if which.cardinality && which.approx_cardinality {
-            HllSlot(Some(datasketches::hll::HllSketch::new(
-                HLL_LG_K,
-                datasketches::hll::HllType::Hll8,
-            )))
+            cfg_select! {
+                target_endian = "little" => HllSlot(Some(datasketches::hll::HllSketch::new(
+                    HLL_LG_K,
+                    datasketches::hll::HllType::Hll8,
+                ))),
+                _ => unreachable!("--cardinality-method approx is rejected on big-endian targets"),
+            }
         } else {
             HllSlot::default()
         };
@@ -4896,6 +4984,10 @@ impl Commute for Stats {
         // at all — see the dispatch in run() around line 1456) and is therefore exactly
         // reproducible. Determinism for --jobs >= 2 is intentionally not guaranteed; the
         // --quantile-method help text documents the caveat for users.
+        //
+        // Skipped on big-endian targets: `TDigestSlot` is a unit-like ZST there (Apache
+        // DataSketches is unavailable), so there's no inner state to merge.
+        #[cfg(not(target_endian = "big"))]
         match (&mut self.tdigest.0, other.tdigest.0) {
             (Some(s), Some(o)) => s.merge(&o),
             (slot @ None, Some(o)) => *slot = Some(o),
@@ -4907,6 +4999,10 @@ impl Commute for Stats {
         // for the cardinality column under --cardinality-method approx. The lg_k
         // here MUST match the HLL_LG_K used in `Stats::new`; reading from the same
         // constant prevents a silent precision downgrade if one site is bumped.
+        //
+        // Skipped on big-endian targets: `HllSlot` is a unit-like ZST there (Apache
+        // DataSketches is unavailable), so there's no inner state to merge.
+        #[cfg(not(target_endian = "big"))]
         match (&mut self.hll.0, other.hll.0) {
             (Some(s), Some(o)) => {
                 let mut union = datasketches::hll::HllUnion::new(HLL_LG_K);

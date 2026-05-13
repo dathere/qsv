@@ -1,24 +1,20 @@
-# Example GitHub Actions workflow for wiki linting.
+# Wiki lint — keeps the project Wiki in sync with the actual command set.
 #
-# WHERE TO PUT THIS FILE:
-#   Copy to the MAIN qsv repo at:
-#       .github/workflows/wiki-lint.yml
+# GitHub Actions doesn't run from inside `<repo>.wiki`, so this workflow
+# lives in the main qsv repo and pulls the wiki in as a second checkout.
 #
-#   GitHub Actions does NOT run from within a `<repo>.wiki` repository.
-#   The lint script lives in the wiki (scripts/lint.sh); the workflow that
-#   invokes it must live in the main code repo.
+# It performs two checks via scripts/lint.sh in the wiki repo:
+#   1. Every `qsv <command>` reference in a wiki page (inside fenced code
+#      blocks or inline backticks) is in `qsv --list`.
+#   2. Every `/docs/help/<X>.md` link in the wiki resolves to a real file
+#      in this repo's docs/help/ directory.
 #
-# WHAT IT DOES:
-#   - Nightly cron + on every PR touching src/cmd/ or docs/help/
-#   - Builds qsv with all features from the PR's source
-#   - Clones the wiki
-#   - Runs scripts/lint.sh against `qsv --list` AND verifies that every
-#     /docs/help/<X>.md reference in the wiki points at a file that actually
-#     exists in this repo's docs/help/
-#   - On scheduled-run failures, opens a sticky issue tagged `wiki-lint`
+# Triggers:
+#   - Nightly cron
+#   - PRs touching src/cmd/, src/main.rs, or docs/help/
+#   - Manual workflow_dispatch
 #
-# To enable: copy to .github/workflows/wiki-lint.yml in the main qsv repo,
-# commit, push. No additional secrets required.
+# Nightly failures open (or comment on) a sticky issue tagged `wiki-lint`.
 
 name: Wiki lint
 

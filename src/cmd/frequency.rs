@@ -107,6 +107,10 @@ frequency options:
                             since the sketch cannot recover the true count of
                             items not in the top-K); rank is 0 to match the
                             exact convention.
+                            Note: 'frequent_items' requires a little-endian
+                            target. Apache DataSketches does not support
+                            big-endian platforms (e.g., s390x); on those
+                            builds, this choice is rejected.
                             [default: exact]
     --sketch-map-size <n>   Maximum map size for the Frequent Items sketch.
                             Must be a power of two and at least 8. Larger values
@@ -682,6 +686,11 @@ fn calculate_memory_aware_chunk_size_for_frequency(
 ///
 /// Returns `false` if any conflicting flag is set, if the user explicitly set
 /// the method (regardless of value), or if --sketch-map-size is invalid.
+///
+/// On big-endian targets the Apache DataSketches port is unavailable, so this
+/// function compiles to a stub that always returns `false`. The OOM auto-enable
+/// path then leaves `flag_sketch_method` alone and the error propagates.
+#[cfg(not(target_endian = "big"))]
 fn can_enable_frequent_items(args: &Args, user_set_sketch_method: bool) -> bool {
     if args.flag_sketch_method != "exact" || user_set_sketch_method {
         return false;
@@ -706,6 +715,14 @@ fn can_enable_frequent_items(args: &Args, user_set_sketch_method: bool) -> bool 
     // sketch-map-size validity (mirrors the `must be a power of two and >= 8`
     // check in run()'s frequent_items dispatch).
     args.flag_sketch_map_size >= 8 && args.flag_sketch_map_size.is_power_of_two()
+}
+
+/// Big-endian stub: Apache DataSketches is unavailable on big-endian targets,
+/// so the Frequent Items sketch cannot be auto-enabled. The OOM path falls
+/// through to returning the original error.
+#[cfg(target_endian = "big")]
+fn can_enable_frequent_items(_args: &Args, _user_set_sketch_method: bool) -> bool {
+    false
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -758,6 +775,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     args.flag_sketch_method = args.flag_sketch_method.to_lowercase();
     match args.flag_sketch_method.as_str() {
         "exact" => {},
+        // Apache DataSketches is unavailable on big-endian targets, so the
+        // Frequent Items sketch cannot run there. Reject upfront with a clear
+        // platform message instead of falling through to the normal validation.
+        #[cfg(target_endian = "big")]
+        "frequent_items" => {
+            return fail_incorrectusage_clierror!(
+                "--sketch-method frequent_items requires a little-endian target. Apache \
+                 DataSketches is not available on big-endian platforms (e.g., s390x). Use \
+                 --sketch-method exact."
+            );
+        },
+        #[cfg(not(target_endian = "big"))]
         "frequent_items" => {
             if args.flag_asc {
                 return fail_incorrectusage_clierror!(
@@ -884,6 +913,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // run_frequent_items doesn't consult flag_sketch_method, so the field
                 // stays at "exact" and that's fine (cache key / diagnostics use other
                 // paths). Verified via grep over run_frequent_items's body.
+                //
+                // Apache DataSketches is unavailable on big-endian targets, so the sketch
+                // fallback is gated out entirely there. The big-endian branch below
+                // preserves the "no index → propagate the error" behavior.
+                #[cfg(not(target_endian = "big"))]
                 if matches!(e, crate::CliError::OutOfMemory(_))
                     && can_enable_frequent_items(&args, user_set_sketch_method)
                 {
@@ -895,6 +929,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     );
                     return args.run_frequent_items(&rconfig);
                 } else if !index_succeeded {
+                    return Err(e);
+                }
+                // Big-endian: no sketch auto-enable is possible (DataSketches is
+                // compiled out), so the only recovery left is the index that may
+                // have been created above. If indexing did NOT succeed, propagate
+                // the original error. If it DID succeed, silently fall through and
+                // retry with parallel processing — matching the little-endian
+                // behavior on the same branch (the original `else if !index_succeeded`
+                // arm above) where success similarly swallows `e`.
+                #[cfg(target_endian = "big")]
+                if !index_succeeded {
                     return Err(e);
                 }
             },
@@ -3822,6 +3867,7 @@ impl Args {
     ///     bounded by `sketch.maximum_error()` (which equals the stream length minus the active
     ///     threshold). The "Other" row's count is `total_weight - sum(top_k_estimates)` and is
     ///     therefore approximate.
+    #[cfg(not(target_endian = "big"))]
     #[allow(clippy::cast_precision_loss)]
     fn run_frequent_items(&self, rconfig: &Config) -> CliResult<()> {
         use datasketches::frequencies::{ErrorType, FrequentItemsSketch};

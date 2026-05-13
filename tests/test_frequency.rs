@@ -6778,3 +6778,41 @@ fn frequency_oom_skips_when_json_output() {
         "frequent_items sketch must NOT auto-enable when --json is set, got: {stderr}"
     );
 }
+
+// --- big-endian platform-rejection test ----------------------------------------------
+//
+// Apache DataSketches does not support big-endian targets, so the qsv source
+// gates the Frequent Items sketch behind `#[cfg(not(target_endian = "big"))]`
+// and `run()` rejects `--sketch-method frequent_items` at the top of the
+// command with a clear platform error message naming s390x. This test is
+// only compiled on big-endian targets; on little-endian the flag works
+// normally and the existing `frequency_sketch_method_frequent_items_*` tests
+// already cover that path.
+//
+// Name intentionally avoids the `frequency_sketch_method_frequent_items_`
+// prefix so the s390x CI `--skip` filter does not drop it.
+
+#[cfg(target_endian = "big")]
+#[test]
+fn frequency_big_endian_sketch_method_frequent_items_rejected() {
+    let wrk = Workdir::new("frequency_big_endian_sketch_method_frequent_items_rejected");
+    wrk.create("data.csv", vec![svec!["v"], svec!["a"], svec!["b"]]);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("--sketch-method")
+        .arg("frequent_items")
+        .arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "--sketch-method frequent_items should be rejected on big-endian"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--sketch-method frequent_items")
+            && stderr.contains("requires a little-endian target")
+            && stderr.contains("s390x"),
+        "error should name the flag, the platform constraint, and s390x; got: {stderr}"
+    );
+}

@@ -6814,3 +6814,68 @@ fn stats_cardinality_method_invalid_value_is_rejected() {
         "error should mention the bad flag and value, got: {stderr}"
     );
 }
+
+// --- big-endian platform-rejection tests ---------------------------------------------
+//
+// Apache DataSketches does not support big-endian targets, so the qsv source
+// gates t-digest / HyperLogLog behind `#[cfg(not(target_endian = "big"))]`
+// and `run()` rejects `--quantile-method approx` / `--cardinality-method approx`
+// at the top of the command with a clear platform error message naming s390x.
+// These tests are only compiled on big-endian targets; on little-endian they
+// would always fail (the flags work normally there) and the existing
+// `*_method_approx_*` tests already cover that path.
+//
+// Names intentionally avoid the `stats_*_method_approx_` prefix so the s390x
+// CI `--skip` filters do not drop them.
+
+#[cfg(target_endian = "big")]
+#[test]
+fn stats_big_endian_quantile_method_approx_rejected() {
+    let wrk = Workdir::new("stats_big_endian_quantile_method_approx_rejected");
+    wrk.create("data.csv", vec![svec!["value"], svec!["1"], svec!["2"]]);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--quantiles")
+        .arg("--quantile-method")
+        .arg("approx")
+        .arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "--quantile-method approx should be rejected on big-endian"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--quantile-method approx")
+            && stderr.contains("requires a little-endian target")
+            && stderr.contains("s390x"),
+        "error should name the flag, the platform constraint, and s390x; got: {stderr}"
+    );
+}
+
+#[cfg(target_endian = "big")]
+#[test]
+fn stats_big_endian_cardinality_method_approx_rejected() {
+    let wrk = Workdir::new("stats_big_endian_cardinality_method_approx_rejected");
+    wrk.create("data.csv", vec![svec!["value"], svec!["1"], svec!["2"]]);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .arg("--cardinality-method")
+        .arg("approx")
+        .arg("data.csv");
+
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "--cardinality-method approx should be rejected on big-endian"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--cardinality-method approx")
+            && stderr.contains("requires a little-endian target")
+            && stderr.contains("s390x"),
+        "error should name the flag, the platform constraint, and s390x; got: {stderr}"
+    );
+}

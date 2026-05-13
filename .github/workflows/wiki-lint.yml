@@ -1,0 +1,113 @@
+# Example GitHub Actions workflow for wiki linting.
+#
+# WHERE TO PUT THIS FILE:
+#   Copy to the MAIN qsv repo at:
+#       .github/workflows/wiki-lint.yml
+#
+#   GitHub Actions does NOT run from within a `<repo>.wiki` repository.
+#   The lint script lives in the wiki (scripts/lint.sh); the workflow that
+#   invokes it must live in the main code repo.
+#
+# WHAT IT DOES:
+#   - Nightly cron + on every PR touching src/cmd/ or docs/help/
+#   - Builds qsv with all features from the PR's source
+#   - Clones the wiki
+#   - Runs scripts/lint.sh against `qsv --list` AND verifies that every
+#     /docs/help/<X>.md reference in the wiki points at a file that actually
+#     exists in this repo's docs/help/
+#   - On scheduled-run failures, opens a sticky issue tagged `wiki-lint`
+#
+# To enable: copy to .github/workflows/wiki-lint.yml in the main qsv repo,
+# commit, push. No additional secrets required.
+
+name: Wiki lint
+
+on:
+  schedule:
+    - cron: '17 4 * * *'   # nightly @ 04:17 UTC
+  pull_request:
+    paths:
+      - 'src/cmd/**'
+      - 'src/main.rs'
+      - 'docs/help/**'
+      - '.github/workflows/wiki-lint.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write   # only used by the scheduled-failure-opens-issue step
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout qsv source
+        uses: actions/checkout@v4
+
+      - name: Checkout wiki
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}.wiki
+          path: wiki
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build qsv (PR source / nightly latest-master)
+        run: |
+          cargo build --release --locked --bin qsv -F all_features
+          sudo install target/release/qsv /usr/local/bin/qsv
+          qsv --version
+
+      - name: Run wiki lint
+        env:
+          QSV_REPO_PATH: ${{ github.workspace }}
+        run: |
+          chmod +x wiki/scripts/lint.sh
+          cd wiki
+          ./scripts/lint.sh
+
+      - name: Open issue if nightly lint fails
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'wiki-lint',
+              state: 'open',
+            });
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              "The nightly **wiki-lint** check failed.",
+              "",
+              "It found references to qsv commands that are no longer present in `qsv --list`, or links to `/docs/help/<X>.md` files that no longer exist.",
+              "",
+              `**Run:** ${runUrl}`,
+              "",
+              "To reproduce locally:",
+              "```bash",
+              "git clone https://github.com/${{ github.repository }}.wiki.git",
+              "cd $(basename $_ .git)",
+              "QSV_REPO_PATH=/path/to/your/qsv-checkout ./scripts/lint.sh",
+              "```",
+              "",
+              "**Fix:** update the wiki page referenced in the error output to use the current command name, or add the page's content to scripts/lint.allowlist if it's a deliberate placeholder.",
+            ].join("\n");
+            if (issues.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: "Wiki lint: stale command references",
+                body,
+                labels: ["wiki-lint", "documentation"],
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issues[0].number,
+                body: `Another nightly lint failure: ${runUrl}`,
+              });
+            }

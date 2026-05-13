@@ -3024,12 +3024,35 @@ impl PartialEq for TDigestSlot {
 }
 
 /// Big-endian fallback for `TDigestSlot`. Apache DataSketches is unavailable on
-/// big-endian targets, so we substitute a zero-sized type. `Stats::tdigest` is
-/// still declared (and `#[serde(skip)]`) on those targets but is never read; the
-/// `--quantile-method approx` codepath is rejected upstream by `run()`.
+/// big-endian targets, so we substitute a tuple-struct wrapping `Option<TDigestStub>`
+/// — the unit-like `TDigestStub` exposes the same no-op method surface used by the
+/// little-endian call sites (`update`, `quantile`, `is_empty`). `Stats::tdigest` is
+/// always `Default` (i.e. `Some` is never written) on these targets — the
+/// `--quantile-method approx` codepath is rejected upstream by `run()` — so the
+/// stub methods are never reached at runtime; they exist only so the shared call
+/// sites in `update_modes`, `add_numeric_value`, `to_record`, etc. type-check
+/// unchanged.
 #[cfg(target_endian = "big")]
 #[derive(Default, Clone, PartialEq)]
-struct TDigestSlot;
+struct TDigestStub;
+
+#[cfg(target_endian = "big")]
+impl TDigestStub {
+    #[inline]
+    fn update(&mut self, _value: f64) {}
+    #[inline]
+    fn quantile(&self, _rank: f64) -> Option<f64> {
+        None
+    }
+    #[inline]
+    fn is_empty(&self) -> bool {
+        true
+    }
+}
+
+#[cfg(target_endian = "big")]
+#[derive(Default, Clone, PartialEq)]
+struct TDigestSlot(Option<TDigestStub>);
 
 /// Wrapper around `datasketches::hll::HllSketch` so the `Stats` struct can keep its
 /// derived `Clone`, `PartialEq`, `Serialize`, `Deserialize` impls without forcing the
@@ -3065,12 +3088,30 @@ impl PartialEq for HllSlot {
 }
 
 /// Big-endian fallback for `HllSlot`. Apache DataSketches is unavailable on
-/// big-endian targets, so we substitute a zero-sized type. `Stats::hll` is
-/// still declared (and `#[serde(skip)]`) on those targets but is never read; the
-/// `--cardinality-method approx` codepath is rejected upstream by `run()`.
+/// big-endian targets, so we substitute a tuple-struct wrapping `Option<HllSketchStub>`
+/// — the unit-like `HllSketchStub` exposes the same no-op method surface used by the
+/// little-endian call sites (`update`, `estimate`). `Stats::hll` is always `Default`
+/// (i.e. `Some` is never written) on these targets — the `--cardinality-method approx`
+/// codepath is rejected upstream by `run()` — so the stub methods are never reached
+/// at runtime; they exist only so the shared call sites in `update_modes` and
+/// `to_record` type-check unchanged.
 #[cfg(target_endian = "big")]
 #[derive(Default, Clone, PartialEq)]
-struct HllSlot;
+struct HllSketchStub;
+
+#[cfg(target_endian = "big")]
+impl HllSketchStub {
+    #[inline]
+    fn update(&mut self, _sample: &[u8]) {}
+    #[inline]
+    fn estimate(&self) -> f64 {
+        0.0
+    }
+}
+
+#[cfg(target_endian = "big")]
+#[derive(Default, Clone, PartialEq)]
+struct HllSlot(Option<HllSketchStub>);
 
 #[allow(clippy::unsafe_derive_deserialize)]
 #[allow(clippy::struct_field_names)]

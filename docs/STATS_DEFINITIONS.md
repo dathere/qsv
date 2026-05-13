@@ -1087,15 +1087,24 @@ Two things are easy to miss:
 Maximum-safety invocation on a multi-GB CSV when you need the full non-streaming stat set:
 
 ```bash
-qsv index huge.csv                         # one-time; enables parallel chunking
+# one-time: index enables parallel chunking
+qsv index huge.csv
+
 qsv stats huge.csv \
   --everything \
-  --quantile-method approx \                # t-digest for median/quartiles/percentiles/skewness
-  --cardinality-method approx \             # HyperLogLog for cardinality/uniqueness_ratio
-  --mode-cardinality-cap 1000000 \          # bound mode/antimode trackers
-  --stats-jsonl \                           # also write the stats cache
+  --quantile-method approx \
+  --cardinality-method approx \
+  --mode-cardinality-cap 1000000 \
+  --stats-jsonl \
   -o huge.stats.csv
 ```
+
+What each non-default flag contributes:
+
+- `--quantile-method approx` — t-digest for median/quartiles/percentiles/skewness.
+- `--cardinality-method approx` — HyperLogLog for `cardinality`/`uniqueness_ratio`.
+- `--mode-cardinality-cap 1000000` — bound the mode/antimode trackers.
+- `--stats-jsonl` — also write the stats cache for downstream "smart" commands.
 
 What this gives you, in order of memory savings:
 
@@ -1119,10 +1128,12 @@ If you only care about the **top-K most frequent values** (a common analyst case
 qsv index huge.csv
 qsv frequency huge.csv \
   --sketch-method frequent_items \
-  --sketch-map-size 4096 \                  # power of two, ≥ 8; larger = tighter error bound
-  --limit 100 \                             # emit top 100 per column
+  --sketch-map-size 4096 \
+  --limit 100 \
   -o huge.freq.csv
 ```
+
+`--sketch-map-size` must be a power of two and ≥ 8; larger values tighten the error bound at the cost of more memory. `--limit 100` emits the top 100 values per column.
 
 `--sketch-map-size` sets the upper bound on map slots; the sketch's worst-case additive error is bounded by the stream length minus the active map total, so doubling the map size roughly halves the error bound at the cost of doubling memory. 4096 is a reasonable starting point; bump to 16384 or 65536 for tighter bounds.
 

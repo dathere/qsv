@@ -50,6 +50,12 @@ jobs:
       # runtime on s390x with a clear platform error. The integration tests below
       # exercise those flags and so are skipped here; the surrounding `_invalid_value_`
       # / `_exact_` tests still run and cover the non-sketch paths.
+      # `frequency_sketch_method_invalid_map_size_is_rejected` is also skipped:
+      # it asserts a "power of two" error, but on s390x the new platform-rejection
+      # error fires before --sketch-map-size validation, so the assertion would no
+      # longer match. The dedicated `*_big_endian_*_rejected` tests in
+      # tests/test_stats.rs / tests/test_frequency.rs (compiled in only on
+      # big-endian) cover the platform-rejection error message instead.
       # run: cargo test s390x --verbose --locked --features=apply,fetch,foreach,luau,python,feature_capable,ui -- --nocapture
       run: |
         cargo test --verbose --locked --features=apply,fetch,foreach,luau,python,feature_capable,ui -- \

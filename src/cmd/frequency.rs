@@ -931,6 +931,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 } else if !index_succeeded {
                     return Err(e);
                 }
+                // Big-endian: no sketch auto-enable is possible (DataSketches is
+                // compiled out), so the only recovery left is the index that may
+                // have been created above. If indexing did NOT succeed, propagate
+                // the original error. If it DID succeed, silently fall through and
+                // retry with parallel processing — matching the little-endian
+                // behavior on the same branch (the original `else if !index_succeeded`
+                // arm above) where success similarly swallows `e`.
                 #[cfg(target_endian = "big")]
                 if !index_succeeded {
                     return Err(e);

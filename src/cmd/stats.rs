@@ -3656,19 +3656,30 @@ impl Stats {
         // unless --quantile-method approx is set, in which case we route values to a
         // t-digest instead. The two engines are mutually exclusive for a given Stats
         // instance.
+        //
+        // The `if which.approx_quantiles` branch is compiled out entirely on
+        // big-endian: Apache DataSketches is unavailable there, so even an
+        // internal caller that constructs `WhichStats { approx_quantiles: true,
+        // .. }` directly (bypassing the CLI rejection in `run()`) takes the
+        // exact path. This is stronger than gating only the allocation expression
+        // with `cfg_select!`+`unreachable!()` — there is no runtime panic path.
         let needs_quantiles = which.quartiles || which.median || which.mad || which.percentiles;
+        #[cfg_attr(target_endian = "big", allow(unused_mut))]
         let mut tdigest = TDigestSlot::default();
         if needs_quantiles {
+            #[cfg(not(target_endian = "big"))]
             if which.approx_quantiles {
                 // k=200 is the upstream default; ~1% rank error, more accurate at the tails.
-                // Apache DataSketches is unavailable on big-endian targets; the
-                // `--quantile-method approx` flag is rejected upstream in `run()`
-                // for those builds, so the big-endian branch is unreachable here.
-                tdigest = cfg_select! {
-                    target_endian = "little" => TDigestSlot(Some(datasketches::tdigest::TDigestMut::new(200))),
-                    _ => unreachable!("--quantile-method approx is rejected on big-endian targets"),
-                };
+                tdigest = TDigestSlot(Some(datasketches::tdigest::TDigestMut::new(200)));
             } else {
+                unsorted_stats = Some(stats::Unsorted::with_capacity(record_count));
+                if use_weights {
+                    weighted_unsorted_stats = Some(Vec::with_capacity(record_count));
+                }
+            }
+            #[cfg(target_endian = "big")]
+            {
+                // Exact path is the only path here: t-digest is compiled out.
                 unsorted_stats = Some(stats::Unsorted::with_capacity(record_count));
                 if use_weights {
                     weighted_unsorted_stats = Some(Vec::with_capacity(record_count));
@@ -3680,20 +3691,20 @@ impl Stats {
         // RSE with ~5KB per column. Hll8 stores 8 bits per register (no decode work
         // on update); memory is the same order whether sparse or dense.
         //
-        // Apache DataSketches is unavailable on big-endian targets; the
-        // `--cardinality-method approx` flag is rejected upstream in `run()` for
-        // those builds, so the big-endian branch below is unreachable.
+        // Compiled out entirely on big-endian — Apache DataSketches is unavailable,
+        // so `hll` is always the zero-sized default there (`HllSlot` is a
+        // unit-like ZST on big-endian).
+        #[cfg(not(target_endian = "big"))]
         let hll = if which.cardinality && which.approx_cardinality {
-            cfg_select! {
-                target_endian = "little" => HllSlot(Some(datasketches::hll::HllSketch::new(
-                    HLL_LG_K,
-                    datasketches::hll::HllType::Hll8,
-                ))),
-                _ => unreachable!("--cardinality-method approx is rejected on big-endian targets"),
-            }
+            HllSlot(Some(datasketches::hll::HllSketch::new(
+                HLL_LG_K,
+                datasketches::hll::HllType::Hll8,
+            )))
         } else {
             HllSlot::default()
         };
+        #[cfg(target_endian = "big")]
+        let hll = HllSlot::default();
         Stats {
             typ: FieldType::default(),
             is_ascii: true,

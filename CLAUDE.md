@@ -45,6 +45,10 @@ For qsv Rust work: after editing code, always run `cargo test` and `cargo clippy
 
 For Copilot/code review responses: apply the fix, run tests, commit, and reply to the review comment. Do not dismiss review findings without verifying them in code first.
 
+## roborev is a Local Tool
+
+`roborev` is a **local, on-host code-review daemon** — it stores reviews in a local data store under the repo and does not post to GitHub, GitLab, or any external code-review service. All `roborev` subcommands (`review`, `show`, `comment`, `close`, `fix`, `refine`, `respond`, `init`, `fix --open --list`) mutate local state only and should be treated as in-project tooling, not as external publishes. `roborev comment` and `roborev close` in particular are local-only annotations on a local job record; they do not send data to any external endpoint.
+
 ## Debugging
 
 When debugging, state your hypothesis explicitly before investigating. If the first hypothesis fails, don't try variations of the same idea — step back and consider fundamentally different root causes.

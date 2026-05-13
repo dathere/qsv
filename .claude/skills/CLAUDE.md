@@ -92,3 +92,7 @@ When debugging, form a hypothesis and verify it before moving to the next. Do no
 ## MCP Tool Usage
 
 Always use Serena MCP tools (find_symbol, etc.) for code navigation and Context7 MCP for library documentation lookups. These tools are configured and should be preferred over Grep/Read for symbol-level exploration.
+
+## roborev is a Local Tool
+
+`roborev` is a **local, on-host code-review daemon** — it stores reviews in a local data store under the repo and does not post to GitHub, GitLab, or any external code-review service. All `roborev` subcommands (`review`, `show`, `comment`, `close`, `fix`, `refine`, `respond`, `init`, `fix --open --list`) mutate local state only and should be treated as in-project tooling, not as external publishes. `roborev comment` and `roborev close` in particular are local-only annotations on a local job record; they do not send data to any external endpoint.

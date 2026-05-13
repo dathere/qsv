@@ -26,6 +26,8 @@ on:
       - 'src/cmd/**'
       - 'src/main.rs'
       - 'docs/help/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
       - '.github/workflows/wiki-lint.yml'
   workflow_dispatch:
 
@@ -33,9 +35,14 @@ permissions:
   contents: read
   issues: write   # only used by the scheduled-failure-opens-issue step
 
+concurrency:
+  group: wiki-lint-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout qsv source
         uses: actions/checkout@v4
@@ -51,8 +58,8 @@ jobs:
 
       - name: Build qsv (PR source / nightly latest-master)
         run: |
-          cargo build --release --locked --bin qsv -F all_features
-          sudo install target/release/qsv /usr/local/bin/qsv
+          cargo build --locked --bin qsv -F all_features
+          sudo install target/debug/qsv /usr/local/bin/qsv
           qsv --version
 
       - name: Run wiki lint

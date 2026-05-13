@@ -47,6 +47,17 @@
   - [JSON/TOON Output](#jsontoon-output)
   - [Frequent Items Sketch (Approximate Top-K)](#frequent-items-sketch-approximate-top-k)
   - [Memory-Aware Processing](#memory-aware-processing)
+- [Processing Very Large Files](#processing-very-large-files)
+  - [When to Worry](#when-to-worry)
+  - [Memory Pressure Points](#memory-pressure-points)
+  - [Recipe: stats on Very Large Files](#recipe-stats-on-very-large-files)
+  - [Recipe: frequency on Very Large Files](#recipe-frequency-on-very-large-files)
+  - [Indexing for Parallelism](#indexing-for-parallelism)
+  - [Environment Variable Cheat Sheet](#environment-variable-cheat-sheet)
+  - [Worked Example: a Multi-GB CSV](#worked-example-a-multi-gb-csv)
+  - [Hard Limits (What Will Still OOM)](#hard-limits-what-will-still-oom)
+  - [Platform Note: Big-Endian Targets](#platform-note-big-endian-targets)
+  - [Notes for moarstats and pragmastat](#notes-for-moarstats-and-pragmastat)
 
 ---
 
@@ -1033,3 +1044,195 @@ If memory check fails and file is not indexed:
 - Falls back to sequential if index creation fails
 
 For configuration details, see https://github.com/dathere/qsv/blob/master/docs/ENVIRONMENT_VARIABLES.md
+
+---
+
+## Processing Very Large Files
+
+This section consolidates guidance for running `stats` and `frequency` on files that are large relative to available RAM (rule of thumb: any file whose CSV size approaches or exceeds 50% of free memory, or any file with columns whose true cardinality could approach the row count). For configuration knobs referenced below, see [ENVIRONMENT_VARIABLES.md](https://github.com/dathere/qsv/blob/master/docs/ENVIRONMENT_VARIABLES.md).
+
+### When to Worry
+
+Most `stats`/`frequency` invocations on multi-GB files **do not** need special handling, because the defaults already cover the common cases:
+
+- **Streaming stats are constant-memory.** All 27 streaming statistics ([list above](#streaming-vs-non-streaming-statistics)) — `sum`, `min`, `max`, `min_length`/`max_length`/`avg_length`, `mean`/`stddev`/`variance`/`cv`, `sem`, `geometric_mean`/`harmonic_mean`, `nullcount`/`sparsity`, type-counts, `sort_order`/`sortiness`, `is_ascii`, `max_precision`, and `range` — run in O(1) memory regardless of row count. A plain `qsv stats huge.csv` on a 1 TB file with no non-streaming flags will not OOM.
+- **`frequency` uses memory-aware chunking by default.** With an index, it samples the first 1000 records, estimates per-record + HashMap overhead, and sizes chunks to fit available memory.
+- **OOM auto-fallback is on by default.** When non-streaming `stats` or `frequency` would exceed the memory-check budget, qsv first tries to auto-create an index (for non-stdin inputs), then auto-enables DataSketches estimators where the flags allow. A `wwarn!` line is printed listing each auto-enabled estimator.
+
+You only need the recipes in this section when:
+
+1. You are requesting **non-streaming stats** (any of `--mode`, `--cardinality`, `--quartiles`, `--median`, `--mad`, `--percentiles`, or `--everything`) on a file too large to materialize the per-column state in memory, **or**
+2. You are running `frequency` on columns whose distinct-value count could blow up the HashMap (UUIDs, free-text, timestamps with sub-second precision), **or**
+3. You are reading from **stdin** (no index can be auto-created — the OOM fallback can still engage the sketch path, but cannot use indexed parallelism), **or**
+4. You are on a **big-endian** target (see [Platform Note](#platform-note-big-endian-targets)).
+
+### Memory Pressure Points
+
+| Command | Pressure point | Scales with | Mitigation |
+|:---|:---|:---|:---|
+| `stats` streaming | none | O(1) | — |
+| `stats --cardinality` (exact) | distinct-value HashMap per column | per-column cardinality | `--cardinality-method approx` (HLL, ~5 KB/col) or `--mode-cardinality-cap <n>` |
+| `stats --mode` / `--everything` (unweighted) | mode tracker Vec | **row count** (every cell pushed) | `--mode-cardinality-cap <n>` (this is the only knob; mode is **not** sketched even under `--cardinality-method approx`) |
+| `stats --mode --weight=…` | mode tracker HashMap | per-column cardinality | `--mode-cardinality-cap <n>` |
+| `stats --median` / `--quartiles` / `--mad` / `--percentiles` | sort buffer per column | column row count | `--quantile-method approx` (t-digest, ~200 centroids/col). Note: `--mad` is **auto-disabled** under approx (needs a second pass that t-digest cannot serve). |
+| `frequency` (exact) | per-column HashMap of distinct values | per-column cardinality | `--sketch-method frequent_items` (Misra-Gries, fixed `--sketch-map-size` slots) |
+
+Two things are easy to miss:
+
+- **`mode`/`antimode` is the most common surprise.** Under unweighted mode tracking, every cell in the column is pushed onto an underlying Vec, so the tracker grows with **row count, not cardinality**. The `--cardinality-method approx` HLL replaces only the `cardinality` column — mode/antimode is **not** sketched. The fix is `--mode-cardinality-cap <n>`: when the tracker grows past `n`, qsv drops it and emits `*HIGH_CARDINALITY` for the mode/antimode columns.
+- **`--mode-cardinality-cap 0` is the default** (no cap). It is opt-in because, under `--cardinality-method exact`, an exceeded cap emits `>=<n>` in the `cardinality` column — and the `>=` prefix breaks downstream integer parsers. Under `--cardinality-method approx`, the cap does not affect the cardinality column (HLL emits its estimate regardless), so combining the two is safe.
+
+### Recipe: stats on Very Large Files
+
+Maximum-safety invocation on a multi-GB CSV when you need the full non-streaming stat set:
+
+```bash
+qsv index huge.csv                         # one-time; enables parallel chunking
+qsv stats huge.csv \
+  --everything \
+  --quantile-method approx \                # t-digest for median/quartiles/percentiles/skewness
+  --cardinality-method approx \             # HyperLogLog for cardinality/uniqueness_ratio
+  --mode-cardinality-cap 1000000 \          # bound mode/antimode trackers
+  --stats-jsonl \                           # also write the stats cache
+  -o huge.stats.csv
+```
+
+What this gives you, in order of memory savings:
+
+1. **Indexed parallel processing.** Without an index, `stats` runs sequentially; with an index, work is split into memory-aware chunks (sized by `QSV_STATS_CHUNK_MEMORY_MB`) processed in parallel and merged.
+2. **t-digest for quantiles.** Median, q1/q2/q3, IQR, fences, skewness, and `--percentiles` all read from a ~200-centroid t-digest per column instead of sorting the full column. Error is ~1% rank error, more accurate at the tails. **Caveat:** `TDigestMut::merge` is associative but not chunk-count-invariant, so different `--jobs` values can yield ~1% differences across runs. Pin `--jobs 1` for run-to-run determinism. `--mad` is auto-disabled with a warning.
+3. **HLL for cardinality.** `cardinality` and `uniqueness_ratio` come from a ~5 KB HyperLogLog per column. ~1.5% RSE. The HLL union is associative and order-invariant, so the estimate **is** reproducible across `--jobs` values.
+4. **Cap on mode/antimode tracker.** Without this, the unweighted mode tracker grows linearly with row count. With it set to, e.g., `1000000`, columns whose tracker exceeds that drop to `*HIGH_CARDINALITY` for mode/antimode while every other statistic remains valid.
+
+**Flags that block this recipe** (you must drop them or fall back to exact mode):
+
+- `--weight <col>` — t-digest has no weighted-update API upstream, so `--quantile-method approx` is rejected with `--weight`.
+- `--infer-boolean` — needs `cardinality == 2` exactness, so `--cardinality-method approx` is rejected (or, under OOM auto-enable, suppressed) with `--infer-boolean`.
+
+If neither of those applies, you can omit the explicit method flags and rely on the OOM auto-fallback: qsv will flip them on automatically when `util::mem_file_check` trips. You can disable the auto-enable by passing `--quantile-method exact` or `--cardinality-method exact` explicitly (the OOM arm scans `argv` for these flag names, so docopt's default-fill does not count as an explicit opt-out).
+
+### Recipe: frequency on Very Large Files
+
+If you only care about the **top-K most frequent values** (a common analyst case), use the Misra-Gries sketch:
+
+```bash
+qsv index huge.csv
+qsv frequency huge.csv \
+  --sketch-method frequent_items \
+  --sketch-map-size 4096 \                  # power of two, ≥ 8; larger = tighter error bound
+  --limit 100 \                             # emit top 100 per column
+  -o huge.freq.csv
+```
+
+`--sketch-map-size` sets the upper bound on map slots; the sketch's worst-case additive error is bounded by the stream length minus the active map total, so doubling the map size roughly halves the error bound at the cost of doubling memory. 4096 is a reasonable starting point; bump to 16384 or 65536 for tighter bounds.
+
+**Flags that are rejected** under `--sketch-method frequent_items` (the full list is in the [Frequent Items Sketch section](#frequent-items-sketch-approximate-top-k)): `--asc`, `--weight`, `--ignore-case`, `--no-trim`, `--other-sorted`, `--null-sorted`, `--frequency-jsonl`, `--stats-filter`, `--json`/`--pretty-json`/`--toon`. If you need any of these, you must run in exact mode and rely on memory-aware chunking (and possibly the OOM auto-enable, which is itself blocked by the same flag set).
+
+**Silently ignored under FI mode:** `--rank-strategy`, `--lmt-threshold`, `--unq-limit` (the sketch's bounded map is itself the unique-limit, and ordering is fixed at top-K by estimate descending).
+
+**"Other" row divergence:** the `Other` label has no `(N)` unique-count suffix and `rank` is `0`, since the sketch cannot recover the true tail count.
+
+### Indexing for Parallelism
+
+For both `stats` and `frequency`, an index is the single highest-leverage prerequisite for large-file processing:
+
+```bash
+qsv index huge.csv      # creates huge.csv.idx; updated automatically when stale
+```
+
+What an index unlocks:
+
+- **Parallel chunking.** Work is split across cores (`-j N` or auto-detected). Each chunk is processed independently and merged.
+- **Memory-aware chunk sizing.** With `QSV_STATS_CHUNK_MEMORY_MB` / `QSV_FREQ_CHUNK_MEMORY_MB` unset (the default), qsv samples the first 1000 records, estimates per-record memory, and picks a chunk size that fits available memory.
+- **OOM fallback for `stats`.** When `util::mem_file_check` trips and no index exists, qsv attempts to auto-create one before falling back to sketches. Auto-creation is skipped for stdin (not seekable), so `cat huge.csv | qsv stats …` cannot benefit from indexed parallelism — pipe to a file first if you can.
+
+You can also auto-build the index by setting `QSV_AUTOINDEX_SIZE=<bytes>` — any CSV larger than that threshold gets an index created on first use.
+
+### Environment Variable Cheat Sheet
+
+Most relevant for large-file work (see [ENVIRONMENT_VARIABLES.md](https://github.com/dathere/qsv/blob/master/docs/ENVIRONMENT_VARIABLES.md) for the full list):
+
+| Variable | Effect |
+|:---|:---|
+| `QSV_AUTOINDEX_SIZE` | Minimum file size (bytes) for automatic index creation. Set this so big inputs always get indexed. |
+| `QSV_MEMORY_CHECK` | Switches `util::mem_file_check` from NORMAL (`file size vs. total memory − headroom`) to CONSERVATIVE (`file size vs. available + free_swap × platform_factor − headroom`). Trips OOM far more readily, so the auto-fallback engages sooner. |
+| `QSV_FREEMEMORY_HEADROOM_PCT` | Free-memory headroom for the memory check (default 20%). Set to `0` to skip the check entirely (use at your own risk). |
+| `QSV_STATS_CHUNK_MEMORY_MB` | Per-chunk memory cap for `stats` (positive integer in MB). `0` = dynamic sizing. `-1` = CPU-based chunking (chunks = rows/cores; ignores memory). |
+| `QSV_FREQ_CHUNK_MEMORY_MB` | Same semantics as above, for `frequency`. |
+| `QSV_ANTIMODES_LEN` | Truncation length for the antimodes preview (default 100 chars). `0` disables truncation. |
+| `QSV_STATS_STRING_MAX_LENGTH` | Truncate `min`/`max` for String columns at this length (useful when a column contains GeoJSON / Shapefile geometry blobs that would otherwise blow up downstream parsers). |
+| `QSV_MAX_JOBS` | Cap on parallel workers across all multithreaded qsv commands. Useful when each chunk's in-memory state is large (lower `QSV_MAX_JOBS` to leave headroom). |
+| `QSV_FREQ_HIGH_CARD_THRESHOLD` / `QSV_FREQ_HIGH_CARD_PCT` | Cardinality cutoffs for the `--frequency-jsonl` cache to emit a `HIGH_CARDINALITY` sentinel instead of a full frequency entry. Useful for keeping the cache compact on wide tables with ID-like columns. |
+
+### Worked Example: a Multi-GB CSV
+
+For a 30 GB CSV with ~200 columns on a 32 GB host, where some columns are UUIDs:
+
+```bash
+# 1. Index up front so all subsequent passes are parallel + chunked.
+qsv index big.csv
+
+# 2. Stats: full non-streaming set, but bound mode tracking and use sketches.
+QSV_STATS_CHUNK_MEMORY_MB=512 \
+qsv stats big.csv \
+  --everything \
+  --quantile-method approx \
+  --cardinality-method approx \
+  --mode-cardinality-cap 1000000 \
+  --stats-jsonl \
+  -o big.stats.csv
+
+# 3. Frequency: top-100 per column, sketch-mode for fixed memory.
+qsv frequency big.csv \
+  --sketch-method frequent_items \
+  --sketch-map-size 16384 \
+  --limit 100 \
+  -o big.freq.csv
+
+# 4. (Optional) Tighten the memory check if you're sharing the host:
+QSV_MEMORY_CHECK=1 QSV_FREEMEMORY_HEADROOM_PCT=40 qsv stats big.csv …
+```
+
+If you forgot any of the sketch flags and `stats` hits the memory check, the OOM auto-fallback will print a `wwarn!` line such as:
+
+```
+OOM during memory check: auto-enabling DataSketches estimators
+(--quantile-method approx, --cardinality-method approx).
+Re-run with explicit --quantile-method exact / --cardinality-method exact
+to disable the auto-enable.
+```
+
+The exact estimators auto-enabled depend on which incompatible flags are set (`--weight` blocks t-digest; `--infer-boolean` blocks HLL; `--mad`/`--everything` causes MAD to be auto-disabled under approx). The corresponding line for `frequency` mentions `--sketch-method frequent_items` and reports the map size.
+
+### Hard Limits (What Will Still OOM)
+
+The DataSketches integration is a major step toward unbounded inputs, but it does **not** make `stats`/`frequency` truly unconditional. Cases where you can still hit memory exhaustion:
+
+1. **Big-endian targets** (s390x, PowerPC BE). DataSketches is unavailable — all `--quantile-method approx`, `--cardinality-method approx`, and `--sketch-method frequent_items` paths are rejected, and the OOM auto-enable compiles to a no-op stub. On these targets, fall back to `--mode-cardinality-cap`, smaller `QSV_STATS_CHUNK_MEMORY_MB`, and `--limit` / `--unq-limit` on `frequency`.
+2. **Unweighted mode/antimode without a cap.** The tracker grows with row count regardless of `--cardinality-method`. Solution: set `--mode-cardinality-cap` to a value you can afford, or drop `--mode`/`--everything`.
+3. **Frequency in exact mode with unbounded distinct values.** If the column is truly unique-per-row (a UUID column on a 1 B-row CSV), exact mode needs ~1 B HashMap entries. Solution: switch to `--sketch-method frequent_items`, or pre-bucket the column.
+4. **`--weight` blocks t-digest** and **`--infer-boolean` blocks HLL** for `stats`. If both flags are set, neither auto-enable engages, and the memory check will simply fail. Solution: drop the blocking flag, run a separate boolean-inference pass with `stats` alone (no `--weight`), or accept exact mode with adequate RAM.
+5. **`frequency` flag combinations that reject Frequent Items.** If you need `--asc`, `--ignore-case`, `--no-trim`, `--weight`, `--other-sorted`, `--null-sorted`, `--frequency-jsonl`, `--stats-filter`, or `--json`/`--pretty-json`/`--toon`, the sketch path is unavailable. Solution: exact mode with sufficient RAM, or do without that flag.
+6. **Stdin input for `stats`.** Stdin is not seekable, so the auto-index path is skipped. The sketch auto-enable still runs, but you lose parallelism. Solution: tee to a file first (`tee /tmp/in.csv | qsv stats …` or `qsv stats /tmp/in.csv`).
+7. **Explicit `--*-method exact` opt-out.** The OOM auto-enable scans `argv` for `--quantile-method` / `--cardinality-method` / `--sketch-method`; if you passed any of those (even `exact`), auto-enable is suppressed for that method. Drop the explicit opt-out to re-enable the fallback.
+
+### Platform Note: Big-Endian Targets
+
+Apache DataSketches' Rust port is gated to little-endian targets (verified upfront in `stats::run`, `frequency::run`, and the OOM fallback paths). On big-endian targets:
+
+- `--quantile-method approx`, `--cardinality-method approx`, and `--sketch-method frequent_items` are all rejected with a clear error.
+- `try_enable_approx_sketches` (stats) and `can_enable_frequent_items` (frequency) compile to no-op stubs, so the OOM path falls through to error rather than silently degrading.
+
+If you maintain qsv on a big-endian platform, the practical large-file toolkit is:
+
+- `--mode-cardinality-cap` for `stats` (bounds mode/antimode tracking only).
+- Smaller `QSV_STATS_CHUNK_MEMORY_MB` / `QSV_FREQ_CHUNK_MEMORY_MB` to keep per-chunk state small.
+- Pre-bucketing high-cardinality columns (e.g., truncate timestamps to the hour) before running `frequency`.
+- For sort/dedup adjacencies, use `extsort`/`extdedup` (external on-disk variants) instead of `sort`/`dedup`.
+
+### Notes for moarstats and pragmastat
+
+The DataSketches fallback applies to `stats` and `frequency` only. Two adjacent commands have their own characteristics:
+
+- **`moarstats`** computes the [Advanced](#advanced-statistics), [Bivariate](#bivariate-statistics), [Robust](#robust-statistics-winsorized--trimmed-means), and [Outlier](#outlier-statistics) statistic families. Most require either two passes or a full in-memory column (e.g., outlier detection needs the IQR + every value; correlation needs paired columns held together). There is no sketch fallback — for very large inputs, sample first with `qsv sample` and run `moarstats` on the sample, or pre-filter columns to the ones you actually need.
+- **`pragmastat`** ([one-sample mode](#one-sample-mode-default) and [two-sample mode](#two-sample-mode)) computes deterministic robust estimators that require full-sample residuals. It is designed for inputs that fit comfortably in memory; for very large inputs, sample down first.

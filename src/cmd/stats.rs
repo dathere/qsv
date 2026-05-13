@@ -3040,10 +3040,12 @@ struct TDigestStub;
 impl TDigestStub {
     #[inline]
     fn update(&mut self, _value: f64) {}
+
     #[inline]
     fn quantile(&self, _rank: f64) -> Option<f64> {
         None
     }
+
     #[inline]
     fn is_empty(&self) -> bool {
         true
@@ -3103,6 +3105,7 @@ struct HllSketchStub;
 impl HllSketchStub {
     #[inline]
     fn update(&mut self, _sample: &[u8]) {}
+
     #[inline]
     fn estimate(&self) -> f64 {
         0.0

@@ -87,7 +87,7 @@ jobs:
 
       - name: Open issue if nightly lint fails
         if: failure() && github.event_name == 'schedule'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { data: issues } = await github.rest.issues.listForRepo({

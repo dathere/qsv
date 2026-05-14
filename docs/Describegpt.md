@@ -18,6 +18,28 @@ Note that this command uses LLMs for inferencing and is therefore prone to inacc
 
 - `-A, --all` - Shortcut for `--dictionary --description --tags`. Generates all three types of metadata in a single run.
 
+## Dictionary Options
+
+When using the `--dictionary` option, the following option controls what the Data Dictionary includes:
+
+### `--infer-content-type`
+
+By default, the Data Dictionary's LLM pass only infers a human-friendly **Label** and **Description** for each field. With `--infer-content-type`, the LLM additionally infers a semantic **Content Type** for each field — a single token describing *what the field actually contains* — and a "Content Type" column/field is added to the Data Dictionary output (Markdown, JSON, TSV, and TOON).
+
+The Content Type is chosen from a fixed, curated vocabulary so the value stays stable and machine-mappable:
+
+`first_name`, `last_name`, `full_name`, `username`, `email`, `phone`, `street_address`, `city`, `state`, `zip_code`, `country`, `country_code`, `latitude`, `longitude`, `company_name`, `job_title`, `uuid`, `credit_card`, `currency_code`, `isbn`, `ip_address`, `mac_address`, `url`, `color_hex`, `time`, `category`, `lorem_word`, `lorem_sentence`, `lorem_paragraph`, `free_text`, `unknown`
+
+Primitive types (`integer`, `decimal`, `boolean`, `date`, `datetime`) are intentionally **not** in the vocabulary — they are already covered by the Data Dictionary's deterministic `Type` column. Plain numeric, temporal, or boolean fields with no specific semantic meaning are classified as `unknown`, and any value the LLM returns outside the vocabulary is coerced to `unknown`.
+
+When `--infer-content-type` is not set, the Data Dictionary output is unchanged.
+
+```bash
+qsv describegpt data.csv --dictionary --infer-content-type
+```
+
+The curated vocabulary is designed to map cleanly onto fake-data generators, so a Data Dictionary produced with `--infer-content-type` can later drive synthetic test-data generation.
+
 ## Tag Options
 
 When using the `--tags` option, you can control how tags are inferred:

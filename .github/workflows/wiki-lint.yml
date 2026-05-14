@@ -48,10 +48,21 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Checkout wiki
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ github.repository }}.wiki
           path: wiki
+      - name: apt-get update Ubuntu, libwayland-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install libwayland-dev
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: '3.13'
+      - name: Install and Run Redis
+        run: |
+          sudo apt-get install redis-server
+          sudo service redis-server start
       - name: Installing Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:

@@ -52,8 +52,8 @@ As LLM inferencing takes time and can be expensive, describegpt caches the LLM i
 in a either a disk cache (default) or a Redis cache. It does so by calculating the BLAKE3 hash of the
 input file and using it as the primary cache key along with the prompt type, model and every flag that
 influences the rendered prompt (including prompt-file, language, tag-vocab, num-tags, enum-threshold,
-sample-size, fewshot-examples, the QSV_DUCKDB_PATH toggle and the generated Data Dictionary), so
-changing any of them produces a fresh LLM call rather than stale cached output.
+infer-content-type, sample-size, fewshot-examples, the QSV_DUCKDB_PATH toggle and the generated Data
+Dictionary), so changing any of them produces a fresh LLM call rather than stale cached output.
 
 The default disk cache is stored in the ~/.qsv-cache/describegpt directory with a default TTL of 28 days
 and cache hits NOT refreshing an existing cached value's TTL.
@@ -73,6 +73,10 @@ Examples:
 
   # Generate a Data Dictionary of data.csv using the DeepSeek R1:14b model on a local Ollama instance
   qsv describegpt data.csv -u http://localhost:11434/v1 --model deepseek-r1:14b --dictionary
+
+  # Generate a Data Dictionary that also infers a semantic Content Type for each field
+  # (e.g. email, city, latitude) so the dictionary can later drive synthetic data generation
+  qsv describegpt data.csv --dictionary --infer-content-type
 
   # Ask questions about the sample NYC 311 dataset using LM Studio with the default gpt-oss-20b model.
   # Questions that can be answered using the Summary Statistics & Frequency Distribution of the dataset.
@@ -151,6 +155,13 @@ describegpt options:
                            An ellipsis is appended to the truncated value.
                            If zero, no truncation is performed.
                            [default: 25]
+    --infer-content-type   Also have the LLM infer a semantic "Content Type" for each field, chosen
+                           from a curated, documented vocabulary of tokens (e.g. email, city,
+                           latitude, uuid, isbn, category, free_text, unknown). Adds a "Content Type"
+                           column/field to the Data Dictionary output. Primitive types (integer,
+                           date, boolean, etc.) are intentionally NOT in the vocabulary as they are
+                           already covered by the deterministic Type column. When this flag is
+                           absent, the Data Dictionary output is unchanged.
     --addl-cols            Add additional columns to the dictionary from the Summary Statistics.
   --addl-cols-list <list>  A comma-separated list of additional stats columns to add to the dictionary.
                            The columns must be present in the Summary Statistics.
@@ -443,57 +454,58 @@ enum OutputFormat {
 }
 #[derive(Debug, Deserialize)]
 struct Args {
-    arg_input:              Option<String>,
-    flag_dictionary:        bool,
-    flag_description:       bool,
-    flag_tags:              bool,
-    flag_all:               bool,
-    flag_num_tags:          u16,
-    flag_tag_vocab:         Option<String>,
+    arg_input:               Option<String>,
+    flag_dictionary:         bool,
+    flag_description:        bool,
+    flag_tags:               bool,
+    flag_all:                bool,
+    flag_num_tags:           u16,
+    flag_tag_vocab:          Option<String>,
     #[allow(dead_code)]
-    flag_cache_dir:         String,
+    flag_cache_dir:          String,
     #[allow(dead_code)]
-    flag_ckan_api:          String,
+    flag_ckan_api:           String,
     #[allow(dead_code)]
-    flag_ckan_token:        Option<String>,
-    flag_stats_options:     String,
-    flag_freq_options:      String,
-    flag_enum_threshold:    usize,
-    flag_num_examples:      u16,
-    flag_truncate_str:      usize,
-    flag_prompt:            Option<String>,
-    flag_sql_results:       Option<String>,
-    flag_prompt_file:       Option<String>,
-    flag_markdown_template: Option<String>,
-    flag_sample_size:       u16,
-    flag_fewshot_examples:  bool,
-    flag_base_url:          Option<String>,
-    flag_model:             Option<String>,
-    flag_language:          Option<String>,
-    flag_addl_props:        Option<String>,
-    flag_api_key:           Option<String>,
-    flag_max_tokens:        u32,
-    flag_timeout:           u16,
-    flag_user_agent:        Option<String>,
-    flag_export_prompt:     Option<String>,
-    flag_no_cache:          bool,
-    flag_disk_cache_dir:    Option<String>,
-    flag_redis_cache:       bool,
-    flag_fresh:             bool,
-    flag_forget:            bool,
-    flag_flush_cache:       bool,
-    flag_prepare_context:   bool,
-    flag_process_response:  bool,
-    flag_format:            Option<String>,
-    flag_output:            Option<String>,
-    flag_quiet:             bool,
-    flag_addl_cols:         bool,
-    flag_addl_cols_list:    Option<String>,
-    flag_session:           Option<String>,
-    flag_session_len:       usize,
-    flag_no_score_sql:      bool,
-    flag_score_threshold:   u32,
-    flag_score_max_retries: u32,
+    flag_ckan_token:         Option<String>,
+    flag_stats_options:      String,
+    flag_freq_options:       String,
+    flag_enum_threshold:     usize,
+    flag_num_examples:       u16,
+    flag_truncate_str:       usize,
+    flag_prompt:             Option<String>,
+    flag_sql_results:        Option<String>,
+    flag_prompt_file:        Option<String>,
+    flag_markdown_template:  Option<String>,
+    flag_sample_size:        u16,
+    flag_fewshot_examples:   bool,
+    flag_base_url:           Option<String>,
+    flag_model:              Option<String>,
+    flag_language:           Option<String>,
+    flag_addl_props:         Option<String>,
+    flag_api_key:            Option<String>,
+    flag_max_tokens:         u32,
+    flag_timeout:            u16,
+    flag_user_agent:         Option<String>,
+    flag_export_prompt:      Option<String>,
+    flag_no_cache:           bool,
+    flag_disk_cache_dir:     Option<String>,
+    flag_redis_cache:        bool,
+    flag_fresh:              bool,
+    flag_forget:             bool,
+    flag_flush_cache:        bool,
+    flag_prepare_context:    bool,
+    flag_process_response:   bool,
+    flag_format:             Option<String>,
+    flag_output:             Option<String>,
+    flag_quiet:              bool,
+    flag_addl_cols:          bool,
+    flag_addl_cols_list:     Option<String>,
+    flag_infer_content_type: bool,
+    flag_session:            Option<String>,
+    flag_session_len:        usize,
+    flag_no_score_sql:       bool,
+    flag_score_threshold:    u32,
+    flag_score_max_retries:  u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1221,6 +1233,7 @@ fn render_dictionary_md_body(
     let ctx = context! {
         entries => entries,
         addl_col_names => addl_col_names,
+        infer_content_type => args.flag_infer_content_type,
         kind => PromptType::Dictionary.to_string(),
         generated_by_signature => &shared.attribution,
         model => model,
@@ -1838,6 +1851,8 @@ fn get_prompt(
         input_table_name => INPUT_TABLE_NAME,
         sample_file => SAMPLE_FILE.get().map_or("", |s| s.as_str()),
         sample_size => args.flag_sample_size.to_string(),
+        infer_content_type => args.flag_infer_content_type,
+        content_type_vocab => dictionary::content_type_vocab_list(),
         generated_by_signature => "{GENERATED_BY_SIGNATURE}",
     };
 
@@ -2124,8 +2139,8 @@ fn get_cache_key_with_flag(
     format!(
         "{file_hash};{prompt_file:?};{prompt_content:?};{max_tokens};{addl_props:?};\
          {actual_model};{kind};{validity_flag};{language:?};{tag_vocab:?};{tag_vocab_fp};\
-         {num_tags};{enum_threshold};{sample_size};{fewshot_examples};{duckdb_enabled};\
-         {duckdb_path};{duckdb_binary_fp};{dictionary_fingerprint:?}",
+         {num_tags};{enum_threshold};{infer_content_type};{sample_size};{fewshot_examples};\
+         {duckdb_enabled};{duckdb_path};{duckdb_binary_fp};{dictionary_fingerprint:?}",
         prompt_file = args.flag_prompt_file,
         max_tokens = args.flag_max_tokens,
         addl_props = args.flag_addl_props,
@@ -2133,6 +2148,7 @@ fn get_cache_key_with_flag(
         tag_vocab = args.flag_tag_vocab,
         num_tags = args.flag_num_tags,
         enum_threshold = args.flag_enum_threshold,
+        infer_content_type = args.flag_infer_content_type,
         sample_size = args.flag_sample_size,
         fewshot_examples = args.flag_fewshot_examples,
     )
@@ -2436,12 +2452,16 @@ fn build_combined_dictionary_entries(
         &addl_cols,
     );
     let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
-    let llm_labels_descriptions =
-        parse_llm_dictionary_response(&completion_response.response, &field_names)
-            .unwrap_or_default();
+    let llm_fields = parse_llm_dictionary_response(
+        &completion_response.response,
+        &field_names,
+        args.flag_infer_content_type,
+    )
+    .unwrap_or_default();
     Ok(combine_dictionary_entries(
         code_entries,
-        &llm_labels_descriptions,
+        &llm_fields,
+        args.flag_infer_content_type,
     ))
 }
 
@@ -2461,6 +2481,7 @@ fn emit_dictionary_context_only(
         args.flag_enum_threshold,
         args.flag_num_examples,
         args.flag_truncate_str,
+        args.flag_infer_content_type,
     );
     if let Some(attribution) = dictionary_json.get_mut("attribution")
         && let Some(attr_str) = attribution.as_str()
@@ -2499,6 +2520,7 @@ fn format_dictionary_phase(
             args.flag_enum_threshold,
             args.flag_num_examples,
             args.flag_truncate_str,
+            args.flag_infer_content_type,
         );
         if let Some(attribution) = dictionary_json.get_mut("attribution")
             && let Some(attr_str) = attribution.as_str()
@@ -2520,7 +2542,8 @@ fn format_dictionary_phase(
         DATA_DICTIONARY_JSON
             .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
     } else if output_format == OutputFormat::Tsv {
-        let mut tsv_output = formatters::format_dictionary_tsv(&combined_entries);
+        let mut tsv_output =
+            formatters::format_dictionary_tsv(&combined_entries, args.flag_infer_content_type);
         tsv_output.push_str(&format_token_usage_comments(
             &completion_response.reasoning,
             &completion_response.token_usage,
@@ -2530,6 +2553,7 @@ fn format_dictionary_phase(
             args.flag_enum_threshold,
             args.flag_num_examples,
             args.flag_truncate_str,
+            args.flag_infer_content_type,
         );
         DATA_DICTIONARY_JSON
             .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
@@ -2577,6 +2601,7 @@ fn format_dictionary_phase(
             args.flag_enum_threshold,
             args.flag_num_examples,
             args.flag_truncate_str,
+            args.flag_infer_content_type,
         );
         DATA_DICTIONARY_JSON
             .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
@@ -5065,6 +5090,10 @@ mod tests {
                 "flag_enum_threshold",
                 Box::new(|a| a.flag_enum_threshold = 42),
             ),
+            (
+                "flag_infer_content_type",
+                Box::new(|a| a.flag_infer_content_type = true),
+            ),
             ("flag_sample_size", Box::new(|a| a.flag_sample_size = 99)),
             (
                 "flag_fewshot_examples",
@@ -5178,54 +5207,55 @@ mod tests {
     /// Minimal Args for unit tests: zero-values everywhere.
     fn default_args_for_test() -> Args {
         Args {
-            arg_input:              None,
-            flag_dictionary:        false,
-            flag_description:       false,
-            flag_tags:              false,
-            flag_all:               false,
-            flag_num_tags:          0,
-            flag_tag_vocab:         None,
-            flag_cache_dir:         String::new(),
-            flag_ckan_api:          String::new(),
-            flag_ckan_token:        None,
-            flag_stats_options:     String::new(),
-            flag_freq_options:      String::new(),
-            flag_enum_threshold:    0,
-            flag_num_examples:      0,
-            flag_truncate_str:      0,
-            flag_prompt:            None,
-            flag_sql_results:       None,
-            flag_prompt_file:       None,
-            flag_markdown_template: None,
-            flag_sample_size:       0,
-            flag_fewshot_examples:  false,
-            flag_base_url:          None,
-            flag_model:             None,
-            flag_language:          None,
-            flag_addl_props:        None,
-            flag_api_key:           None,
-            flag_max_tokens:        0,
-            flag_timeout:           0,
-            flag_user_agent:        None,
-            flag_export_prompt:     None,
-            flag_no_cache:          true,
-            flag_disk_cache_dir:    None,
-            flag_redis_cache:       false,
-            flag_fresh:             false,
-            flag_forget:            false,
-            flag_flush_cache:       false,
-            flag_prepare_context:   false,
-            flag_process_response:  false,
-            flag_format:            None,
-            flag_output:            None,
-            flag_quiet:             false,
-            flag_addl_cols:         false,
-            flag_addl_cols_list:    None,
-            flag_session:           None,
-            flag_session_len:       0,
-            flag_no_score_sql:      false,
-            flag_score_threshold:   0,
-            flag_score_max_retries: 0,
+            arg_input:               None,
+            flag_dictionary:         false,
+            flag_description:        false,
+            flag_tags:               false,
+            flag_all:                false,
+            flag_num_tags:           0,
+            flag_tag_vocab:          None,
+            flag_cache_dir:          String::new(),
+            flag_ckan_api:           String::new(),
+            flag_ckan_token:         None,
+            flag_stats_options:      String::new(),
+            flag_freq_options:       String::new(),
+            flag_enum_threshold:     0,
+            flag_num_examples:       0,
+            flag_truncate_str:       0,
+            flag_prompt:             None,
+            flag_sql_results:        None,
+            flag_prompt_file:        None,
+            flag_markdown_template:  None,
+            flag_sample_size:        0,
+            flag_fewshot_examples:   false,
+            flag_base_url:           None,
+            flag_model:              None,
+            flag_language:           None,
+            flag_addl_props:         None,
+            flag_api_key:            None,
+            flag_max_tokens:         0,
+            flag_timeout:            0,
+            flag_user_agent:         None,
+            flag_export_prompt:      None,
+            flag_no_cache:           true,
+            flag_disk_cache_dir:     None,
+            flag_redis_cache:        false,
+            flag_fresh:              false,
+            flag_forget:             false,
+            flag_flush_cache:        false,
+            flag_prepare_context:    false,
+            flag_process_response:   false,
+            flag_format:             None,
+            flag_output:             None,
+            flag_quiet:              false,
+            flag_addl_cols:          false,
+            flag_addl_cols_list:     None,
+            flag_infer_content_type: false,
+            flag_session:            None,
+            flag_session_len:        0,
+            flag_no_score_sql:       false,
+            flag_score_threshold:    0,
+            flag_score_max_retries:  0,
         }
     }
 
@@ -5306,30 +5336,32 @@ mod tests {
 
         let entries = vec![
             dictionary::DictionaryEntry {
-                name:        "id".to_string(),
-                r#type:      "Integer".to_string(),
-                label:       "ID".to_string(),
-                description: "Unique identifier\nfor the row.".to_string(),
-                min:         "1".to_string(),
-                max:         "1000".to_string(),
-                cardinality: 1000,
-                enumeration: String::new(),
-                null_count:  0,
-                addl_cols:   addl1,
-                examples:    "<ALL_UNIQUE>".to_string(),
+                name:         "id".to_string(),
+                r#type:       "Integer".to_string(),
+                label:        "ID".to_string(),
+                description:  "Unique identifier\nfor the row.".to_string(),
+                content_type: String::new(),
+                min:          "1".to_string(),
+                max:          "1000".to_string(),
+                cardinality:  1000,
+                enumeration:  String::new(),
+                null_count:   0,
+                addl_cols:    addl1,
+                examples:     "<ALL_UNIQUE>".to_string(),
             },
             dictionary::DictionaryEntry {
-                name:        "category|raw".to_string(),
-                r#type:      "String".to_string(),
-                label:       "Category".to_string(),
-                description: "Top-level grouping.".to_string(),
-                min:         String::new(),
-                max:         String::new(),
-                cardinality: 3,
-                enumeration: "alpha\nbeta\ngamma".to_string(),
-                null_count:  12_345,
-                addl_cols:   addl2,
-                examples:    "alpha [9000]\nbeta [1234]".to_string(),
+                name:         "category|raw".to_string(),
+                r#type:       "String".to_string(),
+                label:        "Category".to_string(),
+                description:  "Top-level grouping.".to_string(),
+                content_type: String::new(),
+                min:          String::new(),
+                max:          String::new(),
+                cardinality:  3,
+                enumeration:  "alpha\nbeta\ngamma".to_string(),
+                null_count:   12_345,
+                addl_cols:    addl2,
+                examples:     "alpha [9000]\nbeta [1234]".to_string(),
             },
         ];
 
@@ -5366,6 +5398,135 @@ mod tests {
         assert_eq!(
             rendered, expected,
             "default dictionary_md_body_template diverged from legacy table output"
+        );
+    }
+
+    #[test]
+    fn dictionary_body_template_with_content_type() {
+        use indexmap::IndexMap;
+
+        let mut args = default_args_for_test();
+        args.flag_base_url = Some(DEFAULT_BASE_URL.to_string());
+        args.flag_model = Some(DEFAULT_MODEL.to_string());
+        args.flag_infer_content_type = true;
+        let model = "openai/gpt-oss-20b";
+        let base_url = "http://localhost:11434/v1";
+
+        let mut addl = IndexMap::new();
+        addl.insert("mean".to_string(), "12.5".to_string());
+
+        let entries = vec![
+            dictionary::DictionaryEntry {
+                name:         "id".to_string(),
+                r#type:       "Integer".to_string(),
+                label:        "ID".to_string(),
+                description:  "Unique identifier\nfor the row.".to_string(),
+                content_type: "uuid".to_string(),
+                min:          "1".to_string(),
+                max:          "1000".to_string(),
+                cardinality:  1000,
+                enumeration:  String::new(),
+                null_count:   0,
+                addl_cols:    addl.clone(),
+                examples:     "<ALL_UNIQUE>".to_string(),
+            },
+            dictionary::DictionaryEntry {
+                name:         "category".to_string(),
+                r#type:       "String".to_string(),
+                label:        "Category".to_string(),
+                description:  "Top-level grouping.".to_string(),
+                content_type: "category".to_string(),
+                min:          String::new(),
+                max:          String::new(),
+                cardinality:  3,
+                enumeration:  "alpha\nbeta\ngamma".to_string(),
+                null_count:   12_345,
+                addl_cols:    addl,
+                examples:     "alpha [9000]\nbeta [1234]".to_string(),
+            },
+        ];
+
+        let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
+        let addl_col_names = formatters::extract_ordered_addl_cols(&entries);
+        let rendered =
+            render_dictionary_md_body(&args, &entries, &addl_col_names, model, base_url, &shared)
+                .unwrap();
+
+        // The header and separator gain a "Content Type" column right after "Description".
+        assert!(
+            rendered.contains("| Description | Content Type | Min |"),
+            "header missing Content Type column:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("|-------------|--------------|-----|"),
+            "separator missing Content Type column:\n{rendered}"
+        );
+        // Each data row carries its content_type cell between description and min.
+        assert!(
+            rendered.contains("Unique identifier<br>for the row. | uuid | 1 |"),
+            "row 1 missing content_type cell:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("Top-level grouping. | category |  |"),
+            "row 2 missing content_type cell:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn dictionary_prompt_gates_content_type_on_flag() {
+        // The dictionary_prompt template interleaves {% raw %}/{% endraw %} with
+        // {% if infer_content_type %} blocks; render it both ways to lock in that the
+        // Content Type instruction, vocabulary, and JSON example key are gated correctly.
+        let prompt_file: PromptFile = toml::from_str(get_default_prompt_file_content()).unwrap();
+
+        let mut env = Environment::new();
+        minijinja_contrib::add_to_environment(&mut env);
+
+        let render = |infer: bool| {
+            env.render_str(
+                &prompt_file.dictionary_prompt,
+                context! {
+                    stats => "field,type\nid,Integer\n",
+                    frequency => "field,value,count,percentage,rank\n",
+                    headers => "id,email",
+                    language => "",
+                    infer_content_type => infer,
+                    content_type_vocab => dictionary::content_type_vocab_list(),
+                },
+            )
+            .unwrap()
+        };
+
+        let off = render(false);
+        assert!(
+            !off.contains("Content Type:"),
+            "flag-off prompt must not mention the Content Type instruction:\n{off}"
+        );
+        assert!(
+            !off.contains("content_type"),
+            "flag-off prompt must not include the content_type JSON key:\n{off}"
+        );
+        assert!(
+            off.contains("\"label\" and \"description\" properties"),
+            "flag-off prompt must keep the legacy properties sentence:\n{off}"
+        );
+
+        let on = render(true);
+        assert!(
+            on.contains("- Content Type: classify the SEMANTIC CONTENT"),
+            "flag-on prompt must include the Content Type instruction:\n{on}"
+        );
+        assert!(
+            on.contains("Allowed Content Type tokens: first_name"),
+            "flag-on prompt must inject the curated vocabulary:\n{on}"
+        );
+        assert!(
+            on.contains("\"content_type\": \"email\""),
+            "flag-on prompt must include the content_type JSON example key:\n{on}"
+        );
+        assert!(
+            on.contains("\"label\", \"description\" and \"content_type\" properties"),
+            "flag-on prompt must list content_type in the properties sentence:\n{on}"
         );
     }
 

@@ -1,7 +1,7 @@
 name = "qsv Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "qsv team"
-version = "7.0.0"
+version = "7.1.0"
 tokens = 20000
 base_url = "https://api.openai.com/v1"
 model = "openai/gpt-oss-20b"
@@ -35,6 +35,10 @@ language = ""
 # {{ sample_file }} - The temporary file containing a random sample of the input CSV file.
 #                     Only present if --prompt is set.
 # {{ sample_size }} - The number of rows in the random sample.
+# {{ infer_content_type }} - true when --infer-content-type is set; gates the optional
+#                     Content Type instruction in the dictionary_prompt below.
+# {{ content_type_vocab }} - comma-separated list of allowed Content Type tokens
+#                     (the curated qsv vocabulary)
 
 system_prompt = """
 You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.
@@ -58,7 +62,7 @@ For Dataset fields with all unique values (i.e. cardinality is equal to the numb
 """
 
 dictionary_prompt = """
-Generate{% if language %} {{ language|trim|title }}{% endif %} Labels and Descriptions for ALL fields in the Dataset. Use the Summary Statistics and Frequency Distribution to understand the context and meaning of each field.
+Generate{% if language %} {{ language|trim|title }}{% endif %} Labels{% if infer_content_type %},{% else %} and{% endif %} Descriptions{% if infer_content_type %} and Content Types{% endif %} for ALL fields in the Dataset. Use the Summary Statistics and Frequency Distribution to understand the context and meaning of each field.
 
 {% set headers_list = headers|split(",")|list %}
 The Dataset has {{ headers_list|length }} field{{ headers_list|length | pluralize }}:
@@ -69,16 +73,26 @@ The Dataset has {{ headers_list|length }} field{{ headers_list|length | pluraliz
 For each field, provide:
 - Label: a human-friendly label for this field (e.g., "Unique Key", "Created Date", "Agency Name")
 - Description: a full description for this field (can be multiple sentences)
+{%- if infer_content_type %}
+- Content Type: classify the SEMANTIC CONTENT of this field by choosing exactly ONE token from the
+  fixed vocabulary below. Do NOT invent tokens and do NOT return free text. Base your choice on the
+  field name, Summary Statistics and Frequency Distribution. For plain numeric, date, datetime or
+  boolean fields with no specific semantic meaning, use "unknown" - those are already covered by the
+  deterministic Type column. If no token fits, use "unknown".
+  Allowed Content Type tokens: {{ content_type_vocab }}
+{%- endif %}
 
-Return the results in JSON format where each field name is a key, and the value is an object with "label" and "description" properties:
+Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %} and "content_type"{% endif %} properties:
 {% raw %}{
   "field_name_1": {
     "label": "Human-friendly label",
-    "description": "Full description of the field"
+    "description": "Full description of the field"{% endraw %}{% if infer_content_type %},
+    "content_type": "email"{% endif %}{% raw %}
   },
   "field_name_2": {
     "label": "Another label",
-    "description": "Another description"
+    "description": "Another description"{% endraw %}{% if infer_content_type %},
+    "content_type": "city"{% endif %}{% raw %}
   }
 }{% endraw %}
 

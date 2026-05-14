@@ -28,11 +28,15 @@ pub(super) fn extract_ordered_addl_cols(entries: &[DictionaryEntry]) -> Vec<Stri
 /// are echoed back into the JSON payload as metadata. They come from the top-level
 /// CLI args but are threaded through as primitives to keep this module decoupled
 /// from the full `Args` struct.
+///
+/// When `infer_content_type` is true, a `content_type` key is added to each field
+/// object; when false, the output is unchanged from the legacy format.
 pub(super) fn format_dictionary_json(
     entries: &[DictionaryEntry],
     enum_threshold: usize,
     num_examples: u16,
     truncate_str: usize,
+    infer_content_type: bool,
 ) -> Value {
     let entries_json: Vec<Value> = entries
         .iter()
@@ -50,6 +54,9 @@ pub(super) fn format_dictionary_json(
             });
 
             if let Some(obj) = entry_obj.as_object_mut() {
+                if infer_content_type {
+                    obj.insert("content_type".to_string(), json!(e.content_type));
+                }
                 for (key, value) in &e.addl_cols {
                     let json_value = if value.is_empty() {
                         Value::Null
@@ -77,12 +84,22 @@ pub(super) fn format_dictionary_json(
 }
 
 /// Format dictionary entries as TSV.
-pub(super) fn format_dictionary_tsv(entries: &[DictionaryEntry]) -> String {
+///
+/// When `infer_content_type` is true, a `Content Type` column is inserted after
+/// `Description`; when false, the header and rows are unchanged from the legacy
+/// format.
+pub(super) fn format_dictionary_tsv(
+    entries: &[DictionaryEntry],
+    infer_content_type: bool,
+) -> String {
     let addl_col_names = extract_ordered_addl_cols(entries);
 
     let mut output = String::with_capacity(1024);
-    output
-        .push_str("Name\tType\tLabel\tDescription\tMin\tMax\tCardinality\tEnumeration\tNull Count");
+    output.push_str("Name\tType\tLabel\tDescription");
+    if infer_content_type {
+        output.push_str("\tContent Type");
+    }
+    output.push_str("\tMin\tMax\tCardinality\tEnumeration\tNull Count");
     for col_name in &addl_col_names {
         let _ = write!(output, "\t{col_name}");
     }
@@ -97,14 +114,22 @@ pub(super) fn format_dictionary_tsv(entries: &[DictionaryEntry]) -> String {
         let max = entry.max.replace(['\t', '\n', '\r'], " ");
         let enumeration = entry.enumeration.replace(['\t', '\n', '\r'], " ");
         let examples = entry.examples.replace(['\t', '\n', '\r'], " ");
+        // Either a leading-tab-prefixed cell or empty, so the legacy layout stays
+        // byte-identical when --infer-content-type is not set.
+        let content_type = if infer_content_type {
+            format!("\t{}", entry.content_type.replace(['\t', '\n', '\r'], " "))
+        } else {
+            String::new()
+        };
 
         let _ = write!(
             output,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}{}\t{}\t{}\t{}\t{}\t{}",
             name,
             r#type,
             label,
             description,
+            content_type,
             min,
             max,
             HumanCount(entry.cardinality),
@@ -131,4 +156,78 @@ pub(super) fn format_dictionary_tsv(entries: &[DictionaryEntry]) -> String {
     }
 
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_entry(name: &str, content_type: &str) -> DictionaryEntry {
+        DictionaryEntry {
+            name:         name.to_string(),
+            r#type:       "String".to_string(),
+            label:        "Label".to_string(),
+            description:  "Desc".to_string(),
+            content_type: content_type.to_string(),
+            min:          String::new(),
+            max:          String::new(),
+            cardinality:  3,
+            enumeration:  String::new(),
+            null_count:   0,
+            addl_cols:    Default::default(),
+            examples:     "a [1]".to_string(),
+        }
+    }
+
+    #[test]
+    fn json_omits_content_type_when_flag_off() {
+        let entries = vec![sample_entry("col", "email")];
+        let json = format_dictionary_json(&entries, 10, 5, 25, false);
+        assert!(
+            json["fields"][0].get("content_type").is_none(),
+            "content_type must be absent when infer_content_type is false"
+        );
+    }
+
+    #[test]
+    fn json_includes_content_type_when_flag_on() {
+        let entries = vec![sample_entry("col", "email")];
+        let json = format_dictionary_json(&entries, 10, 5, 25, true);
+        assert_eq!(json["fields"][0]["content_type"], "email");
+    }
+
+    #[test]
+    fn tsv_header_unchanged_when_flag_off() {
+        let entries = vec![sample_entry("col", "email")];
+        let tsv = format_dictionary_tsv(&entries, false);
+        let header = tsv.lines().next().unwrap();
+        assert_eq!(
+            header,
+            "Name\tType\tLabel\tDescription\tMin\tMax\tCardinality\tEnumeration\tNull \
+             Count\tExamples"
+        );
+        assert!(
+            !tsv.contains("Content Type"),
+            "Content Type column leaked when infer_content_type is false"
+        );
+    }
+
+    #[test]
+    fn tsv_inserts_content_type_column_when_flag_on() {
+        let entries = vec![sample_entry("col", "email")];
+        let tsv = format_dictionary_tsv(&entries, true);
+        let mut lines = tsv.lines();
+        let header = lines.next().unwrap();
+        assert_eq!(
+            header,
+            "Name\tType\tLabel\tDescription\tContent \
+             Type\tMin\tMax\tCardinality\tEnumeration\tNull Count\tExamples"
+        );
+        let row = lines.next().unwrap();
+        // ...Label <tab> Description <tab> Content Type <tab> Min...
+        assert!(
+            row.contains("Label\tDesc\temail\t"),
+            "row missing content_type cell: {row}"
+        );
+    }
 }

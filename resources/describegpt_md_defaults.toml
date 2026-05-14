@@ -18,8 +18,12 @@ version = "1.0.0"
 #
 # The dictionary body template (dictionary_md_body_template) additionally receives:
 #   {{ entries }}           - list of records, each with: name, type, label, description,
-#                             min, max, cardinality, enumeration, null_count, addl_cols, examples
+#                             content_type, min, max, cardinality, enumeration, null_count,
+#                             addl_cols, examples
+#                             (content_type is empty unless {{ infer_content_type }} is true)
 #   {{ addl_col_names }}    - list of additional column names (in display order)
+#   {{ infer_content_type }} - true when --infer-content-type is set; gates the optional
+#                             "Content Type" column in the default body template
 #
 ### Custom Mini Jinja filters available in all describegpt markdown templates:
 #   pipe_escape       - replaces "|" with "\|" (escapes pipe for markdown tables)
@@ -31,10 +35,10 @@ version = "1.0.0"
 #   humanize_examples - reproduces legacy "value [count]" line humanization, joined with "<br>";
 #                       the special sentinel "<ALL_UNIQUE>" is passed through unchanged
 
-dictionary_md_body_template = """| Name | Type | Label | Description | Min | Max | Cardinality | Enumeration | Null Count{% for col in addl_col_names %} | {{ col }}{% endfor %} | Examples |
-|------|------|-------|-------------|-----|-----|-------------|-------------|------------{% for col in addl_col_names %}|----------{% endfor %}|----------|
+dictionary_md_body_template = """| Name | Type | Label | Description |{% if infer_content_type %} Content Type |{% endif %} Min | Max | Cardinality | Enumeration | Null Count{% for col in addl_col_names %} | {{ col }}{% endfor %} | Examples |
+|------|------|-------|-------------{% if infer_content_type %}|--------------{% endif %}|-----|-----|-------------|-------------|------------{% for col in addl_col_names %}|----------{% endfor %}|----------|
 {% for entry in entries -%}
-| **{{ entry.name | pipe_escape }}** | {{ entry.type | pipe_escape }} | {{ entry.label | pipe_escape }} | {{ entry.description | pipe_escape | br_replace }} | {{ entry.min | pipe_escape }} | {{ entry.max | pipe_escape }} | {{ entry.cardinality | human_count }} | {{ entry.enumeration | pipe_escape | br_replace }} | {{ entry.null_count | human_count }}{% for col in addl_col_names %} | {{ entry.addl_cols[col] | default("") | dict_cell(col) }}{% endfor %} | {{ entry.examples | pipe_escape | humanize_examples }} |
+| **{{ entry.name | pipe_escape }}** | {{ entry.type | pipe_escape }} | {{ entry.label | pipe_escape }} | {{ entry.description | pipe_escape | br_replace }} |{% if infer_content_type %} {{ entry.content_type | pipe_escape }} |{% endif %} {{ entry.min | pipe_escape }} | {{ entry.max | pipe_escape }} | {{ entry.cardinality | human_count }} | {{ entry.enumeration | pipe_escape | br_replace }} | {{ entry.null_count | human_count }}{% for col in addl_col_names %} | {{ entry.addl_cols[col] | default("") | dict_cell(col) }}{% endfor %} | {{ entry.examples | pipe_escape | humanize_examples }} |
 {% endfor %}
 *Attribution: {{ generated_by_signature }}*
 """

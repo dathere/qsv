@@ -11,6 +11,77 @@ use serde::{Deserialize, Serialize};
 
 use super::{CliError, CliResult, extract_json_from_output};
 
+/// Curated, documented vocabulary of semantic Content Type tokens. Each token is
+/// intended to map cleanly to a `fake-rs` faker for a future `synthesize` command.
+///
+/// Primitive types (`integer`, `decimal`, `boolean`, `date`, `datetime`) are
+/// deliberately excluded — they are redundant with the dictionary's deterministic
+/// `type` column. `synthesize` falls back to `type` + `min`/`max` for plain
+/// numeric/temporal fields whose `content_type` is `unknown`.
+pub(super) const CONTENT_TYPE_VOCAB: &[&str] = &[
+    // person / identity
+    "first_name",
+    "last_name",
+    "full_name",
+    "username",
+    "password",
+    "email",
+    "phone",
+    // address / location
+    "street_address",
+    "building_number",
+    "secondary_address",
+    "city",
+    "state",
+    "state_abbr",
+    "zip_code",
+    "country",
+    "country_code",
+    "latitude",
+    "longitude",
+    "time_zone",
+    // company / job
+    "company_name",
+    "job_title",
+    // identifiers / technical
+    "uuid",
+    "credit_card",
+    "currency_code",
+    "isbn",
+    "ip_address",
+    "mac_address",
+    "url",
+    "user_agent",
+    "file_name",
+    "file_path",
+    "mime_type",
+    "color_hex",
+    // temporal
+    "time",
+    // generic / fallback
+    "category",
+    "lorem_word",
+    "lorem_sentence",
+    "lorem_paragraph",
+    "free_text",
+    "unknown",
+];
+
+/// Render `CONTENT_TYPE_VOCAB` as a comma-separated string for prompt injection.
+pub(super) fn content_type_vocab_list() -> String {
+    CONTENT_TYPE_VOCAB.join(", ")
+}
+
+/// LLM-inferred fields for a single dictionary column, keyed by field name in the
+/// map returned by `parse_llm_dictionary_response`. `content_type` stays empty
+/// unless `--infer-content-type` is set.
+#[derive(Debug, Clone, Default)]
+pub(super) struct LlmDictField {
+    pub(super) label:        String,
+    pub(super) description:  String,
+    pub(super) content_type: String,
+}
+
 /// Parsed row from the `stats` CSV.
 #[derive(Debug, Clone)]
 pub(super) struct StatsRecord {
@@ -33,23 +104,25 @@ pub(super) struct FrequencyRecord {
     pub(super) rank:       f64,
 }
 
-/// One row in the generated data dictionary. `label` and `description` start
-/// empty and are filled by the LLM pass; all other fields are populated
+/// One row in the generated data dictionary. `label`, `description` and
+/// `content_type` start empty and are filled by the LLM pass (`content_type`
+/// only when `--infer-content-type` is set); all other fields are populated
 /// deterministically from `StatsRecord` + `FrequencyRecord`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct DictionaryEntry {
-    pub(super) name:        String,
-    pub(super) r#type:      String,
-    pub(super) label:       String,
-    pub(super) description: String,
-    pub(super) min:         String, // Empty string if not available
-    pub(super) max:         String, // Empty string if not available
-    pub(super) cardinality: u64,
-    pub(super) enumeration: String, // Empty if not enumerable, otherwise one value per line
-    pub(super) null_count:  u64,
-    pub(super) addl_cols:   IndexMap<String, String>, // Preserves column order
-    pub(super) examples:    String,                   /* Format: "val1 [cnt1]\nval2 [cnt2]…" or
-                                                       * "<ALL_UNIQUE>" */
+    pub(super) name:         String,
+    pub(super) r#type:       String,
+    pub(super) label:        String,
+    pub(super) description:  String,
+    pub(super) content_type: String, // Curated semantic token; empty unless --infer-content-type
+    pub(super) min:          String, // Empty string if not available
+    pub(super) max:          String, // Empty string if not available
+    pub(super) cardinality:  u64,
+    pub(super) enumeration:  String, // Empty if not enumerable, otherwise one value per line
+    pub(super) null_count:   u64,
+    pub(super) addl_cols:    IndexMap<String, String>, // Preserves column order
+    pub(super) examples:     String,                   /* Format: "val1 [cnt1]\nval2 [cnt2]…" or
+                                                        * "<ALL_UNIQUE>" */
 }
 
 /// Parse the `stats` CSV into structured records, returning the records plus
@@ -353,8 +426,9 @@ pub(super) fn generate_code_based_dictionary(
         dictionary_entries.push(DictionaryEntry {
             name: stats_record.field.clone(),
             r#type: stats_record.r#type.clone(),
-            label: String::new(),       // Filled by LLM
-            description: String::new(), // Filled by LLM
+            label: String::new(),        // Filled by LLM
+            description: String::new(),  // Filled by LLM
+            content_type: String::new(), // Filled by LLM when --infer-content-type is set
             min: stats_record.min.clone(),
             max: stats_record.max.clone(),
             cardinality: stats_record.cardinality,
@@ -368,27 +442,44 @@ pub(super) fn generate_code_based_dictionary(
     dictionary_entries
 }
 
-/// Merge code-generated dictionary entries with LLM-generated Label /
-/// Description pairs keyed by field name.
+/// Merge code-generated dictionary entries with the LLM-generated fields (Label,
+/// Description and, when `--infer-content-type` is set, Content Type) keyed by
+/// field name.
+///
+/// When `infer_content_type` is set, this is the single point that guarantees
+/// every entry has a non-empty `content_type`: a field the LLM classified with an
+/// invalid token, omitted the `content_type` key for, or left out of its response
+/// entirely all fall back to `"unknown"`.
 pub(super) fn combine_dictionary_entries(
     mut code_entries: Vec<DictionaryEntry>,
-    llm_labels_descriptions: &HashMap<String, (String, String)>,
+    llm_fields: &HashMap<String, LlmDictField>,
+    infer_content_type: bool,
 ) -> Vec<DictionaryEntry> {
     for entry in &mut code_entries {
-        if let Some((label, description)) = llm_labels_descriptions.get(&entry.name) {
-            entry.label = label.clone();
-            entry.description = description.clone();
+        if let Some(llm) = llm_fields.get(&entry.name) {
+            entry.label = llm.label.clone();
+            entry.description = llm.description.clone();
+            entry.content_type = llm.content_type.clone();
+        }
+        if infer_content_type && entry.content_type.is_empty() {
+            entry.content_type = "unknown".to_string();
         }
     }
     code_entries
 }
 
-/// Extract the `{field_name: {label, description}}` map from the LLM's JSON
-/// response, restricted to the given `field_names`.
+/// Extract the `{field_name: {label, description[, content_type]}}` map from the
+/// LLM's JSON response, restricted to the given `field_names`. When
+/// `infer_content_type` is set, `content_type` is lowercased and validated against
+/// `CONTENT_TYPE_VOCAB`; a missing, empty, or out-of-vocabulary value is left empty
+/// here — `combine_dictionary_entries` is the single point that coerces any
+/// still-empty `content_type` to `"unknown"`. When the flag is unset, `content_type`
+/// is always empty.
 pub(super) fn parse_llm_dictionary_response(
     llm_response: &str,
     field_names: &[String],
-) -> CliResult<HashMap<String, (String, String)>> {
+    infer_content_type: bool,
+) -> CliResult<HashMap<String, LlmDictField>> {
     let json_value = extract_json_from_output(llm_response)?;
 
     let mut result = HashMap::new();
@@ -410,10 +501,179 @@ pub(super) fn parse_llm_dictionary_response(
                     .unwrap_or("")
                     .to_string();
 
-                result.insert(field_name.clone(), (label, description));
+                let content_type = if infer_content_type {
+                    // Normalize to lowercase before the vocab lookup — `CONTENT_TYPE_VOCAB` is
+                    // all lowercase, and LLMs don't reliably echo casing exactly (e.g. "Email",
+                    // "First_Name") even when given an explicit token list. A missing, empty, or
+                    // out-of-vocabulary value is left empty here; `combine_dictionary_entries`
+                    // coerces any still-empty content_type to "unknown" when the flag is set.
+                    let raw = field_map
+                        .get("content_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_ascii_lowercase();
+                    if CONTENT_TYPE_VOCAB.contains(&raw.as_str()) {
+                        raw
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+
+                result.insert(
+                    field_name.clone(),
+                    LlmDictField {
+                        label,
+                        description,
+                        content_type,
+                    },
+                );
             }
         }
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn blank_entry(name: &str) -> DictionaryEntry {
+        DictionaryEntry {
+            name:         name.to_string(),
+            r#type:       "String".to_string(),
+            label:        String::new(),
+            description:  String::new(),
+            content_type: String::new(),
+            min:          String::new(),
+            max:          String::new(),
+            cardinality:  0,
+            enumeration:  String::new(),
+            null_count:   0,
+            addl_cols:    IndexMap::new(),
+            examples:     String::new(),
+        }
+    }
+
+    #[test]
+    fn parse_llm_response_ignores_content_type_when_flag_off() {
+        let json = r#"{
+            "name": {"label": "Name", "description": "the name", "content_type": "first_name"}
+        }"#;
+        let fields = vec!["name".to_string()];
+        let parsed = parse_llm_dictionary_response(json, &fields, false).unwrap();
+        let f = parsed.get("name").unwrap();
+        assert_eq!(f.label, "Name");
+        assert_eq!(f.description, "the name");
+        assert!(
+            f.content_type.is_empty(),
+            "content_type must stay empty when infer_content_type is false"
+        );
+    }
+
+    #[test]
+    fn parse_llm_response_extracts_valid_content_type() {
+        let json = r#"{
+            "email_addr": {"label": "Email", "description": "an email", "content_type": "email"}
+        }"#;
+        let fields = vec!["email_addr".to_string()];
+        let parsed = parse_llm_dictionary_response(json, &fields, true).unwrap();
+        assert_eq!(parsed.get("email_addr").unwrap().content_type, "email");
+    }
+
+    #[test]
+    fn parse_llm_response_normalizes_content_type_casing() {
+        // LLMs don't reliably echo casing; a valid-but-differently-cased token must be
+        // accepted and stored in its normalized lowercase form, not coerced to "unknown".
+        let json = r#"{
+            "a": {"label": "A", "description": "d", "content_type": "Email"},
+            "b": {"label": "B", "description": "d", "content_type": "FIRST_NAME"},
+            "c": {"label": "C", "description": "d", "content_type": "  Mac_Address  "}
+        }"#;
+        let fields = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let parsed = parse_llm_dictionary_response(json, &fields, true).unwrap();
+        assert_eq!(parsed.get("a").unwrap().content_type, "email");
+        assert_eq!(parsed.get("b").unwrap().content_type, "first_name");
+        assert_eq!(parsed.get("c").unwrap().content_type, "mac_address");
+    }
+
+    #[test]
+    fn parse_llm_response_drops_out_of_vocab_content_type() {
+        // An out-of-vocabulary token is left empty by parsing; combine_dictionary_entries
+        // is what coerces it to "unknown".
+        let json = r#"{
+            "mystery": {"label": "X", "description": "y", "content_type": "made_up_token"}
+        }"#;
+        let fields = vec!["mystery".to_string()];
+        let parsed = parse_llm_dictionary_response(json, &fields, true).unwrap();
+        assert!(parsed.get("mystery").unwrap().content_type.is_empty());
+    }
+
+    #[test]
+    fn parse_llm_response_missing_content_type_is_empty() {
+        // A missing content_type key is left empty by parsing; combine_dictionary_entries
+        // coerces it to "unknown" when the flag is set.
+        let json = r#"{ "f": {"label": "F", "description": "d"} }"#;
+        let fields = vec!["f".to_string()];
+        let parsed = parse_llm_dictionary_response(json, &fields, true).unwrap();
+        assert!(parsed.get("f").unwrap().content_type.is_empty());
+    }
+
+    #[test]
+    fn combine_copies_content_type_onto_entry() {
+        let code_entries = vec![blank_entry("col_a"), blank_entry("col_b")];
+        let mut llm = HashMap::new();
+        llm.insert(
+            "col_a".to_string(),
+            LlmDictField {
+                label:        "A".to_string(),
+                description:  "desc a".to_string(),
+                content_type: "city".to_string(),
+            },
+        );
+        // infer_content_type = false: pure copy, no "unknown" coercion.
+        let combined = combine_dictionary_entries(code_entries, &llm, false);
+        assert_eq!(combined[0].label, "A");
+        assert_eq!(combined[0].description, "desc a");
+        assert_eq!(combined[0].content_type, "city");
+        // col_b had no LLM entry, so its content_type stays empty when the flag is off.
+        assert!(combined[1].content_type.is_empty());
+    }
+
+    #[test]
+    fn combine_fills_unknown_for_empty_content_type_when_flag_on() {
+        // With --infer-content-type set, every entry must end up with a non-empty
+        // content_type: a valid token is kept; a field the LLM left empty (e.g. an
+        // out-of-vocab token dropped by parsing) or omitted entirely falls back to "unknown".
+        let code_entries = vec![
+            blank_entry("kept"),
+            blank_entry("emptied"),
+            blank_entry("omitted"),
+        ];
+        let mut llm = HashMap::new();
+        llm.insert(
+            "kept".to_string(),
+            LlmDictField {
+                label:        "K".to_string(),
+                description:  "d".to_string(),
+                content_type: "city".to_string(),
+            },
+        );
+        llm.insert(
+            "emptied".to_string(),
+            LlmDictField {
+                label:        "E".to_string(),
+                description:  "d".to_string(),
+                content_type: String::new(),
+            },
+        );
+        // "omitted" is intentionally absent from the LLM map.
+        let combined = combine_dictionary_entries(code_entries, &llm, true);
+        assert_eq!(combined[0].content_type, "city");
+        assert_eq!(combined[1].content_type, "unknown");
+        assert_eq!(combined[2].content_type, "unknown");
+    }
 }

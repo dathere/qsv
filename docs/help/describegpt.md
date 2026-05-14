@@ -64,8 +64,8 @@ As LLM inferencing takes time and can be expensive, describegpt caches the LLM i
 in a either a disk cache (default) or a Redis cache. It does so by calculating the BLAKE3 hash of the
 input file and using it as the primary cache key along with the prompt type, model and every flag that
 influences the rendered prompt (including prompt-file, language, tag-vocab, num-tags, enum-threshold,
-sample-size, fewshot-examples, the QSV_DUCKDB_PATH toggle and the generated Data Dictionary), so
-changing any of them produces a fresh LLM call rather than stale cached output.
+infer-content-type, sample-size, fewshot-examples, the QSV_DUCKDB_PATH toggle and the generated Data
+Dictionary), so changing any of them produces a fresh LLM call rather than stale cached output.
 
 The default disk cache is stored in the ~/.qsv-cache/describegpt directory with a default TTL of 28 days
 and cache hits NOT refreshing an existing cached value's TTL.
@@ -93,6 +93,13 @@ qsv describegpt data.csv --api-key <API_KEY> --all
 
 ```console
 qsv describegpt data.csv -u http://localhost:11434/v1 --model deepseek-r1:14b --dictionary
+```
+
+> Generate a Data Dictionary that also infers a semantic Content Type for each field
+> (e.g. email, city, latitude) so the dictionary can later drive synthetic data generation
+
+```console
+qsv describegpt data.csv --dictionary --infer-content-type
 ```
 
 > Ask questions about the sample NYC 311 dataset using LM Studio with the default gpt-oss-20b model.
@@ -212,10 +219,11 @@ qsv describegpt --help
 
 ## Dictionary Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑num‑examples`&nbsp; | string | The number of Example values to include in the dictionary. | `5` |
 | &nbsp;`‑‑truncate‑str`&nbsp; | string | The maximum length of an Example value in the dictionary. An ellipsis is appended to the truncated value. If zero, no truncation is performed. | `25` |
+| &nbsp;`‑‑infer‑content‑type`&nbsp; | flag | Also have the LLM infer a semantic "Content Type" for each field, chosen from a curated, documented vocabulary of tokens (e.g. email, city, latitude, uuid, isbn, category, free_text, unknown). Adds a "Content Type" column/field to the Data Dictionary output. Primitive types (integer, date, boolean, etc.) are intentionally NOT in the vocabulary as they are already covered by the deterministic Type column. When this flag is absent, the Data Dictionary output is unchanged. |  |
 | &nbsp;`‑‑addl‑cols`&nbsp; | flag | Add additional columns to the dictionary from the Summary Statistics. |  |
 | &nbsp;`‑‑addl‑cols‑list`&nbsp; | string | A comma-separated list of additional stats columns to add to the dictionary. The columns must be present in the Summary Statistics. If the columns are not present in the Summary Statistics or already in the dictionary, they will be ignored. | `sort_order, sortiness, mean, median, mad, stddev, variance, cv` |
 

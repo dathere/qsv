@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/describegpt.rs](https://github.com/dathere/qsv/blob/master/src/cmd/describegpt.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🗃️](TableOfContents.md#legend "Limited Extended input support.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")[🌐](TableOfContents.md#legend "has web-aware options.")[🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")[📚](TableOfContents.md#legend "has lookup table support, enabling runtime \"lookups\" against local or remote reference CSVs.")[⛩️](TableOfContents.md#legend "uses Mini Jinja template engine.") [![CKAN](../images/ckan.png)](TableOfContents.md#legend "has CKAN-aware integration options.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Data Analysis/Inferencing Options](#data-analysis/inferencing-options) | [Dictionary Options](#dictionary-options) | [Convenience Values Options](#convenience-values-options) | [Tag Options](#tag-options) | [Stats/Frequency Options](#stats/frequency-options) | [Custom Prompt Options](#custom-prompt-options) | [LLM API Options](#llm-api-options) | [Caching Options](#caching-options) | [MCP Sampling Options](#mcp-sampling-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Data Analysis/Inferencing Options](#data-analysis/inferencing-options) | [Dictionary Options](#dictionary-options) | [Tag Options](#tag-options) | [Stats/Frequency Options](#stats/frequency-options) | [Custom Prompt Options](#custom-prompt-options) | [LLM API Options](#llm-api-options) | [Caching Options](#caching-options) | [MCP Sampling Options](#mcp-sampling-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -219,20 +219,13 @@ qsv describegpt --help
 
 ## Dictionary Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑num‑examples`&nbsp; | string | The number of Example values to include in the dictionary. | `5` |
 | &nbsp;`‑‑truncate‑str`&nbsp; | string | The maximum length of an Example value in the dictionary. An ellipsis is appended to the truncated value. If zero, no truncation is performed. | `25` |
+| &nbsp;`‑‑infer‑content‑type`&nbsp; | flag | Also have the LLM infer a semantic "Content Type" for each field, chosen from a curated, documented vocabulary of tokens (e.g. email, city, latitude, uuid, isbn, category, free_text, unknown). Adds a "Content Type" column/field to the Data Dictionary output. Primitive types (integer, date, boolean, etc.) are intentionally NOT in the vocabulary as they are already covered by the deterministic Type column. When this flag is absent, the Data Dictionary output is unchanged. |  |
 | &nbsp;`‑‑addl‑cols`&nbsp; | flag | Add additional columns to the dictionary from the Summary Statistics. |  |
 | &nbsp;`‑‑addl‑cols‑list`&nbsp; | string | A comma-separated list of additional stats columns to add to the dictionary. The columns must be present in the Summary Statistics. If the columns are not present in the Summary Statistics or already in the dictionary, they will be ignored. | `sort_order, sortiness, mean, median, mad, stddev, variance, cv` |
-
-<a name="convenience-values-options"></a>
-
-## Convenience Values Options [↩](#nav)
-
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
-|--------|------|-------------|--------|
-| &nbsp;`‑‑infer‑content‑type`&nbsp; | flag | Also have the LLM infer a semantic "Content Type" for each field, chosen from a curated, documented vocabulary of tokens (e.g. email, city, latitude, uuid, isbn, category, free_text, unknown). Adds a "Content Type" column/field to the Data Dictionary output. Primitive types (integer, date, boolean, etc.) are intentionally NOT in the vocabulary as they are already covered by the deterministic Type column. When this flag is absent, the Data Dictionary output is unchanged. |  |
 
 <a name="tag-options"></a>
 

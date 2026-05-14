@@ -158,7 +158,6 @@ pub(super) fn format_dictionary_tsv(
     output
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,8 +203,8 @@ mod tests {
         let header = tsv.lines().next().unwrap();
         assert_eq!(
             header,
-            "Name\tType\tLabel\tDescription\tMin\tMax\tCardinality\tEnumeration\tNull Count\t\
-             Examples"
+            "Name\tType\tLabel\tDescription\tMin\tMax\tCardinality\tEnumeration\tNull \
+             Count\tExamples"
         );
         assert!(
             !tsv.contains("Content Type"),
@@ -221,8 +220,8 @@ mod tests {
         let header = lines.next().unwrap();
         assert_eq!(
             header,
-            "Name\tType\tLabel\tDescription\tContent Type\tMin\tMax\tCardinality\tEnumeration\t\
-             Null Count\tExamples"
+            "Name\tType\tLabel\tDescription\tContent \
+             Type\tMin\tMax\tCardinality\tEnumeration\tNull Count\tExamples"
         );
         let row = lines.next().unwrap();
         // ...Label <tab> Description <tab> Content Type <tab> Min...

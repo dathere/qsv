@@ -155,6 +155,13 @@ describegpt options:
                            An ellipsis is appended to the truncated value.
                            If zero, no truncation is performed.
                            [default: 25]
+    --infer-content-type   Also have the LLM infer a semantic "Content Type" for each field, chosen
+                           from a curated, documented vocabulary of tokens (e.g. email, city,
+                           latitude, uuid, isbn, category, free_text, unknown). Adds a "Content Type"
+                           column/field to the Data Dictionary output. Primitive types (integer,
+                           date, boolean, etc.) are intentionally NOT in the vocabulary as they are
+                           already covered by the deterministic Type column. When this flag is
+                           absent, the Data Dictionary output is unchanged.
     --addl-cols            Add additional columns to the dictionary from the Summary Statistics.
   --addl-cols-list <list>  A comma-separated list of additional stats columns to add to the dictionary.
                            The columns must be present in the Summary Statistics.
@@ -169,13 +176,6 @@ describegpt options:
                            "moar" gets you even moar stats, with detailed outliers info.
                            "moar!" gets you even moar with --advanced stats (Kurtosis, Gini Coefficient & Shannon Entropy)
                            [default: sort_order, sortiness, mean, median, mad, stddev, variance, cv]
-    --infer-content-type   Also have the LLM infer a semantic "Content Type" for each field, chosen
-                           from a curated, documented vocabulary of tokens (e.g. email, city,
-                           latitude, uuid, isbn, category, free_text, unknown). Adds a "Content Type"
-                           column/field to the Data Dictionary output. Primitive types (integer,
-                           date, boolean, etc.) are intentionally NOT in the vocabulary as they are
-                           already covered by the deterministic Type column. When this flag is
-                           absent, the Data Dictionary output is unchanged.
 
                            TAG OPTIONS:
     --num-tags <n>         The maximum number of tags to infer when the --tags option is used.
@@ -5465,6 +5465,64 @@ mod tests {
         assert!(
             rendered.contains("Top-level grouping. | category |  |"),
             "row 2 missing content_type cell:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn dictionary_prompt_gates_content_type_on_flag() {
+        // The dictionary_prompt template interleaves {% raw %}/{% endraw %} with
+        // {% if infer_content_type %} blocks; render it both ways to lock in that the
+        // Content Type instruction, vocabulary, and JSON example key are gated correctly.
+        let prompt_file: PromptFile = toml::from_str(get_default_prompt_file_content()).unwrap();
+
+        let mut env = Environment::new();
+        minijinja_contrib::add_to_environment(&mut env);
+
+        let render = |infer: bool| {
+            env.render_str(
+                &prompt_file.dictionary_prompt,
+                context! {
+                    stats => "field,type\nid,Integer\n",
+                    frequency => "field,value,count,percentage,rank\n",
+                    headers => "id,email",
+                    language => "",
+                    infer_content_type => infer,
+                    content_type_vocab => dictionary::content_type_vocab_list(),
+                },
+            )
+            .unwrap()
+        };
+
+        let off = render(false);
+        assert!(
+            !off.contains("Content Type:"),
+            "flag-off prompt must not mention the Content Type instruction:\n{off}"
+        );
+        assert!(
+            !off.contains("content_type"),
+            "flag-off prompt must not include the content_type JSON key:\n{off}"
+        );
+        assert!(
+            off.contains("\"label\" and \"description\" properties"),
+            "flag-off prompt must keep the legacy properties sentence:\n{off}"
+        );
+
+        let on = render(true);
+        assert!(
+            on.contains("- Content Type: classify the SEMANTIC CONTENT"),
+            "flag-on prompt must include the Content Type instruction:\n{on}"
+        );
+        assert!(
+            on.contains("Allowed Content Type tokens: first_name"),
+            "flag-on prompt must inject the curated vocabulary:\n{on}"
+        );
+        assert!(
+            on.contains("\"content_type\": \"email\""),
+            "flag-on prompt must include the content_type JSON example key:\n{on}"
+        );
+        assert!(
+            on.contains("\"label\", \"description\" and \"content_type\" properties"),
+            "flag-on prompt must list content_type in the properties sentence:\n{on}"
         );
     }
 

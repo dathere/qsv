@@ -481,13 +481,14 @@ pub(super) fn parse_llm_dictionary_response(
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .trim();
-                    if raw.is_empty() {
-                        String::new()
-                    } else if CONTENT_TYPE_VOCAB.contains(&raw) {
+                    // The prompt instructs the LLM to always emit exactly one token from the
+                    // curated vocabulary (using "unknown" when none fits). Treat a missing,
+                    // empty, or out-of-vocabulary value the same way — coerce to "unknown" — so
+                    // every field has a content_type and the future `synthesize` command stays
+                    // deterministic.
+                    if CONTENT_TYPE_VOCAB.contains(&raw) {
                         raw.to_string()
                     } else {
-                        // LLM returned a token outside the curated vocabulary; coerce to
-                        // "unknown" so the future `synthesize` command stays deterministic.
                         "unknown".to_string()
                     }
                 } else {
@@ -508,7 +509,6 @@ pub(super) fn parse_llm_dictionary_response(
 
     Ok(result)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -568,11 +568,13 @@ mod tests {
     }
 
     #[test]
-    fn parse_llm_response_missing_content_type_stays_empty() {
+    fn parse_llm_response_missing_content_type_coerced_to_unknown() {
+        // A missing content_type key is treated the same as an out-of-vocabulary value:
+        // coerced to "unknown" so every field has a token when the flag is on.
         let json = r#"{ "f": {"label": "F", "description": "d"} }"#;
         let fields = vec!["f".to_string()];
         let parsed = parse_llm_dictionary_response(json, &fields, true).unwrap();
-        assert!(parsed.get("f").unwrap().content_type.is_empty());
+        assert_eq!(parsed.get("f").unwrap().content_type, "unknown");
     }
 
     #[test]

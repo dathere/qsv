@@ -28,7 +28,7 @@ By default, the Data Dictionary's LLM pass only infers a human-friendly **Label*
 
 The Content Type is chosen from a fixed, curated vocabulary so the value stays stable and machine-mappable:
 
-`first_name`, `last_name`, `full_name`, `username`, `email`, `phone`, `street_address`, `city`, `state`, `zip_code`, `country`, `country_code`, `latitude`, `longitude`, `company_name`, `job_title`, `uuid`, `credit_card`, `currency_code`, `isbn`, `ip_address`, `mac_address`, `url`, `color_hex`, `time`, `category`, `lorem_word`, `lorem_sentence`, `lorem_paragraph`, `free_text`, `unknown`
+`first_name`, `last_name`, `full_name`, `username`, `password`, `email`, `phone`, `street_address`, `building_number`, `secondary_address`, `city`, `state`, `state_abbr`, `zip_code`, `country`, `country_code`, `latitude`, `longitude`, `time_zone`, `company_name`, `job_title`, `uuid`, `credit_card`, `currency_code`, `isbn`, `ip_address`, `mac_address`, `url`, `user_agent`, `file_name`, `file_path`, `mime_type`, `color_hex`, `time`, `category`, `lorem_word`, `lorem_sentence`, `lorem_paragraph`, `free_text`, `unknown`
 
 Primitive types (`integer`, `decimal`, `boolean`, `date`, `datetime`) are intentionally **not** in the vocabulary — they are already covered by the Data Dictionary's deterministic `Type` column. Plain numeric, temporal, or boolean fields with no specific semantic meaning are classified as `unknown`, and any value the LLM returns outside the vocabulary is coerced to `unknown`.
 

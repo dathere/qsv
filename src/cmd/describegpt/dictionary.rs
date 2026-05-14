@@ -19,22 +19,31 @@ use super::{CliError, CliResult, extract_json_from_output};
 /// `type` column. `synthesize` falls back to `type` + `min`/`max` for plain
 /// numeric/temporal fields whose `content_type` is `unknown`.
 pub(super) const CONTENT_TYPE_VOCAB: &[&str] = &[
+    // person / identity
     "first_name",
     "last_name",
     "full_name",
     "username",
+    "password",
     "email",
     "phone",
+    // address / location
     "street_address",
+    "building_number",
+    "secondary_address",
     "city",
     "state",
+    "state_abbr",
     "zip_code",
     "country",
     "country_code",
     "latitude",
     "longitude",
+    "time_zone",
+    // company / job
     "company_name",
     "job_title",
+    // identifiers / technical
     "uuid",
     "credit_card",
     "currency_code",
@@ -42,8 +51,14 @@ pub(super) const CONTENT_TYPE_VOCAB: &[&str] = &[
     "ip_address",
     "mac_address",
     "url",
+    "user_agent",
+    "file_name",
+    "file_path",
+    "mime_type",
     "color_hex",
+    // temporal
     "time",
+    // generic / fallback
     "category",
     "lorem_word",
     "lorem_sentence",

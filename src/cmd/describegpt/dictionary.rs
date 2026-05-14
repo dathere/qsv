@@ -491,18 +491,22 @@ pub(super) fn parse_llm_dictionary_response(
                     .to_string();
 
                 let content_type = if infer_content_type {
+                    // Normalize to lowercase before the vocab lookup — `CONTENT_TYPE_VOCAB` is
+                    // all lowercase, and LLMs don't reliably echo casing exactly (e.g. "Email",
+                    // "First_Name") even when given an explicit token list.
                     let raw = field_map
                         .get("content_type")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
-                        .trim();
+                        .trim()
+                        .to_ascii_lowercase();
                     // The prompt instructs the LLM to always emit exactly one token from the
                     // curated vocabulary (using "unknown" when none fits). Treat a missing,
                     // empty, or out-of-vocabulary value the same way — coerce to "unknown" — so
                     // every field has a content_type and the future `synthesize` command stays
                     // deterministic.
-                    if CONTENT_TYPE_VOCAB.contains(&raw) {
-                        raw.to_string()
+                    if CONTENT_TYPE_VOCAB.contains(&raw.as_str()) {
+                        raw
                     } else {
                         "unknown".to_string()
                     }
@@ -570,6 +574,22 @@ mod tests {
         let fields = vec!["email_addr".to_string()];
         let parsed = parse_llm_dictionary_response(json, &fields, true).unwrap();
         assert_eq!(parsed.get("email_addr").unwrap().content_type, "email");
+    }
+
+    #[test]
+    fn parse_llm_response_normalizes_content_type_casing() {
+        // LLMs don't reliably echo casing; a valid-but-differently-cased token must be
+        // accepted and stored in its normalized lowercase form, not coerced to "unknown".
+        let json = r#"{
+            "a": {"label": "A", "description": "d", "content_type": "Email"},
+            "b": {"label": "B", "description": "d", "content_type": "FIRST_NAME"},
+            "c": {"label": "C", "description": "d", "content_type": "  Mac_Address  "}
+        }"#;
+        let fields = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let parsed = parse_llm_dictionary_response(json, &fields, true).unwrap();
+        assert_eq!(parsed.get("a").unwrap().content_type, "email");
+        assert_eq!(parsed.get("b").unwrap().content_type, "first_name");
+        assert_eq!(parsed.get("c").unwrap().content_type, "mac_address");
     }
 
     #[test]

@@ -2458,7 +2458,11 @@ fn build_combined_dictionary_entries(
         args.flag_infer_content_type,
     )
     .unwrap_or_default();
-    Ok(combine_dictionary_entries(code_entries, &llm_fields))
+    Ok(combine_dictionary_entries(
+        code_entries,
+        &llm_fields,
+        args.flag_infer_content_type,
+    ))
 }
 
 /// Dictionary phase when `--prompt` is active: still build the dictionary JSON and stash it

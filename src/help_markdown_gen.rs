@@ -427,25 +427,30 @@ fn extract_arg_types_from_file(file_path: &Path) -> HashMap<String, &'static str
 /// Strategy: locate `struct Args { ... }`, walk forward tracking brace depth
 /// to find the matching close, then per-line capture `flag_NAME: TYPE,` fields
 /// and classify the Rust type into one of the display labels {flag, integer,
-/// float, boolean, string}. `arg_*` / `cmd_*` fields are ignored — they are
+/// float, string}. `arg_*` / `cmd_*` fields are ignored — they are
 /// positional / subcommand fields and don't appear in the Options table.
+///
+/// Known limitation: field types are matched on a single line. If a future
+/// command splits a field's type across lines (`flag_x:\n    Option<…>,`),
+/// the partial type will silently fall back to `"string"`. No current qsv
+/// command does this; add a single-line type or extend the line-capture
+/// regex if/when it happens.
 fn extract_arg_types_from_source(source: &str) -> HashMap<String, &'static str> {
     let mut map = HashMap::new();
 
-    // Find `struct Args` (with optional `pub` visibility); require a following
-    // brace so we don't match e.g. `struct ArgsExtra`.
-    let struct_idx = match source.find("struct Args ") {
-        Some(idx) => idx,
-        None => match source.find("struct Args{") {
-            Some(idx) => idx,
-            None => return map,
-        },
-    };
-
-    let Some(brace_off) = source[struct_idx..].find('{') else {
+    // Match `struct Args` with optional `pub`/`pub(crate)` visibility and an
+    // optional generic-parameter list (`<'a>`, `<T>`). Anchored to a word
+    // boundary so we don't match `ArgsExtra` and friends. Cheap insurance
+    // against future drift even though current commands use plain `Args`.
+    let struct_re = regex_oncelock!(r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?struct\s+Args\b");
+    let Some(struct_match) = struct_re.find(source) else {
         return map;
     };
-    let body_start = struct_idx + brace_off + 1;
+
+    let Some(brace_off) = source[struct_match.end()..].find('{') else {
+        return map;
+    };
+    let body_start = struct_match.end() + brace_off + 1;
 
     // Walk forward tracking brace depth to find the matching `}`. This handles
     // nested generics like `Option<Vec<Foo>>` and any inline blocks robustly.
@@ -500,9 +505,10 @@ fn extract_arg_types_from_source(source: &str) -> HashMap<String, &'static str> 
 }
 
 /// Map a Rust type expression (after stripping `Option<>` / `Box<>` wrappers)
-/// to one of the minimal display labels: `flag`, `integer`, `float`, `boolean`,
-/// or `string`. Anything unrecognized (custom types, `String`, `Vec<…>`, paths,
-/// etc.) falls back to `string`.
+/// to one of the minimal display labels: `flag`, `integer`, `float`, or
+/// `string`. Anything unrecognized (custom types, `String`, `Vec<…>`, paths,
+/// etc.) falls back to `string`. `bool` maps to `flag` because docopt-deserialized
+/// `bool` fields are always argument-less switches.
 fn classify_rust_type(rust_type: &str) -> &'static str {
     let mut t = rust_type.trim();
     // Repeatedly unwrap `Option<…>` and `Box<…>`.
@@ -2722,5 +2728,47 @@ Usage:
         assert_eq!(m.get("--mode-cardinality-cap").copied(), Some("integer"));
         assert_eq!(m.get("--select").copied(), Some("string"));
         assert_eq!(m.get("--typesonly").copied(), Some("flag"));
+    }
+
+    #[test]
+    fn test_extract_arg_types_handles_generic_args_and_no_space_before_brace() {
+        // Future-proof: a command may declare `struct Args<'a>` or
+        // `struct Args<T>`, or omit the space before `{`. The regex must
+        // still locate the struct body.
+        let src_lifetime = r#"
+            pub struct Args<'a> {
+                flag_count: Option<u32>,
+            }
+        "#;
+        assert_eq!(
+            extract_arg_types_from_source(src_lifetime)
+                .get("--count")
+                .copied(),
+            Some("integer"),
+        );
+
+        let src_generic = r#"
+            struct Args<T> {
+                flag_ratio: f64,
+            }
+        "#;
+        assert_eq!(
+            extract_arg_types_from_source(src_generic)
+                .get("--ratio")
+                .copied(),
+            Some("float"),
+        );
+
+        let src_no_space = r#"
+            struct Args{
+                flag_force: bool,
+            }
+        "#;
+        assert_eq!(
+            extract_arg_types_from_source(src_no_space)
+                .get("--force")
+                .copied(),
+            Some("flag"),
+        );
     }
 }

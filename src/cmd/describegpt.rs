@@ -411,7 +411,7 @@ use crate::{
 #[cfg(feature = "feature_capable")]
 use crate::{lookup, lookup::LookupTableOptions};
 
-mod dictionary;
+pub(crate) mod dictionary;
 mod duckdb_sql;
 mod formatters;
 mod session;

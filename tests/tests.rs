@@ -136,6 +136,8 @@ mod test_split;
 #[cfg(feature = "polars")]
 mod test_sqlp;
 mod test_stats;
+#[cfg(all(feature = "synthesize", feature = "feature_capable"))]
+mod test_synthesize;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_table;
 #[cfg(feature = "feature_capable")]

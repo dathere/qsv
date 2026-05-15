@@ -1046,6 +1046,7 @@ impl UsageParser {
             "fmt" | "fixlengths" | "table" => "formatting",
             "to" | "input" | "excel" | "json" | "jsonl" | "tojsonl" => "conversion",
             "describegpt" => "documentation",
+            "synthesize" => "generation",
             _ => "utility",
         }
         .to_string()
@@ -1276,6 +1277,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "split",
         "sqlp",
         "stats",
+        "synthesize",
         "table",
         "template",
         "to",
@@ -1344,9 +1346,12 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     for cmd_name in &commands {
         eprintln!("Processing: {cmd_name}");
 
-        // Find command file
-        // Note: enumerate.rs is invoked as "enum"
-        let cmd_file = repo_root.join(format!("src/cmd/{cmd_name}.rs"));
+        // Find command file. Support both `src/cmd/<name>.rs` and module-dir
+        // `src/cmd/<name>/mod.rs`. Note: enumerate.rs is invoked as "enum".
+        let mut cmd_file = repo_root.join(format!("src/cmd/{cmd_name}.rs"));
+        if !cmd_file.exists() {
+            cmd_file = repo_root.join(format!("src/cmd/{cmd_name}/mod.rs"));
+        }
 
         if !cmd_file.exists() {
             eprintln!("  ❌ File not found: {}", cmd_file.display());

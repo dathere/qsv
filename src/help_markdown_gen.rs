@@ -437,7 +437,13 @@ fn generate_command_markdown(
 ) -> String {
     let mut md = String::with_capacity(4096);
 
-    let source_path = format!("src/cmd/{}.rs", cmd_info.source_file);
+    // Support both `src/cmd/<name>.rs` and module-dir `src/cmd/<name>/mod.rs`.
+    let flat_path = format!("src/cmd/{}.rs", cmd_info.source_file);
+    let source_path = if _repo_root.join(&flat_path).exists() {
+        flat_path
+    } else {
+        format!("src/cmd/{}/mod.rs", cmd_info.source_file)
+    };
     let source_url = format!("{GITHUB_BASE}{source_path}");
 
     // Title
@@ -2044,8 +2050,12 @@ pub fn generate_help_markdown() -> CliResult<()> {
     for cmd_info in &commands {
         eprint!("Processing: {}", cmd_info.invocation_name);
 
-        // Find command source file
-        let cmd_file = repo_root.join(format!("src/cmd/{}.rs", cmd_info.source_file));
+        // Find command source file. Support both layouts: `src/cmd/<name>.rs`
+        // and module-dir `src/cmd/<name>/mod.rs`.
+        let mut cmd_file = repo_root.join(format!("src/cmd/{}.rs", cmd_info.source_file));
+        if !cmd_file.exists() {
+            cmd_file = repo_root.join(format!("src/cmd/{}/mod.rs", cmd_info.source_file));
+        }
         if !cmd_file.exists() {
             eprintln!("  ❌ File not found: {}", cmd_file.display());
             error_count += 1;

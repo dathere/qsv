@@ -244,9 +244,15 @@ fn main() -> QsvExitCode {
         "    sqlp        Run a SQL query against several CSVs using the Pola.rs engine\n",
     );
 
+    enabled_commands.push_str("    stats       Infer data types and compute summary statistics\n");
+
+    #[cfg(all(feature = "synthesize", feature = "feature_capable"))]
     enabled_commands.push_str(
-        "    stats       Infer data types and compute summary statistics
-    table       Align CSV data into columns
+        "    synthesize  Generate a statistically-faithful synthetic CSV from a source CSV\n",
+    );
+
+    enabled_commands.push_str(
+        "    table       Align CSV data into columns
     template    Render templates using CSV data
     tojsonl     Convert CSV to newline-delimited JSON\n",
     );
@@ -509,6 +515,8 @@ enum Command {
     #[cfg(all(feature = "polars", feature = "feature_capable"))]
     SqlP,
     Stats,
+    #[cfg(all(feature = "synthesize", feature = "feature_capable"))]
+    Synthesize,
     Moarstats,
     Table,
     Template,
@@ -625,6 +633,8 @@ impl Command {
             #[cfg(all(feature = "polars", feature = "feature_capable"))]
             Command::SqlP => cmd::sqlp::run(argv),
             Command::Stats => cmd::stats::run(argv),
+            #[cfg(all(feature = "synthesize", feature = "feature_capable"))]
+            Command::Synthesize => cmd::synthesize::run(argv),
             Command::Moarstats => cmd::moarstats::run(argv),
             Command::Table => cmd::table::run(argv),
             Command::Template => cmd::template::run(argv),

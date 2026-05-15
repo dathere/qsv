@@ -2096,6 +2096,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "deunicode"
+version = "1.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abd57806937c9cc163efc8ea3910e00a62e2aeb0b8119f1793a978088f8f6b04"
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2209,6 +2215,18 @@ name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
+
+[[package]]
+name = "dummy"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d2a69babd8861dbe09217678b4e8ee461869f9af8a57021e16479628dbd83bd"
+dependencies = [
+ "darling 0.20.11",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
 
 [[package]]
 name = "dunce"
@@ -2398,6 +2416,21 @@ dependencies = [
  "rmp-serde",
  "serde",
  "tempfile",
+]
+
+[[package]]
+name = "fake"
+version = "5.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea6be833b323a56361118a747470a45a1bcd5c52a2ec9b1e40c83dafe687e453"
+dependencies = [
+ "chrono",
+ "deunicode",
+ "dummy",
+ "either",
+ "rand 0.10.1",
+ "random_color",
+ "uuid",
 ]
 
 [[package]]
@@ -4190,6 +4223,16 @@ dependencies = [
 
 [[package]]
 name = "md-5"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
+dependencies = [
+ "cfg-if",
+ "digest 0.10.7",
+]
+
+[[package]]
+name = "md-5"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
@@ -5770,7 +5813,7 @@ dependencies = [
  "bytes",
  "fallible-iterator 0.2.0",
  "hmac",
- "md-5",
+ "md-5 0.11.0",
  "memchr",
  "rand 0.10.1",
  "sha2 0.11.0",
@@ -6035,6 +6078,7 @@ dependencies = [
  "dynfmt2",
  "eudex",
  "ext-sort",
+ "fake",
  "fast-float2",
  "file-format",
  "filetime",
@@ -6482,6 +6526,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f0b2cc7bfeef8f0320ca45f88b00157a03c67137022d59393614352d6bf4312"
 dependencies = [
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "random_color"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d635c5e80ae160390ac62ca027d2d06c94c1dc69e5c0a12f1e3a53664dc84966"
+dependencies = [
+ "rand 0.9.4",
 ]
 
 [[package]]
@@ -8755,7 +8808,9 @@ dependencies = [
  "atomic",
  "getrandom 0.4.2",
  "js-sys",
+ "md-5 0.10.6",
  "serde_core",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 

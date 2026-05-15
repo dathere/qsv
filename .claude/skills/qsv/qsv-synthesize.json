@@ -1,0 +1,89 @@
+{
+  "name": "qsv-synthesize",
+  "version": "20.0.0",
+  "description": "Generate a synthetic CSV that is statistically faithful to a source CSV. Runs `stats` + `frequency` on the source so synthesized columns reproduce its per-column attributes — frequency-weighted sampling for categorical columns, quartile-bucketed numeric/date generation, null-ratio preservation. With a Data Dictionary from `describegpt --dictionary --infer-content-type`, semantic Content Types pick realistic fake-rs fakers (names, emails, addresses, UUIDs, etc.) for non-enumerable columns. Fully reproducible with `--seed`.",
+  "category": "generation",
+  "command": {
+    "subcommand": "synthesize",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading the input CSV. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--dictionary",
+        "type": "string",
+        "description": "Data Dictionary JSON file produced by `describegpt --dictionary --infer-content-type --format JSON`. Layers semantic Content Types onto generation. If omitted, generation is purely type/frequency-based."
+      },
+      {
+        "flag": "--freq-limit",
+        "type": "string",
+        "description": "Frequency pool depth passed to the internal `frequency` run as --limit. A column is reproduced via exact frequency-weighted sampling only when its cardinality is fully captured within this limit; higher values reproduce more columns verbatim. 0 means unlimited.",
+        "default": "100"
+      },
+      {
+        "flag": "--infer-content-type",
+        "type": "flag",
+        "description": "Generate the Data Dictionary on the fly by invoking `describegpt --dictionary --infer-content-type` on <input>. Requires an LLM API key (QSV_LLM_APIKEY). Ignored if --dictionary is given."
+      },
+      {
+        "flag": "--locale",
+        "type": "string",
+        "description": "Locale for faker-backed columns. Only EN is supported in this version.",
+        "default": "EN"
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--rows",
+        "type": "string",
+        "description": "Number of synthetic rows to generate.",
+        "default": "100"
+      },
+      {
+        "flag": "--seed",
+        "type": "string",
+        "description": "RNG seed for fully reproducible output."
+      },
+      {
+        "flag": "--stats-options",
+        "type": "string",
+        "description": "Extra options appended to the internal `stats` run. Note: cardinality, quartiles and date inference are always enabled — do not re-specify them here."
+      }
+    ]
+  },
+  "hints": {
+    "indexed": true,
+    "memory": "constant"
+  },
+  "examples": [
+    {
+      "description": "Pure statistical synthesis — no dictionary needed",
+      "command": "qsv synthesize data.csv -n 1000 --seed 42 > synthetic.csv"
+    },
+    {
+      "description": "First, generate the Data Dictionary with describegpt",
+      "command": "qsv describegpt data.csv --dictionary --infer-content-type --format JSON -o dict.json"
+    },
+    {
+      "description": "Then layer in semantic fakers from the dictionary",
+      "command": "qsv synthesize data.csv --dictionary dict.json -n 1000 > synthetic.csv"
+    },
+    {
+      "description": "Let synthesize build the dictionary itself (needs an LLM API key)",
+      "command": "qsv synthesize data.csv --infer-content-type -n 1000 > synthetic.csv"
+    }
+  ]
+}

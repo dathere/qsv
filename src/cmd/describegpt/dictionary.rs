@@ -18,7 +18,7 @@ use super::{CliError, CliResult, extract_json_from_output};
 /// deliberately excluded — they are redundant with the dictionary's deterministic
 /// `type` column. `synthesize` falls back to `type` + `min`/`max` for plain
 /// numeric/temporal fields whose `content_type` is `unknown`.
-pub(super) const CONTENT_TYPE_VOCAB: &[&str] = &[
+pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
     // person / identity
     "first_name",
     "last_name",
@@ -82,26 +82,22 @@ pub(super) struct LlmDictField {
     pub(super) content_type: String,
 }
 
-/// Parsed row from the `stats` CSV.
-#[derive(Debug, Clone)]
-pub(super) struct StatsRecord {
-    pub(super) field:       String,
-    pub(super) r#type:      String,
-    pub(super) cardinality: u64,
-    pub(super) nullcount:   u64,
-    pub(super) min:         String, // Empty string if not available
-    pub(super) max:         String, // Empty string if not available
-    pub(super) addl_cols:   IndexMap<String, String>, // Additional columns (preserves CSV order)
+pub(crate) struct StatsRecord {
+    pub(crate) field:       String,
+    pub(crate) r#type:      String,
+    pub(crate) cardinality: u64,
+    pub(crate) nullcount:   u64,
+    pub(crate) min:         String, // Empty string if not available
+    pub(crate) max:         String, // Empty string if not available
+    pub(crate) addl_cols:   IndexMap<String, String>, // Additional columns (preserves CSV order)
 }
 
-/// Parsed row from the `frequency` CSV.
-#[derive(Debug, Clone)]
-pub(super) struct FrequencyRecord {
-    pub(super) field:      String,
-    pub(super) value:      String,
-    pub(super) count:      u64,
-    pub(super) percentage: f64,
-    pub(super) rank:       f64,
+pub(crate) struct FrequencyRecord {
+    pub(crate) field:      String,
+    pub(crate) value:      String,
+    pub(crate) count:      u64,
+    pub(crate) percentage: f64,
+    pub(crate) rank:       f64,
 }
 
 /// One row in the generated data dictionary. `label`, `description` and
@@ -127,7 +123,7 @@ pub(super) struct DictionaryEntry {
 
 /// Parse the `stats` CSV into structured records, returning the records plus
 /// the ordered list of additional (non-standard) column names in CSV order.
-pub(super) fn parse_stats_csv(stats_csv: &str) -> CliResult<(Vec<StatsRecord>, Vec<String>)> {
+pub(crate) fn parse_stats_csv(stats_csv: &str) -> CliResult<(Vec<StatsRecord>, Vec<String>)> {
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(true)
         .from_reader(stats_csv.as_bytes());
@@ -231,7 +227,7 @@ pub(super) fn parse_stats_csv(stats_csv: &str) -> CliResult<(Vec<StatsRecord>, V
 }
 
 /// Parse the `frequency` CSV into structured records.
-pub(super) fn parse_frequency_csv(frequency_csv: &str) -> CliResult<Vec<FrequencyRecord>> {
+pub(crate) fn parse_frequency_csv(frequency_csv: &str) -> CliResult<Vec<FrequencyRecord>> {
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(true)
         .from_reader(frequency_csv.as_bytes());

@@ -6930,6 +6930,13 @@ fn stats_widen_date_to_string_issue3855() {
     assert_eq!(row.get("max_length").map(String::as_str), Some("10"));
     assert_eq!(row.get("sum_length").map(String::as_str), Some("12"));
     assert_eq!(row.get("avg_length").map(String::as_str), Some("6"));
+    // online_len-derived length distribution must include both samples
+    // (lengths 10 and 2). If a regression re-gates `online_len.add` under
+    // `t == TString`, only "NA" (length 2) would be added and these would
+    // all become 0 (single-sample distribution).
+    assert_eq!(row.get("stddev_length").map(String::as_str), Some("4"));
+    assert_eq!(row.get("variance_length").map(String::as_str), Some("16"));
+    assert_eq!(row.get("cv_length").map(String::as_str), Some("0.6667"));
     // sort_order is lexical (not chronological) once the column has widened
     // to String: "2026-05-13" < "NA" because digit '2' (0x32) < 'N' (0x4E).
     assert_eq!(row.get("sort_order").map(String::as_str), Some("Ascending"));
@@ -6955,6 +6962,11 @@ fn stats_widen_integer_to_string_issue3855() {
     assert_eq!(row.get("max_length").map(String::as_str), Some("3"));
     assert_eq!(row.get("sum_length").map(String::as_str), Some("4"));
     assert_eq!(row.get("avg_length").map(String::as_str), Some("2"));
+    // online_len-derived length distribution over both samples (1 and 3).
+    // Pre-fix regression would only see length 3 → stddev/variance/cv = 0.
+    assert_eq!(row.get("stddev_length").map(String::as_str), Some("1"));
+    assert_eq!(row.get("variance_length").map(String::as_str), Some("1"));
+    assert_eq!(row.get("cv_length").map(String::as_str), Some("0.5"));
 }
 
 #[test]
@@ -6977,6 +6989,12 @@ fn stats_widen_float_to_string_issue3855() {
     assert_eq!(row.get("max_length").map(String::as_str), Some("3"));
     assert_eq!(row.get("sum_length").map(String::as_str), Some("6"));
     assert_eq!(row.get("avg_length").map(String::as_str), Some("3"));
+    // Both samples have equal length 3 → distribution stats are exactly 0
+    // both pre-fix and post-fix here, but the sum_length=6 assertion above
+    // already catches the regression for this case.
+    assert_eq!(row.get("stddev_length").map(String::as_str), Some("0"));
+    assert_eq!(row.get("variance_length").map(String::as_str), Some("0"));
+    assert_eq!(row.get("cv_length").map(String::as_str), Some("0"));
 }
 
 #[test]
@@ -7008,6 +7026,11 @@ fn stats_widen_datetime_to_string_issue3855() {
     assert_eq!(row.get("max_length").map(String::as_str), Some("20"));
     assert_eq!(row.get("sum_length").map(String::as_str), Some("24"));
     assert_eq!(row.get("avg_length").map(String::as_str), Some("12"));
+    // online_len-derived length distribution over both samples (20 and 4).
+    // Pre-fix regression would only see length 4 → stddev/variance/cv = 0.
+    assert_eq!(row.get("stddev_length").map(String::as_str), Some("8"));
+    assert_eq!(row.get("variance_length").map(String::as_str), Some("64"));
+    assert_eq!(row.get("cv_length").map(String::as_str), Some("0.6667"));
 }
 
 #[test]
@@ -7035,4 +7058,9 @@ fn stats_widen_no_regression_pure_integer_issue3855() {
     assert_eq!(row.get("max_length").map(String::as_str), Some(""));
     assert_eq!(row.get("sum_length").map(String::as_str), Some(""));
     assert_eq!(row.get("avg_length").map(String::as_str), Some(""));
+    // show() gates these on final typ == TString, so pure-Integer columns
+    // emit empty fields even though the trackers now collect data.
+    assert_eq!(row.get("stddev_length").map(String::as_str), Some(""));
+    assert_eq!(row.get("variance_length").map(String::as_str), Some(""));
+    assert_eq!(row.get("cv_length").map(String::as_str), Some(""));
 }

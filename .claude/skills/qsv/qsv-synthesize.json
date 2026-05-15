@@ -74,11 +74,11 @@
       "command": "qsv synthesize data.csv -n 1000 --seed 42 > synthetic.csv"
     },
     {
-      "description": "Layer in semantic fakers from a pre-made Data Dictionary",
+      "description": "First, generate the Data Dictionary with describegpt",
       "command": "qsv describegpt data.csv --dictionary --infer-content-type --format JSON -o dict.json"
     },
     {
-      "description": "Layer in semantic fakers from a pre-made Data Dictionary",
+      "description": "Then layer in semantic fakers from the dictionary",
       "command": "qsv synthesize data.csv --dictionary dict.json -n 1000 > synthetic.csv"
     },
     {

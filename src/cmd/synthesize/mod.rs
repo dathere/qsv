@@ -14,9 +14,12 @@ fake data that reproduce the source's per-column attributes:
 When a Data Dictionary is supplied (via --dictionary, or generated on the fly
 with --infer-content-type), each column's semantic Content Type picks a
 realistic faker (names, emails, addresses, UUIDs, etc.) for columns that are
-NOT fully enumerated by `frequency`. For bounded-cardinality faker columns, a
-fixed pool of distinct fake values is pre-generated and sampled from, so the
-column's cardinality is preserved and a given logical value maps consistently.
+NOT fully enumerated by `frequency`. For bounded-cardinality faker columns
+(cardinality < requested rows and below an internal cap of 100,000), a fixed
+pool of distinct fake values is pre-generated and sampled from, so the column's
+cardinality is preserved. For very high cardinality columns above this cap, a
+fresh fake value is generated per row instead — distinct count is approximate
+in that case.
 
 Columns are generated independently — cross-column correlation is not modeled.
 
@@ -27,8 +30,9 @@ Examples:
   # Pure statistical synthesis — no dictionary needed
   $ qsv synthesize data.csv -n 1000 --seed 42 > synthetic.csv
 
-  # Layer in semantic fakers from a pre-made Data Dictionary
+  # First, generate the Data Dictionary with describegpt
   $ qsv describegpt data.csv --dictionary --infer-content-type --format JSON -o dict.json
+  # Then layer in semantic fakers from the dictionary
   $ qsv synthesize data.csv --dictionary dict.json -n 1000 > synthetic.csv
 
   # Let synthesize build the dictionary itself (needs an LLM API key)

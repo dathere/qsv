@@ -440,13 +440,15 @@ fn build_boolean(freqs: &[&FrequencyRecord], null_ratio: f64) -> ColumnGenerator
     }
 }
 
-/// Parse a numeric stats value; empty string → `None`.
+/// Parse a numeric stats value; empty string and non-finite (NaN/±∞) values
+/// return `None`. Non-finite endpoints would make `rng.random_range(lo..hi)`
+/// panic, so they must be rejected here.
 fn parse_f64(s: &str) -> Option<f64> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         None
     } else {
-        trimmed.parse::<f64>().ok()
+        trimmed.parse::<f64>().ok().filter(|v| v.is_finite())
     }
 }
 

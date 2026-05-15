@@ -2372,8 +2372,9 @@ fn stats_percentiles_mixed_types() {
             "percentiles",
         ],
         svec![
-            "mixed", "String", "true", "", "3", "abc", "", "Unsorted", "0", "1", "3", "7", "1.4",
-            "0.9428", "0.8889", "0.6734", "", "", "", "", "", "", "", "0", "", "", "", "", "0", "",
+            "mixed", "String", "true", "", "1", "abc", "", "Unsorted", "0.5", "1", "3", "11",
+            "2.2", "0.9798", "0.96", "0.4454", "", "", "", "", "", "", "", "0", "", "", "", "",
+            "0", "",
         ],
     ];
 
@@ -6878,4 +6879,188 @@ fn stats_big_endian_cardinality_method_approx_rejected() {
             && stderr.contains("s390x"),
         "error should name the flag, the platform constraint, and s390x; got: {stderr}"
     );
+}
+
+// Regression tests for issue #3855: when a column's inferred type widens to
+// String mid-stream (e.g. --infer-dates Date→String, Integer→String,
+// Float→String, DateTime→String), the string-level stats (min/max,
+// min_length/max_length/sum_length/avg_length, stddev_length/variance_length/
+// cv_length, sort_order/sortiness) must reflect ALL rows, not just the
+// post-widen tail.
+
+/// Helper: run `stats` on the given multi-column CSV, return the row for
+/// `field_name` indexed by stats-output header.
+fn widen_get_row(
+    wrk: &Workdir,
+    cmd: &mut process::Command,
+    field_name: &str,
+) -> std::collections::HashMap<String, String> {
+    let mut rows: Vec<Vec<String>> = wrk.read_stdout(cmd);
+    let headers = rows.remove(0);
+    let row = rows
+        .into_iter()
+        .find(|r| r.first().map(String::as_str) == Some(field_name))
+        .unwrap_or_else(|| panic!("no stats row for field {field_name}"));
+    headers.into_iter().zip(row).collect()
+}
+
+#[test]
+fn stats_widen_date_to_string_issue3855() {
+    let wrk = Workdir::new("stats_widen_date_to_string_issue3855");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["ID", "txt", "date1", "date2"],
+            svec!["1", "abc", "2026-05-12", "2026-05-13"],
+            svec!["2", "def", "2026-05-11", "NA"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-dates")
+        .args(["--dates-whitelist", "all"])
+        .arg("data.csv");
+
+    let row = widen_get_row(&wrk, &mut cmd, "date2");
+    assert_eq!(row.get("type").map(String::as_str), Some("String"));
+    // lex min/max across the post-widen "NA" *and* the earlier "2026-05-13"
+    assert_eq!(row.get("min").map(String::as_str), Some("2026-05-13"));
+    assert_eq!(row.get("max").map(String::as_str), Some("NA"));
+    assert_eq!(row.get("min_length").map(String::as_str), Some("2"));
+    assert_eq!(row.get("max_length").map(String::as_str), Some("10"));
+    assert_eq!(row.get("sum_length").map(String::as_str), Some("12"));
+    assert_eq!(row.get("avg_length").map(String::as_str), Some("6"));
+    // online_len-derived length distribution must include both samples
+    // (lengths 10 and 2). If a regression re-gates `online_len.add` under
+    // `t == TString`, only "NA" (length 2) would be added and these would
+    // all become 0 (single-sample distribution).
+    assert_eq!(row.get("stddev_length").map(String::as_str), Some("4"));
+    assert_eq!(row.get("variance_length").map(String::as_str), Some("16"));
+    assert_eq!(row.get("cv_length").map(String::as_str), Some("0.6667"));
+    // sort_order is lexical (not chronological) once the column has widened
+    // to String: "2026-05-13" < "NA" because digit '2' (0x32) < 'N' (0x4E).
+    assert_eq!(row.get("sort_order").map(String::as_str), Some("Ascending"));
+}
+
+#[test]
+fn stats_widen_integer_to_string_issue3855() {
+    let wrk = Workdir::new("stats_widen_integer_to_string_issue3855");
+    wrk.create(
+        "data.csv",
+        vec![svec!["ID", "mixed"], svec!["1", "1"], svec!["2", "abc"]],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv");
+
+    let row = widen_get_row(&wrk, &mut cmd, "mixed");
+    assert_eq!(row.get("type").map(String::as_str), Some("String"));
+    // earlier "1" must contribute: lex min="1" (vs post-widen-only min="abc")
+    assert_eq!(row.get("min").map(String::as_str), Some("1"));
+    assert_eq!(row.get("max").map(String::as_str), Some("abc"));
+    assert_eq!(row.get("min_length").map(String::as_str), Some("1"));
+    assert_eq!(row.get("max_length").map(String::as_str), Some("3"));
+    assert_eq!(row.get("sum_length").map(String::as_str), Some("4"));
+    assert_eq!(row.get("avg_length").map(String::as_str), Some("2"));
+    // online_len-derived length distribution over both samples (1 and 3).
+    // Pre-fix regression would only see length 3 → stddev/variance/cv = 0.
+    assert_eq!(row.get("stddev_length").map(String::as_str), Some("1"));
+    assert_eq!(row.get("variance_length").map(String::as_str), Some("1"));
+    assert_eq!(row.get("cv_length").map(String::as_str), Some("0.5"));
+}
+
+#[test]
+fn stats_widen_float_to_string_issue3855() {
+    let wrk = Workdir::new("stats_widen_float_to_string_issue3855");
+    wrk.create(
+        "data.csv",
+        vec![svec!["ID", "mixed"], svec!["1", "1.5"], svec!["2", "abc"]],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv");
+
+    let row = widen_get_row(&wrk, &mut cmd, "mixed");
+    assert_eq!(row.get("type").map(String::as_str), Some("String"));
+    // earlier "1.5" must contribute
+    assert_eq!(row.get("min").map(String::as_str), Some("1.5"));
+    assert_eq!(row.get("max").map(String::as_str), Some("abc"));
+    assert_eq!(row.get("min_length").map(String::as_str), Some("3"));
+    assert_eq!(row.get("max_length").map(String::as_str), Some("3"));
+    assert_eq!(row.get("sum_length").map(String::as_str), Some("6"));
+    assert_eq!(row.get("avg_length").map(String::as_str), Some("3"));
+    // Both samples have equal length 3 → distribution stats are exactly 0
+    // both pre-fix and post-fix here, but the sum_length=6 assertion above
+    // already catches the regression for this case.
+    assert_eq!(row.get("stddev_length").map(String::as_str), Some("0"));
+    assert_eq!(row.get("variance_length").map(String::as_str), Some("0"));
+    assert_eq!(row.get("cv_length").map(String::as_str), Some("0"));
+}
+
+#[test]
+fn stats_widen_datetime_to_string_issue3855() {
+    let wrk = Workdir::new("stats_widen_datetime_to_string_issue3855");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["ID", "t"],
+            svec!["1", "2026-05-12T10:00:00Z"],
+            svec!["2", "oops"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-dates")
+        .args(["--dates-whitelist", "all"])
+        .arg("data.csv");
+
+    let row = widen_get_row(&wrk, &mut cmd, "t");
+    assert_eq!(row.get("type").map(String::as_str), Some("String"));
+    // earlier datetime contributes to lex/length stats
+    assert_eq!(
+        row.get("min").map(String::as_str),
+        Some("2026-05-12T10:00:00Z")
+    );
+    assert_eq!(row.get("max").map(String::as_str), Some("oops"));
+    assert_eq!(row.get("min_length").map(String::as_str), Some("4"));
+    assert_eq!(row.get("max_length").map(String::as_str), Some("20"));
+    assert_eq!(row.get("sum_length").map(String::as_str), Some("24"));
+    assert_eq!(row.get("avg_length").map(String::as_str), Some("12"));
+    // online_len-derived length distribution over both samples (20 and 4).
+    // Pre-fix regression would only see length 4 → stddev/variance/cv = 0.
+    assert_eq!(row.get("stddev_length").map(String::as_str), Some("8"));
+    assert_eq!(row.get("variance_length").map(String::as_str), Some("64"));
+    assert_eq!(row.get("cv_length").map(String::as_str), Some("0.6667"));
+}
+
+#[test]
+fn stats_widen_no_regression_pure_integer_issue3855() {
+    // Sanity: a pure-Integer column (no widening) must still emit empty
+    // length-stat fields — confirms the show(TString) gating still skips
+    // length-stat emission for non-String final types.
+    let wrk = Workdir::new("stats_widen_no_regression_pure_integer_issue3855");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["ID", "nums"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("data.csv");
+
+    let row = widen_get_row(&wrk, &mut cmd, "nums");
+    assert_eq!(row.get("type").map(String::as_str), Some("Integer"));
+    assert_eq!(row.get("min_length").map(String::as_str), Some(""));
+    assert_eq!(row.get("max_length").map(String::as_str), Some(""));
+    assert_eq!(row.get("sum_length").map(String::as_str), Some(""));
+    assert_eq!(row.get("avg_length").map(String::as_str), Some(""));
+    // show() gates these on final typ == TString, so pure-Integer columns
+    // emit empty fields even though the trackers now collect data.
+    assert_eq!(row.get("stddev_length").map(String::as_str), Some(""));
+    assert_eq!(row.get("variance_length").map(String::as_str), Some(""));
+    assert_eq!(row.get("cv_length").map(String::as_str), Some(""));
 }

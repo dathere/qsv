@@ -52,6 +52,23 @@ jobs:
         with:
           repository: ${{ github.repository }}.wiki
           path: wiki
+
+      # `cargo build --bin qsv -F all_features` pulls in pyo3, datasketches,
+      # polars, etc. and the ubuntu-latest runner has occasionally crashed
+      # mid-build with "No space left on device" (see PR #3856 / run
+      # 25923503208). Free ~20+ GB of pre-installed tooling we don't use:
+      # Android SDK, .NET, Haskell, and the unused share of the tool cache.
+      # We keep `large-packages: false` because apt-get cleanup is slow.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be   # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: true
+
       - name: apt-get update Ubuntu, libwayland-dev
         run: |
           sudo apt-get update

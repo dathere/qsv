@@ -3032,35 +3032,10 @@ impl PartialEq for TDigestSlot {
 /// stub methods are never reached at runtime; they exist only so the shared call
 /// sites in `update_modes`, `add_numeric_value`, `to_record`, etc. type-check
 /// unchanged.
-#[cfg(target_endian = "big")]
-#[derive(Default, Clone, PartialEq)]
-struct TDigestStub;
-
-#[cfg(target_endian = "big")]
-impl TDigestStub {
-    #[inline]
-    fn update(&mut self, _value: f64) {}
-
-    #[inline]
-    fn quantile(&self, _rank: f64) -> Option<f64> {
-        None
-    }
-
-    #[inline]
-    fn is_empty(&self) -> bool {
-        true
-    }
-}
-
-/// Big-endian fallback for `TDigestSlot`. Apache DataSketches is unavailable on
-/// big-endian targets, so we substitute a tuple-struct wrapping `Option<TDigestStub>`
-/// — the unit-like `TDigestStub` exposes the same no-op method surface used by the
-/// little-endian call sites (`update`, `quantile`, `is_empty`). `Stats::tdigest` is
-/// always `Default` (i.e. `Some` is never written) on these targets — the
-/// `--quantile-method approx` codepath is rejected upstream by `run()` — so the
-/// stub methods are never reached at runtime; they exist only so the shared call
-/// sites in `update_modes`, `add_numeric_value`, `to_record`, etc. type-check
-/// unchanged.
+///
+/// `PartialEq` is not needed on the stub itself: the wrapping `TDigestSlot`
+/// has an explicit `impl PartialEq` (constant `true`) that mirrors the
+/// little-endian semantics.
 #[cfg(target_endian = "big")]
 #[derive(Default, Clone)]
 struct TDigestStub;
@@ -3139,29 +3114,10 @@ impl PartialEq for HllSlot {
 /// codepath is rejected upstream by `run()` — so the stub methods are never reached
 /// at runtime; they exist only so the shared call sites in `update_modes` and
 /// `to_record` type-check unchanged.
-#[cfg(target_endian = "big")]
-#[derive(Default, Clone, PartialEq)]
-struct HllSketchStub;
-
-#[cfg(target_endian = "big")]
-impl HllSketchStub {
-    #[inline]
-    fn update(&mut self, _sample: &[u8]) {}
-
-    #[inline]
-    fn estimate(&self) -> f64 {
-        0.0
-    }
-}
-
-/// Big-endian fallback for `HllSlot`. Apache DataSketches is unavailable on
-/// big-endian targets, so we substitute a tuple-struct wrapping `Option<HllSketchStub>`
-/// — the unit-like `HllSketchStub` exposes the same no-op method surface used by the
-/// little-endian call sites (`update`, `estimate`). `Stats::hll` is always `Default`
-/// (i.e. `Some` is never written) on these targets — the `--cardinality-method approx`
-/// codepath is rejected upstream by `run()` — so the stub methods are never reached
-/// at runtime; they exist only so the shared call sites in `update_modes` and
-/// `to_record` type-check unchanged.
+///
+/// `PartialEq` is not needed on the stub itself: the wrapping `HllSlot` has
+/// an explicit `impl PartialEq` (constant `true`) that mirrors the
+/// little-endian semantics.
 #[cfg(target_endian = "big")]
 #[derive(Default, Clone)]
 struct HllSketchStub;

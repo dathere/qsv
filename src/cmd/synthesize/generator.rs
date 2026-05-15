@@ -318,17 +318,13 @@ fn build_faker_pool(
     // not loop forever trying to reach an unreachable distinct count.
     let max_attempts = target.saturating_mul(20).max(1000);
 
-    #[allow(unused_assignments)]
-    let mut value = String::new();
     for _ in 0..max_attempts {
         if pool.len() >= target {
             break;
         }
-        {
-            value = faker_map::content_type_to_value(content_type, rng)?;
-            if seen.insert(value.clone()) {
-                pool.push(value);
-            }
+        let value = faker_map::content_type_to_value(content_type, rng)?;
+        if seen.insert(value.clone()) {
+            pool.push(value);
         }
     }
 

@@ -166,7 +166,7 @@ qsv excel --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑s,`<br>`‑‑sheet`&nbsp; | string | Name (case-insensitive) or zero-based index of sheet to export. Negative indices start from the end (-1 = last sheet). If the sheet cannot be found, qsv will read the first sheet. | `0` |
-| &nbsp;`‑‑header‑row`&nbsp; | string | The header row. Set if other than the first non-empty row of the sheet. |  |
+| &nbsp;`‑‑header‑row`&nbsp; | integer | The header row. Set if other than the first non-empty row of the sheet. |  |
 | &nbsp;`‑‑metadata`&nbsp; | string | Outputs workbook metadata in CSV or JSON format: index, sheet_name, type, visible, headers, column_count, row_count, safe_headers, safe_headers_count, unsafe_headers, unsafe_headers_count and duplicate_headers_count, names, name_count, tables, table_count. headers is a list of the first row which is presumed to be the header row. type is the sheet type (WorkSheet, DialogSheet, MacroSheet, ChartSheet, Vba). visible is the sheet visibility (Visible, Hidden, VeryHidden). row_count includes all rows, including the first row. safe_headers is a list of headers with "safe"(PostgreSQL-ready) names. unsafe_headers is a list of headers with "unsafe" names. duplicate_headers_count is a count of duplicate header names. names is a list of defined names in the workbook, with the associated formula. name_count is the number of defined names in the workbook. tables is a list of tables in the workbook, along with the sheet where the table is found, the columns and the column_count.  (XLSX only) table_count is the number of tables in the workbook.  (XLSX only) | `none` |
 | &nbsp;`‑‑table`&nbsp; | string | An Excel table (case-insensitive) to extract to a CSV. Only valid for XLSX files. The --sheet option is ignored as a table could be in any sheet. Overrides --range option. |  |
 | &nbsp;`‑‑range`&nbsp; | string | An Excel format range - like RangeName, C:T, C3:T25 or 'Sheet1!C3:T25' to extract to the CSV. If the specified range contains the required sheet, the --sheet option is ignored. If the range is not found, qsv will exit with an error. |  |
@@ -176,7 +176,7 @@ qsv excel --help
 | &nbsp;`‑‑trim`&nbsp; | flag | Trim all fields so that leading & trailing whitespaces are removed. Also removes embedded linebreaks. |  |
 | &nbsp;`‑‑date‑format`&nbsp; | string | Optional date format to use when formatting dates. See <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for the full list of supported format specifiers. Note that if a date format is invalid, qsv will fall back and return the date as if no date-format was specified. |  |
 | &nbsp;`‑‑keep‑zero‑time`&nbsp; | flag | Keep the time part of a date-time field if it is 00:00:00. By default, qsv will remove the time part if it is 00:00:00. |  |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 
 <a name="common-options"></a>
 

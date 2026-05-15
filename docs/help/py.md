@@ -151,7 +151,7 @@ qsv py --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑f,`<br>`‑‑helper`&nbsp; | string | File containing Python code that's loaded into the qsv_uh Python module. Functions with a return statement in the file can be called with the prefix "qsv_uh". The returned value is used in the map or filter operation. |  |
-| &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | string | The number of rows per batch to process before releasing memory and acquiring a new GILpool. Set to 0 to process the entire file in one batch. | `50000` |
+| &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | The number of rows per batch to process before releasing memory and acquiring a new GILpool. Set to 0 to process the entire file in one batch. | `50000` |
 
 <a name="common-options"></a>
 

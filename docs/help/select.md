@@ -159,7 +159,7 @@ qsv select --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑R,`<br>`‑‑random`&nbsp; | flag | Randomly shuffle the columns in the selection. |  |
-| &nbsp;`‑‑seed`&nbsp; | string | Seed for the random number generator. |  |
+| &nbsp;`‑‑seed`&nbsp; | integer | Seed for the random number generator. |  |
 | &nbsp;`‑S,`<br>`‑‑sort`&nbsp; | flag | Sort the selected columns lexicographically, i.e. by their byte values. |  |
 
 <a name="common-options"></a>

@@ -106,8 +106,8 @@ qsv datefmt --help
 | &nbsp;`‑‑utc`&nbsp; | flag | Shortcut for --input-tz and --output-tz set to UTC. |  |
 | &nbsp;`‑‑zulu`&nbsp; | flag | Shortcut for --output-tz set to UTC and --formatstr set to "%Y-%m-%dT%H:%M:%SZ". |  |
 | &nbsp;`‑R,`<br>`‑‑ts‑resolution`&nbsp; | string | The resolution to use when parsing Unix timestamps. Valid values are "sec", "milli", "micro", "nano". | `sec` |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
 
 <a name="common-options"></a>
 

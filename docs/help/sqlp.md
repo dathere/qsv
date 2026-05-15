@@ -310,7 +310,7 @@ qsv sqlp --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑try‑parsedates`&nbsp; | flag | Automatically try to parse dates/datetimes and time. If parsing fails, columns remain as strings. Note that if dates are not well-formatted in your CSV, that you may want to try to set `--ignore-errors` to relax the CSV parsing of dates. |  |
-| &nbsp;`‑‑infer‑len`&nbsp; | string | The number of rows to scan when inferring the schema of the CSV. Set to 0 to do a full table scan (warning: can be slow). | `10000` |
+| &nbsp;`‑‑infer‑len`&nbsp; | integer | The number of rows to scan when inferring the schema of the CSV. Set to 0 to do a full table scan (warning: can be slow). | `10000` |
 | &nbsp;`‑‑cache‑schema`&nbsp; | flag | Create and cache Polars schema JSON files. If the schema file/s exists, it will load the schema instead of inferring it (ignoring --infer-len) and attempt to use it for each corresponding Polars "table" with the same file stem. If specified and the schema file/s do not exist, it will check if a stats cache is available. If so, it will use it to derive a Polars schema and save it. If there's no stats cache, it will infer the schema using --infer-len and save the inferred schemas. Each schema file will have the same file stem as the corresponding input file, with the extension ".pschema.json" (data.csv's Polars schema file will be data.pschema.json) NOTE: You can edit the generated schema files to change the Polars schema and cast columns to the desired data type. For example, you can force a Float32 column to be a Float64 column by changing the "Float32" type to "Float64" in the schema file. You can also cast a Float to a Decimal with a desired precision and scale. (e.g. instead of "Float32", use "{Decimal" : [10, 3]}") The valid types are: `Boolean`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `String`, `Date`, `Datetime`, `Duration`, `Time`, `Null`, `Categorical`, `Decimal` and `Enum`. |  |
 | &nbsp;`‑‑streaming`&nbsp; | flag | Use streaming mode when parsing CSVs. This will use less memory but will be slower. Only use this when you get out of memory errors. |  |
 | &nbsp;`‑‑low‑memory`&nbsp; | flag | Use low memory mode when parsing CSVs. This will use less memory but will be slower. Only use this when you get out of memory errors. |  |
@@ -329,7 +329,7 @@ qsv sqlp --help
 | &nbsp;`‑‑datetime‑format`&nbsp; | string | The datetime format to use writing datetimes. See <https://docs.rs/chrono/latest/chrono/format/strftime/index.html> for the list of valid format specifiers. |  |
 | &nbsp;`‑‑date‑format`&nbsp; | string | The date format to use writing dates. |  |
 | &nbsp;`‑‑time‑format`&nbsp; | string | The time format to use writing times. |  |
-| &nbsp;`‑‑float‑precision`&nbsp; | string | The number of digits of precision to use when writing floats. |  |
+| &nbsp;`‑‑float‑precision`&nbsp; | integer | The number of digits of precision to use when writing floats. |  |
 | &nbsp;`‑‑wnull‑value`&nbsp; | string | The string to use when WRITING null values. | `<empty string>` |
 
 <a name="arrow/avro/parquet-output-formats-only-options"></a>
@@ -346,7 +346,7 @@ qsv sqlp --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑compress‑level`&nbsp; | string | The compression level to use when using zstd or gzip compression. When using zstd, valid values are -7 to 22, with -7 being the lowest compression level and 22 being the highest compression level. When using gzip, valid values are 1-9, with 1 being the lowest compression level and 9 being the highest compression level. Higher compression levels are slower. The zstd default is 3, and the gzip default is 6. |  |
+| &nbsp;`‑‑compress‑level`&nbsp; | integer | The compression level to use when using zstd or gzip compression. When using zstd, valid values are -7 to 22, with -7 being the lowest compression level and 22 being the highest compression level. When using gzip, valid values are 1-9, with 1 being the lowest compression level and 9 being the highest compression level. Higher compression levels are slower. The zstd default is 3, and the gzip default is 6. |  |
 | &nbsp;`‑‑statistics`&nbsp; | flag | Compute column statistics when writing parquet files. |  |
 
 <a name="common-options"></a>

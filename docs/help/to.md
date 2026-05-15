@@ -279,7 +279,7 @@ qsv to --help
 | &nbsp;`‑c,`<br>`‑‑stats‑csv`&nbsp; | string | Output stats as CSV to specified file. |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not print out field summary. |  |
 | &nbsp;`‑s,`<br>`‑‑schema`&nbsp; | string | The schema to load the data into. (postgres only). |  |
-| &nbsp;`‑‑infer‑len`&nbsp; | string | The number of rows to use for schema inference (parquet only). Note that even if a pschema.json file exists for an input file, explicitly specifying infer-len will cause qsv to ignore the pschema.json and infer the schema from the CSV data instead, including when set to 0. Set to 0 to infer from all rows (not recommended for large files). |  |
+| &nbsp;`‑‑infer‑len`&nbsp; | integer | The number of rows to use for schema inference (parquet only). Note that even if a pschema.json file exists for an input file, explicitly specifying infer-len will cause qsv to ignore the pschema.json and infer the schema from the CSV data instead, including when set to 0. Set to 0 to infer from all rows (not recommended for large files). |  |
 | &nbsp;`‑‑try‑parse‑dates`&nbsp; | flag | Attempt to parse date/datetime columns with polars' date inference logic. This may result in more accurate date parsing, but can be slower on large files. (parquet only). |  |
 | &nbsp;`‑d,`<br>`‑‑drop`&nbsp; | flag | Drop tables before loading new data into them (postgres/sqlite only). |  |
 | &nbsp;`‑e,`<br>`‑‑evolve`&nbsp; | flag | If loading into existing db, alter existing tables so that new data will load. (postgres/sqlite only). |  |
@@ -287,9 +287,9 @@ qsv to --help
 | &nbsp;`‑t,`<br>`‑‑table`&nbsp; | string | Use this as the table/sheet/file name (postgres/sqlite/xlsx/ods/parquet). Overrides the default name derived from the input filename. When reading from stdin, the default table name is "stdin". Only valid with a single input file. For postgres/sqlite: must start with a letter or underscore, contain only alphanumeric characters and underscores (max 63). For xlsx/ods: used as sheet name (max 31 chars, cannot contain \ / * [ ] : ?). |  |
 | &nbsp;`‑p,`<br>`‑‑separator`&nbsp; | string | For xlsx, use this character to help truncate xlsx sheet names. Defaults to space. |  |
 | &nbsp;`‑‑compression`&nbsp; | string | Parquet compression codec (parquet only). Valid values: zstd (default), gzip, snappy, lz4raw, uncompressed. |  |
-| &nbsp;`‑‑compress‑level`&nbsp; | string | Compression level (parquet only). For gzip: 1-9 (default: 6). For zstd: -7 to 22 (default: 3). Ignored for other codecs. |  |
+| &nbsp;`‑‑compress‑level`&nbsp; | integer | Compression level (parquet only). For gzip: 1-9 (default: 6). For zstd: -7 to 22 (default: 3). Ignored for other codecs. |  |
 | &nbsp;`‑A,`<br>`‑‑all‑strings`&nbsp; | flag | Convert all fields to strings. |  |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 
 <a name="common-options"></a>
 

@@ -371,7 +371,7 @@ qsv geocode --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑min‑score`&nbsp; | string | The minimum Jaro-Winkler distance score. | `0.8` |
+| &nbsp;`‑‑min‑score`&nbsp; | float | The minimum Jaro-Winkler distance score. | `0.8` |
 | &nbsp;`‑‑admin1`&nbsp; | string | The comma-delimited, case-insensitive list of admin1s to filter for. |  |
 
 <a name="reverse-only-option"></a>
@@ -390,9 +390,9 @@ qsv geocode --help
 |--------|------|-------------|--------|
 | &nbsp;`‑l,`<br>`‑‑language`&nbsp; | string | The language to use when geocoding. The language is specified as a ISO 639-1 code. Note that the Geonames index must have been built with the specified language using the `index-update` subcommand with the --languages option. If the language is not available, the first language in the index is used. | `en` |
 | &nbsp;`‑‑invalid‑result`&nbsp; | string | The string to return when the geocode result is empty/invalid. If not set, the original value is used. |  |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | string | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
-| &nbsp;`‑‑timeout`&nbsp; | string | Timeout for downloading Geonames cities index. | `120` |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
+| &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading Geonames cities index. | `120` |
 | &nbsp;`‑‑cache‑dir`&nbsp; | string | The directory to use for caching the Geonames cities index. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
 
 <a name="index-update-only-options"></a>

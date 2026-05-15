@@ -63,7 +63,7 @@ qsv snappy --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑user‑agent`&nbsp; | string | Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
-| &nbsp;`‑‑timeout`&nbsp; | string | Timeout for downloading URLs in seconds. | `60` |
+| &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading URLs in seconds. | `60` |
 
 <a name="common-options"></a>
 
@@ -73,7 +73,7 @@ qsv snappy --help
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <output> instead of stdout. |  |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel when compressing. When not set, its set to the number of CPUs - 1 |  |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel when compressing. When not set, its set to the number of CPUs - 1 |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Suppress status messages to stderr. |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show download progress bars. Only valid for URL input. |  |
 

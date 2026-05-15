@@ -91,7 +91,7 @@ qsv scoresql --help
 | &nbsp;`‑‑json`&nbsp; | flag | Output results as JSON instead of human-readable report. |  |
 | &nbsp;`‑‑duckdb`&nbsp; | flag | Use DuckDB for query plan analysis instead of Polars. Uses the QSV_DUCKDB_PATH environment variable if set, otherwise looks for "duckdb" in PATH. |  |
 | &nbsp;`‑‑try‑parsedates`&nbsp; | flag | Automatically try to parse dates/datetimes and time. |  |
-| &nbsp;`‑‑infer‑len`&nbsp; | string | Number of rows to scan when inferring schema. | `10000` |
+| &nbsp;`‑‑infer‑len`&nbsp; | integer | Number of rows to scan when inferring schema. | `10000` |
 | &nbsp;`‑‑ignore‑errors`&nbsp; | flag | Ignore errors when parsing CSVs. |  |
 | &nbsp;`‑‑truncate‑ragged‑lines`&nbsp; | flag | Truncate lines with more fields than the header. |  |
 

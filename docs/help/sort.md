@@ -49,9 +49,9 @@ qsv sort --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑random`&nbsp; | flag | Randomize (scramble) the data by row. When set, the numeric, natural, and ignore-case comparison flags still apply to unique-filtering (if --unique is also set). The reverse flag has no effect on unique-filter equality and is ignored for the shuffle itself. |  |
-| &nbsp;`‑‑seed`&nbsp; | string | Random Number Generator (RNG) seed to use if --random is set |  |
+| &nbsp;`‑‑seed`&nbsp; | integer | Random Number Generator (RNG) seed to use if --random is set |  |
 | &nbsp;`‑‑rng`&nbsp; | string | The RNG algorithm to use if --random is set. | `standard` |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | &nbsp;`‑‑faster`&nbsp; | flag | When set, the sort will be faster. This is done by using a faster sorting algorithm that is not "stable" (i.e. the order of identical values is not guaranteed to be preserved). It has the added side benefit that the sort will also be in-place (i.e. does not allocate), which is useful for sorting large files that will otherwise NOT fit in memory using the default allocating stable sort. |  |
 
 <a name="common-options"></a>

@@ -94,10 +94,10 @@ qsv replace --help
 | &nbsp;`‑‑exact`&nbsp; | flag | Match the ENTIRE field exactly. Treats the pattern as a literal string (like --literal) and automatically anchors it to match the complete field value (^pattern$). |  |
 | &nbsp;`‑s,`<br>`‑‑select`&nbsp; | string | Select the columns to search. See 'qsv select -h' for the full syntax. |  |
 | &nbsp;`‑u,`<br>`‑‑unicode`&nbsp; | flag | Enable unicode support. When enabled, character classes will match all unicode word characters instead of only ASCII word characters. Decreases performance. |  |
-| &nbsp;`‑‑size‑limit`&nbsp; | string | Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned. | `50` |
-| &nbsp;`‑‑dfa‑size‑limit`&nbsp; | string | Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. | `10` |
+| &nbsp;`‑‑size‑limit`&nbsp; | integer | Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned. | `50` |
+| &nbsp;`‑‑dfa‑size‑limit`&nbsp; | integer | Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. | `10` |
 | &nbsp;`‑‑not‑one`&nbsp; | flag | Use exit code 0 instead of 1 for no replacement found. |  |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
 
 <a name="common-options"></a>
 

@@ -70,7 +70,7 @@ qsv geoconvert --help
 | &nbsp;`‑g,`<br>`‑‑geometry`&nbsp; | string | The name of the column that has WKT geometry. Alternative to --latitude and --longitude. |  |
 | &nbsp;`‑y,`<br>`‑‑latitude`&nbsp; | string | The name of the column with northing values. |  |
 | &nbsp;`‑x,`<br>`‑‑longitude`&nbsp; | string | The name of the column with easting values. |  |
-| &nbsp;`‑l,`<br>`‑‑max‑length`&nbsp; | string | The maximum column length when the output format is CSV. Oftentimes, the geometry column is too long to fit in a CSV file, causing other tools like Python & PostgreSQL to fail. If a column is too long, it will be truncated to the specified length and an ellipsis ("...") will be appended. |  |
+| &nbsp;`‑l,`<br>`‑‑max‑length`&nbsp; | integer | The maximum column length when the output format is CSV. Oftentimes, the geometry column is too long to fit in a CSV file, causing other tools like Python & PostgreSQL to fail. If a column is too long, it will be truncated to the specified length and an ellipsis ("...") will be appended. |  |
 
 <a name="common-options"></a>
 

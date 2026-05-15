@@ -77,10 +77,10 @@ qsv searchset --help
 | &nbsp;`‑Q,`<br>`‑‑quick`&nbsp; | flag | Return on first match with an exitcode of 0, returning the row number of the first match to stderr. Return exit code 1 if no match is found. No output is produced. Ignored if --json is enabled. |  |
 | &nbsp;`‑c,`<br>`‑‑count`&nbsp; | flag | Write the number of matches to stderr. Suppressed by --quiet. Ignored if --json is enabled. |  |
 | &nbsp;`‑j,`<br>`‑‑json`&nbsp; | flag | Return number of matches, number of rows with matches, and number of rows to stderr in JSON format. |  |
-| &nbsp;`‑‑size‑limit`&nbsp; | string | Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned. Modify this only if you're getting regular expression compilation errors. | `50` |
-| &nbsp;`‑‑dfa‑size‑limit`&nbsp; | string | Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. Modify this only if you're getting regular expression compilation errors. | `10` |
+| &nbsp;`‑‑size‑limit`&nbsp; | integer | Set the approximate size limit (MB) of the compiled regular expression. If the compiled expression exceeds this number, then a compilation error is returned. Modify this only if you're getting regular expression compilation errors. | `50` |
+| &nbsp;`‑‑dfa‑size‑limit`&nbsp; | integer | Set the approximate size of the cache (MB) used by the regular expression engine's Discrete Finite Automata. Modify this only if you're getting regular expression compilation errors. | `10` |
 | &nbsp;`‑‑not‑one`&nbsp; | flag | Use exit code 0 instead of 1 for no match found. |  |
-| &nbsp;`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
+| &nbsp;`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel when the given CSV data has an index. Note that a file handle is opened for each job. When not set, defaults to the number of CPUs detected. |  |
 
 <a name="common-options"></a>
 

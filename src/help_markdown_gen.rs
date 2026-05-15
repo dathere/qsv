@@ -407,6 +407,128 @@ fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
     Ok(after_start[..usage_end].to_string())
 }
 
+/// Extract a map of long-form flag → display-type label by parsing the `Args`
+/// struct in a command's source file.
+///
+/// Returns an empty map if the file can't be read or no `Args` struct is found.
+/// Used to populate the "Type" column in the generated Options table — without
+/// this, docopt alone only tells us whether an option has an argument, not
+/// whether that argument is an integer, float, etc.
+fn extract_arg_types_from_file(file_path: &Path) -> HashMap<String, &'static str> {
+    match fs::read_to_string(file_path) {
+        Ok(content) => extract_arg_types_from_source(&content),
+        Err(_) => HashMap::new(),
+    }
+}
+
+/// Pure-function variant of `extract_arg_types_from_file` that operates on the
+/// source text directly. Public to the module so tests can exercise it.
+///
+/// Strategy: locate `struct Args { ... }`, walk forward tracking brace depth
+/// to find the matching close, then per-line capture `flag_NAME: TYPE,` fields
+/// and classify the Rust type into one of the display labels {flag, integer,
+/// float, boolean, string}. `arg_*` / `cmd_*` fields are ignored — they are
+/// positional / subcommand fields and don't appear in the Options table.
+fn extract_arg_types_from_source(source: &str) -> HashMap<String, &'static str> {
+    let mut map = HashMap::new();
+
+    // Find `struct Args` (with optional `pub` visibility); require a following
+    // brace so we don't match e.g. `struct ArgsExtra`.
+    let struct_idx = match source.find("struct Args ") {
+        Some(idx) => idx,
+        None => match source.find("struct Args{") {
+            Some(idx) => idx,
+            None => return map,
+        },
+    };
+
+    let Some(brace_off) = source[struct_idx..].find('{') else {
+        return map;
+    };
+    let body_start = struct_idx + brace_off + 1;
+
+    // Walk forward tracking brace depth to find the matching `}`. This handles
+    // nested generics like `Option<Vec<Foo>>` and any inline blocks robustly.
+    let bytes = source.as_bytes();
+    let mut depth: usize = 1;
+    let mut body_end: Option<usize> = None;
+    let mut i = body_start;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    body_end = Some(i);
+                    break;
+                }
+            },
+            _ => {},
+        }
+        i += 1;
+    }
+    let Some(body_end) = body_end else {
+        return map;
+    };
+
+    let body = &source[body_start..body_end];
+
+    // Allow an optional visibility modifier (`pub`, `pub(crate)`, etc.) before
+    // the field name — stats.rs and a few others mark Args fields `pub`.
+    let re = regex_oncelock!(r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?flag_([a-z0-9_]+)\s*:\s*(.+)$");
+
+    for caps in re.captures_iter(body) {
+        let field = &caps[1];
+        let mut raw_type = caps[2].to_string();
+        // Strip trailing inline comment, if any.
+        if let Some(c_idx) = raw_type.find("//") {
+            raw_type.truncate(c_idx);
+        }
+        let type_str = raw_type.trim_end().trim_end_matches(',').trim();
+        if type_str.is_empty() {
+            continue;
+        }
+
+        let mut flag = String::with_capacity(field.len() + 2);
+        flag.push_str("--");
+        flag.push_str(&field.replace('_', "-"));
+
+        map.insert(flag, classify_rust_type(type_str));
+    }
+
+    map
+}
+
+/// Map a Rust type expression (after stripping `Option<>` / `Box<>` wrappers)
+/// to one of the minimal display labels: `flag`, `integer`, `float`, `boolean`,
+/// or `string`. Anything unrecognized (custom types, `String`, `Vec<…>`, paths,
+/// etc.) falls back to `string`.
+fn classify_rust_type(rust_type: &str) -> &'static str {
+    let mut t = rust_type.trim();
+    // Repeatedly unwrap `Option<…>` and `Box<…>`.
+    loop {
+        let unwrapped = if let Some(inner) = t.strip_prefix("Option<") {
+            inner.strip_suffix('>').map(str::trim)
+        } else if let Some(inner) = t.strip_prefix("Box<") {
+            inner.strip_suffix('>').map(str::trim)
+        } else {
+            None
+        };
+        match unwrapped {
+            Some(next) => t = next,
+            None => break,
+        }
+    }
+
+    match t {
+        "bool" => "flag",
+        "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16" | "i32" | "i64" | "i128"
+        | "isize" => "integer",
+        "f32" | "f64" => "float",
+        _ => "string",
+    }
+}
+
 /// Parsed option from docopt + manual description extraction
 struct ParsedOption {
     flag:        String,
@@ -434,6 +556,7 @@ fn generate_command_markdown(
     cmd_info: &CommandInfo,
     _repo_root: &Path,
     legend: &[(String, String)],
+    arg_type_map: &HashMap<String, &'static str>,
 ) -> String {
     let mut md = String::with_capacity(4096);
 
@@ -475,8 +598,12 @@ fn generate_command_markdown(
 
     // Parse arguments and options early so we can collect all heading names
     let parsed_args = parse_arguments_section(&sections.arguments_text);
-    let options_sections =
-        parse_options_with_docopt(usage_text, &sections, &cmd_info.invocation_name);
+    let options_sections = parse_options_with_docopt(
+        usage_text,
+        &sections,
+        &cmd_info.invocation_name,
+        arg_type_map,
+    );
 
     // Collect heading names in appearance order for the heading links bar
     let mut headings: Vec<String> = Vec::new();
@@ -1556,6 +1683,7 @@ fn parse_options_with_docopt(
     usage_text: &str,
     sections: &UsageSections,
     command_name: &str,
+    arg_type_map: &HashMap<String, &'static str>,
 ) -> Vec<(String, Vec<ParsedOption>)> {
     // First, try to get structured info from docopt
     let docopt_info = Parser::new(usage_text).ok();
@@ -1593,7 +1721,12 @@ fn parse_options_with_docopt(
 
                     let option_type = match &opts.arg {
                         DocoptArgument::Zero => "flag".to_string(),
-                        DocoptArgument::One(_) => "string".to_string(),
+                        DocoptArgument::One(_) => {
+                            // Prefer looking up by the paired long flag — that's
+                            // the form that matches the Args struct field name.
+                            let lookup_key = long_flag.as_deref().unwrap_or(&flag_str);
+                            (*arg_type_map.get(lookup_key).unwrap_or(&"string")).to_string()
+                        },
                     };
                     let default = match &opts.arg {
                         DocoptArgument::One(Some(d)) => Some(d.clone()),
@@ -1637,7 +1770,10 @@ fn parse_options_with_docopt(
 
                     let option_type = match &opts.arg {
                         DocoptArgument::Zero => "flag".to_string(),
-                        DocoptArgument::One(_) => "string".to_string(),
+                        DocoptArgument::One(_) => {
+                            // `flag_str` here is already the `--long` form.
+                            (*arg_type_map.get(&flag_str).unwrap_or(&"string")).to_string()
+                        },
                     };
                     let default = match &opts.arg {
                         DocoptArgument::One(Some(d)) => Some(d.clone()),
@@ -1688,7 +1824,8 @@ fn parse_options_with_docopt(
 
             // Option line starts with -
             if trimmed.starts_with('-')
-                && let Some(mut parsed) = parse_option_line(trimmed, &lines[i + 1..], &docopt_map)
+                && let Some(mut parsed) =
+                    parse_option_line(trimmed, &lines[i + 1..], &docopt_map, arg_type_map)
             {
                 // Skip if we've already seen this flag (from docopt pairing)
                 let primary = parsed.flag.clone();
@@ -1734,6 +1871,7 @@ fn parse_option_line(
     first_line: &str,
     remaining_lines: &[String],
     docopt_map: &HashMap<String, (String, Option<String>, Option<String>)>,
+    arg_type_map: &HashMap<String, &'static str>,
 ) -> Option<ParsedOption> {
     let trimmed = first_line.trim();
     if !trimmed.starts_with('-') {
@@ -1827,10 +1965,16 @@ fn parse_option_line(
     // Get type and default from docopt if available
     let (option_type, docopt_default) = docopt_map.get(&flag).map_or_else(
         || {
-            // Fallback: infer from the flags_part
+            // Fallback: infer from the flags_part. When the option takes an
+            // argument, consult the Args-struct-derived `arg_type_map` so
+            // numeric options aren't always labeled "string".
             let has_arg = flags_part.contains('<') || flags_part.contains('=');
-            let option_type = if has_arg { "string" } else { "flag" };
-            (option_type.to_string(), None)
+            let option_type = if has_arg {
+                (*arg_type_map.get(&flag).unwrap_or(&"string")).to_string()
+            } else {
+                "flag".to_string()
+            };
+            (option_type, None)
         },
         |(opt_type, default, _)| (opt_type.clone(), default.clone()),
     );
@@ -2072,8 +2216,14 @@ pub fn generate_help_markdown() -> CliResult<()> {
             },
         };
 
+        // Extract per-flag Rust types from the command's `Args` struct so the
+        // generated Options table's "Type" column reflects the real type
+        // (integer/float/string/flag) instead of always "string".
+        let arg_type_map = extract_arg_types_from_file(&cmd_file);
+
         // Generate markdown
-        let markdown = generate_command_markdown(&usage_text, cmd_info, &repo_root, &legend);
+        let markdown =
+            generate_command_markdown(&usage_text, cmd_info, &repo_root, &legend, &arg_type_map);
 
         // Write help file
         let output_file = output_dir.join(format!("{}.md", cmd_info.invocation_name));
@@ -2497,5 +2647,80 @@ Usage:
             joined.contains("qsv foo a.csv") && joined.contains("qsv foo b.csv"),
             "both example commands should be in the examples vec, got:\n{joined}"
         );
+    }
+
+    #[test]
+    fn test_extract_arg_types_handles_common_shapes() {
+        let src = r#"
+            #[derive(Deserialize)]
+            struct Args {
+                flag_jobs:            Option<usize>,
+                flag_round:           Option<f64>,
+                flag_no_headers:      bool,
+                flag_select:          SelectColumns,
+                flag_cache_threshold: Option<isize>,
+                flag_seed:            Option<u64>,
+                flag_dates_whitelist: Option<String>,
+                flag_delimiter:       Option<Delimiter>,
+                arg_input:            Option<String>,
+                cmd_view:             bool,
+            }
+        "#;
+        let m = extract_arg_types_from_source(src);
+        assert_eq!(m.get("--jobs").copied(), Some("integer"));
+        assert_eq!(m.get("--round").copied(), Some("float"));
+        assert_eq!(m.get("--no-headers").copied(), Some("flag"));
+        assert_eq!(m.get("--select").copied(), Some("string"));
+        assert_eq!(m.get("--cache-threshold").copied(), Some("integer"));
+        assert_eq!(m.get("--seed").copied(), Some("integer"));
+        assert_eq!(m.get("--dates-whitelist").copied(), Some("string"));
+        assert_eq!(m.get("--delimiter").copied(), Some("string"));
+        // Positional `arg_*` and subcommand `cmd_*` fields must be skipped.
+        assert!(m.get("--input").is_none());
+        assert!(m.get("--view").is_none());
+    }
+
+    #[test]
+    fn test_extract_arg_types_unwraps_nested_wrappers() {
+        let src = r#"
+            struct Args {
+                flag_a: Option<Box<u32>>,
+                flag_b: Box<Option<f32>>,
+                flag_c: Option<Option<i64>>,
+            }
+        "#;
+        let m = extract_arg_types_from_source(src);
+        assert_eq!(m.get("--a").copied(), Some("integer"));
+        assert_eq!(m.get("--b").copied(), Some("float"));
+        assert_eq!(m.get("--c").copied(), Some("integer"));
+    }
+
+    #[test]
+    fn test_extract_arg_types_missing_struct_returns_empty() {
+        let m = extract_arg_types_from_source("// no Args here\nfn main() {}");
+        assert!(m.is_empty());
+    }
+
+    #[test]
+    fn test_extract_arg_types_handles_pub_visibility() {
+        // `stats.rs` (and a few others) declare `pub struct Args` with
+        // `pub flag_<name>: …,` fields. The extractor must still find them.
+        let src = r#"
+            pub struct Args {
+                pub flag_round:                u32,
+                pub flag_jobs:                 Option<usize>,
+                pub flag_cache_threshold:      isize,
+                pub flag_mode_cardinality_cap: u64,
+                pub flag_select:               SelectColumns,
+                pub flag_typesonly:            bool,
+            }
+        "#;
+        let m = extract_arg_types_from_source(src);
+        assert_eq!(m.get("--round").copied(), Some("integer"));
+        assert_eq!(m.get("--jobs").copied(), Some("integer"));
+        assert_eq!(m.get("--cache-threshold").copied(), Some("integer"));
+        assert_eq!(m.get("--mode-cardinality-cap").copied(), Some("integer"));
+        assert_eq!(m.get("--select").copied(), Some("string"));
+        assert_eq!(m.get("--typesonly").copied(), Some("flag"));
     }
 }

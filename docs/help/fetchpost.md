@@ -198,12 +198,12 @@ qsv fetchpost --help
 | &nbsp;`‑‑jaq`&nbsp; | string | Apply jaq selector to API returned JSON response. Mutually exclusive with --jaqfile. |  |
 | &nbsp;`‑‑jaqfile`&nbsp; | string | Load jaq selector from file instead. Mutually exclusive with --jaq. |  |
 | &nbsp;`‑‑pretty`&nbsp; | flag | Prettify JSON responses. Otherwise, they're minified. If the response is not in JSON format, it's passed through unchanged. Note that --pretty requires the --new-column option. |  |
-| &nbsp;`‑‑rate‑limit`&nbsp; | string | Rate Limit in Queries Per Second (max: 1000). Note that fetch dynamically throttles as well based on rate-limit and retry-after response headers. Set to 0 to go as fast as possible, automatically throttling as required. CAUTION: Only use zero for APIs that use RateLimit and/or Retry-After headers, otherwise your fetchpost job may look like a Denial Of Service attack. Even though zero is the default, this is mitigated by --max-errors having a default of 10. | `0` |
-| &nbsp;`‑‑timeout`&nbsp; | string | Timeout for each URL request. | `30` |
+| &nbsp;`‑‑rate‑limit`&nbsp; | integer | Rate Limit in Queries Per Second (max: 1000). Note that fetch dynamically throttles as well based on rate-limit and retry-after response headers. Set to 0 to go as fast as possible, automatically throttling as required. CAUTION: Only use zero for APIs that use RateLimit and/or Retry-After headers, otherwise your fetchpost job may look like a Denial Of Service attack. Even though zero is the default, this is mitigated by --max-errors having a default of 10. | `0` |
+| &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for each URL request. | `30` |
 | &nbsp;`‑H,`<br>`‑‑http‑header`&nbsp; | string | Append custom header(s) to the HTTP header. Pass multiple key-value pairs by adding this option multiple times, once for each pair. The key and value should be separated by a colon. |  |
 | &nbsp;`‑‑compress`&nbsp; | flag | Compress the HTTP request body using gzip. Note that most servers do not support compressed request bodies unless they are specifically configured to do so. This should only be enabled for trusted scenarios where "zip bombs" are not a concern. see <https://github.com/postmanlabs/httpbin/issues/577#issuecomment-875814469> for more info. |  |
-| &nbsp;`‑‑max‑retries`&nbsp; | string | Maximum number of retries per record before an error is raised. | `5` |
-| &nbsp;`‑‑max‑errors`&nbsp; | string | Maximum number of errors before aborting. Set to zero (0) to continue despite errors. | `10` |
+| &nbsp;`‑‑max‑retries`&nbsp; | integer | Maximum number of retries per record before an error is raised. | `5` |
+| &nbsp;`‑‑max‑errors`&nbsp; | integer | Maximum number of errors before aborting. Set to zero (0) to continue despite errors. | `10` |
 | &nbsp;`‑‑store‑error`&nbsp; | flag | On error, store error code/message instead of blank value. |  |
 | &nbsp;`‑‑cookies`&nbsp; | flag | Allow cookies. |  |
 | &nbsp;`‑‑user‑agent`&nbsp; | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
@@ -216,7 +216,7 @@ qsv fetchpost --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑no‑cache`&nbsp; | flag | Do not cache responses. |  |
-| &nbsp;`‑‑mem‑cache‑size`&nbsp; | string | Maximum number of entries in the in-memory LRU cache. | `2000000` |
+| &nbsp;`‑‑mem‑cache‑size`&nbsp; | integer | Maximum number of entries in the in-memory LRU cache. | `2000000` |
 | &nbsp;`‑‑disk‑cache`&nbsp; | flag | Use a persistent disk cache for responses. The cache is stored in the directory specified by --disk-cache-dir. If the directory does not exist, it will be created. If the directory exists, it will be used as is. It has a default Time To Live (TTL)/lifespan of 28 days and cache hits do not refresh the TTL of cached values. Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars to change DiskCache settings. |  |
 | &nbsp;`‑‑disk‑cache‑dir`&nbsp; | string | The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different fetchpost jobs (e.g. one for geocoding, another for weather, etc.) | `~/.qsv-cache/fetchpost` |
 | &nbsp;`‑‑redis‑cache`&nbsp; | flag | Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/2" with a connection pool size of 20, with a TTL of 28 days, and a cache hit NOT renewing an entry's TTL. Adjust the QSV_FP_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECS & QSV_REDIS_TTL_REFRESH respectively to change Redis settings. |  |

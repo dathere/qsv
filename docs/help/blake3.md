@@ -37,13 +37,13 @@ qsv blake3 --help
 |--------|------|-------------|--------|
 | &nbsp;`‑‑keyed`&nbsp; | flag | Use the keyed mode, reading the 32-byte key from stdin. When using --keyed, file arguments are required (cannot also read data from stdin). |  |
 | &nbsp;`‑‑derive‑key`&nbsp; | string | Use the key derivation mode, with the given context string. Cannot be used with --keyed. |  |
-| &nbsp;`‑l,`<br>`‑‑length`&nbsp; | string | The number of output bytes, before hex encoding. | `32` |
+| &nbsp;`‑l,`<br>`‑‑length`&nbsp; | integer | The number of output bytes, before hex encoding. | `32` |
 | &nbsp;`‑‑no‑mmap`&nbsp; | flag | Disable memory mapping. Also disables multithreading. |  |
 | &nbsp;`‑‑no‑names`&nbsp; | flag | Omit filenames in the output. |  |
 | &nbsp;`‑‑raw`&nbsp; | flag | Write raw output bytes to stdout, rather than hex. Only a single input is allowed. --no-names is implied. |  |
 | &nbsp;`‑‑tag`&nbsp; | flag | Output checksums in tagged format. |  |
 | &nbsp;`‑c,`<br>`‑‑check`&nbsp; | flag | Read blake3 sums from the input files and check them. |  |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel for hashing. When not set, uses the number of CPUs detected. Set to 1 to disable multithreading. |  |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel for hashing. When not set, uses the number of CPUs detected. Set to 1 to disable multithreading. |  |
 
 <a name="common-options"></a>
 

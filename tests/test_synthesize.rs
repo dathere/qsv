@@ -70,13 +70,13 @@ fn synthesize_seed_is_reproducible() {
     let wrk = Workdir::new("synthesize_seed");
     wrk.create("data.csv", fixture());
 
-    let mut cmd1 = wrk.command("synthesize");
-    cmd1.args(["-n", "20", "--seed", "7"]).arg("data.csv");
-    let run1: String = wrk.stdout(&mut cmd1);
+    let mut first_cmd = wrk.command("synthesize");
+    first_cmd.args(["-n", "20", "--seed", "7"]).arg("data.csv");
+    let run1: String = wrk.stdout(&mut first_cmd);
 
-    let mut cmd2 = wrk.command("synthesize");
-    cmd2.args(["-n", "20", "--seed", "7"]).arg("data.csv");
-    let run2: String = wrk.stdout(&mut cmd2);
+    let mut second_cmd = wrk.command("synthesize");
+    second_cmd.args(["-n", "20", "--seed", "7"]).arg("data.csv");
+    let run2: String = wrk.stdout(&mut second_cmd);
 
     assert_eq!(run1, run2, "same seed should produce identical output");
 }

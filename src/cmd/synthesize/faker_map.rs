@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn every_vocab_token_maps_or_is_known_non_faker() {
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(42); // DevSkim: ignore DS148264
         for &token in CONTENT_TYPE_VOCAB {
             let value = content_type_to_value(token, &mut rng);
             if NON_FAKER_TOKENS.contains(&token) {
@@ -144,15 +144,15 @@ mod tests {
 
     #[test]
     fn unrecognized_token_returns_none() {
-        let mut rng = StdRng::seed_from_u64(1);
+        let mut rng = StdRng::seed_from_u64(1); // DevSkim: ignore DS148264
         assert!(content_type_to_value("definitely_not_a_token", &mut rng).is_none());
         assert!(!is_faker_token("definitely_not_a_token"));
     }
 
     #[test]
     fn faker_is_deterministic_with_seed() {
-        let mut rng1 = StdRng::seed_from_u64(7);
-        let mut rng2 = StdRng::seed_from_u64(7);
+        let mut rng1 = StdRng::seed_from_u64(7); // DevSkim: ignore DS148264
+        let mut rng2 = StdRng::seed_from_u64(7); // DevSkim: ignore DS148264
         for &token in CONTENT_TYPE_VOCAB {
             assert_eq!(
                 content_type_to_value(token, &mut rng1),

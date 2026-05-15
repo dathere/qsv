@@ -499,7 +499,7 @@ mod tests {
     #[test]
     fn null_ratio_is_reproduced_within_tolerance() {
         let generator = ColumnGenerator::LoremFallback { null_ratio: 0.3 };
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(42); // DevSkim: ignore DS148264
         let n = 20_000;
         let empty = (0..n)
             .filter(|_| generator.next(&mut rng).is_empty())
@@ -518,7 +518,7 @@ mod tests {
         let refs: Vec<&FrequencyRecord> = freqs.iter().collect();
         let generator = try_frequency_weighted(&refs, 0.0).unwrap();
 
-        let mut rng = StdRng::seed_from_u64(7);
+        let mut rng = StdRng::seed_from_u64(7); // DevSkim: ignore DS148264
         let n = 20_000;
         let mut a = 0;
         for _ in 0..n {
@@ -551,7 +551,7 @@ mod tests {
             "100",
             &[("q1", "10"), ("q2_median", "20"), ("q3", "30")],
         );
-        let mut rng = StdRng::seed_from_u64(1);
+        let mut rng = StdRng::seed_from_u64(1); // DevSkim: ignore DS148264
         let generator = ColumnGenerator::build(&record, &[], "unknown", 1000, 5000, &mut rng);
 
         let mut at_or_below_q3 = 0;
@@ -571,7 +571,7 @@ mod tests {
     #[test]
     fn faker_pool_is_bounded_by_cardinality() {
         let record = stats("city", "String", 5, 0, "", "", &[]);
-        let mut rng = StdRng::seed_from_u64(99);
+        let mut rng = StdRng::seed_from_u64(99); // DevSkim: ignore DS148264
         let generator = ColumnGenerator::build(&record, &[], "city", 1000, 5000, &mut rng);
 
         let mut distinct = HashSet::new();
@@ -584,7 +584,7 @@ mod tests {
     #[test]
     fn date_quantile_stays_in_range() {
         let record = stats("d", "Date", 500, 0, "2020-01-01", "2020-12-31", &[]);
-        let mut rng = StdRng::seed_from_u64(3);
+        let mut rng = StdRng::seed_from_u64(3); // DevSkim: ignore DS148264
         let generator = ColumnGenerator::build(&record, &[], "unknown", 500, 1000, &mut rng);
 
         let lo = parse_epoch("2020-01-01").unwrap();
@@ -607,11 +607,11 @@ mod tests {
             "100",
             &[("q1", "10"), ("q2_median", "20"), ("q3", "30")],
         );
-        let mut build_rng = StdRng::seed_from_u64(11);
+        let mut build_rng = StdRng::seed_from_u64(11); // DevSkim: ignore DS148264
         let generator = ColumnGenerator::build(&record, &[], "unknown", 1000, 5000, &mut build_rng);
 
-        let mut rng1 = StdRng::seed_from_u64(123);
-        let mut rng2 = StdRng::seed_from_u64(123);
+        let mut rng1 = StdRng::seed_from_u64(123); // DevSkim: ignore DS148264
+        let mut rng2 = StdRng::seed_from_u64(123); // DevSkim: ignore DS148264
         for _ in 0..200 {
             assert_eq!(generator.next(&mut rng1), generator.next(&mut rng2));
         }

@@ -112,6 +112,8 @@ pub mod split;
 ))]
 pub mod sqlp;
 pub mod stats;
+#[cfg(all(feature = "synthesize", feature = "feature_capable"))]
+pub mod synthesize;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod table;
 #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]

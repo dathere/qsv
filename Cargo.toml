@@ -125,6 +125,12 @@ dunce = "1"
 dynfmt2 = { version = "0.3", default-features = false, features = ["curly"] }
 eudex = { version = "0.1", optional = true }
 ext-sort = { version = "0.1", default-features = false }
+fake = { version = "5", features = [
+    "derive",
+    "chrono",
+    "uuid",
+    "random_color",
+], optional = true }
 fast-float2 = "0.2"
 flate2 = { version = "1", optional = true }
 foldhash = "0.2"
@@ -393,10 +399,11 @@ distrib_features = [
     "mcp",
     "polars",
     "python",
+    "synthesize",
     "to",
 ]
 all_features = ["distrib_features", "magika", "self_update", "ui"]
-qsvmcp = ["feature_capable", "geocode", "luau", "mcp", "polars", "self_update", "to"]
+qsvmcp = ["feature_capable", "geocode", "luau", "mcp", "polars", "self_update", "synthesize", "to"]
 apply = [
     "base62",
     "base64-simd",
@@ -436,6 +443,7 @@ polars = ["dep:polars", "bytemuck"]
 
 prompt = ["rfd"]
 python = ["pyo3"]
+synthesize = ["dep:fake"]
 to = ["csvs_convert"]
 lens = ["csvlens"]
 lite = []

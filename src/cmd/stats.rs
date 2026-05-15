@@ -4020,11 +4020,24 @@ impl Stats {
         // to TString later (e.g. --infer-dates with dates + a non-date value,
         // or Integer/Float/Date/DateTime → String), and stddev_length /
         // variance_length / cv_length must include earlier rows that were
-        // processed under a more specific type. online_len is Some iff
-        // which.dist is true (`which.dist == !flag_typesonly`); we've already
-        // early-returned for both typesonly paths above, so it's always Some
-        // here — but use `if let` for defense-in-depth since this branch is
-        // no longer gated by t == TString.
+        // processed under a more specific type.
+        //
+        // Null/empty samples contribute a zero-length entry, matching the
+        // pre-fix behavior for nulls that arrived *after* the column widened
+        // to TString. avg_length divides stotlen by the total record count
+        // (including nulls), so the online-stats distribution is intentionally
+        // computed over the same all-rows population for a consistent
+        // mean/stddev relationship.
+        //
+        // online_len is Some iff which.dist is true (which.dist ==
+        // !flag_typesonly); both typesonly paths early-returned above, so it
+        // is always Some here. We still use `if let` for defense-in-depth
+        // since this branch is no longer gated by t == TString, and assert
+        // the invariant in debug builds.
+        debug_assert!(
+            self.online_len.is_some(),
+            "online_len must be enabled after the typesonly early-returns"
+        );
         if let Some(ol) = self.online_len.as_mut() {
             ol.add(&sample.len());
         }
@@ -5398,6 +5411,11 @@ impl TypedSum {
         // must include earlier rows that were processed under a more specific
         // type. show() still gates emission on the final typ == TString, so
         // pure-typed columns incur the tracking cost but no output change.
+        //
+        // Caller invariant: Stats::add only calls this inside `if b"" !=
+        // sample`, and FieldType::from_sample returns TNull only for empty
+        // samples, so we never get here with `typ == TNull` AND a non-empty
+        // sample — no need to special-case TNull below.
         self.stotlen = self.stotlen.saturating_add(sample.len() as u64);
 
         #[allow(clippy::cast_precision_loss)]

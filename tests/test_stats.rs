@@ -6930,6 +6930,8 @@ fn stats_widen_date_to_string_issue3855() {
     assert_eq!(row.get("max_length").map(String::as_str), Some("10"));
     assert_eq!(row.get("sum_length").map(String::as_str), Some("12"));
     assert_eq!(row.get("avg_length").map(String::as_str), Some("6"));
+    // sort_order is lexical (not chronological) once the column has widened
+    // to String: "2026-05-13" < "NA" because digit '2' (0x32) < 'N' (0x4E).
     assert_eq!(row.get("sort_order").map(String::as_str), Some("Ascending"));
 }
 

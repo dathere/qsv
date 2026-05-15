@@ -4016,14 +4016,20 @@ impl Stats {
         // otherwise the unweighted modes (Unsorted) tracker is used.
         self.update_modes(sample, weight);
 
+        // Always track string length online stats — the column type can widen
+        // to TString later (e.g. --infer-dates with dates + a non-date value,
+        // or Integer/Float/Date/DateTime → String), and stddev_length /
+        // variance_length / cv_length must include earlier rows that were
+        // processed under a more specific type. online_len is Some iff
+        // which.dist is true (`which.dist == !flag_typesonly`); we've already
+        // early-returned for both typesonly paths above, so it's always Some
+        // here — but use `if let` for defense-in-depth since this branch is
+        // no longer gated by t == TString.
+        if let Some(ol) = self.online_len.as_mut() {
+            ol.add(&sample.len());
+        }
+
         if t == TString {
-            // safety: online_len is always enabled when t == TString
-            unsafe {
-                self.online_len
-                    .as_mut()
-                    .unwrap_unchecked()
-                    .add(&sample.len());
-            }
             // ASCII check: once false, it stays false, so check the flag first
             if self.is_ascii {
                 self.is_ascii = sample.is_ascii();
@@ -5386,6 +5392,14 @@ impl TypedSum {
     #[allow(clippy::inline_always)]
     #[inline(always)]
     fn add_with_parsed(&mut self, typ: FieldType, sample: &[u8], float_val: f64, int_val: i64) {
+        // Always track byte-length sum — the column type can widen to TString
+        // mid-stream (e.g. --infer-dates with dates + a non-date value, or
+        // Integer/Float/Date/DateTime → String), and sum_length / avg_length
+        // must include earlier rows that were processed under a more specific
+        // type. show() still gates emission on the final typ == TString, so
+        // pure-typed columns incur the tracking cost but no output change.
+        self.stotlen = self.stotlen.saturating_add(sample.len() as u64);
+
         #[allow(clippy::cast_precision_loss)]
         match typ {
             TInteger => {
@@ -5402,11 +5416,8 @@ impl TypedSum {
                     self.float = Some((self.integer as f64) + float_val);
                 }
             },
-            TString => {
-                self.stotlen = self.stotlen.saturating_add(sample.len() as u64);
-            },
-            // we don't need to do anything for TNull, TDate or TDateTime
-            // as they don't have a sum
+            // TString length captured above; TNull / TDate / TDateTime have no
+            // sum, so no per-arm work needed.
             _ => {},
         }
     }
@@ -5473,6 +5484,16 @@ impl TypedMinMax {
             return;
         }
 
+        // Always track string length and lexical min/max — the column type can
+        // widen to TString mid-stream (e.g. --infer-dates with dates + a
+        // non-date value, or Integer/Float/Date/DateTime → String), and
+        // min_length / max_length / lex min / lex max / sort_order / sortiness
+        // must include earlier rows that were processed under a more specific
+        // type. show() still gates emission on the final typ == TString, so
+        // pure-typed columns are unaffected in output.
+        self.str_len.add(sample_len);
+        self.strings.add_bytes(sample);
+
         match typ {
             TInteger => {
                 self.integers.add(int_val);
@@ -5481,11 +5502,8 @@ impl TypedMinMax {
             TFloat => {
                 self.floats.add(float_val);
             },
-            TString => {
-                self.str_len.add(sample_len);
-                self.strings.add_bytes(sample);
-            },
-            TNull => {},
+            // TString length & lex captured above.
+            TString | TNull => {},
             // it must be a TDate or TDateTime
             // we use "_" here instead of "TDate | TDateTime" for the match to avoid
             // the overhead of matching on the OR value, however minor

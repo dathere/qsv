@@ -144,7 +144,7 @@ qsv lens --help
 | &nbsp;`‑‑filter`&nbsp; | string | Use this regex to filter rows to display by default. The regex is matched against each cell in every column. e.g. "val1\|val2" filters rows with any cells containing "val1", "val2" or text like "my_val1" or "val234". |  |
 | &nbsp;`‑‑find`&nbsp; | string | Use this regex to find and highlight matches by default. Automatically sets --monochrome to true so the matches are easier to see. The regex is matched against each cell in every column. e.g. "val1\|val2" highlights text containing "val1", "val2" or longer text like "val1_ok" or "val2_error". |  |
 | &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | Searches ignore case. Ignored if any uppercase letters are present in the search string |  |
-| &nbsp;`‑f,`<br>`‑‑freeze‑columns`&nbsp; | string | Freeze the first N columns | `1` |
+| &nbsp;`‑f,`<br>`‑‑freeze‑columns`&nbsp; | integer | Freeze the first N columns | `1` |
 | &nbsp;`‑m,`<br>`‑‑monochrome`&nbsp; | flag | Disable color output |  |
 | &nbsp;`‑W,`<br>`‑‑wrap‑mode`&nbsp; | string | Set the wrap mode for the output. | `disabled` |
 | &nbsp;`‑A,`<br>`‑‑auto‑reload`&nbsp; | flag | Automatically reload the data when the file changes. |  |

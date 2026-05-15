@@ -114,10 +114,10 @@ qsv slice --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑s,`<br>`‑‑start`&nbsp; | string | The index of the record to slice from. If negative, starts from the last record. |  |
-| &nbsp;`‑e,`<br>`‑‑end`&nbsp; | string | The index of the record to slice to. |  |
-| &nbsp;`‑l,`<br>`‑‑len`&nbsp; | string | The length of the slice (can be used instead of --end). |  |
-| &nbsp;`‑i,`<br>`‑‑index`&nbsp; | string | Slice a single record (shortcut for -s N -l 1). If negative, starts from the last record. |  |
+| &nbsp;`‑s,`<br>`‑‑start`&nbsp; | integer | The index of the record to slice from. If negative, starts from the last record. |  |
+| &nbsp;`‑e,`<br>`‑‑end`&nbsp; | integer | The index of the record to slice to. |  |
+| &nbsp;`‑l,`<br>`‑‑len`&nbsp; | integer | The length of the slice (can be used instead of --end). |  |
+| &nbsp;`‑i,`<br>`‑‑index`&nbsp; | integer | Slice a single record (shortcut for -s N -l 1). If negative, starts from the last record. |  |
 | &nbsp;`‑‑json`&nbsp; | flag | Output the result as JSON. Fields are written as key-value pairs. The key is the column name. The value is the field value. The output is a JSON array. If --no-headers is set, then the keys are the column indices (zero-based). |  |
 | &nbsp;`‑‑invert`&nbsp; | flag | slice all records EXCEPT those in the specified range. |  |
 

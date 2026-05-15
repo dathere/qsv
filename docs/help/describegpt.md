@@ -221,8 +221,8 @@ qsv describegpt --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑num‑examples`&nbsp; | string | The number of Example values to include in the dictionary. | `5` |
-| &nbsp;`‑‑truncate‑str`&nbsp; | string | The maximum length of an Example value in the dictionary. An ellipsis is appended to the truncated value. If zero, no truncation is performed. | `25` |
+| &nbsp;`‑‑num‑examples`&nbsp; | integer | The number of Example values to include in the dictionary. | `5` |
+| &nbsp;`‑‑truncate‑str`&nbsp; | integer | The maximum length of an Example value in the dictionary. An ellipsis is appended to the truncated value. If zero, no truncation is performed. | `25` |
 | &nbsp;`‑‑infer‑content‑type`&nbsp; | flag | Also have the LLM infer a semantic "Content Type" for each field, chosen from a curated, documented vocabulary of tokens (e.g. email, city, latitude, uuid, isbn, category, free_text, unknown). Adds a "Content Type" column/field to the Data Dictionary output. Primitive types (integer, date, boolean, etc.) are intentionally NOT in the vocabulary as they are already covered by the deterministic Type column. When this flag is absent, the Data Dictionary output is unchanged. |  |
 | &nbsp;`‑‑addl‑cols`&nbsp; | flag | Add additional columns to the dictionary from the Summary Statistics. |  |
 | &nbsp;`‑‑addl‑cols‑list`&nbsp; | string | A comma-separated list of additional stats columns to add to the dictionary. The columns must be present in the Summary Statistics. If the columns are not present in the Summary Statistics or already in the dictionary, they will be ignored. | `sort_order, sortiness, mean, median, mad, stddev, variance, cv` |
@@ -233,7 +233,7 @@ qsv describegpt --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑num‑tags`&nbsp; | string | The maximum number of tags to infer when the --tags option is used. Maximum allowed value is 50. | `10` |
+| &nbsp;`‑‑num‑tags`&nbsp; | integer | The maximum number of tags to infer when the --tags option is used. Maximum allowed value is 50. | `10` |
 | &nbsp;`‑‑tag‑vocab`&nbsp; | string | The CSV file containing the tag vocabulary to use for inferring tags. If no tag vocabulary file is provided, the model will use free-form tags. Supports local files, remote URLs (http/https), CKAN resources (ckan://), and dathere:// scheme. Remote resources are cached locally. The CSV file must have two columns with headers: first column is the tag, second column is the description. Note that qsvlite only supports local files. |  |
 | &nbsp;`‑‑cache‑dir`&nbsp; | string | The directory to use for caching downloaded tag vocabulary resources. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
 | &nbsp;`‑‑ckan‑api`&nbsp; | string | The URL of the CKAN API to use for downloading tag vocabulary resources with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. | `https://data.dathere.com/api/3/action` |
@@ -247,7 +247,7 @@ qsv describegpt --help
 |--------|------|-------------|--------|
 | &nbsp;`‑‑stats‑options`&nbsp; | string | Options for the stats command used to generate summary statistics. If it starts with "file:" prefix, the statistics are read from the specified CSV file instead of running the stats command. e.g. "file:my_custom_stats.csv" | `--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl` |
 | &nbsp;`‑‑freq‑options`&nbsp; | string | Options for the frequency command used to generate frequency distributions. You can use this to exclude certain variable types from frequency analysis (e.g., --select '!id,!uuid'), limit results differently per use case, or control output format. If --limit is specified here, it takes precedence over --enum-threshold. If it starts with "file:" prefix, the frequency data is read from the specified CSV file instead of running the frequency command. e.g. "file:my_custom_frequency.csv" | `--rank-strategy dense` |
-| &nbsp;`‑‑enum‑threshold`&nbsp; | string | The threshold for compiling Enumerations with the frequency command before bucketing other unique values into the "Other" category. This is a convenience shortcut for --freq-options --limit <n>. If --freq-options contains --limit, this flag is ignored. | `10` |
+| &nbsp;`‑‑enum‑threshold`&nbsp; | integer | The threshold for compiling Enumerations with the frequency command before bucketing other unique values into the "Other" category. This is a convenience shortcut for --freq-options --limit <n>. If --freq-options contains --limit, this flag is ignored. | `10` |
 
 <a name="custom-prompt-options"></a>
 
@@ -259,13 +259,13 @@ qsv describegpt --help
 | &nbsp;`‑‑sql‑results`&nbsp; | string | The file to save the SQL query results to. Only valid if the --prompt option is used & the "polars" or the "QSV_DUCKDB_PATH" environment variable is set. If the SQL query executes successfully, the results will be saved with a ".csv" extension. Otherwise, it will be saved with a ".sql" extension so the user can inspect why it failed and modify it. |  |
 | &nbsp;`‑‑prompt‑file`&nbsp; | string | The configurable TOML file containing prompts to use for inferencing. If no file is provided, default prompts will be used. The prompt file uses the Mini Jinja template engine (<https://docs.rs/minijinja>) See <https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml> |  |
 | &nbsp;`‑‑markdown‑template`&nbsp; | string | TOML file with Mini Jinja templates for Markdown output. The TOML contains four wrapper templates - one per inference kind: dictionary_md_template, description_md_template, tags_md_template and custom_prompt_md_template - plus a dictionary_md_body_template that drives the per-field dictionary table that fills the dictionary wrapper's {{ llm_response }}. All template fields are optional; any omitted field falls back to the embedded default, so a minimal TOML can override just the templates you want to change. Custom Mini Jinja filters (pipe_escape, br_replace, human_count, dict_cell, humanize_examples) and template variables are documented inline in the default TOML referenced below. If no file is provided, built-in defaults are used (matching legacy output). See <https://github.com/dathere/qsv/blob/master/resources/describegpt_md_defaults.toml> |  |
-| &nbsp;`‑‑sample‑size`&nbsp; | string | The number of rows to randomly sample from the input file for the sample data. Uses the INDEXED sampling method with the qsv sample command. | `100` |
+| &nbsp;`‑‑sample‑size`&nbsp; | integer | The number of rows to randomly sample from the input file for the sample data. Uses the INDEXED sampling method with the qsv sample command. | `100` |
 | &nbsp;`‑‑fewshot‑examples`&nbsp; | flag | By default, few-shot examples are NOT included in the LLM prompt when generating SQL queries. When this option is set, few-shot examples in the default prompt file are included. Though this will increase the quality of the generated SQL, it comes at a cost - increased LLM API call cost in terms of tokens and execution time. See <https://en.wikipedia.org/wiki/Prompt_engineering> for more info. |  |
 | &nbsp;`‑‑session`&nbsp; | string | Enable stateful session mode for iterative SQL RAG refinement. The session name is the file path of the markdown file where session messages will be stored. When used with --prompt, subsequent queries in the same session will refine the baseline SQL query. SQL query results (10-row sample) and errors are automatically included in subsequent messages for context. |  |
-| &nbsp;`‑‑session‑len`&nbsp; | string | Maximum number of recent messages to keep in session context before summarizing older messages. Only used when --session is specified. | `10` |
+| &nbsp;`‑‑session‑len`&nbsp; | integer | Maximum number of recent messages to keep in session context before summarizing older messages. Only used when --session is specified. | `10` |
 | &nbsp;`‑‑no‑score‑sql`&nbsp; | flag | Disable scoresql validation of generated SQL queries before execution. By default, when --prompt generates a SQL query and --sql-results is set, the query is scored and iteratively improved if below threshold. |  |
-| &nbsp;`‑‑score‑threshold`&nbsp; | string | Minimum scoresql score for a SQL query to be accepted. Typical range is 0-100; values >100 will always trigger retries and the below-threshold warning. | `50` |
-| &nbsp;`‑‑score‑max‑retries`&nbsp; | string | Max LLM re-prompts to improve a low-scoring SQL query. | `3` |
+| &nbsp;`‑‑score‑threshold`&nbsp; | integer | Minimum scoresql score for a SQL query to be accepted. Typical range is 0-100; values >100 will always trigger retries and the below-threshold warning. | `50` |
+| &nbsp;`‑‑score‑max‑retries`&nbsp; | integer | Max LLM re-prompts to improve a low-scoring SQL query. | `3` |
 
 <a name="llm-api-options"></a>
 
@@ -278,8 +278,8 @@ qsv describegpt --help
 | &nbsp;`‑‑language`&nbsp; | string | The output language/dialect/tone to use for the response. (e.g., "Spanish", "French", "Hindi", "Mandarin", "Italian", "Castilian", "Franglais", "Taglish", "Pig Latin", "Valley Girl", "Pirate", "Shakespearean English", "Chavacano", "Gen Z", "Yoda", etc.) |  |
 | &nbsp;`‑‑addl‑props`&nbsp; | string | Additional model properties to pass to the LLM chat/completion API. Various models support different properties beyond the standard ones. For instance, gpt-oss-20b supports the "reasoning_effort" property. e.g. to set the "reasoning_effort" property to "high" & "temperature" to 0.5, use '{"reasoning_effort": "high", "temperature": 0.5}' |  |
 | &nbsp;`‑k,`<br>`‑‑api‑key`&nbsp; | string | The API key to use. If set, takes precedence over the QSV_LLM_APIKEY envvar. Required when the base URL is not localhost. Set to NONE to suppress sending the API key. |  |
-| &nbsp;`‑t,`<br>`‑‑max‑tokens`&nbsp; | string | Limits the number of generated tokens in the output. Set to 0 to disable token limits. If the --base-url is localhost, indicating a local LLM, the default is automatically set to 0. | `10000` |
-| &nbsp;`‑‑timeout`&nbsp; | string | Timeout for completions in seconds. If 0, no timeout is used. | `300` |
+| &nbsp;`‑t,`<br>`‑‑max‑tokens`&nbsp; | integer | Limits the number of generated tokens in the output. Set to 0 to disable token limits. If the --base-url is localhost, indicating a local LLM, the default is automatically set to 0. | `10000` |
+| &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for completions in seconds. If 0, no timeout is used. | `300` |
 | &nbsp;`‑‑user‑agent`&nbsp; | string | Specify custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
 | &nbsp;`‑‑export‑prompt`&nbsp; | string | Export the default prompts to the specified file that can be used with the --prompt-file option. The file will be saved with a .toml extension. If the file already exists, it will be overwritten. It will exit after exporting the prompts. |  |
 

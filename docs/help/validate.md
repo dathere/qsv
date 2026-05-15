@@ -245,8 +245,8 @@ qsv validate --help
 | &nbsp;`‑‑json`&nbsp; | flag | When validating without a JSON Schema, return the RFC 4180 check as a JSON file instead of a message. |  |
 | &nbsp;`‑‑pretty‑json`&nbsp; | flag | Same as --json, but pretty printed. |  |
 | &nbsp;`‑‑valid‑output`&nbsp; | string | Change validation mode behavior so if ALL rows are valid, to pass it to output, return exit code 1, and set stderr to the number of valid rows. Setting this will override the default behavior of creating a valid file only when there are invalid records. To send valid records to stdout, use `-` as the filename. |  |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
-| &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | string | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
 
 <a name="fancy-regex-options"></a>
 
@@ -255,7 +255,7 @@ qsv validate --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑fancy‑regex`&nbsp; | flag | Use the fancy regex engine instead of the default regex engine for validation. The fancy engine supports advanced regex features such as lookaround and backreferences, but is not as performant as the default regex engine which guarantees linear-time matching, prevents DoS attacks, and is more efficient for simple patterns. |  |
-| &nbsp;`‑‑backtrack‑limit`&nbsp; | string | Set the approximate number of backtracking steps allowed. This is only used when --fancy-regex is set. | `1000000` |
+| &nbsp;`‑‑backtrack‑limit`&nbsp; | integer | Set the approximate number of backtracking steps allowed. This is only used when --fancy-regex is set. | `1000000` |
 
 <a name="options-for-both-regex-engines"></a>
 
@@ -263,9 +263,9 @@ qsv validate --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑size‑limit`&nbsp; | string | Set the approximate size limit, in megabytes, of a compiled regex. | `50` |
-| &nbsp;`‑‑dfa‑size‑limit`&nbsp; | string | Set the approximate capacity, in megabytes, of the cache of transitions used by the engine's lazy Discrete Finite Automata. | `10` |
-| &nbsp;`‑‑timeout`&nbsp; | string | Timeout for downloading json-schemas on URLs and for 'dynamicEnum' lookups on URLs. If 0, no timeout is used. | `30` |
+| &nbsp;`‑‑size‑limit`&nbsp; | integer | Set the approximate size limit, in megabytes, of a compiled regex. | `50` |
+| &nbsp;`‑‑dfa‑size‑limit`&nbsp; | integer | Set the approximate capacity, in megabytes, of the cache of transitions used by the engine's lazy Discrete Finite Automata. | `10` |
+| &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading json-schemas on URLs and for 'dynamicEnum' lookups on URLs. If 0, no timeout is used. | `30` |
 | &nbsp;`‑‑cache‑dir`&nbsp; | string | The directory to use for caching downloaded dynamicEnum resources. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. Not available on qsvlite. | `~/.qsv-cache` |
 | &nbsp;`‑‑ckan‑api`&nbsp; | string | The URL of the CKAN API to use for downloading dynamicEnum resources with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. Not available on qsvlite. | `https://data.dathere.com/api/3/action` |
 | &nbsp;`‑‑ckan‑token`&nbsp; | string | The CKAN API token to use. Only required if downloading private resources. If the QSV_CKAN_TOKEN envvar is set, it will be used instead. Not available on qsvlite. |  |
@@ -278,7 +278,7 @@ qsv validate --help
 |--------|------|-------------|--------|
 | &nbsp;`‑‑email‑required‑tld`&nbsp; | flag | Require the email to have a valid Top-Level Domain (TLD) (e.g. .com, .org, .net, etc.). e.g. "john.doe@example" is VALID if this option is NOT set. |  |
 | &nbsp;`‑‑email‑display‑text`&nbsp; | flag | Allow display text in emails. e.g. "John Doe <john.doe@example.com>" is INVALID if this option is NOT set. |  |
-| &nbsp;`‑‑email‑min‑subdomains`&nbsp; | string | Minimum number of subdomains required in the email. e.g. "jdoe@example.com" is INVALID if this option is set to 3, but "jdoe@sub.example.com" is VALID. | `2` |
+| &nbsp;`‑‑email‑min‑subdomains`&nbsp; | integer | Minimum number of subdomains required in the email. e.g. "jdoe@example.com" is INVALID if this option is set to 3, but "jdoe@sub.example.com" is VALID. | `2` |
 | &nbsp;`‑‑email‑domain‑literal`&nbsp; | flag | Allow domain literals in emails. e.g. "john.doe@[127.0.0.1]" is VALID if this option is set. |  |
 
 <a name="common-options"></a>

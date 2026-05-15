@@ -124,7 +124,7 @@ qsv diff --help
 | &nbsp;`‑k,`<br>`‑‑key`&nbsp; | string | The column indices that uniquely identify a record as a comma separated list of 0-based indices, e.g. 0,1,2 or column names, e.g. name,age. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. (default: 0) |  |
 | &nbsp;`‑‑sort‑columns`&nbsp; | string | The column indices by which the diff result should be sorted as a comma separated list of indices, e.g. 0,1,2 or column names, e.g. name,age. Records in the diff result that are marked as "modified" ("delete" and "add" records that have the same key, but have different content) will always be kept together in the sorted diff result and so won't be sorted independently from each other. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. |  |
 | &nbsp;`‑‑drop‑equal‑fields`&nbsp; | flag | Drop values of equal fields in modified rows of the CSV diff result (and replace them with the empty string). Key field values will not be dropped. |  |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 
 <a name="common-options"></a>
 

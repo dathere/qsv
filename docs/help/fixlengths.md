@@ -38,9 +38,9 @@ qsv fixlengths --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑l,`<br>`‑‑length`&nbsp; | string | Forcefully set the length of each record. If a record is not the size given, then it is truncated or expanded as appropriate. |  |
+| &nbsp;`‑l,`<br>`‑‑length`&nbsp; | integer | Forcefully set the length of each record. If a record is not the size given, then it is truncated or expanded as appropriate. |  |
 | &nbsp;`‑r,`<br>`‑‑remove‑empty`&nbsp; | flag | Remove empty columns. |  |
-| &nbsp;`‑i,`<br>`‑‑insert`&nbsp; | string | If empty fields need to be inserted, insert them at <pos>. If <pos> is zero, then it is inserted at the end of each record. If <pos> is negative, it is inserted from the END of each record going backwards. If <pos> is positive, it is inserted from the BEGINNING of each record going forward. | `0` |
+| &nbsp;`‑i,`<br>`‑‑insert`&nbsp; | integer | If empty fields need to be inserted, insert them at <pos>. If <pos> is zero, then it is inserted at the end of each record. If <pos> is negative, it is inserted from the END of each record going backwards. If <pos> is positive, it is inserted from the BEGINNING of each record going forward. | `0` |
 | &nbsp;`‑‑quote`&nbsp; | string | The quote character to use. | `"` |
 | &nbsp;`‑‑escape`&nbsp; | string | The escape character to use. When not specified, quotes are escaped by doubling them. |  |
 

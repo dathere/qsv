@@ -86,12 +86,12 @@ qsv synthesize --help
 |--------|------|-------------|--------|
 | &nbsp;`‑‑dictionary`&nbsp; | string | Data Dictionary JSON file produced by `describegpt --dictionary --infer-content-type --format JSON`. Layers semantic Content Types onto generation. If omitted, generation is purely type/frequency-based. |  |
 | &nbsp;`‑‑infer‑content‑type`&nbsp; | flag | Generate the Data Dictionary on the fly by invoking `describegpt --dictionary --infer-content-type` on <input>. Requires an LLM API key (QSV_LLM_APIKEY). Ignored if --dictionary is given. |  |
-| &nbsp;`‑n,`<br>`‑‑rows`&nbsp; | string | Number of synthetic rows to generate. | `100` |
-| &nbsp;`‑‑seed`&nbsp; | string | RNG seed for fully reproducible output. |  |
+| &nbsp;`‑n,`<br>`‑‑rows`&nbsp; | integer | Number of synthetic rows to generate. | `100` |
+| &nbsp;`‑‑seed`&nbsp; | integer | RNG seed for fully reproducible output. |  |
 | &nbsp;`‑‑locale`&nbsp; | string | Locale for faker-backed columns. Only EN is supported in this version. | `EN` |
-| &nbsp;`‑‑freq‑limit`&nbsp; | string | Frequency pool depth passed to the internal `frequency` run as --limit. A column is reproduced via exact frequency-weighted sampling only when its cardinality is fully captured within this limit; higher values reproduce more columns verbatim. 0 means unlimited. | `100` |
+| &nbsp;`‑‑freq‑limit`&nbsp; | integer | Frequency pool depth passed to the internal `frequency` run as --limit. A column is reproduced via exact frequency-weighted sampling only when its cardinality is fully captured within this limit; higher values reproduce more columns verbatim. 0 means unlimited. | `100` |
 | &nbsp;`‑‑stats‑options`&nbsp; | string | Extra options appended to the internal `stats` run. Note: cardinality, quartiles and date inference are always enabled — do not re-specify them here. |  |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | Number of jobs to use for the internal `stats` and `frequency` runs. |  |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | Number of jobs to use for the internal `stats` and `frequency` runs. |  |
 
 <a name="common-options"></a>
 

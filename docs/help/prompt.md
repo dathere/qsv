@@ -60,7 +60,7 @@ qsv prompt --help
 | &nbsp;`‑d,`<br>`‑‑workdir`&nbsp; | string | The directory to start the file dialog in. | `.` |
 | &nbsp;`‑f,`<br>`‑‑fd‑output`&nbsp; | flag | Write output to a file by using a save file dialog. Used when piping into qsv prompt. Mutually exclusive with --output. |  |
 | &nbsp;`‑‑save‑fname`&nbsp; | string | The filename to save the output as when using --fd-output. | `output.csv` |
-| &nbsp;`‑‑base‑delay‑ms`&nbsp; | string | The base delay in milliseconds to use when opening INPUT dialog. This is to ensure that the INPUT dialog is shown before/over the OUTPUT dialog when using the prompt command is used in both INPUT and OUTPUT modes in a single pipeline. | `200` |
+| &nbsp;`‑‑base‑delay‑ms`&nbsp; | integer | The base delay in milliseconds to use when opening INPUT dialog. This is to ensure that the INPUT dialog is shown before/over the OUTPUT dialog when using the prompt command is used in both INPUT and OUTPUT modes in a single pipeline. | `200` |
 
 <a name="common-options"></a>
 

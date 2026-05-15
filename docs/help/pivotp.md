@@ -63,7 +63,7 @@ qsv pivotp --help
 | &nbsp;`‑‑col‑separator`&nbsp; | string | The separator in generated column names in case of multiple --values columns. (pivot mode only; ignored in group-by mode) | `_` |
 | &nbsp;`‑‑validate`&nbsp; | flag | Validate a pivot by checking the pivot column(s)' cardinality. (pivot mode only) |  |
 | &nbsp;`‑‑try‑parsedates`&nbsp; | flag | When set, will attempt to parse columns as dates. |  |
-| &nbsp;`‑‑infer‑len`&nbsp; | string | Number of rows to scan when inferring schema. Set to 0 to scan entire file. | `10000` |
+| &nbsp;`‑‑infer‑len`&nbsp; | integer | Number of rows to scan when inferring schema. Set to 0 to scan entire file. | `10000` |
 | &nbsp;`‑‑decimal‑comma`&nbsp; | flag | Use comma as decimal separator when READING the input. Note that you will need to specify an alternate --delimiter. |  |
 | &nbsp;`‑‑ignore‑errors`&nbsp; | flag | Skip rows that can't be parsed. |  |
 | &nbsp;`‑‑grand‑total`&nbsp; | flag | Append a grand total row summing all numeric non-index columns. The first index column will contain "Grand <total-label>". |  |

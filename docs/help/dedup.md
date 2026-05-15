@@ -89,7 +89,7 @@ qsv dedup --help
 | &nbsp;`‑‑sorted`&nbsp; | flag | The input is already sorted. Do not load the CSV into memory to sort it first. Meant to be used in tandem and after an extsort. |  |
 | &nbsp;`‑D,`<br>`‑‑dupes‑output`&nbsp; | string | Write duplicates to <file>. |  |
 | &nbsp;`‑H,`<br>`‑‑human‑readable`&nbsp; | flag | Comma separate duplicate count. |  |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel when sorting an unsorted CSV, before deduping. When not set, the number of jobs is set to the number of CPUs detected. Does not work with --sorted option as its not multithreaded. |  |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel when sorting an unsorted CSV, before deduping. When not set, the number of jobs is set to the number of CPUs detected. Does not work with --sorted option as its not multithreaded. |  |
 
 <a name="common-options"></a>
 

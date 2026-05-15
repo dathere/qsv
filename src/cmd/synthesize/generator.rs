@@ -186,12 +186,16 @@ impl ColumnGenerator {
                     return String::new();
                 }
                 let (lo, hi) = buckets[rng.random_range(0..buckets.len())];
-                let epoch = if lo < hi {
+                let unit = if lo < hi {
                     rng.random_range(lo..=hi)
                 } else {
                     lo
                 };
-                match chrono::DateTime::from_timestamp(epoch, 0) {
+                // For DateTime: `unit` is epoch seconds, format as RFC 3339.
+                // For Date: `unit` is whole days since the UNIX epoch, multiply
+                // back to seconds and format as YYYY-MM-DD.
+                let seconds = if *is_datetime { unit } else { unit * 86_400 };
+                match chrono::DateTime::from_timestamp(seconds, 0) {
                     Some(dt) if *is_datetime => dt.to_rfc3339(),
                     Some(dt) => dt.format("%Y-%m-%d").to_string(),
                     None => String::new(),
@@ -369,10 +373,12 @@ fn build_numeric(stats: &StatsRecord, is_int: bool, null_ratio: f64) -> ColumnGe
     }
 }
 
-/// Build a quartile-bucketed date/datetime generator over epoch seconds.
+/// Build a quartile-bucketed date/datetime generator. Bucket bounds are
+/// expressed in *days since the UNIX epoch* for `Date` columns and *seconds
+/// since the UNIX epoch* for `DateTime` columns — see `parse_epoch`.
 fn build_date(stats: &StatsRecord, is_datetime: bool, null_ratio: f64) -> ColumnGenerator {
-    let min = parse_epoch(&stats.min);
-    let max = parse_epoch(&stats.max);
+    let min = parse_epoch(&stats.min, is_datetime);
+    let max = parse_epoch(&stats.max, is_datetime);
     let (Some(lo), Some(hi)) = (min, max) else {
         return ColumnGenerator::Empty;
     };
@@ -380,12 +386,18 @@ fn build_date(stats: &StatsRecord, is_datetime: bool, null_ratio: f64) -> Column
         return ColumnGenerator::Empty;
     }
 
-    let q1 = stats.addl_cols.get("q1").and_then(|s| parse_epoch(s));
+    let q1 = stats
+        .addl_cols
+        .get("q1")
+        .and_then(|s| parse_epoch(s, is_datetime));
     let q2 = stats
         .addl_cols
         .get("q2_median")
-        .and_then(|s| parse_epoch(s));
-    let q3 = stats.addl_cols.get("q3").and_then(|s| parse_epoch(s));
+        .and_then(|s| parse_epoch(s, is_datetime));
+    let q3 = stats
+        .addl_cols
+        .get("q3")
+        .and_then(|s| parse_epoch(s, is_datetime));
 
     let buckets = match (q1, q2, q3) {
         (Some(a), Some(b), Some(c)) if lo <= a && a <= b && b <= c && c <= hi => {
@@ -438,21 +450,30 @@ fn parse_f64(s: &str) -> Option<f64> {
     }
 }
 
-/// Parse a date/datetime stats value (RFC 3339 or `YYYY-MM-DD`) to epoch seconds.
-fn parse_epoch(s: &str) -> Option<i64> {
+/// Parse a date/datetime stats value (RFC 3339 or `YYYY-MM-DD`) to a sortable
+/// integer. For `Date` columns we return *whole days since the UNIX epoch* —
+/// the right unit for uniform sampling that doesn't massively under-weight the
+/// max date (stats min/max/q* values are always at midnight, so sampling over
+/// seconds gives the max-day a single tick out of an 86,400-tick day). For
+/// `DateTime` columns we keep seconds since the UNIX epoch.
+fn parse_epoch(s: &str, is_datetime: bool) -> Option<i64> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return None;
     }
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(trimmed) {
-        return Some(dt.timestamp());
-    }
-    if let Ok(date) = chrono::NaiveDate::parse_from_str(trimmed, "%Y-%m-%d") {
-        return date
-            .and_hms_opt(0, 0, 0)
-            .map(|ndt| ndt.and_utc().timestamp());
-    }
-    None
+    let seconds = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(trimmed) {
+        dt.timestamp()
+    } else if let Ok(date) = chrono::NaiveDate::parse_from_str(trimmed, "%Y-%m-%d") {
+        date.and_hms_opt(0, 0, 0)
+            .map(|ndt| ndt.and_utc().timestamp())?
+    } else {
+        return None;
+    };
+    Some(if is_datetime {
+        seconds
+    } else {
+        seconds.div_euclid(86_400)
+    })
 }
 
 #[cfg(test)]
@@ -587,11 +608,12 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(3); // DevSkim: ignore DS148264
         let generator = ColumnGenerator::build(&record, &[], "unknown", 500, 1000, &mut rng);
 
-        let lo = parse_epoch("2020-01-01").unwrap();
-        let hi = parse_epoch("2020-12-31").unwrap();
+        // Date type → values are whole days since the UNIX epoch.
+        let lo = parse_epoch("2020-01-01", false).unwrap();
+        let hi = parse_epoch("2020-12-31", false).unwrap();
         for _ in 0..1000 {
             let value = generator.next(&mut rng);
-            let epoch = parse_epoch(&value).unwrap();
+            let epoch = parse_epoch(&value, false).unwrap();
             assert!((lo..=hi).contains(&epoch), "date {value} out of range");
         }
     }

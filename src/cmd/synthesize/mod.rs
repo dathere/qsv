@@ -134,12 +134,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // --- 1. Analysis (stats + frequency + count) ---------------------------
     // Index the input first (best-effort) to speed up stats/frequency.
+    // `Config::index_files()` returns `Ok(None)` when no index exists (not an
+    // error) and may auto-index large inputs internally — so we explicitly fall
+    // back to `qsv index` whenever it doesn't hand us an existing index.
     let config = Config::new(Some(&args.arg_input));
-    if config.index_files().is_err() {
+    if !matches!(config.index_files(), Ok(Some(_))) {
         let _ = util::run_qsv_cmd("index", &[], input_path, "  Indexed input");
     }
 
-    // delimiter passthrough for the analysis subcommands
+    // Delimiter passthrough for the analysis subcommands. `qsv index` accepts
+    // neither `-d` nor `--jobs`; `qsv count` accepts `-d` but not `--jobs`;
+    // `stats` and `frequency` accept both.
     let delim_arg: Option<String> = args.flag_delimiter.map(|d| {
         let byte = d.as_byte();
         if byte == b'\t' {
@@ -148,14 +153,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             (byte as char).to_string()
         }
     });
-    let mut common_args: Vec<String> = Vec::new();
+    let mut delim_only_args: Vec<String> = Vec::new();
     if let Some(ref delim) = delim_arg {
-        common_args.push("-d".to_string());
-        common_args.push(delim.clone());
+        delim_only_args.push("-d".to_string());
+        delim_only_args.push(delim.clone());
     }
+    let mut analysis_common_args: Vec<String> = delim_only_args.clone();
     if let Some(jobs) = args.flag_jobs {
-        common_args.push("--jobs".to_string());
-        common_args.push(jobs.to_string());
+        analysis_common_args.push("--jobs".to_string());
+        analysis_common_args.push(jobs.to_string());
     }
 
     // stats — --cardinality/--quartiles/--infer-dates are always required.
@@ -164,7 +170,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         "--quartiles".to_string(),
         "--infer-dates".to_string(),
     ];
-    stats_args.extend(common_args.iter().cloned());
+    stats_args.extend(analysis_common_args.iter().cloned());
     if let Some(ref opts) = args.flag_stats_options {
         stats_args.extend(opts.split_whitespace().map(ToString::to_string));
     }
@@ -178,7 +184,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // frequency
     let mut freq_args: Vec<String> = vec!["--limit".to_string(), args.flag_freq_limit.to_string()];
-    freq_args.extend(common_args.iter().cloned());
+    freq_args.extend(analysis_common_args.iter().cloned());
     let freq_args_ref: Vec<&str> = freq_args.iter().map(String::as_str).collect();
     let (freq_csv, _) = util::run_qsv_cmd(
         "frequency",
@@ -187,8 +193,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         "  Computed frequency distribution",
     )?;
 
-    // count — exact source row count, needed for null-ratio math
-    let count_args_ref: Vec<&str> = common_args.iter().map(String::as_str).collect();
+    // count — exact source row count, needed for null-ratio math. `count`
+    // does NOT accept `--jobs`, so use the delimiter-only args here.
+    let count_args_ref: Vec<&str> = delim_only_args.iter().map(String::as_str).collect();
     let (count_out, _) = util::run_qsv_cmd("count", &count_args_ref, input_path, "  Counted rows")?;
     let total_rows: u64 = count_out.trim().parse().map_err(|e| {
         CliError::Other(format!(

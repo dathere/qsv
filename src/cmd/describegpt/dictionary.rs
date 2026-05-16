@@ -34,11 +34,14 @@ use super::{CliError, CliResult, extract_json_from_output};
 /// `unique_id` marks fields where every row has a distinct non-null value
 /// (i.e. stats `cardinality == rowcount`, no nulls — primary keys, surrogate
 /// keys, sequence numbers). It is set DETERMINISTICALLY by
-/// `generate_code_based_dictionary` when the field's frequency table carries
-/// the `<ALL_UNIQUE>` sentinel, and overrides any token the LLM produced for
+/// `generate_code_based_dictionary` via a structural check on the field's
+/// frequency table (single row whose `count == cardinality`), independent of
+/// the literal sentinel text, and overrides any token the LLM produced for
 /// that field. The vocabulary entry is still exposed to the LLM so its
 /// classification stays consistent, but the deterministic check is
-/// authoritative.
+/// authoritative — and LLM-supplied `unique_id` is rejected by
+/// `parse_llm_dictionary_response` and `combine_dictionary_entries` to keep
+/// the contract one-way.
 pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
     // person / identity
     "first_name",
@@ -377,9 +380,12 @@ pub(crate) fn parse_frequency_csv(frequency_csv: &str) -> CliResult<Vec<Frequenc
 /// data. Label and Description are left empty for the LLM pass to fill.
 ///
 /// When `infer_content_type` is set, `content_type` is also deterministically
-/// pre-set to `"unique_id"` for fields whose frequency table contains the
-/// `<ALL_UNIQUE>` sentinel (i.e. `cardinality == rowcount`, no nulls). All
-/// other fields' `content_type` stays empty and is filled by the LLM pass.
+/// pre-set to `"unique_id"` for fields where `cardinality == rowcount` with no
+/// nulls. The detection is structural (single frequency row whose
+/// `count == cardinality`), not text-matching, so it works regardless of the
+/// `frequency --all-unique-text` setting and won't be confused by fields whose
+/// values literally contain the string `<ALL_UNIQUE>`. All other fields'
+/// `content_type` stays empty and is filled by the LLM pass.
 pub(super) fn generate_code_based_dictionary(
     stats_records: &[StatsRecord],
     frequency_records: &[FrequencyRecord],
@@ -475,18 +481,32 @@ pub(super) fn generate_code_based_dictionary(
         }
 
         // Deterministically classify fields where every row carries a distinct
-        // non-null value as `unique_id`. qsv's frequency command emits the
-        // `<ALL_UNIQUE>` sentinel exactly when `cardinality == rowcount`, so we
-        // key off that directly rather than re-deriving rowcount here. This
-        // pre-set value takes precedence over whatever the LLM returns (see
+        // non-null value as `unique_id`. qsv's frequency command emits an
+        // ALL_UNIQUE sentinel row exactly when `cardinality == rowcount` (a
+        // single row with `count == rowcount` and `percentage == 100.0`). We
+        // detect that structurally — `len() == 1` + `count == cardinality` —
+        // rather than matching the literal `<ALL_UNIQUE>` text so that:
+        //   - a real field whose values literally contain the string "<ALL_UNIQUE>" isn't
+        //     mislabeled (constants have `cardinality == 1`; mixed fields produce more than one
+        //     frequency row);
+        //   - a custom `frequency --all-unique-text` sentinel is still detected correctly (the text
+        //     doesn't matter, only the structural cardinality==count invariant does);
+        //   - HIGH_CARDINALITY sentinel rows (also single-row, percentage 100.0, count == rowcount)
+        //     are excluded because for them `cardinality < rowcount == count`.
+        // Also requires `cardinality > 1` and `nullcount == 0` to enforce
+        // the semantic contract (every row has a distinct non-null value).
+        // Pre-set value takes precedence over whatever the LLM returns (see
         // `combine_dictionary_entries`). Only populate when `--infer-content-type`
         // is on; otherwise the `content_type` column is suppressed entirely.
-        let content_type =
-            if infer_content_type && field_frequencies.iter().any(|f| f.value == "<ALL_UNIQUE>") {
-                "unique_id".to_string()
-            } else {
-                String::new()
-            };
+        let is_all_unique = stats_record.cardinality > 1
+            && stats_record.nullcount == 0
+            && field_frequencies.len() == 1
+            && field_frequencies[0].count == stats_record.cardinality;
+        let content_type = if infer_content_type && is_all_unique {
+            "unique_id".to_string()
+        } else {
+            String::new()
+        };
 
         dictionary_entries.push(DictionaryEntry {
             name: stats_record.field.clone(),
@@ -1024,5 +1044,128 @@ mod tests {
         }];
         let entries = generate_code_based_dictionary(&stats, &frequencies, 10, 5, 25, &[], false);
         assert!(entries[0].content_type.is_empty());
+    }
+
+    #[test]
+    fn generate_does_not_mislabel_constant_field_with_all_unique_value() {
+        // Pathological: a field whose only value is literally the string
+        // "<ALL_UNIQUE>". qsv frequency emits a single row with value=
+        // "<ALL_UNIQUE>" and count==row_count, but stats.cardinality==1.
+        // Structural detection (count == cardinality, cardinality > 1)
+        // correctly excludes this.
+        let stats = vec![StatsRecord {
+            field:       "weird".to_string(),
+            r#type:      "String".to_string(),
+            cardinality: 1,
+            nullcount:   0,
+            min:         "<ALL_UNIQUE>".to_string(),
+            max:         "<ALL_UNIQUE>".to_string(),
+            addl_cols:   IndexMap::new(),
+        }];
+        let frequencies = vec![FrequencyRecord {
+            field:      "weird".to_string(),
+            value:      "<ALL_UNIQUE>".to_string(),
+            count:      500,
+            percentage: 100.0,
+            rank:       1.0,
+        }];
+        let entries = generate_code_based_dictionary(&stats, &frequencies, 10, 5, 25, &[], true);
+        assert!(
+            entries[0].content_type.is_empty(),
+            "a constant-value field whose value happens to be the string '<ALL_UNIQUE>' must NOT \
+             be classified as unique_id"
+        );
+    }
+
+    #[test]
+    fn generate_detects_unique_id_with_custom_all_unique_text() {
+        // If qsv frequency was run with `--all-unique-text` set to a custom
+        // string (e.g. "<UNIQUE>"), the sentinel row's text differs but the
+        // structural invariant (one row, count == cardinality, cardinality > 1,
+        // no nulls) still holds. Detection must succeed regardless of the
+        // sentinel text.
+        let stats = vec![StatsRecord {
+            field:       "pk".to_string(),
+            r#type:      "Integer".to_string(),
+            cardinality: 250,
+            nullcount:   0,
+            min:         "1".to_string(),
+            max:         "250".to_string(),
+            addl_cols:   IndexMap::new(),
+        }];
+        let frequencies = vec![FrequencyRecord {
+            field:      "pk".to_string(),
+            value:      "<UNIQUE>".to_string(), // user-customized sentinel text
+            count:      250,
+            percentage: 100.0,
+            rank:       1.0,
+        }];
+        let entries = generate_code_based_dictionary(&stats, &frequencies, 10, 5, 25, &[], true);
+        assert_eq!(
+            entries[0].content_type, "unique_id",
+            "text-independent detection must classify ALL_UNIQUE even when frequency's sentinel \
+             text was customized"
+        );
+    }
+
+    #[test]
+    fn generate_does_not_misclassify_high_cardinality_as_unique_id() {
+        // HIGH_CARDINALITY fields also produce a single frequency row with
+        // count==row_count and percentage==100.0, but their cardinality is
+        // strictly less than row_count (some values repeat). The
+        // `count == cardinality` check correctly excludes them.
+        let stats = vec![StatsRecord {
+            field:       "city".to_string(),
+            r#type:      "String".to_string(),
+            cardinality: 800, // many distinct values, but with repeats
+            nullcount:   0,
+            min:         "Aachen".to_string(),
+            max:         "Zurich".to_string(),
+            addl_cols:   IndexMap::new(),
+        }];
+        let frequencies = vec![FrequencyRecord {
+            field:      "city".to_string(),
+            value:      "<HIGH_CARDINALITY>".to_string(),
+            count:      10_000, // row_count >> cardinality
+            percentage: 100.0,
+            rank:       1.0,
+        }];
+        let entries = generate_code_based_dictionary(&stats, &frequencies, 10, 5, 25, &[], true);
+        assert!(
+            entries[0].content_type.is_empty(),
+            "HIGH_CARDINALITY field must not be classified as unique_id"
+        );
+    }
+
+    #[test]
+    fn generate_does_not_mislabel_unique_id_when_nulls_present() {
+        // Semantic contract: "every row has a distinct non-null value". A
+        // field where cardinality == count but nullcount > 0 doesn't qualify
+        // (some rows have no value at all). qsv frequency wouldn't emit the
+        // ALL_UNIQUE sentinel for this case anyway, but the explicit
+        // nullcount==0 check provides defense in depth for hand-crafted or
+        // cached frequency input.
+        let stats = vec![StatsRecord {
+            field:       "maybe_id".to_string(),
+            r#type:      "Integer".to_string(),
+            cardinality: 95,
+            nullcount:   5, // 5 rows are NULL
+            min:         "1".to_string(),
+            max:         "95".to_string(),
+            addl_cols:   IndexMap::new(),
+        }];
+        let frequencies = vec![FrequencyRecord {
+            field:      "maybe_id".to_string(),
+            value:      "<ALL_UNIQUE>".to_string(),
+            count:      95,
+            percentage: 100.0,
+            rank:       1.0,
+        }];
+        let entries = generate_code_based_dictionary(&stats, &frequencies, 10, 5, 25, &[], true);
+        assert!(
+            entries[0].content_type.is_empty(),
+            "a field with nulls must NOT be classified as unique_id even if non-null cardinality \
+             matches the frequency count"
+        );
     }
 }

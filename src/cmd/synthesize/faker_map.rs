@@ -50,7 +50,15 @@ macro_rules! gen_faker_for_locale {
             // dispatch table simple. The cap is in seconds — bare "duration"
             // defaults to 86_400 (24 h); "duration:N" carries an LLM-inferred
             // upper bound. fake's Duration spans billions of seconds, so the
-            // `% cap` bound is what makes the HH:MM:SS output realistic.
+            // `% cap` bound is what makes the output realistic.
+            //
+            // Format is `H+:MM:SS` — minutes and seconds are always two
+            // digits, but the hours component is variable-width: for the
+            // 24-h default and typical LLM-picked caps (race times, session
+            // durations, etc.) it renders as 2 digits, but a cap above
+            // 99 h * 3600 s lets hours grow to 3+ digits. This is
+            // deliberate: clamping would silently distort the requested
+            // range; we keep the value faithful and accept the wider format.
             if let Some(cap) = parse_duration_cap(content_type) {
                 let d: ::time::Duration = ftime::Duration().fake_with_rng(rng);
                 let total = d.whole_seconds().unsigned_abs() % cap;
@@ -226,20 +234,29 @@ const NON_FAKER_TOKENS: &[&str] = &["category", "unknown"];
 ///
 /// Returns `Some(cap)` for:
 ///   * the bare `"duration"` token (defaults to 86_400 = 24 h)
-///   * `"duration:N"` where N is a positive integer (LLM-inferred upper bound)
+///   * `"duration:N"` where N is a positive integer (LLM-inferred upper bound; whitespace around N
+///     is tolerated)
+///   * `"duration:<malformed>"` (non-numeric / zero / negative / empty) — degrades to the 86_400
+///     default rather than `None`, so user-supplied dictionary JSON that bypasses
+///     `describegpt::normalize_duration_token` still gets duration generation instead of falling
+///     through to lorem fallback text
 ///
-/// Returns `None` for any other token so the caller can fall through to the
-/// regular `match` dispatch. Malformed suffixes (non-numeric, zero, negative)
-/// are NOT silently coerced — `parse_llm_dictionary_response` is responsible
-/// for rejecting bad suffixes upstream, so by the time a token reaches this
-/// helper it has already been validated.
+/// Returns `None` only when the token is not a duration token at all (no
+/// `"duration"` / `"duration:"` prefix), so the caller can fall through to
+/// the regular `match` dispatch.
 pub(crate) fn parse_duration_cap(content_type: &str) -> Option<u64> {
     if content_type == "duration" {
         return Some(86_400);
     }
     let suffix = content_type.strip_prefix("duration:")?;
-    let n: u64 = suffix.parse().ok()?;
-    (n > 0).then_some(n)
+    match suffix.trim().parse::<u64>() {
+        Ok(n) if n > 0 => Some(n),
+        // Malformed / zero / negative suffix → degrade to the default.
+        // describegpt's `normalize_duration_token` normalizes most of these
+        // before they hit the dictionary, but synthesize also accepts
+        // hand-crafted dictionary JSON, so we re-apply the contract here.
+        _ => Some(86_400),
+    }
 }
 
 /// Whether `content_type` maps to a faker (i.e. `content_type_to_value` would
@@ -247,8 +264,10 @@ pub(crate) fn parse_duration_cap(content_type: &str) -> Option<u64> {
 /// draw. Locale-agnostic: every faker token resolves under every locale
 /// (sparse locales fall back to EN data inside fake-rs).
 ///
-/// Also recognizes `duration:N` (positive-integer cap suffix); see
-/// `parse_duration_cap`.
+/// Also recognizes every form `parse_duration_cap` accepts — including
+/// malformed `duration:N` suffixes that degrade to the default cap — so the
+/// faker-vs-fallback decision stays consistent for hand-crafted dictionary
+/// JSON that bypasses `describegpt::normalize_duration_token`.
 pub(crate) fn is_faker_token(content_type: &str) -> bool {
     use crate::cmd::describegpt::dictionary::CONTENT_TYPE_VOCAB;
 
@@ -394,15 +413,19 @@ mod tests {
         assert_eq!(parse_duration_cap("duration:1"), Some(1));
         assert_eq!(parse_duration_cap("duration:3600"), Some(3_600));
         assert_eq!(parse_duration_cap("duration:31536000"), Some(31_536_000));
-        // Malformed suffix: parse_duration_cap rejects (returns None) — the
-        // normalize step upstream is what coerces these to bare "duration",
-        // so by the time parse_duration_cap sees the token it's already
-        // been normalized. Verifying None here documents that contract.
-        assert_eq!(parse_duration_cap("duration:0"), None);
-        assert_eq!(parse_duration_cap("duration:-5"), None);
-        assert_eq!(parse_duration_cap("duration:abc"), None);
-        assert_eq!(parse_duration_cap("duration:"), None);
-        // Non-duration tokens.
+        // Whitespace around the number is tolerated.
+        assert_eq!(parse_duration_cap("duration: 18000"), Some(18_000));
+        // Malformed / zero / negative / empty suffix degrades to the 86_400
+        // default — synthesize also accepts hand-crafted dictionary JSON
+        // that may not have been through normalize_duration_token, so this
+        // helper enforces the "degrade to bare duration" contract on its own.
+        assert_eq!(parse_duration_cap("duration:0"), Some(86_400));
+        assert_eq!(parse_duration_cap("duration:-5"), Some(86_400));
+        assert_eq!(parse_duration_cap("duration:abc"), Some(86_400));
+        assert_eq!(parse_duration_cap("duration:"), Some(86_400));
+        // Non-duration tokens: still None so the caller falls through to
+        // the regular faker-map dispatch.
+        assert_eq!(parse_duration_cap("durationfoo"), None);
         assert_eq!(parse_duration_cap("time"), None);
         assert_eq!(parse_duration_cap("email"), None);
         assert_eq!(parse_duration_cap(""), None);
@@ -437,17 +460,23 @@ mod tests {
         assert!(is_faker_token("duration"));
         assert!(is_faker_token("duration:1"));
         assert!(is_faker_token("duration:86400"));
-        // Malformed suffix is NOT a faker token here — upstream normalize
-        // would have stripped the suffix already, so this case shouldn't
-        // arise in practice; the check just documents the contract.
-        assert!(!is_faker_token("duration:0"));
-        assert!(!is_faker_token("duration:bogus"));
+        assert!(is_faker_token("duration: 18000"));
+        // Malformed suffixes ALSO count as faker tokens — they degrade
+        // to the default 86_400 cap inside parse_duration_cap so that
+        // hand-crafted dictionary JSON with a typo still produces fake
+        // durations instead of falling through to lorem text.
+        assert!(is_faker_token("duration:0"));
+        assert!(is_faker_token("duration:bogus"));
+        assert!(is_faker_token("duration:"));
         // Other vocab tokens still resolve correctly.
         assert!(is_faker_token("time"));
         assert!(is_faker_token("email"));
         assert!(!is_faker_token("category"));
         assert!(!is_faker_token("unknown"));
         assert!(!is_faker_token("not_a_token"));
+        // Non-duration tokens that just happen to start with "duration"
+        // (no colon, no exact match) are NOT faker tokens.
+        assert!(!is_faker_token("durationfoo"));
     }
 
     #[test]

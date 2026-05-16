@@ -137,8 +137,8 @@ macro_rules! gen_faker_for_locale {
                 "lorem_paragraph" => fake_str!(lorem::Paragraph(3..7)),
                 "free_text" => fake_str!(lorem::Sentence(6..15)),
 
-                // `category` & `unknown` (and anything unrecognized) have no faker —
-                // the caller handles them via enumeration/frequency or type-based rules.
+                // `category`, `unique_id` & `unknown` (and anything unrecognized) have no
+                // faker — the caller handles them via enumeration/frequency or type-based rules.
                 _ => None,
             }
         }
@@ -228,7 +228,14 @@ define_locales! {
 
 /// Tokens that are deliberately *not* fakers — they fall through to
 /// enumeration/frequency- or type-based generation.
-const NON_FAKER_TOKENS: &[&str] = &["category", "unknown"];
+///
+/// `unique_id` is here because there is no general-purpose `fake-rs` faker that
+/// guarantees per-row uniqueness across a synthesis pass; instead, synthesize
+/// uses the dictionary's `type` + `min`/`max` columns (sequential integers for
+/// numeric ID fields, type-based text for string IDs) — the same fallback path
+/// `unknown` takes. A future enhancement could swap in a dedicated unique-value
+/// generator (e.g. counter-backed for integers, UUIDv4 for strings).
+const NON_FAKER_TOKENS: &[&str] = &["category", "unique_id", "unknown"];
 
 /// Parse the duration cap (in seconds) from a `content_type` token.
 ///

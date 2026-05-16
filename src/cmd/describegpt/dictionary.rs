@@ -30,6 +30,15 @@ use super::{CliError, CliResult, extract_json_from_output};
 /// suffix is normalized by `normalize_duration_token` and consumed by
 /// `synthesize::faker_map::parse_duration_cap`. Bare `"duration"` falls
 /// back to a 24-hour default at generation time.
+///
+/// `unique_id` marks fields where every row has a distinct non-null value
+/// (i.e. stats `cardinality == rowcount`, no nulls — primary keys, surrogate
+/// keys, sequence numbers). It is set DETERMINISTICALLY by
+/// `generate_code_based_dictionary` when the field's frequency table carries
+/// the `<ALL_UNIQUE>` sentinel, and overrides any token the LLM produced for
+/// that field. The vocabulary entry is still exposed to the LLM so its
+/// classification stays consistent, but the deterministic check is
+/// authoritative.
 pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
     // person / identity
     "first_name",
@@ -56,6 +65,7 @@ pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
     "company_name",
     "job_title",
     // identifiers / technical
+    "unique_id",
     "uuid",
     "credit_card",
     "currency_code",
@@ -365,6 +375,11 @@ pub(crate) fn parse_frequency_csv(frequency_csv: &str) -> CliResult<Vec<Frequenc
 
 /// Generate dictionary entries deterministically from `stats` + `frequency`
 /// data. Label and Description are left empty for the LLM pass to fill.
+///
+/// When `infer_content_type` is set, `content_type` is also deterministically
+/// pre-set to `"unique_id"` for fields whose frequency table contains the
+/// `<ALL_UNIQUE>` sentinel (i.e. `cardinality == rowcount`, no nulls). All
+/// other fields' `content_type` stays empty and is filled by the LLM pass.
 pub(super) fn generate_code_based_dictionary(
     stats_records: &[StatsRecord],
     frequency_records: &[FrequencyRecord],
@@ -372,6 +387,7 @@ pub(super) fn generate_code_based_dictionary(
     num_examples: u16,
     truncate_str: usize,
     addl_cols: &[String],
+    infer_content_type: bool,
 ) -> Vec<DictionaryEntry> {
     let mut frequency_by_field: HashMap<String, Vec<&FrequencyRecord>> = HashMap::new();
     for freq_record in frequency_records {
@@ -458,12 +474,27 @@ pub(super) fn generate_code_based_dictionary(
             }
         }
 
+        // Deterministically classify fields where every row carries a distinct
+        // non-null value as `unique_id`. qsv's frequency command emits the
+        // `<ALL_UNIQUE>` sentinel exactly when `cardinality == rowcount`, so we
+        // key off that directly rather than re-deriving rowcount here. This
+        // pre-set value takes precedence over whatever the LLM returns (see
+        // `combine_dictionary_entries`). Only populate when `--infer-content-type`
+        // is on; otherwise the `content_type` column is suppressed entirely.
+        let content_type =
+            if infer_content_type && field_frequencies.iter().any(|f| f.value == "<ALL_UNIQUE>") {
+                "unique_id".to_string()
+            } else {
+                String::new()
+            };
+
         dictionary_entries.push(DictionaryEntry {
             name: stats_record.field.clone(),
             r#type: stats_record.r#type.clone(),
-            label: String::new(),        // Filled by LLM
-            description: String::new(),  // Filled by LLM
-            content_type: String::new(), // Filled by LLM when --infer-content-type is set
+            label: String::new(),       // Filled by LLM
+            description: String::new(), // Filled by LLM
+            content_type,               /* Pre-set to "unique_id" for ALL_UNIQUE fields;
+                                         * otherwise filled by LLM */
             min: stats_record.min.clone(),
             max: stats_record.max.clone(),
             cardinality: stats_record.cardinality,
@@ -481,10 +512,15 @@ pub(super) fn generate_code_based_dictionary(
 /// Description and, when `--infer-content-type` is set, Content Type) keyed by
 /// field name.
 ///
+/// Code-derived `content_type` always wins over the LLM-supplied value. Today
+/// the only code-derived value is the `"unique_id"` token that
+/// `generate_code_based_dictionary` stamps on fields with the `<ALL_UNIQUE>`
+/// frequency sentinel.
+///
 /// When `infer_content_type` is set, this is the single point that guarantees
-/// every entry has a non-empty `content_type`: a field the LLM classified with an
-/// invalid token, omitted the `content_type` key for, or left out of its response
-/// entirely all fall back to `"unknown"`.
+/// every entry has a non-empty `content_type`: any field the LLM classified
+/// with an invalid token, omitted the `content_type` key for, or left out of
+/// its response entirely falls back to `"unknown"`.
 pub(super) fn combine_dictionary_entries(
     mut code_entries: Vec<DictionaryEntry>,
     llm_fields: &HashMap<String, LlmDictField>,
@@ -494,7 +530,14 @@ pub(super) fn combine_dictionary_entries(
         if let Some(llm) = llm_fields.get(&entry.name) {
             entry.label = llm.label.clone();
             entry.description = llm.description.clone();
-            entry.content_type = llm.content_type.clone();
+            // Preserve any deterministically pre-set content_type (e.g. the
+            // `"unique_id"` classification stamped by
+            // `generate_code_based_dictionary` for fields with the
+            // `<ALL_UNIQUE>` sentinel). Code-derived facts always win over
+            // the LLM's guess.
+            if entry.content_type.is_empty() {
+                entry.content_type = llm.content_type.clone();
+            }
         }
         if infer_content_type && entry.content_type.is_empty() {
             entry.content_type = "unknown".to_string();
@@ -788,5 +831,123 @@ mod tests {
         assert_eq!(combined[0].content_type, "city");
         assert_eq!(combined[1].content_type, "unknown");
         assert_eq!(combined[2].content_type, "unknown");
+    }
+
+    #[test]
+    fn combine_preserves_preset_unique_id_over_llm_value() {
+        // generate_code_based_dictionary stamps "unique_id" deterministically on
+        // ALL_UNIQUE fields; combine_dictionary_entries must keep that value even
+        // when the LLM returned a different (in-vocab) token for the same field.
+        let mut preset = blank_entry("pk");
+        preset.content_type = "unique_id".to_string();
+        let code_entries = vec![preset, blank_entry("other")];
+        let mut llm = HashMap::new();
+        llm.insert(
+            "pk".to_string(),
+            LlmDictField {
+                label:        "Primary Key".to_string(),
+                description:  "row identifier".to_string(),
+                content_type: "uuid".to_string(),
+            },
+        );
+        llm.insert(
+            "other".to_string(),
+            LlmDictField {
+                label:        "Other".to_string(),
+                description:  "city field".to_string(),
+                content_type: "city".to_string(),
+            },
+        );
+        let combined = combine_dictionary_entries(code_entries, &llm, true);
+        // Deterministic "unique_id" wins over the LLM's "uuid".
+        assert_eq!(combined[0].content_type, "unique_id");
+        // Label/Description still flow through from the LLM.
+        assert_eq!(combined[0].label, "Primary Key");
+        assert_eq!(combined[0].description, "row identifier");
+        // Non-ALL_UNIQUE field gets the LLM's token unchanged.
+        assert_eq!(combined[1].content_type, "city");
+    }
+
+    #[test]
+    fn generate_marks_all_unique_field_as_unique_id() {
+        // Field "id" has the <ALL_UNIQUE> sentinel in its frequency table, so
+        // when infer_content_type is on, generate_code_based_dictionary must
+        // pre-set its content_type to "unique_id". The peer field "category"
+        // has a normal frequency distribution and must stay empty.
+        let stats = vec![
+            StatsRecord {
+                field:       "id".to_string(),
+                r#type:      "Integer".to_string(),
+                cardinality: 1000,
+                nullcount:   0,
+                min:         "1".to_string(),
+                max:         "1000".to_string(),
+                addl_cols:   IndexMap::new(),
+            },
+            StatsRecord {
+                field:       "category".to_string(),
+                r#type:      "String".to_string(),
+                cardinality: 2,
+                nullcount:   0,
+                min:         "a".to_string(),
+                max:         "b".to_string(),
+                addl_cols:   IndexMap::new(),
+            },
+        ];
+        let frequencies = vec![
+            FrequencyRecord {
+                field:      "id".to_string(),
+                value:      "<ALL_UNIQUE>".to_string(),
+                count:      1000,
+                percentage: 100.0,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "category".to_string(),
+                value:      "a".to_string(),
+                count:      600,
+                percentage: 60.0,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "category".to_string(),
+                value:      "b".to_string(),
+                count:      400,
+                percentage: 40.0,
+                rank:       2.0,
+            },
+        ];
+        let entries = generate_code_based_dictionary(&stats, &frequencies, 10, 5, 25, &[], true);
+        assert_eq!(entries[0].name, "id");
+        assert_eq!(entries[0].content_type, "unique_id");
+        assert_eq!(entries[1].name, "category");
+        assert!(
+            entries[1].content_type.is_empty(),
+            "non-ALL_UNIQUE field must leave content_type empty for LLM fill"
+        );
+    }
+
+    #[test]
+    fn generate_skips_unique_id_when_infer_content_type_off() {
+        // When --infer-content-type is OFF, the content_type column is suppressed
+        // entirely, so we must not pre-set "unique_id" even for ALL_UNIQUE fields.
+        let stats = vec![StatsRecord {
+            field:       "id".to_string(),
+            r#type:      "Integer".to_string(),
+            cardinality: 100,
+            nullcount:   0,
+            min:         "1".to_string(),
+            max:         "100".to_string(),
+            addl_cols:   IndexMap::new(),
+        }];
+        let frequencies = vec![FrequencyRecord {
+            field:      "id".to_string(),
+            value:      "<ALL_UNIQUE>".to_string(),
+            count:      100,
+            percentage: 100.0,
+            rank:       1.0,
+        }];
+        let entries = generate_code_based_dictionary(&stats, &frequencies, 10, 5, 25, &[], false);
+        assert!(entries[0].content_type.is_empty());
     }
 }

@@ -159,6 +159,10 @@ describegpt options:
                            curated, documented vocabulary (e.g. email, city, category, name, credit card, etc.)
                            see https://github.com/dathere/qsv/blob/master/src/cmd/synthesize/faker_map.rs.
                            Adds a "Content Type" column/field to the Data Dictionary output.
+                           Fields where cardinality equals the row count (i.e. every row has a distinct
+                           non-null value - primary keys, surrogate keys, sequence numbers) are
+                           deterministically classified as "unique_id", overriding any token the LLM
+                           returned for that field.
     --addl-cols            Add additional columns to the dictionary from the Summary Statistics.
   --addl-cols-list <list>  A comma-separated list of additional stats columns to add to the dictionary.
                            The columns must be present in the Summary Statistics.
@@ -2447,6 +2451,7 @@ fn build_combined_dictionary_entries(
         args.flag_num_examples,
         args.flag_truncate_str,
         &addl_cols,
+        args.flag_infer_content_type,
     );
     let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
     let llm_fields = parse_llm_dictionary_response(

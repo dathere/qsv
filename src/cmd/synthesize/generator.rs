@@ -654,10 +654,7 @@ mod tests {
         let mut rng1 = StdRng::seed_from_u64(123); // DevSkim: ignore DS148264
         let mut rng2 = StdRng::seed_from_u64(123); // DevSkim: ignore DS148264
         for _ in 0..200 {
-            assert_eq!(
-                generator.next(&mut rng1),
-                generator.next(&mut rng2)
-            );
+            assert_eq!(generator.next(&mut rng1), generator.next(&mut rng2));
         }
     }
 }

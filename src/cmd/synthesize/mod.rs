@@ -55,8 +55,14 @@ synthesize options:
                            Ignored if --dictionary is given.
     -n, --rows <n>         Number of synthetic rows to generate. [default: 100]
     --seed <n>             RNG seed for fully reproducible output.
-    --locale <loc>         Locale for faker-backed columns. Only EN is supported
-                           in this version. [default: EN]
+    --locale <loc>         Locale for faker-backed columns. Case-insensitive.
+                           Supported: en, fr_fr, de_de, it_it, pt_br, pt_pt,
+                           ja_jp, zh_cn, zh_tw, ar_sa, cy_gb, fa_ir, nl_nl,
+                           tr_tr. Sparse locales (those without per-category
+                           data in fake-rs) silently fall back to en data for
+                           the missing categories — e.g. lorem text under a
+                           non-en locale is still English, since only zh_cn
+                           has localized lorem data. [default: en]
     --freq-limit <n>       Frequency pool depth passed to the internal `frequency`
                            run as --limit. A column is reproduced via exact
                            frequency-weighted sampling only when its cardinality
@@ -92,6 +98,7 @@ mod dictionary;
 mod faker_map;
 mod generator;
 
+use faker_map::Locale;
 use generator::ColumnGenerator;
 
 #[derive(Deserialize)]
@@ -112,13 +119,14 @@ struct Args {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
-    // v1 is English-only; the flag is reserved for future multi-locale support.
-    if !args.flag_locale.eq_ignore_ascii_case("EN") {
-        return fail_incorrectusage_clierror!(
-            "synthesize currently supports only the EN locale (got '{}').",
-            args.flag_locale
-        );
-    }
+    // Parse --locale into the typed dispatch enum. Case-insensitive; unknown
+    // tokens surface the user's exact spelling alongside the supported list.
+    let locale = Locale::from_token(&args.flag_locale).map_err(|bad| {
+        CliError::IncorrectUsage(format!(
+            "Unsupported --locale '{bad}'. Supported: {}.",
+            Locale::ALL.join(", "),
+        ))
+    })?;
 
     if args.flag_rows == 0 {
         return fail_incorrectusage_clierror!("--rows must be greater than 0.");
@@ -250,6 +258,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 content_type,
                 total_rows,
                 args.flag_rows,
+                locale,
                 &mut rng,
             )
         })

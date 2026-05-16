@@ -22,7 +22,7 @@ use std::collections::HashSet;
 
 use rand::{RngExt, rngs::StdRng};
 
-use super::faker_map;
+use super::faker_map::{self, Locale};
 use crate::cmd::describegpt::dictionary::{FrequencyRecord, StatsRecord};
 
 /// `qsv frequency`'s default text for null/empty values (`--null-text`).
@@ -34,7 +34,6 @@ const ALL_UNIQUE_SENTINEL: &str = "<ALL_UNIQUE>";
 /// memory or loop excessively.
 const CARDINALITY_POOL_CAP: u64 = 100_000;
 
-/// One column's synthetic-value generator.
 pub(crate) enum ColumnGenerator {
     /// Sample real values with real frequency weights.
     FrequencyWeighted {
@@ -45,10 +44,12 @@ pub(crate) enum ColumnGenerator {
     },
     /// Semantic faker. `pool` is `Some` for bounded-cardinality columns (sample
     /// from a fixed set of distinct fake values), `None` for all-unique columns
-    /// (generate a fresh value per row).
+    /// (generate a fresh value per row). `locale` is stored here (not threaded
+    /// through `next()`) so the build-time and per-row locale can never diverge.
     Faker {
         content_type: String,
         pool:         Option<Vec<String>>,
+        locale:       Locale,
         null_ratio:   f64,
     },
     /// Numeric column reproduced via quartile buckets.
@@ -67,22 +68,21 @@ pub(crate) enum ColumnGenerator {
     /// `FrequencyWeighted` first.
     Boolean { true_ratio: f64, null_ratio: f64 },
     /// Last-resort text generator for non-faker, non-enumerated string columns.
-    LoremFallback { null_ratio: f64 },
+    /// `locale` is stored so per-row `lorem_sentence` generation uses the same
+    /// locale as the rest of the column build.
+    LoremFallback { locale: Locale, null_ratio: f64 },
     /// All-null / no-data column — always emits an empty value.
     Empty,
 }
 
 impl ColumnGenerator {
-    /// Build a generator for one column from its analysis data and dictionary
-    /// `content_type`. `total_rows` is the source row count (for the null
-    /// ratio); `requested_rows` is the number of synthetic rows to emit (used
-    /// to decide whether to pre-generate a bounded faker pool).
     pub(crate) fn build(
         stats: &StatsRecord,
         freqs: &[&FrequencyRecord],
         content_type: &str,
         total_rows: u64,
         requested_rows: u64,
+        locale: Locale,
         rng: &mut StdRng,
     ) -> ColumnGenerator {
         let null_ratio = compute_null_ratio(stats.nullcount, total_rows);
@@ -100,10 +100,12 @@ impl ColumnGenerator {
 
         // 2. Semantic faker.
         if faker_map::is_faker_token(content_type) {
-            let pool = build_faker_pool(content_type, stats.cardinality, requested_rows, rng);
+            let pool =
+                build_faker_pool(content_type, stats.cardinality, requested_rows, locale, rng);
             return ColumnGenerator::Faker {
                 content_type: content_type.to_string(),
                 pool,
+                locale,
                 null_ratio,
             };
         }
@@ -117,11 +119,13 @@ impl ColumnGenerator {
             "Boolean" => build_boolean(freqs, null_ratio),
             "NULL" => ColumnGenerator::Empty,
             // "String" and anything unrecognized.
-            _ => ColumnGenerator::LoremFallback { null_ratio },
+            _ => ColumnGenerator::LoremFallback { locale, null_ratio },
         }
     }
 
-    /// Emit one synthetic value.
+    /// Emit one synthetic value. Locale is taken from the variant (set at
+    /// `build()` time) — never threaded through `next()`, so build-time and
+    /// per-row locale cannot diverge.
     pub(crate) fn next(&self, rng: &mut StdRng) -> String {
         match self {
             ColumnGenerator::Empty => String::new(),
@@ -142,6 +146,7 @@ impl ColumnGenerator {
             ColumnGenerator::Faker {
                 content_type,
                 pool,
+                locale,
                 null_ratio,
             } => {
                 if draw_null(*null_ratio, rng) {
@@ -149,7 +154,8 @@ impl ColumnGenerator {
                 }
                 match pool {
                     Some(p) if !p.is_empty() => p[rng.random_range(0..p.len())].clone(),
-                    _ => faker_map::content_type_to_value(content_type, rng).unwrap_or_default(),
+                    _ => faker_map::content_type_to_value(content_type, *locale, rng)
+                        .unwrap_or_default(),
                 }
             },
 
@@ -216,11 +222,11 @@ impl ColumnGenerator {
                 }
             },
 
-            ColumnGenerator::LoremFallback { null_ratio } => {
+            ColumnGenerator::LoremFallback { locale, null_ratio } => {
                 if draw_null(*null_ratio, rng) {
                     return String::new();
                 }
-                faker_map::content_type_to_value("lorem_sentence", rng).unwrap_or_default()
+                faker_map::content_type_to_value("lorem_sentence", *locale, rng).unwrap_or_default()
             },
         }
     }
@@ -304,6 +310,7 @@ fn build_faker_pool(
     content_type: &str,
     cardinality: u64,
     requested_rows: u64,
+    locale: Locale,
     rng: &mut StdRng,
 ) -> Option<Vec<String>> {
     if cardinality == 0 || cardinality >= requested_rows || cardinality > CARDINALITY_POOL_CAP {
@@ -322,7 +329,7 @@ fn build_faker_pool(
         if pool.len() >= target {
             break;
         }
-        let value = faker_map::content_type_to_value(content_type, rng)?;
+        let value = faker_map::content_type_to_value(content_type, locale, rng)?;
         if seen.insert(value.clone()) {
             pool.push(value);
         }
@@ -517,7 +524,10 @@ mod tests {
 
     #[test]
     fn null_ratio_is_reproduced_within_tolerance() {
-        let generator = ColumnGenerator::LoremFallback { null_ratio: 0.3 };
+        let generator = ColumnGenerator::LoremFallback {
+            locale:     Locale::EN,
+            null_ratio: 0.3,
+        };
         let mut rng = StdRng::seed_from_u64(42); // DevSkim: ignore DS148264
         let n = 20_000;
         let empty = (0..n)
@@ -571,7 +581,8 @@ mod tests {
             &[("q1", "10"), ("q2_median", "20"), ("q3", "30")],
         );
         let mut rng = StdRng::seed_from_u64(1); // DevSkim: ignore DS148264
-        let generator = ColumnGenerator::build(&record, &[], "unknown", 1000, 5000, &mut rng);
+        let generator =
+            ColumnGenerator::build(&record, &[], "unknown", 1000, 5000, Locale::EN, &mut rng);
 
         let mut at_or_below_q3 = 0;
         let n = 10_000;
@@ -591,7 +602,8 @@ mod tests {
     fn faker_pool_is_bounded_by_cardinality() {
         let record = stats("city", "String", 5, 0, "", "", &[]);
         let mut rng = StdRng::seed_from_u64(99); // DevSkim: ignore DS148264
-        let generator = ColumnGenerator::build(&record, &[], "city", 1000, 5000, &mut rng);
+        let generator =
+            ColumnGenerator::build(&record, &[], "city", 1000, 5000, Locale::EN, &mut rng);
 
         let mut distinct = HashSet::new();
         for _ in 0..2000 {
@@ -604,7 +616,8 @@ mod tests {
     fn date_quantile_stays_in_range() {
         let record = stats("d", "Date", 500, 0, "2020-01-01", "2020-12-31", &[]);
         let mut rng = StdRng::seed_from_u64(3); // DevSkim: ignore DS148264
-        let generator = ColumnGenerator::build(&record, &[], "unknown", 500, 1000, &mut rng);
+        let generator =
+            ColumnGenerator::build(&record, &[], "unknown", 500, 1000, Locale::EN, &mut rng);
 
         // Date type → values are whole days since the UNIX epoch.
         let lo = parse_epoch("2020-01-01", false).unwrap();
@@ -628,7 +641,15 @@ mod tests {
             &[("q1", "10"), ("q2_median", "20"), ("q3", "30")],
         );
         let mut build_rng = StdRng::seed_from_u64(11); // DevSkim: ignore DS148264
-        let generator = ColumnGenerator::build(&record, &[], "unknown", 1000, 5000, &mut build_rng);
+        let generator = ColumnGenerator::build(
+            &record,
+            &[],
+            "unknown",
+            1000,
+            5000,
+            Locale::EN,
+            &mut build_rng,
+        );
 
         let mut rng1 = StdRng::seed_from_u64(123); // DevSkim: ignore DS148264
         let mut rng2 = StdRng::seed_from_u64(123); // DevSkim: ignore DS148264

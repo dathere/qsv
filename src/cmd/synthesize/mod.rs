@@ -277,7 +277,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     for _ in 0..args.flag_rows {
         record.clear();
         for generator in &generators {
-            record.push_field(&generator.next(locale, &mut rng));
+            record.push_field(&generator.next(&mut rng));
         }
         wtr.write_record(&record)?;
     }

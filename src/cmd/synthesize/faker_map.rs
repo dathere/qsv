@@ -20,62 +20,6 @@
 use fake::{Fake, uuid::UUIDv4};
 use rand::rngs::StdRng;
 
-/// Locale supported by `synthesize`'s faker dispatch. Mirrors fake-rs 5.1.0's
-/// locale modules — every variant maps to one `fake::faker::*::<locale>` path.
-///
-/// Sparse locales (those without per-category data) silently fall back to EN
-/// trait defaults at runtime; see module-level docs.
-#[allow(non_camel_case_types)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Locale {
-    EN,
-    FR_FR,
-    DE_DE,
-    IT_IT,
-    PT_BR,
-    PT_PT,
-    JA_JP,
-    ZH_CN,
-    ZH_TW,
-    AR_SA,
-    CY_GB,
-    FA_IR,
-    NL_NL,
-    TR_TR,
-}
-
-impl Locale {
-    /// All supported locale tokens (uppercase canonical form), for USAGE help
-    /// and error messages.
-    pub(crate) const ALL: &'static [&'static str] = &[
-        "EN", "FR_FR", "DE_DE", "IT_IT", "PT_BR", "PT_PT", "JA_JP", "ZH_CN", "ZH_TW", "AR_SA",
-        "CY_GB", "FA_IR", "NL_NL", "TR_TR",
-    ];
-
-    /// Case-insensitive parse. Returns `Err(input_as_typed)` for unknown tokens
-    /// so the caller can surface the user's exact spelling in the error.
-    pub(crate) fn from_token(s: &str) -> Result<Self, String> {
-        let upper = s.to_ascii_uppercase();
-        Ok(match upper.as_str() {
-            "EN" => Self::EN,
-            "FR_FR" => Self::FR_FR,
-            "DE_DE" => Self::DE_DE,
-            "IT_IT" => Self::IT_IT,
-            "PT_BR" => Self::PT_BR,
-            "PT_PT" => Self::PT_PT,
-            "JA_JP" => Self::JA_JP,
-            "ZH_CN" => Self::ZH_CN,
-            "ZH_TW" => Self::ZH_TW,
-            "AR_SA" => Self::AR_SA,
-            "CY_GB" => Self::CY_GB,
-            "FA_IR" => Self::FA_IR,
-            "NL_NL" => Self::NL_NL,
-            "TR_TR" => Self::TR_TR,
-            _ => return Err(s.to_string()),
-        })
-    }
-}
-
 /// Stamp out one `content_type_to_value_<locale>` function bound to a specific
 /// fake-rs locale module. The macro body is the entire token→faker `match` —
 /// keep it in sync with `CONTENT_TYPE_VOCAB`.
@@ -168,46 +112,85 @@ macro_rules! gen_faker_for_locale {
     };
 }
 
-gen_faker_for_locale!(content_type_to_value_en, en);
-gen_faker_for_locale!(content_type_to_value_fr_fr, fr_fr);
-gen_faker_for_locale!(content_type_to_value_de_de, de_de);
-gen_faker_for_locale!(content_type_to_value_it_it, it_it);
-gen_faker_for_locale!(content_type_to_value_pt_br, pt_br);
-gen_faker_for_locale!(content_type_to_value_pt_pt, pt_pt);
-gen_faker_for_locale!(content_type_to_value_ja_jp, ja_jp);
-gen_faker_for_locale!(content_type_to_value_zh_cn, zh_cn);
-gen_faker_for_locale!(content_type_to_value_zh_tw, zh_tw);
-gen_faker_for_locale!(content_type_to_value_ar_sa, ar_sa);
-gen_faker_for_locale!(content_type_to_value_cy_gb, cy_gb);
-gen_faker_for_locale!(content_type_to_value_fa_ir, fa_ir);
-gen_faker_for_locale!(content_type_to_value_nl_nl, nl_nl);
-gen_faker_for_locale!(content_type_to_value_tr_tr, tr_tr);
+/// Single source of truth for locale support. Given a list of
+/// `(VariantName, fake_rs_module, generator_fn_name)` triples, this macro
+/// stamps out:
+///   * the `Locale` enum (one variant per triple)
+///   * `Locale::ALL` (uppercase tokens, derived via `stringify!`)
+///   * `Locale::from_token` (case-insensitive lookup)
+///   * one `gen_faker_for_locale!`-generated function per locale
+///   * the `content_type_to_value` dispatch match
+///
+/// Adding a new locale = adding one row to the `define_locales!` invocation
+/// below — no other place to update.
+macro_rules! define_locales {
+    ($( ($variant:ident, $module:ident, $fn_name:ident) ),* $(,)?) => {
+        /// Locale supported by `synthesize`'s faker dispatch. Mirrors fake-rs 5.1.0's
+        /// locale modules — every variant maps to one `fake::faker::*::<locale>` path.
+        ///
+        /// Sparse locales (those without per-category data) silently fall back to EN
+        /// trait defaults at runtime; see module-level docs.
+        #[allow(non_camel_case_types)]
+        #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+        pub(crate) enum Locale {
+            $($variant,)*
+        }
 
-/// Generate one fake value for the given `content_type` token under `locale`,
-/// or `None` if the token has no faker mapping (`category`, `unknown`, or
-/// anything outside the vocabulary) — the caller then falls back to
-/// enumeration/type-based generation.
-pub(crate) fn content_type_to_value(
-    content_type: &str,
-    locale: Locale,
-    rng: &mut StdRng,
-) -> Option<String> {
-    match locale {
-        Locale::EN => content_type_to_value_en(content_type, rng),
-        Locale::FR_FR => content_type_to_value_fr_fr(content_type, rng),
-        Locale::DE_DE => content_type_to_value_de_de(content_type, rng),
-        Locale::IT_IT => content_type_to_value_it_it(content_type, rng),
-        Locale::PT_BR => content_type_to_value_pt_br(content_type, rng),
-        Locale::PT_PT => content_type_to_value_pt_pt(content_type, rng),
-        Locale::JA_JP => content_type_to_value_ja_jp(content_type, rng),
-        Locale::ZH_CN => content_type_to_value_zh_cn(content_type, rng),
-        Locale::ZH_TW => content_type_to_value_zh_tw(content_type, rng),
-        Locale::AR_SA => content_type_to_value_ar_sa(content_type, rng),
-        Locale::CY_GB => content_type_to_value_cy_gb(content_type, rng),
-        Locale::FA_IR => content_type_to_value_fa_ir(content_type, rng),
-        Locale::NL_NL => content_type_to_value_nl_nl(content_type, rng),
-        Locale::TR_TR => content_type_to_value_tr_tr(content_type, rng),
-    }
+        impl Locale {
+            /// All supported locale tokens (uppercase canonical form), for USAGE help
+            /// and error messages.
+            pub(crate) const ALL: &'static [&'static str] = &[
+                $(stringify!($variant),)*
+            ];
+
+            /// Case-insensitive parse. Returns `Err(input_as_typed)` for unknown tokens
+            /// so the caller can surface the user's exact spelling in the error.
+            pub(crate) fn from_token(s: &str) -> Result<Self, String> {
+                let upper = s.to_ascii_uppercase();
+                $(
+                    if upper == stringify!($variant) {
+                        return Ok(Self::$variant);
+                    }
+                )*
+                Err(s.to_string())
+            }
+        }
+
+        $(
+            gen_faker_for_locale!($fn_name, $module);
+        )*
+
+        /// Generate one fake value for the given `content_type` token under `locale`,
+        /// or `None` if the token has no faker mapping (`category`, `unknown`, or
+        /// anything outside the vocabulary) — the caller then falls back to
+        /// enumeration/type-based generation.
+        pub(crate) fn content_type_to_value(
+            content_type: &str,
+            locale: Locale,
+            rng: &mut StdRng,
+        ) -> Option<String> {
+            match locale {
+                $( Locale::$variant => $fn_name(content_type, rng), )*
+            }
+        }
+    };
+}
+
+define_locales! {
+    (EN,    en,    content_type_to_value_en),
+    (FR_FR, fr_fr, content_type_to_value_fr_fr),
+    (DE_DE, de_de, content_type_to_value_de_de),
+    (IT_IT, it_it, content_type_to_value_it_it),
+    (PT_BR, pt_br, content_type_to_value_pt_br),
+    (PT_PT, pt_pt, content_type_to_value_pt_pt),
+    (JA_JP, ja_jp, content_type_to_value_ja_jp),
+    (ZH_CN, zh_cn, content_type_to_value_zh_cn),
+    (ZH_TW, zh_tw, content_type_to_value_zh_tw),
+    (AR_SA, ar_sa, content_type_to_value_ar_sa),
+    (CY_GB, cy_gb, content_type_to_value_cy_gb),
+    (FA_IR, fa_ir, content_type_to_value_fa_ir),
+    (NL_NL, nl_nl, content_type_to_value_nl_nl),
+    (TR_TR, tr_tr, content_type_to_value_tr_tr),
 }
 
 /// Tokens that are deliberately *not* fakers — they fall through to

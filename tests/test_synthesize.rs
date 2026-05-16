@@ -254,9 +254,23 @@ fn synthesize_accepts_fr_fr_locale() {
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
+    // 1 header + 10 data rows.
     assert_eq!(got.len(), 11);
+    // Header preserved verbatim from the source CSV.
+    assert_eq!(got[0], svec!["email", "tier"]);
+    let tiers: std::collections::HashSet<&str> = ["gold", "silver", "bronze"].into_iter().collect();
     for row in &got[1..] {
+        // Exactly 2 fields per row (matches the source column count).
+        assert_eq!(row.len(), 2, "row should have 2 fields: {row:?}");
+        // Email faker output still looks like an email under FR_FR.
         assert!(row[0].contains('@'), "email '{}' should contain @", row[0]);
+        // `tier` is enumerated, so the value must come from the real source set
+        // regardless of locale.
+        assert!(
+            tiers.contains(row[1].as_str()),
+            "tier '{}' should be from the real set",
+            row[1]
+        );
     }
 }
 

@@ -75,11 +75,26 @@ For each field, provide:
 - Description: a full description for this field (can be multiple sentences)
 {%- if infer_content_type %}
 - Content Type: classify the SEMANTIC CONTENT of this field by choosing exactly ONE token from the
-  fixed vocabulary below. Do NOT invent tokens and do NOT return free text. Base your choice on the
-  field name, Summary Statistics and Frequency Distribution. For plain numeric, date, datetime or
-  boolean fields with no specific semantic meaning, use "unknown" - those are already covered by the
-  deterministic Type column. If no token fits, use "unknown".
-  Allowed Content Type tokens: {{ content_type_vocab }}
+  fixed vocabulary below. Do NOT invent tokens and do NOT return free text - with ONE explicit
+  exception documented below for "duration". Base your choice on the field name, the Label and
+  Description you just produced for this field, the Summary Statistics and the Frequency
+  Distribution - the Label and Description capture your own semantic reading of the field and
+  must be consistent with the Content Type token you pick (e.g. a Label of "Email Address" or a
+  Description mentioning "email" should map to "email", not "free_text"). For plain numeric,
+  date, datetime or boolean fields with no specific semantic meaning, use "unknown" - those are
+  already covered by the deterministic Type column. Use "time" for fields that contain only a
+  time-of-day (e.g. "HH:MM:SS", "14:30") and "duration" for fields that contain elapsed-time
+  values (e.g. "PT5M30S", "00:05:30") - these are NOT covered by the deterministic Type column.
+  ALLOWED EXTENSION (the only exception to "do not invent tokens"): the "duration" token
+  MAY optionally be suffixed with ":N" where N is a positive integer upper bound in
+  SECONDS, e.g. "duration:18000" for race times (~5 hours), "duration:7200" for video lengths
+  (~2 hours), "duration:300" for HTTP request latencies (~5 minutes). This suffix is part of
+  the allowed vocabulary, not a free-form invention. Pick a cap that comfortably contains the
+  values you see in min/max and the Frequency Distribution; do NOT over-tighten. If you cannot
+  confidently pick a cap, just use bare "duration" (synthesize will default to a 24-hour
+  range). No other token accepts this suffix. If no token fits, use "unknown".
+  Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "duration:N" form
+  described above)
 {%- endif %}
 
 Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %} and "content_type"{% endif %} properties:

@@ -515,7 +515,9 @@ pub(super) fn generate_code_based_dictionary(
 /// Code-derived `content_type` always wins over the LLM-supplied value. Today
 /// the only code-derived value is the `"unique_id"` token that
 /// `generate_code_based_dictionary` stamps on fields with the `<ALL_UNIQUE>`
-/// frequency sentinel.
+/// frequency sentinel. The LLM is also blocked from supplying `"unique_id"`
+/// itself (both here and in `parse_llm_dictionary_response`) so non-ALL_UNIQUE
+/// fields cannot be misclassified.
 ///
 /// When `infer_content_type` is set, this is the single point that guarantees
 /// every entry has a non-empty `content_type`: any field the LLM classified
@@ -535,7 +537,13 @@ pub(super) fn combine_dictionary_entries(
             // `generate_code_based_dictionary` for fields with the
             // `<ALL_UNIQUE>` sentinel). Code-derived facts always win over
             // the LLM's guess.
-            if entry.content_type.is_empty() {
+            //
+            // Defense in depth: also refuse to copy `"unique_id"` from the
+            // LLM. `parse_llm_dictionary_response` already strips it from
+            // LLM output, but rejecting it here too means any future caller
+            // that bypasses the parser still can't smuggle in a fabricated
+            // `unique_id` for a non-ALL_UNIQUE field.
+            if entry.content_type.is_empty() && llm.content_type != "unique_id" {
                 entry.content_type = llm.content_type.clone();
             }
         }
@@ -553,6 +561,11 @@ pub(super) fn combine_dictionary_entries(
 /// here — `combine_dictionary_entries` is the single point that coerces any
 /// still-empty `content_type` to `"unknown"`. When the flag is unset, `content_type`
 /// is always empty.
+///
+/// `unique_id` is in the vocab but is REJECTED from LLM input here: it is set
+/// deterministically based on the `<ALL_UNIQUE>` frequency sentinel and the LLM
+/// has no way to verify that condition, so accepting it would let non-ALL_UNIQUE
+/// fields be misclassified.
 pub(super) fn parse_llm_dictionary_response(
     llm_response: &str,
     field_names: &[String],
@@ -589,6 +602,13 @@ pub(super) fn parse_llm_dictionary_response(
                     // `duration` is special: the LLM may append an upper-bound suffix (e.g.
                     // "duration:3600") that isn't in `CONTENT_TYPE_VOCAB` literally, so route
                     // it through `normalize_duration_token` first.
+                    //
+                    // `unique_id` is REJECTED here even though it is in the vocab: it is set
+                    // deterministically by `generate_code_based_dictionary` based on the
+                    // `<ALL_UNIQUE>` frequency sentinel (`cardinality == rowcount`), and the LLM
+                    // has no way to verify that condition. Accepting it from LLM output would let
+                    // non-ALL_UNIQUE fields be misclassified as `unique_id`, breaking the
+                    // deterministic-only contract documented on `CONTENT_TYPE_VOCAB`.
                     let raw = field_map
                         .get("content_type")
                         .and_then(|v| v.as_str())
@@ -597,6 +617,8 @@ pub(super) fn parse_llm_dictionary_response(
                         .to_ascii_lowercase();
                     if let Some(normalized) = normalize_duration_token(&raw) {
                         normalized
+                    } else if raw == "unique_id" {
+                        String::new()
                     } else if CONTENT_TYPE_VOCAB.contains(&raw.as_str()) {
                         raw
                     } else {
@@ -682,6 +704,59 @@ mod tests {
         assert_eq!(parsed.get("a").unwrap().content_type, "email");
         assert_eq!(parsed.get("b").unwrap().content_type, "first_name");
         assert_eq!(parsed.get("c").unwrap().content_type, "mac_address");
+    }
+
+    #[test]
+    fn parse_llm_response_rejects_llm_supplied_unique_id() {
+        // `unique_id` is in CONTENT_TYPE_VOCAB but must be REJECTED from LLM
+        // output: it is only valid when stamped deterministically based on the
+        // `<ALL_UNIQUE>` sentinel. Accepting it from LLM input would let
+        // non-ALL_UNIQUE fields be misclassified. The parser drops it (empties
+        // the field); combine_dictionary_entries then coerces to "unknown".
+        let json = r#"{
+            "a": {"label": "A", "description": "d", "content_type": "unique_id"},
+            "b": {"label": "B", "description": "d", "content_type": "UNIQUE_ID"},
+            "c": {"label": "C", "description": "d", "content_type": "  Unique_ID  "}
+        }"#;
+        let fields = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let parsed = parse_llm_dictionary_response(json, &fields, true).unwrap();
+        assert!(
+            parsed.get("a").unwrap().content_type.is_empty(),
+            "literal 'unique_id' must be stripped from LLM output"
+        );
+        assert!(
+            parsed.get("b").unwrap().content_type.is_empty(),
+            "uppercased 'UNIQUE_ID' must also be stripped (lowercased before check)"
+        );
+        assert!(
+            parsed.get("c").unwrap().content_type.is_empty(),
+            "padded/cased 'unique_id' must also be stripped after trim+lowercase"
+        );
+    }
+
+    #[test]
+    fn combine_refuses_llm_supplied_unique_id_for_non_all_unique_field() {
+        // Even if a future caller bypasses parse_llm_dictionary_response and
+        // hands combine_dictionary_entries an LlmDictField with content_type =
+        // "unique_id", combine must refuse to copy it onto a field whose
+        // code-derived entry was empty (i.e. not ALL_UNIQUE). Such fields fall
+        // through to "unknown" when the flag is on.
+        let code_entries = vec![blank_entry("not_unique")];
+        let mut llm = HashMap::new();
+        llm.insert(
+            "not_unique".to_string(),
+            LlmDictField {
+                label:        "X".to_string(),
+                description:  "y".to_string(),
+                content_type: "unique_id".to_string(),
+            },
+        );
+        let combined = combine_dictionary_entries(code_entries, &llm, true);
+        assert_eq!(
+            combined[0].content_type, "unknown",
+            "smuggled LLM 'unique_id' on a non-ALL_UNIQUE field must be rejected and fall back to \
+             'unknown'"
+        );
     }
 
     #[test]

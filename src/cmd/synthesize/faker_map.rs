@@ -3,9 +3,12 @@
 //!
 //! The token vocabulary is `crate::cmd::describegpt::dictionary::CONTENT_TYPE_VOCAB`
 //! (the 42 tokens emitted by `describegpt --infer-content-type`). Every token
-//! except `category` and `unknown` maps to a faker; those two (and any token not
-//! in the vocabulary) return `None` so the caller falls back to
-//! enumeration/frequency- or type-based generation.
+//! except `category`, `unique_id`, and `unknown` maps to a faker; those three
+//! (and any token not in the vocabulary) return `None` so the caller falls
+//! back to enumeration/frequency- or type-based generation. `unique_id` is in
+//! this fallback set because there is no general-purpose `fake-rs` faker that
+//! guarantees per-row uniqueness across a synthesis pass; see
+//! `NON_FAKER_TOKENS` below.
 //!
 //! `duration` additionally accepts an LLM-inferred upper-bound suffix
 //! (`"duration:N"` where N is seconds); see `parse_duration_cap`. Both the
@@ -138,7 +141,10 @@ macro_rules! gen_faker_for_locale {
                 "free_text" => fake_str!(lorem::Sentence(6..15)),
 
                 // `category`, `unique_id` & `unknown` (and anything unrecognized) have no
-                // faker — the caller handles them via enumeration/frequency or type-based rules.
+                // faker — the caller handles them via enumeration/frequency or type-based
+                // rules. NB: `unique_id` per-row uniqueness is not guaranteed by this
+                // fallback (see the NON_FAKER_TOKENS comment); a dedicated unique generator
+                // is a follow-up.
                 _ => None,
             }
         }
@@ -230,11 +236,14 @@ define_locales! {
 /// enumeration/frequency- or type-based generation.
 ///
 /// `unique_id` is here because there is no general-purpose `fake-rs` faker that
-/// guarantees per-row uniqueness across a synthesis pass; instead, synthesize
-/// uses the dictionary's `type` + `min`/`max` columns (sequential integers for
-/// numeric ID fields, type-based text for string IDs) — the same fallback path
-/// `unknown` takes. A future enhancement could swap in a dedicated unique-value
-/// generator (e.g. counter-backed for integers, UUIDv4 for strings).
+/// guarantees per-row uniqueness across a synthesis pass. Instead, synthesize
+/// uses the same fallback path as `unknown`: numeric columns go through
+/// `build_numeric` (which samples from min/max or quartile buckets — so it does
+/// NOT guarantee uniqueness and can emit duplicates), and string columns get
+/// type-based text. A future enhancement could swap in a dedicated unique-value
+/// generator (e.g. counter-backed for integers, UUIDv4 for strings) to honor
+/// the `unique_id` contract; today the classification round-trips through the
+/// dictionary but synthesize's output is not guaranteed unique.
 const NON_FAKER_TOKENS: &[&str] = &["category", "unique_id", "unknown"];
 
 /// Parse the duration cap (in seconds) from a `content_type` token.

@@ -155,13 +155,10 @@ describegpt options:
                            An ellipsis is appended to the truncated value.
                            If zero, no truncation is performed.
                            [default: 25]
-    --infer-content-type   Also have the LLM infer a semantic "Content Type" for each field, chosen
-                           from a curated, documented vocabulary of tokens (e.g. email, city,
-                           latitude, uuid, isbn, category, free_text, unknown). Adds a "Content Type"
-                           column/field to the Data Dictionary output. Primitive types (integer,
-                           date, boolean, etc.) are intentionally NOT in the vocabulary as they are
-                           already covered by the deterministic Type column. When this flag is
-                           absent, the Data Dictionary output is unchanged.
+    --infer-content-type   Also have the LLM classify each field's semantic "Content Type", mapped to a
+                           curated, documented vocabulary (e.g. email, city, category, name, credit card, etc.)
+                           see https://github.com/dathere/qsv/blob/master/src/cmd/synthesize/faker_map.rs.
+                           Adds a "Content Type" column/field to the Data Dictionary output.
     --addl-cols            Add additional columns to the dictionary from the Summary Statistics.
   --addl-cols-list <list>  A comma-separated list of additional stats columns to add to the dictionary.
                            The columns must be present in the Summary Statistics.

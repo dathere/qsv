@@ -223,7 +223,7 @@ qsv describegpt --help
 |--------|------|-------------|--------|
 | &nbsp;`‑‑num‑examples`&nbsp; | integer | The number of Example values to include in the dictionary. | `5` |
 | &nbsp;`‑‑truncate‑str`&nbsp; | integer | The maximum length of an Example value in the dictionary. An ellipsis is appended to the truncated value. If zero, no truncation is performed. | `25` |
-| &nbsp;`‑‑infer‑content‑type`&nbsp; | flag | Also have the LLM infer a semantic "Content Type" for each field, chosen from a curated, documented vocabulary of tokens (e.g. email, city, latitude, uuid, isbn, category, free_text, unknown). Adds a "Content Type" column/field to the Data Dictionary output. Primitive types (integer, date, boolean, etc.) are intentionally NOT in the vocabulary as they are already covered by the deterministic Type column. When this flag is absent, the Data Dictionary output is unchanged. |  |
+| &nbsp;`‑‑infer‑content‑type`&nbsp; | flag | Also have the LLM classify each field's semantic "Content Type", mapped to a curated, documented vocabulary (e.g. email, city, category, name, credit card, etc.) see <https://github.com/dathere/qsv/blob/master/src/cmd/synthesize/faker_map.rs>. Adds a "Content Type" column/field to the Data Dictionary output. |  |
 | &nbsp;`‑‑addl‑cols`&nbsp; | flag | Add additional columns to the dictionary from the Summary Statistics. |  |
 | &nbsp;`‑‑addl‑cols‑list`&nbsp; | string | A comma-separated list of additional stats columns to add to the dictionary. The columns must be present in the Summary Statistics. If the columns are not present in the Summary Statistics or already in the dictionary, they will be ignored. | `sort_order, sortiness, mean, median, mad, stddev, variance, cv` |
 

@@ -659,6 +659,42 @@ static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
 /// succeeds — so downstream phases always see the better dictionary.
 static FIRST_PASS_DICT_JSON: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 
+/// RAII guard that clears `FIRST_PASS_DICT_JSON` on drop. Built via `seed()` which sets the
+/// slot and returns the guard; the slot is cleared when the guard goes out of scope, whether
+/// the caller returns `Ok` or short-circuits with `?` on an error from the refine LLM call.
+/// Without this guard, an error path between the manual seed and manual clear in
+/// `run_dictionary_phase` would leave the slot populated for the rest of the process
+/// lifetime — fine for a one-shot CLI run, but a leak in the documented test-harness /
+/// repeated-invocation case where a subsequent first pass would briefly see stale data
+/// before overwriting it.
+struct FirstPassDictGuard;
+
+impl FirstPassDictGuard {
+    /// Seed `FIRST_PASS_DICT_JSON` with the given JSON string and return a guard that
+    /// clears the slot on drop. Panics if the lock is poisoned, matching the write side
+    /// in `get_prompt` — a poisoned lock means a panic already broke an invariant somewhere
+    /// and silently continuing would mask the problem.
+    fn seed(json: String) -> Self {
+        let mut guard = FIRST_PASS_DICT_JSON
+            .write()
+            .expect("FIRST_PASS_DICT_JSON write-lock poisoned");
+        *guard = Some(json);
+        Self
+    }
+}
+
+impl Drop for FirstPassDictGuard {
+    fn drop(&mut self) {
+        // Best-effort clear on drop. If the lock is poisoned (a panic broke an invariant
+        // somewhere else), there's nothing useful to do from a Drop — panicking during
+        // unwind would abort the process. The next `seed()` call (or the test-only direct
+        // write) will overwrite the slot anyway.
+        if let Ok(mut guard) = FIRST_PASS_DICT_JSON.write() {
+            *guard = None;
+        }
+    }
+}
+
 #[cfg(feature = "feature_capable")]
 static TAG_VOCAB_CACHE_DIR: OnceLock<String> = OnceLock::new();
 #[cfg(feature = "feature_capable")]
@@ -1970,10 +2006,16 @@ fn get_prompt(
         // Empty string unless we're rendering PromptType::DictionaryRefine during a
         // --two-pass run, where run_dictionary_phase seeds FIRST_PASS_DICT_JSON with the
         // first-pass dictionary JSON before calling get_prompt.
+        //
+        // `.expect("...poisoned")` matches `FirstPassDictGuard::seed`'s write-side
+        // behavior: a poisoned RwLock means a panic broke an invariant elsewhere and
+        // silently coercing to an empty string here would render the refine prompt with
+        // no first-pass context, wasting the refine LLM call with no signal to the user.
+        // Fail loud instead.
         first_pass_dictionary => FIRST_PASS_DICT_JSON
             .read()
-            .ok()
-            .and_then(|guard| guard.clone())
+            .expect("FIRST_PASS_DICT_JSON read-lock poisoned")
+            .clone()
             .unwrap_or_default(),
         generated_by_signature => "{GENERATED_BY_SIGNATURE}",
     };
@@ -2237,10 +2279,13 @@ fn get_cache_key_with_flag(
     // `{{ first_pass_dictionary }}`. This ties the refine cache entry to the exact
     // first-pass content; if the first pass output changes, the refine entry invalidates.
     let dictionary_fingerprint = if kind == PromptType::DictionaryRefine {
+        // Consistent with the get_prompt read side: panic loudly on a poisoned lock
+        // rather than silently producing an empty fingerprint (which would let the refine
+        // cache return stale entries keyed against a missing first-pass JSON).
         FIRST_PASS_DICT_JSON
             .read()
-            .ok()
-            .and_then(|guard| guard.clone())
+            .expect("FIRST_PASS_DICT_JSON read-lock poisoned")
+            .as_deref()
             .map(|s| blake3::hash(s.as_bytes()).to_hex()[..16].to_string())
     } else {
         DATA_DICTIONARY_JSON
@@ -3337,14 +3382,13 @@ fn run_dictionary_phase(
     let first_pass_json =
         build_first_pass_dictionary_json_string(args, &first_pass_entries, model, base_url);
     // Seed the global the refine prompt template reads via `{{ first_pass_dictionary }}`.
-    // Scope the write so the lock is released before `get_prompt` (which read-locks the
-    // slot) is called below.
-    {
-        let mut guard = FIRST_PASS_DICT_JSON
-            .write()
-            .expect("FIRST_PASS_DICT_JSON write-lock poisoned");
-        *guard = Some(first_pass_json);
-    }
+    // The returned guard's `Drop` impl clears `FIRST_PASS_DICT_JSON` on ALL exit paths from
+    // this point onward — both the Ok path below and any `?`-propagated error from
+    // `get_prompt`, `get_cached_completion`, or `build_combined_dictionary_entries_two_pass`.
+    // Without the guard, an error path would leave the slot populated for the rest of the
+    // process lifetime (harmless in CLI one-shot, but a leak in the test-harness /
+    // repeated-invocation case the static's doc comment calls out).
+    let _first_pass_guard = FirstPassDictGuard::seed(first_pass_json);
 
     let (refine_prompt, refine_system_prompt) =
         get_prompt(PromptType::DictionaryRefine, Some(analysis_results), args)?;
@@ -3372,16 +3416,9 @@ fn run_dictionary_phase(
         Some(pass2_start.elapsed()),
     );
 
-    // Clear FIRST_PASS_DICT_JSON now that the refine prompt has been rendered and the
-    // LLM call returned. Downstream phases (description / tags / prompt) render their
-    // own prompts via `get_prompt`, which would otherwise inherit a stale value if this
-    // describegpt process is reused (e.g. in tests).
-    {
-        let mut guard = FIRST_PASS_DICT_JSON
-            .write()
-            .expect("FIRST_PASS_DICT_JSON write-lock poisoned");
-        *guard = None;
-    }
+    // Note: FIRST_PASS_DICT_JSON is cleared automatically when `_first_pass_guard` goes
+    // out of scope at the end of this function. The guard's `Drop` impl handles both the
+    // success path here and any `?`-propagated error above.
 
     // Merge baseline + refine via the baseline-preserving combine so refine omissions
     // don't wipe first-pass Label/Description. Then emit using the SAME format functions

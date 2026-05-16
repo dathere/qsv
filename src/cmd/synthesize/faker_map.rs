@@ -2,10 +2,14 @@
 //! produces a realistic fake value.
 //!
 //! The token vocabulary is `crate::cmd::describegpt::dictionary::CONTENT_TYPE_VOCAB`
-//! (the 40 tokens emitted by `describegpt --infer-content-type`). Every token
+//! (the 42 tokens emitted by `describegpt --infer-content-type`). Every token
 //! except `category` and `unknown` maps to a faker; those two (and any token not
 //! in the vocabulary) return `None` so the caller falls back to
 //! enumeration/frequency- or type-based generation.
+//!
+//! `duration` additionally accepts an LLM-inferred upper-bound suffix
+//! (`"duration:N"` where N is seconds); see `parse_duration_cap`. Both the
+//! bare and suffixed forms share one generation path.
 //!
 //! ## Multi-locale dispatch
 //!
@@ -28,17 +32,34 @@ macro_rules! gen_faker_for_locale {
         #[allow(clippy::too_many_lines)]
         fn $fn_name(content_type: &str, rng: &mut StdRng) -> Option<String> {
             use fake::faker::{
-                address::$loc as addr, barcode::$loc as barcode, chrono::$loc as fchrono,
-                color::$loc as fcolor, company::$loc as company, creditcard::$loc as creditcard,
+                address::$loc as addr, barcode::$loc as barcode, color::$loc as fcolor,
+                company::$loc as company, creditcard::$loc as creditcard,
                 currency::$loc as currency, filesystem::$loc as fs, internet::$loc as net,
                 job::$loc as job, lorem::$loc as lorem, name::$loc as name,
-                phone_number::$loc as phone,
+                phone_number::$loc as phone, time::$loc as ftime,
             };
 
             macro_rules! fake_str {
                 ($faker:expr) => {
                     Some(($faker).fake_with_rng::<String, _>(rng))
                 };
+            }
+
+            // `duration` (bare or "duration:N") shares one generation path with
+            // a parametric cap, so handle it before the literal match keeps the
+            // dispatch table simple. The cap is in seconds — bare "duration"
+            // defaults to 86_400 (24 h); "duration:N" carries an LLM-inferred
+            // upper bound. fake's Duration spans billions of seconds, so the
+            // `% cap` bound is what makes the HH:MM:SS output realistic.
+            if let Some(cap) = parse_duration_cap(content_type) {
+                let d: ::time::Duration = ftime::Duration().fake_with_rng(rng);
+                let total = d.whole_seconds().unsigned_abs() % cap;
+                return Some(format!(
+                    "{:02}:{:02}:{:02}",
+                    total / 3600,
+                    (total % 3600) / 60,
+                    total % 60
+                ));
             }
 
             match content_type {
@@ -95,8 +116,12 @@ macro_rules! gen_faker_for_locale {
                 "mime_type" => fake_str!(fs::MimeType()),
                 "color_hex" => fake_str!(fcolor::HexColor()),
 
-                // temporal
-                "time" => fake_str!(fchrono::Time()),
+                // temporal (time-of-day only; `duration` / `duration:N` is
+                // handled by the pre-match check above. Plain date/datetime
+                // are handled deterministically by the stats `type` column +
+                // min/max in generator::build_date(), so they don't appear
+                // here either.)
+                "time" => fake_str!(ftime::Time()),
 
                 // generic / fallback text
                 "lorem_word" => fake_str!(lorem::Word()),
@@ -197,13 +222,39 @@ define_locales! {
 /// enumeration/frequency- or type-based generation.
 const NON_FAKER_TOKENS: &[&str] = &["category", "unknown"];
 
+/// Parse the duration cap (in seconds) from a `content_type` token.
+///
+/// Returns `Some(cap)` for:
+///   * the bare `"duration"` token (defaults to 86_400 = 24 h)
+///   * `"duration:N"` where N is a positive integer (LLM-inferred upper bound)
+///
+/// Returns `None` for any other token so the caller can fall through to the
+/// regular `match` dispatch. Malformed suffixes (non-numeric, zero, negative)
+/// are NOT silently coerced — `parse_llm_dictionary_response` is responsible
+/// for rejecting bad suffixes upstream, so by the time a token reaches this
+/// helper it has already been validated.
+pub(crate) fn parse_duration_cap(content_type: &str) -> Option<u64> {
+    if content_type == "duration" {
+        return Some(86_400);
+    }
+    let suffix = content_type.strip_prefix("duration:")?;
+    let n: u64 = suffix.parse().ok()?;
+    (n > 0).then_some(n)
+}
+
 /// Whether `content_type` maps to a faker (i.e. `content_type_to_value` would
 /// return `Some`). Used at generator-construction time to avoid a wasted RNG
 /// draw. Locale-agnostic: every faker token resolves under every locale
 /// (sparse locales fall back to EN data inside fake-rs).
+///
+/// Also recognizes `duration:N` (positive-integer cap suffix); see
+/// `parse_duration_cap`.
 pub(crate) fn is_faker_token(content_type: &str) -> bool {
     use crate::cmd::describegpt::dictionary::CONTENT_TYPE_VOCAB;
 
+    if parse_duration_cap(content_type).is_some() {
+        return true;
+    }
     CONTENT_TYPE_VOCAB.contains(&content_type) && !NON_FAKER_TOKENS.contains(&content_type)
 }
 
@@ -292,6 +343,111 @@ mod tests {
             );
         }
         assert!(!is_faker_token("definitely_not_a_token"));
+    }
+
+    #[test]
+    fn temporal_fakers_emit_well_formed_strings() {
+        // `time` should produce a time-of-day (the time crate's Display gives
+        // "HH:MM:SS" or "HH:MM:SS.sssssssss"); `duration` is formatted
+        // explicitly as HH:MM:SS in the faker arm. Both must be non-empty
+        // and contain colon separators for every locale.
+        for locale in all_locales() {
+            let mut rng = StdRng::seed_from_u64(13); // DevSkim: ignore DS148264
+
+            let time = content_type_to_value("time", locale, &mut rng)
+                .unwrap_or_else(|| panic!("time/{locale:?} returned None"));
+            assert!(!time.is_empty(), "time/{locale:?} produced empty string");
+            assert!(
+                time.matches(':').count() >= 2,
+                "time/{locale:?} = {time:?} does not look like HH:MM:SS"
+            );
+
+            let duration = content_type_to_value("duration", locale, &mut rng)
+                .unwrap_or_else(|| panic!("duration/{locale:?} returned None"));
+            assert_eq!(
+                duration.matches(':').count(),
+                2,
+                "duration/{locale:?} = {duration:?} must be HH:MM:SS"
+            );
+            // Each segment must be a 2-digit integer.
+            let segments: Vec<&str> = duration.split(':').collect();
+            assert_eq!(segments.len(), 3, "duration/{locale:?} = {duration:?}");
+            for seg in &segments {
+                assert_eq!(
+                    seg.len(),
+                    2,
+                    "duration/{locale:?} segment {seg:?} not 2 digits in {duration:?}"
+                );
+                assert!(
+                    seg.chars().all(|c| c.is_ascii_digit()),
+                    "duration/{locale:?} segment {seg:?} not all digits in {duration:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn parse_duration_cap_handles_all_forms() {
+        // Bare token defaults to 24h.
+        assert_eq!(parse_duration_cap("duration"), Some(86_400));
+        // Well-formed suffix: any positive integer.
+        assert_eq!(parse_duration_cap("duration:1"), Some(1));
+        assert_eq!(parse_duration_cap("duration:3600"), Some(3_600));
+        assert_eq!(parse_duration_cap("duration:31536000"), Some(31_536_000));
+        // Malformed suffix: parse_duration_cap rejects (returns None) — the
+        // normalize step upstream is what coerces these to bare "duration",
+        // so by the time parse_duration_cap sees the token it's already
+        // been normalized. Verifying None here documents that contract.
+        assert_eq!(parse_duration_cap("duration:0"), None);
+        assert_eq!(parse_duration_cap("duration:-5"), None);
+        assert_eq!(parse_duration_cap("duration:abc"), None);
+        assert_eq!(parse_duration_cap("duration:"), None);
+        // Non-duration tokens.
+        assert_eq!(parse_duration_cap("time"), None);
+        assert_eq!(parse_duration_cap("email"), None);
+        assert_eq!(parse_duration_cap(""), None);
+    }
+
+    #[test]
+    fn duration_suffix_caps_generated_value() {
+        // With a tight cap, every generated value's whole-seconds total must
+        // fit inside [0, cap). Verify across many draws so the modulo bound
+        // is actually load-bearing.
+        let cap_seconds: u64 = 300; // 5 minutes
+        let mut rng = StdRng::seed_from_u64(99); // DevSkim: ignore DS148264
+        for _ in 0..200 {
+            let out = content_type_to_value("duration:300", Locale::EN, &mut rng)
+                .expect("duration:300 must produce a value");
+            // Format is HH:MM:SS; parse back to seconds.
+            let parts: Vec<u64> = out
+                .split(':')
+                .map(|s| s.parse::<u64>().expect("HH:MM:SS digits"))
+                .collect();
+            assert_eq!(parts.len(), 3, "{out:?} not HH:MM:SS");
+            let total = parts[0] * 3600 + parts[1] * 60 + parts[2];
+            assert!(
+                total < cap_seconds,
+                "duration:300 generated {out:?} ({total}s) outside [0,{cap_seconds})"
+            );
+        }
+    }
+
+    #[test]
+    fn is_faker_token_recognizes_duration_suffix() {
+        assert!(is_faker_token("duration"));
+        assert!(is_faker_token("duration:1"));
+        assert!(is_faker_token("duration:86400"));
+        // Malformed suffix is NOT a faker token here — upstream normalize
+        // would have stripped the suffix already, so this case shouldn't
+        // arise in practice; the check just documents the contract.
+        assert!(!is_faker_token("duration:0"));
+        assert!(!is_faker_token("duration:bogus"));
+        // Other vocab tokens still resolve correctly.
+        assert!(is_faker_token("time"));
+        assert!(is_faker_token("email"));
+        assert!(!is_faker_token("category"));
+        assert!(!is_faker_token("unknown"));
+        assert!(!is_faker_token("not_a_token"));
     }
 
     #[test]

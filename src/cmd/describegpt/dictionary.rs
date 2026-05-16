@@ -17,7 +17,19 @@ use super::{CliError, CliResult, extract_json_from_output};
 /// Primitive types (`integer`, `decimal`, `boolean`, `date`, `datetime`) are
 /// deliberately excluded — they are redundant with the dictionary's deterministic
 /// `type` column. `synthesize` falls back to `type` + `min`/`max` for plain
-/// numeric/temporal fields whose `content_type` is `unknown`.
+/// numeric/date/datetime fields whose `content_type` is `unknown`.
+///
+/// `time` (time-of-day, e.g. `HH:MM:SS`) and `duration` (elapsed time) ARE
+/// included because qsv's stats reports them as `String`, so the deterministic
+/// `type` column doesn't cover them; without these tokens `synthesize` would
+/// fall through to lorem text for fields that are clearly temporal. They map
+/// to `fake::faker::time::en::Time` and `Duration` respectively.
+///
+/// `duration` accepts an optional `:N` suffix carrying an LLM-inferred
+/// upper bound in seconds (e.g. `"duration:3600"` for an hour cap). The
+/// suffix is normalized by `normalize_duration_token` and consumed by
+/// `synthesize::faker_map::parse_duration_cap`. Bare `"duration"` falls
+/// back to a 24-hour default at generation time.
 pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
     // person / identity
     "first_name",
@@ -56,8 +68,10 @@ pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
     "file_path",
     "mime_type",
     "color_hex",
-    // temporal
+    // temporal (time-of-day and durations; plain date/datetime fields stay
+    // "unknown" so synthesize's build_date() can use real min/max bounds)
     "time",
+    "duration",
     // generic / fallback
     "category",
     "lorem_word",
@@ -70,6 +84,31 @@ pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
 /// Render `CONTENT_TYPE_VOCAB` as a comma-separated string for prompt injection.
 pub(super) fn content_type_vocab_list() -> String {
     CONTENT_TYPE_VOCAB.join(", ")
+}
+
+/// Normalize the `duration` content type, optionally with an LLM-inferred
+/// per-field upper-bound suffix.
+///
+/// Accepts:
+///   * `"duration"` → returns `Some("duration")` (synthesize falls back to its default 24-hour cap)
+///   * `"duration:N"` where N is a positive integer → returns `Some("duration:N")` (whitespace
+///     around N is tolerated)
+///   * `"duration:<malformed>"` (non-numeric / zero) → returns `Some("duration")` so a bad suffix
+///     degrades gracefully to the unbounded form rather than dropping the classification entirely
+///
+/// Returns `None` for anything that isn't a duration token, so the caller can
+/// fall back to the regular `CONTENT_TYPE_VOCAB` membership check.
+///
+/// Caller is responsible for lowercasing / outer-trimming the input first.
+pub(super) fn normalize_duration_token(raw: &str) -> Option<String> {
+    if raw == "duration" {
+        return Some("duration".to_string());
+    }
+    let suffix = raw.strip_prefix("duration:")?;
+    match suffix.trim().parse::<u64>() {
+        Ok(n) if n > 0 => Some(format!("duration:{n}")),
+        _ => Some("duration".to_string()),
+    }
 }
 
 /// LLM-inferred fields for a single dictionary column, keyed by field name in the
@@ -503,13 +542,19 @@ pub(super) fn parse_llm_dictionary_response(
                     // "First_Name") even when given an explicit token list. A missing, empty, or
                     // out-of-vocabulary value is left empty here; `combine_dictionary_entries`
                     // coerces any still-empty content_type to "unknown" when the flag is set.
+                    //
+                    // `duration` is special: the LLM may append an upper-bound suffix (e.g.
+                    // "duration:3600") that isn't in `CONTENT_TYPE_VOCAB` literally, so route
+                    // it through `normalize_duration_token` first.
                     let raw = field_map
                         .get("content_type")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .trim()
                         .to_ascii_lowercase();
-                    if CONTENT_TYPE_VOCAB.contains(&raw.as_str()) {
+                    if let Some(normalized) = normalize_duration_token(&raw) {
+                        normalized
+                    } else if CONTENT_TYPE_VOCAB.contains(&raw.as_str()) {
                         raw
                     } else {
                         String::new()
@@ -606,6 +651,78 @@ mod tests {
         let fields = vec!["mystery".to_string()];
         let parsed = parse_llm_dictionary_response(json, &fields, true).unwrap();
         assert!(parsed.get("mystery").unwrap().content_type.is_empty());
+    }
+
+    #[test]
+    fn normalize_duration_token_handles_all_forms() {
+        // Bare token is the trivial accept.
+        assert_eq!(
+            normalize_duration_token("duration").as_deref(),
+            Some("duration")
+        );
+        // Well-formed positive integer suffix: preserved verbatim.
+        assert_eq!(
+            normalize_duration_token("duration:3600").as_deref(),
+            Some("duration:3600")
+        );
+        // Whitespace around the number is tolerated.
+        assert_eq!(
+            normalize_duration_token("duration: 18000").as_deref(),
+            Some("duration:18000")
+        );
+        // Malformed suffixes degrade gracefully to bare "duration" rather
+        // than dropping the classification entirely — the LLM picked
+        // "duration" correctly, only the cap is bad.
+        assert_eq!(
+            normalize_duration_token("duration:0").as_deref(),
+            Some("duration")
+        );
+        assert_eq!(
+            normalize_duration_token("duration:-5").as_deref(),
+            Some("duration")
+        );
+        assert_eq!(
+            normalize_duration_token("duration:abc").as_deref(),
+            Some("duration")
+        );
+        assert_eq!(
+            normalize_duration_token("duration:").as_deref(),
+            Some("duration")
+        );
+        // Non-duration tokens return None so the caller falls through to
+        // the regular vocab check.
+        assert_eq!(normalize_duration_token("time"), None);
+        assert_eq!(normalize_duration_token("email"), None);
+        assert_eq!(normalize_duration_token(""), None);
+    }
+
+    #[test]
+    fn parse_llm_response_accepts_duration_suffix() {
+        let json = r#"{
+            "elapsed":    {"label": "E", "description": "d", "content_type": "duration:3600"},
+            "race_time":  {"label": "R", "description": "d", "content_type": "Duration: 18000"},
+            "bare":       {"label": "B", "description": "d", "content_type": "duration"},
+            "bad_cap":    {"label": "X", "description": "d", "content_type": "duration:0"},
+            "bad_suffix": {"label": "Y", "description": "d", "content_type": "duration:abc"}
+        }"#;
+        let fields = vec![
+            "elapsed".to_string(),
+            "race_time".to_string(),
+            "bare".to_string(),
+            "bad_cap".to_string(),
+            "bad_suffix".to_string(),
+        ];
+        let parsed = parse_llm_dictionary_response(json, &fields, true).unwrap();
+        assert_eq!(parsed.get("elapsed").unwrap().content_type, "duration:3600");
+        // Casing + inner whitespace normalized.
+        assert_eq!(
+            parsed.get("race_time").unwrap().content_type,
+            "duration:18000"
+        );
+        assert_eq!(parsed.get("bare").unwrap().content_type, "duration");
+        // Malformed suffix collapses to bare "duration" rather than empty.
+        assert_eq!(parsed.get("bad_cap").unwrap().content_type, "duration");
+        assert_eq!(parsed.get("bad_suffix").unwrap().content_type, "duration");
     }
 
     #[test]

@@ -93,6 +93,11 @@ For each field, provide:
   values you see in min/max and the Frequency Distribution; do NOT over-tighten. If you cannot
   confidently pick a cap, just use bare "duration" (synthesize will default to a 24-hour
   range). No other token accepts this suffix. If no token fits, use "unknown".
+  NOTE: "unique_id" is RESERVED and set deterministically by qsv when a field's cardinality
+  equals the row count (primary keys, surrogate keys, sequence numbers). DO NOT use
+  "unique_id" yourself - it will be ignored if you do. For such fields, pick the most
+  specific other token that fits (e.g. "uuid", "isbn"); the deterministic override replaces
+  it only when the row-count check matches.
   Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "duration:N" form
   described above)
 {%- endif %}

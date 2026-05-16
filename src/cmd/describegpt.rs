@@ -2691,15 +2691,25 @@ fn build_combined_dictionary_entries_two_pass(
 }
 
 /// Produce the prettified first-pass dictionary JSON string used as `{{ first_pass_dictionary }}`
-/// context for the refine prompt. Mirrors the JSON-shaping in `emit_dictionary_context_only`
-/// (attribution placeholder substitution) but does NOT write to `DATA_DICTIONARY_JSON` — that
-/// slot is reserved for the REFINED dictionary so downstream description / tags / prompt
-/// phases see the better dictionary.
+/// context for the refine prompt AND as the input to the `DictionaryRefine` cache-key
+/// fingerprint.
+///
+/// Critically, this STRIPS the `attribution` field that `format_dictionary_json` always emits.
+/// `format_dictionary_json` sets `attribution` to the literal placeholder
+/// `"{GENERATED_BY_SIGNATURE}"`, and the user-facing emit paths
+/// (`format_dictionary_phase` / `emit_dictionary_context_only`) expand it via
+/// `replace_attribution_placeholder`, which injects a live `chrono::Utc::now()` timestamp
+/// and the full process `command_line`. If we did the same expansion here, every invocation
+/// would produce a different `FIRST_PASS_DICT_JSON` string even for byte-identical first-pass
+/// dictionary content — and since the refine-cache key is fingerprinted from that string,
+/// the refine cache would effectively never hit, forcing a fresh second LLM call on every run.
+///
+/// Stripping the field entirely (rather than leaving the unexpanded placeholder) also keeps
+/// the JSON the LLM sees free of bookkeeping noise — attribution metadata is for the
+/// user-facing output, not the refine prompt context.
 fn build_first_pass_dictionary_json_string(
     args: &Args,
     combined_entries: &[dictionary::DictionaryEntry],
-    model: &str,
-    base_url: &str,
 ) -> String {
     let mut dictionary_json = formatters::format_dictionary_json(
         combined_entries,
@@ -2708,17 +2718,8 @@ fn build_first_pass_dictionary_json_string(
         args.flag_truncate_str,
         args.flag_infer_content_type,
     );
-    if let Some(attribution) = dictionary_json.get_mut("attribution")
-        && let Some(attr_str) = attribution.as_str()
-    {
-        *attribution = json!(replace_attribution_placeholder(
-            attr_str,
-            args,
-            model,
-            base_url,
-            AttributionFormat::Markdown,
-            PromptType::Dictionary
-        ));
+    if let Some(obj) = dictionary_json.as_object_mut() {
+        obj.remove("attribution");
     }
     serde_json::to_string_pretty(&dictionary_json).unwrap_or_default()
 }
@@ -3379,8 +3380,7 @@ fn run_dictionary_phase(
     // --- Two-pass: build first-pass entries (without emitting), seed
     // --- FIRST_PASS_DICT_JSON, render the refine prompt, and call the LLM again. ---
     let first_pass_entries = build_combined_dictionary_entries(args, analysis_results, &data_dict)?;
-    let first_pass_json =
-        build_first_pass_dictionary_json_string(args, &first_pass_entries, model, base_url);
+    let first_pass_json = build_first_pass_dictionary_json_string(args, &first_pass_entries);
     // Seed the global the refine prompt template reads via `{{ first_pass_dictionary }}`.
     // The returned guard's `Drop` impl clears `FIRST_PASS_DICT_JSON` on ALL exit paths from
     // this point onward — both the Ok path below and any `?`-propagated error from
@@ -5812,6 +5812,53 @@ p_fewshot_examples = ""
                 .contains("first_pass_dictionary"),
             "fallback refine prompt must reference `{{{{ first_pass_dictionary }}}}` — otherwise \
              the refine LLM call never sees the first-pass dictionary"
+        );
+    }
+
+    #[test]
+    fn first_pass_dictionary_json_is_stable_across_invocations() {
+        // Regression guard against the cache-busting bug: if
+        // `build_first_pass_dictionary_json_string` ever re-introduces attribution
+        // expansion (live timestamp / command line) into the first-pass JSON, the
+        // DictionaryRefine cache key would change on every invocation and the refine
+        // cache would never hit. The string MUST be byte-identical across calls with
+        // the same inputs. Sleep a hair between calls so that any latent
+        // chrono::Utc::now() in the call chain would observably differ.
+        use std::{thread::sleep, time::Duration};
+        let args = default_args_for_test();
+        let entries = vec![dictionary::DictionaryEntry {
+            name:         "f".to_string(),
+            r#type:       "String".to_string(),
+            label:        "F".to_string(),
+            description:  "d".to_string(),
+            content_type: String::new(),
+            min:          String::new(),
+            max:          String::new(),
+            cardinality:  10,
+            enumeration:  String::new(),
+            null_count:   0,
+            addl_cols:    indexmap::IndexMap::new(),
+            examples:     String::new(),
+        }];
+        let first = build_first_pass_dictionary_json_string(&args, &entries);
+        sleep(Duration::from_millis(10));
+        let second = build_first_pass_dictionary_json_string(&args, &entries);
+        assert_eq!(
+            first, second,
+            "first-pass JSON must be byte-identical across runs — any drift busts the \
+             DictionaryRefine cache fingerprint and forces a fresh second LLM call every \
+             invocation"
+        );
+        assert!(
+            !first.contains("\"attribution\""),
+            "first-pass JSON must NOT contain an `attribution` field — that field is for the \
+             user-facing emit path and includes a live timestamp / command line that would \
+             destabilize the cache fingerprint"
+        );
+        assert!(
+            !first.contains("{GENERATED_BY_SIGNATURE}"),
+            "first-pass JSON must NOT leave the unexpanded attribution placeholder either — strip \
+             the field outright"
         );
     }
 

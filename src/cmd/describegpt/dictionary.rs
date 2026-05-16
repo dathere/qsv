@@ -574,6 +574,69 @@ pub(super) fn combine_dictionary_entries(
     code_entries
 }
 
+/// Two-pass-aware merge: seed `code_entries` with the BASELINE LLM Label / Description /
+/// Content Type (from the first pass) and then overlay the REFINE pass's LLM fields on top.
+/// If the refine pass omits a field, the baseline Label / Description / Content Type are
+/// preserved — this is the critical correctness invariant for `--two-pass`. Without it, a
+/// refine response that returns a subset of fields would silently wipe the first-pass
+/// human-friendly fields back to code-derived defaults.
+///
+/// The `"unique_id"` defenses from `combine_dictionary_entries` are preserved:
+/// - Code-derived `content_type` (the `"unique_id"` stamp from `generate_code_based_dictionary` for
+///   `<ALL_UNIQUE>` fields) always wins over both baseline and refine LLM values.
+/// - `parse_llm_dictionary_response` strips LLM-supplied `"unique_id"` from both passes, so neither
+///   `baseline_llm_fields` nor `refine_llm_fields` can carry it.
+/// - When `infer_content_type` is set, any still-empty `content_type` falls back to `"unknown"`
+///   exactly as in the single-pass path.
+pub(super) fn combine_dictionary_entries_with_baseline(
+    mut code_entries: Vec<DictionaryEntry>,
+    baseline_llm_fields: &HashMap<String, LlmDictField>,
+    refine_llm_fields: &HashMap<String, LlmDictField>,
+    infer_content_type: bool,
+) -> Vec<DictionaryEntry> {
+    for entry in &mut code_entries {
+        // Stage 1: apply baseline (first-pass) LLM values, mirroring
+        // `combine_dictionary_entries`'s behavior for the single-pass case.
+        if let Some(baseline) = baseline_llm_fields.get(&entry.name) {
+            entry.label = baseline.label.clone();
+            entry.description = baseline.description.clone();
+            // `parse_llm_dictionary_response` already strips "unique_id" from LLM output,
+            // but mirror `combine_dictionary_entries`'s defense-in-depth check so future
+            // callers that bypass the parser still can't smuggle "unique_id" into a
+            // non-ALL_UNIQUE field.
+            if entry.content_type.is_empty() && baseline.content_type != "unique_id" {
+                entry.content_type = baseline.content_type.clone();
+            }
+        }
+        // Stage 2: overlay refine-pass LLM values where present. Omitted fields keep their
+        // baseline values from stage 1 — this is the whole point of the baseline merge.
+        if let Some(refine) = refine_llm_fields.get(&entry.name) {
+            if !refine.label.is_empty() {
+                entry.label = refine.label.clone();
+            }
+            if !refine.description.is_empty() {
+                entry.description = refine.description.clone();
+            }
+            // Refine pass may upgrade a baseline content_type to a better vocab token
+            // (e.g. "free_text" -> "address_street" once cross-field context is visible).
+            // It cannot override the deterministic "unique_id" stamp because (a) the
+            // parser strips LLM-supplied "unique_id" and (b) we check here too.
+            if !refine.content_type.is_empty()
+                && refine.content_type != "unique_id"
+                && entry.content_type != "unique_id"
+            {
+                entry.content_type = refine.content_type.clone();
+            }
+        }
+        // Stage 3: same final "unknown" coercion as `combine_dictionary_entries` so the
+        // two-pass output matches single-pass invariants for the Content Type column.
+        if infer_content_type && entry.content_type.is_empty() {
+            entry.content_type = "unknown".to_string();
+        }
+    }
+    code_entries
+}
+
 /// Extract the `{field_name: {label, description[, content_type]}}` map from the
 /// LLM's JSON response, restricted to the given `field_names`. When
 /// `infer_content_type` is set, `content_type` is lowercased and validated against
@@ -1167,5 +1230,174 @@ mod tests {
             "a field with nulls must NOT be classified as unique_id even if non-null cardinality \
              matches the frequency count"
         );
+    }
+
+    #[test]
+    fn combine_with_baseline_preserves_baseline_when_refine_omits_field() {
+        // The single biggest correctness pitfall for --two-pass: if the LLM's refine
+        // response leaves out a field, that field's Label/Description must inherit the
+        // first-pass values rather than reverting to code-derived defaults.
+        let code_entries = vec![blank_entry("kept"), blank_entry("refined")];
+
+        let mut baseline = HashMap::new();
+        baseline.insert(
+            "kept".to_string(),
+            LlmDictField {
+                label:        "Baseline Label".to_string(),
+                description:  "Baseline description.".to_string(),
+                content_type: "email".to_string(),
+            },
+        );
+        baseline.insert(
+            "refined".to_string(),
+            LlmDictField {
+                label:        "Old Label".to_string(),
+                description:  "Old description.".to_string(),
+                content_type: "free_text".to_string(),
+            },
+        );
+
+        // Refine pass only returns "refined" — "kept" is intentionally absent.
+        let mut refine = HashMap::new();
+        refine.insert(
+            "refined".to_string(),
+            LlmDictField {
+                label:        "New Label".to_string(),
+                description:  "New description with cross-field context.".to_string(),
+                content_type: "address_street".to_string(),
+            },
+        );
+
+        let combined =
+            combine_dictionary_entries_with_baseline(code_entries, &baseline, &refine, true);
+
+        // "kept" inherits baseline values verbatim.
+        assert_eq!(combined[0].label, "Baseline Label");
+        assert_eq!(combined[0].description, "Baseline description.");
+        assert_eq!(combined[0].content_type, "email");
+        // "refined" gets refine-pass overrides.
+        assert_eq!(combined[1].label, "New Label");
+        assert_eq!(
+            combined[1].description,
+            "New description with cross-field context."
+        );
+        assert_eq!(combined[1].content_type, "address_street");
+    }
+
+    #[test]
+    fn combine_with_baseline_rejects_refine_supplied_unique_id() {
+        // The deterministic "unique_id" stamp (cardinality == rowcount) must survive
+        // the refine pass even if the LLM tries to overwrite it with a different vocab
+        // token — and the refine pass also cannot smuggle in a fabricated "unique_id"
+        // for a non-ALL_UNIQUE field. Mirrors the single-pass guarantees in
+        // combine_dictionary_entries.
+        let mut pk = blank_entry("pk");
+        pk.content_type = "unique_id".to_string();
+        let code_entries = vec![pk, blank_entry("other")];
+
+        // Baseline is empty: this asserts the refine pass is gated independently.
+        let baseline = HashMap::new();
+
+        let mut refine = HashMap::new();
+        refine.insert(
+            "pk".to_string(),
+            LlmDictField {
+                label:        "Primary Key".to_string(),
+                description:  "row id".to_string(),
+                // Refine pass tries to overwrite the deterministic stamp with "uuid".
+                content_type: "uuid".to_string(),
+            },
+        );
+        refine.insert(
+            "other".to_string(),
+            LlmDictField {
+                label:        "Other".to_string(),
+                description:  "not unique".to_string(),
+                // Refine pass tries to smuggle "unique_id" onto a non-ALL_UNIQUE field.
+                content_type: "unique_id".to_string(),
+            },
+        );
+
+        let combined =
+            combine_dictionary_entries_with_baseline(code_entries, &baseline, &refine, true);
+
+        assert_eq!(
+            combined[0].content_type, "unique_id",
+            "deterministic 'unique_id' stamp must survive refine-pass overwrite"
+        );
+        assert_eq!(
+            combined[1].content_type, "unknown",
+            "refine-supplied 'unique_id' for a non-ALL_UNIQUE field must be rejected and coerced \
+             to 'unknown' (the infer_content_type=true default)"
+        );
+    }
+
+    #[test]
+    fn combine_with_baseline_refine_overrides_valid_baseline_content_type() {
+        // The whole point of --two-pass: the refine pass can upgrade a baseline content_type
+        // to a better vocab token once it sees cross-field context (e.g. "free_text" ->
+        // "address_street" after recognizing sibling city / state / zip columns).
+        let code_entries = vec![blank_entry("street1")];
+
+        let mut baseline = HashMap::new();
+        baseline.insert(
+            "street1".to_string(),
+            LlmDictField {
+                label:        "Street 1".to_string(),
+                description:  "First street line".to_string(),
+                content_type: "free_text".to_string(),
+            },
+        );
+
+        let mut refine = HashMap::new();
+        refine.insert(
+            "street1".to_string(),
+            LlmDictField {
+                label:        "Street Address".to_string(),
+                description:  "Street component of the mailing address.".to_string(),
+                content_type: "address_street".to_string(),
+            },
+        );
+
+        let combined =
+            combine_dictionary_entries_with_baseline(code_entries, &baseline, &refine, true);
+        assert_eq!(combined[0].content_type, "address_street");
+        assert_eq!(combined[0].label, "Street Address");
+    }
+
+    #[test]
+    fn combine_with_baseline_matches_single_pass_when_refine_empty() {
+        // Sanity check: with an empty refine map, the baseline-preserving variant must
+        // produce the same result as the single-pass combine. Guards against accidental
+        // divergence between the two functions during future refactors.
+        let mut pk = blank_entry("pk");
+        pk.content_type = "unique_id".to_string();
+        let code_entries = vec![pk, blank_entry("city")];
+
+        let mut baseline = HashMap::new();
+        baseline.insert(
+            "city".to_string(),
+            LlmDictField {
+                label:        "City".to_string(),
+                description:  "City name".to_string(),
+                content_type: "city".to_string(),
+            },
+        );
+
+        let single_pass = combine_dictionary_entries(code_entries.clone(), &baseline, true);
+        let two_pass = combine_dictionary_entries_with_baseline(
+            code_entries,
+            &baseline,
+            &HashMap::new(),
+            true,
+        );
+
+        assert_eq!(single_pass.len(), two_pass.len());
+        for (a, b) in single_pass.iter().zip(two_pass.iter()) {
+            assert_eq!(a.name, b.name);
+            assert_eq!(a.label, b.label);
+            assert_eq!(a.description, b.description);
+            assert_eq!(a.content_type, b.content_type);
+        }
     }
 }

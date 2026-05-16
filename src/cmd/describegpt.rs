@@ -163,6 +163,20 @@ describegpt options:
                            non-null value - primary keys, surrogate keys, sequence numbers) are
                            deterministically classified as "unique_id", overriding any token the LLM
                            returned for that field.
+    --two-pass             Run a second LLM call that takes the full first-pass Data Dictionary
+                           as JSON context and refines each field's Label, Description and
+                           (when --infer-content-type is set) Content Type using cross-field
+                           awareness. The LLM can then relate fields that belong together
+                           (e.g. street_no + street_name + city + state + zip describing a single
+                           mailing address; first_name + last_name naming a single person;
+                           lat + lng forming a coordinate pair). The refined dictionary becomes the
+                           emitted output and is also what downstream Description, Tags and Prompt
+                           inference phases see as dictionary context.
+                           Roughly doubles dictionary LLM cost and latency, so opt-in.
+                           Most useful when combined with --infer-content-type.
+                           Allowed with the --dictionary, --all and --prompt inference flags.
+                           Mutually exclusive with --prepare-context and --process-response
+                           (MCP sampling is single-turn per inference phase).
     --addl-cols            Add additional columns to the dictionary from the Summary Statistics.
   --addl-cols-list <list>  A comma-separated list of additional stats columns to add to the dictionary.
                            The columns must be present in the Summary Statistics.
@@ -418,8 +432,9 @@ mod formatters;
 mod session;
 
 use dictionary::{
-    combine_dictionary_entries, generate_code_based_dictionary, parse_frequency_csv,
-    parse_llm_dictionary_response, parse_stats_csv,
+    combine_dictionary_entries, combine_dictionary_entries_with_baseline,
+    generate_code_based_dictionary, parse_frequency_csv, parse_llm_dictionary_response,
+    parse_stats_csv,
 };
 use duckdb_sql::{
     build_score_refinement_prompt, escape_sql_string, extract_sql_sample, handle_sql_error,
@@ -435,6 +450,7 @@ use session::{
 #[strum(ascii_case_insensitive)]
 enum PromptType {
     Dictionary,
+    DictionaryRefine,
     Description,
     Tags,
     Prompt,
@@ -502,6 +518,7 @@ struct Args {
     flag_addl_cols:          bool,
     flag_addl_cols_list:     Option<String>,
     flag_infer_content_type: bool,
+    flag_two_pass:           bool,
     flag_session:            Option<String>,
     flag_session_len:        usize,
     flag_no_score_sql:       bool,
@@ -512,26 +529,32 @@ struct Args {
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct PromptFile {
-    name:                   String,
-    description:            String,
-    author:                 String,
-    version:                String,
-    tokens:                 u32,
-    system_prompt:          String,
-    dictionary_prompt:      String,
-    description_prompt:     String,
-    tags_prompt:            String,
-    prompt:                 String,
-    format:                 String,
-    language:               String,
-    base_url:               String,
-    model:                  String,
-    timeout:                u32,
-    custom_prompt_guidance: String,
-    duckdb_sql_guidance:    String,
-    polars_sql_guidance:    String,
-    dd_fewshot_examples:    String, //DuckDB few-shot examples
-    p_fewshot_examples:     String, //Polars SQL few-shot examples
+    name:                     String,
+    description:              String,
+    author:                   String,
+    version:                  String,
+    tokens:                   u32,
+    system_prompt:            String,
+    dictionary_prompt:        String,
+    /// Refine-pass prompt template for `--two-pass`. Added in a later qsv version after
+    /// existing user `--prompt-file` TOMLs were already in the wild — make it optional via
+    /// `#[serde(default)]` so those TOMLs keep parsing. When the field is absent, the
+    /// built-in default (mirroring `resources/describegpt_defaults.toml`) is used.
+    #[serde(default = "default_dictionary_refine_prompt")]
+    dictionary_refine_prompt: String,
+    description_prompt:       String,
+    tags_prompt:              String,
+    prompt:                   String,
+    format:                   String,
+    language:                 String,
+    base_url:                 String,
+    model:                    String,
+    timeout:                  u32,
+    custom_prompt_guidance:   String,
+    duckdb_sql_guidance:      String,
+    polars_sql_guidance:      String,
+    dd_fewshot_examples:      String, //DuckDB few-shot examples
+    p_fewshot_examples:       String, //Polars SQL few-shot examples
 }
 
 #[derive(Debug, Deserialize)]
@@ -625,6 +648,16 @@ static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
 static SAMPLE_FILE: OnceLock<String> = OnceLock::new();
 
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
+
+/// First-pass Data Dictionary JSON, used as `{{ first_pass_dictionary }}` context only when
+/// rendering `PromptType::DictionaryRefine` during a `--two-pass` run. Cleared (set to `None`)
+/// otherwise. `RwLock<Option<String>>` rather than `OnceLock` because the slot is
+/// per-invocation: it gets populated before the refine prompt is rendered and reset on the
+/// next first pass, so multiple in-process runs (and the test harness) need to overwrite it.
+/// `DATA_DICTIONARY_JSON` (the `{{ dictionary }}` ctx var read by description / tags / prompt
+/// phases) is populated separately, from the REFINED dictionary, only after the refine pass
+/// succeeds — so downstream phases always see the better dictionary.
+static FIRST_PASS_DICT_JSON: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 
 #[cfg(feature = "feature_capable")]
 static TAG_VOCAB_CACHE_DIR: OnceLock<String> = OnceLock::new();
@@ -995,6 +1028,76 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
     fail_clierror!("Invalid model: {given_model}\n  Valid models: {models_list}")
 }
 
+/// Built-in fallback for the `dictionary_refine_prompt` PromptFile field. Used when a user
+/// supplies a `--prompt-file` TOML that pre-dates `--two-pass` and therefore lacks the field.
+/// Kept byte-identical to the `dictionary_refine_prompt` block in
+/// `resources/describegpt_defaults.toml` (the active default for new users); the two MUST be
+/// kept in sync — `tests::default_dictionary_refine_prompt_matches_resource` enforces it.
+fn default_dictionary_refine_prompt() -> String {
+    DEFAULT_DICTIONARY_REFINE_PROMPT.to_string()
+}
+
+/// String constant mirroring the `dictionary_refine_prompt` block from
+/// `resources/describegpt_defaults.toml`. Defined here so `default_dictionary_refine_prompt`
+/// (the `#[serde(default)]` fallback) doesn't need to parse the TOML at deserialize time.
+// No leading newline: TOML's triple-quoted string spec trims the newline that
+// immediately follows the opening `"""`, so a byte-identical const must also start
+// directly with `R` (not with a `\n`). `default_dictionary_refine_prompt_matches_resource`
+// catches any drift from the TOML block.
+const DEFAULT_DICTIONARY_REFINE_PROMPT: &str = r#"Refine the previously-generated Data Dictionary using full cross-field context.
+
+You are given the FIRST-PASS DATA DICTIONARY below, which already contains a Label{% if infer_content_type %}, Description and Content Type{% else %} and Description{% endif %} for every field. The first pass produced these field-by-field without seeing the dictionary as a coherent whole, so it may have missed obvious cross-field relationships.
+
+Look at all fields together and identify groups that semantically belong to a single higher-level concept, for example:
+- street number + street name + unit + city + state/region + postal code = a single MAILING ADDRESS
+- first name + middle initial/name + last name + suffix = a single PERSON NAME
+- latitude + longitude (and optionally altitude) = a GEOGRAPHIC COORDINATE
+- start date + end date (or begin/end timestamps) = a DATE RANGE / DURATION
+- date column + time column = a single TIMESTAMP split across two columns
+- price/cost + currency code = a MONEY value
+- quantity + unit-of-measure = a MEASUREMENT
+
+Then re-emit Label{% if infer_content_type %}, Description and Content Type{% else %} and Description{% endif %} for EVERY field, not just the ones you change. For fields that belong to a composite concept, mention the relationship in the Description (e.g. "Street name component of the mailing address; combine with street_no, city, state and zip to form the full address.") and refine the Label to make the role explicit.
+
+{% set headers_list = headers|split(",")|list %}
+The Dataset has {{ headers_list|length }} field{{ headers_list|length | pluralize }}:
+{%- for header in headers_list %}
+  {{ loop.index }}. {{ header | trim }}
+{%- endfor %}
+
+FIRST-PASS DATA DICTIONARY (JSON):
+{{ first_pass_dictionary }}
+
+{% if infer_content_type %}For Content Type, the same rules from the first pass apply:
+- Choose exactly ONE token from the fixed vocabulary, lowercased.
+- The `duration:N` suffix form is allowed (seconds upper bound).
+- "unique_id" is RESERVED and set deterministically by qsv based on cardinality; for any field
+  whose first-pass Content Type is "unique_id", OMIT the `content_type` key entirely from your
+  output for that field — qsv will re-apply the deterministic value. Do not echo "unique_id"
+  yourself; it will be stripped.
+- Use cross-field context to pick a BETTER token when warranted. For example, a column named
+  "street1" originally classified as "free_text" should become "address_street" once you see
+  the sibling city / state / zip columns.
+- If you genuinely cannot improve a field's Content Type, keep the first-pass value verbatim.
+Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "duration:N" form).
+
+{% endif %}Return the results in the SAME JSON shape as the first pass:
+{% raw %}{
+  "field_name_1": {
+    "label": "Refined human-friendly label",
+    "description": "Refined full description, referencing cross-field relationships when applicable"{% endraw %}{% if infer_content_type %},
+    "content_type": "address_street"{% endif %}{% raw %}
+  },
+  "field_name_2": {
+    "label": "...",
+    "description": "..."{% endraw %}{% if infer_content_type %},
+    "content_type": "..."{% endif %}{% raw %}
+  }
+}{% endraw %}
+
+Let's think step by step, correcting yourself as needed.
+"#;
+
 /// Returns the default prompt file content as a string.
 const fn get_default_prompt_file_content() -> &'static str {
     include_str!("../../resources/describegpt_defaults.toml")
@@ -1259,7 +1362,12 @@ fn render_markdown_template(
 ) -> CliResult<String> {
     let md_file = get_md_template_file(args)?;
     let template_str: &str = match kind {
-        PromptType::Dictionary => &md_file.dictionary_md_template,
+        // DictionaryRefine reuses the Dictionary markdown wrapper — the refine pass only
+        // differs in *how* the dictionary fields are produced, not in how they're rendered.
+        // In practice, run_dictionary_phase always invokes the output path with
+        // PromptType::Dictionary even after a successful refine, so this arm is defensive
+        // exhaustiveness rather than a hot code path.
+        PromptType::Dictionary | PromptType::DictionaryRefine => &md_file.dictionary_md_template,
         PromptType::Description => &md_file.description_md_template,
         PromptType::Tags => &md_file.tags_md_template,
         PromptType::Prompt => &md_file.custom_prompt_md_template,
@@ -1435,7 +1543,11 @@ fn replace_attribution_placeholder(
 
     // Custom warning message based on PromptType
     let warning_message = match prompt_type {
-        PromptType::Dictionary => {
+        // DictionaryRefine reuses the Dictionary warning — the refine pass produces the same
+        // shape of output (Label / Description / Content Type), just informed by cross-field
+        // context. This arm is defensive: run_dictionary_phase emits with PromptType::Dictionary
+        // even after a successful refine.
+        PromptType::Dictionary | PromptType::DictionaryRefine => {
             "WARNING: Label and Description generated by an LLM and may contain inaccuracies. \
              Verify before using!"
         },
@@ -1610,6 +1722,7 @@ fn get_prompt(
     // Get prompt from prompt file
     let mut prompt = match prompt_type {
         PromptType::Dictionary => prompt_file.dictionary_prompt.clone(),
+        PromptType::DictionaryRefine => prompt_file.dictionary_refine_prompt.clone(),
         PromptType::Description => prompt_file.description_prompt.clone(),
         PromptType::Tags => prompt_file.tags_prompt.clone(),
         PromptType::Prompt => {
@@ -1854,6 +1967,14 @@ fn get_prompt(
         sample_size => args.flag_sample_size.to_string(),
         infer_content_type => args.flag_infer_content_type,
         content_type_vocab => dictionary::content_type_vocab_list(),
+        // Empty string unless we're rendering PromptType::DictionaryRefine during a
+        // --two-pass run, where run_dictionary_phase seeds FIRST_PASS_DICT_JSON with the
+        // first-pass dictionary JSON before calling get_prompt.
+        first_pass_dictionary => FIRST_PASS_DICT_JSON
+            .read()
+            .ok()
+            .and_then(|guard| guard.clone())
+            .unwrap_or_default(),
         generated_by_signature => "{GENERATED_BY_SIGNATURE}",
     };
 
@@ -2107,12 +2228,25 @@ fn get_cache_key_with_flag(
     } else {
         None
     };
-    // Short fingerprint of the generated data dictionary (when populated) — this JSON
-    // is injected as the `dictionary` template var for description/tags kinds, so a
-    // change in the dictionary must miss the cache.
-    let dictionary_fingerprint = DATA_DICTIONARY_JSON
-        .get()
-        .map(|s| blake3::hash(s.as_bytes()).to_hex()[..16].to_string());
+    // Short fingerprint of the relevant dictionary JSON. For description / tags / prompt
+    // kinds it's the FINAL (refined-when-two-pass) dictionary stashed in
+    // `DATA_DICTIONARY_JSON`, which gets injected as the `{{ dictionary }}` template var.
+    // For DictionaryRefine, `DATA_DICTIONARY_JSON` is not yet populated at cache-key
+    // computation time (it's only set after the refine pass succeeds), so read from
+    // `FIRST_PASS_DICT_JSON` instead — that's the JSON the refine prompt actually saw via
+    // `{{ first_pass_dictionary }}`. This ties the refine cache entry to the exact
+    // first-pass content; if the first pass output changes, the refine entry invalidates.
+    let dictionary_fingerprint = if kind == PromptType::DictionaryRefine {
+        FIRST_PASS_DICT_JSON
+            .read()
+            .ok()
+            .and_then(|guard| guard.clone())
+            .map(|s| blake3::hash(s.as_bytes()).to_hex()[..16].to_string())
+    } else {
+        DATA_DICTIONARY_JSON
+            .get()
+            .map(|s| blake3::hash(s.as_bytes()).to_hex()[..16].to_string())
+    };
     let duckdb_enabled = should_use_duckdb();
     // The tag-vocab CSV contents are inlined into the Tags prompt; track local-file
     // edits by BLAKE3 content hash. Remote URLs (http://, https://, ckan://, dathere://)
@@ -2467,19 +2601,95 @@ fn build_combined_dictionary_entries(
     ))
 }
 
-/// Dictionary phase when `--prompt` is active: still build the dictionary JSON and stash it
-/// in `DATA_DICTIONARY_JSON` for later prompt rendering, but emit no output.
-fn emit_dictionary_context_only(
+/// Two-pass variant: parse stats/frequency, parse BOTH the baseline (first-pass) and refine
+/// (second-pass) LLM responses, then merge via `combine_dictionary_entries_with_baseline`
+/// so the final entries inherit baseline Label/Description for any field the refine pass
+/// omitted. Used by `run_dictionary_phase`'s `--two-pass` branch.
+fn build_combined_dictionary_entries_two_pass(
     args: &Args,
     analysis_results: &AnalysisResults,
-    completion_response: &CompletionResponse,
+    baseline_completion: &CompletionResponse,
+    refine_completion: &CompletionResponse,
+) -> CliResult<Vec<dictionary::DictionaryEntry>> {
+    let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
+    let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
+    let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
+    let addl_cols = determine_addl_cols(args, &avail_cols);
+    let code_entries = generate_code_based_dictionary(
+        &stats_records,
+        &frequency_records,
+        args.flag_enum_threshold,
+        args.flag_num_examples,
+        args.flag_truncate_str,
+        &addl_cols,
+        args.flag_infer_content_type,
+    );
+    let field_names: Vec<String> = code_entries.iter().map(|e| e.name.clone()).collect();
+    let baseline_fields = parse_llm_dictionary_response(
+        &baseline_completion.response,
+        &field_names,
+        args.flag_infer_content_type,
+    )
+    .unwrap_or_default();
+    let refine_fields = parse_llm_dictionary_response(
+        &refine_completion.response,
+        &field_names,
+        args.flag_infer_content_type,
+    )
+    .unwrap_or_default();
+    Ok(combine_dictionary_entries_with_baseline(
+        code_entries,
+        &baseline_fields,
+        &refine_fields,
+        args.flag_infer_content_type,
+    ))
+}
+
+/// Produce the prettified first-pass dictionary JSON string used as `{{ first_pass_dictionary }}`
+/// context for the refine prompt. Mirrors the JSON-shaping in `emit_dictionary_context_only`
+/// (attribution placeholder substitution) but does NOT write to `DATA_DICTIONARY_JSON` — that
+/// slot is reserved for the REFINED dictionary so downstream description / tags / prompt
+/// phases see the better dictionary.
+fn build_first_pass_dictionary_json_string(
+    args: &Args,
+    combined_entries: &[dictionary::DictionaryEntry],
+    model: &str,
+    base_url: &str,
+) -> String {
+    let mut dictionary_json = formatters::format_dictionary_json(
+        combined_entries,
+        args.flag_enum_threshold,
+        args.flag_num_examples,
+        args.flag_truncate_str,
+        args.flag_infer_content_type,
+    );
+    if let Some(attribution) = dictionary_json.get_mut("attribution")
+        && let Some(attr_str) = attribution.as_str()
+    {
+        *attribution = json!(replace_attribution_placeholder(
+            attr_str,
+            args,
+            model,
+            base_url,
+            AttributionFormat::Markdown,
+            PromptType::Dictionary
+        ));
+    }
+    serde_json::to_string_pretty(&dictionary_json).unwrap_or_default()
+}
+
+/// Dictionary phase when `--prompt` is active: build the dictionary JSON from pre-built
+/// `combined_entries`, stash it in `DATA_DICTIONARY_JSON` for later prompt rendering, but
+/// emit no user-visible output. Takes pre-built entries so the two-pass flow can hand in
+/// merged baseline+refine entries without re-parsing a single completion response.
+fn emit_dictionary_context_only(
+    args: &Args,
+    combined_entries: &[dictionary::DictionaryEntry],
     model: &str,
     base_url: &str,
 ) -> CliResult<()> {
-    let combined_entries =
-        build_combined_dictionary_entries(args, analysis_results, completion_response)?;
     let mut dictionary_json = formatters::format_dictionary_json(
-        &combined_entries,
+        combined_entries,
         args.flag_enum_threshold,
         args.flag_num_examples,
         args.flag_truncate_str,
@@ -2502,23 +2712,26 @@ fn emit_dictionary_context_only(
 }
 
 /// Full Dictionary phase output across JSON/TOON/TSV/Markdown formats.
+///
+/// Takes pre-built `combined_entries` rather than re-parsing `analysis_results +
+/// completion_response` so the same emit path serves both the single-pass flow
+/// (`process_phase_output` builds entries from one completion) and the two-pass flow
+/// (`run_dictionary_phase` builds entries by merging baseline + refine completions via
+/// `combine_dictionary_entries_with_baseline`).
 #[allow(clippy::too_many_arguments)]
 fn format_dictionary_phase(
     kind: PromptType,
     args: &Args,
-    analysis_results: &AnalysisResults,
+    combined_entries: &[dictionary::DictionaryEntry],
     completion_response: &CompletionResponse,
     total_json_output: &mut serde_json::Value,
     model: &str,
     base_url: &str,
     output_format: OutputFormat,
 ) -> CliResult<()> {
-    let combined_entries =
-        build_combined_dictionary_entries(args, analysis_results, completion_response)?;
-
     if output_format == OutputFormat::Json || output_format == OutputFormat::Toon {
         let mut dictionary_json = formatters::format_dictionary_json(
-            &combined_entries,
+            combined_entries,
             args.flag_enum_threshold,
             args.flag_num_examples,
             args.flag_truncate_str,
@@ -2545,13 +2758,13 @@ fn format_dictionary_phase(
             .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
     } else if output_format == OutputFormat::Tsv {
         let mut tsv_output =
-            formatters::format_dictionary_tsv(&combined_entries, args.flag_infer_content_type);
+            formatters::format_dictionary_tsv(combined_entries, args.flag_infer_content_type);
         tsv_output.push_str(&format_token_usage_comments(
             &completion_response.reasoning,
             &completion_response.token_usage,
         ));
         let dictionary_json = formatters::format_dictionary_json(
-            &combined_entries,
+            combined_entries,
             args.flag_enum_threshold,
             args.flag_num_examples,
             args.flag_truncate_str,
@@ -2566,13 +2779,13 @@ fn format_dictionary_phase(
             print!("{tsv_output}");
         }
     } else {
-        let addl_col_names = formatters::extract_ordered_addl_cols(&combined_entries);
+        let addl_col_names = formatters::extract_ordered_addl_cols(combined_entries);
         // Compute attribution + timestamp once per phase so the body footer's attribution
         // matches the wrapper's `{{ generated_by_signature }}` / `{{ timestamp }}` byte for byte.
         let shared = SharedRenderCtx::new(args, model, base_url, PromptType::Dictionary);
         let mut markdown_output = render_dictionary_md_body(
             args,
-            &combined_entries,
+            combined_entries,
             &addl_col_names,
             model,
             base_url,
@@ -2599,7 +2812,7 @@ fn format_dictionary_phase(
             &shared,
         )?;
         let dictionary_json = formatters::format_dictionary_json(
-            &combined_entries,
+            combined_entries,
             args.flag_enum_threshold,
             args.flag_num_examples,
             args.flag_truncate_str,
@@ -2837,6 +3050,13 @@ fn format_phase_markdown(
 
 /// Process the output of a single inference phase.
 /// Extracted from run_inference_options::process_output for reuse by --process-response.
+///
+/// Dictionary kinds build `combined_entries` from the single `completion_response` here
+/// (the single-pass and `--process-response` flows). The two-pass flow does NOT route the
+/// refined output through this function: `run_dictionary_phase` calls the refactored
+/// `format_dictionary_phase` / `emit_dictionary_context_only` directly with pre-merged
+/// baseline+refine entries, because routing through here would lose the baseline values
+/// for any field the refine pass omitted.
 #[allow(clippy::too_many_arguments)]
 fn process_phase_output(
     kind: PromptType,
@@ -2850,20 +3070,18 @@ fn process_phase_output(
 ) -> CliResult<()> {
     // Dictionary when --prompt is active: generate dictionary JSON for prompt context, no output.
     if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
-        return emit_dictionary_context_only(
-            args,
-            analysis_results,
-            completion_response,
-            model,
-            base_url,
-        );
+        let combined_entries =
+            build_combined_dictionary_entries(args, analysis_results, completion_response)?;
+        return emit_dictionary_context_only(args, &combined_entries, model, base_url);
     }
 
     if kind == PromptType::Dictionary {
+        let combined_entries =
+            build_combined_dictionary_entries(args, analysis_results, completion_response)?;
         return format_dictionary_phase(
             kind,
             args,
-            analysis_results,
+            &combined_entries,
             completion_response,
             total_json_output,
             model,
@@ -3024,8 +3242,18 @@ fn build_inference_messages(
     serde_json::Value::Array(messages)
 }
 
-/// Run the Data Dictionary inference phase. Returns the completion so later phases
-/// (Description / Tags / Prompt) can inline its response as context.
+/// Run the Data Dictionary inference phase. Returns the completion the downstream phases
+/// (Description / Tags / Prompt) should treat as the dictionary context.
+///
+/// In `--two-pass` mode, a second LLM call refines the first-pass dictionary with full
+/// cross-field context (the LLM sees the entire first-pass dictionary JSON via
+/// `{{ first_pass_dictionary }}` and can recognize that, for example, fields like
+/// street_no, street_name, city, state and zip together describe a single mailing
+/// address). The returned `CompletionResponse` then carries the REFINED response text
+/// (so downstream phases see the better dictionary as `{{ dictionary }}` context), the
+/// concatenated reasoning trace from both passes, and the SUMMED token usage. The
+/// first-pass response is intentionally not emitted to the user — only the refined
+/// dictionary appears in the output.
 #[allow(clippy::too_many_arguments)]
 fn run_dictionary_phase(
     args: &Args,
@@ -3038,9 +3266,17 @@ fn run_dictionary_phase(
     base_url: &str,
     output_format: OutputFormat,
 ) -> CliResult<CompletionResponse> {
+    // --- Pass 1: existing single-pass behavior, prompt = PromptType::Dictionary. ---
     let (prompt, system_prompt) = get_prompt(PromptType::Dictionary, Some(analysis_results), args)?;
-    let start_time = Instant::now();
-    print_status("  Inferring Data Dictionary...", None);
+    let pass1_start = Instant::now();
+    print_status(
+        if args.flag_two_pass {
+            "  Inferring Data Dictionary (pass 1/2)..."
+        } else {
+            "  Inferring Data Dictionary..."
+        },
+        None,
+    );
     let messages = build_inference_messages(&prompt, &system_prompt, "", None);
 
     // Special case: if --prompt is used with --fresh, force non-Fresh cache for the
@@ -3069,22 +3305,131 @@ fn run_dictionary_phase(
     )?;
     print_status(
         &format!(
-            "   Received dictionary inference.\n   {:?}\n  ",
+            "   Received {}dictionary inference.\n   {:?}\n  ",
+            if args.flag_two_pass {
+                "first-pass "
+            } else {
+                ""
+            },
             data_dict.token_usage
         ),
-        Some(start_time.elapsed()),
+        Some(pass1_start.elapsed()),
     );
-    process_phase_output(
-        PromptType::Dictionary,
-        &data_dict,
-        total_json_output,
+
+    if !args.flag_two_pass {
+        // Single-pass: existing behavior, emit and return.
+        process_phase_output(
+            PromptType::Dictionary,
+            &data_dict,
+            total_json_output,
+            args,
+            analysis_results,
+            model,
+            base_url,
+            output_format,
+        )?;
+        return Ok(data_dict);
+    }
+
+    // --- Two-pass: build first-pass entries (without emitting), seed
+    // --- FIRST_PASS_DICT_JSON, render the refine prompt, and call the LLM again. ---
+    let first_pass_entries = build_combined_dictionary_entries(args, analysis_results, &data_dict)?;
+    let first_pass_json =
+        build_first_pass_dictionary_json_string(args, &first_pass_entries, model, base_url);
+    // Seed the global the refine prompt template reads via `{{ first_pass_dictionary }}`.
+    // Scope the write so the lock is released before `get_prompt` (which read-locks the
+    // slot) is called below.
+    {
+        let mut guard = FIRST_PASS_DICT_JSON
+            .write()
+            .expect("FIRST_PASS_DICT_JSON write-lock poisoned");
+        *guard = Some(first_pass_json);
+    }
+
+    let (refine_prompt, refine_system_prompt) =
+        get_prompt(PromptType::DictionaryRefine, Some(analysis_results), args)?;
+    let pass2_start = Instant::now();
+    print_status(
+        "  Refining Data Dictionary with cross-field context (pass 2/2)...",
+        None,
+    );
+    let refine_messages = build_inference_messages(&refine_prompt, &refine_system_prompt, "", None);
+
+    let refine_completion = get_cached_completion(
+        args,
+        client,
+        model,
+        api_key,
+        dictionary_cache_type,
+        PromptType::DictionaryRefine,
+        &refine_messages,
+    )?;
+    print_status(
+        &format!(
+            "   Received refined dictionary.\n   {:?}\n  ",
+            refine_completion.token_usage
+        ),
+        Some(pass2_start.elapsed()),
+    );
+
+    // Clear FIRST_PASS_DICT_JSON now that the refine prompt has been rendered and the
+    // LLM call returned. Downstream phases (description / tags / prompt) render their
+    // own prompts via `get_prompt`, which would otherwise inherit a stale value if this
+    // describegpt process is reused (e.g. in tests).
+    {
+        let mut guard = FIRST_PASS_DICT_JSON
+            .write()
+            .expect("FIRST_PASS_DICT_JSON write-lock poisoned");
+        *guard = None;
+    }
+
+    // Merge baseline + refine via the baseline-preserving combine so refine omissions
+    // don't wipe first-pass Label/Description. Then emit using the SAME format functions
+    // the single-pass flow uses — process_phase_output is bypassed here because routing
+    // back through it would re-parse only the refine response and lose the baseline.
+    let merged_entries = build_combined_dictionary_entries_two_pass(
         args,
         analysis_results,
-        model,
-        base_url,
-        output_format,
+        &data_dict,
+        &refine_completion,
     )?;
-    Ok(data_dict)
+
+    // Synthesize the CompletionResponse that emit functions receive: response text comes
+    // from the refine pass (it's what gets shown in the output's `response` JSON field
+    // for --format json/toon), reasoning concatenates both traces, token_usage sums both
+    // calls so the reported total reflects actual cost.
+    let combined_completion = CompletionResponse {
+        response:    refine_completion.response.clone(),
+        reasoning:   format!(
+            "FIRST PASS REASONING:\n{}\n\nREFINE PASS REASONING:\n{}",
+            data_dict.reasoning, refine_completion.reasoning,
+        ),
+        token_usage: TokenUsage {
+            prompt:     data_dict.token_usage.prompt + refine_completion.token_usage.prompt,
+            completion: data_dict.token_usage.completion + refine_completion.token_usage.completion,
+            total:      data_dict.token_usage.total + refine_completion.token_usage.total,
+            elapsed:    data_dict.token_usage.elapsed + refine_completion.token_usage.elapsed,
+        },
+    };
+
+    if args.flag_prompt.is_some() {
+        // --prompt mode: stash refined dictionary JSON for downstream SQL RAG context, no
+        // user-visible dictionary output.
+        emit_dictionary_context_only(args, &merged_entries, model, base_url)?;
+    } else {
+        format_dictionary_phase(
+            PromptType::Dictionary,
+            args,
+            &merged_entries,
+            &combined_completion,
+            total_json_output,
+            model,
+            base_url,
+            output_format,
+        )?;
+    }
+
+    Ok(combined_completion)
 }
 
 /// Run the Description inference phase.
@@ -3935,8 +4280,12 @@ fn run_inference_options(
 }
 
 fn determine_cache_kinds_to_remove(args: &Args) -> Vec<PromptType> {
+    // When removing a Dictionary cache entry we ALSO remove DictionaryRefine: the refine
+    // entry's cache key embeds the first-pass dictionary fingerprint, so it's logically
+    // downstream of the Dictionary entry. Without the cascade, `--forget --dictionary`
+    // would leave a stale refine entry that would no longer match any first-pass content.
     if args.flag_dictionary {
-        vec![PromptType::Dictionary]
+        vec![PromptType::Dictionary, PromptType::DictionaryRefine]
     } else if args.flag_description {
         vec![PromptType::Description]
     } else if args.flag_tags {
@@ -3946,6 +4295,7 @@ fn determine_cache_kinds_to_remove(args: &Args) -> Vec<PromptType> {
     } else {
         vec![
             PromptType::Dictionary,
+            PromptType::DictionaryRefine,
             PromptType::Description,
             PromptType::Tags,
             PromptType::Prompt,
@@ -4626,6 +4976,36 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
+    // --two-pass requires a dictionary-producing inference flag (--dictionary, --all, or
+    // --prompt, which internally builds a dictionary for SQL RAG context).
+    if args.flag_two_pass && !args.flag_dictionary && !args.flag_all && args.flag_prompt.is_none() {
+        return fail_incorrectusage_clierror!(
+            "--two-pass requires --dictionary, --all, or --prompt."
+        );
+    }
+
+    // --two-pass is incompatible with the MCP sampling flags. The refine pass needs the
+    // first-pass LLM response as input, but --prepare-context emits prompts without ever
+    // calling the LLM and --process-response consumes a single phase response per kind,
+    // so neither can plumb the two-call dependency in this iteration.
+    if args.flag_two_pass && (args.flag_prepare_context || args.flag_process_response) {
+        return fail_incorrectusage_clierror!(
+            "--two-pass cannot be used with --prepare-context or --process-response. MCP sampling \
+             is single-turn per phase; the refine pass requires the first-pass LLM response and \
+             is not currently supported in MCP mode."
+        );
+    }
+
+    // --two-pass doubles dictionary LLM cost and latency. Without caching, every invocation
+    // pays both passes; warn so the user doesn't accidentally burn tokens on retries.
+    if args.flag_two_pass && args.flag_no_cache {
+        print_status(
+            "Warning: --two-pass with --no-cache will issue two uncached LLM calls per run (first \
+             pass + refine). Consider omitting --no-cache to amortize cost across runs.",
+            None,
+        );
+    }
+
     // Calculate BLAKE3 hash of the input file early for cache key generation
     print_status(&format!("Calculating BLAKE3 hash of {input_path}..."), None);
     let start_hash_time = Instant::now();
@@ -5206,6 +5586,216 @@ mod tests {
         }
     }
 
+    #[test]
+    fn dictionary_refine_cache_key_differs_from_dictionary_cache_key() {
+        // The refine pass must NEVER share a cache slot with the first pass. The
+        // distinct PromptType variant is what guarantees this — the `{kind}` field
+        // appears in the cache key format string.
+        let args = default_args_for_test();
+        let first_pass_key =
+            get_cache_key_with_flag(&args, PromptType::Dictionary, "gpt-x", "valid");
+        let refine_key =
+            get_cache_key_with_flag(&args, PromptType::DictionaryRefine, "gpt-x", "valid");
+        assert_ne!(
+            first_pass_key, refine_key,
+            "Dictionary and DictionaryRefine must produce distinct cache keys, otherwise two-pass \
+             would silently return the first-pass cached completion as the refine output (or vice \
+             versa)"
+        );
+    }
+
+    #[test]
+    fn two_pass_flag_does_not_change_first_pass_cache_key() {
+        // The first-pass cache key is intentionally identical whether or not --two-pass
+        // is set: the first pass renders the same `dictionary_prompt` template regardless,
+        // and we want first-pass cache hits to be reusable across --two-pass toggles.
+        // Refining is gated by a separate cache entry under PromptType::DictionaryRefine.
+        let mut args_off = default_args_for_test();
+        args_off.flag_two_pass = false;
+        let mut args_on = default_args_for_test();
+        args_on.flag_two_pass = true;
+
+        let key_off = get_cache_key_with_flag(&args_off, PromptType::Dictionary, "gpt-x", "valid");
+        let key_on = get_cache_key_with_flag(&args_on, PromptType::Dictionary, "gpt-x", "valid");
+        assert_eq!(
+            key_off, key_on,
+            "flipping --two-pass must NOT change the first-pass cache key — first-pass prompt \
+             content is identical and cache reuse across toggles is intentional"
+        );
+    }
+
+    /// Test-only mutex serializing tests that mutate `FIRST_PASS_DICT_JSON`. Cargo runs
+    /// unit tests in the same binary in parallel by default, so tests that
+    /// read-then-mutate-then-read would otherwise race and observe each other's writes.
+    /// Lock this BEFORE reading or writing `FIRST_PASS_DICT_JSON` and HOLD it for the
+    /// full sequence of operations.
+    static FIRST_PASS_DICT_JSON_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn dictionary_refine_cache_key_reflects_first_pass_dict_json() {
+        // When kind == DictionaryRefine, the dictionary_fingerprint is sourced from
+        // FIRST_PASS_DICT_JSON (not DATA_DICTIONARY_JSON, which isn't populated yet at
+        // refine-cache-key computation time). This ties the refine cache entry to the
+        // exact first-pass content; a different first-pass output must miss the cache.
+        let _guard = FIRST_PASS_DICT_JSON_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let args = default_args_for_test();
+        // Save the current FIRST_PASS_DICT_JSON to restore after — other tests in this
+        // binary may have set it. RwLock allows overwrite, so this is safe.
+        let saved = FIRST_PASS_DICT_JSON.read().ok().and_then(|g| g.clone());
+
+        // Refine key with FIRST_PASS_DICT_JSON = None.
+        {
+            let mut guard = FIRST_PASS_DICT_JSON.write().unwrap();
+            *guard = None;
+        }
+        let key_empty =
+            get_cache_key_with_flag(&args, PromptType::DictionaryRefine, "gpt-x", "valid");
+
+        // Refine key with FIRST_PASS_DICT_JSON = Some(content_A).
+        {
+            let mut guard = FIRST_PASS_DICT_JSON.write().unwrap();
+            *guard = Some(r#"{"f": "first-pass A"}"#.to_string());
+        }
+        let key_a = get_cache_key_with_flag(&args, PromptType::DictionaryRefine, "gpt-x", "valid");
+
+        // Refine key with FIRST_PASS_DICT_JSON = Some(content_B) (different content).
+        {
+            let mut guard = FIRST_PASS_DICT_JSON.write().unwrap();
+            *guard = Some(r#"{"f": "first-pass B"}"#.to_string());
+        }
+        let key_b = get_cache_key_with_flag(&args, PromptType::DictionaryRefine, "gpt-x", "valid");
+
+        // Restore prior state so we don't leak state into sibling tests.
+        {
+            let mut guard = FIRST_PASS_DICT_JSON.write().unwrap();
+            *guard = saved;
+        }
+
+        assert_ne!(
+            key_empty, key_a,
+            "refine key must differ when FIRST_PASS_DICT_JSON goes from None to Some"
+        );
+        assert_ne!(
+            key_a, key_b,
+            "refine key must differ when first-pass content differs"
+        );
+    }
+
+    #[test]
+    fn dictionary_refine_prompt_renders_first_pass_dictionary_var() {
+        // The refine prompt template MUST reference `{{ first_pass_dictionary }}` and the
+        // renderer MUST surface FIRST_PASS_DICT_JSON's value. If either link breaks, the
+        // LLM never sees the first-pass dictionary during the refine pass — silent
+        // regression to a useless second LLM call. Save/restore FIRST_PASS_DICT_JSON so
+        // this test doesn't poison sibling tests in the same binary run.
+        let _guard = FIRST_PASS_DICT_JSON_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let saved = FIRST_PASS_DICT_JSON.read().ok().and_then(|g| g.clone());
+
+        let sentinel = "SENTINEL_FIRST_PASS_PAYLOAD_42";
+        {
+            let mut guard = FIRST_PASS_DICT_JSON.write().unwrap();
+            *guard = Some(format!(r#"{{"some_field": "{sentinel}"}}"#));
+        }
+
+        let analysis = AnalysisResults {
+            stats: "field,type\nname,String\n".to_string(),
+            frequency: "field,value,count,percentage,rank\n".to_string(),
+            headers: "name".to_string(),
+            ..AnalysisResults::default()
+        };
+        let mut args = default_args_for_test();
+        args.flag_two_pass = true;
+        // get_prompt -> get_prompt_file unwraps flag_base_url whenever it differs from
+        // DEFAULT_BASE_URL, so populate it with the default to avoid the unwrap-on-None
+        // panic in tests that bypass `util::get_args`'s docopt-default population.
+        args.flag_base_url = Some(DEFAULT_BASE_URL.to_string());
+        args.flag_model = Some(DEFAULT_MODEL.to_string());
+
+        let result = get_prompt(PromptType::DictionaryRefine, Some(&analysis), &args);
+
+        // Restore before any assertion so a failure doesn't leak state.
+        {
+            let mut guard = FIRST_PASS_DICT_JSON.write().unwrap();
+            *guard = saved;
+        }
+
+        let (rendered, _system) = result.expect("refine prompt should render");
+        assert!(
+            rendered.contains(sentinel),
+            "refine prompt must surface FIRST_PASS_DICT_JSON contents via {{{{ \
+             first_pass_dictionary }}}}; got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn prompt_file_without_dictionary_refine_prompt_field_still_parses() {
+        // Backward compat: any user --prompt-file TOML authored before --two-pass was
+        // introduced will not have a `dictionary_refine_prompt` field. The
+        // #[serde(default = "default_dictionary_refine_prompt")] attribute must make
+        // serde fall back to the built-in template instead of failing the parse.
+        // Build a minimal TOML missing only that field.
+        let toml_without_refine = r#"
+name = "test"
+description = "test"
+author = "test"
+version = "1.0"
+tokens = 1000
+system_prompt = "system"
+dictionary_prompt = "dictionary"
+description_prompt = "description"
+tags_prompt = "tags"
+prompt = "prompt"
+format = "markdown"
+language = ""
+base_url = "http://localhost"
+model = "test-model"
+timeout = 30
+custom_prompt_guidance = ""
+duckdb_sql_guidance = ""
+polars_sql_guidance = ""
+dd_fewshot_examples = ""
+p_fewshot_examples = ""
+"#;
+        let parsed: Result<PromptFile, _> = toml::from_str(toml_without_refine);
+        let pf = parsed.expect(
+            "PromptFile must parse even without a `dictionary_refine_prompt` field — pre-existing \
+             user prompt files would break without the serde(default)",
+        );
+        assert!(
+            !pf.dictionary_refine_prompt.is_empty(),
+            "fallback `dictionary_refine_prompt` must be non-empty so --two-pass works \
+             out-of-the-box for users on older prompt files"
+        );
+        assert!(
+            pf.dictionary_refine_prompt
+                .contains("first_pass_dictionary"),
+            "fallback refine prompt must reference `{{{{ first_pass_dictionary }}}}` — otherwise \
+             the refine LLM call never sees the first-pass dictionary"
+        );
+    }
+
+    #[test]
+    fn default_dictionary_refine_prompt_matches_resource() {
+        // The const DEFAULT_DICTIONARY_REFINE_PROMPT (used as the #[serde(default)] fallback)
+        // MUST be byte-identical to the dictionary_refine_prompt block in
+        // resources/describegpt_defaults.toml. The TOML is the active default for users
+        // who let the defaults load via include_str!; the const is the fallback for users
+        // on older --prompt-file TOMLs. Both audiences must see the same template.
+        let toml: PromptFile =
+            toml::from_str(get_default_prompt_file_content()).expect("default TOML must parse");
+        assert_eq!(
+            toml.dictionary_refine_prompt,
+            default_dictionary_refine_prompt(),
+            "DEFAULT_DICTIONARY_REFINE_PROMPT const drifted from the \
+             resources/describegpt_defaults.toml `dictionary_refine_prompt` block — keep them in \
+             sync (or two cohorts of users will see different refine prompts)"
+        );
+    }
+
     /// Minimal Args for unit tests: zero-values everywhere.
     fn default_args_for_test() -> Args {
         Args {
@@ -5253,6 +5843,7 @@ mod tests {
             flag_addl_cols:          false,
             flag_addl_cols_list:     None,
             flag_infer_content_type: false,
+            flag_two_pass:           false,
             flag_session:            None,
             flag_session_len:        0,
             flag_no_score_sql:       false,

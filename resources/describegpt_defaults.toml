@@ -39,6 +39,12 @@ language = ""
 #                     Content Type instruction in the dictionary_prompt below.
 # {{ content_type_vocab }} - comma-separated list of allowed Content Type tokens
 #                     (the curated qsv vocabulary)
+# {{ first_pass_dictionary }} - JSON string of the first-pass Data Dictionary. Populated
+#                     only while rendering the dictionary_refine_prompt during a --two-pass
+#                     run; empty string otherwise. The refine prompt feeds this back to the
+#                     LLM so it can refine Label, Description and Content Type using
+#                     cross-field context (e.g. recognizing that street_no + street_name +
+#                     city + state + zip describe a single mailing address).
 
 system_prompt = """
 You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.
@@ -127,6 +133,72 @@ Summary Statistics (CSV):
 Frequency Distribution (CSV):
 
 {{ frequency }}
+"""
+
+# Refine-pass prompt template used by `--two-pass`. The LLM sees the FIRST-PASS Data
+# Dictionary as JSON in `{{ first_pass_dictionary }}` and is asked to re-emit Label,
+# Description and (when --infer-content-type is set) Content Type for EVERY field with
+# cross-field awareness. The output JSON shape MUST match `dictionary_prompt`'s output
+# shape — qsv parses both with the same `parse_llm_dictionary_response` code path.
+#
+# IMPORTANT: this template is also baked into `DEFAULT_DICTIONARY_REFINE_PROMPT` in
+# `src/cmd/describegpt.rs` as a `#[serde(default)]` fallback for users whose
+# `--prompt-file` TOMLs pre-date `--two-pass`. The test
+# `tests::default_dictionary_refine_prompt_matches_resource` keeps them in sync — if you
+# edit this block, update the constant too (or the test will fail with a diff).
+dictionary_refine_prompt = """
+Refine the previously-generated Data Dictionary using full cross-field context.
+
+You are given the FIRST-PASS DATA DICTIONARY below, which already contains a Label{% if infer_content_type %}, Description and Content Type{% else %} and Description{% endif %} for every field. The first pass produced these field-by-field without seeing the dictionary as a coherent whole, so it may have missed obvious cross-field relationships.
+
+Look at all fields together and identify groups that semantically belong to a single higher-level concept, for example:
+- street number + street name + unit + city + state/region + postal code = a single MAILING ADDRESS
+- first name + middle initial/name + last name + suffix = a single PERSON NAME
+- latitude + longitude (and optionally altitude) = a GEOGRAPHIC COORDINATE
+- start date + end date (or begin/end timestamps) = a DATE RANGE / DURATION
+- date column + time column = a single TIMESTAMP split across two columns
+- price/cost + currency code = a MONEY value
+- quantity + unit-of-measure = a MEASUREMENT
+
+Then re-emit Label{% if infer_content_type %}, Description and Content Type{% else %} and Description{% endif %} for EVERY field, not just the ones you change. For fields that belong to a composite concept, mention the relationship in the Description (e.g. "Street name component of the mailing address; combine with street_no, city, state and zip to form the full address.") and refine the Label to make the role explicit.
+
+{% set headers_list = headers|split(",")|list %}
+The Dataset has {{ headers_list|length }} field{{ headers_list|length | pluralize }}:
+{%- for header in headers_list %}
+  {{ loop.index }}. {{ header | trim }}
+{%- endfor %}
+
+FIRST-PASS DATA DICTIONARY (JSON):
+{{ first_pass_dictionary }}
+
+{% if infer_content_type %}For Content Type, the same rules from the first pass apply:
+- Choose exactly ONE token from the fixed vocabulary, lowercased.
+- The `duration:N` suffix form is allowed (seconds upper bound).
+- "unique_id" is RESERVED and set deterministically by qsv based on cardinality; for any field
+  whose first-pass Content Type is "unique_id", OMIT the `content_type` key entirely from your
+  output for that field — qsv will re-apply the deterministic value. Do not echo "unique_id"
+  yourself; it will be stripped.
+- Use cross-field context to pick a BETTER token when warranted. For example, a column named
+  "street1" originally classified as "free_text" should become "address_street" once you see
+  the sibling city / state / zip columns.
+- If you genuinely cannot improve a field's Content Type, keep the first-pass value verbatim.
+Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "duration:N" form).
+
+{% endif %}Return the results in the SAME JSON shape as the first pass:
+{% raw %}{
+  "field_name_1": {
+    "label": "Refined human-friendly label",
+    "description": "Refined full description, referencing cross-field relationships when applicable"{% endraw %}{% if infer_content_type %},
+    "content_type": "address_street"{% endif %}{% raw %}
+  },
+  "field_name_2": {
+    "label": "...",
+    "description": "..."{% endraw %}{% if infer_content_type %},
+    "content_type": "..."{% endif %}{% raw %}
+  }
+}{% endraw %}
+
+Let's think step by step, correcting yourself as needed.
 """
 
 description_prompt = """

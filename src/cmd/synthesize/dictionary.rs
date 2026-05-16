@@ -21,6 +21,22 @@ struct DictionaryFile {
     fields: Vec<SynthDictField>,
 }
 
+/// Extract the `fields` array from a describegpt JSON payload. `describegpt
+/// --format JSON` wraps its output as `{"Dictionary": {"response": {"fields":
+/// [...], ...}, ...}}`, so peel that wrapper when present. Also accept a raw
+/// `{"fields": [...]}` payload so users can hand-author / pre-extract a
+/// dictionary file without going through describegpt.
+fn parse_dictionary_payload(raw: &str) -> Result<Vec<SynthDictField>, serde_json::Error> {
+    let value: serde_json::Value = serde_json::from_str(raw)?;
+    let inner = value
+        .get("Dictionary")
+        .and_then(|d| d.get("response"))
+        .cloned()
+        .unwrap_or(value);
+    let dict: DictionaryFile = serde_json::from_value(inner)?;
+    Ok(dict.fields)
+}
+
 /// One field entry in the dictionary. Deliberately lenient: `content_type` is
 /// absent entirely when the dictionary was generated without
 /// `--infer-content-type`, and `null` for fields the LLM left unclassified.
@@ -46,23 +62,20 @@ fn fields_to_map(fields: Vec<SynthDictField>) -> HashMap<String, String> {
         .collect()
 }
 
-/// Load a data-dictionary JSON file and return the field-name → `content_type` map.
 pub(crate) fn load_content_types(path: &str) -> CliResult<HashMap<String, String>> {
     let contents = fs::read_to_string(path)
         .map_err(|e| CliError::Other(format!("Failed to read dictionary file '{path}': {e}")))?;
-    let dict: DictionaryFile = serde_json::from_str(&contents).map_err(|e| {
+    let fields = parse_dictionary_payload(&contents).map_err(|e| {
         CliError::Other(format!(
             "Failed to parse dictionary file '{path}' as JSON. `synthesize` expects a dictionary \
-             produced with `describegpt --dictionary --infer-content-type --format JSON`. Parser \
-             error: {e}"
+             produced with `describegpt --dictionary --infer-content-type --format JSON` (the \
+             full `{{\"Dictionary\": {{\"response\": ...}}}}` wrapper is fine, as is a raw \
+             `{{\"fields\": [...]}}` payload). Parser error: {e}"
         ))
     })?;
-    Ok(fields_to_map(dict.fields))
+    Ok(fields_to_map(fields))
 }
 
-/// Infer the dictionary on the fly by invoking `describegpt --dictionary
-/// --infer-content-type --format JSON` on `input_path`. Requires an LLM API key
-/// in the environment (`QSV_LLM_APIKEY`). Returns the field-name → `content_type` map.
 pub(crate) fn infer_content_types(input_path: &str) -> CliResult<HashMap<String, String>> {
     let (stdout, _stderr) = util::run_qsv_cmd(
         "describegpt",
@@ -70,13 +83,15 @@ pub(crate) fn infer_content_types(input_path: &str) -> CliResult<HashMap<String,
         input_path,
         "  Inferred Content Types via describegpt",
     )?;
-    let dict: DictionaryFile = serde_json::from_str(&stdout).map_err(|e| {
+    let fields = parse_dictionary_payload(&stdout).map_err(|e| {
         CliError::Other(format!(
-            "Failed to parse describegpt dictionary output as JSON: {e}. Make sure an LLM API key \
-             is configured (QSV_LLM_APIKEY)."
+            "Failed to parse describegpt dictionary output as JSON: {e}. Make sure an LLM is \
+             configured — either set `QSV_LLM_APIKEY` (or `--api-key`) for a hosted provider, or \
+             set `QSV_LLM_BASE_URL` (or `--base-url`) to a localhost address for a local LLM \
+             (e.g. LM Studio, Ollama)."
         ))
     })?;
-    Ok(fields_to_map(dict.fields))
+    Ok(fields_to_map(fields))
 }
 
 #[cfg(test)]
@@ -92,8 +107,8 @@ mod tests {
             ],
             "enum_threshold": 10
         }"#;
-        let dict: DictionaryFile = serde_json::from_str(json).unwrap();
-        let map = fields_to_map(dict.fields);
+        let fields = parse_dictionary_payload(json).unwrap();
+        let map = fields_to_map(fields);
         assert_eq!(map.get("email").unwrap(), "email");
         assert_eq!(map.get("age").unwrap(), "unknown");
     }
@@ -107,10 +122,35 @@ mod tests {
                 {"name": "c", "type": "String", "content_type": "  "}
             ]
         }"#;
-        let dict: DictionaryFile = serde_json::from_str(json).unwrap();
-        let map = fields_to_map(dict.fields);
+        let fields = parse_dictionary_payload(json).unwrap();
+        let map = fields_to_map(fields);
         assert_eq!(map.get("a").unwrap(), "unknown");
         assert_eq!(map.get("b").unwrap(), "unknown");
         assert_eq!(map.get("c").unwrap(), "unknown");
+    }
+
+    #[test]
+    fn parses_describegpt_wrapped_dictionary_output() {
+        // Mirrors the actual `describegpt --dictionary --infer-content-type
+        // --format JSON` stdout shape: a `Dictionary` key whose `response`
+        // holds the dictionary, alongside `reasoning` and `token_usage`.
+        let json = r#"{
+            "Dictionary": {
+                "response": {
+                    "fields": [
+                        {"name": "email", "type": "String", "content_type": "email"},
+                        {"name": "zip", "type": "String", "content_type": "postal_code"}
+                    ],
+                    "enum_threshold": 10,
+                    "attribution": "Generated by describegpt"
+                },
+                "reasoning": "...",
+                "token_usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
+            }
+        }"#;
+        let fields = parse_dictionary_payload(json).unwrap();
+        let map = fields_to_map(fields);
+        assert_eq!(map.get("email").unwrap(), "email");
+        assert_eq!(map.get("zip").unwrap(), "postal_code");
     }
 }

@@ -190,16 +190,145 @@ fn synthesize_output_flag_writes_to_file() {
 }
 
 #[test]
-fn synthesize_rejects_unsupported_locale() {
-    let wrk = Workdir::new("synthesize_locale");
+fn synthesize_rejects_invalid_locale() {
+    let wrk = Workdir::new("synthesize_invalid_locale");
     wrk.create("data.csv", fixture());
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "5", "--locale", "FR_FR"]).arg("data.csv");
+    cmd.args(["-n", "5", "--locale", "ZZ_ZZ"]).arg("data.csv");
     let err = wrk.output_stderr(&mut cmd);
     assert!(
-        err.contains("EN locale"),
-        "expected an EN-only error, got: {err}"
+        err.contains("Unsupported --locale") && err.contains("ZZ_ZZ"),
+        "expected an unsupported-locale error mentioning the bad token, got: {err}"
+    );
+    assert!(
+        err.contains("EN") && err.contains("FR_FR"),
+        "error should list the supported locales, got: {err}"
+    );
+}
+
+/// Faker columns under a non-EN locale should still produce N rows and the
+/// expected column shape. We don't assert specific French/Japanese strings —
+/// fake-rs data can shift across patch releases — so the test only verifies
+/// the dispatch path executes cleanly and the email column still looks like
+/// an email (the email faker is locale-aware but always produces "x@y.z").
+#[test]
+fn synthesize_accepts_fr_fr_locale() {
+    let wrk = Workdir::new("synthesize_fr_fr");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["email", "tier"],
+            svec!["a@example.com", "gold"],
+            svec!["b@example.com", "silver"],
+            svec!["c@example.com", "gold"],
+            svec!["d@example.com", "bronze"],
+            svec!["e@example.com", "silver"],
+            svec!["f@example.com", "gold"],
+            svec!["g@example.com", "silver"],
+            svec!["h@example.com", "bronze"],
+        ],
+    );
+
+    let dict_json = r#"{
+        "fields": [
+            {"name": "email", "type": "String", "content_type": "email"},
+            {"name": "tier", "type": "String", "content_type": "unknown"}
+        ],
+        "enum_threshold": 10
+    }"#;
+    wrk.create_from_string("dict.json", dict_json);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "10",
+        "--seed",
+        "42",
+        "--locale",
+        "FR_FR",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert_eq!(got.len(), 11);
+    for row in &got[1..] {
+        assert!(row[0].contains('@'), "email '{}' should contain @", row[0]);
+    }
+}
+
+#[test]
+fn synthesize_locale_is_case_insensitive() {
+    let wrk = Workdir::new("synthesize_locale_case");
+    wrk.create("data.csv", fixture());
+
+    let mut upper = wrk.command("synthesize");
+    upper
+        .args(["-n", "5", "--seed", "1", "--locale", "FR_FR"])
+        .arg("data.csv");
+    let upper_out: String = wrk.stdout(&mut upper);
+
+    let mut lower = wrk.command("synthesize");
+    lower
+        .args(["-n", "5", "--seed", "1", "--locale", "fr_fr"])
+        .arg("data.csv");
+    let lower_out: String = wrk.stdout(&mut lower);
+
+    assert_eq!(
+        upper_out, lower_out,
+        "lowercase and uppercase locale tokens should be equivalent"
+    );
+}
+
+/// A `full_name` faker column under JA_JP vs EN should produce noticeably
+/// different output — the Japanese name pool shares no surface tokens with
+/// the English one. Use a name-only fixture so frequency-weighted enumeration
+/// doesn't kick in.
+#[test]
+fn synthesize_locale_changes_output() {
+    let wrk = Workdir::new("synthesize_locale_diff");
+    let mut rows: Vec<Vec<String>> = vec![svec!["name"]];
+    for i in 0..20 {
+        rows.push(vec![format!("Person {i}")]);
+    }
+    wrk.create("data.csv", rows);
+
+    let dict_json = r#"{
+        "fields": [
+            {"name": "name", "type": "String", "content_type": "full_name"}
+        ],
+        "enum_threshold": 10
+    }"#;
+    wrk.create_from_string("dict.json", dict_json);
+
+    let mut en_cmd = wrk.command("synthesize");
+    en_cmd
+        .args(["-n", "10", "--seed", "42", "--locale", "EN", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let en_out: String = wrk.stdout(&mut en_cmd);
+
+    let mut ja_cmd = wrk.command("synthesize");
+    ja_cmd
+        .args([
+            "-n",
+            "10",
+            "--seed",
+            "42",
+            "--locale",
+            "JA_JP",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let ja_out: String = wrk.stdout(&mut ja_cmd);
+
+    assert_ne!(
+        en_out, ja_out,
+        "EN and JA_JP full_name output should differ"
     );
 }
 

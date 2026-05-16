@@ -6836,7 +6836,7 @@ fn stats_big_endian_quantile_method_approx_rejected() {
     wrk.create("data.csv", vec![svec!["value"], svec!["1"], svec!["2"]]);
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("--quantiles")
+    cmd.arg("--quartiles")
         .arg("--quantile-method")
         .arg("approx")
         .arg("data.csv");

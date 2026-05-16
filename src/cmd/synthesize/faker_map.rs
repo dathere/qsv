@@ -41,6 +41,10 @@ macro_rules! gen_faker_for_locale {
                 job::$loc as job, lorem::$loc as lorem, name::$loc as name,
                 phone_number::$loc as phone, time::$loc as ftime,
             };
+            // NOTE: fake-rs's `automotive::LicencePlate` is only implemented for PT_PT,
+            // TR_TR and FA_IR locales (5.1.0). To support `license_plate` across all the
+            // qsv locales without lots of cfg gating, `synthesize` rolls its own
+            // locale-agnostic generator in the match arm below (US-style `AAA-1234`).
 
             macro_rules! fake_str {
                 ($faker:expr) => {
@@ -90,6 +94,11 @@ macro_rules! gen_faker_for_locale {
                     addr::StreetName().fake_with_rng::<String, _>(rng),
                     addr::StreetSuffix().fake_with_rng::<String, _>(rng),
                 )),
+                // `street_name` is the same faker the `street_address` composite uses
+                // for its middle component — kept as a separate vocab token so the LLM
+                // can classify standalone street-name columns (e.g. NYC 311's `Street Name`,
+                // which sits alongside but separate from `Incident Address`).
+                "street_name" => fake_str!(addr::StreetName()),
                 "building_number" => fake_str!(addr::BuildingNumber()),
                 "secondary_address" => fake_str!(addr::SecondaryAddress()),
                 "city" => fake_str!(addr::CityName()),
@@ -104,7 +113,16 @@ macro_rules! gen_faker_for_locale {
 
                 // company / job
                 "company_name" => fake_str!(company::CompanyName()),
+                // `industry` and `profession` live under the `company` module in fake-rs,
+                // not `job` (per the upstream README). They generate broader-category
+                // strings — `industry` returns things like "Manufacturing" / "Healthcare",
+                // `profession` returns role/occupation labels like "Doctor" / "Teacher".
+                // `job_title` (fake-rs's `job::Title`) remains the most specific —
+                // combinations of seniority + field + position (e.g. "Senior Backend
+                // Architect").
+                "industry" => fake_str!(company::Industry()),
                 "job_title" => fake_str!(job::Title()),
+                "profession" => fake_str!(company::Profession()),
 
                 // identifiers / technical
                 "uuid" => fake_str!(UUIDv4),
@@ -113,8 +131,11 @@ macro_rules! gen_faker_for_locale {
                 "isbn" => fake_str!(barcode::Isbn13()),
                 // NOTE: fake-rs v5.1.0 has a determinism bug in `IP::Dummy for String`
                 // (the impl ignores the passed RNG). Using `IPv4` directly — same
-                // result format ("a.b.c.d"), deterministic with a seeded RNG.
+                // result format ("a.b.c.d"), deterministic with a seeded RNG. The
+                // dedicated `IPv6` faker is used for `ipv6_address` for the same
+                // reason: avoid the `IP::Dummy` randomness path entirely.
                 "ip_address" => fake_str!(net::IPv4()),
+                "ipv6_address" => fake_str!(net::IPv6()),
                 "mac_address" => fake_str!(net::MACAddress()),
                 "url" => Some(format!(
                     "https://www.{}.{}",
@@ -126,6 +147,26 @@ macro_rules! gen_faker_for_locale {
                 "file_path" => fake_str!(fs::FilePath()),
                 "mime_type" => fake_str!(fs::MimeType()),
                 "color_hex" => fake_str!(fcolor::HexColor()),
+                // Locale-agnostic US-style plate: 3 uppercase letters + dash + 4 digits
+                // (e.g. "ABC-1234"). fake-rs's `automotive::LicencePlate` exists but is
+                // only implemented for PT_PT / TR_TR / FA_IR in 5.1.0 — adopting it
+                // would either drop the token from EN-and-other locales or require
+                // per-locale cfg gating; rolling our own keeps the token uniformly
+                // available across every qsv-supported locale. Uses the same seeded
+                // `rng` argument so output is deterministic with `--seed`.
+                "license_plate" => {
+                    // `rand 0.10` exposes `random_range` on the `RngExt` trait (renamed
+                    // from `Rng::gen_range` in the 0.9->0.10 migration); the trait must
+                    // be in scope at the call site for method resolution to find it.
+                    use rand::RngExt;
+                    let letters: String = (0..3)
+                        .map(|_| (b'A' + rng.random_range(0..26)) as char)
+                        .collect();
+                    let digits: String = (0..4)
+                        .map(|_| char::from_digit(rng.random_range(0..10), 10).unwrap())
+                        .collect();
+                    Some(format!("{letters}-{digits}"))
+                },
 
                 // temporal (time-of-day only; `duration` / `duration:N` is
                 // handled by the pre-match check above. Plain date/datetime
@@ -493,6 +534,95 @@ mod tests {
         // Non-duration tokens that just happen to start with "duration"
         // (no colon, no exact match) are NOT faker tokens.
         assert!(!is_faker_token("durationfoo"));
+    }
+
+    #[test]
+    fn new_vocab_tokens_are_faker_tokens() {
+        // Defense against future drift: the 5 tokens added alongside the two-pass
+        // feature MUST map to a faker, not silently fall through to type-based
+        // generation (which would defeat the point of adding them).
+        for tok in [
+            "street_name",
+            "license_plate",
+            "industry",
+            "profession",
+            "ipv6_address",
+        ] {
+            assert!(
+                is_faker_token(tok),
+                "{tok} must be a faker token; check CONTENT_TYPE_VOCAB and gen_faker_for_locale!"
+            );
+        }
+    }
+
+    #[test]
+    fn new_vocab_tokens_produce_non_empty_values_across_locales() {
+        // Sanity check: every locale must produce SOMETHING for each new token.
+        // Catches regressions where a faker was wired only under EN and silently
+        // returned None / empty string under sparse locales.
+        for locale in all_locales() {
+            for tok in [
+                "street_name",
+                "license_plate",
+                "industry",
+                "profession",
+                "ipv6_address",
+            ] {
+                let mut rng = StdRng::seed_from_u64(17); // DevSkim: ignore DS148264
+                let value = content_type_to_value(tok, locale, &mut rng);
+                let v = value.unwrap_or_else(|| {
+                    panic!("{tok}/{locale:?} returned None — must yield a string")
+                });
+                assert!(!v.is_empty(), "{tok}/{locale:?} produced empty string");
+            }
+        }
+    }
+
+    #[test]
+    fn license_plate_has_us_format_aaa_dash_nnnn() {
+        // license_plate uses qsv's locale-agnostic generator (fake-rs's
+        // automotive::LicencePlate is only implemented for PT_PT / TR_TR / FA_IR).
+        // The output MUST match `AAA-NNNN` exactly: 3 uppercase ASCII letters, a dash,
+        // 4 decimal digits. A regression here would mean either the generator drifted
+        // or the wrong faker is being dispatched.
+        for locale in all_locales() {
+            let mut rng = StdRng::seed_from_u64(23); // DevSkim: ignore DS148264
+            let plate = content_type_to_value("license_plate", locale, &mut rng).unwrap();
+            assert_eq!(
+                plate.len(),
+                8,
+                "{locale:?}: expected 8-char plate, got {plate:?}"
+            );
+            let bytes = plate.as_bytes();
+            assert!(
+                bytes[0..3]
+                    .iter()
+                    .all(|b| b.is_ascii_uppercase() && b.is_ascii_alphabetic()),
+                "{locale:?}: first 3 chars must be A-Z, got {plate:?}"
+            );
+            assert_eq!(
+                bytes[3], b'-',
+                "{locale:?}: 4th char must be '-', got {plate:?}"
+            );
+            assert!(
+                bytes[4..8].iter().all(u8::is_ascii_digit),
+                "{locale:?}: last 4 chars must be 0-9, got {plate:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ipv6_address_has_valid_shape() {
+        // IPv6 output must parse as a valid std::net::Ipv6Addr — fake-rs's
+        // `net::IPv6()` returns the canonical hex-colon form. Guards against a
+        // future change that swaps in IPv4 by mistake (which would parse as
+        // Ipv4Addr but NOT as Ipv6Addr).
+        use std::net::Ipv6Addr;
+        let mut rng = StdRng::seed_from_u64(31); // DevSkim: ignore DS148264
+        let value = content_type_to_value("ipv6_address", Locale::EN, &mut rng).unwrap();
+        value.parse::<Ipv6Addr>().unwrap_or_else(|e| {
+            panic!("ipv6_address produced {value:?} which doesn't parse as Ipv6Addr: {e}")
+        });
     }
 
     #[test]

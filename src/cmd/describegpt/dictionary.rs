@@ -42,6 +42,13 @@ use super::{CliError, CliResult, extract_json_from_output};
 /// authoritative — and LLM-supplied `unique_id` is rejected by
 /// `parse_llm_dictionary_response` and `combine_dictionary_entries` to keep
 /// the contract one-way.
+///
+/// NOTE on spellings:
+/// - `license_plate` uses the AMERICAN spelling in the vocab (the user-facing surface), but maps to
+///   fake-rs's `automotive::LicencePlate` (British) at the faker layer in `synthesize::faker_map`.
+///   The vocab spelling is what the LLM sees and what users author by hand.
+/// - `ipv6_address` mirrors the existing `ip_address` (which is IPv4 today); keeping the explicit
+///   version in the token avoids ambiguity for the LLM.
 pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
     // person / identity
     "first_name",
@@ -53,6 +60,7 @@ pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
     "phone",
     // address / location
     "street_address",
+    "street_name",
     "building_number",
     "secondary_address",
     "city",
@@ -66,7 +74,9 @@ pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
     "time_zone",
     // company / job
     "company_name",
+    "industry",
     "job_title",
+    "profession",
     // identifiers / technical
     "unique_id",
     "uuid",
@@ -74,6 +84,7 @@ pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
     "currency_code",
     "isbn",
     "ip_address",
+    "ipv6_address",
     "mac_address",
     "url",
     "user_agent",
@@ -81,6 +92,7 @@ pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
     "file_path",
     "mime_type",
     "color_hex",
+    "license_plate",
     // temporal (time-of-day and durations; plain date/datetime fields stay
     // "unknown" so synthesize's build_date() can use real min/max bounds)
     "time",

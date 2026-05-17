@@ -61,6 +61,7 @@ This minor release lands a new top-level command, deepens AI/LLM-assisted dictio
 - `util`: open subprocess output with write access for fsync (Windows) [#3831](https://github.com/dathere/qsv/pull/3831)
 - `qsvdp`: only list commands actually compiled into the binary [#3816](https://github.com/dathere/qsv/pull/3816) [#3819](https://github.com/dathere/qsv/pull/3819)
 - `help-md-gen`: infer real argument type for Options "Type" column [#3858](https://github.com/dathere/qsv/pull/3858) [#3859](https://github.com/dathere/qsv/pull/3859)
+- `synthesize`: Date/DateTime columns now always use `build_date()` with the source's real min/max bounds — previously, if the LLM (incorrectly) tagged a date column with a faker-mapped `content_type` like `time` (which is *time-of-day*, e.g. `14:30:45`) or any other temporal token, either faker branch in `ColumnGenerator::build()` could fire before the type-based match and emit a time-of-day string for a date column. Suppress any LLM-emitted `content_type` for Date/DateTime columns at function entry so both faker branches fall through to the type-based fallback (regression test in `tests/test_synthesize.rs::synthesize_date_column_ignores_time_content_type`)
 - `test(fetch,sample)`: bind to ephemeral port to fix flaky macOS CI [#3827](https://github.com/dathere/qsv/pull/3827)
 - `test(moarstats)`: serially execute some flaky CI tests; add missing `serial_test::serial` import
 - `test(stats)`: fix s390x big-endian quantile-method rejection test

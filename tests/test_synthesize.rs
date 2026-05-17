@@ -731,3 +731,98 @@ fn synthesize_consistent_fakes_unstructured_passthrough() {
         );
     }
 }
+
+#[test]
+fn synthesize_date_column_ignores_time_content_type() {
+    // Regression test: a Date/DateTime column tagged by the LLM (incorrectly)
+    // with `content_type: "time"` (or any other temporal/faker token) must
+    // still go through `build_date()` so the synthetic values are real dates,
+    // not time-of-day strings like "14:30:45". The dictionary's design intent
+    // is that real date/datetime fields stay tagged `unknown`; this guards
+    // against the LLM contract violation.
+    //
+    // Fixture uses space-separated datetimes (`YYYY-MM-DD HH:MM:SS`) because
+    // `qsv stats --infer-dates` — which `synthesize` invokes internally —
+    // recognizes that as `DateTime` but does NOT recognize the `T`-separated
+    // RFC 3339 form (`YYYY-MM-DDTHH:MM:SS`) without a tz suffix. The Date
+    // column stays as plain `YYYY-MM-DD`.
+    let wrk = Workdir::new("synthesize_date_ignores_time_ct");
+
+    // Date column with all-unique values to push past `try_frequency_weighted`
+    // so the faker branch would otherwise fire. DateTime column likewise.
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["join_date", "last_seen"],
+            svec!["2020-01-15", "2020-01-15 08:00:00"],
+            svec!["2020-06-20", "2020-06-20 09:15:00"],
+            svec!["2020-11-05", "2020-11-05 10:30:00"],
+            svec!["2021-03-10", "2021-03-10 11:45:00"],
+            svec!["2021-08-22", "2021-08-22 12:00:00"],
+            svec!["2022-02-28", "2022-02-28 13:15:00"],
+            svec!["2022-07-15", "2022-07-15 14:30:00"],
+            svec!["2022-12-01", "2022-12-01 15:45:00"],
+            svec!["2023-05-30", "2023-05-30 16:00:00"],
+            svec!["2023-09-14", "2023-09-14 17:15:00"],
+        ],
+    );
+
+    // Dictionary INTENTIONALLY tags both columns with `time` (a content type
+    // that, before the fix, would route to the time-of-day faker and emit
+    // strings like "14:30:45" instead of dates).
+    let dict_json = r#"{
+        "fields": [
+            {"name": "join_date", "type": "Date", "content_type": "time"},
+            {"name": "last_seen", "type": "DateTime", "content_type": "time"}
+        ],
+        "enum_threshold": 5
+    }"#;
+    wrk.create_from_string("dict.json", dict_json);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "20", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 21);
+
+    // The Date column must be `YYYY-MM-DD` (10 chars, two `-` separators, no
+    // `:`); the DateTime column must lead with the same date shape followed
+    // by `T` or ` ` and an `HH:MM:SS` time. A time-of-day faker (the pre-fix
+    // behavior for `content_type="time"`) would emit `HH:MM:SS` for the Date
+    // column — failing both the length and the `:` check.
+    let looks_like_date = |s: &str| -> bool {
+        s.len() == 10
+            && s.as_bytes()[4] == b'-'
+            && s.as_bytes()[7] == b'-'
+            && !s.contains(':')
+            && s.chars()
+                .filter(|c| c.is_ascii_digit() || *c == '-')
+                .count()
+                == s.len()
+    };
+    let looks_like_datetime = |s: &str| -> bool {
+        s.len() >= 19
+            && looks_like_date(&s[..10])
+            && (s.as_bytes()[10] == b'T' || s.as_bytes()[10] == b' ')
+            && s[11..19].chars().enumerate().all(|(i, c)| match i {
+                2 | 5 => c == ':',
+                _ => c.is_ascii_digit(),
+            })
+    };
+
+    for (i, row) in got[1..].iter().enumerate() {
+        assert!(
+            looks_like_date(&row[0]),
+            "row {i}: Date column tagged content_type=time must still emit YYYY-MM-DD; got '{}'",
+            row[0]
+        );
+        assert!(
+            looks_like_datetime(&row[1]),
+            "row {i}: DateTime column tagged content_type=time must still emit YYYY-MM-DD[T \
+             ]HH:MM:SS; got '{}'",
+            row[1]
+        );
+    }
+}

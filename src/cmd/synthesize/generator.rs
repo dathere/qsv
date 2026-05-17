@@ -200,6 +200,24 @@ impl ColumnGenerator {
             return ColumnGenerator::Empty;
         }
 
+        // Date/DateTime columns ALWAYS take the `build_date()` path so their
+        // synthetic values respect the source's real min/max (and quartile)
+        // bounds — never a content-type faker. The dictionary's design intent
+        // (see `CONTENT_TYPE_VOCAB` comments in
+        // `src/cmd/describegpt/dictionary.rs`) is that real date/datetime
+        // fields stay tagged `unknown` precisely so this branch wins. The
+        // LLM occasionally violates that contract by tagging a Date column
+        // with a temporal token like `time` (which is *time-of-day*, e.g.
+        // "14:30:45" — not a date) or `duration`; if such a content type
+        // reached the faker branches below, we'd emit time-of-day strings
+        // for a date column. Suppress any LLM-emitted content_type here so
+        // both faker branches fall through to the type-based match.
+        let content_type = if matches!(stats.r#type.as_str(), "Date" | "DateTime") {
+            ""
+        } else {
+            content_type
+        };
+
         // 1. When `--consistent-fakes` is set AND the column has a STRUCTURED faker content type
         //    AND frequency fully enumerates the column, build a stable source-value -> fake-value
         //    map. Runs BEFORE `try_frequency_weighted` so it overrides the "emit real values" path

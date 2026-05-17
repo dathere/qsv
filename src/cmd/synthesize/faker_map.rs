@@ -2,13 +2,17 @@
 //! produces a realistic fake value.
 //!
 //! The token vocabulary is `crate::cmd::describegpt::dictionary::CONTENT_TYPE_VOCAB`
-//! (the 42 tokens emitted by `describegpt --infer-content-type`). Every token
-//! except `category`, `unique_id`, and `unknown` maps to a faker; those three
-//! (and any token not in the vocabulary) return `None` so the caller falls
-//! back to enumeration/frequency- or type-based generation. `unique_id` is in
+//! (47 tokens total; the full list is rendered into the LLM prompt by
+//! `content_type_vocab_list()`, but `parse_llm_dictionary_response()` rejects
+//! `unique_id` from LLM output — it's deterministic-only and set by
+//! `generate_code_based_dictionary()` from the `<ALL_UNIQUE>` frequency
+//! sentinel — so 46 tokens may actually appear in an LLM-produced dictionary).
+//! Of the 47 vocab tokens, 44 map to a `fake-rs` faker; the three exceptions
+//! (`category`, `unique_id`, `unknown` — see `NON_FAKER_TOKENS` below) and any
+//! token not in the vocabulary return `None` so the caller falls back to
+//! enumeration / frequency- or type-based generation. `unique_id` lands in
 //! this fallback set because there is no general-purpose `fake-rs` faker that
-//! guarantees per-row uniqueness across a synthesis pass; see
-//! `NON_FAKER_TOKENS` below.
+//! guarantees per-row uniqueness across a synthesis pass.
 //!
 //! `duration` additionally accepts an LLM-inferred upper-bound suffix
 //! (`"duration:N"` where N is seconds); see `parse_duration_cap`. Both the

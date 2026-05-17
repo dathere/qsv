@@ -15,7 +15,7 @@ This minor release lands a new top-level command, deepens AI/LLM-assisted dictio
   - Numeric and date/datetime columns use quartile-bucketed generation, so the *shape* of the distribution is preserved — not just `[min, max]`.
   - Null ratios are reproduced per column.
   - `--seed` makes output fully reproducible (single master `StdRng` threads through both selection logic and every faker call).
-  - `--dictionary <file>` layers in semantic Content Types from `describegpt --dictionary --infer-content-type` — each token maps to a `fake-rs` faker (40-token vocabulary covers names, emails, addresses, UUIDs, license plates, IPv4/IPv6, etc.). Bounded-cardinality faker columns sample from a fixed pre-generated pool of distinct fake values (the `--consistent-fakes` mechanism, so a given logical value maps consistently).
+  - `--dictionary <file>` layers in semantic Content Types from `describegpt --dictionary --infer-content-type` — each token maps to a `fake-rs` faker (47-token vocabulary covering names, emails, addresses, UUIDs, license plates, IPv4/IPv6, etc.; 44 are faker-mapped, 3 — `category`, `unique_id`, `unknown` — fall back to enumeration/frequency-based generation). Bounded-cardinality faker columns sample from a fixed pre-generated pool of distinct fake values (the `--consistent-fakes` mechanism, so a given logical value maps consistently).
   - `--infer-content-type` runs `describegpt` internally to build the dictionary on the fly (needs `QSV_LLM_APIKEY`).
   - `--locale` selects from 14 `fake-rs` locales for region-aware faker output.
   - Gated behind the new `synthesize` feature flag; wired into the `qsv` and `qsvmcp` binaries (not `lite`, not `datapusher_plus`). Cross-column correlation is explicitly out of scope for v1.

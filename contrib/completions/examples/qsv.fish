@@ -290,6 +290,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l export-prompt -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l format -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l freq-options -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l markdown-template -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -s t -l max-tokens -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -s m -l model -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l num-examples -r
@@ -316,6 +317,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l fewshot-examples
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l flush-cache
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l forget
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l fresh
+complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l infer-content-type
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l no-cache
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l no-score-sql
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l prepare-context
@@ -323,6 +325,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l process-response
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -s q -l quiet
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l redis-cache
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l tags
+complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l two-pass
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand diff" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand diff" -l delimiter-left -r
@@ -509,6 +512,8 @@ complete -c qsv -n "__fish_qsv_using_subcommand frequency" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -l pct-dec-places -r
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -s r -l rank-strategy -r
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -s s -l select -r
+complete -c qsv -n "__fish_qsv_using_subcommand frequency" -l sketch-map-size -r
+complete -c qsv -n "__fish_qsv_using_subcommand frequency" -l sketch-method -r
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -l stats-filter -r
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -s u -l unq-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -l weight -r
@@ -1368,11 +1373,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand sqlp" -l try-parsedates
 complete -c qsv -n "__fish_qsv_using_subcommand sqlp" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l boolean-patterns -r
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -s c -l cache-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand stats" -l cardinality-method -r
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l dates-whitelist -r
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand stats" -l mode-cardinality-cap -r
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l percentile-list -r
+complete -c qsv -n "__fish_qsv_using_subcommand stats" -l quantile-method -r
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l round -r
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -s s -l select -r
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l weight -r

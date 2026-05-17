@@ -272,7 +272,9 @@ module completions {
     --format: string
     --freq-options: string
     --fresh
+    --infer-content-type
     --language: string
+    --markdown-template: string
     --max-tokens(-t): string
     --model(-m): string
     --no-cache
@@ -297,6 +299,7 @@ module completions {
     --tags
     --timeout: string
     --truncate-str: string
+    --two-pass
     --user-agent: string
     --help(-h)                # Print help
   ]
@@ -547,6 +550,8 @@ module completions {
     --pretty-json
     --rank-strategy(-r): string
     --select(-s): string
+    --sketch-map-size: string
+    --sketch-method: string
     --stats-filter: string
     --toon
     --unq-limit(-u): string
@@ -1627,6 +1632,7 @@ module completions {
     --boolean-patterns: string
     --cache-threshold(-c): string
     --cardinality
+    --cardinality-method: string
     --dates-whitelist: string
     --delimiter(-d): string
     --everything(-E)
@@ -1638,12 +1644,14 @@ module completions {
     --median
     --memcheck
     --mode
+    --mode-cardinality-cap: string
     --no-headers(-n)
     --nulls
     --output(-o): string
     --percentile-list: string
     --percentiles
     --prefer-dmy
+    --quantile-method: string
     --quartiles
     --round: string
     --select(-s): string

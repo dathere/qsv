@@ -4,6 +4,81 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.1.0] - 2026-05-17 🤖 The "Synthetic Data" Release 🎲
+
+This minor release lands a new top-level command, deepens AI/LLM-assisted dictionary inference in `describegpt`, expands the opt-in Apache DataSketches estimators in `stats`/`frequency` that began in 20.0.0, and sweeps in a long tail of correctness and big-endian fixes. No breaking changes — pipelines built against 20.0.0 should upgrade in place.
+
+### Headline
+
+- **NEW `synthesize` command** — generates statistically-faithful synthetic CSVs from a source file. Runs `stats` + `frequency` + `count` on the source, then emits N rows that reproduce per-column attributes:
+  - Categorical / low-cardinality columns are reproduced by frequency-weighted sampling of the *real* value set (cardinality, weights, and repetition structure preserved exactly).
+  - Numeric and date/datetime columns use quartile-bucketed generation, so the *shape* of the distribution is preserved — not just `[min, max]`.
+  - Null ratios are reproduced per column.
+  - `--seed` makes output fully reproducible (single master `StdRng` threads through both selection logic and every faker call).
+  - `--dictionary <file>` layers in semantic Content Types from `describegpt --dictionary --infer-content-type` — each token maps to a `fake-rs` faker (40-token vocabulary covers names, emails, addresses, UUIDs, license plates, IPv4/IPv6, etc.). Bounded-cardinality faker columns sample from a fixed pre-generated pool of distinct fake values (the `--consistent-fakes` mechanism, so a given logical value maps consistently).
+  - `--infer-content-type` runs `describegpt` internally to build the dictionary on the fly (needs `QSV_LLM_APIKEY`).
+  - `--locale` selects from 14 `fake-rs` locales for region-aware faker output.
+  - Gated behind the new `synthesize` feature flag; wired into the `qsv` and `qsvmcp` binaries (not `lite`, not `datapusher_plus`). Cross-column correlation is explicitly out of scope for v1.
+
+### Added
+- `synthesize`: new top-level command (see Headline) [#3854](https://github.com/dathere/qsv/pull/3854)
+- `synthesize`: `--consistent-fakes` for stable source→fake mapping [#3865](https://github.com/dathere/qsv/pull/3865)
+- `synthesize`: `--locale` option for 14 fake-rs locales [#3860](https://github.com/dathere/qsv/pull/3860)
+- `describegpt`: `--two-pass` cross-field Data Dictionary refinement [#3863](https://github.com/dathere/qsv/pull/3863)
+- `describegpt`: deterministic `unique_id` Content Type for ALL_UNIQUE fields [#3862](https://github.com/dathere/qsv/pull/3862)
+- `describegpt,synthesize`: infer Content Type for temporal fields with LLM-hinted duration cap [#3861](https://github.com/dathere/qsv/pull/3861)
+- `describegpt,synthesize`: 5 new Content Type tokens — `street_name`, `license_plate`, `industry`, `profession`, `ipv6_address`
+- `describegpt`: `--markdown-template` for customizable Markdown output [#3834](https://github.com/dathere/qsv/pull/3834)
+- `pivotp`: `--agg quantile@<p>` (alias `q@<p>`) with linear interpolation [#3842](https://github.com/dathere/qsv/pull/3842)
+- `stats`/`frequency`: opt-in Apache DataSketches modes — HLL cardinality, Frequent Items top-K [#3840](https://github.com/dathere/qsv/pull/3840)
+- `stats`: widened BLAKE3 fingerprint to cover all streaming stats [#3824](https://github.com/dathere/qsv/pull/3824)
+
+### Changed
+- `stats`/`frequency`: auto-enable Apache DataSketches estimators (t-digest + HyperLogLog for `stats`; Misra-Gries Frequent Items for `frequency`) when `util::mem_file_check` reports OOM, in addition to the existing auto-index fallback. A `wwarn!` is emitted listing the auto-enabled estimators; explicit `--quantile-method exact` / `--cardinality-method exact` / `--sketch-method exact` still suppresses the auto-enable [#3843](https://github.com/dathere/qsv/pull/3843)
+- `stats`: three opt-in micro-optimizations — simdutf8 output, t-digest quantiles, mode-cardinality cap [#3839](https://github.com/dathere/qsv/pull/3839)
+- `synthesize`: use string-length stats for unstructured text columns [#3864](https://github.com/dathere/qsv/pull/3864)
+- `describegpt`: inline `{{ dictionary }}` in default description/tags prompts; skip redundant chat-message dictionary injection when the template already inlines it
+- `synthesize`: handle both describegpt-wrapped and raw dictionary JSON
+- `refactor`: adopt Rust 1.95 `cfg_select!` macro at platform-conditional sites [#3846](https://github.com/dathere/qsv/pull/3846)
+- `perf`: promote `bytes_to_cow_str` helper to `util` and sweep callsites
+- `perf(moarstats)`: hint rare branches with `core::hint::cold_path()` [#3823](https://github.com/dathere/qsv/pull/3823)
+- `perf(stats)`: mark non-UTF-8 branch cold
+- `perf(frequency)`: hint UTF-8 failure as cold in the ignore-case hot loop [#3821](https://github.com/dathere/qsv/pull/3821)
+- `refactor(stats)`: shrink and tidy `WhichStats` [#3822](https://github.com/dathere/qsv/pull/3822)
+- `refactor(publish)`: fetch tags and enforce SemVer for debian package releases
+- `refactor(benchmarks)`: harden `benchmarks.sh` error handling and cross-platform support [#3814](https://github.com/dathere/qsv/pull/3814)
+- `deps`: bump polars (latest upstream), calamine 0.34→0.35, csvlens fork with bumped arrow, sysinfo 0.38.4→0.39.2, rust_decimal 1.41→1.42, tokio 1.52.1→1.52.3, filetime 0.2.27→0.2.29, jsonschema 0.46.4→0.46.5, rand_xoshiro 0.8.0→0.8.1, redis 1.2.0→1.2.1
+- assorted clippy cleanups across `stats`, `frequency`, `pivotp`, `partition`
+
+### Fixed
+- `stats`: preserve length & lex stats when column type widens to String [#3856](https://github.com/dathere/qsv/pull/3856)
+- `stats`: remove duplicate big-endian `TDigestStub`/`HllSketchStub` defs [#3857](https://github.com/dathere/qsv/pull/3857)
+- `stats`: restore big-endian build by giving slot fallbacks an accessible `.0` [#3850](https://github.com/dathere/qsv/pull/3850)
+- `stats`/`frequency`: gate Apache DataSketches behind little-endian targets [#3847](https://github.com/dathere/qsv/pull/3847)
+- `apply`/`applydp`: thousands negative fractions; scope `<NULL>` to `regex_replace` [#3845](https://github.com/dathere/qsv/pull/3845)
+- `moarstats`: retry on stats coverage mismatch + fsync joined CSV parent dir [#3838](https://github.com/dathere/qsv/pull/3838)
+- `moarstats`: close fsync race that silently dropped joined columns on macOS [#3830](https://github.com/dathere/qsv/pull/3830)
+- `util`: open subprocess output with write access for fsync (Windows) [#3831](https://github.com/dathere/qsv/pull/3831)
+- `qsvdp`: only list commands actually compiled into the binary [#3816](https://github.com/dathere/qsv/pull/3816) [#3819](https://github.com/dathere/qsv/pull/3819)
+- `help-md-gen`: infer real argument type for Options "Type" column [#3858](https://github.com/dathere/qsv/pull/3858) [#3859](https://github.com/dathere/qsv/pull/3859)
+- `test(fetch,sample)`: bind to ephemeral port to fix flaky macOS CI [#3827](https://github.com/dathere/qsv/pull/3827)
+- `test(moarstats)`: serially execute some flaky CI tests; add missing `serial_test::serial` import
+- `test(stats)`: fix s390x big-endian quantile-method rejection test
+
+### Docs
+- AI Policy section added to README.md and CONTRIBUTING.md, with cross-links and contributor attribution guidance
+- `docs-drift` CI check added; audit-detected drift fixed [#3868](https://github.com/dathere/qsv/pull/3868)
+- README emoji legend audited and normalized; help docs regenerated [#3832](https://github.com/dathere/qsv/pull/3832)
+- "Processing Very Large Files" guidance added; large-file recipe inline-comment fixes
+- `stats`: explicit Count Reference tables for 47 `stats` / 55 `moarstats` measures; count conventions clarified
+- `STATS_DEFINITIONS` audit; `stats` DEVELOPER NOTE wordsmithed
+- `features`: corrected `self_update` probability + nightly sub-features documentation [#3833](https://github.com/dathere/qsv/pull/3833)
+- Test count updated to the verified exact total (3,094)
+
+Detailed MCP Server and Cowork Plugin changes are documented in the [MCP Server/Cowork Plugin CHANGELOG](.claude/skills/CHANGELOG.md).
+
+---
+
 ## [20.0.0] - 2026-05-03 🧹 The "Spring Cleaning" Release 🌱
 
 Over the past four weeks, we did the first end-to-end pass over the qsv codebase using Claude Code, [roborev](https://www.roborev.io/), [Serena](https://oraios.github.io/serena), [Context7](https://context7.com) and GitHub Copilot orchestrated using a multi-agent, adversarial review workflow - systematically auditing every command for correctness, safety, and performance.  The result is the largest correctness-and-safety sweep in qsv's history: ALL commands were touched by review-driven cleanups, with dozens of latent bugs, panic paths, and performance cliffs swept out, while adding more than 250 new tests across the board.

@@ -1893,7 +1893,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__describegpt)
-            opts="-A -k -u -t -m -o -p -q -h --addl-cols --addl-cols-list --addl-props --all --api-key --base-url --cache-dir --ckan-api --ckan-token --description --dictionary --disk-cache-dir --enum-threshold --export-prompt --fewshot-examples --flush-cache --forget --format --freq-options --fresh --language --max-tokens --model --no-cache --no-score-sql --num-examples --num-tags --output --prepare-context --process-response --prompt --prompt-file --quiet --redis-cache --sample-size --score-max-retries --score-threshold --session --session-len --sql-results --stats-options --tag-vocab --tags --timeout --truncate-str --user-agent --help"
+            opts="-A -k -u -t -m -o -p -q -h --addl-cols --addl-cols-list --addl-props --all --api-key --base-url --cache-dir --ckan-api --ckan-token --description --dictionary --disk-cache-dir --enum-threshold --export-prompt --fewshot-examples --flush-cache --forget --format --freq-options --fresh --infer-content-type --language --markdown-template --max-tokens --model --no-cache --no-score-sql --num-examples --num-tags --output --prepare-context --process-response --prompt --prompt-file --quiet --redis-cache --sample-size --score-max-retries --score-threshold --session --session-len --sql-results --stats-options --tag-vocab --tags --timeout --truncate-str --two-pass --user-agent --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1956,6 +1956,10 @@ _qsv() {
                     return 0
                     ;;
                 --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --markdown-template)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2853,7 +2857,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__frequency)
-            opts="-a -d -i -j -l -n -o -r -s -u -h --all-unique-text --asc --delimiter --force --frequency-jsonl --high-card-pct --high-card-threshold --ignore-case --jobs --json --limit --lmt-threshold --memcheck --no-float --no-headers --no-nulls --no-other --no-stats --no-trim --null-sorted --null-text --other-sorted --other-text --output --pct-dec-places --pct-nulls --pretty-json --rank-strategy --select --stats-filter --toon --unq-limit --vis-whitespace --weight --help"
+            opts="-a -d -i -j -l -n -o -r -s -u -h --all-unique-text --asc --delimiter --force --frequency-jsonl --high-card-pct --high-card-threshold --ignore-case --jobs --json --limit --lmt-threshold --memcheck --no-float --no-headers --no-nulls --no-other --no-stats --no-trim --null-sorted --null-text --other-sorted --other-text --output --pct-dec-places --pct-nulls --pretty-json --rank-strategy --select --sketch-map-size --sketch-method --stats-filter --toon --unq-limit --vis-whitespace --weight --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2936,6 +2940,14 @@ _qsv() {
                     return 0
                     ;;
                 -s)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sketch-map-size)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sketch-method)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8733,7 +8745,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__stats)
-            opts="-c -d -E -j -n -o -s -h --boolean-patterns --cache-threshold --cardinality --dates-whitelist --delimiter --everything --force --infer-boolean --infer-dates --jobs --mad --median --memcheck --mode --no-headers --nulls --output --percentile-list --percentiles --prefer-dmy --quartiles --round --select --stats-jsonl --typesonly --vis-whitespace --weight --help"
+            opts="-c -d -E -j -n -o -s -h --boolean-patterns --cache-threshold --cardinality --cardinality-method --dates-whitelist --delimiter --everything --force --infer-boolean --infer-dates --jobs --mad --median --memcheck --mode --mode-cardinality-cap --no-headers --nulls --output --percentile-list --percentiles --prefer-dmy --quantile-method --quartiles --round --select --stats-jsonl --typesonly --vis-whitespace --weight --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -8748,6 +8760,10 @@ _qsv() {
                     return 0
                     ;;
                 -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cardinality-method)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8771,6 +8787,10 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --mode-cardinality-cap)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -8780,6 +8800,10 @@ _qsv() {
                     return 0
                     ;;
                 --percentile-list)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --quantile-method)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

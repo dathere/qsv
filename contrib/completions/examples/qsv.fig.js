@@ -1152,6 +1152,14 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--markdown-template",
+          isRepeatable: true,
+          args: {
+            name: "markdown-template",
+            isOptional: true,
+          },
+        },
+        {
           name: ["-t", "--max-tokens"],
           isRepeatable: true,
           args: {
@@ -1320,6 +1328,9 @@ const completion: Fig.Spec = {
           name: "--fresh",
         },
         {
+          name: "--infer-content-type",
+        },
+        {
           name: "--no-cache",
         },
         {
@@ -1339,6 +1350,9 @@ const completion: Fig.Spec = {
         },
         {
           name: "--tags",
+        },
+        {
+          name: "--two-pass",
         },
         {
           name: ["-h", "--help"],
@@ -2546,6 +2560,22 @@ const completion: Fig.Spec = {
           isRepeatable: true,
           args: {
             name: "select",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--sketch-map-size",
+          isRepeatable: true,
+          args: {
+            name: "sketch-map-size",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--sketch-method",
+          isRepeatable: true,
+          args: {
+            name: "sketch-method",
             isOptional: true,
           },
         },
@@ -7907,6 +7937,14 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--cardinality-method",
+          isRepeatable: true,
+          args: {
+            name: "cardinality-method",
+            isOptional: true,
+          },
+        },
+        {
           name: "--dates-whitelist",
           isRepeatable: true,
           args: {
@@ -7931,6 +7969,14 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--mode-cardinality-cap",
+          isRepeatable: true,
+          args: {
+            name: "mode-cardinality-cap",
+            isOptional: true,
+          },
+        },
+        {
           name: ["-o", "--output"],
           isRepeatable: true,
           args: {
@@ -7943,6 +7989,14 @@ const completion: Fig.Spec = {
           isRepeatable: true,
           args: {
             name: "percentile-list",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--quantile-method",
+          isRepeatable: true,
+          args: {
+            name: "quantile-method",
             isOptional: true,
           },
         },

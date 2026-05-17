@@ -1,7 +1,7 @@
 {
   "name": "qsv-sample",
-  "version": "20.0.0",
-  "description": "Randomly draw rows (with optional seed) from a CSV using seven different sampling methods - reservoir (default), indexed, bernoulli, systematic, stratified, weighted & cluster sampling. Supports sampling from CSVs on remote URLs.",
+  "version": "20.1.0",
+  "description": "Randomly draw rows (with optional seed) from a CSV using seven different sampling methods - reservoir (default), indexed, bernoulli, systematic, stratified, weighted & cluster sampling. Supports sampling from CSVs on remote URLs. Uses the stats cache to skip unnecessary scanning and inform its sampling strategies.",
   "category": "selection",
   "command": {
     "subcommand": "sample",

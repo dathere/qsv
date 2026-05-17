@@ -493,6 +493,7 @@ _arguments "${_arguments_options[@]}" : \
 '--format=[]: :_default' \
 '--freq-options=[]: :_default' \
 '--language=[]: :_default' \
+'--markdown-template=[]: :_default' \
 '-t+[]: :_default' \
 '--max-tokens=[]: :_default' \
 '-m+[]: :_default' \
@@ -524,6 +525,7 @@ _arguments "${_arguments_options[@]}" : \
 '--flush-cache[]' \
 '--forget[]' \
 '--fresh[]' \
+'--infer-content-type[]' \
 '--no-cache[]' \
 '--no-score-sql[]' \
 '--prepare-context[]' \
@@ -532,6 +534,7 @@ _arguments "${_arguments_options[@]}" : \
 '--quiet[]' \
 '--redis-cache[]' \
 '--tags[]' \
+'--two-pass[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -880,6 +883,8 @@ _arguments "${_arguments_options[@]}" : \
 '--rank-strategy=[]: :_default' \
 '-s+[]: :_default' \
 '--select=[]: :_default' \
+'--sketch-map-size=[]: :_default' \
+'--sketch-method=[]: :_default' \
 '--stats-filter=[]: :_default' \
 '-u+[]: :_default' \
 '--unq-limit=[]: :_default' \
@@ -2608,14 +2613,17 @@ _arguments "${_arguments_options[@]}" : \
 '--boolean-patterns=[]: :_default' \
 '-c+[]: :_default' \
 '--cache-threshold=[]: :_default' \
+'--cardinality-method=[]: :_default' \
 '--dates-whitelist=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'--mode-cardinality-cap=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--percentile-list=[]: :_default' \
+'--quantile-method=[]: :_default' \
 '--round=[]: :_default' \
 '-s+[]: :_default' \
 '--select=[]: :_default' \

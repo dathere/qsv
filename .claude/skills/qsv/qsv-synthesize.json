@@ -1,6 +1,6 @@
 {
   "name": "qsv-synthesize",
-  "version": "20.0.0",
+  "version": "20.1.0",
   "description": "Generate a synthetic CSV that is statistically faithful to a source CSV. Runs `stats` + `frequency` on the source so synthesized columns reproduce its per-column attributes — frequency-weighted sampling for categorical columns, quartile-bucketed numeric/date generation, null-ratio preservation. With a Data Dictionary from `describegpt --dictionary --infer-content-type`, semantic Content Types pick realistic fake-rs fakers (names, emails, addresses, UUIDs, etc.) for non-enumerable columns. Fully reproducible with `--seed`.",
   "category": "generation",
   "command": {

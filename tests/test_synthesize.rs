@@ -451,21 +451,25 @@ fn synthesize_respects_length_stats_for_free_text_column() {
 fn synthesize_consistent_fakes_stable_mapping() {
     let wrk = Workdir::new("synthesize_consistent_fakes_stable");
 
-    // `first_name` with three distinct source values × varied counts. With
-    // `--consistent-fakes` and a dictionary that marks the column as
-    // `first_name`, the output must:
+    // `first_name` with three distinct source values × varied counts. The
+    // `SRC_` prefix keeps the source values outside the fake-rs first-name
+    // value space (`first_name` can legitimately emit "Michael", "Sarah", or
+    // "Tom"), so the "no real value leaked" assertion below is robust to
+    // fake-rs locale-dataset and version drift. With `--consistent-fakes` and
+    // a dictionary that marks the column as `first_name`, the output must:
     //   * contain exactly 3 distinct fakes (one per distinct source value)
-    //   * never contain any of the real source values
+    //   * never contain any of the real source values (no SRC_-prefixed strings — the faker never
+    //     emits those)
     wrk.create(
         "data.csv",
         vec![
             svec!["first_name"],
-            svec!["Michael"],
-            svec!["Michael"],
-            svec!["Michael"],
-            svec!["Sarah"],
-            svec!["Sarah"],
-            svec!["Tom"],
+            svec!["SRC_Michael"],
+            svec!["SRC_Michael"],
+            svec!["SRC_Michael"],
+            svec!["SRC_Sarah"],
+            svec!["SRC_Sarah"],
+            svec!["SRC_Tom"],
         ],
     );
 
@@ -492,8 +496,9 @@ fn synthesize_consistent_fakes_stable_mapping() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert_eq!(got.len(), 201);
 
-    let real_values: std::collections::HashSet<&str> =
-        ["Michael", "Sarah", "Tom"].into_iter().collect();
+    let real_values: std::collections::HashSet<&str> = ["SRC_Michael", "SRC_Sarah", "SRC_Tom"]
+        .into_iter()
+        .collect();
     let mut distinct_fakes: std::collections::HashSet<String> = std::collections::HashSet::new();
     for row in &got[1..] {
         let v = &row[0];
@@ -523,13 +528,13 @@ fn synthesize_consistent_fakes_distribution_preserved() {
     // 6 / 4 / 2 (50% / 33% / 17%) over 12 source rows.
     let mut rows: Vec<Vec<String>> = vec![svec!["first_name"]];
     for _ in 0..6 {
-        rows.push(svec!["Michael"]);
+        rows.push(svec!["SRC_Michael"]);
     }
     for _ in 0..4 {
-        rows.push(svec!["Sarah"]);
+        rows.push(svec!["SRC_Sarah"]);
     }
     for _ in 0..2 {
-        rows.push(svec!["Tom"]);
+        rows.push(svec!["SRC_Tom"]);
     }
     wrk.create("data.csv", rows);
 
@@ -589,10 +594,10 @@ fn synthesize_consistent_fakes_seed_reproducible() {
         "data.csv",
         vec![
             svec!["first_name"],
-            svec!["Michael"],
-            svec!["Michael"],
-            svec!["Sarah"],
-            svec!["Tom"],
+            svec!["SRC_Michael"],
+            svec!["SRC_Michael"],
+            svec!["SRC_Sarah"],
+            svec!["SRC_Tom"],
         ],
     );
     let dict_json = r#"{
@@ -642,10 +647,10 @@ fn synthesize_consistent_fakes_off_preserves_default() {
         "data.csv",
         vec![
             svec!["first_name"],
-            svec!["Michael"],
-            svec!["Michael"],
-            svec!["Sarah"],
-            svec!["Tom"],
+            svec!["SRC_Michael"],
+            svec!["SRC_Michael"],
+            svec!["SRC_Sarah"],
+            svec!["SRC_Tom"],
         ],
     );
     let dict_json = r#"{
@@ -665,8 +670,9 @@ fn synthesize_consistent_fakes_off_preserves_default() {
 
     // Without the flag, frequency-enumeration wins: every output row must be
     // one of the real source values.
-    let real_values: std::collections::HashSet<&str> =
-        ["Michael", "Sarah", "Tom"].into_iter().collect();
+    let real_values: std::collections::HashSet<&str> = ["SRC_Michael", "SRC_Sarah", "SRC_Tom"]
+        .into_iter()
+        .collect();
     for row in &got[1..] {
         assert!(
             real_values.contains(row[0].as_str()),

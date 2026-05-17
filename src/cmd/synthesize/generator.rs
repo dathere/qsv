@@ -490,8 +490,12 @@ fn try_frequency_weighted(freqs: &[&FrequencyRecord], null_ratio: f64) -> Option
 ///
 /// Returns `None` when the same gate `try_frequency_weighted` uses rejects
 /// the column (no enumeration, all rank-0, no real values after null
-/// filtering), OR when the faker fails to produce any value at all — in
-/// that case the caller falls through to the regular `Faker` variant.
+/// filtering), when the post-filter source cardinality exceeds
+/// `CARDINALITY_POOL_CAP` (matching `build_faker_pool`'s safety bound — keeps
+/// allocations and the `source_count * 20` attempt loop bounded when a user
+/// passes `--freq-limit 0` on a high-cardinality column), OR when the faker
+/// fails to produce any value at all — in any of those cases the caller
+/// falls through to the regular `Faker` variant.
 fn try_faker_mapped(
     freqs: &[&FrequencyRecord],
     content_type: &str,
@@ -522,6 +526,14 @@ fn try_faker_mapped(
         weights.push(f.count as f64);
     }
     if source_count == 0 {
+        return None;
+    }
+    // Bound the work — match `build_faker_pool`'s safety cap so a user passing
+    // `--freq-limit 0` on a high-cardinality column does not allocate a huge
+    // `HashSet`/`Vec` or spin in a `source_count * 20` attempt loop. Above the
+    // cap, fall through to the regular `Faker` variant (per-row generation, no
+    // pre-allocated map).
+    if source_count as u64 > CARDINALITY_POOL_CAP {
         return None;
     }
 

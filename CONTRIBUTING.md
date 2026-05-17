@@ -45,9 +45,9 @@ If you are not familiar with GitHub Wikis, you can find a guide [here](https://d
 
 ## AI Policy
 
-We embrace the use of AI tools to enhance productivity and creativity in this project. Contributors are encouraged to use AI responsibly and transparently. If AI tools are used to generate code, documentation, or other contributions, please:
+qsv itself uses AI tools heavily in day-to-day development — see the [AI Policy section in README.md](README.md#ai-policy) for how the project uses them. Contributors are likewise encouraged to use AI responsibly and transparently. If AI tools are used to generate code, documentation, or other contributions, please:
 
-1. Clearly indicate where and how AI was used in your pull request description or commit messages.
+1. Clearly indicate where and how AI was used in your pull request description or commit messages, and accredit the specific Agent/Model used (e.g. `Co-Authored-By:` trailer). Do not represent AI-generated work as your own.
 2. Review and test AI-generated outputs thoroughly to ensure they meet the project's quality standards.
 3. Avoid submitting AI-generated content that violates copyrights, licenses, or ethical guidelines.
 

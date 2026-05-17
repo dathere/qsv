@@ -60,7 +60,7 @@ pub(crate) struct LengthStats {
     pub min:    usize,
     pub max:    usize,
     pub avg:    f64,
-    /// `0.0` when absent or unparseable → falls back to uniform `[min, max]`
+    /// `0.0` when absent or unparsable → falls back to uniform `[min, max]`
     /// sampling in `sample_target_length`.
     pub stddev: f64,
 }

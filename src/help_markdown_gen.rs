@@ -560,7 +560,7 @@ fn heading_to_anchor(heading: &str) -> String {
 fn generate_command_markdown(
     usage_text: &str,
     cmd_info: &CommandInfo,
-    _repo_root: &Path,
+    repo_root: &Path,
     legend: &[(String, String)],
     arg_type_map: &HashMap<String, &'static str>,
 ) -> String {
@@ -568,7 +568,7 @@ fn generate_command_markdown(
 
     // Support both `src/cmd/<name>.rs` and module-dir `src/cmd/<name>/mod.rs`.
     let flat_path = format!("src/cmd/{}.rs", cmd_info.source_file);
-    let source_path = if _repo_root.join(&flat_path).exists() {
+    let source_path = if repo_root.join(&flat_path).exists() {
         flat_path
     } else {
         format!("src/cmd/{}/mod.rs", cmd_info.source_file)

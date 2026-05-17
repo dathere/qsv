@@ -15,6 +15,7 @@
 * `polars` - enables all [Polars](https://pola.rs)-powered commands (currently, `joinp`, `pivotp`, `scoresql` and `sqlp` and enables polars mode in `count`). It also enables support for reading `.parquet`, `.ipc`/`.arrow` and `.json`/`.jsonl` formats as well as `.csv.gz`, `.csv.zst` and `.csv.zlib` compressed files.<br />Note that Polars is a very powerful library, but it has a lot of dependencies that drastically increases both compile time and binary size.
 * `prompt` - enable `prompt` command.
 * `python` - enable `py` command. Note that qsv will look for the shared library for the Python version (Python 3.10 & above supported) it was compiled against & will abort on startup if the library is not found, even if you're NOT using the `py` command. Check [Python](#python) section for more info. Though Luau is the preferred DSL for qsv for all the reasons stated above, Python is still the lingua franca of data wrangling.
+* `synthesize` - enable `synthesize` command. Generates statistically-faithful synthetic CSVs from a source CSV using `stats` + `frequency` plus, optionally, semantic Content Types from a Data Dictionary to pick realistic [fake-rs](https://github.com/cksac/fake-rs) fakers.
 * `magika` - enable [Magika](https://github.com/google/magika)-powered, AI-based file type detection in the `sniff` command for enhanced MIME type identification. Falls back to the `file-format` crate in `qsvlite`/`qsvdp` variants. Not available on MUSL builds.
 * `mcp` - enable `log` command and MCP (Model Context Protocol) skill JSON generation for AI agent integration.
 * `to` - enables the `to` command.
@@ -26,13 +27,13 @@ To check if your qsv build will have the option to self-update, run `qsv --versi
 ## Special Features for building qsv binary variants:
 
 * `feature_capable` - enable to build `qsv` binary variant which is feature-capable. Also used by `qsvmcp`. (mutually exclusive with `lite` and `datapusher_plus`)
-  * `all_features` - shortcut to build `qsv` binary variant with all features enabled (apply,fetch,foreach,geocode,luau,magika,mcp,polars,python,to,self_update,ui).
+  * `all_features` - shortcut to build `qsv` binary variant with all features enabled (apply,fetch,foreach,geocode,luau,magika,mcp,polars,python,synthesize,to,self_update,ui).
 
-* `qsvmcp` - enable to build `qsvmcp` binary variant - optimized for [MCP](https://modelcontextprotocol.io/) server use with geocode, luau, mcp, polars, self_update, and to features. Shares `src/main.rs` with `qsv`. (mutually exclusive with `lite` and `datapusher_plus`)
+* `qsvmcp` - enable to build `qsvmcp` binary variant - optimized for [MCP](https://modelcontextprotocol.io/) server use with geocode, luau, mcp, polars, self_update, synthesize, and to features. Shares `src/main.rs` with `qsv`. (mutually exclusive with `lite` and `datapusher_plus`)
 * `lite` - enable to build `qsvlite` binary variant with all features disabled. (mutually exclusive with `feature_capable` and `datapusher_plus`)
 * `datapusher_plus` - enable to build `qsvdp` binary variant - the [DataPusher+](https://github.com/dathere/datapusher-plus) optimized qsv binary. (mutually exclusive with `feature_capable` and `lite`)
 * `nightly` - enable to turn on nightly-only features when building with Rust nightly/unstable. Specifically: `crc32fast/nightly`, `pyo3/nightly`, `rand/simd_support`, `simd-json/hints` and `foldhash/nightly`. Note that Polars has its own separate `nightly-polars` feature.
-* `distrib_features` - enable to build `qsv` binary variant with the core distribution features enabled (apply, fetch, foreach, geocode, luau, mcp, polars, python, to) - i.e. all features except `self_update`, `ui` and `magika`. This should make it easier for distro packagers to build `qsv` as qsv removes and adds features over time.
+* `distrib_features` - enable to build `qsv` binary variant with the core distribution features enabled (apply, fetch, foreach, geocode, luau, mcp, polars, python, synthesize, to) - i.e. all features except `self_update`, `ui` and `magika`. This should make it easier for distro packagers to build `qsv` as qsv removes and adds features over time.
 
 > [!NOTE]
 > `qsvlite`, as the name implies, always has **non-default features disabled**. `qsv` can be built with any combination of the above features using the cargo `--features` & `--no-default-features` flags. The prebuilt `qsv` binaries have **all applicable features valid for the target platform**.

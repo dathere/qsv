@@ -120,8 +120,8 @@ The core of `run` is straightforward:
 
 While `index.rs` only builds indexes, the broader lifecycle is governed by `Config`:
 
-- **`Config::autoindex_file()`** (lines ~540-575): silently creates an index when either `QSV_AUTOINDEX_SIZE` is set and the CSV size meets the threshold or when stale indexes are detected.
-- **`Config::index_files()`** (lines ~578-663): central check used by other commands to determine if an index exists, auto-create one, and refresh stale indexes by comparing modification times.
+- **`Config::autoindex_file()`** (lines ~594-619): silently creates an index when either `QSV_AUTOINDEX_SIZE` is set and the CSV size meets the threshold or when stale indexes are detected.
+- **`Config::index_files()`** (lines ~627-715): central check used by other commands to determine if an index exists, auto-create one, and refresh stale indexes by comparing modification times.
 - **`Config::indexed()`**: wraps `index_files()` and opens an `Indexed<fs::File, fs::File>` handle used by workloads that support parallel iteration.
 
 Environment knobs:

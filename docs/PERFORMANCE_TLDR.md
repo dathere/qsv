@@ -36,6 +36,7 @@ The stats cache is qsv's secret weapon for fast data analysis. When you run the 
 qsv is designed to handle large files efficiently, but some operations need to load entire files into memory. Here's what you need to know:
 
 **Commands that need full memory loading (marked with 🤯):**
+- `color`
 - `dedup` (unless using --sorted)
 - `pragmastat`
 - `reverse`

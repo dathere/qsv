@@ -10,7 +10,7 @@ The `frequency` command produces exact frequency distribution tables that:
 - **Handle data normalization** with trimming, case folding, NULL handling, and whitespace visualization options
 
 ## File Location
-`src/cmd/frequency.rs` (~3,826 lines)
+`src/cmd/frequency.rs` (~4,287 lines)
 
 ## Key Entry Points
 

@@ -1,0 +1,64 @@
+# Docs drift check — re-derives feature lists, source-file line counts, the
+# MAX_STAT_COLUMNS constant, and the qsv version from authoritative sources
+# (Cargo.toml, the .rs files themselves) and flags any documentation file
+# that contradicts them.
+#
+# This catches the recurring drift patterns the documentation-audit skill has
+# repeatedly surfaced: stale feature lists in FEATURES.md / README.md after
+# new features are added to Cargo.toml, "~NNN lines" claims in contributor
+# quick-reference docs that have drifted as the source files grew, and stale
+# version numbers in QSV_USER_AGENT examples.
+#
+# Triggers:
+#   - PRs that touch any input the check reads (Cargo.toml, the audited .rs
+#     files, the audited docs, or the check script itself)
+#   - Nightly cron (catches drift introduced by main pushes that bypassed PRs)
+#   - Manual workflow_dispatch
+
+name: Docs drift check
+
+on:
+  schedule:
+    - cron: '37 4 * * *'   # nightly @ 04:37 UTC
+  pull_request:
+    paths:
+      - 'Cargo.toml'
+      - 'src/cmd/stats.rs'
+      - 'src/cmd/frequency.rs'
+      - 'src/cmd/index.rs'
+      - 'tests/test_stats.rs'
+      - 'tests/test_frequency.rs'
+      - 'tests/test_index.rs'
+      - 'README.md'
+      - 'docs/FEATURES.md'
+      - 'docs/PERFORMANCE.md'
+      - 'docs/PERFORMANCE_TLDR.md'
+      - 'docs/STATS_DEFINITIONS.md'
+      - 'docs/contributor/**'
+      - 'dotenv.template'
+      - 'scripts/docs-drift-check.py'
+      - '.github/workflows/docs-drift.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Run docs-drift-check
+        run: python3 scripts/docs-drift-check.py

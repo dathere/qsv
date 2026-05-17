@@ -32,7 +32,7 @@ export QSV_AUTOINDEX_SIZE=10000000
 ## Stats Cache
 `stats` is the primary reason qsv was created. In 2021, several projects we were working on required GUARANTEED data type inferences at speed. As we iterated and started additional projects, we started needing additional capabilities to enable the ["automagical metadata"](https://dathere.com/2023/11/automagical-metadata/) inferencing workflow we wanted for our data ingestion pipelines.
 
-From the original 11 summary statistics in xsv (type, sum, min/max, min/max length, mean, stddev, median, mode & cardinality ), 35 more were added incrementally over time (is_ascii, range, sort_order/sortiness, min/max/sum/avg/stddev/variance/cv lengths, sem, geometric_mean, harmonic_mean, variance, cv, nullcount, max_precision, sparsity, mad, lower outer/inner fence, q1, q2_median, q3, iqr, upper inner/outer fence, skewness, uniqueness_ratio, mode_count, mode_occurrences, antimode, antimode_count, antimode_occurrences) [more info](https://github.com/dathere/qsv/wiki/Supplemental#stats-command-output-explanation).
+Starting from the original 11 summary statistics in xsv (type, sum, min/max, min/max length, mean, stddev, median, mode & cardinality), `stats` now produces **up to 47 total** columns (see [STATS_DEFINITIONS.md](STATS_DEFINITIONS.md) for the canonical, per-column reference). The added columns include is_ascii, range, sort_order/sortiness, min/max/sum/avg/stddev/variance/cv lengths, sem, geometric_mean, harmonic_mean, variance, cv, nullcount, max_precision, sparsity, mad, lower outer/inner fence, q1, q2_median, q3, iqr, upper inner/outer fence, skewness, uniqueness_ratio, mode_count, mode_occurrences, antimode, antimode_count, antimode_occurrences, n_negative, n_zero, n_positive and percentiles ([more info](https://github.com/dathere/qsv/wiki/Supplemental#stats-command-output-explanation)).
 
 And some of these stats were relatively expensive to compute, we added stats caching so it didn't need to recompute them if a file hasn't changed (as most of the files we were working on were historical data).
 
@@ -134,7 +134,7 @@ To find out what memory allocator qsv is using, run `qsv --version`. After the q
 ### Out-of-Memory (OOM) Prevention
 Most qsv commands use a "streaming" approach to processing CSVs - "streaming" in the input record-by-record while processing it. This allows it to process arbitrarily large CSVs with constant memory.
 
-There are a number of commands/modes however (denoted by the "exploding head" emoji - 🤯), that require qsv to load the entire CSV into memory - `dedup` (when not using the --sorted option), `pragmastat`, `reverse`, `sort`, `stats` (when calculating the "non-streaming" extended stats), `table` and `transpose` (when not running in --multipass mode).
+There are a number of commands/modes however (denoted by the "exploding head" emoji - 🤯), that require qsv to load the entire CSV into memory - `color`, `dedup` (when not using the --sorted option), `pragmastat`, `reverse`, `sort`, `stats` (when calculating the "non-streaming" extended stats), `table` and `transpose` (when not running in --multipass or --long mode).
 
 > NOTE: Though not as flexible, `dedup` and `sort` have corresponding "external" versions - `extdedup` and `extsort` respectively, that use external memory (i.e. disk) to process arbitrarily large CSVs.
 

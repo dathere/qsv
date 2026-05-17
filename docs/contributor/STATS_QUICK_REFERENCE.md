@@ -7,10 +7,10 @@ The `stats` command in qsv is a high-performance CSV statistics engine that:
 - **Computes statistics** from streaming (mean, sum, stddev) to non-streaming (median, quartiles, modes)
 - **Processes files** either sequentially or in parallel (with index)
 - **Caches results** to avoid recomputation
-- **Supports 44+ output columns** with detailed statistics
+- **Supports up to 47 output columns** with detailed statistics
 
 ## File Location
-`src/cmd/stats.rs` (~4,873 lines)
+`src/cmd/stats.rs` (~5,638 lines)
 
 ## Key Entry Points
 
@@ -160,8 +160,8 @@ cargo test --test test_stats -- --test-threads=1
 # Test specific feature
 cargo test test_stats::integer_stats
 
-# With logging
-RUST_LOG=debug cargo test test_stats
+# With logging (qsv uses QSV_LOG_LEVEL; RUST_LOG is not consulted)
+QSV_LOG_LEVEL=debug cargo test test_stats
 
 # Manual test
 echo "name,age,score
@@ -174,13 +174,13 @@ Bob,25,87.2" | ./target/release/qsv stats
 - Full technical guide: `STATS_TECHNICAL_GUIDE.md` (this repo)
 - qsv wiki: https://github.com/dathere/qsv/wiki
 - stats command docs: `/docs/PERFORMANCE.md`
-- Test cases: `/tests/test_stats.rs` (~6,054 lines)
+- Test cases: `/tests/test_stats.rs` (~7,066 lines)
 
 ## Quick Debugging
 
 ```bash
-# Enable logging
-RUST_LOG=debug ./qsv stats file.csv
+# Enable logging (qsv uses QSV_LOG_LEVEL; RUST_LOG is not consulted)
+QSV_LOG_LEVEL=debug ./qsv stats file.csv
 
 # Check cached stats
 cat file.stats.csv.json | jq .
@@ -199,11 +199,11 @@ cat file.stats.csv.data.jsonl | jq . | head
 
 | File | Purpose |
 |------|---------|
-| `src/cmd/stats.rs` | Main implementation (~4,873 lines) |
+| `src/cmd/stats.rs` | Main implementation (~5,638 lines) |
 | `src/config.rs` | CSV reader configuration |
 | `src/select.rs` | Column selection logic |
 | `src/util.rs` | Utility functions |
-| `tests/test_stats.rs` | Comprehensive test suite (~6,054 lines) |
+| `tests/test_stats.rs` | Comprehensive test suite (~7,066 lines) |
 | `Cargo.toml` | Dependencies (see `stats` and `csv` crates) |
 
 ---

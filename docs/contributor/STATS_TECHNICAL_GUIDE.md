@@ -1032,8 +1032,8 @@ cargo test --test test_stats -- --test-threads=1
 # Run specific test
 cargo test test_stats::integer_stats
 
-# Run with logging
-RUST_LOG=debug cargo test test_stats
+# Run with logging (qsv uses QSV_LOG_LEVEL; RUST_LOG is not consulted)
+QSV_LOG_LEVEL=debug cargo test test_stats
 
 # Build the release binary
 cargo build --release
@@ -1100,9 +1100,9 @@ Per the project's `Cargo.toml` (the source of truth for the MSRV) and `.github/c
 
 ### Debugging Tips
 
-1. **Enable logging**:
+1. **Enable logging** (qsv uses `QSV_LOG_LEVEL`; `RUST_LOG` is not consulted):
    ```bash
-   RUST_LOG=debug qsv stats myfile.csv
+   QSV_LOG_LEVEL=debug qsv stats myfile.csv
    ```
 
 2. **Use conditional compilation**:

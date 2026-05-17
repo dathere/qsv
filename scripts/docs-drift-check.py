@@ -104,8 +104,12 @@ def get_features(cargo: dict) -> dict[str, set[str]]:
     for k in keys:
         if k not in features:
             raise KeyError(f"Cargo.toml [features] is missing {k!r}")
-        # Strip any optional crate-dep references (those contain a slash)
-        # and drop the "dep:" prefix used by feature unification.
+        # Strip any feature-of-dep references (entries containing a slash,
+        # like "crc32fast/nightly"). The meta-features audited here
+        # (distrib_features, all_features, qsvmcp) only enumerate other
+        # named features and don't currently use "dep:"-prefixed entries —
+        # those appear only in leaf feature definitions (e.g.
+        # `synthesize = ["dep:fake", "dep:time"]`) which we don't read.
         out[k] = {f for f in features[k] if "/" not in f}
     return out
 
@@ -280,7 +284,14 @@ FEATURE_LIST_CHECKS: list[tuple[str, str, re.Pattern[str]]] = [
 
 
 def _parse_feature_blob(blob: str) -> set[str]:
-    """Tokenize a comma/space/'and'-separated feature list into a set."""
+    """Tokenize a comma-separated feature list into a set.
+
+    The "and" between the last two entries (e.g. "geocode, luau, ..., and to")
+    is normalized to a comma first. Whitespace-only separators are NOT
+    supported because none of the audited doc anchors use that style — all
+    real enumerations in qsv docs use commas, optionally with a trailing
+    "and".
+    """
     cleaned = re.sub(r"\band\b", ",", blob)
     return {tok for tok in (t.strip().strip(".,`") for t in cleaned.split(",")) if tok}
 

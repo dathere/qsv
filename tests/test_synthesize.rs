@@ -372,3 +372,74 @@ fn synthesize_rejects_missing_input() {
         "expected a missing-input error, got: {err}"
     );
 }
+
+/// End-to-end check that `qsv stats`' string-length statistics are honored for
+/// unstructured / free-text columns. The `blurb` column has varying-length
+/// free-text values; `stats` provides `min_length`/`max_length`/`avg_length`/
+/// `stddev_length`; `synthesize` should truncate generated values so their
+/// character lengths fall within the source range. The dictionary marks the
+/// column as `free_text` so it routes to the live-faker (no pool) path where
+/// length stats apply.
+#[test]
+fn synthesize_respects_length_stats_for_free_text_column() {
+    let wrk = Workdir::new("synthesize_length_stats");
+
+    // 30 rows of free-text blurbs of varying lengths, all in [10, 40] chars.
+    // Use distinct values to defeat frequency enumeration so the column lands
+    // on the live-faker path.
+    let mut rows: Vec<Vec<String>> = vec![svec!["id", "blurb"]];
+    let templates = [
+        "alpha bravo",                            // 11
+        "charlie delta echo",                     // 18
+        "foxtrot golf hotel india",               // 24
+        "juliet kilo lima mike november",         // 30
+        "oscar papa quebec romeo sierra tango u", // 38
+    ];
+    for i in 0..30 {
+        let blurb = format!("{} {i:02}", templates[i % templates.len()]);
+        rows.push(vec![format!("{i}"), blurb]);
+    }
+    wrk.create("data.csv", rows);
+
+    let dict_json = r#"{
+        "fields": [
+            {"name": "id", "type": "Integer", "content_type": "unknown"},
+            {"name": "blurb", "type": "String", "content_type": "free_text"}
+        ],
+        "enum_threshold": 10
+    }"#;
+    wrk.create_from_string("dict.json", dict_json);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "200", "--seed", "2024", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // 1 header + 200 data rows.
+    assert_eq!(got.len(), 201);
+    assert_eq!(got[0], svec!["id", "blurb"]);
+
+    // Every synthesized blurb must be at least 1 char and at most max_length
+    // characters wide. We don't assert a tight lower bound — lorem fakers
+    // can produce a string shorter than min_length and we don't pad — but
+    // we DO assert the cap holds, which is the headline guarantee.
+    let mut total = 0_usize;
+    for (i, row) in got[1..].iter().enumerate() {
+        let len = row[1].chars().count();
+        assert!(
+            (1..=41).contains(&len),
+            "row {i}: blurb '{}' has {len} chars; expected in [1, 41] (max_length ≈ 41 with \
+             id-suffix)",
+            row[1]
+        );
+        total += len;
+    }
+    let mean = total as f64 / 200.0;
+    // Source `avg_length` is ~24; with truncation the empirical mean should
+    // stay within a generous band rather than blow past max_length.
+    assert!(
+        (10.0..=40.0).contains(&mean),
+        "mean blurb length {mean} not within reasonable [10, 40] band"
+    );
+}

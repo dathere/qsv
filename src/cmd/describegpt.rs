@@ -1739,6 +1739,11 @@ fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) 
 /// Returns a tuple containing:
 /// * The generated prompt string (rendered from Mini Jinja template)
 /// * The system prompt string (rendered from Mini Jinja template)
+/// * Whether the SOURCE template referenced `{{ dictionary }}` (any whitespace variation). The
+///   Description / Tags / Prompt phase callers use this to avoid the redundant chat-message-side
+///   dictionary injection in `build_inference_messages` when the template already inlines
+///   DATA_DICTIONARY_JSON. Custom `--prompt-file` users whose templates DON'T reference `{{
+///   dictionary }}` continue to receive the dictionary via the chat-message path unchanged.
 ///
 /// # Errors
 ///
@@ -1751,7 +1756,7 @@ fn get_prompt(
     prompt_type: PromptType,
     analysis_results: Option<&AnalysisResults>,
     args: &Args,
-) -> CliResult<(String, String)> {
+) -> CliResult<(String, String, bool)> {
     // Get prompt file if --prompt-file is used, otherwise get default prompt file
     let prompt_file = get_prompt_file(args)?;
 
@@ -2036,8 +2041,18 @@ fn get_prompt(
         log::debug!("Rendered prompt: {rendered_prompt}");
     }
 
-    // Return rendered prompt
-    Ok((rendered_prompt, rendered_system_prompt))
+    // Check the SOURCE template (post-selection, pre-render) for `{{ dictionary }}` so
+    // callers can avoid the redundant chat-message-side injection in
+    // `build_inference_messages`. The regex tolerates `{{ dictionary }}`,
+    // `{{dictionary}}`, `{{  dictionary  }}`, etc.
+    let template_inlines_dictionary =
+        regex_oncelock!(r"\{\{\s*dictionary\s*\}\}").is_match(&prompt);
+
+    Ok((
+        rendered_prompt,
+        rendered_system_prompt,
+        template_inlines_dictionary,
+    ))
 }
 
 /// Makes a completion request to the LLM API and processes the response.
@@ -3313,7 +3328,8 @@ fn run_dictionary_phase(
     output_format: OutputFormat,
 ) -> CliResult<CompletionResponse> {
     // --- Pass 1: existing single-pass behavior, prompt = PromptType::Dictionary. ---
-    let (prompt, system_prompt) = get_prompt(PromptType::Dictionary, Some(analysis_results), args)?;
+    let (prompt, system_prompt, _) =
+        get_prompt(PromptType::Dictionary, Some(analysis_results), args)?;
     let pass1_start = Instant::now();
     print_status(
         if args.flag_two_pass {
@@ -3390,7 +3406,7 @@ fn run_dictionary_phase(
     // repeated-invocation case the static's doc comment calls out).
     let _first_pass_guard = FirstPassDictGuard::seed(first_pass_json);
 
-    let (refine_prompt, refine_system_prompt) =
+    let (refine_prompt, refine_system_prompt, _) =
         get_prompt(PromptType::DictionaryRefine, Some(analysis_results), args)?;
     let pass2_start = Instant::now();
     print_status(
@@ -3483,9 +3499,18 @@ fn run_description_phase(
     base_url: &str,
     output_format: OutputFormat,
 ) -> CliResult<CompletionResponse> {
-    let (prompt, system_prompt) =
+    let (prompt, system_prompt, template_inlines_dictionary) =
         get_prompt(PromptType::Description, Some(analysis_results), args)?;
-    let messages = build_inference_messages(&prompt, &system_prompt, dictionary_response, None);
+    // If the description template already inlines `{{ dictionary }}`, skip the redundant
+    // chat-message-side injection. Templates that don't reference it (custom prompt files
+    // authored before the default added the dictionary section) still get the chat-message
+    // path, preserving backward compatibility.
+    let chat_dict_injection = if template_inlines_dictionary {
+        ""
+    } else {
+        dictionary_response
+    };
+    let messages = build_inference_messages(&prompt, &system_prompt, chat_dict_injection, None);
     let start_time = Instant::now();
     print_status("  Inferring Description...", None);
     let completion_response = get_cached_completion(
@@ -3532,8 +3557,17 @@ fn run_tags_phase(
     base_url: &str,
     output_format: OutputFormat,
 ) -> CliResult<CompletionResponse> {
-    let (prompt, system_prompt) = get_prompt(PromptType::Tags, Some(analysis_results), args)?;
-    let messages = build_inference_messages(&prompt, &system_prompt, dictionary_context, None);
+    let (prompt, system_prompt, template_inlines_dictionary) =
+        get_prompt(PromptType::Tags, Some(analysis_results), args)?;
+    // Skip the redundant chat-message-side dictionary injection when the tags template
+    // already inlines `{{ dictionary }}` (the default since the dictionary-in-template
+    // change). Custom prompt files without `{{ dictionary }}` keep the chat-message path.
+    let chat_dict_injection = if template_inlines_dictionary {
+        ""
+    } else {
+        dictionary_context
+    };
+    let messages = build_inference_messages(&prompt, &system_prompt, chat_dict_injection, None);
     let start_time = Instant::now();
     if let Some(ref tag_vocab_uri) = args.flag_tag_vocab {
         print_status(
@@ -3631,13 +3665,23 @@ fn run_prompt_phase(
         }
     }
 
-    let (prompt, system_prompt) = get_prompt(PromptType::Prompt, Some(analysis_results), args)?;
+    let (prompt, system_prompt, template_inlines_dictionary) =
+        get_prompt(PromptType::Prompt, Some(analysis_results), args)?;
     let start_time = Instant::now();
     print_status("  Answering Custom Prompt...", None);
+    // `custom_prompt_guidance` (the default body for PromptType::Prompt) inlines
+    // `{{ dictionary }}` for SQL RAG mode, so skip the chat-message-side injection in
+    // that case. Custom prompt files without the placeholder still get the chat-message
+    // path so they aren't silently regressed.
+    let chat_dict_injection = if template_inlines_dictionary {
+        ""
+    } else {
+        dictionary_response
+    };
     let messages = build_inference_messages(
         &prompt,
         &system_prompt,
-        dictionary_response,
+        chat_dict_injection,
         session_state.as_ref(),
     );
     let completion_response = get_cached_completion(
@@ -5128,7 +5172,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let run_prompt = args.flag_prompt.is_some();
 
         if run_dictionary {
-            let (user_prompt, system_prompt) =
+            let (user_prompt, system_prompt, _) =
                 get_prompt(PromptType::Dictionary, Some(&analysis_results), &args)?;
             let cache_key = get_cache_key(&args, PromptType::Dictionary, cache_key_model);
             let cached = lookup_cache(&cache_type, &cache_key);
@@ -5142,7 +5186,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             });
         }
         if run_description {
-            let (user_prompt, system_prompt) =
+            let (user_prompt, system_prompt, _) =
                 get_prompt(PromptType::Description, Some(&analysis_results), &args)?;
             let cache_key = get_cache_key(&args, PromptType::Description, cache_key_model);
             let cached = lookup_cache(&cache_type, &cache_key);
@@ -5156,7 +5200,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             });
         }
         if run_tags {
-            let (user_prompt, system_prompt) =
+            let (user_prompt, system_prompt, _) =
                 get_prompt(PromptType::Tags, Some(&analysis_results), &args)?;
             let cache_key = get_cache_key(&args, PromptType::Tags, cache_key_model);
             let cached = lookup_cache(&cache_type, &cache_key);
@@ -5170,7 +5214,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             });
         }
         if run_prompt {
-            let (user_prompt, system_prompt) =
+            let (user_prompt, system_prompt, _) =
                 get_prompt(PromptType::Prompt, Some(&analysis_results), &args)?;
             let cache_key = get_cache_key(&args, PromptType::Prompt, cache_key_model);
             let cached = lookup_cache(&cache_type, &cache_key);
@@ -5760,11 +5804,55 @@ mod tests {
             *guard = saved;
         }
 
-        let (rendered, _system) = result.expect("refine prompt should render");
+        let (rendered, _system, _inlines_dict) = result.expect("refine prompt should render");
         assert!(
             rendered.contains(sentinel),
             "refine prompt must surface FIRST_PASS_DICT_JSON contents via {{{{ \
              first_pass_dictionary }}}}; got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn get_prompt_signals_when_template_inlines_dictionary() {
+        // The default Description and Tags templates now include `{{ dictionary }}`
+        // (gated on `{% if dictionary %}`), so get_prompt's third return value MUST be
+        // true for them. The Description / Tags / Prompt phase callers rely on this
+        // flag to skip the redundant chat-message-side dictionary injection.
+        //
+        // Also asserts the negative path: the Dictionary first-pass template (which
+        // never inlines the dictionary — that would be self-referential) returns false.
+        let mut args = default_args_for_test();
+        args.flag_base_url = Some(DEFAULT_BASE_URL.to_string());
+        args.flag_model = Some(DEFAULT_MODEL.to_string());
+
+        let analysis = AnalysisResults {
+            stats: "field,type\nname,String\n".to_string(),
+            frequency: "field,value,count,percentage,rank\n".to_string(),
+            headers: "name".to_string(),
+            ..AnalysisResults::default()
+        };
+
+        let (_p, _s, dict_in_desc) = get_prompt(PromptType::Description, Some(&analysis), &args)
+            .expect("Description prompt");
+        assert!(
+            dict_in_desc,
+            "default description_prompt now references `{{{{ dictionary }}}}` — the signal MUST \
+             be true"
+        );
+
+        let (_p, _s, dict_in_tags) =
+            get_prompt(PromptType::Tags, Some(&analysis), &args).expect("Tags prompt");
+        assert!(
+            dict_in_tags,
+            "default tags_prompt now references `{{{{ dictionary }}}}` — the signal MUST be true"
+        );
+
+        let (_p, _s, dict_in_dict) =
+            get_prompt(PromptType::Dictionary, Some(&analysis), &args).expect("Dictionary prompt");
+        assert!(
+            !dict_in_dict,
+            "dictionary_prompt does NOT reference `{{{{ dictionary }}}}` (it would be \
+             self-referential) — the signal MUST be false"
         );
     }
 

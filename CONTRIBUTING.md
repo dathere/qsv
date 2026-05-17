@@ -42,3 +42,13 @@ We are always looking for ways to improve the documentation. If you find a typo,
 And if you want to add a new page to the Wiki, please do! Just make sure to add section headers to your Wiki contributions, so it automatically shows up in the sidebar.
 
 If you are not familiar with GitHub Wikis, you can find a guide [here](https://docs.github.com/en/github/building-a-strong-community/adding-or-editing-wiki-pages#adding-wiki-pages).
+
+## AI Policy
+
+We embrace the use of AI tools to enhance productivity and creativity in this project. Contributors are encouraged to use AI responsibly and transparently. If AI tools are used to generate code, documentation, or other contributions, please:
+
+1. Clearly indicate where and how AI was used in your pull request description or commit messages.
+2. Review and test AI-generated outputs thoroughly to ensure they meet the project's quality standards.
+3. Avoid submitting AI-generated content that violates copyrights, licenses, or ethical guidelines.
+
+By adhering to these principles, we can ensure that AI contributions align with the project's goals and maintain the integrity of the codebase.

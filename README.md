@@ -508,7 +508,7 @@ It can process well-formed CSVs in _any_ language so long as its UTF-8 encoded. 
 Finally, though the default Geonames index of the `geocode` command is English-only, the index can be rebuilt with the `geocode index-update` subcommand with the `--languages` option to return place names in multiple languages ([with support for 254 languages](http://download.geonames.org/export/dump/alternatenames/)).
 
 ## Testing
-qsv has ~2,950 tests in the [tests](https://github.com/dathere/qsv/tree/master/tests) directory.
+qsv has ~3,100 tests in the [tests](https://github.com/dathere/qsv/tree/master/tests) directory.
 Each command has its own test suite in a separate file with the convention `test_<COMMAND>.rs`.
 Apart from preventing regressions, the tests also serve as good illustrative examples, and are often linked from the usage text of each corresponding command.
 
@@ -559,6 +559,11 @@ Dual-licensed under MIT or the [UNLICENSE](https://unlicense.org).
 
 qsv is a fork of the popular [xsv](https://github.com/BurntSushi/xsv) utility. Building on this solid foundation, it was forked in Sept 2021 and has since evolved to a general purpose data wrangling toolkit, adding numerous commands and features.
 See [FAQ](https://github.com/dathere/qsv/discussions/287) for more details.
+
+## AI Policy
+qsv has a very fast development pace with frequent releases. To keep up with this pace, we use the latest AI tools to help with various tasks, including code generation, documentation, testing, bug fixing, code review, etc.
+To ensure we the quality of the work - we have more than 3,000 tests; use multi-agent adversarial code reviews using [roborev](https://roborev.io) and GitHub Copilot; heavily comment the code to help Agents, Users and Developers understand the code; and use tools like [Serena](https://oraios.github.io/serena) and [Context7](https://context7.com) to help Agents with semantic context.
+We accredit the Agent/Model used in the commit message and the pull request description. If you submit a pull request, be sure to include this information in your commit message and pull request description as well. Do not represent AI-generated work as your own.
 
 ## Sponsor
 

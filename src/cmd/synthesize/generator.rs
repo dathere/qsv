@@ -607,6 +607,16 @@ fn parse_epoch(s: &str, is_datetime: bool) -> Option<i64> {
 /// dependency) and clamps to `[stats.min, stats.max]`. When `stddev` is zero or
 /// missing, falls back to a uniform draw over `[stats.min, stats.max]`. The
 /// returned length is always at least 1 so we never request an empty string.
+///
+/// **On clamping vs. rejection sampling:** clamping is intentional. The
+/// `avg`/`stddev` reported by `qsv stats` can be inconsistent with `min`/`max`
+/// (rounding, an averaged value near a bound, or a large `stddev` relative to
+/// the range), and rejection-sampling could loop unboundedly. Clamping piles a
+/// small probability mass at the bounds in those edge cases, which slightly
+/// biases the empirical mean — an acceptable trade for synthetic data and a
+/// guaranteed-bounded sampler. Likewise the `lo >= hi` guard returns
+/// `lo.max(1)`, so a degenerate `min == max == 0` yields a 1-char target
+/// rather than an empty string.
 fn sample_target_length(stats: &LengthStats, rng: &mut StdRng) -> usize {
     let (lo, hi) = (stats.min, stats.max);
     if lo >= hi {

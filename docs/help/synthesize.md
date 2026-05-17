@@ -37,11 +37,12 @@ When `stats` provides string-length statistics (min_length / max_length /
 avg_length / stddev_length) AND the column is routed to an unstructured text
 generator (lorem_*, free_text, or the no-faker fallback), synthesized values
 are truncated so their character lengths follow Normal(avg_length,
-stddev_length) clamped to [min_length, max_length]. Structured semantic fakers
-(email, name, uuid, phone, address parts, etc.) ignore these stats —
-truncating them would corrupt their format. Frequency-enumerated and
-bounded-cardinality pool values are reproduced verbatim and are never
-truncated.
+stddev_length) clamped to [min_length, max_length]. This applies to unstructured
+pooled values as well — a low-cardinality free-text column still gets its
+generated pool entries truncated. Structured semantic fakers (email, name,
+uuid, phone, address parts, etc.) ignore these stats — truncating them would
+corrupt their format, so their pools are reproduced verbatim. Frequency-
+enumerated values are always reproduced verbatim and are never truncated.
 
 Columns are generated independently — cross-column correlation is not modeled.
 

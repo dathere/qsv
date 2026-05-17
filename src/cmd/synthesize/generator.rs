@@ -5,14 +5,21 @@
 //! `ColumnGenerator::next` then emits one synthetic value per call.
 //!
 //! Construction precedence (highest first):
-//!   1. `FrequencyWeighted` — the column is *fully enumerated* by `frequency` (no "Other" catch-all
+//!   1. `FakerMapped` — only when `--consistent-fakes` is set, the column is fully enumerated by
+//!      `frequency`, and the dictionary `content_type` is a STRUCTURED faker token (not in
+//!      `UNSTRUCTURED_CONTENT_TYPES`). Each distinct source value is paired with one fake at build
+//!      time, so the same source value always emits the same fake while the source frequency
+//!      distribution is preserved. Overrides `FrequencyWeighted` for these columns (the whole point
+//!      of the flag: emit fakes, not real values).
+//!   2. `FrequencyWeighted` — the column is *fully enumerated* by `frequency` (no "Other" catch-all
 //!      bucket, not all-unique). The real value set is emitted with real frequency weights, so
-//!      cardinality, repetition, and value identity are reproduced exactly. This wins even over a
-//!      faker mapping (a `state` column with 50 enumerated values emits the real 50).
-//!   2. `Faker` — the dictionary `content_type` maps to a `fake-rs` faker. Bounded-cardinality
+//!      cardinality, repetition, and value identity are reproduced exactly. This wins over a faker
+//!      mapping for non-`--consistent-fakes` runs (a `state` column with 50 enumerated values emits
+//!      the real 50).
+//!   3. `Faker` — the dictionary `content_type` maps to a `fake-rs` faker. Bounded-cardinality
 //!      columns sample from a fixed pre-generated pool of distinct fake values (the consistency
 //!      mechanism); all-unique columns generate a fresh value per row.
-//!   3. Type-based — `NumericQuantile` / `DateQuantile` (quartile-bucketed to reproduce
+//!   4. Type-based — `NumericQuantile` / `DateQuantile` (quartile-bucketed to reproduce
 //!      distribution shape), `Boolean`, or `LoremFallback`.
 //!
 //! Cross-column correlation is out of scope: every column is generated
@@ -127,6 +134,25 @@ pub(crate) enum ColumnGenerator {
         null_ratio:   f64,
         length_stats: Option<LengthStats>,
     },
+    /// Structured-faker column with a stable source-value -> fake-value mapping.
+    /// Built only when `--consistent-fakes` is set AND the column has a *structured*
+    /// faker `content_type` (i.e. `is_faker_token` is true and the type is NOT in
+    /// `UNSTRUCTURED_CONTENT_TYPES`) AND `frequency` fully enumerates the column
+    /// (same gate as `FrequencyWeighted`). Each distinct source value is pre-paired
+    /// with one fake value at build time; the per-row draw samples a *source value*
+    /// by its real frequency and emits the paired fake. This preserves the source
+    /// distribution and guarantees the same source value always emits the same
+    /// fake. No `length_stats` field — structured fakers preserve their semantic
+    /// format (same rationale as the `Faker` variant when `is_unstructured` is
+    /// false).
+    FakerMapped {
+        /// One fake per distinct source value, indexed in sync with `cumulative`.
+        fakes:      Vec<String>,
+        /// Normalized cumulative weights, ascending, last element == 1.0, derived
+        /// from the source frequency counts.
+        cumulative: Vec<f64>,
+        null_ratio: f64,
+    },
     /// Numeric column reproduced via quartile buckets.
     NumericQuantile {
         buckets:    Vec<(f64, f64)>,
@@ -164,6 +190,7 @@ impl ColumnGenerator {
         total_rows: u64,
         requested_rows: u64,
         locale: Locale,
+        consistent_fakes: bool,
         rng: &mut StdRng,
     ) -> ColumnGenerator {
         let null_ratio = compute_null_ratio(stats.nullcount, total_rows);
@@ -173,13 +200,26 @@ impl ColumnGenerator {
             return ColumnGenerator::Empty;
         }
 
-        // 1. Fully-enumerated frequency pool wins — reproduces the real value set, weights,
-        //    cardinality and repetition structure exactly.
+        // 1. When `--consistent-fakes` is set AND the column has a STRUCTURED faker content type
+        //    AND frequency fully enumerates the column, build a stable source-value -> fake-value
+        //    map. Runs BEFORE `try_frequency_weighted` so it overrides the "emit real values" path
+        //    — that's the whole point of the flag: fakes (deidentified), not real values, with
+        //    stable mapping.
+        if consistent_fakes
+            && faker_map::is_faker_token(content_type)
+            && !is_unstructured(content_type)
+            && let Some(generator) = try_faker_mapped(freqs, content_type, locale, null_ratio, rng)
+        {
+            return generator;
+        }
+
+        // 2. Fully-enumerated frequency pool — reproduces the real value set, weights, cardinality
+        //    and repetition structure exactly.
         if let Some(generator) = try_frequency_weighted(freqs, null_ratio) {
             return generator;
         }
 
-        // 2. Semantic faker.
+        // 3. Semantic faker.
         if faker_map::is_faker_token(content_type) {
             let pool =
                 build_faker_pool(content_type, stats.cardinality, requested_rows, locale, rng);
@@ -203,7 +243,7 @@ impl ColumnGenerator {
             };
         }
 
-        // 3. Type-based fallback.
+        // 4. Type-based fallback.
         match stats.r#type.as_str() {
             "Integer" => build_numeric(stats, true, null_ratio),
             "Float" => build_numeric(stats, false, null_ratio),
@@ -267,6 +307,23 @@ impl ColumnGenerator {
                     Some(ls) => truncate_to_chars(value, sample_target_length(ls, rng)),
                     None => value,
                 }
+            },
+
+            ColumnGenerator::FakerMapped {
+                fakes,
+                cumulative,
+                null_ratio,
+            } => {
+                if draw_null(*null_ratio, rng) {
+                    return String::new();
+                }
+                // Same weighted draw as `FrequencyWeighted`, but the indexed
+                // vector holds pre-paired fakes (one per distinct source value),
+                // so the same source value always emits the same fake. Structured
+                // fakers preserve their semantic format — no length truncation.
+                let r = rng.random_range(0.0..1.0);
+                let idx = cumulative.partition_point(|&c| c < r).min(fakes.len() - 1);
+                fakes[idx].clone()
             },
 
             ColumnGenerator::NumericQuantile {
@@ -416,6 +473,105 @@ fn try_frequency_weighted(freqs: &[&FrequencyRecord], null_ratio: f64) -> Option
 
     Some(ColumnGenerator::FrequencyWeighted {
         values,
+        cumulative,
+        null_ratio,
+    })
+}
+
+/// Build a `FakerMapped` generator if the column is fully enumerated by the
+/// frequency records AND a structured faker is available for `content_type`.
+/// Each distinct source value is paired with one fake value at build time;
+/// distinct fakes are preferred (best-effort, capped attempts — same pattern
+/// as `build_faker_pool`) so the cardinality structure is preserved, but
+/// duplicates are accepted when the faker's value space is smaller than the
+/// source cardinality (e.g. `state_abbr` with > 50 distinct sources). All
+/// RNG draws go through the master `rng`, so `--seed` reproducibility is
+/// preserved.
+///
+/// Returns `None` when the same gate `try_frequency_weighted` uses rejects
+/// the column (no enumeration, all rank-0, no real values after null
+/// filtering), OR when the faker fails to produce any value at all — in
+/// that case the caller falls through to the regular `Faker` variant.
+fn try_faker_mapped(
+    freqs: &[&FrequencyRecord],
+    content_type: &str,
+    locale: Locale,
+    null_ratio: f64,
+    rng: &mut StdRng,
+) -> Option<ColumnGenerator> {
+    if freqs.is_empty() {
+        return None;
+    }
+    // Same enumeration gate as `try_frequency_weighted`: rank 0 marks either
+    // the "Other" catch-all or the `<ALL_UNIQUE>` sentinel — both mean the
+    // column is NOT fully enumerated.
+    if freqs.iter().any(|f| f.rank == 0.0) {
+        return None;
+    }
+
+    // Collect source value weights (nulls and sentinels are skipped — they
+    // are reproduced via `null_ratio`, not the value pool).
+    let mut weights = Vec::new();
+    let mut source_count = 0usize;
+    for f in freqs {
+        if f.value == NULL_TEXT || f.value.contains(ALL_UNIQUE_SENTINEL) || f.count == 0 {
+            continue;
+        }
+        source_count += 1;
+        #[allow(clippy::cast_precision_loss)]
+        weights.push(f.count as f64);
+    }
+    if source_count == 0 {
+        return None;
+    }
+
+    // Pre-generate `source_count` fakes; prefer distinct (best-effort) so the
+    // cardinality structure is preserved. Attempt cap mirrors
+    // `build_faker_pool` to handle fakers with a small value space gracefully.
+    let mut fakes = Vec::with_capacity(source_count);
+    let mut seen = HashSet::with_capacity(source_count);
+    let max_attempts = source_count.saturating_mul(20).max(1000);
+
+    for _ in 0..max_attempts {
+        if fakes.len() >= source_count {
+            break;
+        }
+        let value = faker_map::content_type_to_value(content_type, locale, rng)?;
+        if seen.insert(value.clone()) {
+            fakes.push(value);
+        }
+    }
+    // If we couldn't reach `source_count` distinct fakes within the attempt
+    // cap, the faker's value space is smaller than the source cardinality
+    // (e.g. `state_abbr` with > 50 distinct sources). Warn once, then fill the
+    // remainder with fresh draws — duplicates are acceptable (the mapping is
+    // still deterministic per-source-value, just not 1:1 globally).
+    if fakes.len() < source_count {
+        log::warn!(
+            "synthesize: faker '{content_type}' could only produce {} distinct fakes for \
+             {source_count} source values; some source values will share a fake",
+            fakes.len()
+        );
+        while fakes.len() < source_count {
+            let value = faker_map::content_type_to_value(content_type, locale, rng)?;
+            fakes.push(value);
+        }
+    }
+
+    // Build cumulative weights (pin last to exactly 1.0 to avoid FP drift).
+    let total: f64 = weights.iter().sum();
+    let mut cumulative = Vec::with_capacity(weights.len());
+    let mut acc = 0.0;
+    for w in &weights {
+        acc += w / total;
+        cumulative.push(acc);
+    }
+    if let Some(last) = cumulative.last_mut() {
+        *last = 1.0;
+    }
+
+    Some(ColumnGenerator::FakerMapped {
+        fakes,
         cumulative,
         null_ratio,
     })
@@ -763,8 +919,16 @@ mod tests {
             &[("q1", "10"), ("q2_median", "20"), ("q3", "30")],
         );
         let mut rng = StdRng::seed_from_u64(1); // DevSkim: ignore DS148264
-        let generator =
-            ColumnGenerator::build(&record, &[], "unknown", 1000, 5000, Locale::EN, &mut rng);
+        let generator = ColumnGenerator::build(
+            &record,
+            &[],
+            "unknown",
+            1000,
+            5000,
+            Locale::EN,
+            false,
+            &mut rng,
+        );
 
         let mut at_or_below_q3 = 0;
         let n = 10_000;
@@ -784,8 +948,16 @@ mod tests {
     fn faker_pool_is_bounded_by_cardinality() {
         let record = stats("city", "String", 5, 0, "", "", &[]);
         let mut rng = StdRng::seed_from_u64(99); // DevSkim: ignore DS148264
-        let generator =
-            ColumnGenerator::build(&record, &[], "city", 1000, 5000, Locale::EN, &mut rng);
+        let generator = ColumnGenerator::build(
+            &record,
+            &[],
+            "city",
+            1000,
+            5000,
+            Locale::EN,
+            false,
+            &mut rng,
+        );
 
         let mut distinct = HashSet::new();
         for _ in 0..2000 {
@@ -798,8 +970,16 @@ mod tests {
     fn date_quantile_stays_in_range() {
         let record = stats("d", "Date", 500, 0, "2020-01-01", "2020-12-31", &[]);
         let mut rng = StdRng::seed_from_u64(3); // DevSkim: ignore DS148264
-        let generator =
-            ColumnGenerator::build(&record, &[], "unknown", 500, 1000, Locale::EN, &mut rng);
+        let generator = ColumnGenerator::build(
+            &record,
+            &[],
+            "unknown",
+            500,
+            1000,
+            Locale::EN,
+            false,
+            &mut rng,
+        );
 
         // Date type → values are whole days since the UNIX epoch.
         let lo = parse_epoch("2020-01-01", false).unwrap();
@@ -830,6 +1010,7 @@ mod tests {
             1000,
             5000,
             Locale::EN,
+            false,
             &mut build_rng,
         );
 
@@ -987,6 +1168,7 @@ mod tests {
             1000,
             5000,
             Locale::EN,
+            false,
             &mut build_rng,
         );
 
@@ -1046,6 +1228,7 @@ mod tests {
             10_000,
             5000,
             Locale::EN,
+            false,
             &mut build_rng,
         );
 
@@ -1094,8 +1277,16 @@ mod tests {
             ],
         );
         let mut build_rng = StdRng::seed_from_u64(55); // DevSkim: ignore DS148264
-        let generator =
-            ColumnGenerator::build(&record, &[], "city", 1000, 5000, Locale::EN, &mut build_rng);
+        let generator = ColumnGenerator::build(
+            &record,
+            &[],
+            "city",
+            1000,
+            5000,
+            Locale::EN,
+            false,
+            &mut build_rng,
+        );
 
         // Pooled faker variant — length_stats must be None.
         match &generator {
@@ -1155,6 +1346,7 @@ mod tests {
             1000,
             5000,
             Locale::EN,
+            false,
             &mut build_rng,
         );
 

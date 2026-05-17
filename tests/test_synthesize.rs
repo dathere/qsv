@@ -443,3 +443,285 @@ fn synthesize_respects_length_stats_for_free_text_column() {
         "mean blurb length {mean} not within reasonable [10, 40] band"
     );
 }
+
+/// `--consistent-fakes`: a structured-faker column with bounded cardinality must
+/// emit a fake (not the real source value), and each distinct source value must
+/// map to a stable distinct fake across all output rows.
+#[test]
+fn synthesize_consistent_fakes_stable_mapping() {
+    let wrk = Workdir::new("synthesize_consistent_fakes_stable");
+
+    // `first_name` with three distinct source values × varied counts. With
+    // `--consistent-fakes` and a dictionary that marks the column as
+    // `first_name`, the output must:
+    //   * contain exactly 3 distinct fakes (one per distinct source value)
+    //   * never contain any of the real source values
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["first_name"],
+            svec!["Michael"],
+            svec!["Michael"],
+            svec!["Michael"],
+            svec!["Sarah"],
+            svec!["Sarah"],
+            svec!["Tom"],
+        ],
+    );
+
+    let dict_json = r#"{
+        "fields": [
+            {"name": "first_name", "type": "String", "content_type": "first_name"}
+        ],
+        "enum_threshold": 10
+    }"#;
+    wrk.create_from_string("dict.json", dict_json);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "200",
+        "--seed",
+        "42",
+        "--consistent-fakes",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 201);
+
+    let real_values: std::collections::HashSet<&str> =
+        ["Michael", "Sarah", "Tom"].into_iter().collect();
+    let mut distinct_fakes: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for row in &got[1..] {
+        let v = &row[0];
+        assert!(
+            !real_values.contains(v.as_str()),
+            "real source value '{v}' leaked into output — `--consistent-fakes` should emit fakes, \
+             not real values"
+        );
+        assert!(!v.is_empty(), "empty fake should not be emitted");
+        distinct_fakes.insert(v.clone());
+    }
+    // Exactly one fake per distinct source value (no source has a null ratio
+    // in this fixture, so all 3 source values are represented across 200 rows).
+    assert_eq!(
+        distinct_fakes.len(),
+        3,
+        "expected 3 distinct fakes (one per distinct source value), got {distinct_fakes:?}"
+    );
+}
+
+/// `--consistent-fakes`: the source frequency distribution must be reproduced
+/// in the output — the mapping changes the *labels*, not the proportions.
+#[test]
+fn synthesize_consistent_fakes_distribution_preserved() {
+    let wrk = Workdir::new("synthesize_consistent_fakes_distribution");
+
+    // 6 / 4 / 2 (50% / 33% / 17%) over 12 source rows.
+    let mut rows: Vec<Vec<String>> = vec![svec!["first_name"]];
+    for _ in 0..6 {
+        rows.push(svec!["Michael"]);
+    }
+    for _ in 0..4 {
+        rows.push(svec!["Sarah"]);
+    }
+    for _ in 0..2 {
+        rows.push(svec!["Tom"]);
+    }
+    wrk.create("data.csv", rows);
+
+    let dict_json = r#"{
+        "fields": [
+            {"name": "first_name", "type": "String", "content_type": "first_name"}
+        ],
+        "enum_threshold": 10
+    }"#;
+    wrk.create_from_string("dict.json", dict_json);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "1200",
+        "--seed",
+        "42",
+        "--consistent-fakes",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 1201);
+
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for row in &got[1..] {
+        *counts.entry(row[0].clone()).or_insert(0) += 1;
+    }
+    assert_eq!(
+        counts.len(),
+        3,
+        "expected 3 distinct fakes, got {}: {counts:?}",
+        counts.len()
+    );
+
+    let mut sorted: Vec<_> = counts.values().copied().collect();
+    sorted.sort_unstable();
+    sorted.reverse(); // descending: most-frequent first
+    // Expected ratios 6/4/2 over 1200 rows → ~600/400/200. Allow ±15% band.
+    let bands = [(510, 690), (340, 460), (170, 230)];
+    for (i, (lo, hi)) in bands.iter().enumerate() {
+        assert!(
+            (*lo..=*hi).contains(&sorted[i]),
+            "rank-{i} count {} outside expected band [{lo}, {hi}] (full counts: {counts:?})",
+            sorted[i]
+        );
+    }
+}
+
+/// `--consistent-fakes` must remain seed-reproducible: same input + same seed
+/// → byte-identical output across two runs.
+#[test]
+fn synthesize_consistent_fakes_seed_reproducible() {
+    let wrk = Workdir::new("synthesize_consistent_fakes_seed");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["first_name"],
+            svec!["Michael"],
+            svec!["Michael"],
+            svec!["Sarah"],
+            svec!["Tom"],
+        ],
+    );
+    let dict_json = r#"{
+        "fields": [
+            {"name": "first_name", "type": "String", "content_type": "first_name"}
+        ],
+        "enum_threshold": 10
+    }"#;
+    wrk.create_from_string("dict.json", dict_json);
+
+    let args = [
+        "-n",
+        "50",
+        "--seed",
+        "7",
+        "--consistent-fakes",
+        "--dictionary",
+    ];
+
+    let mut first_cmd = wrk.command("synthesize");
+    first_cmd
+        .args(args)
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let run1: String = wrk.stdout(&mut first_cmd);
+
+    let mut second_cmd = wrk.command("synthesize");
+    second_cmd
+        .args(args)
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let run2: String = wrk.stdout(&mut second_cmd);
+
+    assert_eq!(
+        run1, run2,
+        "same seed + --consistent-fakes should produce identical output"
+    );
+}
+
+/// Without `--consistent-fakes`, the default behavior for a frequency-enumerated
+/// column is unchanged: real source values are emitted (regression guard so the
+/// new branch only fires when the flag is set).
+#[test]
+fn synthesize_consistent_fakes_off_preserves_default() {
+    let wrk = Workdir::new("synthesize_consistent_fakes_off");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["first_name"],
+            svec!["Michael"],
+            svec!["Michael"],
+            svec!["Sarah"],
+            svec!["Tom"],
+        ],
+    );
+    let dict_json = r#"{
+        "fields": [
+            {"name": "first_name", "type": "String", "content_type": "first_name"}
+        ],
+        "enum_threshold": 10
+    }"#;
+    wrk.create_from_string("dict.json", dict_json);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "100", "--seed", "7", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 101);
+
+    // Without the flag, frequency-enumeration wins: every output row must be
+    // one of the real source values.
+    let real_values: std::collections::HashSet<&str> =
+        ["Michael", "Sarah", "Tom"].into_iter().collect();
+    for row in &got[1..] {
+        assert!(
+            real_values.contains(row[0].as_str()),
+            "without --consistent-fakes the column should emit real values; got '{}'",
+            row[0]
+        );
+    }
+}
+
+/// `--consistent-fakes` must NOT steal unstructured-text columns. A column
+/// inferred as `free_text` should still route to the regular `Faker` (or
+/// `LoremFallback`) path with length-stat truncation intact.
+#[test]
+fn synthesize_consistent_fakes_unstructured_passthrough() {
+    let wrk = Workdir::new("synthesize_consistent_fakes_unstructured");
+
+    // Distinct values to defeat full enumeration; gives `free_text` the live
+    // faker path, which is where length-stat truncation lives.
+    let mut rows: Vec<Vec<String>> = vec![svec!["blurb"]];
+    for i in 0..30 {
+        rows.push(vec![format!("alpha bravo charlie delta {i:02}")]); // ~28 chars
+    }
+    wrk.create("data.csv", rows);
+
+    let dict_json = r#"{
+        "fields": [
+            {"name": "blurb", "type": "String", "content_type": "free_text"}
+        ],
+        "enum_threshold": 10
+    }"#;
+    wrk.create_from_string("dict.json", dict_json);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "50",
+        "--seed",
+        "11",
+        "--consistent-fakes",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 51);
+
+    // Length cap from `stats` should still kick in — verify no row balloons
+    // beyond a small multiple of the source max (~30 chars).
+    for (i, row) in got[1..].iter().enumerate() {
+        let len = row[0].chars().count();
+        assert!(
+            len <= 80,
+            "row {i}: --consistent-fakes must not disable length-stat truncation for free_text; \
+             got {len} chars: '{}'",
+            row[0]
+        );
+    }
+}

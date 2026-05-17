@@ -83,6 +83,18 @@ synthesize options:
     --stats-options <arg>  Extra options appended to the internal `stats` run.
                            Note: cardinality, quartiles and date inference are
                            always enabled — do not re-specify them here.
+    --consistent-fakes     For structured-faker columns with bounded cardinality
+                           (cardinality fully captured by `frequency`), build a
+                           stable source-value -> fake-value mapping so the same
+                           source value always produces the same fake in the
+                           output. Preserves the source frequency distribution
+                           and overrides the default "emit real values when
+                           frequency-enumerated" behavior for structured fakers
+                           (names, emails, addresses, etc.). Has no effect on
+                           unstructured columns (lorem_*, free_text, unknown),
+                           all-unique columns, or non-faker columns. Useful for
+                           deidentified synthesis where you want stable joins
+                           on the faked columns.
     -j, --jobs <arg>       Number of jobs to use for the internal `stats` and
                            `frequency` runs.
 
@@ -122,6 +134,7 @@ struct Args {
     flag_locale:             String,
     flag_freq_limit:         usize,
     flag_stats_options:      Option<String>,
+    flag_consistent_fakes:   bool,
     flag_jobs:               Option<usize>,
     flag_output:             Option<String>,
     flag_delimiter:          Option<Delimiter>,
@@ -270,6 +283,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 total_rows,
                 args.flag_rows,
                 locale,
+                args.flag_consistent_fakes,
                 &mut rng,
             )
         })

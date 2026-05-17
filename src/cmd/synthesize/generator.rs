@@ -20,6 +20,7 @@
 
 use std::collections::HashSet;
 
+use indexmap::IndexMap;
 use rand::{RngExt, rngs::StdRng};
 
 use super::faker_map::{self, Locale};
@@ -34,6 +35,75 @@ const ALL_UNIQUE_SENTINEL: &str = "<ALL_UNIQUE>";
 /// memory or loop excessively.
 const CARDINALITY_POOL_CAP: u64 = 100_000;
 
+/// Content-type tokens treated as *unstructured* free text — the only paths
+/// where string-length statistics (`min_length`/`max_length`/`avg_length`/
+/// `stddev_length`) are applied. Structured fakers (email, name, uuid, phone,
+/// address parts, …) are intentionally excluded because truncating them would
+/// corrupt their semantic format (e.g. `"john.doe@fa"` is a broken email).
+///
+/// Note: `is_faker_token` filters `unknown` out of the `Faker` variant — it
+/// always lands in `LoremFallback`. `unknown` is kept here as defense-in-depth
+/// for hand-crafted dictionaries that bypass that gate.
+const UNSTRUCTURED_CONTENT_TYPES: &[&str] = &[
+    "lorem_word",
+    "lorem_sentence",
+    "lorem_paragraph",
+    "free_text",
+    "unknown",
+];
+
+/// Per-column character-length distribution extracted from `qsv stats`
+/// (`min_length` / `max_length` / `avg_length` / `stddev_length`). Only attached
+/// to unstructured/free-text generators — structured fakers ignore it.
+#[derive(Clone, Debug)]
+pub(crate) struct LengthStats {
+    pub min:    usize,
+    pub max:    usize,
+    pub avg:    f64,
+    /// `0.0` when absent or unparseable → falls back to uniform `[min, max]`
+    /// sampling in `sample_target_length`.
+    pub stddev: f64,
+}
+
+impl LengthStats {
+    /// Parse length stats from a `StatsRecord`'s `addl_cols`. Returns `None`
+    /// when `min_length` or `max_length` is absent/unparseable, or when the
+    /// resulting range is empty (`max == 0` or `max < min`).
+    pub(crate) fn from_addl_cols(addl: &IndexMap<String, String>) -> Option<Self> {
+        let min = addl
+            .get("min_length")
+            .and_then(|s| s.trim().parse::<usize>().ok())?;
+        let max = addl
+            .get("max_length")
+            .and_then(|s| s.trim().parse::<usize>().ok())?;
+        if max == 0 || max < min {
+            return None;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        let midpoint = (min + max) as f64 / 2.0;
+        let avg = addl
+            .get("avg_length")
+            .and_then(|s| parse_f64(s))
+            .unwrap_or(midpoint);
+        let stddev = addl
+            .get("stddev_length")
+            .and_then(|s| parse_f64(s))
+            .unwrap_or(0.0);
+        Some(Self {
+            min,
+            max,
+            avg,
+            stddev: stddev.max(0.0),
+        })
+    }
+}
+
+/// Whether `content_type` is an unstructured / free-text token eligible for
+/// length-stat post-processing.
+fn is_unstructured(content_type: &str) -> bool {
+    UNSTRUCTURED_CONTENT_TYPES.contains(&content_type)
+}
+
 pub(crate) enum ColumnGenerator {
     /// Sample real values with real frequency weights.
     FrequencyWeighted {
@@ -46,11 +116,16 @@ pub(crate) enum ColumnGenerator {
     /// from a fixed set of distinct fake values), `None` for all-unique columns
     /// (generate a fresh value per row). `locale` is stored here (not threaded
     /// through `next()`) so the build-time and per-row locale can never diverge.
+    /// `length_stats` is `Some` for any *unstructured* token in
+    /// `UNSTRUCTURED_CONTENT_TYPES` (whether pooled or not) so free-text
+    /// columns get truncated to the source length distribution; structured
+    /// fakers (email/uuid/phone/…) keep it `None` to preserve their format.
     Faker {
         content_type: String,
         pool:         Option<Vec<String>>,
         locale:       Locale,
         null_ratio:   f64,
+        length_stats: Option<LengthStats>,
     },
     /// Numeric column reproduced via quartile buckets.
     NumericQuantile {
@@ -69,8 +144,14 @@ pub(crate) enum ColumnGenerator {
     Boolean { true_ratio: f64, null_ratio: f64 },
     /// Last-resort text generator for non-faker, non-enumerated string columns.
     /// `locale` is stored so per-row `lorem_sentence` generation uses the same
-    /// locale as the rest of the column build.
-    LoremFallback { locale: Locale, null_ratio: f64 },
+    /// locale as the rest of the column build. When `length_stats` is `Some`,
+    /// each generated sentence is truncated to a target character length drawn
+    /// from `Normal(avg, stddev)` clamped to `[min, max]`.
+    LoremFallback {
+        locale:       Locale,
+        null_ratio:   f64,
+        length_stats: Option<LengthStats>,
+    },
     /// All-null / no-data column — always emits an empty value.
     Empty,
 }
@@ -102,11 +183,23 @@ impl ColumnGenerator {
         if faker_map::is_faker_token(content_type) {
             let pool =
                 build_faker_pool(content_type, stats.cardinality, requested_rows, locale, rng);
+            // Length stats apply to unstructured fakers regardless of pool
+            // presence — bounded-cardinality free-text columns (a common
+            // shape) would otherwise produce un-truncated lorem sentences
+            // from the pool. Structured fakers (email/uuid/phone/…) keep
+            // `length_stats = None` so their semantic format stays intact;
+            // the per-row hook in `next()` is then a no-op.
+            let length_stats = if is_unstructured(content_type) {
+                LengthStats::from_addl_cols(&stats.addl_cols)
+            } else {
+                None
+            };
             return ColumnGenerator::Faker {
                 content_type: content_type.to_string(),
                 pool,
                 locale,
                 null_ratio,
+                length_stats,
             };
         }
 
@@ -119,7 +212,11 @@ impl ColumnGenerator {
             "Boolean" => build_boolean(freqs, null_ratio),
             "NULL" => ColumnGenerator::Empty,
             // "String" and anything unrecognized.
-            _ => ColumnGenerator::LoremFallback { locale, null_ratio },
+            _ => ColumnGenerator::LoremFallback {
+                locale,
+                null_ratio,
+                length_stats: LengthStats::from_addl_cols(&stats.addl_cols),
+            },
         }
     }
 
@@ -148,14 +245,27 @@ impl ColumnGenerator {
                 pool,
                 locale,
                 null_ratio,
+                length_stats,
             } => {
                 if draw_null(*null_ratio, rng) {
                     return String::new();
                 }
-                match pool {
-                    Some(p) if !p.is_empty() => p[rng.random_range(0..p.len())].clone(),
-                    _ => faker_map::content_type_to_value(content_type, *locale, rng)
-                        .unwrap_or_default(),
+                // Pick a value: from the pool (bounded-cardinality fakers) or
+                // freshly generated (all-unique / above-cap fakers).
+                let value = if let Some(p) = pool
+                    && !p.is_empty()
+                {
+                    p[rng.random_range(0..p.len())].clone()
+                } else {
+                    faker_map::content_type_to_value(content_type, *locale, rng).unwrap_or_default()
+                };
+                // Length truncation only kicks in when `build()` attached
+                // `length_stats` — i.e. for unstructured tokens. Structured
+                // fakers (email/uuid/phone/…) reach this with `length_stats =
+                // None` so their semantic format is preserved.
+                match length_stats {
+                    Some(ls) => truncate_to_chars(value, sample_target_length(ls, rng)),
+                    None => value,
                 }
             },
 
@@ -222,11 +332,20 @@ impl ColumnGenerator {
                 }
             },
 
-            ColumnGenerator::LoremFallback { locale, null_ratio } => {
+            ColumnGenerator::LoremFallback {
+                locale,
+                null_ratio,
+                length_stats,
+            } => {
                 if draw_null(*null_ratio, rng) {
                     return String::new();
                 }
-                faker_map::content_type_to_value("lorem_sentence", *locale, rng).unwrap_or_default()
+                let value = faker_map::content_type_to_value("lorem_sentence", *locale, rng)
+                    .unwrap_or_default();
+                match length_stats {
+                    Some(ls) => truncate_to_chars(value, sample_target_length(ls, rng)),
+                    None => value,
+                }
             },
         }
     }
@@ -481,6 +600,58 @@ fn parse_epoch(s: &str, is_datetime: bool) -> Option<i64> {
     })
 }
 
+/// Sample a target character length for unstructured-string generation.
+///
+/// When `stats.stddev > 0`, draws from `Normal(stats.avg, stats.stddev)` using
+/// the Box-Muller transform (one Normal per call, cosine variant — no extra
+/// dependency) and clamps to `[stats.min, stats.max]`. When `stddev` is zero or
+/// missing, falls back to a uniform draw over `[stats.min, stats.max]`. The
+/// returned length is always at least 1 so we never request an empty string.
+fn sample_target_length(stats: &LengthStats, rng: &mut StdRng) -> usize {
+    let (lo, hi) = (stats.min, stats.max);
+    if lo >= hi {
+        return lo.max(1);
+    }
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    let raw = if stats.stddev > 0.0 {
+        // Box-Muller (cosine variant). `u1 >= f64::EPSILON` guards `ln(0) = -∞`.
+        let u1: f64 = rng.random_range(f64::EPSILON..1.0);
+        let u2: f64 = rng.random_range(0.0..1.0);
+        let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+        stats.avg + z * stats.stddev
+    } else {
+        rng.random_range(lo as f64..=hi as f64)
+    };
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    {
+        let clamped = raw.clamp(lo as f64, hi as f64).round();
+        (clamped as usize).max(1)
+    }
+}
+
+/// UTF-8-safe truncate to at most `n` characters. Returns the string unchanged
+/// when it is already short enough — we never pad, since natural variation
+/// below the target is acceptable per the length-stats design.
+///
+/// Note: with very small `max_length`, lorem-style fakers (minimum ~4 words
+/// ≈ 20+ chars) may still need significant truncation, producing fragments
+/// like `"Lorem ip"`. This is acceptable for synthetic data.
+fn truncate_to_chars(s: String, n: usize) -> String {
+    if s.chars().count() <= n {
+        s
+    } else {
+        s.chars().take(n).collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use indexmap::IndexMap;
@@ -525,8 +696,9 @@ mod tests {
     #[test]
     fn null_ratio_is_reproduced_within_tolerance() {
         let generator = ColumnGenerator::LoremFallback {
-            locale:     Locale::EN,
-            null_ratio: 0.3,
+            locale:       Locale::EN,
+            null_ratio:   0.3,
+            length_stats: None,
         };
         let mut rng = StdRng::seed_from_u64(42); // DevSkim: ignore DS148264
         let n = 20_000;
@@ -655,6 +827,349 @@ mod tests {
         let mut rng2 = StdRng::seed_from_u64(123); // DevSkim: ignore DS148264
         for _ in 0..200 {
             assert_eq!(generator.next(&mut rng1), generator.next(&mut rng2));
+        }
+    }
+
+    // ---- Length-stats: parsing -------------------------------------------
+
+    #[test]
+    fn length_stats_from_addl_cols_present() {
+        let mut addl = IndexMap::new();
+        addl.insert("min_length".to_string(), "5".to_string());
+        addl.insert("max_length".to_string(), "50".to_string());
+        addl.insert("avg_length".to_string(), "20.5".to_string());
+        addl.insert("stddev_length".to_string(), "7.25".to_string());
+
+        let ls = LengthStats::from_addl_cols(&addl).expect("should parse");
+        assert_eq!(ls.min, 5);
+        assert_eq!(ls.max, 50);
+        assert!((ls.avg - 20.5).abs() < 1e-9);
+        assert!((ls.stddev - 7.25).abs() < 1e-9);
+    }
+
+    #[test]
+    fn length_stats_from_addl_cols_missing_returns_none() {
+        let addl: IndexMap<String, String> = IndexMap::new();
+        assert!(LengthStats::from_addl_cols(&addl).is_none());
+
+        let mut only_min = IndexMap::new();
+        only_min.insert("min_length".to_string(), "5".to_string());
+        assert!(LengthStats::from_addl_cols(&only_min).is_none());
+    }
+
+    #[test]
+    fn length_stats_from_addl_cols_rejects_empty_or_inverted_range() {
+        let mut max_zero = IndexMap::new();
+        max_zero.insert("min_length".to_string(), "0".to_string());
+        max_zero.insert("max_length".to_string(), "0".to_string());
+        assert!(LengthStats::from_addl_cols(&max_zero).is_none());
+
+        let mut inverted = IndexMap::new();
+        inverted.insert("min_length".to_string(), "10".to_string());
+        inverted.insert("max_length".to_string(), "5".to_string());
+        assert!(LengthStats::from_addl_cols(&inverted).is_none());
+    }
+
+    #[test]
+    fn length_stats_stddev_optional_with_midpoint_avg_fallback() {
+        let mut addl = IndexMap::new();
+        addl.insert("min_length".to_string(), "10".to_string());
+        addl.insert("max_length".to_string(), "30".to_string());
+
+        let ls = LengthStats::from_addl_cols(&addl).expect("should parse");
+        assert_eq!(ls.min, 10);
+        assert_eq!(ls.max, 30);
+        // No avg_length → fallback to midpoint (10+30)/2 = 20.
+        assert!((ls.avg - 20.0).abs() < 1e-9);
+        // No stddev_length → 0.0.
+        assert!((ls.stddev - 0.0).abs() < 1e-9);
+    }
+
+    // ---- Length-stats: target-length sampling ----------------------------
+
+    #[test]
+    fn sample_target_length_normal_respects_bounds_and_mean() {
+        let stats = LengthStats {
+            min:    5,
+            max:    50,
+            avg:    20.0,
+            stddev: 8.0,
+        };
+        let mut rng = StdRng::seed_from_u64(2024); // DevSkim: ignore DS148264
+        let n = 10_000;
+        let mut sum = 0_usize;
+        for _ in 0..n {
+            let t = sample_target_length(&stats, &mut rng);
+            assert!((5..=50).contains(&t), "sample {t} out of [5, 50]");
+            sum += t;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        let mean = sum as f64 / n as f64;
+        // Normal(20, 8) clamped to [5, 50] still has its mass near 20.
+        // Allow ±1.5 — tight enough to detect any real shift.
+        assert!((mean - 20.0).abs() < 1.5, "mean {mean} not near 20.0");
+    }
+
+    #[test]
+    fn sample_target_length_uniform_when_stddev_zero() {
+        let stats = LengthStats {
+            min:    10,
+            max:    20,
+            avg:    15.0,
+            stddev: 0.0,
+        };
+        let mut rng = StdRng::seed_from_u64(99); // DevSkim: ignore DS148264
+        let mut saw_low = false;
+        let mut saw_high = false;
+        for _ in 0..2000 {
+            let t = sample_target_length(&stats, &mut rng);
+            assert!((10..=20).contains(&t), "sample {t} out of [10, 20]");
+            if t <= 11 {
+                saw_low = true;
+            }
+            if t >= 19 {
+                saw_high = true;
+            }
+        }
+        assert!(
+            saw_low && saw_high,
+            "uniform fallback should cover both ends of [10, 20]"
+        );
+    }
+
+    #[test]
+    fn sample_target_length_min_max_equal_returns_value() {
+        let stats = LengthStats {
+            min:    7,
+            max:    7,
+            avg:    7.0,
+            stddev: 0.0,
+        };
+        let mut rng = StdRng::seed_from_u64(1); // DevSkim: ignore DS148264
+        for _ in 0..50 {
+            assert_eq!(sample_target_length(&stats, &mut rng), 7);
+        }
+    }
+
+    // ---- Length-stats: generator integration -----------------------------
+
+    #[test]
+    fn lorem_fallback_respects_length_stats() {
+        let record = stats(
+            "blurb",
+            "String",
+            1000,
+            0,
+            "",
+            "",
+            &[
+                ("min_length", "8"),
+                ("max_length", "40"),
+                ("avg_length", "20"),
+                ("stddev_length", "5"),
+            ],
+        );
+        let mut build_rng = StdRng::seed_from_u64(17); // DevSkim: ignore DS148264
+        let generator = ColumnGenerator::build(
+            &record,
+            &[],
+            "unknown",
+            1000,
+            5000,
+            Locale::EN,
+            &mut build_rng,
+        );
+
+        // Sanity: this should be a LoremFallback variant with length stats set.
+        match &generator {
+            ColumnGenerator::LoremFallback {
+                length_stats: Some(_),
+                ..
+            } => {},
+            _ => panic!("expected LoremFallback with length_stats set"),
+        }
+
+        let mut rng = StdRng::seed_from_u64(2025); // DevSkim: ignore DS148264
+        let n = 2000;
+        let mut total_chars = 0_usize;
+        for _ in 0..n {
+            let value = generator.next(&mut rng);
+            let len = value.chars().count();
+            assert!(
+                (1..=40).contains(&len),
+                "value {value:?} has {len} chars, expected in [1, 40]"
+            );
+            total_chars += len;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        let mean = total_chars as f64 / n as f64;
+        // Lorem fakers can't go below their natural minimum (~4 words),
+        // so the empirical mean shifts a bit above avg_length=20.
+        // Allow a generous ±30% band.
+        assert!(
+            (14.0..=26.0).contains(&mean),
+            "mean length {mean} not within ±30% of avg_length=20"
+        );
+    }
+
+    #[test]
+    fn structured_faker_ignores_length_stats() {
+        let record = stats(
+            "email",
+            "String",
+            10_000,
+            0,
+            "",
+            "",
+            &[
+                ("min_length", "3"),
+                ("max_length", "3"),
+                ("avg_length", "3"),
+                ("stddev_length", "0"),
+            ],
+        );
+        let mut build_rng = StdRng::seed_from_u64(31); // DevSkim: ignore DS148264
+        let generator = ColumnGenerator::build(
+            &record,
+            &[],
+            "email",
+            10_000,
+            5000,
+            Locale::EN,
+            &mut build_rng,
+        );
+
+        // The Faker variant for "email" must NOT carry length_stats —
+        // truncating an email would destroy the @ structure.
+        match &generator {
+            ColumnGenerator::Faker {
+                content_type,
+                length_stats,
+                ..
+            } => {
+                assert_eq!(content_type, "email");
+                assert!(
+                    length_stats.is_none(),
+                    "structured faker must not carry length_stats"
+                );
+            },
+            _ => panic!("expected Faker variant for 'email' content_type"),
+        }
+
+        let mut rng = StdRng::seed_from_u64(7); // DevSkim: ignore DS148264
+        for _ in 0..50 {
+            let value = generator.next(&mut rng);
+            assert!(
+                value.contains('@'),
+                "email '{value}' should retain @ — must not be truncated"
+            );
+        }
+    }
+
+    #[test]
+    fn bounded_pool_ignores_length_stats() {
+        // Low-cardinality faker column (pool path).
+        let record = stats(
+            "city",
+            "String",
+            5,
+            0,
+            "",
+            "",
+            &[
+                ("min_length", "3"),
+                ("max_length", "3"),
+                ("avg_length", "3"),
+                ("stddev_length", "0"),
+            ],
+        );
+        let mut build_rng = StdRng::seed_from_u64(55); // DevSkim: ignore DS148264
+        let generator =
+            ColumnGenerator::build(&record, &[], "city", 1000, 5000, Locale::EN, &mut build_rng);
+
+        // Pooled faker variant — length_stats must be None.
+        match &generator {
+            ColumnGenerator::Faker {
+                pool: Some(_),
+                length_stats,
+                ..
+            } => assert!(
+                length_stats.is_none(),
+                "pooled faker must not carry length_stats"
+            ),
+            _ => panic!("expected pooled Faker variant for low-cardinality 'city'"),
+        }
+
+        // Output values come from the pool verbatim — they will exceed the
+        // bogus max_length=3 we set above, proving no truncation happened.
+        let mut rng = StdRng::seed_from_u64(11); // DevSkim: ignore DS148264
+        let mut saw_longer_than_three = false;
+        for _ in 0..200 {
+            if generator.next(&mut rng).chars().count() > 3 {
+                saw_longer_than_three = true;
+                break;
+            }
+        }
+        assert!(
+            saw_longer_than_three,
+            "pool values should not be truncated to max_length=3"
+        );
+    }
+
+    #[test]
+    fn unstructured_pooled_faker_truncates_to_length_stats() {
+        // Bounded-cardinality FREE-TEXT column: the pool path is taken (since
+        // cardinality < requested_rows), AND length stats must still apply —
+        // otherwise the pre-generated pool of full lorem sentences would
+        // bypass truncation and produce 60-100 char strings for a column
+        // whose source caps at 25.
+        let record = stats(
+            "blurb",
+            "String",
+            10,
+            0,
+            "",
+            "",
+            &[
+                ("min_length", "5"),
+                ("max_length", "25"),
+                ("avg_length", "15"),
+                ("stddev_length", "4"),
+            ],
+        );
+        let mut build_rng = StdRng::seed_from_u64(81); // DevSkim: ignore DS148264
+        let generator = ColumnGenerator::build(
+            &record,
+            &[],
+            "free_text",
+            1000,
+            5000,
+            Locale::EN,
+            &mut build_rng,
+        );
+
+        // Verify the variant carries length_stats AND a pool — this is the
+        // unstructured + bounded-cardinality path.
+        match &generator {
+            ColumnGenerator::Faker {
+                content_type,
+                pool: Some(_),
+                length_stats: Some(_),
+                ..
+            } => assert_eq!(content_type, "free_text"),
+            _ => panic!(
+                "expected pooled Faker variant with length_stats for unstructured 'free_text'"
+            ),
+        }
+
+        let mut rng = StdRng::seed_from_u64(2026); // DevSkim: ignore DS148264
+        for _ in 0..500 {
+            let value = generator.next(&mut rng);
+            let len = value.chars().count();
+            assert!(
+                (1..=25).contains(&len),
+                "value {value:?} has {len} chars; expected in [1, 25]"
+            );
         }
     }
 }

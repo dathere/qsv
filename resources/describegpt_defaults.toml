@@ -202,7 +202,7 @@ Let's think step by step, correcting yourself as needed.
 """
 
 description_prompt = """
-Generate a{% if language %} {{ language|trim|title }}{% endif %} Description based on the following Summary Statistics and Frequency Distribution data about the Dataset.
+Generate a{% if language %} {{ language|trim|title }}{% endif %} Description based on the following Summary Statistics, Frequency Distribution{% if dictionary %} and Data Dictionary{% endif %} data about the Dataset.
 
 Let's think step by step.
 
@@ -215,7 +215,11 @@ Summary Statistics (CSV):
 Frequency Distribution (CSV):
 
 {{ frequency }}
+{% if dictionary %}
+Data Dictionary (JSON):
 
+{{ dictionary }}
+{% endif %}
 ---
 
 Do not output the summary statistics for each field. Do not output the frequency for each field.
@@ -239,8 +243,8 @@ Using the right Tags makes it easier for others to find and use datasets.
 
 {% if tag_vocab %}
 Limit your choices to only {{ num_tags }} unique Tags{{ json_add }} in the following Tag Vocabulary,
-in order of relevance, based on the Summary Statistics and Frequency Distribution about the Dataset
-provided further below.
+in order of relevance, based on the Summary Statistics, Frequency Distribution{% if dictionary %} and Data Dictionary{% endif %}
+about the Dataset provided further below.
 
 The Tag Vocabulary is a CSV with 2 columns: Tag and Description.
 
@@ -253,7 +257,7 @@ Tag Vocabulary (CSV):
 {% else %}{# NOTE: If no tag vocabulary is provided, use the default tag generation prompt #}
 Choose no more than {{ num_tags }} unique Tags{{ json_add }} about the contents of the Dataset
 in descending order of importance (lowercase only and use _ to separate words) based on the
-Summary Statistics and Frequency Distribution about the Dataset provided below.
+Summary Statistics, Frequency Distribution{% if dictionary %} and Data Dictionary{% endif %} about the Dataset provided below.
 Do not use field names in the tags.
 
 {% if language %} Make sure your tag choices are in this language: {{ language|trim|title }} {% endif %}
@@ -273,7 +277,12 @@ Summary Statistics (CSV):
 
 Frequency Distribution (CSV):
 
-{{ frequency }}"""
+{{ frequency }}
+{% if dictionary %}
+Data Dictionary (JSON):
+
+{{ dictionary }}
+{% endif %}"""
 
 prompt = "What is this dataset about?"
 

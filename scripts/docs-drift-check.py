@@ -11,7 +11,10 @@ flags any documentation file that contradicts them:
      "~NNN lines" (source: wc -l on the named .rs file).
   3. The MAX_STAT_COLUMNS constant referenced as "up to N (summary) statistics"
      (source: src/cmd/stats.rs).
-  4. The qsv crate version referenced in dotenv.template's QSV_USER_AGENT
+  4. The 🤯 "loads entire CSV into memory" command set duplicated between
+     docs/PERFORMANCE.md (prose) and docs/PERFORMANCE_TLDR.md (bullets);
+     both docs must list the same commands.
+  5. The qsv crate version referenced in dotenv.template's QSV_USER_AGENT
      example (source: Cargo.toml package.version).
 
 Exit codes:
@@ -276,9 +279,6 @@ FEATURE_LIST_CHECKS: list[tuple[str, str, re.Pattern[str]]] = [
 ]
 
 
-SPLIT_RE = re.compile(r"[,\s]+(?:and\s+)?")
-
-
 def _parse_feature_blob(blob: str) -> set[str]:
     """Tokenize a comma/space/'and'-separated feature list into a set."""
     cleaned = re.sub(r"\band\b", ",", blob)
@@ -343,7 +343,11 @@ def check_feature_lists(report: Report, cargo: dict) -> None:
 
 
 # Files in which we audit the MAX_STAT_COLUMNS claim.
-# Each entry is (doc_rel, regex with named group "n").
+# Each entry is (doc_rel, regex with named group "n"). Regexes are anchored
+# to the canonical wording the doc uses for the *total* stat-column count;
+# bare patterns like `(\d+)\s+statistics` would collide with other
+# stat-count claims in the same file (e.g., STATS_DEFINITIONS.md:991 has
+# "up to 17 statistics" describing the schema-side cap).
 STAT_COLUMN_CHECKS: list[tuple[str, re.Pattern[str]]] = [
     (
         "README.md",
@@ -351,7 +355,7 @@ STAT_COLUMN_CHECKS: list[tuple[str, re.Pattern[str]]] = [
     ),
     (
         "docs/STATS_DEFINITIONS.md",
-        re.compile(r"(?P<n>\d+)\s+statistics"),
+        re.compile(r"\*?\*?Total:\s*(?P<n>\d+)\s+statistics"),
     ),
     (
         "docs/contributor/STATS_QUICK_REFERENCE.md",
@@ -359,7 +363,7 @@ STAT_COLUMN_CHECKS: list[tuple[str, re.Pattern[str]]] = [
     ),
     (
         "docs/PERFORMANCE.md",
-        re.compile(r"up to (?P<n>\d+) total"),
+        re.compile(r"up to (?P<n>\d+) total\*?\*?\s+columns?"),
     ),
 ]
 
@@ -392,6 +396,96 @@ def check_stat_columns(report: Report) -> None:
                 category="stat-columns",
                 message=(
                     f"MAX_STAT_COLUMNS is {truth}; doc still says {n}"
+                ),
+            )
+
+
+# Extract the set of bare command names (backticked, leading-asterisk strip)
+# from a chunk of text. Used to compare the 🤯 OOM lists in PERFORMANCE.md
+# and PERFORMANCE_TLDR.md.
+BACKTICKED_CMD_RE = re.compile(r"`([a-z][a-z0-9_]*)`")
+
+
+# Anchor: the prose sentence in PERFORMANCE.md that enumerates 🤯 commands.
+PERFORMANCE_OOM_RE = re.compile(
+    r"exploding head[^\n]*?-\s*🤯\s*\)\s*,\s*that\s+require\s+qsv\s+to\s+load\s+the\s+entire\s+CSV\s+into\s+memory\s*-\s*(?P<list>[^.]+)\.",
+)
+
+
+# Anchor: the bullet block in PERFORMANCE_TLDR.md that lists 🤯 commands.
+PERFORMANCE_TLDR_OOM_RE = re.compile(
+    r"full memory loading[^\n]*?🤯\)[^\n]*?\*\*\s*\n(?P<list>(?:-\s+`[^`]+`[^\n]*\n)+)",
+)
+
+
+def check_oom_lists_in_sync(report: Report) -> None:
+    """Cross-check that PERFORMANCE.md and PERFORMANCE_TLDR.md list the same
+    🤯 ("loads entire CSV into memory") commands.
+
+    The two docs duplicate the same command set in different formats — the
+    long doc as prose, the TLDR as a bullet list — so they drift
+    independently. We extract the bare command names from each (ignoring
+    parenthetical qualifiers like "when not using --sorted") and report any
+    asymmetry."""
+    perf = REPO_ROOT / "docs/PERFORMANCE.md"
+    tldr = REPO_ROOT / "docs/PERFORMANCE_TLDR.md"
+    if not perf.exists() or not tldr.exists():
+        return
+
+    perf_text = perf.read_text(encoding="utf-8")
+    tldr_text = tldr.read_text(encoding="utf-8")
+
+    m_perf = PERFORMANCE_OOM_RE.search(perf_text)
+    m_tldr = PERFORMANCE_TLDR_OOM_RE.search(tldr_text)
+    if not m_perf:
+        report.add(
+            file="docs/PERFORMANCE.md",
+            line=None,
+            category="oom-list",
+            message=(
+                "could not locate the 🤯 OOM-command sentence via the "
+                "configured regex — re-anchor docs-drift-check.py"
+            ),
+        )
+        return
+    if not m_tldr:
+        report.add(
+            file="docs/PERFORMANCE_TLDR.md",
+            line=None,
+            category="oom-list",
+            message=(
+                "could not locate the 🤯 OOM-command bullet list via the "
+                "configured regex — re-anchor docs-drift-check.py"
+            ),
+        )
+        return
+
+    perf_cmds = set(BACKTICKED_CMD_RE.findall(m_perf.group("list")))
+    tldr_cmds = set(BACKTICKED_CMD_RE.findall(m_tldr.group("list")))
+
+    if perf_cmds != tldr_cmds:
+        missing_in_tldr = perf_cmds - tldr_cmds
+        missing_in_perf = tldr_cmds - perf_cmds
+        if missing_in_tldr:
+            lineno = tldr_text[: m_tldr.start()].count("\n") + 1
+            report.add(
+                file="docs/PERFORMANCE_TLDR.md",
+                line=lineno,
+                category="oom-list",
+                message=(
+                    f"🤯 list is missing commands present in PERFORMANCE.md: "
+                    f"{', '.join(sorted(missing_in_tldr))}"
+                ),
+            )
+        if missing_in_perf:
+            lineno = perf_text[: m_perf.start()].count("\n") + 1
+            report.add(
+                file="docs/PERFORMANCE.md",
+                line=lineno,
+                category="oom-list",
+                message=(
+                    f"🤯 list is missing commands present in PERFORMANCE_TLDR.md: "
+                    f"{', '.join(sorted(missing_in_perf))}"
                 ),
             )
 
@@ -452,6 +546,7 @@ def main(argv: list[str]) -> int:
         check_feature_lists(report, cargo)
         check_line_counts(report, args.line_tolerance)
         check_stat_columns(report)
+        check_oom_lists_in_sync(report)
         check_user_agent_version(report, cargo)
     except (OSError, KeyError, RuntimeError) as exc:
         print(f"docs-drift-check: error: {exc}", file=sys.stderr)

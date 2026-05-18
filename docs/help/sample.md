@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/sample.rs](https://github.com/dathere/qsv/blob/master/src/cmd/sample.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")[🌐](TableOfContents.md#legend "has web-aware options.")[🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sample Options](#sample-options) | [Sampling Methods Options](#sampling-methods-options) | [Time-Series Sampling Options](#time-series-sampling-options) | [Remote File Options](#remote-file-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Sample Options](#sample-options) | [Sampling Methods Options](#sampling-methods-options) | [Time-Series Sampling Options](#time-series-sampling-options) | [Sketch Options](#sketch-options) | [Remote File Options](#remote-file-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -63,6 +63,32 @@ The weights are automatically normalized using the maximum weight in the dataset
 Specify the desired sample size with <sample-size>. Uses MEMORY PROPORTIONAL to the
 sample size (k) - O(k).
 "Weighted random sampling with a reservoir" <https://doi.org/10.1016/j.ipl.2005.11.003>
+
+* VAROPT: the sampling method when the --varopt option is specified.
+Variance-bounded weighted reservoir sampling using the A-ExpJ keying scheme of
+Efraimidis and Spirakis (2006). For each record, computes a key u^(1/w) and
+retains the <sample-size> items with the largest keys. Unlike the --weighted
+method, it does NOT require a stats cache, runs in a single pass, and supports
+merge across partitions through the --sketch-out and --sketch-in options.
+Suitable for heavy-tailed weight distributions where bounded-variance
+estimators are needed. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k).
+This is a native Rust implementation written from the original paper; the
+analogous VarOpt sketches in the Apache DataSketches library use the same
+family of algorithms but are NOT used here.
+Algorithm: "Weighted random sampling with a reservoir"
+doi 10.1016/j.ipl.2005.11.003
+
+* MERGEABLE-RESERVOIR: the sampling method when the --mergeable-reservoir flag is set.
+Uniform reservoir sample using Vitter's Algorithm R. Same statistical
+distribution as the default RESERVOIR method, but the sampler state is
+mergeable: a sketch written by one run can be combined with sketches from
+other runs via the --sketch-out and --sketch-in options, producing a uniform
+sample of the combined stream WITHOUT re-reading the input files. Useful
+for sharded or incremental sampling pipelines. Uses MEMORY PROPORTIONAL to
+the sample size (k) - O(k). Native Rust implementation; the analogous
+ReservoirItemsSketch in the Apache DataSketches library implements the same
+algorithm but is NOT used here.
+See en.wikipedia.org/wiki/Reservoir_sampling
 
 * CLUSTER: the sampling method when the --cluster option is specified.
 Samples entire groups of records together based on a cluster identifier column.
@@ -152,6 +178,29 @@ qsv sample --weighted Revenue 1000 data.csv
 qsv sample --cluster Neighborhood 10 data.csv
 ```
 
+> Take a sample using VAROPT (A-ExpJ weighted reservoir) sampling, weighted by
+> the 'Revenue' column, for a sample size of 1000 records. Unlike --weighted,
+> this does NOT require a stats cache.
+
+```console
+qsv sample --varopt Revenue 1000 data.csv
+```
+
+> Sample two shards and merge their sketches into a single uniform sample
+> without re-reading the inputs.
+
+```console
+qsv sample --mergeable-reservoir --sketch-out a.sk 1000 shard_a.csv
+```
+
+```console
+qsv sample --mergeable-reservoir --sketch-out b.sk 1000 shard_b.csv
+```
+
+```console
+qsv sample --sketch-in a.sk,b.sk 1000 -o merged.csv
+```
+
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_sample.rs).
 
 
@@ -186,12 +235,14 @@ qsv sample --help
 
 ## Sampling Methods Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑bernoulli`&nbsp; | flag | Use Bernoulli sampling instead of indexed or reservoir sampling. When this flag is set, <sample-size> must be between 0 and 1 and represents the probability of selecting each record. |  |
 | &nbsp;`‑‑systematic`&nbsp; | string | Use systematic sampling (every nth record as specified by <sample-size>). If <arg> is "random", the starting point is randomly chosen between 0 & n. If <arg> is "first", the starting point is the first record. The sample size must be a whole number. Uses CONSTANT memory - O(1). |  |
 | &nbsp;`‑‑stratified`&nbsp; | string | Use stratified sampling. The strata column is specified by <col>. Can be either a column name or 0-based column index. The sample size must be a whole number. Uses MEMORY PROPORTIONAL to the number of strata (s) and samples per stratum (k) - O(s*k). |  |
 | &nbsp;`‑‑weighted`&nbsp; | string | Use weighted sampling. The weight column is specified by <col>. Can be either a column name or 0-based column index. The column will be parsed as a number. Records with non-number weights will be skipped. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k). |  |
+| &nbsp;`‑‑varopt`&nbsp; | string | Use VAROPT weighted reservoir sampling (A-ExpJ keying). The weight column is specified by <col> (column name or 0-based index). Variance-bounded, single-pass, no stats-cache required, mergeable via --sketch-out / --sketch-in. Records with non-positive or non-numeric weights are silently skipped. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k). |  |
+| &nbsp;`‑‑mergeable‑reservoir`&nbsp; | flag | Use a mergeable Algorithm-R reservoir sampler. Distribution is identical to the default RESERVOIR method, but the resulting sketch is mergeable via --sketch-out / --sketch-in. Cannot be combined with another sampling-method flag. |  |
 | &nbsp;`‑‑cluster`&nbsp; | string | Use cluster sampling. The cluster column is specified by <col>. Can be either a column name or 0-based column index. Uses MEMORY PROPORTIONAL to the number of clusters (c) - O(c). |  |
 | &nbsp;`‑‑timeseries`&nbsp; | string | Use time-series sampling. The time column is specified by <col>. Can be either a column name or 0-based column index. Sorts records by the specified time column and then groups by time intervals and selects one record per interval. Supports various date formats (19 formats recognized by qsv-dateparser). Uses MEMORY PROPORTIONAL to the number of records - O(n). |  |
 
@@ -207,6 +258,15 @@ qsv sample --help
 | &nbsp;`‑‑ts‑aggregate`&nbsp; | string | Aggregation function to apply within each time interval. Options: "first", "last", "mean", "sum", "count", "min", "max", "median". When specified, aggregates all records in each interval instead of selecting a single record. |  |
 | &nbsp;`‑‑ts‑input‑tz`&nbsp; | string | Timezone for parsing input timestamps. Can be an IANA timezone name or "local" for the local timezone. | `UTC` |
 | &nbsp;`‑‑ts‑prefer‑dmy`&nbsp; | flag | Prefer to parse dates in dmy format. Otherwise, use mdy format. |  |
+
+<a name="sketch-options"></a>
+
+## Sketch Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`‑‑sketch‑out`&nbsp; | string | After sampling, also write a binary sketch describing the internal sampler state to <file>. The blob can later be merged into another run via --sketch-in. Only valid with --varopt or --mergeable-reservoir. The format is qsv-specific and is not interoperable with serialized sketches from other tools. |  |
+| &nbsp;`‑‑sketch‑in`&nbsp; | string | Comma-separated list of sketch files produced by --sketch-out. CSV input is NOT read; the listed sketches (which must all be of the same sampler kind) are merged and the resulting sample is emitted as CSV. <sample-size> may be used to cap the merged sample below the sketches' own k. |  |
 
 <a name="remote-file-options"></a>
 

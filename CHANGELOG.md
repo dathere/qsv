@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Headline
+
+- **Mergeable / variance-bounded sampling in `sample`** — two new sampling modes plus a sketch-IO surface that lets users sample sharded inputs and combine the results without re-reading the whole corpus. Both modes are native Rust implementations written from the original algorithm papers. The Apache DataSketches project's [Sampling family](https://datasketches.apache.org/docs/Sampling/SamplingSketches.html) implements the same family of algorithms in C++/Java/Python — qsv does not bind to or depend on that code (the `datasketches` Rust crate doesn't expose Sampling-family sketches), so the on-disk format is qsv-specific and not interoperable with DataSketches serialized sketches.
+  - **`--varopt <col>`** — variance-bounded weighted reservoir sampling using the A-ExpJ keying scheme of Efraimidis & Spirakis (2006). Each record gets a key `u^(1/w)` and the top-`k` keys are retained. Unlike `--weighted` (which is single-pass acceptance-rejection requiring a `max_weight` from the stats cache), `--varopt` is a true reservoir sampler — no stats cache required, single pass, bounded memory, and mergeable across partitions.
+  - **`--mergeable-reservoir`** — uniform reservoir using Vitter's Algorithm R. Same statistical distribution as the default RESERVOIR method, but the resulting sampler state is mergeable.
+  - **`--sketch-out <file>` / `--sketch-in <file1,file2,...>`** — serialize the sampler state to a binary blob and merge across runs. Sketches embed the source CSV header so `--sketch-in` re-emits a schema-bearing CSV without consulting the source files. Sampler-kind mismatch (mixing a reservoir blob with a varopt blob) is rejected. Works with both new sampling modes.
+
+### Added
+
+- `sample`: `--varopt <col>` flag for variance-bounded weighted reservoir sampling (A-ExpJ keying, Efraimidis & Spirakis 2006). See Headline above.
+- `sample`: `--mergeable-reservoir` flag for a uniform reservoir sampler whose state is mergeable across runs (same distribution as the default RESERVOIR method). See Headline above.
+- `sample`: `--sketch-out <file>` / `--sketch-in <files>` for serializing and merging sampler state across runs. Sketches carry their source CSV header so merged output is schema-bearing.
+
 ## [20.1.0] - 2026-05-17 🤖 The "Synthetic Data" Release 🎲
 
 This minor release lands a new top-level command (`synthesize`), introduces LLM-assisted semantic Data Dictionary inference in `describegpt`, adds Apache DataSketches estimators to `stats` and `frequency` for sub-linear-memory approximate stats, and sweeps in a long tail of correctness and big-endian fixes. No breaking changes — pipelines built against 20.0.0 should upgrade in place.

@@ -18,7 +18,7 @@ A feature-packed minor release headlined by a brand-new `synthesize` command for
   - **`--dictionary` / `--infer-content-type`** plugs in the new `describegpt` Content Types (see next bullet) so columns recognized as e.g. `email`, `phone`, `city`, or `credit_card` are filled with realistic-looking fakes instead of generic random strings. **`--locale`** picks from 14 regional flavors (US, FR, JP, etc.) so the fakes match your audience.
   - **Cross-column correlations** (e.g. keeping `city` ↔ `zip_code` consistent within a row) aren't modeled by default — but turning on `describegpt`'s **`--two-pass`** option (see next bullet) lets the LLM detect related fields, and `synthesize` will then keep those relationships consistent in the generated rows.
 
-- **🧠 `describegpt` got a lot smarter — it can now label what your columns *mean*.** In addition to qsv's existing type detection (Integer, Float, Date, etc.), `describegpt` can now ask an LLM to tag each column with a **semantic label** from a 47-token vocabulary covering people, addresses, companies, technical identifiers, and more — so a column of strings isn't just "String", it's `email`, `street_address`, `job_title`, or `credit_card`. These labels are what powers `synthesize`'s realistic fakes, but they're also useful on their own as auto-generated data dictionaries.
+- **🧠 `describegpt` got a lot smarter — it can now label what your columns *mean*.** In addition to qsv's existing type detection (Integer, Float, Date, etc.), `describegpt` can now ask an LLM to classify each column with a **semantic label** from a 47-token vocabulary covering people, addresses, companies, technical identifiers, and more — so a column of strings isn't just "String", it's `email`, `street_address`, `job_title`, or `credit_card`. These labels are what powers `synthesize`'s realistic fakes, but they're also useful on their own as auto-generated data dictionaries.
   - **`--two-pass`** runs the LLM a second time over the ENTIRE Data Dictionary so it can spot relationships between columns (e.g. "this is a `state_abbr` because the next column is a `zip_code`") and fix sloppy first-pass labels. This is also what unlocks cross-column consistency in `synthesize` (see previous bullet).
   - **Deterministic `unique_id` tag** — columns where every value is unique (like IDs and UUIDs) are tagged by qsv directly, *before* the LLM ever sees them. That means the label is 100% reproducible and doesn't drift between LLM versions.
   - **Smarter time/duration handling** — duration columns can carry a realistic upper bound (e.g. "0–1 hour") so synthetic latency or TTL values stay believable instead of ranging out to absurd numbers.
@@ -91,6 +91,21 @@ Detailed MCP Server and Cowork Plugin changes are documented in the [MCP Server/
 - `STATS_DEFINITIONS` audit; `stats` DEVELOPER NOTE wordsmithed
 - `features`: corrected `self_update` probability + nightly sub-features documentation [#3833](https://github.com/dathere/qsv/pull/3833)
 - Test count updated to the verified exact total (3,094)
+- 📚 **Wiki revamped end-to-end** ([github.com/dathere/qsv/wiki](https://github.com/dathere/qsv/wiki)) — 50 pages reorganized into a tiered (Beginner / Intermediate / Advanced) information architecture, complementing the canonical `/docs/help/` flag reference. Highlights:
+  - Hub-style **Home** with three CTAs, tier-grouped page lists, and the anchor-dataset table used across examples (`wcp.csv`, NYC 311, Boston 311, Allegheny property sales, NOAA GHCN, GitHub stargazers)
+  - **Command Reference** as a single index of every command, grouped by category, with the README legend symbols inline and dual deep-links to the category page (workflow) and `/docs/help/<cmd>.md` (flags)
+  - 12 **command-reference category pages** — Selection & Inspection, Transform & Reshape, Aggregation & Statistics, Joins & Set Ops, SQL & Polars, Validation & Schema, Conversion & I/O, Geospatial, HTTP & Web, Scripting (Luau / Python), Indexing / Compression / Diff, AI & Documentation
+  - 13 **Cookbook recipes** — Inspect an Unknown CSV, Clean & Normalize, Geographic Enrichment, Date Enrichment, Fetch & Cache, JSON Schema Validation, Stats → Insights, Build a Data Pipeline, Multi-Table Joins, Diff & Audit, Larger-than-RAM CSV, CKAN Integration, and the new **Synthesize Fake Data**
+  - Tuning & internals: **Performance Tuning**, **Environment Variables**, **Stats Cache & Caching**, **Lookup Tables**
+  - Ecosystem: **MCP Server**, **Claude Cowork Plugin**, **qsv pro Spotlight**, **Integrations**
+  - Reference: **Troubleshooting**, **FAQ**, **Comparison vs others** (xsv, csvkit, Miller, DuckDB, pandas, Visidata, awk/sed), 30-term **Glossary**, **External Resources**, **Contributing to the Wiki**
+- 📚 Wiki updated for 20.1.0:
+  - New [`synthesize`](https://github.com/dathere/qsv/wiki/AI-and-Documentation#synthesize) section under AI & Documentation
+  - [`describegpt`](https://github.com/dathere/qsv/wiki/AI-and-Documentation#describegpt) expanded — Content Types (47-token vocabulary), `--two-pass` cross-field refinement, deterministic `unique_id`, `--markdown-template`, lower-LLM-cost notes
+  - [`stats`](https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#stats) and [`frequency`](https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#frequency) document the new auto-fallback to approximate modes on OOM
+  - [`pivotp --agg quantile@<p>`](https://github.com/dathere/qsv/wiki/SQL-and-Polars#pivotp) (alias `q@<p>`) for quantile pivots
+  - New cookbook recipe: [Synthesize Fake Data](https://github.com/dathere/qsv/wiki/Recipe-Synthesize-Fake-Data) — end-to-end `stats` → `describegpt --two-pass --infer-content-type` → `synthesize` walkthrough
+  - `color` re-homed to [Selection & Inspection](https://github.com/dathere/qsv/wiki/Selection-and-Inspection#color); `pro` re-homed to [Integrations](https://github.com/dathere/qsv/wiki/Integrations#qsv-pro-bridge)
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/20.0.0...20.1.0
 

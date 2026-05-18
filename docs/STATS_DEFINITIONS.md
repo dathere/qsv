@@ -682,7 +682,7 @@ Adds 7 `ps_*` columns to each row of the existing stats CSV (the same row-per-co
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
-| `ps_n` | Variable | Count of finite numeric values used by pragmastat estimators. | Count after filtering non-numeric, NaN, Inf. |
+| `ps_n` | Variable | Count of values used by pragmastat estimators. | Count after filtering: finite numerics for numeric columns, or parsed epoch-ms values for Date/DateTime columns (when supported via the stats cache). Non-numeric / NaN / Inf / unparseable values are excluded. |
 | `ps_center` | Variable | Hodges-Lehmann estimator — robust location. | Median of pairwise averages. Tolerates up to 29% corrupted data. |
 | `ps_spread` | Variable | Shamos estimator — robust dispersion. | Median of pairwise absolute differences. Same units as data; also tolerates up to 29% corrupted data. |
 | `ps_center_lower` | Variable | Lower confidence bound for `ps_center`. | Exact under weak symmetry, with error rate = misrate. |
@@ -777,9 +777,9 @@ Output columns: `field_x, field_y, n_x, n_y, metric, threshold, estimate, lower,
 | `--stats-options <arg>` | `--infer-dates --infer-boolean --mad --quartiles --force --stats-jsonl` | Options passed to the `stats` command when baseline stats need to be generated. Note: this default differs from `moarstats` by omitting `--percentiles`. |
 | `--round <n>` | `4` | Round statistics to `<n>` decimal places. Uses Midpoint Nearest Even (Bankers Rounding). |
 | `--force` | off | Force recomputing `ps_*` columns in the stats cache even if they already exist. |
-| `--subsample <N>` | off | Partial Fisher-Yates shuffle keeping only N values per column before computing. ~100× speedup on large datasets while preserving statistical robustness. Recommended: 10,000–50,000 for exploratory analysis. |
+| `--subsample <N>` | off | Partial Fisher-Yates shuffle keeping only N values per column before computing. ~100× speedup on large datasets while preserving statistical robustness. Recommended: 10,000–50,000 for exploratory analysis. Incompatible with the default cache-append mode (approximate results would be silently reused as if computed from the full dataset) — must be combined with `--standalone` or one of the other non-cache modes. |
 | `--seed <N>` | `42` (when `--subsample` is set) | Seed for reproducible subsampling. |
-| `--no-bounds` | off | Skip confidence bound computation (~2× speedup) when only point estimates are needed. Incompatible with `--compare1` / `--compare2`. |
+| `--no-bounds` | off | Skip confidence bound computation (~2× speedup) when only point estimates are needed. Incompatible with `--compare1` / `--compare2`, and with the default cache-append mode (the cache would store empty bounds that a subsequent run would silently reuse) — must be combined with `--standalone`. |
 | `--output <file>` / `-o` | stdout | Write output to file instead of stdout. |
 | `--delimiter <c>` / `-d` | `,` | Field delimiter for reading/writing CSV data. |
 | `--no-headers` / `-n` | off | When set, the first row will not be treated as headers. |
@@ -819,7 +819,7 @@ Cells are empty (blank) when:
 - **No numeric data (n=0):** The column contains no finite numeric values
 - **Positivity required:** `ratio`, `ratio_lower`, and `ratio_upper` require all values > 0
 - **Date/DateTime pairs:** `ratio` is suppressed for `--twosample` and `--compare2` because it depends on the arbitrary 1970 epoch origin and isn't meaningful for dates; `shift`, `disparity`, and their bounds remain populated
-- **Sparity required:** `spread`, `spread_lower`, `spread_upper`, `disparity`, `disparity_lower`, and `disparity_upper` need real variability (not tie-dominant data)
+- **Sparsity required:** `spread`, `spread_lower`, `spread_upper`, `disparity`, `disparity_lower`, and `disparity_upper` need real variability (not tie-dominant data)
 - **Insufficient data for bounds:** All bounds columns need enough data for the requested misrate; try a higher misrate or more data
 
 See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.1.0/pragmastat-v12.1.0.pdf), [pragmastat.dev](https://pragmastat.dev/)

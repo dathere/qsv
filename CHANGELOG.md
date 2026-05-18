@@ -4,48 +4,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [20.1.0] - 2026-05-17 🤖 The "Synthetic Data" Release 🎲
+## [20.1.0] - 2026-05-18 🤖 The "Synthetic Data" Release 🎲
 
-This minor release lands a new top-level command (`synthesize`), introduces LLM-assisted semantic Data Dictionary inference in `describegpt`, adds Apache DataSketches estimators to `stats` and `frequency` for sub-linear-memory approximate stats, and sweeps in a long tail of correctness and big-endian fixes. No breaking changes — pipelines built against 20.0.0 should upgrade in place.
+A feature-packed minor release headlined by a brand-new `synthesize` command for generating realistic fake CSV data, a much smarter `describegpt` that can now describe *what your columns mean* (not just their data types), and new "approximate stats" modes that let `stats` and `frequency` keep working on files that are bigger than your computer's memory. No breaking changes — pipelines built on 20.0.0 will upgrade in place.
 
-### Headline
+### Highlights
 
-- **NEW `synthesize` command** — generates statistically-faithful synthetic CSVs from a source file. Runs `stats` + `frequency` + `count` on the source, then emits N rows that reproduce per-column attributes:
-  - Categorical / low-cardinality columns are reproduced by frequency-weighted sampling of the *real* value set (cardinality, weights, and repetition structure preserved exactly).
-  - Numeric and date/datetime columns use quartile-bucketed generation, so the *shape* of the distribution is preserved — not just `[min, max]`.
-  - Null ratios are reproduced per column.
-  - `--seed` makes output fully reproducible (single master `StdRng` threads through both selection logic and every faker call).
-  - `--dictionary <file>` layers in semantic Content Types from `describegpt --dictionary --infer-content-type` — each token in describegpt's 47-token Content Type vocabulary (see SMARTER `describegpt` bullet below) maps to a `fake-rs` faker for semantic-aware generation. Bounded-cardinality faker columns sample from a fixed pre-generated pool of distinct fake values (the `--consistent-fakes` mechanism, so a given logical value maps consistently).
-  - `--infer-content-type` runs `describegpt` internally to build the dictionary on the fly (needs `QSV_LLM_APIKEY`).
-  - `--locale` selects from 14 `fake-rs` locales for region-aware faker output.
-  - Gated behind the new `synthesize` feature flag; wired into the `qsv` and `qsvmcp` binaries (not `lite`, not `datapusher_plus`). Cross-column correlation is explicitly out of scope for v1.
+- **🆕 `synthesize` — generate realistic fake CSVs from a real one.** Point it at a source file and it produces a new CSV of any size whose columns *look and behave* like the original — same value mix, same distribution shape, same null rate — but without any of the original records. Useful for sharing test data, populating staging environments, or building demos without leaking real customer data.
+  - **Categorical columns** (e.g. `country`, `status`) are rebuilt by sampling the real values in the same proportions they appear.
+  - **Numeric and date columns** preserve the *shape* of the distribution, not just the min/max — so the synthetic data has realistic clusters, not a flat random spread.
+  - **Null rates** are matched per column.
+  - **`--seed`** makes output fully reproducible — same seed, same file, every time.
+  - **`--dictionary` / `--infer-content-type`** plugs in the new `describegpt` Content Types (see next bullet) so columns recognized as e.g. `email`, `phone`, `city`, or `credit_card` are filled with realistic-looking fakes instead of generic random strings. **`--locale`** picks from 14 regional flavors (US, FR, JP, etc.) so the fakes match your audience.
+  - **Cross-column correlations** (e.g. keeping `city` ↔ `zip_code` consistent within a row) aren't modeled by default — but turning on `describegpt`'s **`--two-pass`** option (see next bullet) lets the LLM detect related fields, and `synthesize` will then keep those relationships consistent in the generated rows.
 
-- **SMARTER `describegpt`** — introducing LLM-assisted semantic Data Dictionary inference (`--infer-content-type` and supporting machinery, all new in this release). Six user-facing additions:
-  - `--two-pass`: after the first-pass per-field inference, runs a second LLM pass over the entire field set so the model can reconcile cross-field relationships (e.g. "this column is `state_abbr` because the next one is `zip_code`") and correct over-eager singleton labels. The second pass is cached separately from the first, so re-runs with the same input + flags don't repeat the LLM cost.
-  - Deterministic `unique_id` Content Type: columns where the frequency cache reports `<ALL_UNIQUE>` (cardinality == rowcount) are tagged `unique_id` by qsv's code path *before* the LLM sees them, in `generate_code_based_dictionary()`. The LLM is explicitly forbidden from emitting `unique_id` from its own output (rejected in `parse_llm_dictionary_response()`), so the tag's origin is unambiguous and the inference is fully reproducible across runs — no token-budget jitter, no model-version drift on this label.
-  - Temporal Content Types with bounded duration: `time` (time-of-day) and `duration` now carry an LLM-hinted upper-bound cap (e.g. `duration:3600` means "0..1 hour" rather than the open-ended `duration`). `synthesize`'s faker_map respects the cap when generating values, so synthetic latency / elapsed-time / TTL columns stay within realistic ranges instead of producing values out to `i64::MAX`.
-  - **New Content Type vocabulary** — a 47-token semantic vocabulary that `--infer-content-type` lets the LLM apply to each Data Dictionary field, going beyond qsv's deterministic type inference (`Integer` / `Float` / `Date` / `DateTime` / `String` / `Boolean` / `NULL`) with a finer-grained semantic label. Organized into six categories:
-    - **person / identity** (7): `first_name`, `last_name`, `full_name`, `username`, `password`, `email`, `phone`
-    - **address / location** (13): `street_address`, `street_name`, `building_number`, `secondary_address`, `city`, `state`, `state_abbr`, `zip_code`, `country`, `country_code`, `latitude`, `longitude`, `time_zone`
-    - **company / job** (4): `company_name`, `industry`, `job_title`, `profession`
-    - **identifiers / technical** (15): `unique_id`, `uuid`, `credit_card`, `currency_code`, `isbn`, `ip_address`, `ipv6_address`, `mac_address`, `url`, `user_agent`, `file_name`, `file_path`, `mime_type`, `color_hex`, `license_plate`
-    - **temporal** (2): `time`, `duration` (plain date/datetime fields stay `unknown` so `synthesize` can use real min/max bounds — see preceding bullet for the LLM-hinted duration cap)
-    - **generic / fallback** (6): `category`, `lorem_word`, `lorem_sentence`, `lorem_paragraph`, `free_text`, `unknown`
+- **🧠 `describegpt` got a lot smarter — it can now label what your columns *mean*.** In addition to qsv's existing type detection (Integer, Float, Date, etc.), `describegpt` can now ask an LLM to tag each column with a **semantic label** from a 47-token vocabulary covering people, addresses, companies, technical identifiers, and more — so a column of strings isn't just "String", it's `email`, `street_address`, `job_title`, or `credit_card`. These labels are what powers `synthesize`'s realistic fakes, but they're also useful on their own as auto-generated data dictionaries.
+  - **`--two-pass`** runs the LLM a second time over the ENTIRE Data Dictionary so it can spot relationships between columns (e.g. "this is a `state_abbr` because the next column is a `zip_code`") and fix sloppy first-pass labels. This is also what unlocks cross-column consistency in `synthesize` (see previous bullet).
+  - **Deterministic `unique_id` tag** — columns where every value is unique (like IDs and UUIDs) are tagged by qsv directly, *before* the LLM ever sees them. That means the label is 100% reproducible and doesn't drift between LLM versions.
+  - **Smarter time/duration handling** — duration columns can carry a realistic upper bound (e.g. "0–1 hour") so synthetic latency or TTL values stay believable instead of ranging out to absurd numbers.
+  - **`--markdown-template`** lets you customize the generated Data Dictionary's Markdown output — add your team's review checklist, restructure the per-column layout, whatever fits your docs.
+  - **Lower LLM costs** — the default prompts were restructured to stop re-sending the dictionary on every step, measurably cutting token usage on multi-phase runs.
 
-    44 of the 47 tokens map to a `fake-rs` faker that `synthesize --dictionary` consumes for semantic-aware generation; the remaining 3 (`category`, `unique_id`, `unknown`) intentionally fall back to enumeration / frequency / type-based generation in `synthesize`. The full vocabulary is rendered into the LLM prompt by `content_type_vocab_list()`, but only 46 are accepted from LLM output — `unique_id` is deterministic-only, set by qsv from the `<ALL_UNIQUE>` frequency sentinel before the LLM is invoked (see preceding bullet).
-  - `--markdown-template`: customize the Markdown dictionary output with your own minijinja template (e.g. add your team's review checklist as a header per field, or restructure the per-column block).
+- **📊 Approximate stats for huge files — `stats` and `frequency` no longer give up when a file is bigger than your RAM.** New opt-in modes use [Apache DataSketches](https://datasketches.apache.org/) algorithms that compute approximate-but-bounded-error answers in a tiny fraction of the memory. Three new modes across two commands:
+  - **For `stats`:** `--quantile-method tdigest` for approximate percentiles ([t-digest](https://datasketches.apache.org/docs/tdigest/tdigest.html)) and `--cardinality-method hll` for approximate distinct counts ([HyperLogLog](https://datasketches.apache.org/docs/HLL/HllSketches.html)).
+  - **For `frequency`:** `--sketch-method misra-gries` for approximate top-K most-frequent values ([Misra-Gries Frequent Items](https://datasketches.apache.org/docs/Frequency/FrequentItemsOverview.html)).
+  - **Automatic when you'd otherwise OOM:** if qsv detects the file is too big to fit in memory, it now auto-switches to the approximate modes (and tells you which ones), instead of failing. Pass `--quantile-method exact` (etc.) to force the precise calculation regardless.
+  - **Cache stays correct:** the `stats` cache key now includes the chosen mode, so switching between exact and approximate modes won't accidentally return stale results.
+  - **Note:** these modes require a "little-endian" CPU, which covers all common hardware (Intel, AMD, Apple Silicon, ARM, etc.). Exotic platforms like IBM s390x get a clear error message instead.
 
-  Performance side-effect: the default description and tags prompts now inline `{{ dictionary }}` at template-render time rather than re-injecting it as a separate chat-message turn on every phase — measurably lower token consumption on multi-phase runs, and a related fix skips the redundant chat-message dictionary injection when the template already inlines it.
+Detailed MCP Server and Cowork Plugin changes are documented in the [MCP Server/Cowork Plugin CHANGELOG](https://github.com/dathere/qsv/blob/master/.claude/skills/CHANGELOG.md).
 
-- **[Apache DataSketches](https://datasketches.apache.org/) in `stats` and `frequency`** — new opt-in probabilistic / streaming estimators that let you compute approximate statistics on datasets larger than available memory, with bounded-error guarantees. Three algorithms, three trigger modes:
-  - **Algorithms:**
-    - `stats`: [t-digest](https://datasketches.apache.org/docs/tdigest/tdigest.html) for quantiles (`--quantile-method tdigest`), [HyperLogLog](https://datasketches.apache.org/docs/HLL/HllSketches.html) for cardinality (`--cardinality-method hll`)
-    - `frequency`: [Misra-Gries Frequent Items](https://datasketches.apache.org/docs/Frequency/FrequentItemsOverview.html) for top-K (`--sketch-method misra-gries`)
-  - **Explicit opt-in:** pass any of the above flags directly to enable the sketch for that statistic.
-  - **Auto-enable on OOM:** when `util::mem_file_check` reports the file won't fit in memory (file size > total RAM − headroom, in NORMAL mode; or under the stricter `--memcheck` / `QSV_MEMORY_CHECK` CONSERVATIVE mode), qsv now auto-enables the sketches *in addition to* the existing auto-index fallback, and emits a `wwarn!` listing which estimators got auto-enabled. Combined with the auto-index path, this lets `stats` / `frequency` finish cleanly on inputs that previously OOM-killed the process. The fallback can now also trigger when an index is already present (e.g. with `--jobs 1` on a pre-indexed file) — a deliberate behavior change from the previous "error out" path in that narrow case.
-  - **Exact mode wins:** `--quantile-method exact` / `--cardinality-method exact` / `--sketch-method exact` always overrides the auto-enable, so users who need precise results in spite of memory pressure can still get them (accepting the OOM risk).
-  - **Cache-correctness side-effect:** the `stats` BLAKE3 fingerprint that keys the stats cache was widened to cover all streaming stats, so changing a quantile / cardinality / sketch flag now correctly invalidates the cache instead of silently returning stale results.
-  - **Platform note:** Apache DataSketches' bindings are little-endian only, so the new modes are gated behind `cfg(target_endian = "little")` and big-endian targets (s390x, etc.) get stub fallbacks that error explicitly rather than misbehaving silently.
+---
 
 ### Added
 - `synthesize`: new top-level command (see Headline) [#3854](https://github.com/dathere/qsv/pull/3854)
@@ -102,8 +91,6 @@ This minor release lands a new top-level command (`synthesize`), introduces LLM-
 - `STATS_DEFINITIONS` audit; `stats` DEVELOPER NOTE wordsmithed
 - `features`: corrected `self_update` probability + nightly sub-features documentation [#3833](https://github.com/dathere/qsv/pull/3833)
 - Test count updated to the verified exact total (3,094)
-
-Detailed MCP Server and Cowork Plugin changes are documented in the [MCP Server/Cowork Plugin CHANGELOG](.claude/skills/CHANGELOG.md).
 
 **Full Changelog**: https://github.com/dathere/qsv/compare/20.0.0...20.1.0
 

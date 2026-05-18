@@ -47,7 +47,7 @@ This minor release lands a new top-level command, deepens AI/LLM-assisted dictio
 - `refactor(stats)`: shrink and tidy `WhichStats` [#3822](https://github.com/dathere/qsv/pull/3822)
 - `refactor(publish)`: fetch tags and enforce SemVer for debian package releases
 - `refactor(benchmarks)`: harden `benchmarks.sh` error handling and cross-platform support [#3814](https://github.com/dathere/qsv/pull/3814)
-- `deps`: bump polars (latest upstream), calamine 0.34→0.35, csvlens fork with bumped arrow, sysinfo 0.38.4→0.39.2, rust_decimal 1.41→1.42, tokio 1.52.1→1.52.3, filetime 0.2.27→0.2.29, jsonschema 0.46.4→0.46.5, rand_xoshiro 0.8.0→0.8.1, redis 1.2.0→1.2.1
+- `deps`: bump polars (latest upstream), calamine 0.34→0.35, csvlens fork with bumped arrow, sysinfo 0.38.4→0.39.2, rust_decimal 1.41→1.42, tokio 1.52.1→1.52.3, filetime 0.2.27→0.2.29, jsonschema 0.46.4→0.46.5, rand_xoshiro 0.8.0→0.8.1, redis 1.2.0→1.2.1, qsv-dateparser 0.14→0.15 (adds support for ISO 8601 `T`-separated datetimes without a timezone suffix — e.g. `2020-01-15T08:00:00`, the form produced by Python's `datetime.isoformat()` without `astimezone()`; previously misclassified by `qsv stats --infer-dates` as `String`)
 - assorted clippy cleanups across `stats`, `frequency`, `pivotp`, `partition`
 
 ### Fixed

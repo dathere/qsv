@@ -741,11 +741,15 @@ fn synthesize_date_column_ignores_time_content_type() {
     // is that real date/datetime fields stay tagged `unknown`; this guards
     // against the LLM contract violation.
     //
-    // Fixture uses space-separated datetimes (`YYYY-MM-DD HH:MM:SS`) because
-    // `qsv stats --infer-dates` — which `synthesize` invokes internally —
-    // recognizes that as `DateTime` but does NOT recognize the `T`-separated
-    // RFC 3339 form (`YYYY-MM-DDTHH:MM:SS`) without a tz suffix. The Date
-    // column stays as plain `YYYY-MM-DD`.
+    // Fixture uses `T`-separated naive datetimes (`YYYY-MM-DDTHH:MM:SS`) —
+    // the form that `datetime.isoformat()` and most ISO 8601 emitters produce
+    // without a timezone suffix. Supported by `qsv stats --infer-dates` as
+    // of qsv-dateparser 0.15.0 (earlier 0.14.0 only recognized the
+    // space-separated form, which is why an earlier revision of this test
+    // used `YYYY-MM-DD HH:MM:SS`). Exercising the `T`-separated form here
+    // double-validates the cleanup: parser correctly classifies the column
+    // as `DateTime`, AND the guard in `ColumnGenerator::build()` prevents
+    // the dictionary-supplied `content_type="time"` from intercepting it.
     let wrk = Workdir::new("synthesize_date_ignores_time_ct");
 
     // Date column with all-unique values to push past `try_frequency_weighted`
@@ -754,16 +758,16 @@ fn synthesize_date_column_ignores_time_content_type() {
         "data.csv",
         vec![
             svec!["join_date", "last_seen"],
-            svec!["2020-01-15", "2020-01-15 08:00:00"],
-            svec!["2020-06-20", "2020-06-20 09:15:00"],
-            svec!["2020-11-05", "2020-11-05 10:30:00"],
-            svec!["2021-03-10", "2021-03-10 11:45:00"],
-            svec!["2021-08-22", "2021-08-22 12:00:00"],
-            svec!["2022-02-28", "2022-02-28 13:15:00"],
-            svec!["2022-07-15", "2022-07-15 14:30:00"],
-            svec!["2022-12-01", "2022-12-01 15:45:00"],
-            svec!["2023-05-30", "2023-05-30 16:00:00"],
-            svec!["2023-09-14", "2023-09-14 17:15:00"],
+            svec!["2020-01-15", "2020-01-15T08:00:00"],
+            svec!["2020-06-20", "2020-06-20T09:15:00"],
+            svec!["2020-11-05", "2020-11-05T10:30:00"],
+            svec!["2021-03-10", "2021-03-10T11:45:00"],
+            svec!["2021-08-22", "2021-08-22T12:00:00"],
+            svec!["2022-02-28", "2022-02-28T13:15:00"],
+            svec!["2022-07-15", "2022-07-15T14:30:00"],
+            svec!["2022-12-01", "2022-12-01T15:45:00"],
+            svec!["2023-05-30", "2023-05-30T16:00:00"],
+            svec!["2023-09-14", "2023-09-14T17:15:00"],
         ],
     );
 

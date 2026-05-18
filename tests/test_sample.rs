@@ -2471,19 +2471,21 @@ fn sample_sketch_out_in_round_trip() {
     wrk.create("in.csv", sketch_test_input());
 
     let sketch_path = wrk.path("snapshot.sk");
-    let mut cmd1 = wrk.command("sample");
-    cmd1.arg("--mergeable-reservoir")
+    let mut cmd_produce = wrk.command("sample");
+    cmd_produce
+        .arg("--mergeable-reservoir")
         .args(["--sketch-out", sketch_path.to_str().unwrap()])
         .args(["--seed", "42"])
         .arg("4")
         .arg("in.csv");
-    let initial: Vec<Vec<String>> = wrk.read_stdout(&mut cmd1);
+    let initial: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_produce);
 
-    let mut cmd2 = wrk.command("sample");
-    cmd2.args(["--sketch-in", sketch_path.to_str().unwrap()])
+    let mut cmd_consume = wrk.command("sample");
+    cmd_consume
+        .args(["--sketch-in", sketch_path.to_str().unwrap()])
         .args(["--seed", "1"])
         .arg("99");
-    let merged: Vec<Vec<String>> = wrk.read_stdout(&mut cmd2);
+    let merged: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_consume);
 
     // Round-trip from a single-sketch sketch-in should emit the exact same
     // sample (and header) as the producing call.

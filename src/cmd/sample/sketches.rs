@@ -624,7 +624,7 @@ mod tests {
     use super::*;
 
     fn rng(seed: u64) -> Xoshiro256Plus {
-        Xoshiro256Plus::seed_from_u64(seed)
+        Xoshiro256Plus::seed_from_u64(seed) // DevSkim: ignore DS148264
     }
 
     fn rec(field: &str) -> csv::ByteRecord {

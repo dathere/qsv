@@ -225,7 +225,7 @@ Computed using Welford's online algorithm for single-pass accuracy. When `--weig
 | `avg_length` | Variable | Average string length. | `sum_length / count`. Shows `*OVERFLOW*` when `sum_length` overflowed. |
 | `stddev_length` | Variable | Standard deviation of string lengths. | Welford's algorithm on lengths. Shows `*OVERFLOW*` when `sum_length` overflowed. |
 | `variance_length` | Variable | Variance of string lengths. | Square of `stddev_length`. Shows `*OVERFLOW*` when `sum_length` overflowed. |
-| `cv_length` | Variable | Coefficient of Variation of lengths. | `(stddev_length / avg_length) * 100`. Shows `*OVERFLOW*` when `sum_length` overflowed. |
+| `cv_length` | Variable | Coefficient of Variation of lengths. | `stddev_length / avg_length` (unitless ratio, **not** multiplied by 100 unlike the numeric `cv` above). Shows `*OVERFLOW*` when `sum_length` overflowed. |
 
 ### Quality & Distribution
 
@@ -651,17 +651,48 @@ See: [Outlier](https://en.wikipedia.org/wiki/Outlier)
 
 ## `pragmastat`
 
-The `pragmastat` command computes robust, median-of-pairwise statistics using the [Pragmastat library](https://pragmastat.dev/) (v12.0.0). Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
+The `pragmastat` command computes robust, median-of-pairwise statistics using the [Pragmastat library](https://pragmastat.dev/) (v12.1.0). Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
 
 Sourced from `src/cmd/pragmastat.rs`.
 
 **Key Features:**
 - Only finite numeric values are used; non-numeric/NaN/Inf values are ignored
+- Date/DateTime columns are supported when a stats cache is available (run `qsv stats -E --infer-dates --stats-jsonl` first); dates are converted to epoch milliseconds for analysis, then `center`/bounds are formatted as dates and `spread`/`shift` as days
 - Each column is treated as its own sample (two-sample compares columns, not rows)
 - Non-numeric columns appear with n=0 and empty estimator cells
 - Loads all numeric values into memory
 
-### One-Sample Mode (Default)
+### Modes
+
+`pragmastat` has four mutually exclusive output modes. The **default** (no mode flag) **extends the existing stats cache** the way `moarstats` does; the other modes always produce a standalone CSV.
+
+| Mode flag | Behavior | Output |
+|:---|:---|:---|
+| *(none)* | **Default.** Appends 7 `ps_*` columns to the existing `.stats.csv` cache file. If no cache exists, runs `stats` first using `--stats-options`. | Extended stats CSV |
+| `--standalone` | One-sample point/bound estimates as a fresh CSV, without touching the stats cache. | Standalone CSV |
+| `-t` / `--twosample` | Two-sample estimators for every unordered column pair. | Standalone CSV |
+| `--compare1 <spec>` | One-sample confirmatory analysis — tests `center` / `spread` against user-defined thresholds. | Standalone CSV |
+| `--compare2 <spec>` | Two-sample confirmatory analysis — tests `shift` / `ratio` / `disparity` against user-defined thresholds. | Standalone CSV |
+
+### Default Mode (Stats Cache Append)
+
+Adds 7 `ps_*` columns to each row of the existing stats CSV (the same row-per-column layout `stats` and `moarstats` use). If no stats cache is present, one is generated first using `--stats-options` (default: `--infer-dates --infer-boolean --mad --quartiles --force --stats-jsonl` — note: **no `--percentiles`**, unlike `moarstats`).
+
+`ps_*` columns that already exist in the cache are left untouched unless `--force` is set.
+
+| Identifier | Level | Summary | Computation |
+|:---|:---:|:---|:---|
+| `ps_n` | Variable | Count of finite numeric values used by pragmastat estimators. | Count after filtering non-numeric, NaN, Inf. |
+| `ps_center` | Variable | Hodges-Lehmann estimator — robust location. | Median of pairwise averages. Tolerates up to 29% corrupted data. |
+| `ps_spread` | Variable | Shamos estimator — robust dispersion. | Median of pairwise absolute differences. Same units as data; also tolerates up to 29% corrupted data. |
+| `ps_center_lower` | Variable | Lower confidence bound for `ps_center`. | Exact under weak symmetry, with error rate = misrate. |
+| `ps_center_upper` | Variable | Upper confidence bound for `ps_center`. | Exact under weak symmetry, with error rate = misrate. |
+| `ps_spread_lower` | Variable | Lower confidence bound for `ps_spread`. | Randomized (bootstrap); error rate = misrate. |
+| `ps_spread_upper` | Variable | Upper confidence bound for `ps_spread`. | Randomized (bootstrap); error rate = misrate. |
+
+### Standalone Mode (`--standalone`)
+
+One-sample mode that produces a fresh standalone CSV instead of extending the stats cache. (This is the legacy default behavior preserved behind a flag.)
 
 Output columns: `field, n, center, spread, center_lower, center_upper, spread_lower, spread_upper`
 
@@ -676,9 +707,9 @@ Output columns: `field, n, center, spread, center_lower, center_upper, spread_lo
 | `spread_lower` | Variable | Lower confidence bound for spread. | Randomized (bootstrap); error rate = misrate. |
 | `spread_upper` | Variable | Upper confidence bound for spread. | Randomized (bootstrap); error rate = misrate. |
 
-### Two-Sample Mode
+### Two-Sample Mode (`-t` / `--twosample`)
 
-Enabled with the `--twosample` option. Computes statistics for all unordered column pairs.
+Computes statistics for all unordered column pairs. Always produces a standalone CSV.
 
 Output columns: `field_x, field_y, n_x, n_y, shift, ratio, disparity, shift_lower, shift_upper, ratio_lower, ratio_upper, disparity_lower, disparity_upper`
 
@@ -687,19 +718,68 @@ Output columns: `field_x, field_y, n_x, n_y, shift, ratio, disparity, shift_lowe
 | `field_x`, `field_y` | Pairwise | Column names being compared. | From CSV header. |
 | `n_x`, `n_y` | Pairwise | Counts of finite numeric values. | Per-column counts after filtering non-numeric/NaN/Inf. |
 | `shift` | Pairwise | Hodges-Lehmann difference — robust location difference. | Median of pairwise differences between columns. Negative means first column tends to be lower. |
-| `ratio` | Pairwise | Robust multiplicative ratio. | `exp(shift(log x, log y))`. Use for positive-valued quantities (latency, price, concentration). Requires all values > 0. |
+| `ratio` | Pairwise | Robust multiplicative ratio. | `exp(shift(log x, log y))`. Use for positive-valued quantities (latency, price, concentration). Requires all values > 0. Suppressed for Date/DateTime pairs (depends on the arbitrary 1970 epoch origin). |
 | `disparity` | Pairwise | Robust effect size. | `shift / (average spread of x and y)`. |
 | `shift_lower`, `shift_upper` | Pairwise | Confidence bounds for shift. | Exact; error rate = misrate. If bounds exclude 0, the difference is reliable. Ties may be conservative. |
 | `ratio_lower`, `ratio_upper` | Pairwise | Confidence bounds for ratio. | Exact; error rate = misrate. If bounds exclude 1, the difference is reliable. Requires all values > 0. |
 | `disparity_lower`, `disparity_upper` | Pairwise | Confidence bounds for disparity. | Randomized (Bonferroni combination); error rate = misrate. If bounds exclude 0, the disparity is reliable. |
 
+### Compare1 Mode (`--compare1 <spec>`)
+
+One-sample confirmatory analysis. Tests one-sample estimates (`center` / `spread`) against user-supplied thresholds and renders a verdict per (column, threshold) pair. Always produces a standalone CSV.
+
+**Threshold format:** comma-separated `metric:value` pairs, e.g. `center:42.0` or `center:42.0,spread:0.5`. Valid metrics: `center`, `spread`.
+
+Output columns: `field, n, metric, threshold, estimate, lower, upper, verdict`
+
+| Identifier | Level | Summary |
+|:---|:---:|:---|
+| `field` | Variable | Column name (or 1-based index if `--no-headers`). |
+| `n` | Variable | Count of finite numeric values. |
+| `metric` | Variable | The metric being tested (`center` or `spread`). |
+| `threshold` | Variable | The user-supplied threshold from `--compare1 metric:value`. |
+| `estimate` | Variable | Point estimate of the chosen metric for this column. |
+| `lower`, `upper` | Variable | Confidence bounds for the estimate (error rate = misrate). |
+| `verdict` | Variable | One of `less` (estimate statistically below threshold), `greater` (statistically above), or `inconclusive` (interval contains threshold). |
+
+Incompatible with `--no-bounds` (the verdict requires bounds).
+
+### Compare2 Mode (`--compare2 <spec>`)
+
+Two-sample confirmatory analysis. Tests two-sample estimates (`shift` / `ratio` / `disparity`) against user-supplied thresholds and renders a verdict per (column pair, threshold). Always produces a standalone CSV.
+
+**Threshold format:** comma-separated `metric:value` pairs, e.g. `shift:0` or `shift:0,disparity:0.8`. Valid metrics: `shift`, `ratio`, `disparity`.
+
+Output columns: `field_x, field_y, n_x, n_y, metric, threshold, estimate, lower, upper, verdict`
+
+| Identifier | Level | Summary |
+|:---|:---:|:---|
+| `field_x`, `field_y` | Pairwise | Column names being compared. |
+| `n_x`, `n_y` | Pairwise | Per-column counts of finite numeric values. |
+| `metric` | Pairwise | The metric being tested (`shift`, `ratio`, or `disparity`). |
+| `threshold` | Pairwise | The user-supplied threshold from `--compare2 metric:value`. |
+| `estimate` | Pairwise | Point estimate of the chosen metric for this column pair. |
+| `lower`, `upper` | Pairwise | Confidence bounds for the estimate (error rate = misrate). |
+| `verdict` | Pairwise | One of `less`, `greater`, or `inconclusive` (same semantics as compare1). |
+
+`ratio` rows are suppressed for Date/DateTime pairs (see Two-Sample Mode above). Incompatible with `--no-bounds`.
+
 ### Options
 
 | Option | Default | Description |
 |:---|:---|:---|
-| `--twosample` / `-t` | off | Compute two-sample estimators for all column pairs. |
-| `--select <cols>` / `-s` | all columns | Select columns for analysis using qsv's column selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed. |
+| `--twosample` / `-t` | off | Compute two-sample estimators for all column pairs. Mutually exclusive with `--compare1` / `--compare2`. |
+| `--compare1 <spec>` | — | One-sample confirmatory analysis. Format: `metric:value[,metric:value,...]`. Valid metrics: `center`, `spread`. Mutually exclusive with `--twosample` / `--compare2`. |
+| `--compare2 <spec>` | — | Two-sample confirmatory analysis. Format: `metric:value[,metric:value,...]`. Valid metrics: `shift`, `ratio`, `disparity`. Mutually exclusive with `--twosample` / `--compare1`. |
+| `--select <cols>` / `-s` | all numeric columns (when stats cache fresh) | Column selection using qsv's column-selection syntax. Non-numeric columns appear with n=0. In two-sample mode, all pairs of selected columns are computed. |
 | `--misrate <n>` / `-m` | `0.001` | Probability that bounds fail to contain the true parameter. Lower values produce wider bounds. Must be achievable for the given sample size. Use `1e-3` for everyday analysis or `1e-6` for critical decisions. |
+| `--standalone` | off | Force one-sample mode to emit a standalone CSV instead of extending the stats cache. No effect with `--twosample` / `--compare1` / `--compare2` (which are always standalone). |
+| `--stats-options <arg>` | `--infer-dates --infer-boolean --mad --quartiles --force --stats-jsonl` | Options passed to the `stats` command when baseline stats need to be generated. Note: this default differs from `moarstats` by omitting `--percentiles`. |
+| `--round <n>` | `4` | Round statistics to `<n>` decimal places. Uses Midpoint Nearest Even (Bankers Rounding). |
+| `--force` | off | Force recomputing `ps_*` columns in the stats cache even if they already exist. |
+| `--subsample <N>` | off | Partial Fisher-Yates shuffle keeping only N values per column before computing. ~100× speedup on large datasets while preserving statistical robustness. Recommended: 10,000–50,000 for exploratory analysis. |
+| `--seed <N>` | `42` (when `--subsample` is set) | Seed for reproducible subsampling. |
+| `--no-bounds` | off | Skip confidence bound computation (~2× speedup) when only point estimates are needed. Incompatible with `--compare1` / `--compare2`. |
 | `--output <file>` / `-o` | stdout | Write output to file instead of stdout. |
 | `--delimiter <c>` / `-d` | `,` | Field delimiter for reading/writing CSV data. |
 | `--no-headers` / `-n` | off | When set, the first row will not be treated as headers. |
@@ -738,10 +818,11 @@ These are per‑column (one‑sample) or per‑pair (two‑sample) complexities.
 Cells are empty (blank) when:
 - **No numeric data (n=0):** The column contains no finite numeric values
 - **Positivity required:** `ratio`, `ratio_lower`, and `ratio_upper` require all values > 0
+- **Date/DateTime pairs:** `ratio` is suppressed for `--twosample` and `--compare2` because it depends on the arbitrary 1970 epoch origin and isn't meaningful for dates; `shift`, `disparity`, and their bounds remain populated
 - **Sparity required:** `spread`, `spread_lower`, `spread_upper`, `disparity`, `disparity_lower`, and `disparity_upper` need real variability (not tie-dominant data)
 - **Insufficient data for bounds:** All bounds columns need enough data for the requested misrate; try a higher misrate or more data
 
-See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.0.0/pragmastat-v12.0.0.pdf), [pragmastat.dev](https://pragmastat.dev/)
+See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.1.0/pragmastat-v12.1.0.pdf), [pragmastat.dev](https://pragmastat.dev/)
 
 ## `frequency`
 

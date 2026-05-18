@@ -5118,7 +5118,7 @@ impl Commute for Stats {
                 let mut union = datasketches::hll::HllUnion::new(HLL_LG_K);
                 union.update(s);
                 union.update(&o);
-                *s = union.get_result(datasketches::hll::HllType::Hll8);
+                *s = union.to_sketch(datasketches::hll::HllType::Hll8);
             },
             (slot @ None, Some(o)) => *slot = Some(o),
             _ => {},

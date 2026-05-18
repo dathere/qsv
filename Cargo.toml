@@ -387,7 +387,7 @@ polars = { git = "https://github.com/pola-rs/polars", rev = "3d5a70b", optional 
 # support big-endian targets, so we exclude the crate on big-endian builds.
 # Code paths that use it are guarded by #[cfg(not(target_endian = "big"))].
 [target.'cfg(not(target_endian = "big"))'.dependencies]
-datasketches = "0.2"
+datasketches = { version = "0.3", features = ["frequencies", "hll", "tdigest"] }
 
 [features]
 default = ["jemallocator"]

@@ -20,6 +20,15 @@ This minor release lands a new top-level command, deepens AI/LLM-assisted dictio
   - `--locale` selects from 14 `fake-rs` locales for region-aware faker output.
   - Gated behind the new `synthesize` feature flag; wired into the `qsv` and `qsvmcp` binaries (not `lite`, not `datapusher_plus`). Cross-column correlation is explicitly out of scope for v1.
 
+- **SMARTER `describegpt`** — significantly deeper LLM-assisted Data Dictionary inference, building on the `--infer-content-type` flag introduced in 20.0.0. Five user-facing additions:
+  - `--two-pass`: after the first-pass per-field inference, runs a second LLM pass over the entire field set so the model can reconcile cross-field relationships (e.g. "this column is `state_abbr` because the next one is `zip_code`") and correct over-eager singleton labels. The second pass is cached separately from the first, so re-runs with the same input + flags don't repeat the LLM cost.
+  - Deterministic `unique_id` Content Type: columns where the frequency cache reports `<ALL_UNIQUE>` (cardinality == rowcount) are tagged `unique_id` by qsv's code path *before* the LLM sees them, in `generate_code_based_dictionary()`. The LLM is explicitly forbidden from emitting `unique_id` from its own output (rejected in `parse_llm_dictionary_response()`), so the tag's origin is unambiguous and the inference is fully reproducible across runs — no token-budget jitter, no model-version drift on this label.
+  - Temporal Content Types with bounded duration: `time` (time-of-day) and `duration` now carry an LLM-hinted upper-bound cap (e.g. `duration:3600` means "0..1 hour" rather than the open-ended `duration`). `synthesize`'s faker_map respects the cap when generating values, so synthetic latency / elapsed-time / TTL columns stay within realistic ranges instead of producing values out to `i64::MAX`.
+  - 5 new Content Type tokens — `street_name`, `license_plate`, `industry`, `profession`, `ipv6_address` — bringing the `CONTENT_TYPE_VOCAB` to 47 tokens (44 of which map to `fake-rs` fakers for downstream `synthesize`; the remaining 3 — `category`, `unique_id`, `unknown` — intentionally fall back to enumeration / frequency-based generation).
+  - `--markdown-template`: customize the Markdown dictionary output with your own minijinja template (e.g. add your team's review checklist as a header per field, or restructure the per-column block).
+
+  Performance side-effect: the default description and tags prompts now inline `{{ dictionary }}` at template-render time rather than re-injecting it as a separate chat-message turn on every phase — measurably lower token consumption on multi-phase runs, and a related fix skips the redundant chat-message dictionary injection when the template already inlines it.
+
 ### Added
 - `synthesize`: new top-level command (see Headline) [#3854](https://github.com/dathere/qsv/pull/3854)
 - `synthesize`: `--consistent-fakes` for stable source→fake mapping [#3865](https://github.com/dathere/qsv/pull/3865)

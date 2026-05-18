@@ -5,6 +5,25 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [20.1.0] - 2026-05-18
+
+Companion release to qsv 20.1.0 ("Synthetic Data"). MCP server tracks the qsv binary version per the policy adopted in 20.0.0.
+
+### Added
+- **`synthesize` command skill** — new `qsv-synthesize.json` (category: `generation`), exposing the 20.1.0 `qsv synthesize` command for statistically-faithful synthetic CSV generation, including `--locale` for 14 fake-rs locales, `--consistent-fakes` for stable source→fake mapping, string-length stats for unstructured text columns, and Content Type inference (street_name, license_plate, industry, profession, ipv6_address, etc.) when paired with `describegpt`. Skill JSONs auto-regenerated from qsv 20.1.0 USAGE text.
+
+### Changed
+- **Minimum qsv version raised to 20.1.0** across all three enforcement points (`src/config.ts`, `manifest.json`, `scripts/cowork-setup.cjs`); required for the `synthesize` skill and the `describegpt --infer-content-type` / `--two-pass` features it builds on.
+- **Skill count: 54 → 55** — reflected in `manifest.json`, `.claude-plugin/plugin.json`, root `.claude-plugin/marketplace.json`, `README-MCP.md`, `README.md`, `cowork-CLAUDE.md`, and `skills/csv-wrangling/SKILL.md`.
+- **qsv CLI command count: 72 → 73** in `manifest.json` features array (qsvmcp 63 → 64); the new `synthesize` command joins `distrib_features` and the `qsvmcp` feature set.
+- **`feat(mcp): Compute qsv skill count dynamically`** (65af4bf65) — skill count is now derived at build time rather than hardcoded.
+- **`chore(mcp): update luau skill JSON with Luau version`** (d384893fc) — pin Luau 0.720 in skill metadata.
+- **README.md totals refreshed** — examples 174 → 221, options 604 → 658, arguments 87 → 98; new `generation` category row; `utility` 23 → 24 (includes `implode`).
+
+### Fixed
+- **Version drift fixed across publish artifacts** — `.claude-plugin/plugin.json` and the repo-root `.claude-plugin/marketplace.json` (both `metadata.version` and `plugins[0].version`) were stale at 20.0.0 after the qsv 20.1.0 binary bump; now aligned at 20.1.0.
+- **`MINIMUM_QSV_VERSION` enforcement points re-synced** — `src/config.ts` and `scripts/cowork-setup.cjs` were stale at 20.0.0 while `manifest.json` had already moved to 20.1.0; all three now agree.
+
 ## [20.0.0] - 2026-05-03
 
 ### Added

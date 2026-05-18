@@ -1,6 +1,6 @@
 # QSV MCP Server
 
-Model Context Protocol (MCP) server that exposes qsv's tabular data-wrangling commands to Claude Desktop. The server works with **qsvmcp** (preferred) or the full **qsv** binary, exposing 54 skill-based commands optimized for AI agent workflows.
+Model Context Protocol (MCP) server that exposes qsv's tabular data-wrangling commands to Claude Desktop. The server works with **qsvmcp** (preferred) or the full **qsv** binary, exposing 55 skill-based commands optimized for AI agent workflows.
 
 ## Overview
 
@@ -489,7 +489,7 @@ npm run mcp:start
 The server should start and log:
 ```
 Loading QSV skills...
-Loaded 54 skills
+Loaded 55 skills
 QSV MCP Server initialized successfully
 QSV MCP Server running on stdio
 ```
@@ -563,7 +563,7 @@ npm test
 
 ## Performance
 
-- **Server Startup**: < 100ms (54 skills loaded)
+- **Server Startup**: < 100ms (55 skills loaded)
 - **Tool Execution**: < 10ms overhead + qsv processing time
 - **File Processing**: Depends on qsv performance (generally very fast)
 - **Streaming**: Large files processed efficiently by qsv
@@ -606,8 +606,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-05-03
-**Version**: 20.0.0
-**Tools**: 10 core tools initially (+1 app-only), 54 when discovered via search
-**Skills**: 54 qsv commands
+**Updated**: 2026-05-18
+**Version**: 20.1.0
+**Tools**: 10 core tools initially (+1 app-only), 55 when discovered via search
+**Skills**: 55 qsv commands
 **Status**: Production Ready

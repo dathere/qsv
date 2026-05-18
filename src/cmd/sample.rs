@@ -956,6 +956,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!("Sample size cannot be negative.");
     }
 
+    // --sketch-in is its own input mode (CSV is NOT read); it cannot be
+    // combined with any sampling-method flag. Detect this first so the user
+    // gets a targeted error rather than the generic "Only one sampling
+    // method" message.
+    if args.flag_sketch_in.is_some() {
+        let conflicting = args.flag_bernoulli
+            || args.flag_systematic.is_some()
+            || args.flag_stratified.is_some()
+            || args.flag_weighted.is_some()
+            || args.flag_varopt.is_some()
+            || args.flag_mergeable_reservoir
+            || args.flag_cluster.is_some()
+            || args.flag_timeseries.is_some();
+        if conflicting {
+            return fail_incorrectusage_clierror!(
+                "--sketch-in does not read CSV input; do not combine it with another \
+                 sampling-method flag (--bernoulli, --systematic, --stratified, --weighted, \
+                 --varopt, --mergeable-reservoir, --cluster, --timeseries)."
+            );
+        }
+    }
+
     // Validate that only one sampling method is selected
     let methods = [
         args.flag_bernoulli,
@@ -964,7 +986,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_weighted.is_some(),
         args.flag_varopt.is_some(),
         args.flag_mergeable_reservoir,
-        args.flag_sketch_in.is_some(),
         args.flag_cluster.is_some(),
         args.flag_timeseries.is_some(),
     ];
@@ -2228,6 +2249,30 @@ fn sample_mergeable_reservoir(
     Ok(())
 }
 
+// Resolve `<sample-size>` for sketch-merge mode against an already-retained
+// item count (the merged sketch's sample size). Semantics mirror the other
+// sample paths: a value in [0, 1) is a *fraction* of the retained items; a
+// value >= 1 is an absolute count. Non-finite or non-positive values mean
+// "no cap" — emit everything in the sketch.
+fn resolve_sketch_cap(sample_size: f64, retained: usize) -> usize {
+    if !sample_size.is_finite() || sample_size <= 0.0 {
+        return retained;
+    }
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    if sample_size < 1.0 {
+        // Fraction of retained items, rounded to nearest. min ensures we
+        // never request more rows than the sketch actually holds.
+        let n = (retained as f64 * sample_size).round() as usize;
+        n.min(retained)
+    } else {
+        (sample_size as usize).min(retained)
+    }
+}
+
 // Load and merge a comma-separated list of sketch files (produced by
 // --sketch-out), emit the merged sample as CSV, and optionally re-emit the
 // merged sketch via --sketch-out. All input sketches must share the same
@@ -2295,12 +2340,9 @@ fn sample_sketch_merge(
             }
 
             // Optionally cap the emitted sample below the sketch's k.
-            #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
-            let cap = if args.arg_sample_size > 0.0 && args.arg_sample_size.is_finite() {
-                args.arg_sample_size as usize
-            } else {
-                usize::MAX
-            };
+            // 0 < size < 1 means "fraction of the merged sketch's retained
+            // items"; size >= 1 means "this many rows".
+            let cap = resolve_sketch_cap(args.arg_sample_size, merged.samples().len());
             for (i, record) in merged.samples().iter().enumerate() {
                 if i >= cap {
                     break;
@@ -2350,12 +2392,8 @@ fn sample_sketch_merge(
                 wtr.write_byte_record(h)?;
             }
 
-            #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
-            let cap = if args.arg_sample_size > 0.0 && args.arg_sample_size.is_finite() {
-                args.arg_sample_size as usize
-            } else {
-                usize::MAX
-            };
+            // Same fractional / count semantics as the Reservoir branch above.
+            let cap = resolve_sketch_cap(args.arg_sample_size, merged.samples_with_weights().len());
             for (i, (record, _w)) in merged.samples_with_weights().into_iter().enumerate() {
                 if i >= cap {
                     break;

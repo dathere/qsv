@@ -190,11 +190,23 @@ impl<T: Clone> ReservoirItemsSketch<T> {
     /// Merge another sketch into self, producing a uniform sample of size
     /// `min(k, self.n + other.n)` from the combined stream.
     ///
-    /// Algorithm: each output slot is independently filled from `other`'s
-    /// reservoir with probability `other.n / (self.n + other.n)`, otherwise
-    /// it's kept from `self`. This yields a uniform marginal distribution
-    /// over the union without item duplication (since `other`'s reservoir
-    /// items are distinct and consumed at most once).
+    /// Algorithm (weighted-reservoir union, equivalent to Apache
+    /// DataSketches' ReservoirItemsUnion): assign each item in the
+    /// concatenated pool of `self.reservoir ∪ other.reservoir` an A-ExpJ
+    /// key `u^(1/w)` (Efraimidis & Spirakis 2006), where its weight `w`
+    /// equals the stream's mass-per-sampled-item it stands in for
+    /// (`self.n / self.reservoir.len()` for items from `self`, analogous
+    /// for `other`). Keep the top `k` keys.
+    ///
+    /// Each original stream item is then included in the merged sample
+    /// with marginal probability `k / (self.n + other.n)`, the desired
+    /// uniform-from-union target. No duplication occurs because each
+    /// item appears in the pool at most once. The earlier per-slot
+    /// Bernoulli scheme had a distributional bias under asymmetric
+    /// stream sizes (when `other.n / total_n` was close to 1 and
+    /// `other.reservoir` was exhausted before all slots were considered,
+    /// late slots had a lower effective replacement probability than
+    /// intended).
     pub fn merge<R: Rng + ?Sized>(&mut self, mut other: Self, rng: &mut R) {
         // Prefer self's header; fall back to other's if self has none.
         if self.header.is_none() && other.header.is_some() {
@@ -214,29 +226,47 @@ impl<T: Clone> ReservoirItemsSketch<T> {
         }
 
         let total_n = self.n.saturating_add(other.n);
-        let p_b = other.n as f64 / total_n as f64;
+        let k = self.k;
 
-        // Fill self up to k from other first if we have warmup capacity.
-        while self.reservoir.len() < self.k {
-            if let Some(item) = other.reservoir.pop() {
-                self.reservoir.push(item);
-            } else {
-                break;
-            }
+        // If the combined logical stream fits in k slots, just concatenate
+        // (both reservoirs hold every item they've seen and nothing has
+        // been displaced).
+        if total_n <= k as u64
+            && (self.reservoir.len() as u64) == self.n
+            && (other.reservoir.len() as u64) == other.n
+        {
+            self.reservoir.extend(other.reservoir);
+            self.reservoir.truncate(k);
+            self.n = total_n;
+            return;
         }
 
-        // Slot-replacement union over the full reservoir.
-        let mut other_iter = other.reservoir.into_iter();
-        for slot in self.reservoir.iter_mut() {
-            if rng.random::<f64>() < p_b {
-                if let Some(item) = other_iter.next() {
-                    *slot = item;
-                } else {
-                    break;
-                }
-            }
+        // Per-item weights: each pool item from `self` stands in for
+        // self.n / self.reservoir.len() original stream items (same for
+        // other). Items below contribute proportionally to their stream's
+        // mass.
+        let self_k = self.reservoir.len().max(1) as f64;
+        let other_k = other.reservoir.len().max(1) as f64;
+        let w_self = (self.n as f64) / self_k;
+        let w_other = (other.n as f64) / other_k;
+
+        // Concatenate the two reservoirs and assign A-ExpJ keys.
+        let mut keyed: Vec<(f64, T)> =
+            Vec::with_capacity(self.reservoir.len() + other.reservoir.len());
+        for item in std::mem::take(&mut self.reservoir) {
+            let u: f64 = rng.random::<f64>().max(f64::MIN_POSITIVE);
+            keyed.push((u.powf(1.0 / w_self), item));
+        }
+        for item in other.reservoir {
+            let u: f64 = rng.random::<f64>().max(f64::MIN_POSITIVE);
+            keyed.push((u.powf(1.0 / w_other), item));
         }
 
+        // Keep the top-`k` keys.
+        keyed.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+        keyed.truncate(k);
+
+        self.reservoir = keyed.into_iter().map(|(_, item)| item).collect();
         self.n = total_n;
     }
 }
@@ -444,9 +474,9 @@ impl<T: Clone> VarOptItemsSketch<T> {
         self.heap.iter().map(|it| it.item.clone()).collect()
     }
 
-    /// Insert one item with a non-negative weight. Items with non-positive
-    /// or non-finite weights are silently skipped (count `n` is incremented
-    /// for finite non-negative weights; zero-weight items are skipped entirely).
+    /// Insert one item. Items with non-finite or non-positive weights are
+    /// silently dropped and do not increment `n`; only items with a finite,
+    /// strictly positive weight are counted.
     pub fn update<R: Rng + ?Sized>(&mut self, item: T, weight: f64, rng: &mut R) {
         if !weight.is_finite() || weight <= 0.0 {
             return;
@@ -473,6 +503,12 @@ impl<T: Clone> VarOptItemsSketch<T> {
 
     /// Merge another sketch into self, keeping the top-`k` of the combined
     /// key heap.
+    ///
+    /// Note: this merge is deterministic given the two sketches' keys (it
+    /// is just a top-`k` selection over `self.heap ∪ other.heap`). The
+    /// `_rng` parameter is unused and exists only so callers can use
+    /// `merge` with the same signature shape as
+    /// [`ReservoirItemsSketch::merge`], which does use the RNG.
     pub fn merge<R: Rng + ?Sized>(&mut self, mut other: Self, _rng: &mut R) {
         // Prefer self's header; fall back to other's if self has none.
         if self.header.is_none() && other.header.is_some() {
@@ -569,6 +605,8 @@ impl<T: Clone + SerializableItem> VarOptItemsSketch<T> {
 // ============================================================================
 
 /// Inspect a serialized sketch's family without deserializing the items.
+/// Also rejects unknown format versions so a stale peek doesn't surface
+/// confusing downstream errors when a newer-format blob is loaded.
 pub fn peek_family(bytes: &[u8]) -> io::Result<SketchFamily> {
     let header: &[u8; 8] = bytes.first_chunk::<8>().ok_or_else(|| {
         io::Error::new(
@@ -580,6 +618,13 @@ pub fn peek_family(bytes: &[u8]) -> io::Result<SketchFamily> {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "sketch blob has bad magic bytes",
+        ));
+    }
+    let version = header[4];
+    if version != SKETCH_FORMAT_VERSION {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("unsupported sketch format version: {version}"),
         ));
     }
     SketchFamily::from_byte(header[5])

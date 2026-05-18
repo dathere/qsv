@@ -2394,6 +2394,14 @@ fn sketch_test_input() -> Vec<Vec<String>> {
 
 #[test]
 fn sample_varopt_seeded() {
+    // Pins the exact rows VarOpt emits for the (fixture, --seed 42, k=4)
+    // tuple. Intentionally exact: this is the regression net that catches
+    // accidental changes in how the sampler consumes the RNG (e.g.,
+    // reordering an `rng.random::<f64>()` call inside `update`). The
+    // `sample_varopt_heavy_weight_dominates` test below carries the
+    // semantic invariant (heavy-weight retention); this one nails down
+    // the implementation. If the algorithm legitimately changes its RNG
+    // consumption, regenerate the expected vector and document why.
     let wrk = Workdir::new("sample_varopt_seeded");
     wrk.create("in.csv", sketch_test_input());
 
@@ -2445,6 +2453,11 @@ fn sample_varopt_heavy_weight_dominates() {
 
 #[test]
 fn sample_mergeable_reservoir_seeded() {
+    // Pins the exact rows Algorithm R emits for (fixture, --seed 42, k=4).
+    // Same intentional-pin rationale as `sample_varopt_seeded` above: a
+    // refactor that changes how `ReservoirItemsSketch::update` draws from
+    // the RNG should require regenerating these expected values, not
+    // silently producing a different sample.
     let wrk = Workdir::new("sample_mergeable_reservoir");
     wrk.create("in.csv", sketch_test_input());
 

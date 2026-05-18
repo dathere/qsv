@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [20.1.0] - 2026-05-17 🤖 The "Synthetic Data" Release 🎲
 
-This minor release lands a new top-level command, deepens AI/LLM-assisted dictionary inference in `describegpt`, expands the opt-in Apache DataSketches estimators in `stats`/`frequency` that began in 20.0.0, and sweeps in a long tail of correctness and big-endian fixes. No breaking changes — pipelines built against 20.0.0 should upgrade in place.
+This minor release lands a new top-level command (`synthesize`), introduces LLM-assisted semantic Data Dictionary inference in `describegpt`, adds Apache DataSketches estimators to `stats` and `frequency` for sub-linear-memory approximate stats, and sweeps in a long tail of correctness and big-endian fixes. No breaking changes — pipelines built against 20.0.0 should upgrade in place.
 
 ### Headline
 
@@ -36,6 +36,16 @@ This minor release lands a new top-level command, deepens AI/LLM-assisted dictio
   - `--markdown-template`: customize the Markdown dictionary output with your own minijinja template (e.g. add your team's review checklist as a header per field, or restructure the per-column block).
 
   Performance side-effect: the default description and tags prompts now inline `{{ dictionary }}` at template-render time rather than re-injecting it as a separate chat-message turn on every phase — measurably lower token consumption on multi-phase runs, and a related fix skips the redundant chat-message dictionary injection when the template already inlines it.
+
+- **Apache DataSketches in `stats` and `frequency`** — new opt-in probabilistic / streaming estimators that let you compute approximate statistics on datasets larger than available memory, with bounded-error guarantees. Three algorithms, three trigger modes:
+  - **Algorithms:**
+    - `stats`: t-digest for quantiles (`--quantile-method tdigest`), HyperLogLog for cardinality (`--cardinality-method hll`)
+    - `frequency`: Misra-Gries Frequent Items for top-K (`--sketch-method misra-gries`)
+  - **Explicit opt-in:** pass any of the above flags directly to enable the sketch for that statistic.
+  - **Auto-enable on OOM:** when `util::mem_file_check` reports the file won't fit in memory (file size > total RAM − headroom, in NORMAL mode; or under the stricter `--memcheck` / `QSV_MEMORY_CHECK` CONSERVATIVE mode), qsv now auto-enables the sketches *in addition to* the existing auto-index fallback, and emits a `wwarn!` listing which estimators got auto-enabled. Combined with the auto-index path, this lets `stats` / `frequency` finish cleanly on inputs that previously OOM-killed the process. The fallback can now also trigger when an index is already present (e.g. with `--jobs 1` on a pre-indexed file) — a deliberate behavior change from the previous "error out" path in that narrow case.
+  - **Exact mode wins:** `--quantile-method exact` / `--cardinality-method exact` / `--sketch-method exact` always overrides the auto-enable, so users who need precise results in spite of memory pressure can still get them (accepting the OOM risk).
+  - **Cache-correctness side-effect:** the `stats` BLAKE3 fingerprint that keys the stats cache was widened to cover all streaming stats, so changing a quantile / cardinality / sketch flag now correctly invalidates the cache instead of silently returning stale results.
+  - **Platform note:** Apache DataSketches' bindings are little-endian only, so the new modes are gated behind `cfg(target_endian = "little")` and big-endian targets (s390x, etc.) get stub fallbacks that error explicitly rather than misbehaving silently.
 
 ### Added
 - `synthesize`: new top-level command (see Headline) [#3854](https://github.com/dathere/qsv/pull/3854)
@@ -94,6 +104,8 @@ This minor release lands a new top-level command, deepens AI/LLM-assisted dictio
 - Test count updated to the verified exact total (3,094)
 
 Detailed MCP Server and Cowork Plugin changes are documented in the [MCP Server/Cowork Plugin CHANGELOG](.claude/skills/CHANGELOG.md).
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/20.0.0...20.1.0
 
 ---
 

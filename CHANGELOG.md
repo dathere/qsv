@@ -37,10 +37,10 @@ This minor release lands a new top-level command (`synthesize`), introduces LLM-
 
   Performance side-effect: the default description and tags prompts now inline `{{ dictionary }}` at template-render time rather than re-injecting it as a separate chat-message turn on every phase — measurably lower token consumption on multi-phase runs, and a related fix skips the redundant chat-message dictionary injection when the template already inlines it.
 
-- **Apache DataSketches in `stats` and `frequency`** — new opt-in probabilistic / streaming estimators that let you compute approximate statistics on datasets larger than available memory, with bounded-error guarantees. Three algorithms, three trigger modes:
+- **[Apache DataSketches](https://datasketches.apache.org/) in `stats` and `frequency`** — new opt-in probabilistic / streaming estimators that let you compute approximate statistics on datasets larger than available memory, with bounded-error guarantees. Three algorithms, three trigger modes:
   - **Algorithms:**
-    - `stats`: t-digest for quantiles (`--quantile-method tdigest`), HyperLogLog for cardinality (`--cardinality-method hll`)
-    - `frequency`: Misra-Gries Frequent Items for top-K (`--sketch-method misra-gries`)
+    - `stats`: [t-digest](https://datasketches.apache.org/docs/tdigest/tdigest.html) for quantiles (`--quantile-method tdigest`), [HyperLogLog](https://datasketches.apache.org/docs/HLL/HllSketches.html) for cardinality (`--cardinality-method hll`)
+    - `frequency`: [Misra-Gries Frequent Items](https://datasketches.apache.org/docs/Frequency/FrequentItemsOverview.html) for top-K (`--sketch-method misra-gries`)
   - **Explicit opt-in:** pass any of the above flags directly to enable the sketch for that statistic.
   - **Auto-enable on OOM:** when `util::mem_file_check` reports the file won't fit in memory (file size > total RAM − headroom, in NORMAL mode; or under the stricter `--memcheck` / `QSV_MEMORY_CHECK` CONSERVATIVE mode), qsv now auto-enables the sketches *in addition to* the existing auto-index fallback, and emits a `wwarn!` listing which estimators got auto-enabled. Combined with the auto-index path, this lets `stats` / `frequency` finish cleanly on inputs that previously OOM-killed the process. The fallback can now also trigger when an index is already present (e.g. with `--jobs 1` on a pre-indexed file) — a deliberate behavior change from the previous "error out" path in that narrow case.
   - **Exact mode wins:** `--quantile-method exact` / `--cardinality-method exact` / `--sketch-method exact` always overrides the auto-enable, so users who need precise results in spite of memory pressure can still get them (accepting the OOM risk).

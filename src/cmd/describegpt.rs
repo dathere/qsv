@@ -2844,7 +2844,23 @@ fn format_dictionary_phase(
         {
             x_qsv.insert("generated_by".to_string(), json!(attribution));
         }
-        DATA_DICTIONARY_JSON.get_or_init(|| serde_json::to_string_pretty(&schema_value).unwrap());
+        // Downstream Description/Tags prompts read `DATA_DICTIONARY_JSON` as the
+        // `{{ dictionary }}` Mini-Jinja variable, and that variable's contract is the
+        // dictionary-entries shape produced by `format_dictionary_json` — NOT a JSON
+        // Schema scaffold. Cache that shape regardless of the chosen output format
+        // so `--description --format jsonschema` and `--tags --format jsonschema`
+        // feed the LLM the same context every other format does. The schema document
+        // stays in `total_json_output[Dictionary]["response"]` for
+        // `finalize_structured_output` to consume.
+        let dictionary_json = formatters::format_dictionary_json(
+            combined_entries,
+            args.flag_enum_threshold,
+            args.flag_num_examples,
+            args.flag_truncate_str,
+            args.flag_infer_content_type,
+        );
+        DATA_DICTIONARY_JSON
+            .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
         total_json_output[kind.to_string()] = json!({
             "response": schema_value,
             "reasoning": completion_response.reasoning,

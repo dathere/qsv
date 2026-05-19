@@ -112,6 +112,11 @@ pub(super) fn format_dictionary_jsonschema(
     allow_extra_cols: bool,
 ) -> Value {
     let mut properties = serde_json::Map::with_capacity(entries.len());
+    // Every column is listed in `required`, matching `qsv schema`'s behavior.
+    // `required` means the property KEY must be present in each row-object;
+    // nullability is expressed independently via the per-property `type` array
+    // (which gains `"null"` when `null_count > 0`). Callers who want a record
+    // shape that allows omitting a column should re-emit `required` themselves.
     let mut required: Vec<Value> = Vec::with_capacity(entries.len());
 
     for entry in entries {
@@ -151,12 +156,34 @@ fn build_property_schema(entry: &DictionaryEntry, infer_content_type: bool) -> V
     let (json_type, format_hint) = map_qsv_type(qsv_type);
     let nullable = entry.null_count > 0 && json_type != "null";
 
+    let mut prop = serde_json::Map::new();
+
+    // For a fully-null column (qsv_type == "NULL"), the only consistent shape
+    // is `type: "null"` with no enum/const/examples — those would contradict
+    // the type. Short-circuit so a stray sentinel in `examples` can't produce
+    // a self-contradictory schema.
+    if json_type == "null" {
+        prop.insert("type".to_string(), Value::String("null".to_string()));
+        if !entry.label.is_empty() {
+            prop.insert("title".to_string(), Value::String(entry.label.clone()));
+        }
+        let description = if entry.description.is_empty() {
+            format!("{} column", entry.name)
+        } else {
+            entry.description.clone()
+        };
+        prop.insert("description".to_string(), Value::String(description));
+        prop.insert(
+            "x-qsv".to_string(),
+            Value::Object(build_x_qsv(entry, infer_content_type)),
+        );
+        return Value::Object(prop);
+    }
+
     let mut type_array: Vec<Value> = vec![Value::String(json_type.to_string())];
     if nullable {
         type_array.push(Value::String("null".to_string()));
     }
-
-    let mut prop = serde_json::Map::new();
     prop.insert("type".to_string(), Value::Array(type_array));
 
     if !entry.label.is_empty() {
@@ -202,6 +229,11 @@ fn build_property_schema(entry: &DictionaryEntry, infer_content_type: bool) -> V
 
     // enum / const inference from the enumeration string. The enumeration field
     // is non-empty only when cardinality <= enum_threshold (set by the caller).
+    //
+    // `const` requires the instance to exactly equal the value, so it's only
+    // safe when the column is NOT nullable. For a nullable single-value column
+    // we emit `enum: [value, null]` instead, which permits both the constant
+    // and a null in the same way the `type` array does.
     if !entry.enumeration.is_empty() {
         let values: Vec<Value> = entry
             .enumeration
@@ -211,6 +243,7 @@ fn build_property_schema(entry: &DictionaryEntry, infer_content_type: bool) -> V
             .collect();
 
         if entry.cardinality == 1
+            && !nullable
             && let Some(single) = values.first()
         {
             prop.insert("const".to_string(), single.clone());
@@ -243,11 +276,22 @@ fn build_property_schema(entry: &DictionaryEntry, infer_content_type: bool) -> V
         }
     }
 
-    // x-qsv extras: spec-compliant annotation keyword (unknown keywords are
-    // ignored by validators per draft 2020-12). Groups all qsv/LLM-specific
-    // metadata in one place so the standard schema stays clean.
+    prop.insert(
+        "x-qsv".to_string(),
+        Value::Object(build_x_qsv(entry, infer_content_type)),
+    );
+
+    Value::Object(prop)
+}
+
+/// Build the per-property `x-qsv` annotation object. Extracted so the NULL
+/// short-circuit path can reuse it without duplicating the field map.
+fn build_x_qsv(
+    entry: &DictionaryEntry,
+    infer_content_type: bool,
+) -> serde_json::Map<String, Value> {
     let mut x_qsv = serde_json::Map::new();
-    x_qsv.insert("qsv_type".to_string(), Value::String(qsv_type.to_string()));
+    x_qsv.insert("qsv_type".to_string(), Value::String(entry.r#type.clone()));
     x_qsv.insert("cardinality".to_string(), json!(entry.cardinality));
     x_qsv.insert("null_count".to_string(), json!(entry.null_count));
     if infer_content_type && !entry.content_type.is_empty() {
@@ -277,9 +321,7 @@ fn build_property_schema(entry: &DictionaryEntry, infer_content_type: bool) -> V
         }
         x_qsv.insert("addl".to_string(), Value::Object(addl));
     }
-    prop.insert("x-qsv".to_string(), Value::Object(x_qsv));
-
-    Value::Object(prop)
+    x_qsv
 }
 
 /// Map a qsv stats type string to a JSON Schema `type` keyword and optional

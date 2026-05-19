@@ -682,7 +682,7 @@ Adds 7 `ps_*` columns to each row of the existing stats CSV (the same row-per-co
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
-| `ps_n` | Variable | Count of values used by pragmastat estimators. | Count after filtering: finite numerics for numeric columns, or parsed epoch-ms values for Date/DateTime columns (when supported via the stats cache). Non-numeric / NaN / Inf / unparseable values are excluded. |
+| `ps_n` | Variable | Count of values used by pragmastat estimators. | Count after filtering: finite numerics for numeric columns, or parsed epoch-ms values for Date/DateTime columns (when supported via the stats cache). Non-numeric / NaN / Inf / unparsable values are excluded. |
 | `ps_center` | Variable | Hodges-Lehmann estimator — robust location. | Median of pairwise averages. Tolerates up to 29% corrupted data. |
 | `ps_spread` | Variable | Shamos estimator — robust dispersion. | Median of pairwise absolute differences. Same units as data; also tolerates up to 29% corrupted data. |
 | `ps_center_lower` | Variable | Lower confidence bound for `ps_center`. | Exact under weak symmetry, with error rate = misrate. |

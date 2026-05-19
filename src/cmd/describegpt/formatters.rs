@@ -327,13 +327,20 @@ fn build_x_qsv(
 /// Map a qsv stats type string to a JSON Schema `type` keyword and optional
 /// `format` keyword. Unknown types default to `string` to keep the emitted
 /// schema valid even if qsv's stats add a new type in the future.
+///
+/// Date/DateTime intentionally return `None` for the format hint — qsv's
+/// `--infer-dates` is permissive (it classifies many real-world strings like
+/// "June 27, 1968" as Date) but JSON Schema's `format: "date"` / `"date-time"`
+/// require RFC 3339 full-date / date-time. Emitting the format keyword by
+/// default would break the `qsv validate` roundtrip for permissively-inferred
+/// date columns. This mirrors `src/cmd/schema.rs:462,469`, which only emits
+/// these formats when `--strict-dates` is set.
 fn map_qsv_type(qsv_type: &str) -> (&'static str, Option<&'static str>) {
     match qsv_type {
         "Integer" => ("integer", None),
         "Float" => ("number", None),
         "Boolean" => ("boolean", None),
-        "Date" => ("string", Some("date")),
-        "DateTime" => ("string", Some("date-time")),
+        "Date" | "DateTime" => ("string", None),
         "NULL" => ("null", None),
         _ => ("string", None),
     }

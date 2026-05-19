@@ -5052,23 +5052,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             )?;
         }
 
-        // Write accumulated JSON/TOON output
-        if output_format == OutputFormat::Json {
-            let json_str = serde_json::to_string_pretty(&total_json_output)?;
-            if let Some(output) = &args.flag_output {
-                fs::write(output, json_str.as_bytes())?;
-            } else {
-                println!("{json_str}");
-            }
-        } else if output_format == OutputFormat::Toon {
-            let toon_str = encode(&total_json_output, &EncodeOptions::new())
-                .map_err(|e| CliError::Other(format!("TOON encoding error: {e}")))?;
-            if let Some(output) = &args.flag_output {
-                fs::write(output, toon_str.as_bytes())?;
-            } else {
-                println!("{toon_str}");
-            }
-        }
+        // Delegate accumulated-output emission to the same finalizer the live
+        // inference path uses so every accumulating format (Json, Toon,
+        // JsonSchema, …) gets emitted consistently. Markdown/TSV are inline
+        // emit-as-you-go and finalize_structured_output is a no-op for them.
+        finalize_structured_output(&args, &total_json_output, output_format)?;
 
         return Ok(());
     }

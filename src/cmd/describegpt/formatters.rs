@@ -83,6 +83,256 @@ pub(super) fn format_dictionary_json(
     })
 }
 
+/// Format dictionary entries as a JSON Schema (draft 2020-12) document.
+///
+/// Standard JSON Schema keywords (`type`, `title`, `description`, `minimum`,
+/// `maximum`, `enum`, `const`, `format`, `examples`) come from the deterministic
+/// stats data plus the LLM-inferred Label/Description. qsv- and LLM-specific data
+/// that doesn't map to standard keywords (`content_type`, `cardinality`,
+/// `null_count`, weighted example counts, additional stats columns) is preserved
+/// via a single `x-qsv` annotation object per property. Per draft 2020-12,
+/// unknown keywords are ignored by validators, so this flows through validation
+/// cleanly.
+///
+/// `allow_extra_cols` toggles the schema-root `additionalProperties` between
+/// `false` (strict, the default) and `true` (permissive).
+///
+/// The schema's top-level `x-qsv.generated_by` is left as the literal
+/// `{GENERATED_BY_SIGNATURE}` placeholder; the caller substitutes the resolved
+/// attribution after building, mirroring the pattern used by
+/// `format_dictionary_json`.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn format_dictionary_jsonschema(
+    entries: &[DictionaryEntry],
+    input_filename: &str,
+    enum_threshold: usize,
+    num_examples: u16,
+    truncate_str: usize,
+    infer_content_type: bool,
+    allow_extra_cols: bool,
+) -> Value {
+    let mut properties = serde_json::Map::with_capacity(entries.len());
+    let mut required: Vec<Value> = Vec::with_capacity(entries.len());
+
+    for entry in entries {
+        required.push(json!(entry.name));
+        properties.insert(
+            entry.name.clone(),
+            build_property_schema(entry, infer_content_type),
+        );
+    }
+
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": format!("Data Dictionary for {input_filename}"),
+        "description": format!("JSON Schema (draft 2020-12) Data Dictionary inferred from {input_filename} by qsv describegpt --dictionary."),
+        "type": "object",
+        "properties": Value::Object(properties),
+        "required": Value::Array(required),
+        "additionalProperties": allow_extra_cols,
+        "x-qsv": {
+            "generated_by": "{GENERATED_BY_SIGNATURE}",
+            "enum_threshold": enum_threshold,
+            "num_examples": num_examples,
+            "truncate_str": truncate_str,
+            "infer_content_type": infer_content_type,
+        },
+    })
+}
+
+/// Build the per-property JSON Schema for one `DictionaryEntry`.
+///
+/// Type mapping mirrors `src/cmd/schema.rs::infer_schema_from_stats`:
+/// Integer→integer, Float→number, String→string, Boolean→boolean,
+/// Date→string+format:date, DateTime→string+format:date-time, NULL→null.
+/// Nullable columns (null_count > 0) get `"null"` appended to the `type` array.
+fn build_property_schema(entry: &DictionaryEntry, infer_content_type: bool) -> Value {
+    let qsv_type = entry.r#type.as_str();
+    let (json_type, format_hint) = map_qsv_type(qsv_type);
+    let nullable = entry.null_count > 0 && json_type != "null";
+
+    let mut type_array: Vec<Value> = vec![Value::String(json_type.to_string())];
+    if nullable {
+        type_array.push(Value::String("null".to_string()));
+    }
+
+    let mut prop = serde_json::Map::new();
+    prop.insert("type".to_string(), Value::Array(type_array));
+
+    if !entry.label.is_empty() {
+        prop.insert("title".to_string(), Value::String(entry.label.clone()));
+    }
+    let description = if entry.description.is_empty() {
+        format!("{} column", entry.name)
+    } else {
+        entry.description.clone()
+    };
+    prop.insert("description".to_string(), Value::String(description));
+
+    if let Some(fmt) = format_hint {
+        prop.insert("format".to_string(), Value::String(fmt.to_string()));
+    }
+
+    // Numeric range constraints. Skip silently if the qsv stats min/max can't be
+    // parsed as the inferred numeric type — better to omit the keyword than to
+    // emit a malformed schema.
+    match qsv_type {
+        "Integer" => {
+            if let Ok(min_i) = entry.min.parse::<i64>() {
+                prop.insert("minimum".to_string(), json!(min_i));
+            }
+            if let Ok(max_i) = entry.max.parse::<i64>() {
+                prop.insert("maximum".to_string(), json!(max_i));
+            }
+        },
+        "Float" => {
+            if let Ok(min_f) = entry.min.parse::<f64>()
+                && let Some(n) = serde_json::Number::from_f64(min_f)
+            {
+                prop.insert("minimum".to_string(), Value::Number(n));
+            }
+            if let Ok(max_f) = entry.max.parse::<f64>()
+                && let Some(n) = serde_json::Number::from_f64(max_f)
+            {
+                prop.insert("maximum".to_string(), Value::Number(n));
+            }
+        },
+        _ => {},
+    }
+
+    // enum / const inference from the enumeration string. The enumeration field
+    // is non-empty only when cardinality <= enum_threshold (set by the caller).
+    if !entry.enumeration.is_empty() {
+        let values: Vec<Value> = entry
+            .enumeration
+            .split('\n')
+            .filter(|s| !s.is_empty())
+            .map(|s| coerce_value(s, qsv_type))
+            .collect();
+
+        if entry.cardinality == 1
+            && let Some(single) = values.first()
+        {
+            prop.insert("const".to_string(), single.clone());
+        } else if !values.is_empty() {
+            let mut enum_vals = values;
+            if nullable {
+                enum_vals.push(Value::Null);
+            }
+            prop.insert("enum".to_string(), Value::Array(enum_vals));
+        }
+    }
+
+    // examples: parse the "val [cnt]\nval [cnt]" form to bare typed values.
+    // "<ALL_UNIQUE>" sentinel and the empty case both skip emitting `examples`.
+    if !entry.examples.is_empty() && entry.examples != "<ALL_UNIQUE>" {
+        let example_vals: Vec<Value> = entry
+            .examples
+            .split('\n')
+            .filter_map(|line| {
+                let bare = strip_count_suffix(line);
+                if bare.is_empty() {
+                    None
+                } else {
+                    Some(coerce_value(bare, qsv_type))
+                }
+            })
+            .collect();
+        if !example_vals.is_empty() {
+            prop.insert("examples".to_string(), Value::Array(example_vals));
+        }
+    }
+
+    // x-qsv extras: spec-compliant annotation keyword (unknown keywords are
+    // ignored by validators per draft 2020-12). Groups all qsv/LLM-specific
+    // metadata in one place so the standard schema stays clean.
+    let mut x_qsv = serde_json::Map::new();
+    x_qsv.insert("qsv_type".to_string(), Value::String(qsv_type.to_string()));
+    x_qsv.insert("cardinality".to_string(), json!(entry.cardinality));
+    x_qsv.insert("null_count".to_string(), json!(entry.null_count));
+    if infer_content_type && !entry.content_type.is_empty() {
+        x_qsv.insert(
+            "content_type".to_string(),
+            Value::String(entry.content_type.clone()),
+        );
+    }
+    if !entry.examples.is_empty() {
+        x_qsv.insert(
+            "example_counts".to_string(),
+            Value::String(entry.examples.clone()),
+        );
+    }
+    if !entry.addl_cols.is_empty() {
+        let mut addl = serde_json::Map::with_capacity(entry.addl_cols.len());
+        for (k, v) in &entry.addl_cols {
+            let value = if v.is_empty() {
+                Value::Null
+            } else if k == "percentiles" {
+                // Mirror format_dictionary_json: '|' is the percentiles delimiter.
+                Value::String(v.replace('|', "\n"))
+            } else {
+                Value::String(v.clone())
+            };
+            addl.insert(k.clone(), value);
+        }
+        x_qsv.insert("addl".to_string(), Value::Object(addl));
+    }
+    prop.insert("x-qsv".to_string(), Value::Object(x_qsv));
+
+    Value::Object(prop)
+}
+
+/// Map a qsv stats type string to a JSON Schema `type` keyword and optional
+/// `format` keyword. Unknown types default to `string` to keep the emitted
+/// schema valid even if qsv's stats add a new type in the future.
+fn map_qsv_type(qsv_type: &str) -> (&'static str, Option<&'static str>) {
+    match qsv_type {
+        "Integer" => ("integer", None),
+        "Float" => ("number", None),
+        "Boolean" => ("boolean", None),
+        "Date" => ("string", Some("date")),
+        "DateTime" => ("string", Some("date-time")),
+        "NULL" => ("null", None),
+        _ => ("string", None),
+    }
+}
+
+/// Convert a stats-derived string value into a JSON Schema-typed value matching
+/// the property's declared type. Falls back to a JSON string when the value
+/// doesn't parse — preferable to dropping the value silently.
+fn coerce_value(s: &str, qsv_type: &str) -> Value {
+    match qsv_type {
+        "Integer" => s
+            .parse::<i64>()
+            .map_or_else(|_| Value::String(s.to_string()), |i| json!(i)),
+        "Float" => s
+            .parse::<f64>()
+            .ok()
+            .and_then(serde_json::Number::from_f64)
+            .map_or_else(|| Value::String(s.to_string()), Value::Number),
+        "Boolean" => match s.to_ascii_lowercase().as_str() {
+            "true" | "t" | "1" | "yes" | "y" => Value::Bool(true),
+            "false" | "f" | "0" | "no" | "n" => Value::Bool(false),
+            _ => Value::String(s.to_string()),
+        },
+        _ => Value::String(s.to_string()),
+    }
+}
+
+/// Strip a trailing ` [count]` suffix from an example line.
+/// Input is one line of `entry.examples` ("val1 [cnt1]" form). Returns the
+/// bare value (trimmed). The count is preserved in `x-qsv.example_counts`.
+fn strip_count_suffix(line: &str) -> &str {
+    // Use rfind so values that themselves contain "[" aren't truncated mid-value.
+    if let Some(idx) = line.rfind(" [")
+        && line.ends_with(']')
+    {
+        line[..idx].trim()
+    } else {
+        line.trim()
+    }
+}
+
 /// Format dictionary entries as TSV.
 ///
 /// When `infer_content_type` is true, a `Content Type` column is inserted after

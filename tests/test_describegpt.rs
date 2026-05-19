@@ -2405,3 +2405,184 @@ fn describegpt_score_duckdb_high_threshold_retries() {
         "Expected retry activity with threshold 101, stderr: {stderr}"
     );
 }
+
+// --format jsonschema CLI validation: rejects when neither --dictionary nor --all is set.
+// Non-LLM test (validation runs before any LLM call).
+#[test]
+fn describegpt_jsonschema_requires_dictionary() {
+    let wrk = Workdir::new("describegpt_jsonschema_requires_dictionary");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .args(["--format", "jsonschema"])
+        .arg("--description")
+        .arg("--no-cache");
+
+    let got = wrk.output(&mut cmd);
+    assert!(
+        !got.status.success(),
+        "Expected --format jsonschema without --dictionary to fail"
+    );
+    let stderr = String::from_utf8_lossy(&got.stderr);
+    assert!(
+        stderr.contains("--format jsonschema requires --dictionary"),
+        "stderr did not mention the dictionary requirement: {stderr}"
+    );
+}
+
+// --format jsonschema with --dictionary emits a valid draft 2020-12 schema.
+#[test]
+#[serial]
+fn describegpt_jsonschema_dictionary() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_jsonschema_dictionary");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+            svec!["gamma", "37"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--format", "jsonschema"])
+        .arg("--no-cache");
+
+    let got = wrk.stdout::<String>(&mut cmd);
+    let schema: serde_json::Value = serde_json::from_str(&got)
+        .unwrap_or_else(|e| panic!("Output is not valid JSON: {e}\noutput: {got}"));
+
+    // Root-level shape.
+    assert_eq!(
+        schema.get("$schema").and_then(|v| v.as_str()),
+        Some("https://json-schema.org/draft/2020-12/schema")
+    );
+    assert_eq!(schema.get("type").and_then(|v| v.as_str()), Some("object"));
+    assert_eq!(
+        schema.get("additionalProperties").and_then(|v| v.as_bool()),
+        Some(false),
+        "additionalProperties should default to false"
+    );
+    let required = schema
+        .get("required")
+        .and_then(|v| v.as_array())
+        .expect("required array");
+    assert_eq!(required.len(), 2, "required should list every column");
+
+    // Per-property x-qsv extras present.
+    let properties = schema
+        .get("properties")
+        .and_then(|v| v.as_object())
+        .expect("properties object");
+    for col in ["letter", "number"] {
+        let prop = properties
+            .get(col)
+            .unwrap_or_else(|| panic!("missing property {col}"));
+        let x_qsv = prop
+            .get("x-qsv")
+            .and_then(|v| v.as_object())
+            .unwrap_or_else(|| panic!("missing x-qsv on {col}"));
+        assert!(
+            x_qsv.contains_key("cardinality"),
+            "{col} x-qsv missing cardinality"
+        );
+        assert!(
+            x_qsv.contains_key("null_count"),
+            "{col} x-qsv missing null_count"
+        );
+        assert!(
+            x_qsv.contains_key("qsv_type"),
+            "{col} x-qsv missing qsv_type"
+        );
+    }
+
+    // Schema must compile under jsonschema (which implicitly meta-validates against 2020-12).
+    jsonschema::Validator::options()
+        .build(&schema)
+        .expect("emitted schema must be a valid draft 2020-12 JSON Schema");
+}
+
+// --allow-extra-cols flips additionalProperties to true.
+#[test]
+#[serial]
+fn describegpt_jsonschema_allow_extra_cols() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_jsonschema_allow_extra_cols");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--format", "jsonschema"])
+        .arg("--allow-extra-cols")
+        .arg("--no-cache");
+
+    let got = wrk.stdout::<String>(&mut cmd);
+    let schema: serde_json::Value =
+        serde_json::from_str(&got).expect("output should be valid JSON");
+    assert_eq!(
+        schema.get("additionalProperties").and_then(|v| v.as_bool()),
+        Some(true),
+        "additionalProperties should be true with --allow-extra-cols"
+    );
+}
+
+// Emitted schema actually validates the source CSV when piped through `qsv validate`.
+#[test]
+#[serial]
+fn describegpt_jsonschema_roundtrip() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_jsonschema_roundtrip");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+            svec!["gamma", "37"],
+        ],
+    );
+
+    // Emit schema to file.
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--format", "jsonschema"])
+        .args(["--output", "in.schema.json"])
+        .arg("--no-cache");
+    wrk.assert_success(&mut cmd);
+
+    // Use `qsv validate` to assert the schema describes the data.
+    let mut validate_cmd = wrk.command("validate");
+    validate_cmd.arg("in.csv").arg("in.schema.json");
+    wrk.assert_success(&mut validate_cmd);
+}

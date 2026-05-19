@@ -2586,3 +2586,101 @@ fn describegpt_jsonschema_roundtrip() {
     validate_cmd.arg("in.csv").arg("in.schema.json");
     wrk.assert_success(&mut validate_cmd);
 }
+
+// Regression: a CSV with a permissively-inferred Date column (e.g.
+// "June 27, 1968") must produce a schema that `qsv validate` accepts. Without
+// this guarantee, re-introducing an unconditional `format: "date"` emission in
+// `map_qsv_type` / `build_property_schema` would silently break the roundtrip
+// for real-world date data. Also asserts the date property does NOT carry a
+// `format` keyword by default.
+#[test]
+#[serial]
+fn describegpt_jsonschema_roundtrip_permissive_dates() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_jsonschema_roundtrip_permissive_dates");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["name", "birth_date"],
+            svec!["Alice", "June 27, 1968"],
+            svec!["Bob", "March 3, 1972"],
+            svec!["Carol", "November 11, 1981"],
+            svec!["Dave", "April 18, 1990"],
+        ],
+    );
+
+    // Emit schema with default settings (no --strict-dates).
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--format", "jsonschema"])
+        .args(["--output", "in.schema.json"])
+        .arg("--no-cache");
+    wrk.assert_success(&mut cmd);
+
+    // Schema must not emit `format` on the permissively-inferred date column.
+    let schema_str: String = wrk.from_str(&wrk.path("in.schema.json"));
+    let schema: serde_json::Value =
+        serde_json::from_str(&schema_str).expect("output should be valid JSON");
+    let birth_date = schema
+        .get("properties")
+        .and_then(|p| p.get("birth_date"))
+        .and_then(|v| v.as_object())
+        .expect("birth_date property");
+    assert!(
+        !birth_date.contains_key("format"),
+        "permissive-date column should NOT emit a `format` keyword by default; doing so would \
+         break the validate roundtrip on non-RFC-3339 dates. birth_date schema: {birth_date:?}"
+    );
+
+    // qsv validate must accept the schema for the source CSV.
+    let mut validate_cmd = wrk.command("validate");
+    validate_cmd.arg("in.csv").arg("in.schema.json");
+    wrk.assert_success(&mut validate_cmd);
+}
+
+// --strict-dates re-enables `format: "date"` / `"date-time"` emission for
+// columns whose stats type is Date / DateTime. Verifies feature parity with
+// `qsv schema --strict-dates`.
+#[test]
+#[serial]
+fn describegpt_jsonschema_strict_dates_flag() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_jsonschema_strict_dates_flag");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["name", "birth_date"],
+            svec!["Alice", "1968-06-27"],
+            svec!["Bob", "1972-03-03"],
+            svec!["Carol", "1981-11-11"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--format", "jsonschema"])
+        .arg("--strict-dates")
+        .arg("--no-cache");
+
+    let got = wrk.stdout::<String>(&mut cmd);
+    let schema: serde_json::Value =
+        serde_json::from_str(&got).expect("output should be valid JSON");
+    let birth_date = schema
+        .get("properties")
+        .and_then(|p| p.get("birth_date"))
+        .and_then(|v| v.as_object())
+        .expect("birth_date property");
+    assert_eq!(
+        birth_date.get("format").and_then(|v| v.as_str()),
+        Some("date"),
+        "--strict-dates should emit `format: \"date\"` on Date columns"
+    );
+}

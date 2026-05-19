@@ -97,6 +97,12 @@ pub(super) fn format_dictionary_json(
 /// `allow_extra_cols` toggles the schema-root `additionalProperties` between
 /// `false` (strict, the default) and `true` (permissive).
 ///
+/// `strict_dates` toggles whether columns whose stats type is Date / DateTime
+/// emit `format: "date"` / `"date-time"`. Off by default because qsv's
+/// `--infer-dates` accepts many non-RFC-3339 strings (e.g. "June 27, 1968")
+/// that would fail JSON Schema format validation. Mirrors
+/// `src/cmd/schema.rs`'s `--strict-dates` flag (lines 462,469).
+///
 /// The schema's top-level `x-qsv.generated_by` is left as the literal
 /// `{GENERATED_BY_SIGNATURE}` placeholder; the caller substitutes the resolved
 /// attribution after building, mirroring the pattern used by
@@ -110,6 +116,7 @@ pub(super) fn format_dictionary_jsonschema(
     truncate_str: usize,
     infer_content_type: bool,
     allow_extra_cols: bool,
+    strict_dates: bool,
 ) -> Value {
     let mut properties = serde_json::Map::with_capacity(entries.len());
     // Every column is listed in `required`, matching `qsv schema`'s behavior.
@@ -123,7 +130,7 @@ pub(super) fn format_dictionary_jsonschema(
         required.push(json!(entry.name));
         properties.insert(
             entry.name.clone(),
-            build_property_schema(entry, infer_content_type),
+            build_property_schema(entry, infer_content_type, strict_dates),
         );
     }
 
@@ -141,6 +148,7 @@ pub(super) fn format_dictionary_jsonschema(
             "num_examples": num_examples,
             "truncate_str": truncate_str,
             "infer_content_type": infer_content_type,
+            "strict_dates": strict_dates,
         },
     })
 }
@@ -149,11 +157,17 @@ pub(super) fn format_dictionary_jsonschema(
 ///
 /// Type mapping mirrors `src/cmd/schema.rs::infer_schema_from_stats`:
 /// Integer→integer, Float→number, String→string, Boolean→boolean,
-/// Date→string+format:date, DateTime→string+format:date-time, NULL→null.
-/// Nullable columns (null_count > 0) get `"null"` appended to the `type` array.
-fn build_property_schema(entry: &DictionaryEntry, infer_content_type: bool) -> Value {
+/// Date→string (+`format: "date"` only when `strict_dates`),
+/// DateTime→string (+`format: "date-time"` only when `strict_dates`),
+/// NULL→null. Nullable columns (null_count > 0) get `"null"` appended to
+/// the `type` array.
+fn build_property_schema(
+    entry: &DictionaryEntry,
+    infer_content_type: bool,
+    strict_dates: bool,
+) -> Value {
     let qsv_type = entry.r#type.as_str();
-    let (json_type, format_hint) = map_qsv_type(qsv_type);
+    let (json_type, _format_hint) = map_qsv_type(qsv_type);
     let nullable = entry.null_count > 0 && json_type != "null";
 
     let mut prop = serde_json::Map::new();
@@ -196,8 +210,20 @@ fn build_property_schema(entry: &DictionaryEntry, infer_content_type: bool) -> V
     };
     prop.insert("description".to_string(), Value::String(description));
 
-    if let Some(fmt) = format_hint {
-        prop.insert("format".to_string(), Value::String(fmt.to_string()));
+    // `format` emission is opt-in via `--strict-dates` (mirrors schema.rs).
+    // Without the flag, qsv's permissive --infer-dates (e.g. "June 27, 1968")
+    // would otherwise produce a schema that rejects its own source CSV under
+    // RFC 3339 format validation.
+    if strict_dates {
+        match qsv_type {
+            "Date" => {
+                prop.insert("format".to_string(), Value::String("date".to_string()));
+            },
+            "DateTime" => {
+                prop.insert("format".to_string(), Value::String("date-time".to_string()));
+            },
+            _ => {},
+        }
     }
 
     // Numeric range constraints. Skip silently if the qsv stats min/max can't be

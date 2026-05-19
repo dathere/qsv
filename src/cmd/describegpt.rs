@@ -402,6 +402,13 @@ Common options:
     --allow-extra-cols     When the format is JSONSchema, emit additionalProperties as true at the
                            schema root (default is false, strict). Only meaningful with the
                            JSONSchema format; ignored otherwise.
+    --strict-dates         When the format is JSONSchema, emit format date or date-time for
+                           columns that stats infers as Date or DateTime. Off by default because
+                           qsv's --infer-dates is permissive (accepts strings like
+                           "June 27, 1968") and JSON Schema's date formats require RFC 3339, so
+                           the validate roundtrip would otherwise fail. Set this only when your
+                           source columns are guaranteed to be RFC 3339 full-date / date-time.
+                           Mirrors the same flag on the schema command.
     -o, --output <file>    Write output to <file> instead of stdout. If --format is set to TSV,
                            separate files will be created for each prompt type with the pattern
                            {filestem}.{kind}.tsv (e.g., output.dictionary.tsv, output.tags.tsv).
@@ -529,6 +536,7 @@ struct Args {
     flag_process_response:   bool,
     flag_format:             Option<String>,
     flag_allow_extra_cols:   bool,
+    flag_strict_dates:       bool,
     flag_output:             Option<String>,
     flag_quiet:              bool,
     flag_addl_cols:          bool,
@@ -2825,6 +2833,7 @@ fn format_dictionary_phase(
             args.flag_truncate_str,
             args.flag_infer_content_type,
             args.flag_allow_extra_cols,
+            args.flag_strict_dates,
         );
         let attribution = replace_attribution_placeholder(
             "{GENERATED_BY_SIGNATURE}",
@@ -6156,6 +6165,7 @@ p_fewshot_examples = ""
             flag_process_response:   false,
             flag_format:             None,
             flag_allow_extra_cols:   false,
+            flag_strict_dates:       false,
             flag_output:             None,
             flag_quiet:              false,
             flag_addl_cols:          false,

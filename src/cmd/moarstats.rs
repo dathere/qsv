@@ -4330,11 +4330,72 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         };
 
-        // Get CSV headers to map field names to column indices
-        let mut csv_rdr = ReaderBuilder::new()
-            .has_headers(true)
-            .from_path(actual_input_path)?;
-        let csv_headers = csv_rdr.headers()?.clone();
+        // Collect all numeric/date/string field names from the stats CSV.
+        // Computed before the header read so the joined-input path can
+        // verify the joined CSV's header covers every stats field.
+        let stats_field_names: Vec<String> = records
+            .iter()
+            .filter_map(|r| {
+                field_idx
+                    .and_then(|idx| r.get(idx))
+                    .map(std::string::ToString::to_string)
+            })
+            .collect();
+
+        // Read the input/joined CSV header to map field names to column
+        // indices. Wrapped in a closure so the joined-input path can retry
+        // the read after an fsync.
+        let read_csv_headers = || -> CliResult<StringRecord> {
+            let mut csv_rdr = ReaderBuilder::new()
+                .has_headers(true)
+                .from_path(actual_input_path)?;
+            Ok(csv_rdr.headers()?.clone())
+        };
+
+        let csv_headers = if temp_joined_path.is_some() {
+            // For joined inputs, the stats CSV was freshly computed FROM the
+            // joined CSV, so every stats field MUST appear in the joined
+            // CSV's header. A column missing here means this follow-up read
+            // saw a short/stale view of the joined temp file — the same
+            // page-cache race already guarded against in
+            // `join_datasets_internal` and the joined-stats block. fsync and
+            // retry once; if a column is still missing, fail loud rather
+            // than silently dropping bivariate pairs (lines below `continue`
+            // on a header miss) and emitting "primary-only" join-corrupt
+            // output.
+            util::sync_subprocess_output(actual_input_path)?;
+            let missing_cols = |hdrs: &StringRecord| -> Vec<String> {
+                stats_field_names
+                    .iter()
+                    .filter(|f| !hdrs.iter().any(|h| h == f.as_str()))
+                    .cloned()
+                    .collect()
+            };
+            let mut headers = read_csv_headers()?;
+            let mut missing = missing_cols(&headers);
+            if !missing.is_empty() {
+                log::warn!(
+                    "Joined CSV header missing columns {missing:?} present in the stats output; \
+                     re-syncing joined CSV and re-reading its header once"
+                );
+                util::sync_subprocess_output(actual_input_path)?;
+                headers = read_csv_headers()?;
+                missing = missing_cols(&headers);
+                if !missing.is_empty() {
+                    return fail_clierror!(
+                        "Joined CSV header is still missing columns {missing:?} after one retry: \
+                         the stats output covers {} column(s) ({stats_field_names:?}), but the \
+                         joined CSV header only has {:?}. This indicates silent join corruption — \
+                         aborting instead of emitting primary-only bivariate output.",
+                        stats_field_names.len(),
+                        headers.iter().collect::<Vec<_>>()
+                    );
+                }
+            }
+            headers
+        } else {
+            read_csv_headers()?
+        };
 
         // Store field names for index-to-name lookups (used for output and frequency cache)
         let field_names: Vec<String> = csv_headers
@@ -4348,16 +4409,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // u16 supports up to 65,535 columns, which is more than sufficient for any CSV
         let mut field_pairs: HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)> =
             HashMap::new();
-
-        // Collect all numeric/date/string field names from stats CSV
-        let stats_field_names: Vec<String> = records
-            .iter()
-            .filter_map(|r| {
-                field_idx
-                    .and_then(|idx| r.get(idx))
-                    .map(std::string::ToString::to_string)
-            })
-            .collect();
 
         for (i, field1_name) in stats_field_names.iter().enumerate() {
             let field1_type_str = records.get(i).and_then(|r| r.get(type_idx)).unwrap_or("");

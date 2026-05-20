@@ -499,9 +499,9 @@ geocode options:
                                 CACHE-PRUNE only option:
     --older-than <val>          Delete OpenCage cache entries older than this value.
                                 Accepts an absolute date/datetime (e.g. 2025-01-31) or a
-                                relative age with a unit suffix:
-                                s/m/h/d/w = seconds/minutes/hours/days/weeks
-                                (e.g. 30d, 2w, 48h). Required by the cache-prune subcommand.
+                                relative age with a unit suffix (s/m/h/d/w = seconds,
+                                minutes, hours, days or weeks; e.g. 30d, 2w, 48h).
+                                Required by the cache-prune subcommand.
 
                                 INDEX-UPDATE only options:
     --languages <lang-list>     The comma-delimited, case-insensitive list of languages to use when building
@@ -1855,6 +1855,13 @@ fn parse_relative_age(input: &str) -> Option<Duration> {
 fn resolve_older_than(value: &str) -> CliResult<Duration> {
     if let Some(age) = parse_relative_age(value) {
         return Ok(age);
+    }
+    // a value with the shape of a relative age that didn't parse overflowed -
+    // report that explicitly instead of misleadingly falling through to date parsing
+    if RELATIVE_AGE_REGEX().is_match(value.trim()) {
+        return Err(CliError::IncorrectUsage(format!(
+            "Invalid --older-than value '{value}': the relative age is too large."
+        )));
     }
     // not a relative age - try parsing as an absolute date/datetime
     let cutoff = qsv_dateparser::parse(value).map_err(|e| {
@@ -3289,4 +3296,86 @@ fn add_fields(record: &mut csv::StringRecord, value: &str, count: u8) {
     (0..count).for_each(|_| {
         record.push_field(value);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_relative_age_units() {
+        assert_eq!(parse_relative_age("30s"), Some(Duration::from_secs(30)));
+        assert_eq!(parse_relative_age("5m"), Some(Duration::from_secs(300)));
+        assert_eq!(parse_relative_age("2h"), Some(Duration::from_secs(7_200)));
+        assert_eq!(parse_relative_age("3d"), Some(Duration::from_secs(259_200)));
+        assert_eq!(parse_relative_age("1w"), Some(Duration::from_secs(604_800)));
+    }
+
+    #[test]
+    fn parse_relative_age_case_and_whitespace() {
+        // unit is case-insensitive and whitespace around/within is tolerated
+        assert_eq!(
+            parse_relative_age("30D"),
+            Some(Duration::from_secs(2_592_000))
+        );
+        assert_eq!(
+            parse_relative_age("  30 d  "),
+            Some(Duration::from_secs(2_592_000))
+        );
+    }
+
+    #[test]
+    fn parse_relative_age_non_matches() {
+        // not a relative-age form -> None (caller falls back to date parsing)
+        assert_eq!(parse_relative_age("2025-01-01"), None);
+        assert_eq!(parse_relative_age("garbage"), None);
+        assert_eq!(parse_relative_age("30"), None); // missing unit
+        assert_eq!(parse_relative_age("30y"), None); // unsupported unit
+    }
+
+    #[test]
+    fn parse_relative_age_overflow_is_none() {
+        // a relative-age form whose seconds overflow u64 -> None
+        assert_eq!(parse_relative_age("99999999999999999999999999w"), None);
+    }
+
+    #[test]
+    fn resolve_older_than_relative_age() {
+        assert_eq!(
+            resolve_older_than("30d").unwrap(),
+            Duration::from_secs(2_592_000)
+        );
+    }
+
+    #[test]
+    fn resolve_older_than_absolute_date() {
+        // a date safely in the past resolves to a large positive age
+        let age = resolve_older_than("2000-01-01").unwrap();
+        assert!(age.as_secs() > 600_000_000);
+    }
+
+    #[test]
+    fn resolve_older_than_future_date_rejected() {
+        let err = resolve_older_than("2099-01-01").unwrap_err();
+        assert!(matches!(&err, CliError::IncorrectUsage(m) if m.contains("in the future")));
+    }
+
+    #[test]
+    fn resolve_older_than_pre_epoch_rejected() {
+        let err = resolve_older_than("1850-01-01").unwrap_err();
+        assert!(matches!(&err, CliError::IncorrectUsage(m) if m.contains("Unix epoch")));
+    }
+
+    #[test]
+    fn resolve_older_than_overflow_rejected() {
+        // a relative-age form that overflows reports the overflow, not a date-parse error
+        let err = resolve_older_than("99999999999999999999999999w").unwrap_err();
+        assert!(matches!(&err, CliError::IncorrectUsage(m) if m.contains("too large")));
+    }
+
+    #[test]
+    fn resolve_older_than_garbage_rejected() {
+        let err = resolve_older_than("not-a-date").unwrap_err();
+        assert!(matches!(&err, CliError::IncorrectUsage(m) if m.contains("not a relative age")));
+    }
 }

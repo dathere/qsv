@@ -123,11 +123,11 @@ npm test
 npm run mcpb:package
 ```
 
-## Generated Skills (54)
+## Generated Skills (55)
 
 | Category | Count | Skills |
 |----------|-------|--------|
-| **utility** | 23 | blake3, cat, dedup, diff, enum, exclude, explode, extdedup, extsort, fill, geocode, headers, index, luau, partition, pivotp, pseudo, sniff, sort, sortcheck, split, sqlp, template |
+| **utility** | 24 | blake3, cat, dedup, diff, enum, exclude, explode, extdedup, extsort, fill, geocode, headers, implode, index, luau, partition, pivotp, pseudo, sniff, sort, sortcheck, split, sqlp, template |
 | **conversion** | 6 | excel, input, json, jsonl, to, tojsonl |
 | **aggregation** | 5 | count, frequency, moarstats, pragmastat, stats |
 | **transformation** | 5 | datefmt, rename, replace, reverse, transpose |
@@ -137,22 +137,23 @@ npm run mcpb:package
 | **filtering** | 2 | search, searchset |
 | **joining** | 2 | join, joinp |
 | **documentation** | 1 | describegpt |
+| **generation** | 1 | synthesize |
 
 **Total Statistics:**
-- **Skills**: 54 commands
-- **Usage Examples**: 174 from documentation
-- **Options**: 604 command-line options
-- **Arguments**: 87 positional arguments
+- **Skills**: 55 commands
+- **Usage Examples**: 221 from documentation
+- **Options**: 658 command-line options
+- **Arguments**: 98 positional arguments
 
 ## Project Structure
 
 ```
 .claude/skills/
-├── qsv/                    # 54 skill JSON definitions
+├── qsv/                    # 55 skill JSON definitions
 │   ├── qsv-select.json
 │   ├── qsv-stats.json
 │   ├── qsv-moarstats.json
-│   └── ... (51 more)
+│   └── ... (52 more)
 ├── src/                    # TypeScript source
 │   ├── types.ts           # Type definitions
 │   ├── loader.ts          # Skill loading
@@ -201,7 +202,7 @@ npm run mcpb:package
 ```typescript
 import { SkillLoader, SkillExecutor } from './dist/index.js';
 
-// Load all 54 skills
+// Load all 55 skills
 const loader = new SkillLoader();
 await loader.loadAll();
 
@@ -341,7 +342,7 @@ await agent.chat("Remove duplicates from sales.csv");
 
 ## Integration with Claude Desktop (MCP Server)
 
-The QSV MCP Server exposes all 54 qsv skill-based commands to Claude Desktop through the Model Context Protocol.
+The QSV MCP Server exposes all 55 qsv skill-based commands to Claude Desktop through the Model Context Protocol.
 
 ### Quick Start
 
@@ -447,11 +448,11 @@ MIT
 
 ---
 
-**Updated**: 2026-05-03
-**Version**: 20.0.0
+**Updated**: 2026-05-18
+**Version**: 20.1.0
 **Generator**: `qsv --update-mcp-skills`
-**Skills**: 54 commands
-**Usage Examples**: 174 from documentation
+**Skills**: 55 commands
+**Usage Examples**: 221 from documentation
 **Parsing**: qsv-docopt (robust, accurate)
 **Features**: MCP server, filesystem access, type-safe execution
 **Status**: ✅ Production Ready

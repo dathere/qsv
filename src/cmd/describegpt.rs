@@ -384,10 +384,31 @@ describegpt options:
 
 Common options:
     -h, --help             Display this message
-    --format <format>      Output format: Markdown, TSV, JSON, or TOON.
+    --format <format>      Output format: Markdown, TSV, JSON, TOON, or JSONSchema.
                            TOON is a compact, human-readable encoding of the JSON data model for LLM prompts.
                            See https://toonformat.dev/ for more info.
+                           JSONSchema emits the Data Dictionary as a JSON Schema (draft 2020-12)
+                           document, enriched with LLM-inferred Label, Description and Content Type
+                           (the latter only when the infer-content-type flag is set). qsv- and LLM-
+                           specific metadata not modeled by the JSON Schema spec (cardinality,
+                           null_count, weighted example counts, content_type, addl stats columns)
+                           is preserved via a single x-qsv annotation object per property; unknown
+                           keywords are ignored by validators per the 2020-12 spec.
+                           The JSONSchema format requires the dictionary inference phase
+                           (the dictionary or all flag). The description inference, when also run,
+                           becomes the schema's top-level description; tags, when also run, are
+                           embedded at x-qsv.tags. The prompt inference is not supported.
                            [default: Markdown]
+    --allow-extra-cols     When the format is JSONSchema, emit additionalProperties as true at the
+                           schema root (default is false, strict). Only meaningful with the
+                           JSONSchema format; ignored otherwise.
+    --strict-dates         When the format is JSONSchema, emit format date or date-time for
+                           columns that stats infers as Date or DateTime. Off by default because
+                           qsv's --infer-dates is permissive (accepts strings like
+                           "June 27, 1968") and JSON Schema's date formats require RFC 3339, so
+                           the validate roundtrip would otherwise fail. Set this only when your
+                           source columns are guaranteed to be RFC 3339 full-date / date-time.
+                           Mirrors the same flag on the schema command.
     -o, --output <file>    Write output to <file> instead of stdout. If --format is set to TSV,
                            separate files will be created for each prompt type with the pattern
                            {filestem}.{kind}.tsv (e.g., output.dictionary.tsv, output.tags.tsv).
@@ -468,6 +489,7 @@ enum OutputFormat {
     Tsv,
     Json,
     Toon,
+    JsonSchema,
 }
 #[derive(Debug, Deserialize)]
 struct Args {
@@ -513,6 +535,8 @@ struct Args {
     flag_prepare_context:    bool,
     flag_process_response:   bool,
     flag_format:             Option<String>,
+    flag_allow_extra_cols:   bool,
+    flag_strict_dates:       bool,
     flag_output:             Option<String>,
     flag_quiet:              bool,
     flag_addl_cols:          bool,
@@ -2553,8 +2577,9 @@ fn get_output_format(args: &Args) -> CliResult<OutputFormat> {
         "tsv" => Ok(OutputFormat::Tsv),
         "json" => Ok(OutputFormat::Json),
         "toon" => Ok(OutputFormat::Toon),
+        "jsonschema" | "json-schema" | "json_schema" => Ok(OutputFormat::JsonSchema),
         _ => fail_incorrectusage_clierror!(
-            "Invalid format '{format_str}'. Must be one of: Markdown, TSV, JSON, TOON"
+            "Invalid format '{format_str}'. Must be one of: Markdown, TSV, JSON, TOON, JSONSchema"
         ),
     }
 }
@@ -2772,7 +2797,7 @@ fn emit_dictionary_context_only(
     Ok(())
 }
 
-/// Full Dictionary phase output across JSON/TOON/TSV/Markdown formats.
+/// Full Dictionary phase output across JSON/TOON/TSV/Markdown/JSONSchema formats.
 ///
 /// Takes pre-built `combined_entries` rather than re-parsing `analysis_results +
 /// completion_response` so the same emit path serves both the single-pass flow
@@ -2790,7 +2815,67 @@ fn format_dictionary_phase(
     base_url: &str,
     output_format: OutputFormat,
 ) -> CliResult<()> {
-    if output_format == OutputFormat::Json || output_format == OutputFormat::Toon {
+    if output_format == OutputFormat::JsonSchema {
+        // Build the draft 2020-12 JSON Schema base. The final emission (with any
+        // --description / --tags integration) happens in `finalize_structured_output`,
+        // which reads back what we stash under `total_json_output[kind]["response"]`.
+        let input_filename = args.arg_input.as_deref().map_or("input", |p| {
+            std::path::Path::new(p)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(p)
+        });
+        let schema_value = formatters::format_dictionary_jsonschema(
+            combined_entries,
+            input_filename,
+            args.flag_enum_threshold,
+            args.flag_num_examples,
+            args.flag_truncate_str,
+            args.flag_infer_content_type,
+            args.flag_allow_extra_cols,
+            args.flag_strict_dates,
+        );
+        let attribution = replace_attribution_placeholder(
+            "{GENERATED_BY_SIGNATURE}",
+            args,
+            model,
+            base_url,
+            AttributionFormat::Markdown,
+            PromptType::Dictionary,
+        );
+        // Re-emit the schema with the attribution baked into `x-qsv.generated_by`
+        // (the formatter writes the literal placeholder; replace it once here so we
+        // don't have to thread args/model/base_url through the formatter).
+        let mut schema_value = schema_value;
+        if let Some(x_qsv) = schema_value
+            .get_mut("x-qsv")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            x_qsv.insert("generated_by".to_string(), json!(attribution));
+        }
+        // Downstream Description/Tags prompts read `DATA_DICTIONARY_JSON` as the
+        // `{{ dictionary }}` Mini-Jinja variable, and that variable's contract is the
+        // dictionary-entries shape produced by `format_dictionary_json` — NOT a JSON
+        // Schema scaffold. Cache that shape regardless of the chosen output format
+        // so `--description --format jsonschema` and `--tags --format jsonschema`
+        // feed the LLM the same context every other format does. The schema document
+        // stays in `total_json_output[Dictionary]["response"]` for
+        // `finalize_structured_output` to consume.
+        let dictionary_json = formatters::format_dictionary_json(
+            combined_entries,
+            args.flag_enum_threshold,
+            args.flag_num_examples,
+            args.flag_truncate_str,
+            args.flag_infer_content_type,
+        );
+        DATA_DICTIONARY_JSON
+            .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+        total_json_output[kind.to_string()] = json!({
+            "response": schema_value,
+            "reasoning": completion_response.reasoning,
+            "token_usage": completion_response.token_usage,
+        });
+    } else if output_format == OutputFormat::Json || output_format == OutputFormat::Toon {
         let mut dictionary_json = formatters::format_dictionary_json(
             combined_entries,
             args.flag_enum_threshold,
@@ -3161,7 +3246,10 @@ fn process_phase_output(
     // is_sql_response) so adding a new OutputFormat variant is a compile error here,
     // forcing an explicit routing decision.
     match (output_format, is_sql_response) {
-        (OutputFormat::Json, false) => {
+        (OutputFormat::Json | OutputFormat::JsonSchema, false) => {
+            // JsonSchema mode reuses the JSON accumulator for Description/Tags so
+            // `finalize_structured_output` can fold their LLM responses into the
+            // schema's top-level `description` / `x-qsv.tags`.
             format_phase_json(kind, args, completion_response, total_json_output);
             Ok(())
         },
@@ -3178,16 +3266,17 @@ fn process_phase_output(
             Ok(())
         },
         (OutputFormat::Markdown, _)
-        | (OutputFormat::Json | OutputFormat::Tsv | OutputFormat::Toon, true) => {
-            format_phase_markdown(
-                kind,
-                args,
-                completion_response,
-                is_sql_response,
-                model,
-                base_url,
-            )
-        },
+        | (
+            OutputFormat::Json | OutputFormat::Tsv | OutputFormat::Toon | OutputFormat::JsonSchema,
+            true,
+        ) => format_phase_markdown(
+            kind,
+            args,
+            completion_response,
+            is_sql_response,
+            model,
+            base_url,
+        ),
     }
 }
 
@@ -4182,6 +4271,64 @@ fn finalize_structured_output(
                 println!("{toon_output}");
             }
         },
+        OutputFormat::JsonSchema => {
+            // Pull the schema base emitted by `format_dictionary_phase`. Required —
+            // run() rejects --format jsonschema without --dictionary/--all, so this
+            // entry must exist by the time we get here.
+            let mut schema = total_json_output
+                .get(PromptType::Dictionary.to_string())
+                .and_then(|v| v.get("response"))
+                .cloned()
+                .ok_or_else(|| {
+                    CliError::Other(
+                        "--format jsonschema: dictionary schema missing from phase output. This \
+                         is a bug — please report it."
+                            .to_string(),
+                    )
+                })?;
+
+            // Fold the Description phase response (if it ran) into the schema's
+            // top-level `description`, overriding the placeholder set by the formatter.
+            if let Some(desc_value) = total_json_output
+                .get(PromptType::Description.to_string())
+                .and_then(|v| v.get("response"))
+                && let Some(desc_str) = desc_value.as_str()
+                && !desc_str.is_empty()
+                && let Some(obj) = schema.as_object_mut()
+            {
+                obj.insert("description".to_string(), json!(desc_str));
+            }
+
+            // Fold the Tags phase response (if it ran) into `x-qsv.tags`.
+            if let Some(tags_value) = total_json_output
+                .get(PromptType::Tags.to_string())
+                .and_then(|v| v.get("response"))
+                && !tags_value.is_null()
+                && let Some(obj) = schema.as_object_mut()
+                && let Some(x_qsv) = obj
+                    .get_mut("x-qsv")
+                    .and_then(serde_json::Value::as_object_mut)
+            {
+                x_qsv.insert("tags".to_string(), tags_value.clone());
+            }
+
+            // Meta-validate the emitted schema against the draft 2020-12 meta-schema
+            // (auto-detected from the embedded `$schema` URL). Converts authoring bugs
+            // into immediate, loud failures rather than silently producing schemas that
+            // downstream consumers reject.
+            if let Err(e) = jsonschema::meta::validate(&schema) {
+                return fail_clierror!(
+                    "Emitted JSON Schema failed meta-validation against draft 2020-12: {e}"
+                );
+            }
+
+            let schema_output = serde_json::to_string_pretty(&schema)?;
+            if let Some(output_file_path) = &args.flag_output {
+                fs::write(output_file_path, schema_output)?;
+            } else {
+                println!("{schema_output}");
+            }
+        },
         OutputFormat::Markdown | OutputFormat::Tsv => {
             // Already written inline by per-phase helpers.
         },
@@ -4590,6 +4737,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
+    // --format jsonschema specific validation: schema is dictionary-centric, so require
+    // a dictionary phase. --description/--tags piggyback on the dictionary schema (their
+    // outputs become top-level `description` and `x-qsv.tags`); --prompt produces a
+    // natural-language/SQL answer which is conceptually separate from a schema.
+    if get_output_format(&args)? == OutputFormat::JsonSchema {
+        if !(args.flag_dictionary || args.flag_all) {
+            return fail_incorrectusage_clierror!(
+                "--format jsonschema requires --dictionary (or --all)."
+            );
+        }
+        if args.flag_prompt.is_some() {
+            return fail_incorrectusage_clierror!(
+                "--format jsonschema is not compatible with --prompt."
+            );
+        }
+    } else if args.flag_allow_extra_cols && !args.flag_quiet {
+        wwarn!("--allow-extra-cols is only meaningful with --format jsonschema; ignoring.");
+    }
+
     // --prompt specific parameter validation
     if let Some(mut prompt) = args.flag_prompt.take() {
         // Check if prompt is a file path and read its contents if so
@@ -4895,23 +5061,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             )?;
         }
 
-        // Write accumulated JSON/TOON output
-        if output_format == OutputFormat::Json {
-            let json_str = serde_json::to_string_pretty(&total_json_output)?;
-            if let Some(output) = &args.flag_output {
-                fs::write(output, json_str.as_bytes())?;
-            } else {
-                println!("{json_str}");
-            }
-        } else if output_format == OutputFormat::Toon {
-            let toon_str = encode(&total_json_output, &EncodeOptions::new())
-                .map_err(|e| CliError::Other(format!("TOON encoding error: {e}")))?;
-            if let Some(output) = &args.flag_output {
-                fs::write(output, toon_str.as_bytes())?;
-            } else {
-                println!("{toon_str}");
-            }
-        }
+        // Delegate accumulated-output emission to the same finalizer the live
+        // inference path uses so every accumulating format (Json, Toon,
+        // JsonSchema, …) gets emitted consistently. Markdown/TSV are inline
+        // emit-as-you-go and finalize_structured_output is a no-op for them.
+        finalize_structured_output(&args, &total_json_output, output_format)?;
 
         return Ok(());
     }
@@ -6010,6 +6164,8 @@ p_fewshot_examples = ""
             flag_prepare_context:    false,
             flag_process_response:   false,
             flag_format:             None,
+            flag_allow_extra_cols:   false,
+            flag_strict_dates:       false,
             flag_output:             None,
             flag_quiet:              false,
             flag_addl_cols:          false,

@@ -125,7 +125,7 @@ Examples:
   qsv pragmastat --standalone --subsample 10000 --no-bounds data.csv
 
 Full Pragmastat manual:
-  https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.0.0/pragmastat-v12.0.0.pdf
+  https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.1.0/pragmastat-v12.1.0.pdf
   https://pragmastat.dev/ (latest version)
 
 Usage:

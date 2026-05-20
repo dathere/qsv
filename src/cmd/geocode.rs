@@ -18,7 +18,7 @@ By default, the prebuilt index uses the Geonames Gazeteer cities15000.zip file u
 English names. It contains cities with populations > 15,000 (about ~26k cities). 
 See https://download.geonames.org/export/dump/ for more information.
 
-It has fourteen major subcommands:
+It has twelve major subcommands:
  * suggest        - given a partial City name, return the closest City's location metadata
                     per the local Geonames cities index (Jaro-Winkler distance)
  * suggestnow     - same as suggest, but using a partial City name from the command line,
@@ -491,7 +491,8 @@ geocode options:
                                 [default: 50000]
     --timeout <seconds>         Timeout for downloading Geonames cities index.
                                 [default: 120]
-    --cache-dir <dir>           The directory to use for caching the Geonames cities index.
+    --cache-dir <dir>           The directory to use for caching the Geonames cities index
+                                and the persistent on-disk OpenCage result cache.
                                 If the directory does not exist, qsv will attempt to create it.
                                 If the QSV_CACHE_DIR envvar is set, it will be used instead.
                                 [default: ~/.qsv-cache]
@@ -1946,7 +1947,8 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
             cache
                 .remove_expired_entries()
                 .map_err(|e| CliError::Other(format!("Error pruning OpenCage cache: {e}")))?;
-            let _ = db.flush();
+            db.flush()
+                .map_err(|e| CliError::Other(format!("Error flushing OpenCage cache: {e}")))?;
             let after = db.len();
             let pruned = before.saturating_sub(after);
             winfo!(
@@ -1956,22 +1958,36 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
         },
         GeocodeSubCmd::CacheInfo => {
             let entry_count = db.len();
-            let size_on_disk = db.size_on_disk().unwrap_or(0);
+            // size_on_disk() can fail on I/O errors; degrade gracefully rather than
+            // reporting a misleading 0 bytes (None -> "unknown" / JSON null)
+            let size_on_disk: Option<u64> = db.size_on_disk().ok();
 
-            // oldest/newest created_at - degrade gracefully on a deserialize failure
+            // oldest/newest created_at - degrade gracefully on a deserialize failure;
+            // surface sled iteration errors via a warning so a partial scan is visible
             let mut oldest: Option<SystemTime> = None;
             let mut newest: Option<SystemTime> = None;
-            for (_key, value) in db.iter().flatten() {
+            for kv in db.iter() {
+                let (_key, value) = match kv {
+                    Ok(kv) => kv,
+                    Err(e) => {
+                        log::warn!("Error reading an OpenCage cache entry: {e}");
+                        continue;
+                    },
+                };
                 if let Ok(entry) = rmp_serde::from_slice::<OpencageCacheEntry>(&value) {
                     oldest = Some(oldest.map_or(entry.created_at, |o| o.min(entry.created_at)));
                     newest = Some(newest.map_or(entry.created_at, |n| n.max(entry.created_at)));
                 }
             }
             let fmt_ts = |t: Option<SystemTime>| t.map(|t| util::format_systemtime(t, "%+"));
+            let size_human = size_on_disk.map(|s| HumanBytes(s).to_string());
 
             winfo!("OpenCage cache directory: {}", cache_path.display());
             winfo!("Entries: {entry_count}");
-            winfo!("Size on disk: {}", HumanBytes(size_on_disk));
+            winfo!(
+                "Size on disk: {}",
+                size_human.clone().unwrap_or_else(|| "unknown".to_string())
+            );
             winfo!(
                 "Oldest entry: {}",
                 fmt_ts(oldest).unwrap_or_else(|| "n/a".to_string())
@@ -1988,7 +2004,7 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
                     "exists":       true,
                     "entry_count":  entry_count,
                     "size_on_disk": size_on_disk,
-                    "size_human":   HumanBytes(size_on_disk).to_string(),
+                    "size_human":   size_human,
                     "oldest_entry": fmt_ts(oldest),
                     "newest_entry": fmt_ts(newest),
                 })

@@ -4341,7 +4341,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         };
 
-        // Collect all numeric/date/string field names from the stats CSV.
+        // Collect all field names from the stats CSV (the `field` column has
+        // one row per column of the joined CSV, regardless of type).
         // Computed before the header read so the joined-input path can
         // verify the joined CSV's header covers every stats field.
         let stats_field_names: Vec<String> = records
@@ -4376,9 +4377,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // output.
             util::sync_subprocess_output(actual_input_path)?;
             let missing_cols = |hdrs: &StringRecord| -> Vec<String> {
+                let header_set: std::collections::HashSet<&str> = hdrs.iter().collect();
                 stats_field_names
                     .iter()
-                    .filter(|f| !hdrs.iter().any(|h| h == f.as_str()))
+                    .filter(|f| !header_set.contains(f.as_str()))
                     .cloned()
                     .collect()
             };

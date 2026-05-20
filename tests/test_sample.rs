@@ -2370,3 +2370,251 @@ fn sample_bernoulli_url_custom_delimiter() {
         assert_eq!(row.len(), 3, "TSV data row should have 3 fields: {row:?}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// DataSketches Sampling-family tests: --varopt, --mergeable-reservoir, and
+// the --sketch-out / --sketch-in serialization round-trip.
+// ---------------------------------------------------------------------------
+
+fn sketch_test_input() -> Vec<Vec<String>> {
+    vec![
+        svec!["ID", "Weight"],
+        svec!["1", "10"],
+        svec!["2", "20"],
+        svec!["3", "30"],
+        svec!["4", "40"],
+        svec!["5", "50"],
+        svec!["6", "60"],
+        svec!["7", "70"],
+        svec!["8", "80"],
+        svec!["9", "90"],
+        svec!["10", "100"],
+    ]
+}
+
+#[test]
+fn sample_varopt_seeded() {
+    // Pins the exact rows VarOpt emits for the (fixture, --seed 42, k=4)
+    // tuple. Intentionally exact: this is the regression net that catches
+    // accidental changes in how the sampler consumes the RNG (e.g.,
+    // reordering an `rng.random::<f64>()` call inside `update`). The
+    // `sample_varopt_heavy_weight_dominates` test below carries the
+    // semantic invariant (heavy-weight retention); this one nails down
+    // the implementation. If the algorithm legitimately changes its RNG
+    // consumption, regenerate the expected vector and document why.
+    let wrk = Workdir::new("sample_varopt_seeded");
+    wrk.create("in.csv", sketch_test_input());
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--varopt", "Weight"])
+        .args(["--seed", "42"])
+        .arg("4")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // VarOpt with this fixture and seed retains a heavy-weight-leaning sample.
+    let expected = vec![
+        svec!["ID", "Weight"],
+        svec!["3", "30"],
+        svec!["6", "60"],
+        svec!["7", "70"],
+        svec!["8", "80"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sample_varopt_heavy_weight_dominates() {
+    // VarOpt should overwhelmingly retain a single very-heavy item among
+    // light-weight peers.
+    let wrk = Workdir::new("sample_varopt_heavy");
+    let mut rows: Vec<Vec<String>> = vec![svec!["ID", "Weight"]];
+    for i in 0..200 {
+        rows.push(vec![i.to_string(), "1.0".to_string()]);
+    }
+    rows.push(svec!["9999", "1000000000.0"]);
+    wrk.create("in.csv", rows);
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--varopt", "Weight"])
+        .args(["--seed", "7"])
+        .arg("5")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // First row is the header.
+    let ids: Vec<&str> = got.iter().skip(1).map(|r| r[0].as_str()).collect();
+    assert!(
+        ids.contains(&"9999"),
+        "heavy-weight item must be retained; got {ids:?}"
+    );
+    assert_eq!(got.len(), 6, "expected header + 5 sampled rows");
+}
+
+#[test]
+fn sample_mergeable_reservoir_seeded() {
+    // Pins the exact rows Algorithm R emits for (fixture, --seed 42, k=4).
+    // Same intentional-pin rationale as `sample_varopt_seeded` above: a
+    // refactor that changes how `ReservoirItemsSketch::update` draws from
+    // the RNG should require regenerating these expected values, not
+    // silently producing a different sample.
+    let wrk = Workdir::new("sample_mergeable_reservoir");
+    wrk.create("in.csv", sketch_test_input());
+
+    let mut cmd = wrk.command("sample");
+    cmd.arg("--mergeable-reservoir")
+        .args(["--seed", "42"])
+        .arg("4")
+        .arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["ID", "Weight"],
+        svec!["9", "90"],
+        svec!["2", "20"],
+        svec!["5", "50"],
+        svec!["8", "80"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sample_sketch_out_in_round_trip() {
+    let wrk = Workdir::new("sample_sketch_round_trip");
+    wrk.create("in.csv", sketch_test_input());
+
+    let sketch_path = wrk.path("snapshot.sk");
+    let mut cmd_produce = wrk.command("sample");
+    cmd_produce
+        .arg("--mergeable-reservoir")
+        .args(["--sketch-out", sketch_path.to_str().unwrap()])
+        .args(["--seed", "42"])
+        .arg("4")
+        .arg("in.csv");
+    let initial: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_produce);
+
+    let mut cmd_consume = wrk.command("sample");
+    cmd_consume
+        .args(["--sketch-in", sketch_path.to_str().unwrap()])
+        .args(["--seed", "1"])
+        .arg("99");
+    let merged: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_consume);
+
+    // Round-trip from a single-sketch sketch-in should emit the exact same
+    // sample (and header) as the producing call.
+    assert_eq!(merged, initial);
+}
+
+#[test]
+fn sample_sketch_in_merge_two_sketches() {
+    let wrk = Workdir::new("sample_sketch_merge_two");
+    wrk.create("in.csv", sketch_test_input());
+
+    let a = wrk.path("a.sk");
+    let b = wrk.path("b.sk");
+
+    let mut cmd_a = wrk.command("sample");
+    cmd_a
+        .arg("--mergeable-reservoir")
+        .args(["--sketch-out", a.to_str().unwrap()])
+        .args(["--seed", "1"])
+        .arg("3")
+        .arg("in.csv");
+    let _: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_a);
+
+    let mut cmd_b = wrk.command("sample");
+    cmd_b
+        .arg("--mergeable-reservoir")
+        .args(["--sketch-out", b.to_str().unwrap()])
+        .args(["--seed", "99"])
+        .arg("3")
+        .arg("in.csv");
+    let _: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_b);
+
+    let combined = format!("{},{}", a.to_str().unwrap(), b.to_str().unwrap());
+    let mut cmd_merge = wrk.command("sample");
+    cmd_merge
+        .args(["--sketch-in", &combined])
+        .args(["--seed", "5"])
+        .arg("99");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_merge);
+
+    // Header preserved, sample size capped at the underlying sketches' k=3.
+    assert_eq!(got[0], svec!["ID", "Weight"]);
+    assert!(
+        got.len() >= 2 && got.len() <= 4,
+        "merged sample should have 1 header + 1..3 rows; got {} rows",
+        got.len()
+    );
+    // Every retained row must come from the input domain.
+    let valid_ids: std::collections::HashSet<&str> =
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+            .into_iter()
+            .collect();
+    for row in &got[1..] {
+        assert!(
+            valid_ids.contains(row[0].as_str()),
+            "unexpected ID in merge output: {row:?}"
+        );
+    }
+}
+
+#[test]
+fn sample_sketch_in_family_mismatch_errors() {
+    let wrk = Workdir::new("sample_sketch_family_mismatch");
+    wrk.create("in.csv", sketch_test_input());
+
+    let reservoir = wrk.path("r.sk");
+    let varopt = wrk.path("v.sk");
+
+    let mut c1 = wrk.command("sample");
+    c1.arg("--mergeable-reservoir")
+        .args(["--sketch-out", reservoir.to_str().unwrap()])
+        .arg("3")
+        .arg("in.csv");
+    let _: Vec<Vec<String>> = wrk.read_stdout(&mut c1);
+
+    let mut c2 = wrk.command("sample");
+    c2.args(["--varopt", "Weight"])
+        .args(["--sketch-out", varopt.to_str().unwrap()])
+        .arg("3")
+        .arg("in.csv");
+    let _: Vec<Vec<String>> = wrk.read_stdout(&mut c2);
+
+    let combined = format!(
+        "{},{}",
+        reservoir.to_str().unwrap(),
+        varopt.to_str().unwrap()
+    );
+    let mut c_merge = wrk.command("sample");
+    c_merge.args(["--sketch-in", &combined]).arg("99");
+    let out = c_merge.output().expect("spawn");
+    assert!(
+        !out.status.success(),
+        "mixing Reservoir + VarOpt sketches should fail"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("family mismatch") || stderr.contains("Sketch family mismatch"),
+        "expected family-mismatch error, got stderr: {stderr}"
+    );
+}
+
+#[test]
+fn sample_varopt_and_weighted_are_mutually_exclusive() {
+    let wrk = Workdir::new("sample_varopt_and_weighted");
+    wrk.create("in.csv", sketch_test_input());
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--weighted", "Weight"])
+        .args(["--varopt", "Weight"])
+        .arg("4")
+        .arg("in.csv");
+    let out = cmd.output().expect("spawn");
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Only one sampling method"),
+        "expected method-collision error, got: {stderr}"
+    );
+}

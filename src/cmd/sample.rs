@@ -52,6 +52,32 @@ It supports eight sampling methods:
   sample size (k) - O(k).
   "Weighted random sampling with a reservoir" https://doi.org/10.1016/j.ipl.2005.11.003
 
+* VAROPT: the sampling method when the --varopt option is specified.
+  Variance-bounded weighted reservoir sampling using the A-ExpJ keying scheme of
+  Efraimidis and Spirakis (2006). For each record, computes a key u^(1/w) and
+  retains the <sample-size> items with the largest keys. Unlike the --weighted
+  method, it does NOT require a stats cache, runs in a single pass, and supports
+  merge across partitions through the --sketch-out and --sketch-in options.
+  Suitable for heavy-tailed weight distributions where bounded-variance
+  estimators are needed. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k).
+  This is a native Rust implementation written from the original paper; the
+  analogous VarOpt sketches in the Apache DataSketches library use the same
+  family of algorithms but are NOT used here.
+  Algorithm: "Weighted random sampling with a reservoir"
+  doi 10.1016/j.ipl.2005.11.003
+
+* MERGEABLE-RESERVOIR: the sampling method when the --mergeable-reservoir flag is set.
+  Uniform reservoir sample using Vitter's Algorithm R. Same statistical
+  distribution as the default RESERVOIR method, but the sampler state is
+  mergeable: a sketch written by one run can be combined with sketches from
+  other runs via the --sketch-out and --sketch-in options, producing a uniform
+  sample of the combined stream WITHOUT re-reading the input files. Useful
+  for sharded or incremental sampling pipelines. Uses MEMORY PROPORTIONAL to
+  the sample size (k) - O(k). Native Rust implementation; the analogous
+  ReservoirItemsSketch in the Apache DataSketches library implements the same
+  algorithm but is NOT used here.
+  See en.wikipedia.org/wiki/Reservoir_sampling
+
 * CLUSTER: the sampling method when the --cluster option is specified.
   Samples entire groups of records together based on a cluster identifier column.
   The number of clusters is specified by the <sample-size> argument.
@@ -116,6 +142,17 @@ Examples:
   # are included in the sample.
   qsv sample --cluster Neighborhood 10 data.csv
 
+  # Take a sample using VAROPT (A-ExpJ weighted reservoir) sampling, weighted by
+  # the 'Revenue' column, for a sample size of 1000 records. Unlike --weighted,
+  # this does NOT require a stats cache.
+  qsv sample --varopt Revenue 1000 data.csv
+
+  # Sample two shards and merge their sketches into a single uniform sample
+  # without re-reading the inputs.
+  qsv sample --mergeable-reservoir --sketch-out a.sk 1000 shard_a.csv
+  qsv sample --mergeable-reservoir --sketch-out b.sk 1000 shard_b.csv
+  qsv sample --sketch-in a.sk,b.sk 1000 -o merged.csv
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_sample.rs.
 
 Usage:
@@ -172,6 +209,16 @@ sample options:
                            The column will be parsed as a number. Records with non-number weights
                            will be skipped.
                            Uses MEMORY PROPORTIONAL to the sample size (k) - O(k).
+    --varopt <col>         Use VAROPT weighted reservoir sampling (A-ExpJ keying).
+                           The weight column is specified by <col> (column name or 0-based index).
+                           Variance-bounded, single-pass, no stats-cache required, mergeable
+                           via --sketch-out / --sketch-in. Records with non-positive or
+                           non-numeric weights are silently skipped.
+                           Uses MEMORY PROPORTIONAL to the sample size (k) - O(k).
+    --mergeable-reservoir  Use a mergeable Algorithm-R reservoir sampler. Distribution is
+                           identical to the default RESERVOIR method, but the resulting sketch
+                           is mergeable via --sketch-out / --sketch-in. Cannot be combined
+                           with another sampling-method flag.
     --cluster <col>        Use cluster sampling. The cluster column is specified by <col>.
                            Can be either a column name or 0-based column index.
                            Uses MEMORY PROPORTIONAL to the number of clusters (c) - O(c).
@@ -201,6 +248,18 @@ sample options:
     --ts-input-tz <tz>     Timezone for parsing input timestamps. Can be an IANA timezone name or "local" for the local timezone.
                            [default: UTC]
     --ts-prefer-dmy        Prefer to parse dates in dmy format. Otherwise, use mdy format.
+
+                           SKETCH OPTIONS:
+    --sketch-out <file>    After sampling, also write a binary sketch describing the internal
+                           sampler state to <file>. The blob can later be merged into another
+                           run via --sketch-in. Only valid with --varopt or --mergeable-reservoir.
+                           The format is qsv-specific and is not interoperable with serialized
+                           sketches from other tools.
+    --sketch-in <files>    Comma-separated list of sketch files produced by --sketch-out.
+                           CSV input is NOT read; the listed sketches (which must all be of
+                           the same sampler kind) are merged and the resulting sample is
+                           emitted as CSV. <sample-size> may be used to cap the merged sample
+                           below the sketches' own k.
 
                            REMOTE FILE OPTIONS:
     --user-agent <agent>   Specify custom user agent to use when the input is a URL.
@@ -255,31 +314,40 @@ use crate::{
     util,
     util::{SchemaArgs, StatsMode, get_stats_records},
 };
+
+mod sketches;
+
+use sketches::{ReservoirItemsSketch, SketchFamily, VarOptItemsSketch, peek_family};
+
 #[derive(Deserialize)]
 struct Args {
-    arg_input:          Option<String>,
-    arg_sample_size:    f64,
-    flag_output:        Option<String>,
-    flag_no_headers:    bool,
-    flag_delimiter:     Option<Delimiter>,
-    flag_seed:          Option<u64>,
-    flag_rng:           String,
-    flag_user_agent:    Option<String>,
-    flag_timeout:       Option<u16>,
-    flag_max_size:      Option<u64>,
-    flag_bernoulli:     bool,
-    flag_systematic:    Option<String>,
-    flag_stratified:    Option<String>,
-    flag_weighted:      Option<String>,
-    flag_cluster:       Option<String>,
-    flag_timeseries:    Option<String>,
-    flag_ts_interval:   Option<String>,
-    flag_ts_start:      Option<String>,
-    flag_ts_adaptive:   Option<String>,
-    flag_ts_aggregate:  Option<String>,
-    flag_ts_input_tz:   Option<String>,
-    flag_ts_prefer_dmy: bool,
-    flag_force:         bool,
+    arg_input:                Option<String>,
+    arg_sample_size:          f64,
+    flag_output:              Option<String>,
+    flag_no_headers:          bool,
+    flag_delimiter:           Option<Delimiter>,
+    flag_seed:                Option<u64>,
+    flag_rng:                 String,
+    flag_user_agent:          Option<String>,
+    flag_timeout:             Option<u16>,
+    flag_max_size:            Option<u64>,
+    flag_bernoulli:           bool,
+    flag_systematic:          Option<String>,
+    flag_stratified:          Option<String>,
+    flag_weighted:            Option<String>,
+    flag_varopt:              Option<String>,
+    flag_mergeable_reservoir: bool,
+    flag_sketch_out:          Option<String>,
+    flag_sketch_in:           Option<String>,
+    flag_cluster:             Option<String>,
+    flag_timeseries:          Option<String>,
+    flag_ts_interval:         Option<String>,
+    flag_ts_start:            Option<String>,
+    flag_ts_adaptive:         Option<String>,
+    flag_ts_aggregate:        Option<String>,
+    flag_ts_input_tz:         Option<String>,
+    flag_ts_prefer_dmy:       bool,
+    flag_force:               bool,
 }
 
 impl Args {
@@ -329,6 +397,15 @@ impl Args {
             Some(col) => Self::get_column_index(header, col, "weight"),
             None => {
                 fail_incorrectusage_clierror!("--weighted <col> is required for weighted sampling")
+            },
+        }
+    }
+
+    fn get_varopt_column(&self, header: &csv::ByteRecord) -> CliResult<usize> {
+        match &self.flag_varopt {
+            Some(col) => Self::get_column_index(header, col, "varopt weight"),
+            None => {
+                fail_incorrectusage_clierror!("--varopt <col> is required for varopt sampling")
             },
         }
     }
@@ -390,6 +467,9 @@ enum SamplingMethod {
     Systematic,
     Stratified,
     Weighted,
+    VarOpt,
+    MergeableReservoir,
+    SketchMerge,
     Cluster,
     Timeseries,
     Default,
@@ -876,17 +956,53 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!("Sample size cannot be negative.");
     }
 
+    // --sketch-in is its own input mode (CSV is NOT read); it cannot be
+    // combined with any sampling-method flag. Detect this first so the user
+    // gets a targeted error rather than the generic "Only one sampling
+    // method" message.
+    if args.flag_sketch_in.is_some() {
+        let conflicting = args.flag_bernoulli
+            || args.flag_systematic.is_some()
+            || args.flag_stratified.is_some()
+            || args.flag_weighted.is_some()
+            || args.flag_varopt.is_some()
+            || args.flag_mergeable_reservoir
+            || args.flag_cluster.is_some()
+            || args.flag_timeseries.is_some();
+        if conflicting {
+            return fail_incorrectusage_clierror!(
+                "--sketch-in does not read CSV input; do not combine it with another \
+                 sampling-method flag (--bernoulli, --systematic, --stratified, --weighted, \
+                 --varopt, --mergeable-reservoir, --cluster, --timeseries)."
+            );
+        }
+    }
+
     // Validate that only one sampling method is selected
     let methods = [
         args.flag_bernoulli,
         args.flag_systematic.is_some(),
         args.flag_stratified.is_some(),
         args.flag_weighted.is_some(),
+        args.flag_varopt.is_some(),
+        args.flag_mergeable_reservoir,
         args.flag_cluster.is_some(),
         args.flag_timeseries.is_some(),
     ];
     if methods.iter().filter(|&&x| x).count() > 1 {
         return fail_incorrectusage_clierror!("Only one sampling method can be specified");
+    }
+
+    // --sketch-out is only meaningful with --varopt, --mergeable-reservoir, or
+    // --sketch-in (re-emitting a merged sketch). Reject other combinations.
+    if args.flag_sketch_out.is_some()
+        && args.flag_varopt.is_none()
+        && !args.flag_mergeable_reservoir
+        && args.flag_sketch_in.is_none()
+    {
+        return fail_incorrectusage_clierror!(
+            "--sketch-out is only valid with --varopt, --mergeable-reservoir, or --sketch-in"
+        );
     }
 
     // For Bernoulli, sample-size IS the probability — validate up front so the
@@ -905,22 +1021,36 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     };
 
-    let sampling_method = match (
-        args.flag_bernoulli,
-        args.flag_systematic.is_some(),
-        args.flag_stratified.is_some(),
-        args.flag_weighted.is_some(),
-        args.flag_cluster.is_some(),
-        args.flag_timeseries.is_some(),
-    ) {
-        (true, _, _, _, _, _) => SamplingMethod::Bernoulli,
-        (_, true, _, _, _, _) => SamplingMethod::Systematic,
-        (_, _, true, _, _, _) => SamplingMethod::Stratified,
-        (_, _, _, true, _, _) => SamplingMethod::Weighted,
-        (_, _, _, _, true, _) => SamplingMethod::Cluster,
-        (_, _, _, _, _, true) => SamplingMethod::Timeseries,
-        (false, false, false, false, false, false) => SamplingMethod::Default,
+    let sampling_method = if args.flag_bernoulli {
+        SamplingMethod::Bernoulli
+    } else if args.flag_systematic.is_some() {
+        SamplingMethod::Systematic
+    } else if args.flag_stratified.is_some() {
+        SamplingMethod::Stratified
+    } else if args.flag_weighted.is_some() {
+        SamplingMethod::Weighted
+    } else if args.flag_varopt.is_some() {
+        SamplingMethod::VarOpt
+    } else if args.flag_sketch_in.is_some() {
+        SamplingMethod::SketchMerge
+    } else if args.flag_mergeable_reservoir {
+        SamplingMethod::MergeableReservoir
+    } else if args.flag_cluster.is_some() {
+        SamplingMethod::Cluster
+    } else if args.flag_timeseries.is_some() {
+        SamplingMethod::Timeseries
+    } else {
+        SamplingMethod::Default
     };
+
+    // SketchMerge does not read CSV input — handle it entirely here.
+    if sampling_method == SamplingMethod::SketchMerge {
+        let mut wtr = Config::new(args.flag_output.as_ref())
+            .delimiter(args.flag_delimiter)
+            .writer()?;
+        sample_sketch_merge(&args, &mut wtr, &rng_kind)?;
+        return Ok(wtr.flush()?);
+    }
 
     let temp_download = NamedTempFile::new()?;
 
@@ -1047,6 +1177,78 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 args.flag_seed,
                 &rng_kind,
             )?;
+        },
+        SamplingMethod::VarOpt => {
+            let headers = rdr.byte_headers()?.clone();
+            let weight_column = args.get_varopt_column(&headers)?;
+
+            // Embed the CSV header into the sketch so a future --sketch-in
+            // can re-emit a schema-bearing CSV. Skip when --no-headers is set
+            // (the "header" then is actually the first data row).
+            let embedded_header = if args.flag_no_headers {
+                None
+            } else {
+                Some(headers)
+            };
+
+            #[allow(clippy::cast_precision_loss)]
+            let sample_size = if args.arg_sample_size < 1.0 {
+                let row_count: u64 = if let Ok(rc) = util::count_rows(&rconfig) {
+                    rc
+                } else {
+                    return fail!("VarOpt fractional sampling requires rowcount.");
+                };
+                (row_count as f64 * args.arg_sample_size).round() as usize
+            } else {
+                args.arg_sample_size as usize
+            };
+
+            sample_varopt(
+                &mut rdr,
+                &mut wtr,
+                weight_column,
+                sample_size,
+                args.flag_seed,
+                &rng_kind,
+                args.flag_sketch_out.as_deref(),
+                embedded_header,
+            )?;
+        },
+        SamplingMethod::MergeableReservoir => {
+            // Embed the CSV header into the sketch so a future --sketch-in
+            // can re-emit a schema-bearing CSV. Skip when --no-headers is set
+            // (the "header" then is actually the first data row).
+            let embedded_header = if args.flag_no_headers {
+                None
+            } else {
+                Some(rdr.byte_headers()?.clone())
+            };
+
+            #[allow(clippy::cast_precision_loss)]
+            let sample_size = if args.arg_sample_size < 1.0 {
+                let row_count: u64 = if let Ok(rc) = util::count_rows(&rconfig) {
+                    rc
+                } else {
+                    return fail!("Mergeable-reservoir fractional sampling requires rowcount.");
+                };
+                (row_count as f64 * args.arg_sample_size).round() as usize
+            } else {
+                args.arg_sample_size as usize
+            };
+
+            sample_mergeable_reservoir(
+                &mut rdr,
+                &mut wtr,
+                sample_size,
+                args.flag_seed,
+                &rng_kind,
+                args.flag_sketch_out.as_deref(),
+                embedded_header,
+            )?;
+        },
+        SamplingMethod::SketchMerge => {
+            // handled above before the CSV reader is opened
+            unreachable!("SketchMerge handled before CSV pipeline");
         },
         SamplingMethod::Cluster => {
             let cluster_column = args.get_cluster_column(&rdr.byte_headers()?.clone())?;
@@ -1920,6 +2122,296 @@ fn sample_cluster<R: io::Read, W: io::Write>(
         if selected_clusters.contains(cluster) {
             wtr.write_byte_record(&curr_record)?;
         }
+    }
+
+    Ok(())
+}
+
+// --- Sketch-backed sampling helpers (sample_varopt,
+// sample_mergeable_reservoir, sample_sketch_merge) ----------------------------
+//
+// These drive the input stream through native Rust sampler-state objects
+// (`ReservoirItemsSketch`, `VarOptItemsSketch`) defined in `sketches.rs`.
+// They are not bindings to Apache DataSketches.
+
+// Drive the input through a `VarOptItemsSketch` (A-ExpJ keying, native Rust)
+// keyed by `weight_column`, then emit retained items as CSV. Optionally
+// serialize the sketch to `sketch_out`.
+fn sample_varopt(
+    rdr: &mut csv::Reader<impl io::Read>,
+    wtr: &mut csv::Writer<impl io::Write>,
+    weight_column: usize,
+    sample_size: usize,
+    seed: Option<u64>,
+    rng_kind: &RngKind,
+    sketch_out: Option<&str>,
+    header: Option<csv::ByteRecord>,
+) -> CliResult<()> {
+    if sample_size == 0 {
+        return Ok(());
+    }
+    log::info!(
+        "doing {rng_kind:?} VAROPT (A-ExpJ) weighted reservoir sampling with k={sample_size}..."
+    );
+
+    let mut sketch: VarOptItemsSketch<csv::ByteRecord> = VarOptItemsSketch::new(sample_size);
+    if let Some(h) = header {
+        sketch.set_header(h);
+    }
+    let mut skipped = 0u64;
+
+    with_rng!(rng_kind, seed, |rng| {
+        for record in rdr.byte_records() {
+            let curr_record = record?;
+            let raw = curr_record
+                .get(weight_column)
+                .ok_or_else(|| format!("Weight column index {weight_column} out of bounds"))?;
+            let weight: f64 = fast_float2::parse(raw).unwrap_or(0.0);
+            if !weight.is_finite() || weight <= 0.0 {
+                skipped += 1;
+                continue;
+            }
+            sketch.update(curr_record, weight, &mut rng);
+        }
+    });
+
+    if skipped > 0 {
+        wwarn!("VAROPT: skipped {skipped} record(s) with non-positive or non-numeric weight");
+    }
+
+    let kept = sketch.samples_with_weights();
+    let actual = kept.len();
+    if actual < sample_size {
+        wwarn!("VAROPT: produced {actual} record(s) (requested {sample_size})");
+    }
+    for (record, _w) in kept {
+        wtr.write_byte_record(&record)?;
+    }
+
+    if let Some(path) = sketch_out {
+        let bytes = sketch
+            .to_bytes()
+            .map_err(|e| format!("Failed to serialize VarOpt sketch: {e}"))?;
+        std::fs::write(path, &bytes)?;
+        log::info!("VAROPT: wrote sketch ({} bytes) to {path}", bytes.len());
+    }
+
+    Ok(())
+}
+
+// Drive the input through a `ReservoirItemsSketch` (Vitter Algorithm R, native
+// Rust; same distribution as the default RESERVOIR but with a serializable,
+// mergeable state), then emit retained items as CSV. Optionally serialize the
+// sketch to `sketch_out`.
+fn sample_mergeable_reservoir(
+    rdr: &mut csv::Reader<impl io::Read>,
+    wtr: &mut csv::Writer<impl io::Write>,
+    sample_size: usize,
+    seed: Option<u64>,
+    rng_kind: &RngKind,
+    sketch_out: Option<&str>,
+    header: Option<csv::ByteRecord>,
+) -> CliResult<()> {
+    if sample_size == 0 {
+        return Ok(());
+    }
+    log::info!(
+        "doing {rng_kind:?} MERGEABLE-RESERVOIR (Algorithm R) sampling with k={sample_size}..."
+    );
+
+    let mut sketch: ReservoirItemsSketch<csv::ByteRecord> = ReservoirItemsSketch::new(sample_size);
+    if let Some(h) = header {
+        sketch.set_header(h);
+    }
+
+    with_rng!(rng_kind, seed, |rng| {
+        for record in rdr.byte_records() {
+            let curr_record = record?;
+            sketch.update(curr_record, &mut rng);
+        }
+    });
+
+    for record in sketch.samples() {
+        wtr.write_byte_record(record)?;
+    }
+
+    if let Some(path) = sketch_out {
+        let bytes = sketch
+            .to_bytes()
+            .map_err(|e| format!("Failed to serialize Reservoir sketch: {e}"))?;
+        std::fs::write(path, &bytes)?;
+        log::info!(
+            "MERGEABLE-RESERVOIR: wrote sketch ({} bytes) to {path}",
+            bytes.len()
+        );
+    }
+
+    Ok(())
+}
+
+// Resolve `<sample-size>` for sketch-merge mode against an already-retained
+// item count (the merged sketch's sample size). Semantics mirror the other
+// sample paths: a value in [0, 1) is a *fraction* of the retained items; a
+// value >= 1 is an absolute count. Non-finite or non-positive values mean
+// "no cap" — emit everything in the sketch.
+fn resolve_sketch_cap(sample_size: f64, retained: usize) -> usize {
+    if !sample_size.is_finite() || sample_size <= 0.0 {
+        return retained;
+    }
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    if sample_size < 1.0 {
+        // Fraction of retained items, rounded to nearest. min ensures we
+        // never request more rows than the sketch actually holds.
+        let n = (retained as f64 * sample_size).round() as usize;
+        n.min(retained)
+    } else {
+        (sample_size as usize).min(retained)
+    }
+}
+
+// Load and merge a comma-separated list of sketch files (produced by
+// --sketch-out), emit the merged sample as CSV, and optionally re-emit the
+// merged sketch via --sketch-out. All input sketches must share the same
+// family (Reservoir or VarOpt).
+fn sample_sketch_merge(
+    args: &Args,
+    wtr: &mut csv::Writer<impl io::Write>,
+    rng_kind: &RngKind,
+) -> CliResult<()> {
+    let sketch_in = args
+        .flag_sketch_in
+        .as_deref()
+        .ok_or("--sketch-in is required for sketch-merge mode")?;
+    let paths: Vec<&str> = sketch_in
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    if paths.is_empty() {
+        return fail_incorrectusage_clierror!("--sketch-in requires at least one sketch path");
+    }
+
+    // Read first sketch to determine family; then merge the rest.
+    let first_bytes = std::fs::read(paths[0])
+        .map_err(|e| format!("Failed to read sketch file {}: {e}", paths[0]))?;
+    let family = peek_family(&first_bytes)
+        .map_err(|e| format!("Failed to identify sketch family in {}: {e}", paths[0]))?;
+    log::info!(
+        "SKETCH-MERGE: merging {} {:?} sketch(es) with {rng_kind:?} RNG",
+        paths.len(),
+        family
+    );
+
+    match family {
+        SketchFamily::Reservoir => {
+            let mut merged: ReservoirItemsSketch<csv::ByteRecord> =
+                ReservoirItemsSketch::from_bytes(&first_bytes).map_err(|e| {
+                    format!("Failed to load Reservoir sketch from {}: {e}", paths[0])
+                })?;
+            with_rng!(rng_kind, args.flag_seed, |rng| {
+                for p in &paths[1..] {
+                    let bytes = std::fs::read(p)
+                        .map_err(|e| format!("Failed to read sketch file {p}: {e}"))?;
+                    let other_family = peek_family(&bytes)
+                        .map_err(|e| format!("Failed to identify sketch family in {p}: {e}"))?;
+                    if other_family != SketchFamily::Reservoir {
+                        return fail_incorrectusage_clierror!(
+                            "Sketch family mismatch: {} is Reservoir but {p} is {:?}",
+                            paths[0],
+                            other_family
+                        );
+                    }
+                    let other = ReservoirItemsSketch::<csv::ByteRecord>::from_bytes(&bytes)
+                        .map_err(|e| format!("Failed to load Reservoir sketch from {p}: {e}"))?;
+                    merged.merge(other, &mut rng);
+                }
+                Ok::<(), crate::CliError>(())
+            })?;
+
+            // Emit the embedded header first (if present and --no-headers not set).
+            if !args.flag_no_headers
+                && let Some(h) = merged.header()
+            {
+                wtr.write_byte_record(h)?;
+            }
+
+            // Optionally cap the emitted sample below the sketch's k.
+            // 0 < size < 1 means "fraction of the merged sketch's retained
+            // items"; size >= 1 means "this many rows".
+            let cap = resolve_sketch_cap(args.arg_sample_size, merged.samples().len());
+            for (i, record) in merged.samples().iter().enumerate() {
+                if i >= cap {
+                    break;
+                }
+                wtr.write_byte_record(record)?;
+            }
+
+            if let Some(path) = &args.flag_sketch_out {
+                let bytes = merged
+                    .to_bytes()
+                    .map_err(|e| format!("Failed to serialize merged Reservoir sketch: {e}"))?;
+                std::fs::write(path, &bytes)?;
+                log::info!(
+                    "SKETCH-MERGE: wrote merged sketch ({} bytes) to {path}",
+                    bytes.len()
+                );
+            }
+        },
+        SketchFamily::VarOpt => {
+            let mut merged: VarOptItemsSketch<csv::ByteRecord> =
+                VarOptItemsSketch::from_bytes(&first_bytes)
+                    .map_err(|e| format!("Failed to load VarOpt sketch from {}: {e}", paths[0]))?;
+            with_rng!(rng_kind, args.flag_seed, |rng| {
+                for p in &paths[1..] {
+                    let bytes = std::fs::read(p)
+                        .map_err(|e| format!("Failed to read sketch file {p}: {e}"))?;
+                    let other_family = peek_family(&bytes)
+                        .map_err(|e| format!("Failed to identify sketch family in {p}: {e}"))?;
+                    if other_family != SketchFamily::VarOpt {
+                        return fail_incorrectusage_clierror!(
+                            "Sketch family mismatch: {} is VarOpt but {p} is {:?}",
+                            paths[0],
+                            other_family
+                        );
+                    }
+                    let other = VarOptItemsSketch::<csv::ByteRecord>::from_bytes(&bytes)
+                        .map_err(|e| format!("Failed to load VarOpt sketch from {p}: {e}"))?;
+                    merged.merge(other, &mut rng);
+                }
+                Ok::<(), crate::CliError>(())
+            })?;
+
+            // Emit the embedded header first (if present and --no-headers not set).
+            if !args.flag_no_headers
+                && let Some(h) = merged.header()
+            {
+                wtr.write_byte_record(h)?;
+            }
+
+            // Same fractional / count semantics as the Reservoir branch above.
+            let cap = resolve_sketch_cap(args.arg_sample_size, merged.samples_with_weights().len());
+            for (i, (record, _w)) in merged.samples_with_weights().into_iter().enumerate() {
+                if i >= cap {
+                    break;
+                }
+                wtr.write_byte_record(&record)?;
+            }
+
+            if let Some(path) = &args.flag_sketch_out {
+                let bytes = merged
+                    .to_bytes()
+                    .map_err(|e| format!("Failed to serialize merged VarOpt sketch: {e}"))?;
+                std::fs::write(path, &bytes)?;
+                log::info!(
+                    "SKETCH-MERGE: wrote merged sketch ({} bytes) to {path}",
+                    bytes.len()
+                );
+            }
+        },
     }
 
     Ok(())

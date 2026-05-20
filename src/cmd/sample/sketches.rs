@@ -148,17 +148,17 @@ impl<T: Clone> ReservoirItemsSketch<T> {
 
     /// Borrow the attached header, if any.
     #[must_use]
-    pub fn header(&self) -> Option<&T> {
+    pub const fn header(&self) -> Option<&T> {
         self.header.as_ref()
     }
 
     #[must_use]
-    pub fn k(&self) -> usize {
+    pub const fn k(&self) -> usize {
         self.k
     }
 
     #[must_use]
-    pub fn n(&self) -> u64 {
+    pub const fn n(&self) -> u64 {
         self.n
     }
 
@@ -428,23 +428,23 @@ impl<T: Clone> VarOptItemsSketch<T> {
 
     /// Borrow the attached header, if any.
     #[must_use]
-    pub fn header(&self) -> Option<&T> {
+    pub const fn header(&self) -> Option<&T> {
         self.header.as_ref()
     }
 
     #[must_use]
-    pub fn k(&self) -> usize {
+    pub const fn k(&self) -> usize {
         self.k
     }
 
     #[must_use]
-    pub fn n(&self) -> u64 {
+    pub const fn n(&self) -> u64 {
         self.n
     }
 
     /// Total weight of all items observed (including discarded ones).
     #[must_use]
-    pub fn total_weight(&self) -> f64 {
+    pub const fn total_weight(&self) -> f64 {
         self.total_weight
     }
 

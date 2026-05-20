@@ -883,6 +883,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 }
 
 // main async geocode function that does the actual work
+#[allow(clippy::future_not_send)]
 async fn geocode_main(args: Args) -> CliResult<()> {
     let mut index_cmd = false;
     let mut now_cmd = false;
@@ -1541,6 +1542,7 @@ async fn geocode_main(args: Args) -> CliResult<()> {
 /// via the OpenCage API. Rows are processed sequentially behind a rate limiter, with
 /// a persistent on-disk result cache (OpenCage's TOS explicitly permits caching).
 /// This is a separate path from geocode_main's offline, rayon-parallel pipeline.
+#[allow(clippy::future_not_send)]
 async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResult<()> {
     let now_cmd = mode == GeocodeSubCmd::OpencageNow;
 

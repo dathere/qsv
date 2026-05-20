@@ -2169,7 +2169,7 @@ fn geocode_cache_prune_missing_flag() {
 #[test]
 #[serial]
 fn geocode_cache_prune_bad_older_than() {
-    // an unparseable --older-than value -> clean error (validated in run(),
+    // an unparsable --older-than value -> clean error (validated in run(),
     // independent of whether a cache exists)
     let wrk = Workdir::new("geocode_cache_prune_bad_older_than");
     let mut cmd = wrk.command("geocode");

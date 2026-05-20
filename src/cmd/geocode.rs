@@ -1663,11 +1663,27 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
     let mut column_values: Vec<String> = Vec::new();
     if dyncols_mode {
         for column in args.flag_formatstr[9..].split(',') {
-            let column_key_value: Vec<&str> = column.trim().split(':').collect();
-            if column_key_value.len() == 2 {
-                column_names.push(column_key_value[0].trim_matches('{').trim().to_string());
-                column_values.push(column_key_value[1].trim_matches('}').trim().to_string());
+            let column = column.trim();
+            if column.is_empty() {
+                // tolerate a trailing/empty comma-delimited entry
+                continue;
             }
+            let column_key_value: Vec<&str> = column.split(':').collect();
+            if column_key_value.len() != 2 {
+                return fail_incorrectusage_clierror!(
+                    "Invalid '%dyncols:' pair: {column:?}. Expected a single '{{col_name:key}}' \
+                     pair."
+                );
+            }
+            let column_name = column_key_value[0].trim_matches('{').trim();
+            let column_value = column_key_value[1].trim_matches('}').trim();
+            if column_name.is_empty() {
+                return fail_incorrectusage_clierror!(
+                    "Invalid '%dyncols:' pair: {column:?}. The column name is empty."
+                );
+            }
+            column_names.push(column_name.to_string());
+            column_values.push(column_value.to_string());
         }
         if column_values.is_empty() {
             return fail_incorrectusage_clierror!(
@@ -3222,8 +3238,11 @@ async fn opencage_lookup_dyncols(
     no_annotations: bool,
     column_values: &[String],
 ) -> Result<Option<Vec<String>>, OcError> {
+    // the literal NUL in the formatstr slot keeps this key space disjoint from
+    // opencage_lookup's: a --formatstr is a CLI arg and can never contain a NUL
+    // byte, so a dyncols cache entry can never collide with a regular one.
     let cache_key = format!(
-        "{query}|{language}|{cc}|%dyncols|{no_annotations}",
+        "{query}|{language}|{cc}|\0dyncols|{no_annotations}",
         cc = countrycode.unwrap_or_default()
     );
 

@@ -2158,6 +2158,58 @@ fn geocode_opencage_dyncols_new_column_rejected() {
 
 #[test]
 #[serial]
+fn geocode_opencage_dyncols_empty_rejected() {
+    // this runs in CI: a "%dyncols:" formatstr with no col_name:key pairs is rejected
+    let wrk = Workdir::new("geocode_opencage_dyncols_empty_rejected");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["--api-key", "dummy-key-for-arg-validation"])
+        .args(["-f", "%dyncols:"]);
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("expected one or more"));
+}
+
+#[test]
+#[serial]
+fn geocode_opencage_dyncols_malformed_pair_rejected() {
+    // this runs in CI: a malformed pair (no colon separator) is rejected, not
+    // silently dropped
+    let wrk = Workdir::new("geocode_opencage_dyncols_malformed_pair_rejected");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["--api-key", "dummy-key-for-arg-validation"])
+        .args(["-f", "%dyncols: {city components.city}"]);
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Invalid '%dyncols:' pair"));
+}
+
+#[test]
+#[serial]
+fn geocode_opencage_dyncols_empty_col_name_rejected() {
+    // this runs in CI: a pair with an empty column name is rejected
+    let wrk = Workdir::new("geocode_opencage_dyncols_empty_col_name_rejected");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["--api-key", "dummy-key-for-arg-validation"])
+        .args(["-f", "%dyncols: {:components.city}"]);
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("column name is empty"));
+}
+
+#[test]
+#[serial]
 #[ignore = "requires an OpenCage API key (set QSV_OPENCAGE_API_KEY)"]
 fn geocode_opencage_dyncols() {
     let wrk = Workdir::new("geocode_opencage_dyncols");

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sample`: `--varopt <col>` flag for variance-bounded weighted reservoir sampling (A-ExpJ keying, Efraimidis & Spirakis 2006). See Headline above.
 - `sample`: `--mergeable-reservoir` flag for a uniform reservoir sampler whose state is mergeable across runs (same distribution as the default RESERVOIR method). See Headline above.
 - `sample`: `--sketch-out <file>` / `--sketch-in <files>` for serializing and merging sampler state across runs. Sketches carry their source CSV header so merged output is schema-bearing.
+- `geocode`: new `cache-clear`, `cache-prune` & `cache-info` subcommands to manage the persistent on-disk OpenCage result cache. `cache-clear` wipes the cache, `cache-prune --older-than <val>` deletes entries older than an absolute date or a relative age (e.g. `30d`, `2w`), and `cache-info` reports the cache directory, entry count, on-disk size and oldest/newest entry timestamps.
 
 ## [20.1.0] - 2026-05-18 🤖 The "Synthetic Data" Release 🎲
 

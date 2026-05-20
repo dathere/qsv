@@ -18,7 +18,7 @@ By default, the prebuilt index uses the Geonames Gazeteer cities15000.zip file u
 English names. It contains cities with populations > 15,000 (about ~26k cities). 
 See https://download.geonames.org/export/dump/ for more information.
 
-It has eleven major subcommands:
+It has fourteen major subcommands:
  * suggest        - given a partial City name, return the closest City's location metadata
                     per the local Geonames cities index (Jaro-Winkler distance)
  * suggestnow     - same as suggest, but using a partial City name from the command line,
@@ -43,7 +43,9 @@ It has eleven major subcommands:
                     command line, instead of CSV data.
  * index-*        - operations to update the local Geonames cities index.
                     (index-check, index-update, index-load & index-reset)
- 
+ * cache-*        - operations to manage the persistent on-disk OpenCage result cache.
+                    (cache-clear, cache-prune & cache-info)
+
 SUGGEST
 Suggest a Geonames city based on a partial city name. It returns the closest Geonames
 city record based on the Jaro-Winkler distance between the partial city name and the
@@ -233,6 +235,36 @@ Load an alternative Geonames cities index from a file, making it the default ind
 
   $ qsv geocode index-load my_geonames_index.rkyv
 
+CACHE-<operation>
+Manage the persistent on-disk OpenCage result cache used by the opencage subcommands.
+This cache is separate from the Geonames cities index and is only populated by the
+opencage/opencagenow subcommands. It lives in {cache-dir}/geocode-opencage_v1.
+
+It has three operations:
+ * clear  - wipe the entire OpenCage disk cache, removing all cached results.
+ * prune  - delete cache entries older than the --older-than value. The value is either
+            an absolute date/datetime (e.g. 2025-01-31, "2025-01-31 12:00:00") or a
+            relative age with a unit suffix - s(econds), m(inutes), h(ours), d(ays) or
+            w(eeks). e.g. 30d, 2w, 48h, 90m, 3600s.
+ * info   - report the cache directory, entry count, on-disk size and the oldest/newest
+            cached entry timestamps. Emits a JSON summary to stdout.
+
+Wipe the entire OpenCage cache.
+
+  $ qsv geocode cache-clear
+
+Delete cached entries older than 30 days.
+
+  $ qsv geocode cache-prune --older-than 30d
+
+Delete cached entries created before a specific date.
+
+  $ qsv geocode cache-prune --older-than 2025-01-01
+
+Show cache statistics.
+
+  $ qsv geocode cache-info
+
 Examples:
 
 # For US locations, you can retrieve the us_state_fips_code and us_county_fips_code fields of a US City
@@ -264,6 +296,9 @@ qsv geocode index-load <index-file>
 qsv geocode index-check
 qsv geocode index-update [--languages=<lang>] [--cities-url=<url>] [--force] [--timeout=<seconds>]
 qsv geocode index-reset
+qsv geocode cache-clear [options]
+qsv geocode cache-prune --older-than=<val> [options]
+qsv geocode cache-info [options]
 qsv geocode --help
 
 geocode arguments:
@@ -459,7 +494,14 @@ geocode options:
     --cache-dir <dir>           The directory to use for caching the Geonames cities index.
                                 If the directory does not exist, qsv will attempt to create it.
                                 If the QSV_CACHE_DIR envvar is set, it will be used instead.
-                                [default: ~/.qsv-cache]                                
+                                [default: ~/.qsv-cache]
+
+                                CACHE-PRUNE only option:
+    --older-than <val>          Delete OpenCage cache entries older than this value.
+                                Accepts an absolute date/datetime (e.g. 2025-01-31) or a
+                                relative age with a unit suffix:
+                                s/m/h/d/w = seconds/minutes/hours/days/weeks
+                                (e.g. 30d, 2w, 48h). Required by the cache-prune subcommand.
 
                                 INDEX-UPDATE only options:
     --languages <lang-list>     The comma-delimited, case-insensitive list of languages to use when building
@@ -498,6 +540,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     num::NonZeroU32,
     path::{Path, PathBuf},
+    time::{Duration, SystemTime},
 };
 
 use cached::{DiskCache, IOCached, SizedCache, proc_macro::cached, stores::DiskCacheBuilder};
@@ -509,7 +552,7 @@ use geosuggest_core::{
 };
 use geosuggest_utils::{IndexUpdater, IndexUpdaterSettings, SourceItem};
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
-use indicatif::{ProgressBar, ProgressDrawTarget};
+use indicatif::{HumanBytes, ProgressBar, ProgressDrawTarget};
 use log::info;
 use phf::phf_map;
 use rayon::{
@@ -547,6 +590,10 @@ static FORMATSTR_REGEX: fn() -> &'static Regex = || regex_oncelock!(r"\{(?P<key>
 // {annotations.timezone.name}) used by the opencage subcommands' dynamic formatting
 static OPENCAGE_FORMATSTR_REGEX: fn() -> &'static Regex = || regex_oncelock!(r"\{([\w.-]+)\}");
 
+// matches a relative age for the cache-prune --older-than option, e.g. 30d, 2w,
+// 48h, 90m, 3600s (case-insensitive). Group 1 is the count, group 2 is the unit.
+static RELATIVE_AGE_REGEX: fn() -> &'static Regex = || regex_oncelock!(r"(?i)^(\d+)\s*([smhdw])$");
+
 #[derive(Deserialize)]
 struct Args {
     arg_column:          String,
@@ -565,6 +612,9 @@ struct Args {
     cmd_index_update:    bool,
     cmd_index_load:      bool,
     cmd_index_reset:     bool,
+    cmd_cache_clear:     bool,
+    cmd_cache_prune:     bool,
+    cmd_cache_info:      bool,
     arg_input:           Option<String>,
     arg_index_file:      Option<String>,
     flag_rename:         Option<String>,
@@ -592,6 +642,7 @@ struct Args {
     flag_no_annotations: bool,
     flag_cache_ttl:      u64,
     flag_no_cache:       bool,
+    flag_older_than:     Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -797,6 +848,9 @@ enum GeocodeSubCmd {
     IndexUpdate,
     IndexLoad,
     IndexReset,
+    CacheClear,
+    CachePrune,
+    CacheInfo,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -875,6 +929,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
+    // --older-than is only valid with cache-prune. Validate it eagerly so a bad
+    // value errors regardless of whether an OpenCage cache exists yet.
+    if args.flag_older_than.is_some() && !args.cmd_cache_prune {
+        return fail_incorrectusage_clierror!(
+            "--older-than is only valid with the `cache-prune` subcommand."
+        );
+    }
+    if args.cmd_cache_prune
+        && let Some(older_than) = args.flag_older_than.as_deref()
+    {
+        resolve_older_than(older_than)?;
+    }
+
     // we need to use tokio runtime as geosuggest uses async
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(geocode_main(args))?;
@@ -927,6 +994,12 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     } else if args.cmd_index_reset {
         index_cmd = true;
         GeocodeSubCmd::IndexReset
+    } else if args.cmd_cache_clear {
+        GeocodeSubCmd::CacheClear
+    } else if args.cmd_cache_prune {
+        GeocodeSubCmd::CachePrune
+    } else if args.cmd_cache_info {
+        GeocodeSubCmd::CacheInfo
     } else {
         // should not happen as docopt won't allow it
         unreachable!();
@@ -964,6 +1037,15 @@ async fn geocode_main(args: Args) -> CliResult<()> {
         GeocodeSubCmd::Opencage | GeocodeSubCmd::OpencageNow
     ) {
         return run_opencage(args, geocode_cmd, &geocode_cache_dir).await;
+    }
+
+    // cache-* subcommands manage the persistent on-disk OpenCage result cache.
+    // They do not use the Geonames index, so dispatch before any index handling.
+    if matches!(
+        geocode_cmd,
+        GeocodeSubCmd::CacheClear | GeocodeSubCmd::CachePrune | GeocodeSubCmd::CacheInfo
+    ) {
+        return run_cache_mgmt(&args, geocode_cmd, &geocode_cache_dir);
     }
 
     let geocode_index_filename = std::env::var("QSV_GEOCODE_INDEX_FILENAME")
@@ -1722,6 +1804,192 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
         util::finish_progress(&progress);
     }
     Ok(wtr.flush()?)
+}
+
+// ─────────────────────── OpenCage disk-cache management ───────────────────────
+
+/// The cache name used for the persistent on-disk OpenCage result cache.
+/// `cached`'s `DiskCacheBuilder` stores the sled DB in `{cache_dir}/{name}_v{N}`,
+/// where N is the crate's `DISK_FILE_VERSION` (currently 1).
+const OPENCAGE_CACHE_NAME: &str = "geocode-opencage";
+
+/// The on-disk directory `cached` uses for the OpenCage cache. The `_v1` suffix
+/// tracks `cached`'s `DISK_FILE_VERSION`; update it if the `cached` crate bumps it.
+fn opencage_cache_path(cache_dir: &Path) -> PathBuf {
+    cache_dir.join(format!("{OPENCAGE_CACHE_NAME}_v1"))
+}
+
+/// Deserialize-only mirror of `cached` 0.59's private `CachedDiskValue<String>`.
+/// Entries are rmp_serde-encoded positionally as [value, created_at, version],
+/// so the field ORDER here must match exactly. Used to read entry timestamps for
+/// `cache-info`; if `cached` changes its encoding, deserialization simply fails
+/// and oldest/newest gracefully degrade to "n/a".
+#[derive(serde::Deserialize)]
+#[allow(dead_code)]
+struct OpencageCacheEntry {
+    value:      String,
+    created_at: SystemTime,
+    version:    u64,
+}
+
+/// Parse a relative age like "30d", "2w", "48h", "90m", "3600s" (case-insensitive,
+/// surrounding whitespace allowed) into a Duration. Returns None when the input is
+/// not a relative-age string, so the caller can fall back to absolute-date parsing.
+fn parse_relative_age(input: &str) -> Option<Duration> {
+    let caps = RELATIVE_AGE_REGEX().captures(input.trim())?;
+    let n: u64 = caps.get(1)?.as_str().parse().ok()?;
+    let secs = match caps.get(2)?.as_str().to_ascii_lowercase().as_str() {
+        "s" => n,
+        "m" => n.checked_mul(60)?,
+        "h" => n.checked_mul(3_600)?,
+        "d" => n.checked_mul(86_400)?,
+        "w" => n.checked_mul(604_800)?,
+        _ => return None,
+    };
+    Some(Duration::from_secs(secs))
+}
+
+/// Resolve a `--older-than` value into an age threshold (the lifespan handed to
+/// `DiskCacheBuilder::set_lifespan`). Accepts a relative age (30d, 2w, ...) or an
+/// absolute date/datetime parsed by `qsv_dateparser`. A future cutoff is rejected.
+fn resolve_older_than(value: &str) -> CliResult<Duration> {
+    if let Some(age) = parse_relative_age(value) {
+        return Ok(age);
+    }
+    // not a relative age - try parsing as an absolute date/datetime
+    let cutoff = qsv_dateparser::parse(value).map_err(|e| {
+        CliError::IncorrectUsage(format!(
+            "Invalid --older-than value '{value}': not a relative age (e.g. 30d, 2w) nor a \
+             parseable date - {e}"
+        ))
+    })?;
+    let cutoff_secs = u64::try_from(cutoff.timestamp()).map_err(|_| {
+        CliError::IncorrectUsage(format!(
+            "Invalid --older-than value '{value}': date is before the Unix epoch."
+        ))
+    })?;
+    let cutoff_systime = SystemTime::UNIX_EPOCH + Duration::from_secs(cutoff_secs);
+    SystemTime::now()
+        .duration_since(cutoff_systime)
+        .map_err(|_| {
+            CliError::IncorrectUsage(format!(
+                "Invalid --older-than value '{value}': the date is in the future."
+            ))
+        })
+}
+
+/// Run the `cache-clear` / `cache-prune` / `cache-info` subcommands, which manage
+/// the persistent on-disk OpenCage result cache. Synchronous - does not use the
+/// Geonames index nor make any network calls.
+fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResult<()> {
+    let cache_path = opencage_cache_path(cache_dir);
+
+    // graceful "no cache" path - do not create an empty sled DB as a side effect
+    if !cache_path.exists() {
+        winfo!(
+            "No OpenCage cache found at {}. Nothing to do.",
+            cache_path.display()
+        );
+        if mode == GeocodeSubCmd::CacheInfo {
+            println!(
+                "{}",
+                json!({
+                    "cache_dir":   cache_path.display().to_string(),
+                    "exists":      false,
+                    "entry_count": 0,
+                })
+            );
+        }
+        return Ok(());
+    }
+
+    // for cache-prune, the lifespan is the resolved age threshold;
+    // remove_expired_entries() deletes entries where (now - created_at) >= lifespan.
+    let lifespan = if mode == GeocodeSubCmd::CachePrune {
+        // run() guarantees --older-than is present & valid for cache-prune
+        resolve_older_than(args.flag_older_than.as_deref().unwrap_or_default())?
+    } else {
+        Duration::from_secs(0)
+    };
+
+    let mut builder = DiskCacheBuilder::new(OPENCAGE_CACHE_NAME)
+        .set_disk_directory(cache_dir)
+        .set_lifespan(lifespan)
+        .set_refresh(false);
+    if mode == GeocodeSubCmd::CachePrune {
+        // remove_expired_entries() only persists to disk when this is set
+        builder = builder.set_sync_to_disk_on_cache_change(true);
+    }
+    let cache: DiskCache<String, String> = builder
+        .build()
+        .map_err(|e| CliError::Other(format!("Error opening OpenCage disk cache: {e}")))?;
+    let db = cache.connection();
+
+    match mode {
+        GeocodeSubCmd::CacheClear => {
+            let count = db.len();
+            db.clear()
+                .map_err(|e| CliError::Other(format!("Error clearing OpenCage cache: {e}")))?;
+            db.flush()
+                .map_err(|e| CliError::Other(format!("Error flushing OpenCage cache: {e}")))?;
+            winfo!("Cleared the OpenCage cache - removed {count} entries.");
+        },
+        GeocodeSubCmd::CachePrune => {
+            let before = db.len();
+            cache
+                .remove_expired_entries()
+                .map_err(|e| CliError::Other(format!("Error pruning OpenCage cache: {e}")))?;
+            let _ = db.flush();
+            let after = db.len();
+            let pruned = before.saturating_sub(after);
+            winfo!(
+                "Pruned the OpenCage cache - removed {pruned} of {before} entries ({after} \
+                 remaining)."
+            );
+        },
+        GeocodeSubCmd::CacheInfo => {
+            let entry_count = db.len();
+            let size_on_disk = db.size_on_disk().unwrap_or(0);
+
+            // oldest/newest created_at - degrade gracefully on a deserialize failure
+            let mut oldest: Option<SystemTime> = None;
+            let mut newest: Option<SystemTime> = None;
+            for (_key, value) in db.iter().flatten() {
+                if let Ok(entry) = rmp_serde::from_slice::<OpencageCacheEntry>(&value) {
+                    oldest = Some(oldest.map_or(entry.created_at, |o| o.min(entry.created_at)));
+                    newest = Some(newest.map_or(entry.created_at, |n| n.max(entry.created_at)));
+                }
+            }
+            let fmt_ts = |t: Option<SystemTime>| t.map(|t| util::format_systemtime(t, "%+"));
+
+            winfo!("OpenCage cache directory: {}", cache_path.display());
+            winfo!("Entries: {entry_count}");
+            winfo!("Size on disk: {}", HumanBytes(size_on_disk));
+            winfo!(
+                "Oldest entry: {}",
+                fmt_ts(oldest).unwrap_or_else(|| "n/a".to_string())
+            );
+            winfo!(
+                "Newest entry: {}",
+                fmt_ts(newest).unwrap_or_else(|| "n/a".to_string())
+            );
+
+            println!(
+                "{}",
+                json!({
+                    "cache_dir":    cache_path.display().to_string(),
+                    "exists":       true,
+                    "entry_count":  entry_count,
+                    "size_on_disk": size_on_disk,
+                    "size_human":   HumanBytes(size_on_disk).to_string(),
+                    "oldest_entry": fmt_ts(oldest),
+                    "newest_entry": fmt_ts(newest),
+                })
+            );
+        },
+        _ => unreachable!("run_cache_mgmt called with a non-cache subcommand"),
+    }
+    Ok(())
 }
 
 /// Display instructions for rebuilding the Geonames index using the geosuggest crate directly

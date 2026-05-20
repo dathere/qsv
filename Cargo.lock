@@ -6153,6 +6153,7 @@ dependencies = [
  "regex",
  "reqwest 0.13.3",
  "rfd",
+ "rmp-serde",
  "rust_decimal",
  "sanitize-filename",
  "self_update",

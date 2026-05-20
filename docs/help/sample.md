@@ -13,7 +13,7 @@
 
 Randomly samples CSV data.
 
-It supports eight sampling methods:  
+It supports ten sampling methods:  
 * RESERVOIR: the default sampling method when NO INDEX is present and no sampling method
 is specified. Visits every CSV record exactly once, using MEMORY PROPORTIONAL to the
 sample size (k) - O(k).

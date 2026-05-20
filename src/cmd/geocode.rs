@@ -1644,7 +1644,9 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
             .set_refresh(false)
             .build()
             .map_err(|e| CliError::Other(format!("Error building OpenCage disk cache: {e}")))?;
-        let _ = cache.remove_expired_entries();
+        if let Err(e) = cache.remove_expired_entries() {
+            log::warn!("Could not remove expired OpenCage cache entries: {e}");
+        }
         Some(cache)
     };
     let mut mem_cache: HashMap<String, String> = HashMap::new();

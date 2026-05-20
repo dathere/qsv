@@ -1998,10 +1998,11 @@ fn geocode_opencage_missing_api_key() {
     cmd.env_remove("QSV_OPENCAGE_API_KEY");
     cmd.arg("opencagenow").arg("Brooklyn, NY");
 
-    wrk.assert_err(&mut cmd);
-
-    let got = wrk.output_stderr(&mut cmd);
-    assert!(got.contains("requires an API key"));
+    // capture a single run, then assert on both status and stderr
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("requires an API key"));
 }
 
 #[test]
@@ -2015,10 +2016,11 @@ fn geocode_opencage_admin1_rejected() {
         .args(["--api-key", "dummy-key-for-arg-validation"])
         .args(["--admin1", "US.NY"]);
 
-    wrk.assert_err(&mut cmd);
-
-    let got = wrk.output_stderr(&mut cmd);
-    assert!(got.contains("--admin1"));
+    // capture a single run, then assert on both status and stderr
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--admin1"));
 }
 
 #[test]

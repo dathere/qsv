@@ -2121,6 +2121,74 @@ fn geocode_opencagenow_dynfmt() {
     assert!(got.to_lowercase().contains("united states"));
 }
 
+#[test]
+#[serial]
+fn geocode_opencage_dyncols_invalid_key_rejected() {
+    // this runs in CI: an invalid %dyncols: key is rejected before any API call
+    let wrk = Workdir::new("geocode_opencage_dyncols_invalid_key_rejected");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["--api-key", "dummy-key-for-arg-validation"])
+        .args(["-f", "%dyncols: {city:components.city}, {bad:not_a_field}"]);
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Invalid '%dyncols:' key"));
+}
+
+#[test]
+#[serial]
+fn geocode_opencage_dyncols_new_column_rejected() {
+    // this runs in CI: %dyncols: cannot be combined with --new-column
+    let wrk = Workdir::new("geocode_opencage_dyncols_new_column_rejected");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["--api-key", "dummy-key-for-arg-validation"])
+        .args(["-c", "geocoded"])
+        .args(["-f", "%dyncols: {city:components.city}"]);
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--new-column"));
+}
+
+#[test]
+#[serial]
+#[ignore = "requires an OpenCage API key (set QSV_OPENCAGE_API_KEY)"]
+fn geocode_opencage_dyncols() {
+    let wrk = Workdir::new("geocode_opencage_dyncols");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Location"],
+            svec!["1600 Pennsylvania Ave NW, Washington DC"], // forward
+            svec![""],                                        // empty -> empty dyncols
+        ],
+    );
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencage").arg("Location").arg("data.csv").args([
+        "-f",
+        "%dyncols: {city:components.city}, {country:components.country}, {addr:formatted}",
+    ]);
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 3);
+    // the input column is preserved & three dyncols columns are appended
+    assert_eq!(got[0], svec!["Location", "city", "country", "addr"]);
+    // geocoded row: input cell unchanged, dyncols populated
+    assert_eq!(got[1][0], "1600 Pennsylvania Ave NW, Washington DC");
+    assert!(!got[1][3].is_empty());
+    assert!(got[1][2].to_lowercase().contains("united states"));
+    // empty cell: input preserved, dyncols left empty
+    assert_eq!(got[2], svec!["", "", "", ""]);
+}
+
 // ---------------------------------------------------------------------------
 // cache-* subcommands manage the persistent on-disk OpenCage result cache.
 // The tests below isolate the cache via QSV_CACHE_DIR pointed at the Workdir,

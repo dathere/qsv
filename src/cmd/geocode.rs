@@ -18,7 +18,7 @@ By default, the prebuilt index uses the Geonames Gazeteer cities15000.zip file u
 English names. It contains cities with populations > 15,000 (about ~26k cities). 
 See https://download.geonames.org/export/dump/ for more information.
 
-It has seven major subcommands:
+It has eleven major subcommands:
  * suggest        - given a partial City name, return the closest City's location metadata
                     per the local Geonames cities index (Jaro-Winkler distance)
  * suggestnow     - same as suggest, but using a partial City name from the command line,
@@ -36,6 +36,11 @@ It has seven major subcommands:
                     per the local Maxmind GeoLite2 City database.
  * iplookupnow    - same as iplookup, but using an IP address or URL from the command line,
                     instead of CSV data.
+ * opencage       - ONLINE forward/reverse geocoding using the OpenCage API.
+                    Forward-geocodes a free-form address, or reverse-geocodes a
+                    "lat, long" coordinate. Requires an OpenCage API key.
+ * opencagenow    - same as opencage, but using an address/coordinate from the
+                    command line, instead of CSV data.
  * index-*        - operations to update the local Geonames cities index.
                     (index-check, index-update, index-load & index-reset)
  
@@ -147,6 +152,58 @@ Accepts the same options as iplookup, but does not require an input file.
   $ qsv geocode iplookupnow --formatstr "%json" 140.174.222.253
   $ qsv geocode iplookupnow -f "%cityrecord" 140.174.222.253
 
+OPENCAGE
+Online forward or reverse geocoding using the OpenCage Geocoding API
+(https://opencagedata.com). Unlike the suggest/reverse subcommands which use the
+local Geonames index, opencage geocodes real street addresses online.
+
+Requires an OpenCage API key. Set it with --api-key or the QSV_OPENCAGE_API_KEY
+environment variable (the --api-key flag takes precedence). Get a free key at
+https://opencagedata.com/users/sign_up.
+
+The <column> may contain either a free-form address (forward geocoding) or a
+"lat, long" / "(lat, long)" WGS-84 coordinate (reverse geocoding). The mode is
+auto-detected per row; pass --reverse to force reverse geocoding.
+
+OpenCage's Terms of Service explicitly allow caching, so results are cached in a
+persistent on-disk cache (see --cache-ttl & --no-cache). Re-runs and duplicate
+queries do NOT re-hit the API. The free tier allows 2,500 requests/day at 1
+request/second; rows are processed sequentially and rate-limited (see --rate-limit).
+
+The --country option, if set, restricts results to the given ISO 3166-1 alpha-2
+country code(s). The --timeout, --language, --invalid-result, --new-column, --rename
+and --output options behave as they do for the other subcommands.
+
+The --formatstr option supports these OpenCage-specific formats:
+  * '%+' | '%formatted'   - the OpenCage formatted address (default)
+  * '%lat-long'           - <latitude>, <longitude>
+  * '%location'           - (<latitude>, <longitude>)
+  * '%city'               - the city/town/village
+  * '%state' | '%admin1'  - the state/province
+  * '%county' | '%admin2' - the county
+  * '%country'            - the ISO 3166-1 alpha-2 country code
+  * '%country_name'       - the country name
+  * '%postcode'           - the postal code
+  * '%confidence'         - the OpenCage confidence score (0-10)
+  * '%json'               - the first OpenCage result as JSON
+  * '%pretty-json'        - the first OpenCage result as pretty JSON
+Dynamic formatting is also supported, using dotted keys, e.g.
+  "{components.city}, {components.country}" or "{annotations.timezone.name}".
+Available keys: formatted, lat, lng, confidence, components.<name> and
+annotations.<dotted.path>. ("%dyncols:" is not supported by opencage.)
+
+  $ qsv geocode opencage address --api-key YOURKEY file.csv
+  $ qsv geocode opencage address --country us -f '%json' file.csv
+  $ qsv geocode opencage coord_col --reverse -c city file.csv
+  $ qsv geocode opencage address -f '{components.city}, {components.country}' file.csv
+
+OPENCAGENOW
+Accepts the same options as opencage, but does not require an input file.
+
+  $ qsv geocode opencagenow --api-key YOURKEY "Brooklyn, NY"
+  $ qsv geocode opencagenow "40.71427, -74.00597"
+  $ qsv geocode opencagenow -f '%pretty-json' "Eiffel Tower, Paris"
+
 INDEX-<operation>
 Manage the local Geonames cities index used by the geocode command.
 
@@ -201,6 +258,8 @@ qsv geocode countryinfo [options] <column> [<input>]
 qsv geocode countryinfonow [options] <location>
 qsv geocode iplookup [options] <column> [<input>]
 qsv geocode iplookupnow [options] <location>
+qsv geocode opencage [--formatstr=<string>] [options] <column> [<input>]
+qsv geocode opencagenow [options] <location>
 qsv geocode index-load <index-file>
 qsv geocode index-check
 qsv geocode index-update [--languages=<lang>] [--cities-url=<url>] [--force] [--timeout=<seconds>]
@@ -217,6 +276,7 @@ geocode arguments:
                                 "lat, long" or "(lat, long)" format.
                                 For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code.
                                 For iplookup, it must be a column with an IP address or a URL.
+                                For opencage, it may be a free-form address OR a WGS 84 coordinate.
                                 Note that you can use column selector syntax to select the column, but only
                                 the first column will be used. See `select --help` for more information.
 
@@ -226,6 +286,7 @@ geocode arguments:
                                   For reversenow, it must be a WGS 84 coordinate.
                                   For countryinfonow, it must be a ISO 3166-1 alpha-2 code.
                                   For iplookupnow, it must be an IP address or a URL.
+                                  For opencagenow, it must be an address OR a WGS 84 coordinate.
 
     <index-file>                The alternate geonames index file to use. It must be a .rkyv file.
                                 For convenience, if this is set to 500, 1000, 5000 or 15000, it will download
@@ -279,6 +340,24 @@ geocode options:
                                 Larger values will favor more populated cities.
                                 If not set (default), the population is not used and the
                                 nearest city is returned.
+
+                                OPENCAGE only options:
+    --api-key <key>             The OpenCage API key for the opencage/opencagenow subcommands.
+                                If set, it takes precedence over the QSV_OPENCAGE_API_KEY
+                                environment variable. Get a free key at
+                                https://opencagedata.com/users/sign_up.
+    --rate-limit <qps>          Maximum number of OpenCage API requests per second.
+                                The free tier allows 1 request/second (2,500/day).
+                                [default: 1]
+    --reverse                   Force reverse geocoding for opencage/opencagenow (treat the
+                                query as a "lat, long" WGS-84 coordinate). If not set, forward
+                                and reverse mode is auto-detected per row.
+    --no-annotations            Omit OpenCage annotations (timezone, currency, etc.) from the
+                                result and from %json output.
+    --cache-ttl <seconds>       Time-to-live for the persistent on-disk OpenCage result cache.
+                                [default: 1209600]
+    --no-cache                  Disable the persistent on-disk OpenCage cache. Duplicate
+                                queries within a run are still de-duplicated.
 
     -f, --formatstr=<string>    The place format to use. It has three options:
                                 1. Use one of the predefined formats.
@@ -417,10 +496,11 @@ use std::{
     collections::HashMap,
     fs,
     net::{IpAddr, Ipv4Addr},
+    num::NonZeroU32,
     path::{Path, PathBuf},
 };
 
-use cached::{SizedCache, proc_macro::cached};
+use cached::{DiskCache, IOCached, SizedCache, proc_macro::cached, stores::DiskCacheBuilder};
 use dynfmt2::Format;
 use geosuggest_core::{
     Engine, EngineData,
@@ -428,6 +508,7 @@ use geosuggest_core::{
     storage,
 };
 use geosuggest_utils::{IndexUpdater, IndexUpdaterSettings, SourceItem};
+use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use log::info;
 use phf::phf_map;
@@ -462,6 +543,10 @@ static LOCATION_REGEX: fn() -> &'static Regex =
 
 static FORMATSTR_REGEX: fn() -> &'static Regex = || regex_oncelock!(r"\{(?P<key>\w+)\}");
 
+// like FORMATSTR_REGEX, but also matches dotted keys (e.g. {components.city},
+// {annotations.timezone.name}) used by the opencage subcommands' dynamic formatting
+static OPENCAGE_FORMATSTR_REGEX: fn() -> &'static Regex = || regex_oncelock!(r"\{([\w.-]+)\}");
+
 #[derive(Deserialize)]
 struct Args {
     arg_column:          String,
@@ -474,6 +559,8 @@ struct Args {
     cmd_countryinfonow:  bool,
     cmd_iplookup:        bool,
     cmd_iplookupnow:     bool,
+    cmd_opencage:        bool,
+    cmd_opencagenow:     bool,
     cmd_index_check:     bool,
     cmd_index_update:    bool,
     cmd_index_load:      bool,
@@ -499,6 +586,12 @@ struct Args {
     flag_output:         Option<String>,
     flag_delimiter:      Option<Delimiter>,
     flag_progressbar:    bool,
+    flag_api_key:        Option<String>,
+    flag_rate_limit:     u32,
+    flag_reverse:        bool,
+    flag_no_annotations: bool,
+    flag_cache_ttl:      u64,
+    flag_no_cache:       bool,
 }
 
 #[derive(Clone, Debug)]
@@ -513,6 +606,52 @@ struct NamesLang {
     admin1name:  String,
     admin2name:  String,
     countryname: String,
+}
+
+/// OpenCage Geocoding API response. Only the fields qsv uses are deserialized.
+/// See https://opencagedata.com/api for the full schema.
+#[derive(Deserialize)]
+struct OpencageResponse {
+    #[serde(default)]
+    results: Vec<OpencageResult>,
+    #[serde(default)]
+    status:  OpencageStatus,
+}
+
+#[derive(Deserialize, Default)]
+struct OpencageStatus {
+    #[serde(default)]
+    code: u16,
+}
+
+#[derive(Deserialize)]
+struct OpencageResult {
+    #[serde(default)]
+    formatted:   String,
+    #[serde(default)]
+    confidence:  u8,
+    #[serde(default)]
+    geometry:    OpencageGeometry,
+    #[serde(default)]
+    components:  HashMap<String, serde_json::Value>,
+    #[serde(default)]
+    annotations: serde_json::Value,
+}
+
+#[derive(Deserialize, Default)]
+struct OpencageGeometry {
+    #[serde(default)]
+    lat: f64,
+    #[serde(default)]
+    lng: f64,
+}
+
+/// Error from an OpenCage lookup. `Fatal` aborts the whole run (bad API key, quota
+/// exceeded); `Transient` is a per-row failure (network error, 5xx, rate-limited)
+/// that is handled via --invalid-result.
+enum OcError {
+    Fatal(String),
+    Transient(String),
 }
 
 static QSV_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -652,6 +791,8 @@ enum GeocodeSubCmd {
     CountryInfoNow,
     Iplookup,
     IplookupNow,
+    Opencage,
+    OpencageNow,
     IndexCheck,
     IndexUpdate,
     IndexLoad,
@@ -671,6 +812,43 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!(
             "Cannot use --new-column with the '%dyncols:' --formatstr option."
         );
+    }
+
+    // validate & resolve options for the opencage/opencagenow subcommands
+    if args.cmd_opencage || args.cmd_opencagenow {
+        // resolve the API key: the --api-key flag takes precedence over the
+        // QSV_OPENCAGE_API_KEY environment variable
+        let api_key = args
+            .flag_api_key
+            .clone()
+            .filter(|k| !k.trim().is_empty())
+            .or_else(|| {
+                std::env::var("QSV_OPENCAGE_API_KEY")
+                    .ok()
+                    .filter(|k| !k.trim().is_empty())
+            });
+        let Some(api_key) = api_key else {
+            return fail_incorrectusage_clierror!(
+                "OpenCage geocoding requires an API key. Set it with --api-key or the \
+                 QSV_OPENCAGE_API_KEY environment variable. Get a free key at \
+                 https://opencagedata.com/users/sign_up"
+            );
+        };
+        args.flag_api_key = Some(api_key);
+
+        if args.flag_admin1.is_some() {
+            return fail_incorrectusage_clierror!(
+                "The --admin1 filter is not supported by the opencage subcommands."
+            );
+        }
+        if args.flag_formatstr.starts_with("%dyncols:") {
+            return fail_incorrectusage_clierror!(
+                "The '%dyncols:' --formatstr option is not supported by the opencage subcommands."
+            );
+        }
+        if args.flag_rate_limit == 0 {
+            return fail_incorrectusage_clierror!("--rate-limit must be >= 1.");
+        }
     }
 
     // if args.flag_cities_url is a number and is 500, 1000, 5000 or 15000,
@@ -731,6 +909,11 @@ async fn geocode_main(args: Args) -> CliResult<()> {
         now_cmd = true;
         iplookup_cmd = true;
         GeocodeSubCmd::IplookupNow
+    } else if args.cmd_opencage {
+        GeocodeSubCmd::Opencage
+    } else if args.cmd_opencagenow {
+        now_cmd = true;
+        GeocodeSubCmd::OpencageNow
     } else if args.cmd_index_check {
         index_cmd = true;
         GeocodeSubCmd::IndexCheck
@@ -772,6 +955,15 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     }
 
     info!("Using cache directory: {}", geocode_cache_dir.display());
+
+    // OpenCage subcommands geocode online via the OpenCage API and do not use the
+    // local Geonames index, so dispatch before any index handling/loading.
+    if matches!(
+        geocode_cmd,
+        GeocodeSubCmd::Opencage | GeocodeSubCmd::OpencageNow
+    ) {
+        return run_opencage(args, geocode_cmd, &geocode_cache_dir).await;
+    }
 
     let geocode_index_filename = std::env::var("QSV_GEOCODE_INDEX_FILENAME")
         .unwrap_or_else(|_| DEFAULT_GEOCODE_INDEX_FILENAME.to_string());
@@ -1340,6 +1532,189 @@ async fn geocode_main(args: Args) -> CliResult<()> {
         if dyncols_len == 0 {
             util::update_cache_info!(progress, SEARCH_INDEX);
         }
+        util::finish_progress(&progress);
+    }
+    Ok(wtr.flush()?)
+}
+
+/// Run the `opencage` / `opencagenow` subcommands: online forward/reverse geocoding
+/// via the OpenCage API. Rows are processed sequentially behind a rate limiter, with
+/// a persistent on-disk result cache (OpenCage's TOS explicitly permits caching).
+/// This is a separate path from geocode_main's offline, rayon-parallel pipeline.
+async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResult<()> {
+    let now_cmd = mode == GeocodeSubCmd::OpencageNow;
+
+    // for opencagenow, write the single CLI value to a one-row temp CSV, so the rest
+    // of the pipeline (reader, headers, JSON quoting) is identical to opencage
+    let tempdir = tempfile::Builder::new().prefix("qsv-geocode").tempdir()?;
+    let input = if now_cmd {
+        let temp_csv_path = format!(
+            "{}/{}.csv",
+            tempdir.path().to_string_lossy(),
+            Uuid::new_v4()
+        );
+        let mut temp_csv_wtr = csv::WriterBuilder::new().from_path(&temp_csv_path)?;
+        temp_csv_wtr.write_record(["Location"])?;
+        temp_csv_wtr.write_record([&args.arg_location])?;
+        temp_csv_wtr.flush()?;
+        Some(temp_csv_path)
+    } else {
+        args.arg_input.clone()
+    };
+
+    let rconfig = Config::new(input.as_ref())
+        .delimiter(args.flag_delimiter)
+        .select(SelectColumns::parse(&args.arg_column)?);
+
+    #[cfg(feature = "datapusher_plus")]
+    let show_progress = false;
+    #[cfg(not(feature = "datapusher_plus"))]
+    let show_progress =
+        (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR")) && !rconfig.is_stdin();
+
+    let progress = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(5));
+    if show_progress {
+        util::prep_progress(&progress, util::count_rows(&rconfig)?);
+    } else {
+        progress.set_draw_target(ProgressDrawTarget::hidden());
+    }
+
+    // when a now subcommand outputs JSON, the CSV writer must not quote the output
+    // (and the "Location" header is omitted) so the result is valid JSON
+    let json_output =
+        now_cmd && (args.flag_formatstr == "%json" || args.flag_formatstr == "%pretty-json");
+
+    let mut rdr = rconfig.reader()?;
+    let mut wtr = Config::new(args.flag_output.as_ref())
+        .quote_style(if json_output {
+            csv::QuoteStyle::Never
+        } else {
+            csv::QuoteStyle::Necessary
+        })
+        .writer()?;
+
+    let header_record = rdr.byte_headers()?.clone();
+    let sel = rconfig.selection(&header_record)?;
+    let column_index = *sel.iter().next().unwrap();
+
+    let mut headers = rdr.headers()?.clone();
+    if let Some(new_name) = &args.flag_rename {
+        let new_col_names = util::ColumnNameParser::new(new_name).parse()?;
+        if new_col_names.len() != sel.len() {
+            return fail_incorrectusage_clierror!(
+                "Number of new columns does not match input column selection."
+            );
+        }
+        for (i, col_index) in sel.iter().enumerate() {
+            headers = replace_column_value(&headers, *col_index, &new_col_names[i]);
+        }
+    }
+    if let Some(new_column) = &args.flag_new_column {
+        headers.push_field(new_column);
+    }
+    if !json_output {
+        wtr.write_record(&headers)?;
+    }
+
+    // build the async HTTP client (rustls, honors --timeout)
+    let timeout = std::time::Duration::from_secs(util::timeout_secs(args.flag_timeout)?);
+    let client = reqwest::Client::builder()
+        .user_agent(util::set_user_agent(None)?)
+        .timeout(timeout)
+        .use_rustls_tls()
+        .brotli(true)
+        .gzip(true)
+        .deflate(true)
+        .zstd(true)
+        .build()?;
+
+    // rate limiter - allow_burst(1) avoids an initial burst (see governor#39)
+    // safety: flag_rate_limit is validated to be >= 1 in run()
+    let rate_limit = NonZeroU32::new(args.flag_rate_limit).unwrap();
+    let limiter =
+        RateLimiter::direct(Quota::per_second(rate_limit).allow_burst(NonZeroU32::new(1).unwrap()));
+
+    // persistent on-disk result cache (OpenCage's TOS explicitly permits caching)
+    let disk_cache = if args.flag_no_cache {
+        None
+    } else {
+        let cache = DiskCacheBuilder::new("geocode-opencage")
+            .set_disk_directory(cache_dir)
+            .set_lifespan(std::time::Duration::from_secs(args.flag_cache_ttl))
+            .set_refresh(false)
+            .build()
+            .map_err(|e| CliError::Other(format!("Error building OpenCage disk cache: {e}")))?;
+        let _ = cache.remove_expired_entries();
+        Some(cache)
+    };
+    let mut mem_cache: HashMap<String, String> = HashMap::new();
+
+    // safety: flag_api_key is resolved (flag > env) and validated non-empty in run()
+    let api_key = args.flag_api_key.as_deref().unwrap_or_default();
+    let invalid_result = args.flag_invalid_result.clone().unwrap_or_default();
+    let formatstr = args.flag_formatstr.as_str();
+    let language = if args.flag_language.is_empty() {
+        "en"
+    } else {
+        args.flag_language.as_str()
+    };
+    let countrycode = args.flag_country.as_deref();
+
+    let mut record = csv::StringRecord::new();
+    while rdr.read_record(&mut record)? {
+        let cell = record.get(column_index).unwrap_or_default().to_string();
+        let out_cell = if cell.trim().is_empty() {
+            // empty cell - leave the row untouched
+            cell.clone()
+        } else if let Some(query) = normalize_opencage_query(&cell, args.flag_reverse) {
+            match opencage_lookup(
+                &client,
+                &limiter,
+                disk_cache.as_ref(),
+                &mut mem_cache,
+                api_key,
+                &query,
+                formatstr,
+                language,
+                countrycode,
+                args.flag_no_annotations,
+            )
+            .await
+            {
+                Ok(Some(result)) => result,
+                Ok(None) if invalid_result.is_empty() => cell.clone(),
+                Ok(None) => invalid_result.clone(),
+                Err(OcError::Fatal(msg)) => return fail_clierror!("{msg}"),
+                Err(OcError::Transient(msg)) => {
+                    log::warn!("OpenCage lookup failed for {cell:?}: {msg}");
+                    if invalid_result.is_empty() {
+                        cell.clone()
+                    } else {
+                        invalid_result.clone()
+                    }
+                },
+            }
+        } else if invalid_result.is_empty() {
+            // --reverse is set but the cell is not a WGS-84 coordinate
+            cell.clone()
+        } else {
+            invalid_result.clone()
+        };
+
+        let out_record = if args.flag_new_column.is_some() {
+            let mut new_record = record.clone();
+            new_record.push_field(&out_cell);
+            new_record
+        } else {
+            replace_column_value(&record, column_index, &out_cell)
+        };
+        wtr.write_record(&out_record)?;
+        if show_progress {
+            progress.inc(1);
+        }
+    }
+
+    if show_progress {
         util::finish_progress(&progress);
     }
     Ok(wtr.flush()?)
@@ -2119,6 +2494,320 @@ fn format_result(
             INVALID_DYNFMT.to_string()
         }
     }
+}
+
+/// Helper: return the first present OpenCage component (as a plain string) from `keys`.
+fn opencage_component(r: &OpencageResult, keys: &[&str]) -> String {
+    for key in keys {
+        if let Some(value) = r.components.get(*key) {
+            return opencage_value_to_string(value);
+        }
+    }
+    String::new()
+}
+
+/// Helper: convert a serde_json::Value to a plain (unquoted) string.
+fn opencage_value_to_string(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+/// Helper: walk a serde_json::Value by a dotted path (e.g. "timezone.name").
+fn opencage_json_dotpath(value: &serde_json::Value, path: &str) -> String {
+    let mut current = value;
+    for part in path.split('.') {
+        match current.get(part) {
+            Some(next) => current = next,
+            None => return String::new(),
+        }
+    }
+    opencage_value_to_string(current)
+}
+
+/// Helper: resolve a single dynamic-format field for an OpenCage result.
+/// Returns None for an unrecognized key (which makes the whole template invalid).
+fn opencage_field_value(r: &OpencageResult, key: &str) -> Option<String> {
+    match key {
+        "formatted" => Some(r.formatted.clone()),
+        "lat" => Some(r.geometry.lat.to_string()),
+        "lng" => Some(r.geometry.lng.to_string()),
+        "confidence" => Some(r.confidence.to_string()),
+        _ => {
+            if let Some(name) = key.strip_prefix("components.") {
+                Some(
+                    r.components
+                        .get(name)
+                        .map(opencage_value_to_string)
+                        .unwrap_or_default(),
+                )
+            } else {
+                key.strip_prefix("annotations.")
+                    .map(|path| opencage_json_dotpath(&r.annotations, path))
+            }
+        },
+    }
+}
+
+/// Build a JSON object from an OpenCage result for the %json / %pretty-json formats.
+fn opencage_result_json(r: &OpencageResult, no_annotations: bool) -> serde_json::Value {
+    let mut obj = json!({
+        "formatted": r.formatted,
+        "confidence": r.confidence,
+        "geometry": {"lat": r.geometry.lat, "lng": r.geometry.lng},
+        "components": r.components,
+    });
+    if !no_annotations && !r.annotations.is_null() {
+        obj["annotations"] = r.annotations.clone();
+    }
+    obj
+}
+
+/// Format an OpenCage geocoding result per `formatstr`.
+/// Supports predefined %-formats and dotted-key dynamic templating.
+/// Unlike format_result(), this is bound to the OpenCage response shape, not Geonames.
+fn format_opencage_result(r: &OpencageResult, formatstr: &str, no_annotations: bool) -> String {
+    if formatstr.starts_with('%') {
+        match formatstr {
+            "%+" | "%formatted" => r.formatted.clone(),
+            "%lat-long" => format!("{}, {}", r.geometry.lat, r.geometry.lng),
+            "%location" => format!("({}, {})", r.geometry.lat, r.geometry.lng),
+            "%city" => opencage_component(
+                r,
+                &[
+                    "city",
+                    "town",
+                    "village",
+                    "municipality",
+                    "hamlet",
+                    "locality",
+                ],
+            ),
+            "%state" | "%admin1" => opencage_component(r, &["state", "province", "region"]),
+            "%county" | "%admin2" => {
+                opencage_component(r, &["county", "state_district", "district"])
+            },
+            "%country" => opencage_component(r, &["country_code"]).to_uppercase(),
+            "%country_name" => opencage_component(r, &["country"]),
+            "%postcode" => opencage_component(r, &["postcode"]),
+            "%confidence" => r.confidence.to_string(),
+            "%json" => serde_json::to_string(&opencage_result_json(r, no_annotations))
+                .unwrap_or_else(|_| "null".to_string()),
+            "%pretty-json" => {
+                serde_json::to_string_pretty(&opencage_result_json(r, no_annotations))
+                    .unwrap_or_else(|_| "null".to_string())
+            },
+            // unknown %-format, fall back to the default (the formatted address)
+            _ => r.formatted.clone(),
+        }
+    } else {
+        // dynamic templating with dotted keys, e.g.
+        // "{components.city}, {annotations.timezone.name}"
+        let re = OPENCAGE_FORMATSTR_REGEX();
+        let mut fields: HashMap<String, String> = HashMap::new();
+        for caps in re.captures_iter(formatstr) {
+            let key = caps[1].to_string();
+            if fields.contains_key(&key) {
+                continue;
+            }
+            let Some(value) = opencage_field_value(r, &key) else {
+                return INVALID_DYNFMT.to_string();
+            };
+            fields.insert(key, value);
+        }
+        re.replace_all(formatstr, |caps: &regex::Captures| {
+            fields.get(&caps[1]).cloned().unwrap_or_default()
+        })
+        .into_owned()
+    }
+}
+
+/// Normalize a query cell for the OpenCage API.
+/// If the cell (after stripping one pair of surrounding parens) is entirely a
+/// WGS-84 coordinate, returns a bare "lat,long" string for reverse geocoding.
+/// Otherwise, for forward geocoding, returns the trimmed cell as-is.
+/// When `reverse` is set, a non-coordinate cell returns None (an invalid row).
+fn normalize_opencage_query(cell: &str, reverse: bool) -> Option<String> {
+    let trimmed = cell.trim();
+    let mut coord_candidate = trimmed;
+    if coord_candidate.starts_with('(') && coord_candidate.ends_with(')') {
+        coord_candidate = coord_candidate[1..coord_candidate.len() - 1].trim();
+    }
+    if let Some(caps) = LOCATION_REGEX().captures(coord_candidate)
+        && let Some(m) = caps.get(0)
+        && m.start() == 0
+        && m.end() == coord_candidate.len()
+    {
+        // the whole cell is a coordinate -> normalize to bare "lat,long"
+        return Some(format!("{},{}", &caps[1], &caps[2]));
+    }
+    if reverse {
+        // --reverse forces coordinate input; a non-coordinate cell is invalid
+        None
+    } else {
+        // forward geocoding: pass the address as-is
+        Some(trimmed.to_string())
+    }
+}
+
+/// Encode an OpenCage lookup outcome for the string-valued cache.
+/// `Some(s)` is stored as "F"+s; `None` (zero results) is stored as "N".
+fn encode_opencage_cache(outcome: Option<&str>) -> String {
+    match outcome {
+        Some(s) => format!("F{s}"),
+        None => "N".to_string(),
+    }
+}
+
+/// Decode a cached OpenCage lookup outcome (see encode_opencage_cache).
+fn decode_opencage_cache(encoded: &str) -> Option<String> {
+    if encoded == "N" {
+        None
+    } else {
+        Some(encoded.get(1..).unwrap_or_default().to_string())
+    }
+}
+
+/// Call the OpenCage Geocoding API for a single (already normalized) query.
+/// The same `q` parameter does forward geocoding for an address and reverse
+/// geocoding for a "lat,long" coordinate.
+async fn opencage_fetch(
+    client: &reqwest::Client,
+    limiter: &DefaultDirectRateLimiter,
+    api_key: &str,
+    query: &str,
+    language: &str,
+    countrycode: Option<&str>,
+    no_annotations: bool,
+) -> Result<OpencageResponse, OcError> {
+    // respect the configured rate limit before hitting the API
+    limiter.until_ready().await;
+
+    let no_ann = if no_annotations { "1" } else { "0" };
+    let cc_lower = countrycode.map(str::to_lowercase);
+    let mut params: Vec<(&str, &str)> = vec![
+        ("q", query),
+        ("key", api_key),
+        ("limit", "1"),
+        ("language", language),
+        ("no_annotations", no_ann),
+        ("abbrv", "0"),
+    ];
+    if let Some(cc) = &cc_lower {
+        params.push(("countrycode", cc.as_str()));
+    }
+
+    let url = Url::parse_with_params("https://api.opencagedata.com/geocode/v1/json", &params)
+        .map_err(|e| OcError::Transient(format!("OpenCage URL build error: {e}")))?;
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| OcError::Transient(format!("OpenCage network error: {e}")))?;
+
+    let status = resp.status().as_u16();
+    match status {
+        200 => {},
+        401 | 403 => {
+            return Err(OcError::Fatal(format!(
+                "OpenCage rejected the API key (HTTP {status}). Check --api-key or the \
+                 QSV_OPENCAGE_API_KEY environment variable."
+            )));
+        },
+        402 => {
+            return Err(OcError::Fatal(
+                "OpenCage quota exceeded (HTTP 402). The free tier allows 2,500 requests/day."
+                    .to_string(),
+            ));
+        },
+        429 => {
+            return Err(OcError::Transient(
+                "OpenCage rate-limited the request (HTTP 429).".to_string(),
+            ));
+        },
+        code => {
+            return Err(OcError::Transient(format!(
+                "OpenCage returned HTTP {code}."
+            )));
+        },
+    }
+
+    let parsed: OpencageResponse = resp
+        .json()
+        .await
+        .map_err(|e| OcError::Transient(format!("OpenCage response error: {e}")))?;
+
+    // OpenCage also echoes the status code in the JSON body
+    match parsed.status.code {
+        401 | 403 => Err(OcError::Fatal(
+            "OpenCage rejected the API key. Check --api-key or the QSV_OPENCAGE_API_KEY \
+             environment variable."
+                .to_string(),
+        )),
+        402 => Err(OcError::Fatal(
+            "OpenCage quota exceeded. The free tier allows 2,500 requests/day.".to_string(),
+        )),
+        _ => Ok(parsed),
+    }
+}
+
+/// Geocode a single normalized query via OpenCage, with caching.
+/// Checks the in-run memory cache, then the persistent on-disk cache, and only
+/// then hits the API. Successful lookups (including zero-result lookups) are
+/// cached; `OcError::Fatal` aborts the run and is never cached.
+#[allow(clippy::too_many_arguments)]
+async fn opencage_lookup(
+    client: &reqwest::Client,
+    limiter: &DefaultDirectRateLimiter,
+    disk_cache: Option<&DiskCache<String, String>>,
+    mem_cache: &mut HashMap<String, String>,
+    api_key: &str,
+    query: &str,
+    formatstr: &str,
+    language: &str,
+    countrycode: Option<&str>,
+    no_annotations: bool,
+) -> Result<Option<String>, OcError> {
+    let cache_key = format!(
+        "{query}|{language}|{cc}|{formatstr}|{no_annotations}",
+        cc = countrycode.unwrap_or_default()
+    );
+
+    if let Some(encoded) = mem_cache.get(&cache_key) {
+        return Ok(decode_opencage_cache(encoded));
+    }
+    if let Some(dc) = disk_cache
+        && let Ok(Some(encoded)) = dc.cache_get(&cache_key)
+    {
+        let decoded = decode_opencage_cache(&encoded);
+        mem_cache.insert(cache_key, encoded);
+        return Ok(decoded);
+    }
+
+    let response = opencage_fetch(
+        client,
+        limiter,
+        api_key,
+        query,
+        language,
+        countrycode,
+        no_annotations,
+    )
+    .await?;
+
+    let outcome = response
+        .results
+        .first()
+        .map(|r| format_opencage_result(r, formatstr, no_annotations));
+
+    let encoded = encode_opencage_cache(outcome.as_deref());
+    if let Some(dc) = disk_cache {
+        let _ = dc.cache_set(cache_key.clone(), encoded.clone());
+    }
+    mem_cache.insert(cache_key, encoded);
+    Ok(outcome)
 }
 
 /// get_countryinfo is a cached function that returns a countryinfo result for a given cell value.

@@ -52,7 +52,7 @@
 | [fmt](docs/help/fmt.md) | Reformat a CSV with different delimiters, record terminators or quoting rules. (Supports ASCII delimited data.)  |
 | [foreach](docs/help/foreach.md)✨ | Execute a shell command once per record in a given CSV file. |
 | [frequency](docs/help/frequency.md)<br>📇😣🏎️👆🪄![Luau](docs/images/luau.png) | Build [frequency distribution tables](https://en.wikipedia.org/wiki/Frequency_(statistics)) of each column. Uses multithreading to go faster if an index is present (Examples: [CSV](scripts/nyc311-1m.freqs.csv) [JSON](scripts/nyc311-1m.freqs.json) [TOON](scripts/nyc311-1m.freqs.toon)). |
-| [geocode](docs/help/geocode.md)✨<br>📇🧠🚀🌐🔣👆🌎 | Geocodes a location against an updatable local copy of the [Geonames](https://www.geonames.org/) cities & the [Maxmind GeoLite2](https://www.maxmind.com/en/geolite-free-ip-geolocation-data) databases. With caching and multi-threading, it geocodes up to 360,000 records/sec! |
+| [geocode](docs/help/geocode.md)✨<br>📇🧠🚀🌐🔣👆🌎 | Geocodes a location against an updatable local copy of the [Geonames](https://www.geonames.org/) cities & the [Maxmind GeoLite2](https://www.maxmind.com/en/geolite-free-ip-geolocation-data) databases, or online via the [OpenCage](https://opencagedata.com) geocoding API. With caching and multi-threading, it geocodes up to 360,000 records/sec! |
 | [geoconvert](docs/help/geoconvert.md)✨<br>🌎 | Convert between various spatial formats and CSV/SVG including GeoJSON, SHP, and more. |
 | [headers](docs/help/headers.md)<br>🗄️ | Show the headers of a CSV. Or show the intersection of all headers between many CSV files. |
 | [implode](docs/help/implode.md)<br>😣👆 | Implode rows by grouping on key column(s) and joining a value column with a given separator. The inverse of `explode`. |

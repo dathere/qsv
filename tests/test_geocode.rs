@@ -1981,3 +1981,140 @@ fn geocode_iplookupnow_invalid_url() {
     // Invalid URL should return the input as-is
     assert!(got.contains("not-a-valid-url"));
 }
+
+// ---------------------------------------------------------------------------
+// OpenCage online geocoding tests.
+// The geocode_opencage* tests below hit the live OpenCage API, so they are
+// #[ignore]'d by default. Run them with a free OpenCage API key:
+//   QSV_OPENCAGE_API_KEY=<key> cargo test -F all_features geocode_opencage -- --ignored
+// ---------------------------------------------------------------------------
+
+#[test]
+#[serial]
+fn geocode_opencage_missing_api_key() {
+    // this runs in CI: no --api-key and no QSV_OPENCAGE_API_KEY -> clean error
+    let wrk = Workdir::new("geocode_opencage_missing_api_key");
+    let mut cmd = wrk.command("geocode");
+    cmd.env_remove("QSV_OPENCAGE_API_KEY");
+    cmd.arg("opencagenow").arg("Brooklyn, NY");
+
+    wrk.assert_err(&mut cmd);
+
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(got.contains("requires an API key"));
+}
+
+#[test]
+#[serial]
+fn geocode_opencage_admin1_rejected() {
+    // this runs in CI: --admin1 is not supported by the opencage subcommands
+    let wrk = Workdir::new("geocode_opencage_admin1_rejected");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["--api-key", "dummy-key-for-arg-validation"])
+        .args(["--admin1", "US.NY"]);
+
+    wrk.assert_err(&mut cmd);
+
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(got.contains("--admin1"));
+}
+
+#[test]
+#[serial]
+#[ignore = "requires an OpenCage API key (set QSV_OPENCAGE_API_KEY)"]
+fn geocode_opencage() {
+    let wrk = Workdir::new("geocode_opencage");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Location"],
+            svec!["1600 Pennsylvania Ave NW, Washington DC"], // forward
+            svec!["40.71427, -74.00597"],                     // reverse (auto-detected)
+            svec![""],                                        // empty -> passthrough
+        ],
+    );
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencage").arg("Location").arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 4);
+    assert_eq!(got[0], svec!["Location"]);
+    // forward & reverse rows are geocoded (changed from the input)
+    assert_ne!(got[1][0], "1600 Pennsylvania Ave NW, Washington DC");
+    assert!(!got[1][0].is_empty());
+    assert_ne!(got[2][0], "40.71427, -74.00597");
+    assert!(!got[2][0].is_empty());
+    // empty cell is passed through untouched
+    assert_eq!(got[3], svec![""]);
+}
+
+#[test]
+#[serial]
+#[ignore = "requires an OpenCage API key (set QSV_OPENCAGE_API_KEY)"]
+fn geocode_opencagenow_forward() {
+    let wrk = Workdir::new("geocode_opencagenow_forward");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["-f", "%location"]);
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    // %location format is "(lat, long)"
+    assert!(got.contains('(') && got.contains(','));
+}
+
+#[test]
+#[serial]
+#[ignore = "requires an OpenCage API key (set QSV_OPENCAGE_API_KEY)"]
+fn geocode_opencagenow_reverse() {
+    let wrk = Workdir::new("geocode_opencagenow_reverse");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow").arg("40.71427, -74.00597");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    // a reverse geocode of a NYC coordinate should mention New York
+    assert!(got.to_lowercase().contains("new york") || got.to_lowercase().contains("york"));
+}
+
+#[test]
+#[serial]
+#[ignore = "requires an OpenCage API key (set QSV_OPENCAGE_API_KEY)"]
+fn geocode_opencagenow_json() {
+    let wrk = Workdir::new("geocode_opencagenow_json");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["-f", "%json"]);
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    // %json on a now subcommand emits valid JSON (no "Location" header)
+    let parsed: serde_json::Value = serde_json::from_str(got.trim()).unwrap();
+    assert!(parsed.get("formatted").is_some());
+    assert!(parsed.get("geometry").is_some());
+}
+
+#[test]
+#[serial]
+#[ignore = "requires an OpenCage API key (set QSV_OPENCAGE_API_KEY)"]
+fn geocode_opencagenow_dynfmt() {
+    let wrk = Workdir::new("geocode_opencagenow_dynfmt");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["-f", "{components.country}"]);
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert!(got.to_lowercase().contains("united states"));
+}

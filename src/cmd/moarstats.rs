@@ -517,7 +517,7 @@ fn join_datasets_internal(
     additional_inputs: &[String],
     join_keys: &[String],
     join_type: &str,
-) -> CliResult<PathBuf> {
+) -> CliResult<(PathBuf, Vec<String>)> {
     use std::collections::HashSet;
 
     use tempfile::TempPath;
@@ -593,6 +593,13 @@ fn join_datasets_internal(
     #[allow(clippy::collection_is_never_read)]
     let mut intermediate_temps: Vec<TempPath> =
         Vec::with_capacity(additional_inputs.len().saturating_sub(1));
+
+    // Header of the final joined CSV, captured from the last join step's
+    // already-validated read. Returned to the caller so downstream stats
+    // coverage checks can validate against a trusted header instead of an
+    // independent re-read of the joined temp file (which, under heavy
+    // parallel load, has been observed to come back short).
+    let mut final_joined_headers: Vec<String> = Vec::new();
 
     for (i, (additional_input, next_key)) in additional_inputs
         .iter()
@@ -722,11 +729,12 @@ fn join_datasets_internal(
         log::debug!("Join step {i} header: {joined_headers:?}");
 
         // Update for next iteration
+        final_joined_headers.clone_from(&joined_headers);
         current_input = output_path_str;
         current_key.clone_from(next_key);
     }
 
-    Ok(temp_path)
+    Ok((temp_path, final_joined_headers))
 }
 
 /// Compute Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
@@ -3290,6 +3298,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Handle multi-dataset join if requested
     let temp_joined_path: Option<PathBuf>;
+    // Header of the joined CSV (empty when not joining). Used to validate that
+    // the joined-stats subprocess produced a record for every joined column.
+    let mut joined_csv_header: Vec<String> = Vec::new();
     let actual_input_path = if let Some(ref join_inputs_str) = args.flag_join_inputs {
         let additional_inputs: Vec<String> = join_inputs_str
             .split(',')
@@ -3306,8 +3317,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .collect();
         let join_type = args.flag_join_type.as_deref().unwrap_or("inner");
 
-        let joined_path =
+        let (joined_path, joined_header) =
             join_datasets_internal(input_path, &additional_inputs, &join_keys, join_type)?;
+        joined_csv_header = joined_header;
         // Belt-and-suspenders: fsync the joined CSV's parent directory so the
         // directory entry is durable for the follow-up `qsv stats` subprocess.
         // `fsync(file)` on Linux doesn't flush parent dir metadata, and rare
@@ -3357,7 +3369,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Determine stats CSV path
     // If we joined datasets, we need stats for the joined dataset, but write bivariate stats
-    // based on the original input path
+    // based on the original input path.
+    // For the joined path, the coverage-validated stats CSV content is
+    // captured here so it does NOT have to be re-read (and possibly observed
+    // short) further below.
+    let mut prevalidated_stats_content: Option<String> = None;
     let stats_csv_path = if temp_joined_path.is_some() {
         // For joined datasets, generate stats for the joined dataset
         // Use a temp stats CSV file
@@ -3393,10 +3409,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .to_string_lossy()
             .to_string();
 
-        // Run `qsv stats` on the joined CSV, fsync its output, and read
-        // back the stats output's `field` column values. Returns the set
-        // of columns the stats subprocess produced records for.
-        let run_stats_subprocess = || -> CliResult<std::collections::HashSet<String>> {
+        // Run `qsv stats` on the joined CSV, fsync its output, then read the
+        // ENTIRE stats CSV back as one string. The `field`-column coverage
+        // set is parsed from that same string, so the validated set and the
+        // content handed downstream are guaranteed to be the same snapshot —
+        // there is no separate, unvalidated re-read that could observe a
+        // short file.
+        let run_stats_subprocess = || -> CliResult<(String, std::collections::HashSet<String>)> {
             let mut cmd = Command::new(&qsv_path);
             cmd.arg("stats")
                 .args(&stats_cmd_args)
@@ -3413,21 +3432,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 );
             }
             // Force a flush of the stats subprocess output to disk before
-            // any follow-up read. Same rationale as in
-            // `join_datasets_internal`: macOS APFS under heavy parallel
-            // load has been observed to hand back a short/empty file to
-            // the next open() without this fsync.
+            // reading it back. Same rationale as in `join_datasets_internal`:
+            // under heavy parallel load a follow-up open() has been observed
+            // to hand back a short/empty file without this fsync.
             util::sync_subprocess_output(&temp_stats_path)?;
 
+            let content = fs::read_to_string(&temp_stats_path).map_err(|e| {
+                CliError::Other(format!(
+                    "Failed to read joined-stats output ({}): {e}",
+                    temp_stats_path.display()
+                ))
+            })?;
             let mut rdr = csv::ReaderBuilder::new()
                 .has_headers(true)
-                .from_path(&temp_stats_path)
-                .map_err(|e| {
-                    CliError::Other(format!(
-                        "Failed to open joined-stats output to validate header ({}): {e}",
-                        temp_stats_path.display()
-                    ))
-                })?;
+                .from_reader(content.as_bytes());
             let hdrs: Vec<String> = rdr
                 .headers()
                 .map_err(|e| CliError::Other(format!("Failed to read joined-stats header: {e}")))?
@@ -3459,65 +3477,53 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     field_values.insert(v.to_string());
                 }
             }
-            Ok(field_values)
+            Ok((content, field_values))
         };
 
-        // Read the joined CSV's column names so we can verify the stats
-        // subprocess produced a record for each one.
-        let joined_input_headers: Vec<String> = {
-            let mut joined_rdr = csv::ReaderBuilder::new()
-                .has_headers(true)
-                .from_path(actual_input_path)
-                .map_err(|e| {
-                    CliError::Other(format!(
-                        "Failed to open joined CSV to validate stats coverage ({}): {e}",
-                        actual_input_path.display()
-                    ))
-                })?;
-            joined_rdr
-                .headers()
-                .map_err(|e| CliError::Other(format!("Failed to read joined CSV header: {e}")))?
+        // Verify the stats output has a record for every column of the joined
+        // CSV. `joined_csv_header` is the header `join_datasets_internal`
+        // already read AND validated, so it is a trustworthy reference —
+        // unlike a fresh re-read of the joined temp file, which under heavy
+        // parallel load has been observed to come back short (CI runs
+        // 25545197594, 26137827735). Retry up to 3x — re-syncing the joined
+        // CSV and re-running stats — so a transient short read is absorbed
+        // rather than silently producing primary-only bivariate output. If a
+        // column is still missing after the retries, fail loud.
+        let missing_cols = |found: &std::collections::HashSet<String>| -> Vec<String> {
+            joined_csv_header
                 .iter()
-                .map(std::string::ToString::to_string)
+                .filter(|h| !found.contains(h.as_str()))
+                .cloned()
                 .collect()
         };
-
-        // Run `qsv stats` and verify coverage. On the rare Linux page-cache
-        // race (CI run 25545197594) the subprocess has been observed to
-        // produce stats for fewer columns than the joined CSV actually has.
-        // Retry once silently with a re-fsync of the joined CSV; if the
-        // mismatch persists, fail loud.
-        let mut stats_field_values = run_stats_subprocess()?;
-        let mut missing: Vec<String> = joined_input_headers
-            .iter()
-            .filter(|h| !stats_field_values.contains(h.as_str()))
-            .cloned()
-            .collect();
-        if !missing.is_empty() {
+        let (mut validated_content, mut stats_field_values) = run_stats_subprocess()?;
+        let mut missing = missing_cols(&stats_field_values);
+        let mut attempt = 1u32;
+        while !missing.is_empty() && attempt < 3 {
             log::warn!(
-                "Joined-stats subprocess output missing columns {missing:?}; re-syncing joined \
-                 CSV and retrying stats once"
+                "Joined-stats output missing columns {missing:?} after attempt {attempt}; \
+                 re-syncing joined CSV and re-running stats"
             );
             util::sync_subprocess_output(actual_input_path)?;
-            stats_field_values = run_stats_subprocess()?;
-            missing = joined_input_headers
-                .iter()
-                .filter(|h| !stats_field_values.contains(h.as_str()))
-                .cloned()
-                .collect();
-            if !missing.is_empty() {
-                return fail_clierror!(
-                    "Joined-stats subprocess output is still missing stats records for columns \
-                     {missing:?} after one retry: joined CSV has {} columns \
-                     ({joined_input_headers:?}), but stats output's `field` column only contains \
-                     {} of them ({stats_field_values:?}). Stats output: {}",
-                    joined_input_headers.len(),
-                    stats_field_values.len(),
-                    temp_stats_path.display()
-                );
-            }
+            let (content, field_values) = run_stats_subprocess()?;
+            validated_content = content;
+            stats_field_values = field_values;
+            missing = missing_cols(&stats_field_values);
+            attempt += 1;
+        }
+        if !missing.is_empty() {
+            return fail_clierror!(
+                "Joined-stats subprocess output is still missing stats records for columns \
+                 {missing:?} after {attempt} attempts: the joined CSV has {} column(s) \
+                 ({joined_csv_header:?}), but the stats output's `field` column only covers {} of \
+                 them ({stats_field_values:?}). Stats output: {}",
+                joined_csv_header.len(),
+                stats_field_values.len(),
+                temp_stats_path.display()
+            );
         }
 
+        prevalidated_stats_content = Some(validated_content);
         temp_stats_path
     } else {
         // For single dataset, use normal stats CSV path
@@ -3554,8 +3560,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         path
     };
 
-    // Read the stats CSV file
-    let stats_csv_content = fs::read_to_string(&stats_csv_path)?;
+    // Read the stats CSV file. For the joined path we already hold the
+    // coverage-validated content captured above, so reuse it instead of
+    // performing a second, unvalidated read of the temp stats file.
+    let stats_csv_content = match prevalidated_stats_content {
+        Some(content) => content,
+        None => fs::read_to_string(&stats_csv_path)?,
+    };
 
     // Parse the stats CSV
     let mut rdr = ReaderBuilder::new()
@@ -4330,11 +4341,74 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         };
 
-        // Get CSV headers to map field names to column indices
-        let mut csv_rdr = ReaderBuilder::new()
-            .has_headers(true)
-            .from_path(actual_input_path)?;
-        let csv_headers = csv_rdr.headers()?.clone();
+        // Collect all field names from the stats CSV (the `field` column has
+        // one row per column of the joined CSV, regardless of type).
+        // Computed before the header read so the joined-input path can
+        // verify the joined CSV's header covers every stats field.
+        let stats_field_names: Vec<String> = records
+            .iter()
+            .filter_map(|r| {
+                field_idx
+                    .and_then(|idx| r.get(idx))
+                    .map(std::string::ToString::to_string)
+            })
+            .collect();
+
+        // Read the input/joined CSV header to map field names to column
+        // indices. Wrapped in a closure so the joined-input path can retry
+        // the read after an fsync.
+        let read_csv_headers = || -> CliResult<StringRecord> {
+            let mut csv_rdr = ReaderBuilder::new()
+                .has_headers(true)
+                .from_path(actual_input_path)?;
+            Ok(csv_rdr.headers()?.clone())
+        };
+
+        let csv_headers = if temp_joined_path.is_some() {
+            // For joined inputs, the stats CSV was freshly computed FROM the
+            // joined CSV, so every stats field MUST appear in the joined
+            // CSV's header. A column missing here means this follow-up read
+            // saw a short/stale view of the joined temp file — the same
+            // page-cache race already guarded against in
+            // `join_datasets_internal` and the joined-stats block. fsync and
+            // retry once; if a column is still missing, fail loud rather
+            // than silently dropping bivariate pairs (lines below `continue`
+            // on a header miss) and emitting "primary-only" join-corrupt
+            // output.
+            util::sync_subprocess_output(actual_input_path)?;
+            let missing_cols = |hdrs: &StringRecord| -> Vec<String> {
+                let header_set: std::collections::HashSet<&str> = hdrs.iter().collect();
+                stats_field_names
+                    .iter()
+                    .filter(|f| !header_set.contains(f.as_str()))
+                    .cloned()
+                    .collect()
+            };
+            let mut headers = read_csv_headers()?;
+            let mut missing = missing_cols(&headers);
+            if !missing.is_empty() {
+                log::warn!(
+                    "Joined CSV header missing columns {missing:?} present in the stats output; \
+                     re-syncing joined CSV and re-reading its header once"
+                );
+                util::sync_subprocess_output(actual_input_path)?;
+                headers = read_csv_headers()?;
+                missing = missing_cols(&headers);
+                if !missing.is_empty() {
+                    return fail_clierror!(
+                        "Joined CSV header is still missing columns {missing:?} after one retry: \
+                         the stats output covers {} column(s) ({stats_field_names:?}), but the \
+                         joined CSV header only has {:?}. This indicates silent join corruption — \
+                         aborting instead of emitting primary-only bivariate output.",
+                        stats_field_names.len(),
+                        headers.iter().collect::<Vec<_>>()
+                    );
+                }
+            }
+            headers
+        } else {
+            read_csv_headers()?
+        };
 
         // Store field names for index-to-name lookups (used for output and frequency cache)
         let field_names: Vec<String> = csv_headers
@@ -4348,16 +4422,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // u16 supports up to 65,535 columns, which is more than sufficient for any CSV
         let mut field_pairs: HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)> =
             HashMap::new();
-
-        // Collect all numeric/date/string field names from stats CSV
-        let stats_field_names: Vec<String> = records
-            .iter()
-            .filter_map(|r| {
-                field_idx
-                    .and_then(|idx| r.get(idx))
-                    .map(std::string::ToString::to_string)
-            })
-            .collect();
 
         for (i, field1_name) in stats_field_names.iter().enumerate() {
             let field1_type_str = records.get(i).and_then(|r| r.get(type_idx)).unwrap_or("");

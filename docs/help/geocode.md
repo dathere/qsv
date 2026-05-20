@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/geocode.rs](https://github.com/dathere/qsv/blob/master/src/cmd/geocode.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🧠](TableOfContents.md#legend "expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")[🌐](TableOfContents.md#legend "has web-aware options.")[🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")[🌎](TableOfContents.md#legend "has geospatial capabilities.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Geocode Options](#geocode-options) | [Suggest Only Options](#suggest-only-options) | [Reverse Only Option](#reverse-only-option) | [Opencage Only Options](#opencage-only-options) | [Dynamic Formatting Options](#dynamic-formatting-options) | [Index-Update Only Options](#index-update-only-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Geocode Options](#geocode-options) | [Suggest Only Options](#suggest-only-options) | [Reverse Only Option](#reverse-only-option) | [Opencage Only Options](#opencage-only-options) | [Dynamic Formatting Options](#dynamic-formatting-options) | [Cache-Prune Only Option](#cache-prune-only-option) | [Index-Update Only Options](#index-update-only-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -30,7 +30,7 @@ By default, the prebuilt index uses the Geonames Gazeteer cities15000.zip file u
 English names. It contains cities with populations > 15,000 (about ~26k cities).
 See <https://download.geonames.org/export/dump/> for more information.
 
-It has eleven major subcommands:  
+It has twelve major subcommands:  
 * suggest        - given a partial City name, return the closest City's location metadata
 per the local Geonames cities index (Jaro-Winkler distance)
 * suggestnow     - same as suggest, but using a partial City name from the command line,
@@ -55,6 +55,8 @@ Forward-geocodes a free-form address, or reverse-geocodes a
 command line, instead of CSV data.
 * index-*        - operations to update the local Geonames cities index.
 (index-check, index-update, index-load & index-reset)
+* cache-*        - operations to manage the persistent on-disk OpenCage result cache.
+(cache-clear, cache-prune & cache-info)
 
 ### Suggest
 
@@ -378,6 +380,48 @@ $ qsv geocode index-load my_geonames_index.rkyv
 ```
 
 
+CACHE-<operation>
+Manage the persistent on-disk OpenCage result cache used by the opencage subcommands.
+This cache is separate from the Geonames cities index and is only populated by the
+opencage/opencagenow subcommands. It lives in {cache-dir}/geocode-opencage_v1.
+
+It has three operations:  
+* clear  - wipe the entire OpenCage disk cache, removing all cached results.
+* prune  - delete cache entries older than the --older-than value. The value is either
+an absolute date/datetime (e.g. 2025-01-31, "2025-01-31 12:00:00") or a
+relative age with a unit suffix - s(econds), m(inutes), h(ours), d(ays) or
+w(eeks). e.g. 30d, 2w, 48h, 90m, 3600s.
+* info   - report the cache directory, entry count, on-disk size and the oldest/newest
+cached entry timestamps. Emits a JSON summary to stdout.
+
+Wipe the entire OpenCage cache.
+
+```console
+$ qsv geocode cache-clear
+```
+
+
+Delete cached entries older than 30 days.
+
+```console
+$ qsv geocode cache-prune --older-than 30d
+```
+
+
+Delete cached entries created before a specific date.
+
+```console
+$ qsv geocode cache-prune --older-than 2025-01-01
+```
+
+
+Show cache statistics.
+
+```console
+$ qsv geocode cache-info
+```
+
+
 
 <a name="examples"></a>
 
@@ -423,6 +467,9 @@ qsv geocode index-load <index-file>
 qsv geocode index-check
 qsv geocode index-update [--languages=<lang>] [--cities-url=<url>] [--force] [--timeout=<seconds>]
 qsv geocode index-reset
+qsv geocode cache-clear [options]
+qsv geocode cache-prune --older-than=<val> [options]
+qsv geocode cache-info [options]
 qsv geocode --help
 ```
 
@@ -488,7 +535,15 @@ qsv geocode --help
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
 | &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading Geonames cities index. | `120` |
-| &nbsp;`‑‑cache‑dir`&nbsp; | string | The directory to use for caching the Geonames cities index. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
+| &nbsp;`‑‑cache‑dir`&nbsp; | string | The directory to use for caching the Geonames cities index and the persistent on-disk OpenCage result cache. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
+
+<a name="cache-prune-only-option"></a>
+
+## Cache-Prune Only Option [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`‑‑older‑than`&nbsp; | string | Delete OpenCage cache entries older than this value. Accepts an absolute date/datetime (e.g. 2025-01-31) or a relative age with a unit suffix (s/m/h/d/w = seconds, minutes, hours, days or weeks; e.g. 30d, 2w, 48h). Required by the cache-prune subcommand. |  |
 
 <a name="index-update-only-options"></a>
 

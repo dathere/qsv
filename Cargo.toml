@@ -264,6 +264,7 @@ reqwest = { version = "0.13", features = [
     "zstd",
 ], default-features = false }
 rfd = { version = "0.17", optional = true }
+rmp-serde = { version = "1.3", optional = true }
 rust_decimal = { version = "1.42", default-features = false }
 sanitize-filename = { version = "0.6", optional = true }
 simd-json = "0.17"
@@ -437,6 +438,7 @@ geocode = [
     "geosuggest-utils",
     "geozero",
     "governor",
+    "rmp-serde",
     "sled",
 ]
 luau = ["mlua", "sanitize-filename"]

@@ -2120,3 +2120,113 @@ fn geocode_opencagenow_dynfmt() {
     let got: String = wrk.stdout(&mut cmd);
     assert!(got.to_lowercase().contains("united states"));
 }
+
+// ---------------------------------------------------------------------------
+// cache-* subcommands manage the persistent on-disk OpenCage result cache.
+// The tests below isolate the cache via QSV_CACHE_DIR pointed at the Workdir,
+// so they never touch the real ~/.qsv-cache. The "no cache" tests run in CI;
+// the populated-cache round-trip is #[ignore]'d as it needs a live API key.
+// ---------------------------------------------------------------------------
+
+#[test]
+#[serial]
+fn geocode_cache_info_no_cache() {
+    // cache-info on a cache dir with no OpenCage cache -> graceful "no cache" report
+    let wrk = Workdir::new("geocode_cache_info_no_cache");
+    let mut cmd = wrk.command("geocode");
+    cmd.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+    cmd.arg("cache-info");
+
+    let output = wrk.output(&mut cmd);
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("No OpenCage cache found"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"exists\":false"));
+}
+
+#[test]
+#[serial]
+fn geocode_cache_clear_no_cache() {
+    // cache-clear on an empty cache dir -> succeeds, nothing to do
+    let wrk = Workdir::new("geocode_cache_clear_no_cache");
+    let mut cmd = wrk.command("geocode");
+    cmd.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+    cmd.arg("cache-clear");
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+#[serial]
+fn geocode_cache_prune_missing_flag() {
+    // cache-prune requires --older-than -> docopt usage error
+    let wrk = Workdir::new("geocode_cache_prune_missing_flag");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("cache-prune");
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+#[serial]
+fn geocode_cache_prune_bad_older_than() {
+    // an unparsable --older-than value -> clean error (validated in run(),
+    // independent of whether a cache exists)
+    let wrk = Workdir::new("geocode_cache_prune_bad_older_than");
+    let mut cmd = wrk.command("geocode");
+    cmd.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+    cmd.arg("cache-prune").args(["--older-than", "not-a-date"]);
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Invalid --older-than"));
+}
+
+#[test]
+#[serial]
+fn geocode_cache_older_than_rejected_elsewhere() {
+    // --older-than is only valid with cache-prune -> rejected on cache-info
+    let wrk = Workdir::new("geocode_cache_older_than_rejected_elsewhere");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("cache-info").args(["--older-than", "30d"]);
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--older-than is only valid"));
+}
+
+#[test]
+#[serial]
+#[ignore = "requires an OpenCage API key (set QSV_OPENCAGE_API_KEY)"]
+fn geocode_cache_roundtrip() {
+    // populate the cache via opencagenow, inspect it, then clear it
+    let wrk = Workdir::new("geocode_cache_roundtrip");
+    let cache_dir = wrk.path("").to_string_lossy().to_string();
+
+    let mut populate = wrk.command("geocode");
+    populate
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .arg("opencagenow")
+        .arg("Brooklyn, NY");
+    wrk.assert_success(&mut populate);
+
+    let mut info = wrk.command("geocode");
+    info.env("QSV_CACHE_DIR", &cache_dir).arg("cache-info");
+    let info_out = wrk.output(&mut info);
+    assert!(info_out.status.success());
+    let info_json = String::from_utf8_lossy(&info_out.stdout);
+    assert!(info_json.contains("\"exists\":true"));
+    assert!(!info_json.contains("\"entry_count\":0"));
+
+    let mut clear = wrk.command("geocode");
+    clear.env("QSV_CACHE_DIR", &cache_dir).arg("cache-clear");
+    wrk.assert_success(&mut clear);
+
+    let mut info2 = wrk.command("geocode");
+    info2.env("QSV_CACHE_DIR", &cache_dir).arg("cache-info");
+    let info2_out = wrk.output(&mut info2);
+    assert!(info2_out.status.success());
+    let info2_json = String::from_utf8_lossy(&info2_out.stdout);
+    assert!(info2_json.contains("\"entry_count\":0"));
+}

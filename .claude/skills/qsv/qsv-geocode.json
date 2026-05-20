@@ -1,7 +1,7 @@
 {
   "name": "qsv-geocode",
   "version": "20.1.0",
-  "description": "Geocodes a location against an updatable local copy of the Geonames cities & the Maxmind GeoLite2 databases. With caching and multi-threading, it geocodes up to 360,000 records/sec!",
+  "description": "Geocodes a location against an updatable local copy of the Geonames cities & the Maxmind GeoLite2 databases — with caching and multi-threading, this offline path geocodes up to 360,000 records/sec! Can also geocode online (forward & reverse) via the OpenCage API, which is sequential and rate-limited.",
   "category": "utility",
   "command": {
     "subcommand": "geocode",
@@ -10,8 +10,11 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: countryinfo, countryinfonow, iplookup, iplookupnow, opencage, opencagenow, reverse, reversenow, suggest, suggestnow",
+        "description": "Subcommand to execute. Valid values: cache-clear, cache-info, cache-prune, countryinfo, countryinfonow, iplookup, iplookupnow, opencage, opencagenow, reverse, reversenow, suggest, suggestnow",
         "enum": [
+          "cache-clear",
+          "cache-info",
+          "cache-prune",
           "countryinfo",
           "countryinfonow",
           "iplookup",
@@ -64,7 +67,7 @@
       {
         "flag": "--cache-dir",
         "type": "string",
-        "description": "The directory to use for caching the Geonames cities index. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead.",
+        "description": "The directory to use for caching the Geonames cities index and the persistent on-disk OpenCage result cache. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead.",
         "default": "~/.qsv-cache"
       },
       {
@@ -142,6 +145,11 @@
         "flag": "--no-cache",
         "type": "flag",
         "description": "Disable the persistent on-disk OpenCage cache. Duplicate queries within a run are still de-duplicated."
+      },
+      {
+        "flag": "--older-than",
+        "type": "string",
+        "description": "Delete OpenCage cache entries older than this value. Accepts an absolute date/datetime (e.g. 2025-01-31) or a relative age with a unit suffix (s/m/h/d/w = seconds, minutes, hours, days or weeks; e.g. 30d, 2w, 48h). Required by the cache-prune subcommand."
       },
       {
         "flag": "--output",

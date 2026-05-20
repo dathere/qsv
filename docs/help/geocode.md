@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/geocode.rs](https://github.com/dathere/qsv/blob/master/src/cmd/geocode.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🧠](TableOfContents.md#legend "expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")[🌐](TableOfContents.md#legend "has web-aware options.")[🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")[🌎](TableOfContents.md#legend "has geospatial capabilities.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Geocode Options](#geocode-options) | [Suggest Only Options](#suggest-only-options) | [Reverse Only Option](#reverse-only-option) | [Dynamic Formatting Options](#dynamic-formatting-options) | [Index-Update Only Options](#index-update-only-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Geocode Options](#geocode-options) | [Suggest Only Options](#suggest-only-options) | [Reverse Only Option](#reverse-only-option) | [Opencage Only Options](#opencage-only-options) | [Dynamic Formatting Options](#dynamic-formatting-options) | [Index-Update Only Options](#index-update-only-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -30,7 +30,7 @@ By default, the prebuilt index uses the Geonames Gazeteer cities15000.zip file u
 English names. It contains cities with populations > 15,000 (about ~26k cities).
 See <https://download.geonames.org/export/dump/> for more information.
 
-It has seven major subcommands:  
+It has eleven major subcommands:  
 * suggest        - given a partial City name, return the closest City's location metadata
 per the local Geonames cities index (Jaro-Winkler distance)
 * suggestnow     - same as suggest, but using a partial City name from the command line,
@@ -48,6 +48,11 @@ instead of CSV data.
 per the local Maxmind GeoLite2 City database.
 * iplookupnow    - same as iplookup, but using an IP address or URL from the command line,
 instead of CSV data.
+* opencage       - ONLINE forward/reverse geocoding using the OpenCage API.
+Forward-geocodes a free-form address, or reverse-geocodes a
+"lat, long" coordinate. Requires an OpenCage API key.
+* opencagenow    - same as opencage, but using an address/coordinate from the
+command line, instead of CSV data.
 * index-*        - operations to update the local Geonames cities index.
 (index-check, index-update, index-load & index-reset)
 
@@ -260,6 +265,81 @@ $ qsv geocode iplookupnow -f "%cityrecord" 140.174.222.253
 ```
 
 
+### Opencage
+
+Online forward or reverse geocoding using the OpenCage Geocoding API
+(<https://opencagedata.com>). Unlike the suggest/reverse subcommands which use the
+local Geonames index, opencage geocodes real street addresses online.
+
+Requires an OpenCage API key. Set it with --api-key or the QSV_OPENCAGE_API_KEY
+environment variable (the --api-key flag takes precedence). Get a free key at
+<https://opencagedata.com/users/sign_up>.
+
+The <column> may contain either a free-form address (forward geocoding) or a
+"lat, long" / "(lat, long)" WGS-84 coordinate (reverse geocoding). The mode is
+auto-detected per row; pass --reverse to force reverse geocoding.
+
+OpenCage's Terms of Service explicitly allow caching, so results are cached in a
+persistent on-disk cache (see --cache-ttl & --no-cache). Re-runs and duplicate
+queries do NOT re-hit the API. The free tier allows 2,500 requests/day at 1
+request/second; rows are processed sequentially and rate-limited (see --rate-limit).
+
+The --country option, if set, restricts results to the given ISO 3166-1 alpha-2
+country code(s). The --timeout, --language, --invalid-result, --new-column, --rename
+and --output options behave as they do for the other subcommands.
+
+The --formatstr option supports these OpenCage-specific formats:  
+* '%+' | '%formatted'   - the OpenCage formatted address (default)
+* '%lat-long'           - <latitude>, <longitude>
+* '%location'           - (<latitude>, <longitude>)
+* '%city'               - the city/town/village
+* '%state' | '%admin1'  - the state/province
+* '%county' | '%admin2' - the county
+* '%country'            - the ISO 3166-1 alpha-2 country code
+* '%country_name'       - the country name
+* '%postcode'           - the postal code
+* '%confidence'         - the OpenCage confidence score (0-10)
+* '%json'               - the first OpenCage result as JSON
+* '%pretty-json'        - the first OpenCage result as pretty JSON
+Dynamic formatting is also supported, using dotted keys, e.g.
+"{components.city}, {components.country}" or "{annotations.timezone.name}".
+Available keys: formatted, lat, lng, confidence, components.<name> and
+annotations.<dotted.path>. ("%dyncols:" is not supported by opencage.)
+
+```console
+$ qsv geocode opencage address --api-key YOURKEY file.csv
+```
+
+```console
+$ qsv geocode opencage address --country us -f '%json' file.csv
+```
+
+```console
+$ qsv geocode opencage coord_col --reverse -c city file.csv
+```
+
+```console
+$ qsv geocode opencage address -f '{components.city}, {components.country}' file.csv
+```
+
+
+### Opencagenow
+
+Accepts the same options as opencage, but does not require an input file.
+
+```console
+$ qsv geocode opencagenow --api-key YOURKEY "Brooklyn, NY"
+```
+
+```console
+$ qsv geocode opencagenow "40.71427, -74.00597"
+```
+
+```console
+$ qsv geocode opencagenow -f '%pretty-json' "Eiffel Tower, Paris"
+```
+
+
 INDEX-<operation>
 Manage the local Geonames cities index used by the geocode command.
 
@@ -337,6 +417,8 @@ qsv geocode countryinfo [options] <column> [<input>]
 qsv geocode countryinfonow [options] <location>
 qsv geocode iplookup [options] <column> [<input>]
 qsv geocode iplookupnow [options] <location>
+qsv geocode opencage [--formatstr=<string>] [options] <column> [<input>]
+qsv geocode opencagenow [options] <location>
 qsv geocode index-load <index-file>
 qsv geocode index-check
 qsv geocode index-update [--languages=<lang>] [--cities-url=<url>] [--force] [--timeout=<seconds>]
@@ -351,8 +433,8 @@ qsv geocode --help
 | &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | The input file to read from. If not specified, reads from stdin. |
-| &nbsp;`<column>`&nbsp; | The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in "lat, long" or "(lat, long)" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information. |
-| &nbsp;`<location>`&nbsp; | The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL. |
+| &nbsp;`<column>`&nbsp; | The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in "lat, long" or "(lat, long)" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. For opencage, it may be a free-form address OR a WGS 84 coordinate. Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information. |
+| &nbsp;`<location>`&nbsp; | The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL. For opencagenow, it must be an address OR a WGS 84 coordinate. |
 | &nbsp;`<index-file>`&nbsp; | The alternate geonames index file to use. It must be a .rkyv file. For convenience, if this is set to 500, 1000, 5000 or 15000, it will download the corresponding English-only Geonames index rkyv file from the qsv GitHub repo for the current qsv version and use it. Only used by the index-load subcommand. |
 
 <a name="geocode-options"></a>
@@ -381,6 +463,19 @@ qsv geocode --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑k,`<br>`‑‑k_weight`&nbsp; | string | Use population-weighted distance for reverse subcommand. (i.e. nearest.distance - k * city.population) Larger values will favor more populated cities. If not set (default), the population is not used and the nearest city is returned. |  |
+
+<a name="opencage-only-options"></a>
+
+## Opencage Only Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`‑‑api‑key`&nbsp; | string | The OpenCage API key for the opencage/opencagenow subcommands. If set, it takes precedence over the QSV_OPENCAGE_API_KEY environment variable. Get a free key at <https://opencagedata.com/users/sign_up>. |  |
+| &nbsp;`‑‑rate‑limit`&nbsp; | integer | Maximum number of OpenCage API requests per second. The free tier allows 1 request/second (2,500/day). | `1` |
+| &nbsp;`‑‑reverse`&nbsp; | flag | Force reverse geocoding for opencage/opencagenow (treat the query as a "lat, long" WGS-84 coordinate). If not set, forward and reverse mode is auto-detected per row. |  |
+| &nbsp;`‑‑no‑annotations`&nbsp; | flag | Omit OpenCage annotations (timezone, currency, etc.) from the result and from %json output. |  |
+| &nbsp;`‑‑cache‑ttl`&nbsp; | integer | Time-to-live for the persistent on-disk OpenCage result cache. | `1209600` |
+| &nbsp;`‑‑no‑cache`&nbsp; | flag | Disable the persistent on-disk OpenCage cache. Duplicate queries within a run are still de-duplicated. |  |
 
 <a name="dynamic-formatting-options"></a>
 

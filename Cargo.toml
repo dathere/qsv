@@ -436,6 +436,7 @@ geocode = [
     "geosuggest-core",
     "geosuggest-utils",
     "geozero",
+    "governor",
     "sled",
 ]
 luau = ["mlua", "sanitize-filename"]

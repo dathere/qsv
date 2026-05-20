@@ -10,12 +10,14 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: countryinfo, countryinfonow, iplookup, iplookupnow, reverse, reversenow, suggest, suggestnow",
+        "description": "Subcommand to execute. Valid values: countryinfo, countryinfonow, iplookup, iplookupnow, opencage, opencagenow, reverse, reversenow, suggest, suggestnow",
         "enum": [
           "countryinfo",
           "countryinfonow",
           "iplookup",
           "iplookupnow",
+          "opencage",
+          "opencagenow",
           "reverse",
           "reversenow",
           "suggest",
@@ -26,7 +28,7 @@
         "name": "column",
         "type": "string",
         "required": false,
-        "description": "The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in \"lat, long\" or \"(lat, long)\" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information."
+        "description": "The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in \"lat, long\" or \"(lat, long)\" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. For opencage, it may be a free-form address OR a WGS 84 coordinate. Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information."
       },
       {
         "name": "input",
@@ -38,7 +40,7 @@
         "name": "location",
         "type": "string",
         "required": false,
-        "description": "The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL."
+        "description": "The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL. For opencagenow, it must be an address OR a WGS 84 coordinate."
       },
       {
         "name": "index-file",
@@ -64,6 +66,12 @@
         "type": "string",
         "description": "The directory to use for caching the Geonames cities index. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead.",
         "default": "~/.qsv-cache"
+      },
+      {
+        "flag": "--cache-ttl",
+        "type": "string",
+        "description": "Time-to-live for the persistent on-disk OpenCage result cache.",
+        "default": "1209600"
       },
       {
         "flag": "--cities-url",
@@ -126,14 +134,35 @@
         "description": "Put the transformed values in a new column instead. Not valid when using the '%dyncols:' --formatstr option."
       },
       {
+        "flag": "--no-annotations",
+        "type": "flag",
+        "description": "Omit OpenCage annotations (timezone, currency, etc.) from the result and from %json output."
+      },
+      {
+        "flag": "--no-cache",
+        "type": "flag",
+        "description": "Disable the persistent on-disk OpenCage cache. Duplicate queries within a run are still de-duplicated."
+      },
+      {
         "flag": "--output",
         "type": "string",
         "description": "Write output to <file> instead of stdout."
       },
       {
+        "flag": "--rate-limit",
+        "type": "string",
+        "description": "Maximum number of OpenCage API requests per second. The free tier allows 1 request/second (2,500/day).",
+        "default": "1"
+      },
+      {
         "flag": "--rename",
         "type": "string",
         "description": "New name for the transformed column."
+      },
+      {
+        "flag": "--reverse",
+        "type": "flag",
+        "description": "Force reverse geocoding for opencage/opencagenow (treat the query as a \"lat, long\" WGS-84 coordinate). If not set, forward and reverse mode is auto-detected per row."
       },
       {
         "flag": "--timeout",

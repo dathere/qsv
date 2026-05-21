@@ -2140,6 +2140,25 @@ fn geocode_opencage_dyncols_invalid_key_rejected() {
 
 #[test]
 #[serial]
+fn geocode_opencage_dyncols_bare_prefix_rejected() {
+    // this runs in CI: a bare "components."/"annotations." prefix with no
+    // field suffix is rejected before any API call - it has no field to
+    // resolve and would otherwise silently yield an empty column
+    let wrk = Workdir::new("geocode_opencage_dyncols_bare_prefix_rejected");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["--api-key", "dummy-key-for-arg-validation"])
+        .args(["-f", "%dyncols: {bad:components.}, {worse:annotations.}"]);
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Invalid '%dyncols:' key"));
+}
+
+#[test]
+#[serial]
 fn geocode_opencage_dyncols_new_column_rejected() {
     // this runs in CI: %dyncols: cannot be combined with --new-column
     let wrk = Workdir::new("geocode_opencage_dyncols_new_column_rejected");

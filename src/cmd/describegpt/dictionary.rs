@@ -752,13 +752,17 @@ fn sample_parses_with_format(sample: &str, fmt: &str, is_datetime: bool) -> bool
 }
 
 /// Group usable raw frequency values by field name — every value except the
-/// rank-0 "Other" bucket and the `<ALL_UNIQUE>` sentinel (a `(NULL)` row has an
-/// empty rank, parsed as `0.0`, so it is excluded too). Borrows from
-/// `frequency_records`.
+/// rank-0 "Other" bucket, the `<ALL_UNIQUE>` sentinel, and the `(NULL)` row.
+///
+/// The `(NULL)` row is excluded by value, not by rank: `frequency --pct-nulls`
+/// gives the null row a real (non-zero) rank, so a rank check alone would let
+/// it through and the strict format check in `validate_date_formats` would
+/// then wrongly strip an otherwise-valid suffix. `(NULL)` is `frequency`'s
+/// default `--null-text`. Borrows from `frequency_records`.
 fn usable_samples_by_field(frequency_records: &[FrequencyRecord]) -> HashMap<&str, Vec<&str>> {
     let mut samples_by_field: HashMap<&str, Vec<&str>> = HashMap::new();
     for rec in frequency_records {
-        if rec.rank == 0.0 || rec.value.contains("<ALL_UNIQUE>") {
+        if rec.rank == 0.0 || rec.value.contains("<ALL_UNIQUE>") || rec.value == "(NULL)" {
             continue;
         }
         samples_by_field
@@ -2205,5 +2209,31 @@ mod tests {
         ];
         validate_date_formats(&mut entries, &freqs);
         assert_eq!(entries[0].content_type, "date");
+    }
+
+    #[test]
+    fn validate_date_formats_ignores_ranked_null_rows() {
+        // `frequency --pct-nulls` emits the `(NULL)` row with a real (non-zero)
+        // rank. It must not count as a sample — otherwise it fails to parse
+        // and strips an otherwise-valid format.
+        let mut entries = vec![entry_with_content_type("d", "date:%Y-%m-%d")];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "d".to_string(),
+                value:      "2020-01-15".to_string(),
+                count:      5,
+                percentage: 50.0,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "d".to_string(),
+                value:      "(NULL)".to_string(),
+                count:      5,
+                percentage: 50.0,
+                rank:       2.0,
+            },
+        ];
+        validate_date_formats(&mut entries, &freqs);
+        assert_eq!(entries[0].content_type, "date:%Y-%m-%d");
     }
 }

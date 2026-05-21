@@ -424,7 +424,7 @@ use std::{
 };
 
 use cached::{
-    DiskCache, IOCached, RedisCache, Return, proc_macro::io_cached, stores::DiskCacheBuilder,
+    ConcurrentCached, DiskCache, DiskCacheBuilder, RedisCache, Return, macros::concurrent_cached,
 };
 use foldhash::{HashMap, HashMapExt, HashSet};
 use indexmap::IndexSet;
@@ -2414,7 +2414,7 @@ fn invalidate_prompt_validity_flag(args: &Args, prompt_content: Option<&String>)
 }
 
 // this is a disk cache that can be used across qsv sessions
-#[io_cached(
+#[concurrent_cached(
     disk = true,
     ty = "cached::DiskCache<String, CompletionResponse>",
     key = "String",
@@ -2423,10 +2423,10 @@ fn invalidate_prompt_validity_flag(args: &Args, prompt_content: Option<&String>)
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
         let diskcache: DiskCache<String, CompletionResponse> = DiskCacheBuilder::new("describegpt")
-            .set_disk_directory(cache_dir)
-            .set_lifespan(diskcache_config.ttl_secs)
-            .set_refresh(diskcache_config.ttl_refresh)
-            .set_sync_to_disk_on_cache_change(true)
+            .disk_directory(cache_dir)
+            .ttl(diskcache_config.ttl_secs)
+            .refresh(diskcache_config.ttl_refresh)
+            .sync_to_disk_on_cache_change(true)
             .build()
             .expect("error building diskcache");
         log::info!("Disk cache created - dir: {cache_dir} - ttl: {ttl_secs:?}",
@@ -2441,27 +2441,27 @@ fn get_diskcache_completion(
     client: &Client,
     model: &str,
     api_key: &str,
-    // this unused_variable lint is a false positive as we use kind in the io_cached macro
+    // this unused_variable lint is a false positive as we use kind in the concurrent_cached macro
     #[allow(unused_variables)] kind: PromptType,
     messages: &serde_json::Value,
-) -> CliResult<Return<CompletionResponse>> {
+) -> Result<Return<CompletionResponse>, CliError> {
     Ok(Return::new(get_completion(
         args, client, model, api_key, messages, kind,
     )?))
 }
 
 // this is a redis cache that can be used across qsv sessions
-#[io_cached(
+#[concurrent_cached(
     ty = "cached::RedisCache<String, CompletionResponse>",
     key = "String",
     convert = r##"{ get_cache_key(args, kind, model) }"##,
     create = r##" {
         let redis_config = REDISCONFIG.get().unwrap();
         let rediscache: RedisCache<String, CompletionResponse> = RedisCache::new("f", redis_config.ttl_secs)
-            .set_namespace("descq")
-            .set_refresh(redis_config.ttl_refresh)
-            .set_connection_string(&redis_config.conn_str)
-            .set_connection_pool_max_size(redis_config.max_pool_size)
+            .namespace("descq")
+            .refresh(redis_config.ttl_refresh)
+            .connection_string(&redis_config.conn_str)
+            .connection_pool_max_size(redis_config.max_pool_size)
             .build()
             .expect("error building redis cache");
         log::info!("Redis cache created - conn_str: {conn_str} - refresh: {ttl_refresh} - ttl: {ttl_secs:?} - pool_size: {pool_size}",
@@ -2481,14 +2481,14 @@ fn get_redis_completion(
     api_key: &str,
     #[allow(unused_variables)] kind: PromptType,
     messages: &serde_json::Value,
-) -> CliResult<Return<CompletionResponse>> {
+) -> Result<Return<CompletionResponse>, CliError> {
     Ok(Return::new(get_completion(
         args, client, model, api_key, messages, kind,
     )?))
 }
 
 // Cached analysis results for disk cache
-#[io_cached(
+#[concurrent_cached(
     disk = true,
     ty = "cached::DiskCache<String, AnalysisResults>",
     key = "String",
@@ -2497,10 +2497,10 @@ fn get_redis_completion(
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
         let diskcache: DiskCache<String, AnalysisResults> = DiskCacheBuilder::new("describegpt_analysis")
-            .set_disk_directory(cache_dir)
-            .set_lifespan(diskcache_config.ttl_secs)
-            .set_refresh(diskcache_config.ttl_refresh)
-            .set_sync_to_disk_on_cache_change(true)
+            .disk_directory(cache_dir)
+            .ttl(diskcache_config.ttl_secs)
+            .refresh(diskcache_config.ttl_refresh)
+            .sync_to_disk_on_cache_change(true)
             .build()
             .expect("error building analysis diskcache");
         log::info!("Analysis disk cache created - dir: {cache_dir} - ttl: {ttl_secs:?}",
@@ -2514,22 +2514,22 @@ fn get_diskcache_analysis(
     args: &Args,
     #[allow(unused_variables)] file_hash: &str,
     input_path: &str,
-) -> CliResult<Return<AnalysisResults>> {
+) -> Result<Return<AnalysisResults>, CliError> {
     Ok(Return::new(perform_analysis(args, input_path)?))
 }
 
 // Cached analysis results for redis cache
-#[io_cached(
+#[concurrent_cached(
     ty = "cached::RedisCache<String, AnalysisResults>",
     key = "String",
     convert = r##"{ get_analysis_cache_key(args, file_hash) }"##,
     create = r##" {
         let redis_config = REDISCONFIG.get().unwrap();
         let rediscache: RedisCache<String, AnalysisResults> = RedisCache::new("analysis", redis_config.ttl_secs)
-            .set_namespace("descq")
-            .set_refresh(redis_config.ttl_refresh)
-            .set_connection_string(&redis_config.conn_str)
-            .set_connection_pool_max_size(redis_config.max_pool_size)
+            .namespace("descq")
+            .refresh(redis_config.ttl_refresh)
+            .connection_string(&redis_config.conn_str)
+            .connection_pool_max_size(redis_config.max_pool_size)
             .build()
             .expect("error building analysis redis cache");
         log::info!("Analysis Redis cache created - conn_str: {conn_str} - refresh: {ttl_refresh} - ttl: {ttl_secs:?} - pool_size: {pool_size}",
@@ -2546,7 +2546,7 @@ fn get_redis_analysis(
     args: &Args,
     #[allow(unused_variables)] file_hash: &str,
     input_path: &str,
-) -> CliResult<Return<AnalysisResults>> {
+) -> Result<Return<AnalysisResults>, CliError> {
     Ok(Return::new(perform_analysis(args, input_path)?))
 }
 

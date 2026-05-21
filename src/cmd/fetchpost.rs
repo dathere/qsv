@@ -264,9 +264,8 @@ Common options:
 use std::{fs, io::Write, num::NonZeroU32, path::PathBuf, sync::OnceLock, thread, time};
 
 use cached::{
-    Cached, IOCached, RedisCache, Return, SizedCache,
-    proc_macro::{cached, io_cached},
-    stores::DiskCacheBuilder,
+    Cached, ConcurrentCached, DiskCacheBuilder, LruCache, RedisCache, Return,
+    macros::{cached, concurrent_cached},
 };
 use flate2::{Compression, write::GzEncoder};
 use governor::{
@@ -934,7 +933,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         // key matches get_cached_response's convert macro
                         // (body-only — see NOTE above the cached fn).
                         let key = format!("{form_body_jsonmap:?}");
-                        let mut cache = GET_CACHED_RESPONSE.lock();
+                        let mut cache = GET_CACHED_RESPONSE.write();
                         cache.cache_remove(&key);
                     }
                 },
@@ -1165,10 +1164,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 // sharing a body but using different URLs will collide on the same in-memory
 // entry. The disk and redis caches use the wider cross_session_cache_key.
 #[cached(
-    ty = "SizedCache<String, Return<FetchResponse>>",
+    ty = "LruCache<String, Return<FetchResponse>>",
     create = r##"{
         let cache_size = MEM_CACHE_SIZE.get().unwrap();
-        let memcache = SizedCache::with_size(*cache_size);
+        let memcache = LruCache::with_size(*cache_size);
         log::info!("In Memory cache created - size: {cache_size} entries");
         memcache
     }"##,
@@ -1229,24 +1228,25 @@ fn cross_session_cache_key(
 // this is a disk cache that can be used across qsv sessions
 // so we need to include the values of flag_jaq, flag_store_error, flag_pretty and
 // include_existing_columns in the cache key
-#[io_cached(
+#[concurrent_cached(
     disk = true,
     ty = "cached::DiskCache<String, FetchResponse>",
-    cache_prefix_block = r##"{ "dc_" }"##,
     key = "String",
     convert = r#"{ cross_session_cache_key(url, form_body_jsonmap, payload_content_type, flag_jaq, flag_store_error, flag_pretty, flag_compress, include_existing_columns) }"#,
     create = r##"{
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
         let diskcache = DiskCacheBuilder::new("fetchpost")
-            .set_disk_directory(cache_dir)
-            .set_lifespan(diskcache_config.ttl_secs)
-            .set_refresh(diskcache_config.ttl_refresh)
+            .disk_directory(cache_dir)
+            .ttl(diskcache_config.ttl_secs)
+            .refresh(diskcache_config.ttl_refresh)
             .build()
             .expect("error building diskcache");
         log::info!("Disk cache created - dir: {cache_dir} - ttl: {ttl_secs:?}",
             ttl_secs = diskcache_config.ttl_secs);
-        diskcache.remove_expired_entries().expect("error removing expired diskcache entries");
+        if let Err(e) = diskcache.remove_expired_entries() {
+            log::warn!("error removing expired diskcache entries: {e}");
+        }
         diskcache
     }"##,
     map_error = r##"|e| CliError::Other(format!("Diskcache Error: {:?}", e))"##,
@@ -1285,17 +1285,17 @@ fn get_diskcache_response(
 // get_redis_response needs a longer key as its a persistent cache and the
 // values of flag_jaq, flag_store_error, flag_pretty and include_existing_columns
 // may change between sessions
-#[io_cached(
+#[concurrent_cached(
     ty = "cached::RedisCache<String, String>",
     key = "String",
     convert = r#"{ cross_session_cache_key(url, form_body_jsonmap, payload_content_type, flag_jaq, flag_store_error, flag_pretty, flag_compress, include_existing_columns) }"#,
     create = r##" {
         let redis_config = REDISCONFIG.get().unwrap();
         let rediscache = RedisCache::new("fp", redis_config.ttl_secs)
-            .set_namespace("q")
-            .set_refresh(redis_config.ttl_refresh)
-            .set_connection_string(&redis_config.conn_str)
-            .set_connection_pool_max_size(redis_config.max_pool_size)
+            .namespace("q")
+            .refresh(redis_config.ttl_refresh)
+            .connection_string(&redis_config.conn_str)
+            .connection_pool_max_size(redis_config.max_pool_size)
             .build()
             .expect("error building redis cache");
         log::info!("Redis cache created - conn_str: {conn_str} - refresh: {ttl_refresh} - ttl: {ttl_secs:?} - pool_size: {pool_size}",

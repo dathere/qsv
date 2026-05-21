@@ -2377,3 +2377,47 @@ fn geocode_cache_roundtrip() {
     let info2_json = String::from_utf8_lossy(&info2_out.stdout);
     assert!(info2_json.contains("\"entry_count\":0"));
 }
+
+#[test]
+#[serial]
+fn geocode_index_load_invalid_shortcut() {
+    // the index-load numeric shortcut only accepts 15000 (the prebuilt cities15000
+    // index); any other number fails fast with an actionable error - no download
+    let wrk = Workdir::new("geocode_index_load_invalid_shortcut");
+    let mut cmd = wrk.command("geocode");
+    cmd.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+    cmd.arg("index-load").arg("5000");
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Invalid index shortcut") && stderr.contains("only 15000 is supported"),
+        "expected an actionable 'only 15000' error, got: {stderr}"
+    );
+}
+
+#[test]
+#[serial]
+fn geocode_index_load_numeric_named_file_not_shortcut() {
+    // a real local file whose name happens to be numeric (e.g. `15000.rkyv`) must be
+    // loaded as a file, NOT mistaken for the `15000` download shortcut - which would
+    // overwrite it. Verify the file content is left untouched.
+    let wrk = Workdir::new("geocode_index_load_numeric_named_file_not_shortcut");
+    let index_path = wrk.path("15000.rkyv");
+    let original = b"this is not a real rkyv index";
+    std::fs::write(&index_path, original).unwrap();
+
+    let mut cmd = wrk.command("geocode");
+    cmd.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+    cmd.arg("index-load").arg(&index_path);
+
+    // loading garbage content fails, but crucially the file must not be overwritten
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    assert_eq!(
+        std::fs::read(&index_path).unwrap(),
+        original,
+        "index-load must not overwrite a real file whose name parses as a number"
+    );
+}

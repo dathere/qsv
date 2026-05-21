@@ -2183,8 +2183,8 @@ fn check_index_file(index_file: &str) -> CliResult<()> {
 
 /// load_engine_data loads the Geonames index file into memory
 /// if the index file does not exist, it will download the default index file
-/// from the qsv GitHub repo. For convenience, if geocode_index_file is 500, 1000, 5000 or 15000,
-/// it will download the desired index file from the qsv GitHub repo.
+/// from the qsv GitHub repo. For convenience, if geocode_index_file is the bare
+/// number 15000 (no extension), it downloads the prebuilt cities15000 index instead.
 async fn load_engine_data(
     geocode_index_file: PathBuf,
     progressbar: &ProgressBar,
@@ -2194,9 +2194,7 @@ async fn load_engine_data(
 
     let index_file = std::path::Path::new(&geocode_index_file);
 
-    // check if geocode_index_file is a 500, 1000, 5000 or 15000 record index file
-    // by looking at the filestem, and checking if its a number
-    // if it is, for convenience, we download the desired index file from the qsv GitHub repo
+    // the file stem is used to detect the numeric shortcut (e.g. `index-load 15000`)
     let geocode_index_file_stem = geocode_index_file
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
@@ -2206,9 +2204,18 @@ async fn load_engine_data(
         "https://github.com/dathere/qsv/releases/download/{QSV_VERSION}/{DEFAULT_GEOCODE_INDEX_FILENAME}.cities"
     );
 
-    if geocode_index_file_stem.parse::<u16>().is_ok() {
-        // it's a number; the only prebuilt index in the qsv GitHub repo is cities15000
-        if geocode_index_file_stem != "15000" {
+    // the numeric shortcut (e.g. `index-load 15000`) only applies to a bare number
+    // with no file extension - a real local file like `15000.rkyv` must be loaded
+    // as-is, not mistaken for the shortcut and overwritten by a download.
+    let numeric_shortcut = if geocode_index_file.extension().is_none() {
+        geocode_index_file_stem.parse::<u16>().ok()
+    } else {
+        None
+    };
+
+    if let Some(shortcut) = numeric_shortcut {
+        // the only prebuilt index in the qsv GitHub repo is cities15000
+        if shortcut != DEFAULT_GEONAMES_CITIES_INDEX {
             return fail_incorrectusage_clierror!(
                 "Only the prebuilt cities15000 index is supported via the numeric shortcut (use \
                  15000). To use a different city set, rebuild the index with `index-update \
@@ -2221,7 +2228,7 @@ async fn load_engine_data(
         ));
 
         util::download_file(
-            &format!("{download_url}{geocode_index_file_stem}.sz"),
+            &format!("{download_url}{shortcut}.sz"),
             geocode_index_file.clone(),
             !progressbar.is_hidden(),
             None,

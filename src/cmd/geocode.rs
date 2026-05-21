@@ -227,8 +227,8 @@ It has four operations:
  * reset  - resets the local Geonames index to the default prebuilt, English-only Geonames cities
             index (cities15000) - downloading it from the qsv GitHub repo for the current qsv version.
  * load   - load a Geonames cities index from a file, making it the default index going forward.
-            If set to 500, 1000, 5000 or 15000, it will download the corresponding English-only
-            Geonames index rkyv file from the qsv GitHub repo for the current qsv version.
+            If set to 15000, it will download the prebuilt English-only cities15000 Geonames
+            index rkyv file from the qsv GitHub repo for the current qsv version.
 
 Update the Geonames cities index with the latest changes.
 
@@ -331,8 +331,8 @@ geocode arguments:
                                   For opencagenow, it must be an address OR a WGS 84 coordinate.
 
     <index-file>                The alternate geonames index file to use. It must be a .rkyv file.
-                                For convenience, if this is set to 500, 1000, 5000 or 15000, it will download
-                                the corresponding English-only Geonames index rkyv file from the qsv GitHub repo
+                                For convenience, if this is set to 15000, it will download the prebuilt
+                                English-only cities15000 Geonames index rkyv file from the qsv GitHub repo
                                 for the current qsv version and use it. Only used by the index-load subcommand.
 
 geocode options:
@@ -2149,12 +2149,17 @@ cargo run -p geosuggest-utils --bin geosuggest-build-index --release --features=
 
 /// check if index_file exists and ends with a .rkyv extension
 fn check_index_file(index_file: &str) -> CliResult<()> {
-    // check if index_file is a u16 with the values 500, 1000, 5000 or 15000
-    // if it is, return OK
-    if let Ok(i) = index_file.parse::<u16>()
-        && (i == 500 || i == 1000 || i == 5000 || i == 15000)
-    {
-        return Ok(());
+    // the only prebuilt index published to the qsv GitHub repo is cities15000,
+    // so 15000 is the sole numeric shortcut accepted by the index-load subcommand
+    if let Ok(i) = index_file.parse::<u16>() {
+        if i == 15000 {
+            return Ok(());
+        }
+        return fail_incorrectusage_clierror!(
+            "Invalid index shortcut {index_file} - only 15000 is supported (the prebuilt \
+             cities15000 index). To use a different city set, rebuild the index with \
+             `index-update --cities-url`."
+        );
     }
 
     if !std::path::Path::new(index_file)
@@ -2178,8 +2183,8 @@ fn check_index_file(index_file: &str) -> CliResult<()> {
 
 /// load_engine_data loads the Geonames index file into memory
 /// if the index file does not exist, it will download the default index file
-/// from the qsv GitHub repo. For convenience, if geocode_index_file is 500, 1000, 5000 or 15000,
-/// it will download the desired index file from the qsv GitHub repo.
+/// from the qsv GitHub repo. For convenience, if geocode_index_file is the bare
+/// number 15000 (no extension), it downloads the prebuilt cities15000 index instead.
 async fn load_engine_data(
     geocode_index_file: PathBuf,
     progressbar: &ProgressBar,
@@ -2189,9 +2194,7 @@ async fn load_engine_data(
 
     let index_file = std::path::Path::new(&geocode_index_file);
 
-    // check if geocode_index_file is a 500, 1000, 5000 or 15000 record index file
-    // by looking at the filestem, and checking if its a number
-    // if it is, for convenience, we download the desired index file from the qsv GitHub repo
+    // the file stem is used to detect the numeric shortcut (e.g. `index-load 15000`)
     let geocode_index_file_stem = geocode_index_file
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
@@ -2201,26 +2204,31 @@ async fn load_engine_data(
         "https://github.com/dathere/qsv/releases/download/{QSV_VERSION}/{DEFAULT_GEOCODE_INDEX_FILENAME}.cities"
     );
 
-    if geocode_index_file_stem.parse::<u16>().is_ok() {
-        // its a number, check if its a 500, 1000, 5000 or 15000 record index file
-        if geocode_index_file_stem != "500"
-            && geocode_index_file_stem != "1000"
-            && geocode_index_file_stem != "5000"
-            && geocode_index_file_stem != "15000"
-        {
-            // we only do the convenience download for 500, 1000, 5000 or 15000 record index files
+    // the numeric shortcut (e.g. `index-load 15000`) only applies to a bare number
+    // with no file extension - a real local file like `15000.rkyv` must be loaded
+    // as-is, not mistaken for the shortcut and overwritten by a download.
+    let numeric_shortcut = if geocode_index_file.extension().is_none() {
+        geocode_index_file_stem.parse::<u16>().ok()
+    } else {
+        None
+    };
+
+    if let Some(shortcut) = numeric_shortcut {
+        // the only prebuilt index in the qsv GitHub repo is cities15000
+        if shortcut != DEFAULT_GEONAMES_CITIES_INDEX {
             return fail_incorrectusage_clierror!(
-                "Only 500, 1000, 5000 or 15000 record index files are supported."
+                "Only the prebuilt cities15000 index is supported via the numeric shortcut (use \
+                 15000). To use a different city set, rebuild the index with `index-update \
+                 --cities-url`."
             );
         }
 
         progressbar.println(format!(
-            "Alternate Geonames index file is a 500, 1000, 5000 or 15000 record index file. \
-             Downloading {geocode_index_file_stem} Geonames index for qsv {QSV_VERSION} release..."
+            "Downloading the prebuilt cities15000 Geonames index for qsv {QSV_VERSION} release..."
         ));
 
         util::download_file(
-            &format!("{download_url}{geocode_index_file_stem}.sz"),
+            &format!("{download_url}{shortcut}.sz"),
             geocode_index_file.clone(),
             !progressbar.is_hidden(),
             None,
@@ -2343,15 +2351,7 @@ fn search_index(
 ) -> Option<String> {
     if mode == GeocodeSubCmd::Suggest || mode == GeocodeSubCmd::SuggestNow {
         let search_result: Vec<&CitiesRecord>;
-        let cityrecord = if admin1_filter_list.is_none() {
-            // no admin1 filter, run a search for 1 result (top match)
-            search_result = engine.suggest(cell, 1, min_score, country_filter_list);
-            let Some(cr) = search_result.into_iter().next() else {
-                // no results, so return early with None
-                return None;
-            };
-            cr
-        } else {
+        let cityrecord = if let Some(admin1_filter_list) = admin1_filter_list {
             // we have an admin1 filter, run a search for top SUGGEST_ADMIN1_LIMIT results
             search_result =
                 engine.suggest(cell, SUGGEST_ADMIN1_LIMIT, min_score, country_filter_list);
@@ -2364,8 +2364,6 @@ fn search_index(
 
             // then iterate through search results and find the first one that matches admin1
             // the search results are already sorted by score, so we just need to find the first
-            // safety: outer match guaranteed admin1_filter_list is Some
-            let admin1_filter_list = admin1_filter_list.unwrap();
             let mut matched_record: Option<&CitiesRecord> = None;
             'outer: for cr in &search_result {
                 if let Some(admin_division) = cr.admin_division.as_ref() {
@@ -2396,6 +2394,14 @@ fn search_index(
 
             // no admin1 match, so we return the first result
             matched_record.unwrap_or(first_result)
+        } else {
+            // no admin1 filter, run a search for 1 result (top match)
+            search_result = engine.suggest(cell, 1, min_score, country_filter_list);
+            let Some(cr) = search_result.into_iter().next() else {
+                // no results, so return early with None
+                return None;
+            };
+            cr
         };
 
         let country = cityrecord.country.as_ref()?.code.as_str();

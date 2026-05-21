@@ -366,8 +366,8 @@ as it's faster and will not download any data from Geonames.
 * reset  - resets the local Geonames index to the default prebuilt, English-only Geonames cities
 index (cities15000) - downloading it from the qsv GitHub repo for the current qsv version.
 * load   - load a Geonames cities index from a file, making it the default index going forward.
-If set to 500, 1000, 5000 or 15000, it will download the corresponding English-only
-Geonames index rkyv file from the qsv GitHub repo for the current qsv version.
+If set to 15000, it will download the prebuilt English-only cities15000 Geonames
+index rkyv file from the qsv GitHub repo for the current qsv version.
 
 Update the Geonames cities index with the latest changes.
 
@@ -492,7 +492,7 @@ qsv geocode --help
 | &nbsp;`<input>`&nbsp; | The input file to read from. If not specified, reads from stdin. |
 | &nbsp;`<column>`&nbsp; | The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in "lat, long" or "(lat, long)" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. For opencage, it may be a free-form address OR a WGS 84 coordinate. Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information. |
 | &nbsp;`<location>`&nbsp; | The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL. For opencagenow, it must be an address OR a WGS 84 coordinate. |
-| &nbsp;`<index-file>`&nbsp; | The alternate geonames index file to use. It must be a .rkyv file. For convenience, if this is set to 500, 1000, 5000 or 15000, it will download the corresponding English-only Geonames index rkyv file from the qsv GitHub repo for the current qsv version and use it. Only used by the index-load subcommand. |
+| &nbsp;`<index-file>`&nbsp; | The alternate geonames index file to use. It must be a .rkyv file. For convenience, if this is set to 15000, it will download the prebuilt English-only cities15000 Geonames index rkyv file from the qsv GitHub repo for the current qsv version and use it. Only used by the index-load subcommand. |
 
 <a name="geocode-options"></a>
 

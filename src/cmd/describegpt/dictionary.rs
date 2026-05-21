@@ -754,18 +754,24 @@ fn sample_parses_with_format(sample: &str, fmt: &str, is_datetime: bool) -> bool
 /// Group usable raw frequency values by field name — every value except the
 /// rank-0 "Other" bucket, the `<ALL_UNIQUE>` sentinel, and the emitted null row.
 ///
-/// The null row is identified STRUCTURALLY — its `count` equals the column's
-/// null count (carried on `DictionaryEntry.null_count`) — not by matching a
-/// display label. `frequency`'s null text is configurable (`--null-text`,
-/// default `(NULL)`) and `--pct-nulls` gives the null row a real rank, so a
-/// label- or rank-based check is unreliable; the count is not. Identifying by
-/// count also avoids wrongly excluding a real data value that merely happens
-/// to read `(NULL)`.
+/// The null row is identified by BOTH signals `frequency` guarantees for it,
+/// never by either one alone:
+///   * its `value` equals the configured `--null-text` (`null_text`, default `(NULL)`), and
+///   * its `count` equals the column's null count (carried on `DictionaryEntry.null_count`).
+///
+/// Value alone is too broad — `frequency`'s null text is configurable, and a
+/// real datum that merely reads as the null label would be dropped. Count
+/// alone is also too broad — a real value that merely shares the column's null
+/// count would be dropped, which can keep a bad date suffix or wrongly
+/// downgrade a `datetime` column. Requiring both confines the exclusion to the
+/// genuine null sentinel, even when `frequency --pct-nulls` gives that row a
+/// real (non-zero) rank that a rank check alone would let through.
 ///
 /// Borrows the sample strings from `frequency_records`.
 fn usable_samples_by_field<'a>(
     frequency_records: &'a [FrequencyRecord],
     entries: &[DictionaryEntry],
+    null_text: &str,
 ) -> HashMap<&'a str, Vec<&'a str>> {
     let null_count_by_field: HashMap<&str, u64> = entries
         .iter()
@@ -778,8 +784,10 @@ fn usable_samples_by_field<'a>(
         if rec.rank == 0.0 || rec.value.contains("<ALL_UNIQUE>") {
             continue;
         }
-        // the emitted null row: its count equals the column's null count
-        if null_count_by_field.get(rec.field.as_str()) == Some(&rec.count) {
+        // the emitted null row: `frequency` writes it with `--null-text` as
+        // its value AND a count equal to the column's null count
+        if rec.value == null_text && null_count_by_field.get(rec.field.as_str()) == Some(&rec.count)
+        {
             continue;
         }
         samples_by_field
@@ -809,8 +817,9 @@ fn usable_samples_by_field<'a>(
 pub(super) fn validate_date_formats(
     entries: &mut [DictionaryEntry],
     frequency_records: &[FrequencyRecord],
+    null_text: &str,
 ) {
-    let samples_by_field = usable_samples_by_field(frequency_records, entries);
+    let samples_by_field = usable_samples_by_field(frequency_records, entries, null_text);
 
     for entry in entries {
         let base = content_type_base(&entry.content_type);
@@ -928,13 +937,15 @@ fn sample_time_at_midnight(sample: &str, fmt: &str) -> Option<bool> {
 /// to test the samples against. A sample that does NOT parse with the format
 /// blocks the downgrade (the column stays `datetime`): a non-parsing real
 /// value could carry a non-midnight time, so ignoring it would risk a wrong
-/// downgrade. Null sentinels like `(NULL)` never reach here — they have rank 0
-/// and are excluded by `usable_samples_by_field`.
+/// downgrade. The emitted null row never reaches here — `usable_samples_by_field`
+/// excludes it by `--null-text` value plus null count, even when
+/// `frequency --pct-nulls` gives it a real rank.
 pub(super) fn downgrade_all_midnight_datetime_columns(
     entries: &mut [DictionaryEntry],
     frequency_records: &[FrequencyRecord],
+    null_text: &str,
 ) {
-    let samples_by_field = usable_samples_by_field(frequency_records, entries);
+    let samples_by_field = usable_samples_by_field(frequency_records, entries, null_text);
 
     for entry in entries {
         let Some(fmt) = entry.content_type.strip_prefix("datetime:") else {
@@ -1982,7 +1993,7 @@ mod tests {
             percentage: 10.0,
             rank:       1.0,
         }];
-        validate_date_formats(&mut entries, &freqs);
+        validate_date_formats(&mut entries, &freqs, "(NULL)");
         assert_eq!(entries[0].content_type, "date");
     }
 
@@ -1999,7 +2010,7 @@ mod tests {
             percentage: 10.0,
             rank:       1.0,
         }];
-        validate_date_formats(&mut entries, &freqs);
+        validate_date_formats(&mut entries, &freqs, "(NULL)");
         assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
     }
 
@@ -2014,7 +2025,7 @@ mod tests {
             percentage: 10.0,
             rank:       1.0,
         }];
-        validate_date_formats(&mut entries, &freqs);
+        validate_date_formats(&mut entries, &freqs, "(NULL)");
         assert_eq!(entries[0].content_type, "datetime:%Y-%m-%dT%H:%M:%S%z");
     }
 
@@ -2030,7 +2041,7 @@ mod tests {
             percentage: 100.0,
             rank:       1.0,
         }];
-        validate_date_formats(&mut entries, &freqs);
+        validate_date_formats(&mut entries, &freqs, "(NULL)");
         assert_eq!(entries[0].content_type, "date:%d/%m/%Y");
     }
 
@@ -2091,7 +2102,7 @@ mod tests {
                 rank:       2.0,
             },
         ];
-        downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
         // every sample is at midnight → date, with the time stripped from <fmt>
         assert_eq!(entries[0].content_type, "date:%m/%d/%Y");
     }
@@ -2118,7 +2129,7 @@ mod tests {
                 rank:       2.0,
             },
         ];
-        downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
         // one sample carries a non-midnight time → stays datetime
         assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
     }
@@ -2148,7 +2159,7 @@ mod tests {
                 rank:       2.0,
             },
         ];
-        downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
         assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
     }
 
@@ -2175,7 +2186,7 @@ mod tests {
                 rank:       1.0,
             },
         ];
-        downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
         // bare `datetime` has no format to test against → unchanged
         assert_eq!(entries[0].content_type, "datetime");
         // an already-`date` entry → unchanged
@@ -2198,7 +2209,7 @@ mod tests {
             percentage: 100.0,
             rank:       1.0,
         }];
-        downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
         assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
     }
 
@@ -2224,17 +2235,18 @@ mod tests {
                 rank:       2.0,
             },
         ];
-        validate_date_formats(&mut entries, &freqs);
+        validate_date_formats(&mut entries, &freqs, "(NULL)");
         assert_eq!(entries[0].content_type, "date");
     }
 
     #[test]
     fn validate_date_formats_ignores_ranked_null_rows() {
         // `frequency --pct-nulls` emits the null row with a real (non-zero)
-        // rank. It is identified by `count == null_count` (not by label), so
-        // it does not count as a sample — otherwise it fails to parse and
-        // strips an otherwise-valid format. The null label here is custom
-        // (`<MISSING>`), proving the check is label-independent.
+        // rank. It is identified by its `--null-text` value AND a count equal
+        // to the column's null count, so it does not count as a sample —
+        // otherwise it fails to parse and strips an otherwise-valid format.
+        // The null label here is custom (`<MISSING>`), threaded in as
+        // `null_text`, proving the check honors a configured `--null-text`.
         let mut entries = vec![DictionaryEntry {
             null_count: 5,
             ..entry_with_content_type("d", "date:%Y-%m-%d")
@@ -2255,15 +2267,16 @@ mod tests {
                 rank:       2.0,
             },
         ];
-        validate_date_formats(&mut entries, &freqs);
+        validate_date_formats(&mut entries, &freqs, "<MISSING>");
         assert_eq!(entries[0].content_type, "date:%Y-%m-%d");
     }
 
     #[test]
     fn downgrade_ignores_ranked_null_rows() {
-        // a ranked null row (`count == null_count`) must not count as a
-        // sample: it would fail to parse and block the downgrade of an
-        // otherwise all-midnight datetime column.
+        // a ranked null row — its `--null-text` value plus a count equal to
+        // the column's null count — must not count as a sample: it would fail
+        // to parse and block the downgrade of an otherwise all-midnight
+        // datetime column.
         let mut entries = vec![DictionaryEntry {
             null_count: 5,
             ..entry_with_content_type("closed", "datetime:%m/%d/%Y %I:%M:%S %p")
@@ -2284,7 +2297,75 @@ mod tests {
                 rank:       2.0,
             },
         ];
-        downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
         assert_eq!(entries[0].content_type, "date:%m/%d/%Y");
+    }
+
+    #[test]
+    fn validate_date_formats_keeps_real_sample_sharing_null_count() {
+        // a real, non-null value whose count merely equals the column's null
+        // count must still be validated — identifying the null row by count
+        // alone would drop it. Here that sample (`2020-01-15`, ISO) disproves
+        // the inferred `%m/%d/%Y` suffix; only the genuine `(NULL)` row, which
+        // also matches `--null-text`, is excluded.
+        let mut entries = vec![DictionaryEntry {
+            null_count: 5,
+            ..entry_with_content_type("d", "date:%m/%d/%Y")
+        }];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "d".to_string(),
+                value:      "2020-01-15".to_string(),
+                count:      5,
+                percentage: 35.7,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "d".to_string(),
+                value:      "(NULL)".to_string(),
+                count:      5,
+                percentage: 35.7,
+                rank:       2.0,
+            },
+        ];
+        validate_date_formats(&mut entries, &freqs, "(NULL)");
+        assert_eq!(entries[0].content_type, "date");
+    }
+
+    #[test]
+    fn downgrade_keeps_datetime_when_non_midnight_sample_shares_null_count() {
+        // a real non-midnight value whose count merely equals the column's
+        // null count must still block the downgrade — identifying the null row
+        // by count alone would drop it and wrongly reclassify the column as
+        // `date`. Only the genuine `(NULL)` row is excluded.
+        let mut entries = vec![DictionaryEntry {
+            null_count: 5,
+            ..entry_with_content_type("closed", "datetime:%m/%d/%Y %I:%M:%S %p")
+        }];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "11/15/2010 12:00:00 AM".to_string(),
+                count:      8,
+                percentage: 44.4,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "04/08/2015 10:00:58 AM".to_string(),
+                count:      5,
+                percentage: 27.8,
+                rank:       2.0,
+            },
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "(NULL)".to_string(),
+                count:      5,
+                percentage: 27.8,
+                rank:       3.0,
+            },
+        ];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
+        assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
     }
 }

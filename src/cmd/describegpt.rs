@@ -2657,6 +2657,27 @@ fn unescape_llm_output_str(s: &str) -> String {
         + "\n\n"
 }
 
+/// The `--null-text` configured for the `frequency` command via `--freq-options`,
+/// or `frequency`'s default (`(NULL)`) when none is set. `frequency` writes the
+/// null row's `value` with exactly this text; the dictionary date-format checks
+/// pair it with the column null count to recognize that row. When frequency
+/// data is supplied via a `file:`, the null text is unknown and the default is
+/// assumed.
+fn configured_null_text(freq_options: &str) -> &str {
+    let mut tokens = freq_options.split_whitespace();
+    while let Some(tok) = tokens.next() {
+        if let Some(val) = tok.strip_prefix("--null-text=") {
+            return val;
+        }
+        if tok == "--null-text" {
+            if let Some(val) = tokens.next() {
+                return val;
+            }
+        }
+    }
+    "(NULL)"
+}
+
 /// Run the shared dictionary-entry build pipeline used by both dictionary output
 /// paths: parse the stats + frequency CSVs, merge code-generated entries with any
 /// LLM-provided labels / descriptions, and return the combined list.
@@ -2688,12 +2709,17 @@ fn build_combined_dictionary_entries(
     let mut entries =
         combine_dictionary_entries(code_entries, &llm_fields, args.flag_infer_content_type);
     if args.flag_infer_content_type {
+        let null_text = configured_null_text(&args.flag_freq_options);
         // strip any LLM-inferred date/datetime strftime suffix that does not
         // actually parse the column's real values
-        dictionary::validate_date_formats(&mut entries, &frequency_records);
+        dictionary::validate_date_formats(&mut entries, &frequency_records, null_text);
         // reclassify a datetime column as date when its frequency-sampled
         // values are all at midnight (a date stored with a zero time-of-day)
-        dictionary::downgrade_all_midnight_datetime_columns(&mut entries, &frequency_records);
+        dictionary::downgrade_all_midnight_datetime_columns(
+            &mut entries,
+            &frequency_records,
+            null_text,
+        );
     }
     Ok(entries)
 }
@@ -2741,12 +2767,17 @@ fn build_combined_dictionary_entries_two_pass(
         args.flag_infer_content_type,
     );
     if args.flag_infer_content_type {
+        let null_text = configured_null_text(&args.flag_freq_options);
         // strip any LLM-inferred date/datetime strftime suffix that does not
         // actually parse the column's real values
-        dictionary::validate_date_formats(&mut entries, &frequency_records);
+        dictionary::validate_date_formats(&mut entries, &frequency_records, null_text);
         // reclassify a datetime column as date when its frequency-sampled
         // values are all at midnight (a date stored with a zero time-of-day)
-        dictionary::downgrade_all_midnight_datetime_columns(&mut entries, &frequency_records);
+        dictionary::downgrade_all_midnight_datetime_columns(
+            &mut entries,
+            &frequency_records,
+            null_text,
+        );
     }
     Ok(entries)
 }

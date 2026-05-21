@@ -2236,4 +2236,33 @@ mod tests {
         validate_date_formats(&mut entries, &freqs);
         assert_eq!(entries[0].content_type, "date:%Y-%m-%d");
     }
+
+    #[test]
+    fn downgrade_ignores_ranked_null_rows() {
+        // a `(NULL)` row ranked by `frequency --pct-nulls` must not count as a
+        // sample: it would fail to parse and block the downgrade of an
+        // otherwise all-midnight datetime column.
+        let mut entries = vec![entry_with_content_type(
+            "closed",
+            "datetime:%m/%d/%Y %I:%M:%S %p",
+        )];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "11/15/2010 12:00:00 AM".to_string(),
+                count:      5,
+                percentage: 50.0,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "(NULL)".to_string(),
+                count:      5,
+                percentage: 50.0,
+                rank:       2.0,
+            },
+        ];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
+        assert_eq!(entries[0].content_type, "date:%m/%d/%Y");
+    }
 }

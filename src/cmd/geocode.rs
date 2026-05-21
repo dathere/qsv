@@ -2344,15 +2344,7 @@ fn search_index(
 ) -> Option<String> {
     if mode == GeocodeSubCmd::Suggest || mode == GeocodeSubCmd::SuggestNow {
         let search_result: Vec<&CitiesRecord>;
-        let cityrecord = if admin1_filter_list.is_none() {
-            // no admin1 filter, run a search for 1 result (top match)
-            search_result = engine.suggest(cell, 1, min_score, country_filter_list);
-            let Some(cr) = search_result.into_iter().next() else {
-                // no results, so return early with None
-                return None;
-            };
-            cr
-        } else {
+        let cityrecord = if let Some(admin1_filter_list) = admin1_filter_list {
             // we have an admin1 filter, run a search for top SUGGEST_ADMIN1_LIMIT results
             search_result =
                 engine.suggest(cell, SUGGEST_ADMIN1_LIMIT, min_score, country_filter_list);
@@ -2365,8 +2357,6 @@ fn search_index(
 
             // then iterate through search results and find the first one that matches admin1
             // the search results are already sorted by score, so we just need to find the first
-            // safety: outer match guaranteed admin1_filter_list is Some
-            let admin1_filter_list = admin1_filter_list.unwrap();
             let mut matched_record: Option<&CitiesRecord> = None;
             'outer: for cr in &search_result {
                 if let Some(admin_division) = cr.admin_division.as_ref() {
@@ -2397,6 +2387,14 @@ fn search_index(
 
             // no admin1 match, so we return the first result
             matched_record.unwrap_or(first_result)
+        } else {
+            // no admin1 filter, run a search for 1 result (top match)
+            search_result = engine.suggest(cell, 1, min_score, country_filter_list);
+            let Some(cr) = search_result.into_iter().next() else {
+                // no results, so return early with None
+                return None;
+            };
+            cr
         };
 
         let country = cityrecord.country.as_ref()?.code.as_str();

@@ -227,8 +227,8 @@ It has four operations:
  * reset  - resets the local Geonames index to the default prebuilt, English-only Geonames cities
             index (cities15000) - downloading it from the qsv GitHub repo for the current qsv version.
  * load   - load a Geonames cities index from a file, making it the default index going forward.
-            If set to 500, 1000, 5000 or 15000, it will download the corresponding English-only
-            Geonames index rkyv file from the qsv GitHub repo for the current qsv version.
+            If set to 15000, it will download the prebuilt English-only cities15000 Geonames
+            index rkyv file from the qsv GitHub repo for the current qsv version.
 
 Update the Geonames cities index with the latest changes.
 
@@ -331,8 +331,8 @@ geocode arguments:
                                   For opencagenow, it must be an address OR a WGS 84 coordinate.
 
     <index-file>                The alternate geonames index file to use. It must be a .rkyv file.
-                                For convenience, if this is set to 500, 1000, 5000 or 15000, it will download
-                                the corresponding English-only Geonames index rkyv file from the qsv GitHub repo
+                                For convenience, if this is set to 15000, it will download the prebuilt
+                                English-only cities15000 Geonames index rkyv file from the qsv GitHub repo
                                 for the current qsv version and use it. Only used by the index-load subcommand.
 
 geocode options:
@@ -2149,12 +2149,17 @@ cargo run -p geosuggest-utils --bin geosuggest-build-index --release --features=
 
 /// check if index_file exists and ends with a .rkyv extension
 fn check_index_file(index_file: &str) -> CliResult<()> {
-    // check if index_file is a u16 with the values 500, 1000, 5000 or 15000
-    // if it is, return OK
-    if let Ok(i) = index_file.parse::<u16>()
-        && (i == 500 || i == 1000 || i == 5000 || i == 15000)
-    {
-        return Ok(());
+    // the only prebuilt index published to the qsv GitHub repo is cities15000,
+    // so 15000 is the sole numeric shortcut accepted by the index-load subcommand
+    if let Ok(i) = index_file.parse::<u16>() {
+        if i == 15000 {
+            return Ok(());
+        }
+        return fail_incorrectusage_clierror!(
+            "Invalid index shortcut {index_file} - only 15000 is supported (the prebuilt \
+             cities15000 index). To use a different city set, rebuild the index with \
+             `index-update --cities-url`."
+        );
     }
 
     if !std::path::Path::new(index_file)
@@ -2202,21 +2207,17 @@ async fn load_engine_data(
     );
 
     if geocode_index_file_stem.parse::<u16>().is_ok() {
-        // its a number, check if its a 500, 1000, 5000 or 15000 record index file
-        if geocode_index_file_stem != "500"
-            && geocode_index_file_stem != "1000"
-            && geocode_index_file_stem != "5000"
-            && geocode_index_file_stem != "15000"
-        {
-            // we only do the convenience download for 500, 1000, 5000 or 15000 record index files
+        // it's a number; the only prebuilt index in the qsv GitHub repo is cities15000
+        if geocode_index_file_stem != "15000" {
             return fail_incorrectusage_clierror!(
-                "Only 500, 1000, 5000 or 15000 record index files are supported."
+                "Only the prebuilt cities15000 index is supported via the numeric shortcut (use \
+                 15000). To use a different city set, rebuild the index with `index-update \
+                 --cities-url`."
             );
         }
 
         progressbar.println(format!(
-            "Alternate Geonames index file is a 500, 1000, 5000 or 15000 record index file. \
-             Downloading {geocode_index_file_stem} Geonames index for qsv {QSV_VERSION} release..."
+            "Downloading the prebuilt cities15000 Geonames index for qsv {QSV_VERSION} release..."
         ));
 
         util::download_file(

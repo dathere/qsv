@@ -2227,9 +2227,7 @@ fn geocode_opencage_dyncols() {
         "%dyncols: {city:components.city}, {country:components.country}, {addr:formatted}",
     ]);
 
-    wrk.assert_success(&mut cmd);
-
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 3);
     // the input column is preserved & three dyncols columns are appended
     assert_eq!(got[0], svec!["Location", "city", "country", "addr"]);

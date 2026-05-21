@@ -2955,10 +2955,14 @@ fn opencage_field_value(r: &OpencageResult, key: &str) -> Option<String> {
 
 /// Returns true if `key` is a valid "%dyncols:" field key for an OpenCage result,
 /// i.e. one that opencage_field_value() can resolve.
+/// `components.` / `annotations.` prefixes require a non-empty suffix - a bare
+/// prefix has no field to resolve and would silently yield an empty column.
 fn is_valid_opencage_dyncol(key: &str) -> bool {
     matches!(key, "formatted" | "lat" | "lng" | "confidence")
-        || key.starts_with("components.")
-        || key.starts_with("annotations.")
+        || key
+            .strip_prefix("components.")
+            .or_else(|| key.strip_prefix("annotations."))
+            .is_some_and(|suffix| !suffix.is_empty())
 }
 
 /// Build a JSON object from an OpenCage result for the %json / %pretty-json formats.
@@ -3281,9 +3285,24 @@ async fn opencage_lookup_dyncols(
     .await?;
 
     // cache the raw first result as JSON (a zero-result lookup is cached too)
-    let result_json = response.results.first().map(|r| {
-        serde_json::to_string(&opencage_result_json(r, no_annotations)).unwrap_or_default()
-    });
+    let result_json = match response.results.first() {
+        Some(r) => match serde_json::to_string(&opencage_result_json(r, no_annotations)) {
+            Ok(json) => Some(json),
+            Err(_) => {
+                // serialization unexpectedly failed: skip caching rather than
+                // poisoning the cache with an empty entry that would later
+                // decode as a (bogus) zero-result. Extract the column values
+                // directly from the live result instead.
+                return Ok(Some(
+                    column_values
+                        .iter()
+                        .map(|key| opencage_field_value(r, key).unwrap_or_default())
+                        .collect(),
+                ));
+            },
+        },
+        None => None,
+    };
     let encoded = encode_opencage_cache(result_json.as_deref());
     if let Some(dc) = disk_cache {
         let _ = dc.cache_set(cache_key.clone(), encoded.clone());

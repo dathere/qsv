@@ -763,6 +763,43 @@ fn join_datasets_internal(
     Ok((temp_path, final_joined_headers))
 }
 
+/// Returns true if the given `qsv stats` option string contains an output
+/// redirection flag (`-o`/`--output`).
+///
+/// A plain `token.starts_with("-o")` check misses docopt-style clustered
+/// short options: `-Eo joined_stats.csv` expands to `-E -o joined_stats.csv`,
+/// so the stats CSV would still be redirected away from the captured stdout.
+///
+/// The no-argument short flags accepted by `qsv stats` are taken from its
+/// USAGE in `src/cmd/stats.rs` (`-E`, `-h`, `-n`). When scanning a clustered
+/// short-option token, we stop at the first argument-taking option, since the
+/// remainder of the token is that option's value (e.g. `-so` selects a column
+/// literally named `o` — it is *not* `-s -o`). If `qsv stats` ever gains a new
+/// no-argument short flag, add it here so clusters ending in `-o` stay caught.
+fn stats_options_redirect_output(stats_options: &str) -> bool {
+    // no-argument short flags accepted by `qsv stats`
+    const STATS_SHORT_FLAGS: [char; 3] = ['E', 'h', 'n'];
+
+    stats_options.split_whitespace().any(|token| {
+        if let Some(long) = token.strip_prefix("--") {
+            return long == "output" || long.starts_with("output=");
+        }
+        if let Some(short) = token.strip_prefix('-') {
+            for ch in short.chars() {
+                if ch == 'o' {
+                    return true;
+                }
+                if !STATS_SHORT_FLAGS.contains(&ch) {
+                    // argument-taking (or unknown) short option: the rest of
+                    // the token is its value, so any `o` here is not -o/--output
+                    break;
+                }
+            }
+        }
+        false
+    })
+}
+
 /// Compute Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
 #[inline]
 fn compute_pearson_skewness(
@@ -3338,11 +3375,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // -o/--output in --stats-options: it would silently redirect the
         // stats CSV to a file, leaving stdout empty and triggering a
         // confusing downstream "missing 'field' column" parse failure.
-        if args
-            .flag_stats_options
-            .split_whitespace()
-            .any(|a| a.starts_with("-o") || a == "--output" || a.starts_with("--output="))
-        {
+        // `stats_options_redirect_output` also catches clustered short
+        // options (e.g. `-Eo file`), which a naive `starts_with("-o")` misses.
+        if stats_options_redirect_output(&args.flag_stats_options) {
             return fail_incorrectusage_clierror!(
                 "--stats-options may not contain -o/--output when --join-inputs is used; \
                  moarstats manages the joined stats output internally."
@@ -5946,5 +5981,34 @@ mod tests {
             None,
         );
         assert_eq!(compute_spearman_correlation(&[1.0], &[2.0]), None);
+    }
+
+    #[test]
+    fn stats_options_redirect_output_detects_output_flags() {
+        // Plain long/short forms.
+        assert!(stats_options_redirect_output("-o joined.csv"));
+        assert!(stats_options_redirect_output("-ojoined.csv"));
+        assert!(stats_options_redirect_output("--output joined.csv"));
+        assert!(stats_options_redirect_output("--output=joined.csv"));
+        assert!(stats_options_redirect_output("-E --output joined.csv"));
+
+        // Clustered short options — the regression the original
+        // `starts_with("-o")` guard missed.
+        assert!(stats_options_redirect_output("-Eo joined.csv"));
+        assert!(stats_options_redirect_output("-Eojoined.csv"));
+        assert!(stats_options_redirect_output("-no joined.csv"));
+        assert!(stats_options_redirect_output("-Eno joined.csv"));
+
+        // No redirection.
+        assert!(!stats_options_redirect_output(""));
+        assert!(!stats_options_redirect_output("-E"));
+        assert!(!stats_options_redirect_output("--everything --infer-dates"));
+        assert!(!stats_options_redirect_output("-En"));
+
+        // `-s` takes an argument, so `-so` selects a column named `o` —
+        // it must NOT be mistaken for `-s -o`.
+        assert!(!stats_options_redirect_output("-so"));
+        assert!(!stats_options_redirect_output("-Eso"));
+        assert!(!stats_options_redirect_output("--select output"));
     }
 }

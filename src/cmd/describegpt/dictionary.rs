@@ -869,7 +869,12 @@ fn strip_time_from_format(fmt: &str) -> Option<String> {
         }
     }
     let date_part = cut.map_or(fmt, |c| &fmt[..c]);
-    let trimmed = date_part.trim_end_matches(|c: char| c.is_whitespace() || c == 'T' || c == ',');
+    // trim the trailing date/time separator literal (whitespace, the ISO `T`,
+    // or punctuation like `-` `/` `.` `:` `,` `_`) so a format such as
+    // `%Y-%m-%d-%H:%M:%S` yields `%Y-%m-%d`, not `%Y-%m-%d-`
+    let trimmed = date_part.trim_end_matches(|c: char| {
+        c.is_whitespace() || matches!(c, 'T' | '-' | '/' | '.' | ':' | ',' | '_')
+    });
     (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
@@ -886,11 +891,12 @@ fn sample_time_at_midnight(sample: &str, fmt: &str) -> Option<bool> {
     Some(time.num_seconds_from_midnight() == 0 && time.nanosecond() == 0)
 }
 
-/// Reclassify a `datetime` column as `date` when every parseable frequency
-/// sample falls exactly on midnight — i.e. the column holds dates stored with
-/// a zero time-of-day. `qsv stats` types a column `DateTime` whenever ANY
-/// value has a non-midnight time, which over-reports columns whose dominant
-/// pattern (per the frequency distribution) is plainly a date.
+/// Reclassify a `datetime` column as `date` when every usable frequency sample
+/// parses with the inferred format AND falls exactly on midnight — i.e. the
+/// column holds dates stored with a zero time-of-day. `qsv stats` types a
+/// column `DateTime` whenever ANY value has a non-midnight time, which
+/// over-reports columns whose dominant pattern (per the frequency
+/// distribution) is plainly a date.
 ///
 /// Runs after `validate_date_formats`, so a surviving `datetime:<fmt>` suffix
 /// is already format-validated. On downgrade the time specifiers are stripped
@@ -898,8 +904,11 @@ fn sample_time_at_midnight(sample: &str, fmt: &str) -> Option<bool> {
 /// bare `date` when the format has no clean date-only prefix).
 ///
 /// Bare `datetime` (no inferred format) is left unchanged — there is no format
-/// to test the samples against. Samples that don't parse (e.g. a `(NULL)`
-/// frequency row) are ignored rather than blocking the downgrade.
+/// to test the samples against. A sample that does NOT parse with the format
+/// blocks the downgrade (the column stays `datetime`): a non-parsing real
+/// value could carry a non-midnight time, so ignoring it would risk a wrong
+/// downgrade. Null sentinels like `(NULL)` never reach here — they have rank 0
+/// and are excluded by `usable_samples_by_field`.
 pub(super) fn downgrade_all_midnight_datetime_columns(
     entries: &mut [DictionaryEntry],
     frequency_records: &[FrequencyRecord],
@@ -913,11 +922,18 @@ pub(super) fn downgrade_all_midnight_datetime_columns(
         let Some(samples) = samples_by_field.get(entry.name.as_str()) else {
             continue; // no usable sample to judge by
         };
-        let parsed: Vec<bool> = samples
+        // EVERY usable sample must parse with the format: collecting into an
+        // `Option<Vec<_>>` yields `None` if any sample fails to parse, which
+        // keeps the column `datetime` rather than silently dropping a value
+        // that might carry a non-midnight time.
+        let Some(midnight_flags) = samples
             .iter()
-            .filter_map(|s| sample_time_at_midnight(s, fmt))
-            .collect();
-        if !parsed.is_empty() && parsed.iter().all(|&midnight| midnight) {
+            .map(|s| sample_time_at_midnight(s, fmt))
+            .collect::<Option<Vec<bool>>>()
+        else {
+            continue;
+        };
+        if !midnight_flags.is_empty() && midnight_flags.iter().all(|&midnight| midnight) {
             entry.content_type = strip_time_from_format(fmt)
                 .map_or_else(|| "date".to_string(), |date_fmt| format!("date:{date_fmt}"));
         }
@@ -2016,6 +2032,11 @@ mod tests {
             strip_time_from_format("%Y-%m-%dT%H:%M:%S%z").as_deref(),
             Some("%Y-%m-%d")
         );
+        // a `-` date/time separator is trimmed, not left dangling
+        assert_eq!(
+            strip_time_from_format("%Y-%m-%d-%H:%M:%S").as_deref(),
+            Some("%Y-%m-%d")
+        );
         // a pure-date format is returned unchanged
         assert_eq!(
             strip_time_from_format("%Y-%m-%d").as_deref(),
@@ -2082,9 +2103,10 @@ mod tests {
     }
 
     #[test]
-    fn downgrade_ignores_unparseable_samples() {
-        // an unparseable frequency value (e.g. a NULL sentinel) is ignored,
-        // not treated as evidence that blocks the downgrade
+    fn downgrade_keeps_datetime_when_a_sample_is_unparseable() {
+        // a usable frequency value that does not parse with the inferred
+        // format blocks the downgrade — a non-parsing real value could carry
+        // a non-midnight time, so it must not be silently dropped
         let mut entries = vec![entry_with_content_type(
             "closed",
             "datetime:%m/%d/%Y %I:%M:%S %p",
@@ -2099,14 +2121,14 @@ mod tests {
             },
             FrequencyRecord {
                 field:      "closed".to_string(),
-                value:      "(NULL)".to_string(),
+                value:      "not-a-date".to_string(),
                 count:      28619,
                 percentage: 2.0,
                 rank:       2.0,
             },
         ];
         downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
-        assert_eq!(entries[0].content_type, "date:%m/%d/%Y");
+        assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
     }
 
     #[test]

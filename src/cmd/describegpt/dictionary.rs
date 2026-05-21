@@ -752,17 +752,34 @@ fn sample_parses_with_format(sample: &str, fmt: &str, is_datetime: bool) -> bool
 }
 
 /// Group usable raw frequency values by field name — every value except the
-/// rank-0 "Other" bucket, the `<ALL_UNIQUE>` sentinel, and the `(NULL)` row.
+/// rank-0 "Other" bucket, the `<ALL_UNIQUE>` sentinel, and the emitted null row.
 ///
-/// The `(NULL)` row is excluded by value, not by rank: `frequency --pct-nulls`
-/// gives the null row a real (non-zero) rank, so a rank check alone would let
-/// it through and the strict format check in `validate_date_formats` would
-/// then wrongly strip an otherwise-valid suffix. `(NULL)` is `frequency`'s
-/// default `--null-text`. Borrows from `frequency_records`.
-fn usable_samples_by_field(frequency_records: &[FrequencyRecord]) -> HashMap<&str, Vec<&str>> {
+/// The null row is identified STRUCTURALLY — its `count` equals the column's
+/// null count (carried on `DictionaryEntry.null_count`) — not by matching a
+/// display label. `frequency`'s null text is configurable (`--null-text`,
+/// default `(NULL)`) and `--pct-nulls` gives the null row a real rank, so a
+/// label- or rank-based check is unreliable; the count is not. Identifying by
+/// count also avoids wrongly excluding a real data value that merely happens
+/// to read `(NULL)`.
+///
+/// Borrows the sample strings from `frequency_records`.
+fn usable_samples_by_field<'a>(
+    frequency_records: &'a [FrequencyRecord],
+    entries: &[DictionaryEntry],
+) -> HashMap<&'a str, Vec<&'a str>> {
+    let null_count_by_field: HashMap<&str, u64> = entries
+        .iter()
+        .filter(|e| e.null_count > 0)
+        .map(|e| (e.name.as_str(), e.null_count))
+        .collect();
+
     let mut samples_by_field: HashMap<&str, Vec<&str>> = HashMap::new();
     for rec in frequency_records {
-        if rec.rank == 0.0 || rec.value.contains("<ALL_UNIQUE>") || rec.value == "(NULL)" {
+        if rec.rank == 0.0 || rec.value.contains("<ALL_UNIQUE>") {
+            continue;
+        }
+        // the emitted null row: its count equals the column's null count
+        if null_count_by_field.get(rec.field.as_str()) == Some(&rec.count) {
             continue;
         }
         samples_by_field
@@ -793,7 +810,7 @@ pub(super) fn validate_date_formats(
     entries: &mut [DictionaryEntry],
     frequency_records: &[FrequencyRecord],
 ) {
-    let samples_by_field = usable_samples_by_field(frequency_records);
+    let samples_by_field = usable_samples_by_field(frequency_records, entries);
 
     for entry in entries {
         let base = content_type_base(&entry.content_type);
@@ -917,7 +934,7 @@ pub(super) fn downgrade_all_midnight_datetime_columns(
     entries: &mut [DictionaryEntry],
     frequency_records: &[FrequencyRecord],
 ) {
-    let samples_by_field = usable_samples_by_field(frequency_records);
+    let samples_by_field = usable_samples_by_field(frequency_records, entries);
 
     for entry in entries {
         let Some(fmt) = entry.content_type.strip_prefix("datetime:") else {
@@ -2213,23 +2230,28 @@ mod tests {
 
     #[test]
     fn validate_date_formats_ignores_ranked_null_rows() {
-        // `frequency --pct-nulls` emits the `(NULL)` row with a real (non-zero)
-        // rank. It must not count as a sample — otherwise it fails to parse
-        // and strips an otherwise-valid format.
-        let mut entries = vec![entry_with_content_type("d", "date:%Y-%m-%d")];
+        // `frequency --pct-nulls` emits the null row with a real (non-zero)
+        // rank. It is identified by `count == null_count` (not by label), so
+        // it does not count as a sample — otherwise it fails to parse and
+        // strips an otherwise-valid format. The null label here is custom
+        // (`<MISSING>`), proving the check is label-independent.
+        let mut entries = vec![DictionaryEntry {
+            null_count: 5,
+            ..entry_with_content_type("d", "date:%Y-%m-%d")
+        }];
         let freqs = vec![
             FrequencyRecord {
                 field:      "d".to_string(),
                 value:      "2020-01-15".to_string(),
-                count:      5,
-                percentage: 50.0,
+                count:      8,
+                percentage: 61.5,
                 rank:       1.0,
             },
             FrequencyRecord {
                 field:      "d".to_string(),
-                value:      "(NULL)".to_string(),
+                value:      "<MISSING>".to_string(),
                 count:      5,
-                percentage: 50.0,
+                percentage: 38.5,
                 rank:       2.0,
             },
         ];
@@ -2239,26 +2261,26 @@ mod tests {
 
     #[test]
     fn downgrade_ignores_ranked_null_rows() {
-        // a `(NULL)` row ranked by `frequency --pct-nulls` must not count as a
+        // a ranked null row (`count == null_count`) must not count as a
         // sample: it would fail to parse and block the downgrade of an
         // otherwise all-midnight datetime column.
-        let mut entries = vec![entry_with_content_type(
-            "closed",
-            "datetime:%m/%d/%Y %I:%M:%S %p",
-        )];
+        let mut entries = vec![DictionaryEntry {
+            null_count: 5,
+            ..entry_with_content_type("closed", "datetime:%m/%d/%Y %I:%M:%S %p")
+        }];
         let freqs = vec![
             FrequencyRecord {
                 field:      "closed".to_string(),
                 value:      "11/15/2010 12:00:00 AM".to_string(),
-                count:      5,
-                percentage: 50.0,
+                count:      8,
+                percentage: 61.5,
                 rank:       1.0,
             },
             FrequencyRecord {
                 field:      "closed".to_string(),
                 value:      "(NULL)".to_string(),
                 count:      5,
-                percentage: 50.0,
+                percentage: 38.5,
                 rank:       2.0,
             },
         ];

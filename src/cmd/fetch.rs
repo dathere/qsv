@@ -1140,7 +1140,9 @@ fn cross_session_cache_key(
             .expect("error building diskcache");
         log::info!("Disk cache created - dir: {cache_dir} - ttl: {ttl_secs:?}",
             ttl_secs = diskcache_config.ttl_secs);
-        diskcache.remove_expired_entries().expect("error removing expired diskcache entries");
+        if let Err(e) = diskcache.remove_expired_entries() {
+            log::warn!("error removing expired diskcache entries: {e}");
+        }
         diskcache
     }"##,
     map_error = r##"|e| CliError::Other(format!("Diskcache Error: {:?}", e))"##,

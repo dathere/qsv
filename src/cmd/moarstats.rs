@@ -3332,6 +3332,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .split(',')
             .map(|s| s.trim().to_string())
             .collect();
+
+        // moarstats manages the joined stats output internally — it captures
+        // the `qsv stats` subprocess stdout. Reject a caller-supplied
+        // -o/--output in --stats-options: it would silently redirect the
+        // stats CSV to a file, leaving stdout empty and triggering a
+        // confusing downstream "missing 'field' column" parse failure.
+        if args
+            .flag_stats_options
+            .split_whitespace()
+            .any(|a| a.starts_with("-o") || a == "--output" || a.starts_with("--output="))
+        {
+            return fail_incorrectusage_clierror!(
+                "--stats-options may not contain -o/--output when --join-inputs is used; \
+                 moarstats manages the joined stats output internally."
+            );
+        }
+
         let join_keys_str = args.flag_join_keys.as_ref().ok_or_else(|| {
             CliError::IncorrectUsage(
                 "--join-keys required when --join-inputs is specified".to_string(),
@@ -3419,7 +3436,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .to_string();
 
         // `qsv stats` writes the stats CSV to stdout when no --output is
-        // given; capture it in memory.
+        // given; capture it in memory. A caller-supplied -o/--output in
+        // --stats-options was already rejected up front (see the
+        // --join-inputs guard above), so stdout is the stats CSV here.
         let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
         let mut cmd = Command::new(&qsv_path);
         cmd.arg("stats")
@@ -3429,10 +3448,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .output()
             .map_err(|e| CliError::Other(format!("Error while executing stats command: {e:?}")))?;
         if !output.status.success() {
+            // Omit stdout: on the joined path it carries the (potentially
+            // large) stats CSV, and qsv reports errors on stderr anyway.
             return fail_clierror!(
-                "Command stats failed: Output {{ status: {:?}, stdout: {:?}, stderr: {:?} }}",
+                "Command stats failed: Output {{ status: {:?}, stderr: {:?} }}",
                 output.status,
-                String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             );
         }

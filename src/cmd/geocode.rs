@@ -192,12 +192,19 @@ The --formatstr option supports these OpenCage-specific formats:
 Dynamic formatting is also supported, using dotted keys, e.g.
   "{components.city}, {components.country}" or "{annotations.timezone.name}".
 Available keys: formatted, lat, lng, confidence, components.<name> and
-annotations.<dotted.path>. ("%dyncols:" is not supported by opencage.)
+annotations.<dotted.path>.
+
+The special "%dyncols:" format is also supported, adding multiple columns to the
+output CSV. Set --formatstr to "%dyncols:" followed by a comma-delimited list of
+"{col_name:key}" pairs, where key is one of the dynamic keys above, e.g.
+  "%dyncols: {city:components.city}, {tz:annotations.timezone.name}"
+Like the other subcommands, "%dyncols:" cannot be combined with --new-column.
 
   $ qsv geocode opencage address --api-key YOURKEY file.csv
   $ qsv geocode opencage address --country us -f '%json' file.csv
   $ qsv geocode opencage coord_col --reverse -c city file.csv
   $ qsv geocode opencage address -f '{components.city}, {components.country}' file.csv
+  $ qsv geocode opencage address -f '%dyncols: {city:components.city}, {pc:components.postcode}' file.csv
 
 OPENCAGENOW
 Accepts the same options as opencage, but does not require an input file.
@@ -894,11 +901,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if args.flag_admin1.is_some() {
             return fail_incorrectusage_clierror!(
                 "The --admin1 filter is not supported by the opencage subcommands."
-            );
-        }
-        if args.flag_formatstr.starts_with("%dyncols:") {
-            return fail_incorrectusage_clierror!(
-                "The '%dyncols:' --formatstr option is not supported by the opencage subcommands."
             );
         }
         if args.flag_rate_limit == 0 {
@@ -1651,6 +1653,61 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
         .delimiter(args.flag_delimiter)
         .select(SelectColumns::parse(&args.arg_column)?);
 
+    // parse & validate the "%dyncols:" formatstr (if used). In dyncols mode, one
+    // output column is added per "{col_name:key}" pair, where key is an OpenCage
+    // dynamic field key (formatted, lat, lng, confidence, components.* or
+    // annotations.*). Unlike the predefined & dynamic formats, dyncols mode does
+    // not replace the input column.
+    let dyncols_mode = args.flag_formatstr.starts_with("%dyncols:");
+    let mut column_names: Vec<String> = Vec::new();
+    let mut column_values: Vec<String> = Vec::new();
+    if dyncols_mode {
+        for column in args.flag_formatstr[9..].split(',') {
+            let column = column.trim();
+            if column.is_empty() {
+                // tolerate a trailing/empty comma-delimited entry
+                continue;
+            }
+            let column_key_value: Vec<&str> = column.split(':').collect();
+            if column_key_value.len() != 2 {
+                return fail_incorrectusage_clierror!(
+                    "Invalid '%dyncols:' pair: {column:?}. Expected a single '{{col_name:key}}' \
+                     pair."
+                );
+            }
+            let column_name = column_key_value[0].trim_matches('{').trim();
+            let column_value = column_key_value[1].trim_matches('}').trim();
+            if column_name.is_empty() {
+                return fail_incorrectusage_clierror!(
+                    "Invalid '%dyncols:' pair: {column:?}. The column name is empty."
+                );
+            }
+            column_names.push(column_name.to_string());
+            column_values.push(column_value.to_string());
+        }
+        if column_values.is_empty() {
+            return fail_incorrectusage_clierror!(
+                "Invalid '%dyncols:' format - expected one or more 'col_name:key' pairs enclosed \
+                 in curly braces."
+            );
+        }
+        for column_value in &column_values {
+            if !is_valid_opencage_dyncol(column_value) {
+                return fail_incorrectusage_clierror!(
+                    "Invalid '%dyncols:' key: {column_value}. Valid keys are: formatted, lat, \
+                     lng, confidence, components.<name> or annotations.<dotted.path>."
+                );
+            }
+        }
+    }
+    // dyncols_len doubles as the empty/invalid fill count; u8 mirrors geocode_main
+    let Ok(dyncols_len) = u8::try_from(column_values.len()) else {
+        return fail_incorrectusage_clierror!(
+            "Too many %dyncols columns: {} (max 255).",
+            column_values.len()
+        );
+    };
+
     #[cfg(feature = "datapusher_plus")]
     let show_progress = false;
     #[cfg(not(feature = "datapusher_plus"))]
@@ -1696,6 +1753,10 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
     }
     if let Some(new_column) = &args.flag_new_column {
         headers.push_field(new_column);
+    }
+    // dyncols mode: append one header per "{col_name:key}" pair
+    for column_name in &column_names {
+        headers.push_field(column_name);
     }
     if !json_output {
         wtr.write_record(&headers)?;
@@ -1750,52 +1811,98 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
     let mut record = csv::StringRecord::new();
     while rdr.read_record(&mut record)? {
         let cell = record.get(column_index).unwrap_or_default().to_string();
-        let out_cell = if cell.trim().is_empty() {
-            // empty cell - leave the row untouched
-            cell.clone()
-        } else if let Some(query) = normalize_opencage_query(&cell, args.flag_reverse) {
-            match opencage_lookup(
-                &client,
-                &limiter,
-                disk_cache.as_ref(),
-                &mut mem_cache,
-                api_key,
-                &query,
-                formatstr,
-                language,
-                countrycode,
-                args.flag_no_annotations,
-            )
-            .await
-            {
-                Ok(Some(result)) => result,
-                Ok(None) if invalid_result.is_empty() => cell.clone(),
-                Ok(None) => invalid_result.clone(),
-                Err(OcError::Fatal(msg)) => return fail_clierror!("{msg}"),
-                Err(OcError::Transient(msg)) => {
-                    log::warn!("OpenCage lookup failed for {cell:?}: {msg}");
-                    if invalid_result.is_empty() {
-                        cell.clone()
-                    } else {
-                        invalid_result.clone()
-                    }
-                },
-            }
-        } else if invalid_result.is_empty() {
-            // --reverse is set but the cell is not a WGS-84 coordinate
-            cell.clone()
-        } else {
-            invalid_result.clone()
-        };
 
-        let out_record = if args.flag_new_column.is_some() {
-            let mut new_record = record.clone();
-            new_record.push_field(&out_cell);
-            new_record
+        if dyncols_mode {
+            // dyncols mode: keep the input row intact and append one field per
+            // requested column, geocoding (with caching) when the cell is non-empty
+            let mut out_record = record.clone();
+            let values = if cell.trim().is_empty() {
+                // empty cell - no geocoding
+                None
+            } else if let Some(query) = normalize_opencage_query(&cell, args.flag_reverse) {
+                match opencage_lookup_dyncols(
+                    &client,
+                    &limiter,
+                    disk_cache.as_ref(),
+                    &mut mem_cache,
+                    api_key,
+                    &query,
+                    language,
+                    countrycode,
+                    args.flag_no_annotations,
+                    &column_values,
+                )
+                .await
+                {
+                    Ok(values) => values,
+                    Err(OcError::Fatal(msg)) => return fail_clierror!("{msg}"),
+                    Err(OcError::Transient(msg)) => {
+                        log::warn!("OpenCage lookup failed for {cell:?}: {msg}");
+                        None
+                    },
+                }
+            } else {
+                // --reverse is set but the cell is not a WGS-84 coordinate
+                None
+            };
+            if let Some(values) = values {
+                for value in &values {
+                    out_record.push_field(value);
+                }
+            } else {
+                // empty cell, non-coordinate or no result: fill the added columns
+                // with --invalid-result (an empty string if --invalid-result is unset)
+                add_fields(&mut out_record, &invalid_result, dyncols_len);
+            }
+            wtr.write_record(&out_record)?;
         } else {
-            replace_column_value(&record, column_index, &out_cell)
-        };
-        wtr.write_record(&out_record)?;
+            let out_cell = if cell.trim().is_empty() {
+                // empty cell - leave the row untouched
+                cell.clone()
+            } else if let Some(query) = normalize_opencage_query(&cell, args.flag_reverse) {
+                match opencage_lookup(
+                    &client,
+                    &limiter,
+                    disk_cache.as_ref(),
+                    &mut mem_cache,
+                    api_key,
+                    &query,
+                    formatstr,
+                    language,
+                    countrycode,
+                    args.flag_no_annotations,
+                )
+                .await
+                {
+                    Ok(Some(result)) => result,
+                    Ok(None) if invalid_result.is_empty() => cell.clone(),
+                    Ok(None) => invalid_result.clone(),
+                    Err(OcError::Fatal(msg)) => return fail_clierror!("{msg}"),
+                    Err(OcError::Transient(msg)) => {
+                        log::warn!("OpenCage lookup failed for {cell:?}: {msg}");
+                        if invalid_result.is_empty() {
+                            cell.clone()
+                        } else {
+                            invalid_result.clone()
+                        }
+                    },
+                }
+            } else if invalid_result.is_empty() {
+                // --reverse is set but the cell is not a WGS-84 coordinate
+                cell.clone()
+            } else {
+                invalid_result.clone()
+            };
+
+            let out_record = if args.flag_new_column.is_some() {
+                let mut new_record = record.clone();
+                new_record.push_field(&out_cell);
+                new_record
+            } else {
+                replace_column_value(&record, column_index, &out_cell)
+            };
+            wtr.write_record(&out_record)?;
+        }
         if show_progress {
             progress.inc(1);
         }
@@ -2846,6 +2953,18 @@ fn opencage_field_value(r: &OpencageResult, key: &str) -> Option<String> {
     }
 }
 
+/// Returns true if `key` is a valid "%dyncols:" field key for an OpenCage result,
+/// i.e. one that opencage_field_value() can resolve.
+/// `components.` / `annotations.` prefixes require a non-empty suffix - a bare
+/// prefix has no field to resolve and would silently yield an empty column.
+fn is_valid_opencage_dyncol(key: &str) -> bool {
+    matches!(key, "formatted" | "lat" | "lng" | "confidence")
+        || key
+            .strip_prefix("components.")
+            .or_else(|| key.strip_prefix("annotations."))
+            .is_some_and(|suffix| !suffix.is_empty())
+}
+
 /// Build a JSON object from an OpenCage result for the %json / %pretty-json formats.
 fn opencage_result_json(r: &OpencageResult, no_annotations: bool) -> serde_json::Value {
     let mut obj = json!({
@@ -3103,6 +3222,94 @@ async fn opencage_lookup(
     }
     mem_cache.insert(cache_key, encoded);
     Ok(outcome)
+}
+
+/// Geocode a single normalized query via OpenCage for "%dyncols:" mode, with caching.
+/// Unlike opencage_lookup (which caches a single formatted string), this caches the
+/// raw first result as JSON, so any set of dyncols fields can be extracted from it -
+/// the cache key is therefore independent of the requested columns.
+/// Returns one value per `column_values` entry, or None for a zero-result lookup.
+#[allow(clippy::too_many_arguments)]
+async fn opencage_lookup_dyncols(
+    client: &reqwest::Client,
+    limiter: &DefaultDirectRateLimiter,
+    disk_cache: Option<&DiskCache<String, String>>,
+    mem_cache: &mut HashMap<String, String>,
+    api_key: &str,
+    query: &str,
+    language: &str,
+    countrycode: Option<&str>,
+    no_annotations: bool,
+    column_values: &[String],
+) -> Result<Option<Vec<String>>, OcError> {
+    // the literal NUL in the formatstr slot keeps this key space disjoint from
+    // opencage_lookup's: a --formatstr is a CLI arg and can never contain a NUL
+    // byte, so a dyncols cache entry can never collide with a regular one.
+    let cache_key = format!(
+        "{query}|{language}|{cc}|\0dyncols|{no_annotations}",
+        cc = countrycode.unwrap_or_default()
+    );
+
+    // extract the requested column values from a cached raw-result JSON string
+    let extract = |encoded: &str| -> Option<Vec<String>> {
+        let result_json = decode_opencage_cache(encoded)?;
+        let result: OpencageResult = serde_json::from_str(&result_json).ok()?;
+        Some(
+            column_values
+                .iter()
+                .map(|key| opencage_field_value(&result, key).unwrap_or_default())
+                .collect(),
+        )
+    };
+
+    if let Some(encoded) = mem_cache.get(&cache_key) {
+        return Ok(extract(encoded));
+    }
+    if let Some(dc) = disk_cache
+        && let Ok(Some(encoded)) = dc.cache_get(&cache_key)
+    {
+        let values = extract(&encoded);
+        mem_cache.insert(cache_key, encoded);
+        return Ok(values);
+    }
+
+    let response = opencage_fetch(
+        client,
+        limiter,
+        api_key,
+        query,
+        language,
+        countrycode,
+        no_annotations,
+    )
+    .await?;
+
+    // cache the raw first result as JSON (a zero-result lookup is cached too)
+    let result_json = match response.results.first() {
+        Some(r) => match serde_json::to_string(&opencage_result_json(r, no_annotations)) {
+            Ok(json) => Some(json),
+            Err(_) => {
+                // serialization unexpectedly failed: skip caching rather than
+                // poisoning the cache with an empty entry that would later
+                // decode as a (bogus) zero-result. Extract the column values
+                // directly from the live result instead.
+                return Ok(Some(
+                    column_values
+                        .iter()
+                        .map(|key| opencage_field_value(r, key).unwrap_or_default())
+                        .collect(),
+                ));
+            },
+        },
+        None => None,
+    };
+    let encoded = encode_opencage_cache(result_json.as_deref());
+    if let Some(dc) = disk_cache {
+        let _ = dc.cache_set(cache_key.clone(), encoded.clone());
+    }
+    let values = extract(&encoded);
+    mem_cache.insert(cache_key, encoded);
+    Ok(values)
 }
 
 /// get_countryinfo is a cached function that returns a countryinfo result for a given cell value.

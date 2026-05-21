@@ -2121,6 +2121,153 @@ fn geocode_opencagenow_dynfmt() {
     assert!(got.to_lowercase().contains("united states"));
 }
 
+#[test]
+#[serial]
+fn geocode_opencage_dyncols_invalid_key_rejected() {
+    // this runs in CI: an invalid %dyncols: key is rejected before any API call
+    let wrk = Workdir::new("geocode_opencage_dyncols_invalid_key_rejected");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["--api-key", "dummy-key-for-arg-validation"])
+        .args(["-f", "%dyncols: {city:components.city}, {bad:not_a_field}"]);
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Invalid '%dyncols:' key"));
+}
+
+#[test]
+#[serial]
+fn geocode_opencage_dyncols_bare_prefix_rejected() {
+    // this runs in CI: a bare "components."/"annotations." prefix with no
+    // field suffix is rejected before any API call - it has no field to
+    // resolve and would otherwise silently yield an empty column. The
+    // components. and annotations. branches are checked independently
+    // because validation short-circuits on the first invalid key.
+    for bad_key in ["components.", "annotations."] {
+        let wrk = Workdir::new("geocode_opencage_dyncols_bare_prefix_rejected");
+        let mut cmd = wrk.command("geocode");
+        cmd.arg("opencagenow")
+            .arg("Brooklyn, NY")
+            .args(["--api-key", "dummy-key-for-arg-validation"])
+            .args(["-f", &format!("%dyncols: {{bad:{bad_key}}}")]);
+
+        let output = wrk.output(&mut cmd);
+        assert!(
+            !output.status.success(),
+            "bare prefix '{bad_key}' should be rejected"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("Invalid '%dyncols:' key"),
+            "bare prefix '{bad_key}' should fail with \"Invalid '%dyncols:' key\", got: {stderr}"
+        );
+    }
+}
+
+#[test]
+#[serial]
+fn geocode_opencage_dyncols_new_column_rejected() {
+    // this runs in CI: %dyncols: cannot be combined with --new-column
+    let wrk = Workdir::new("geocode_opencage_dyncols_new_column_rejected");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["--api-key", "dummy-key-for-arg-validation"])
+        .args(["-c", "geocoded"])
+        .args(["-f", "%dyncols: {city:components.city}"]);
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--new-column"));
+}
+
+#[test]
+#[serial]
+fn geocode_opencage_dyncols_empty_rejected() {
+    // this runs in CI: a "%dyncols:" formatstr with no col_name:key pairs is rejected
+    let wrk = Workdir::new("geocode_opencage_dyncols_empty_rejected");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["--api-key", "dummy-key-for-arg-validation"])
+        .args(["-f", "%dyncols:"]);
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("expected one or more"));
+}
+
+#[test]
+#[serial]
+fn geocode_opencage_dyncols_malformed_pair_rejected() {
+    // this runs in CI: a malformed pair (no colon separator) is rejected, not
+    // silently dropped
+    let wrk = Workdir::new("geocode_opencage_dyncols_malformed_pair_rejected");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["--api-key", "dummy-key-for-arg-validation"])
+        .args(["-f", "%dyncols: {city components.city}"]);
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Invalid '%dyncols:' pair"));
+}
+
+#[test]
+#[serial]
+fn geocode_opencage_dyncols_empty_col_name_rejected() {
+    // this runs in CI: a pair with an empty column name is rejected
+    let wrk = Workdir::new("geocode_opencage_dyncols_empty_col_name_rejected");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencagenow")
+        .arg("Brooklyn, NY")
+        .args(["--api-key", "dummy-key-for-arg-validation"])
+        .args(["-f", "%dyncols: {:components.city}"]);
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("column name is empty"));
+}
+
+#[test]
+#[serial]
+#[ignore = "requires an OpenCage API key (set QSV_OPENCAGE_API_KEY)"]
+fn geocode_opencage_dyncols() {
+    let wrk = Workdir::new("geocode_opencage_dyncols");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Location"],
+            svec!["1600 Pennsylvania Ave NW, Washington DC"], // forward
+            svec![""],                                        // empty -> empty dyncols
+        ],
+    );
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencage").arg("Location").arg("data.csv").args([
+        "-f",
+        "%dyncols: {city:components.city}, {country:components.country}, {addr:formatted}",
+    ]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 3);
+    // the input column is preserved & three dyncols columns are appended
+    assert_eq!(got[0], svec!["Location", "city", "country", "addr"]);
+    // geocoded row: input cell unchanged, dyncols populated
+    assert_eq!(got[1][0], "1600 Pennsylvania Ave NW, Washington DC");
+    assert!(!got[1][3].is_empty());
+    assert!(got[1][2].to_lowercase().contains("united states"));
+    // empty cell: input preserved, dyncols left empty
+    assert_eq!(got[2], svec!["", "", "", ""]);
+}
+
 // ---------------------------------------------------------------------------
 // cache-* subcommands manage the persistent on-disk OpenCage result cache.
 // The tests below isolate the cache via QSV_CACHE_DIR pointed at the Workdir,

@@ -306,7 +306,13 @@ The --formatstr option supports these OpenCage-specific formats:
 Dynamic formatting is also supported, using dotted keys, e.g.
 "{components.city}, {components.country}" or "{annotations.timezone.name}".
 Available keys: formatted, lat, lng, confidence, components.<name> and
-annotations.<dotted.path>. ("%dyncols:" is not supported by opencage.)
+annotations.<dotted.path>.
+
+The special "%dyncols:" format is also supported, adding multiple columns to the
+output CSV. Set --formatstr to "%dyncols:" followed by a comma-delimited list of
+"{col_name:key}" pairs, where key is one of the dynamic keys above, e.g.
+"%dyncols: {city:components.city}, {tz:annotations.timezone.name}"
+Like the other subcommands, "%dyncols:" cannot be combined with --new-column.
 
 ```console
 $ qsv geocode opencage address --api-key YOURKEY file.csv
@@ -322,6 +328,10 @@ $ qsv geocode opencage coord_col --reverse -c city file.csv
 
 ```console
 $ qsv geocode opencage address -f '{components.city}, {components.country}' file.csv
+```
+
+```console
+$ qsv geocode opencage address -f '%dyncols: {city:components.city}, {pc:components.postcode}' file.csv
 ```
 
 

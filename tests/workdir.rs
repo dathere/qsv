@@ -124,6 +124,37 @@ impl Workdir {
         Csv::from_vecs(records)
     }
 
+    /// Run `cmd`, assert it exited successfully, and return its stdout parsed
+    /// as CSV. Use this instead of `assert_success` followed by `read_stdout`,
+    /// which executes `cmd` twice — the second run could fail yet still emit
+    /// parseable CSV, silently masking the failure.
+    pub fn read_stdout_on_success<T: Csv>(&self, cmd: &mut process::Command) -> T {
+        let o = cmd.output().unwrap();
+        assert!(
+            o.status.success(),
+            "\n\n===== {:?} =====\ncommand failed but expected success!\n\ncwd: {}\n\nstatus: \
+             {}\n\nstdout: {}\n\nstderr: {}\n\n=====\n",
+            cmd,
+            self.dir.display(),
+            o.status,
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr)
+        );
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .flexible(true)
+            .from_reader(io::Cursor::new(o.stdout));
+
+        let records: Vec<Vec<String>> = rdr
+            .records()
+            .collect::<Result<Vec<csv::StringRecord>, _>>()
+            .unwrap()
+            .into_iter()
+            .map(|r| r.iter().map(std::string::ToString::to_string).collect())
+            .collect();
+        Csv::from_vecs(records)
+    }
+
     pub fn command(&self, command_str: &str) -> process::Command {
         let mut cmd = process::Command::new(self.qsv_bin());
         if command_str.is_empty() {

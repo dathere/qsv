@@ -2691,6 +2691,9 @@ fn build_combined_dictionary_entries(
         // strip any LLM-inferred date/datetime strftime suffix that does not
         // actually parse the column's real values
         dictionary::validate_date_formats(&mut entries, &frequency_records);
+        // reclassify a datetime column as date when its frequency-sampled
+        // values are all at midnight (a date stored with a zero time-of-day)
+        dictionary::downgrade_all_midnight_datetime_columns(&mut entries, &frequency_records);
     }
     Ok(entries)
 }
@@ -2741,6 +2744,9 @@ fn build_combined_dictionary_entries_two_pass(
         // strip any LLM-inferred date/datetime strftime suffix that does not
         // actually parse the column's real values
         dictionary::validate_date_formats(&mut entries, &frequency_records);
+        // reclassify a datetime column as date when its frequency-sampled
+        // values are all at midnight (a date stored with a zero time-of-day)
+        dictionary::downgrade_all_midnight_datetime_columns(&mut entries, &frequency_records);
     }
     Ok(entries)
 }

@@ -36,6 +36,12 @@ use super::{CliError, CliResult, extract_json_from_output};
 /// `synthesize::faker_map::parse_date_format`. A bare `date`/`datetime` falls
 /// back to `synthesize`'s hardcoded `%Y-%m-%d` / RFC3339 output.
 ///
+/// `downgrade_all_midnight_datetime_columns` reclassifies a `datetime` column
+/// as `date` (stripping the time specifiers from `<fmt>`) when every
+/// frequency-sampled value falls on midnight — `stats` reports `DateTime`
+/// whenever any single value carries a time, which over-reports columns that
+/// are plainly dates stored with a zero time-of-day.
+///
 /// `duration` accepts an optional `:N` suffix carrying an LLM-inferred
 /// upper bound in seconds (e.g. `"duration:3600"` for an hour cap). The
 /// suffix is normalized by `normalize_duration_token` and consumed by
@@ -790,6 +796,121 @@ pub(super) fn validate_date_formats(
         };
         if !sample_parses_with_format(sample, fmt, base == "datetime") {
             entry.content_type = base.to_string();
+        }
+    }
+}
+
+/// Produce the date-only portion of a chrono strftime format by truncating at
+/// the first time-related specifier (`%H`, `%I`, `%M`, `%S`, `%p`, `%z`, …).
+///
+/// Used when an all-midnight `datetime` column is reclassified as `date`: the
+/// on-disk format `%m/%d/%Y %I:%M:%S %p` becomes the date-only `%m/%d/%Y`.
+///
+/// Returns `None` when there is no clean date-only prefix — a datetime-compound
+/// specifier (`%c`, `%+`, `%s`) or a time-first layout — so the caller falls
+/// back to a bare `date` token.
+fn strip_time_from_format(fmt: &str) -> Option<String> {
+    let bytes = fmt.as_bytes();
+    let mut i = 0;
+    let mut cut: Option<usize> = None;
+    while i < bytes.len() {
+        if bytes[i] != b'%' {
+            i += 1;
+            continue;
+        }
+        let pct = i;
+        i += 1; // past '%'
+        if i >= bytes.len() {
+            break;
+        }
+        if bytes[i] == b'%' {
+            i += 1; // literal "%%"
+            continue;
+        }
+        // skip modifier chars (`-_0.:#` and digits) to reach the specifier letter
+        while i < bytes.len() && matches!(bytes[i], b'-' | b'_' | b'0'..=b'9' | b'.' | b':' | b'#')
+        {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            break;
+        }
+        let letter = bytes[i] as char;
+        i += 1;
+        match letter {
+            // datetime-compound: no clean date-only prefix
+            'c' | '+' | 's' => return None,
+            // time-related specifier: the date part ends at this `%`
+            'H' | 'k' | 'I' | 'l' | 'P' | 'p' | 'M' | 'S' | 'f' | 'R' | 'T' | 'X' | 'r' | 'Z'
+            | 'z' => {
+                cut = Some(pct);
+                break;
+            },
+            // date specifier (or a harmless literal like `%n`/`%t`) — keep scanning
+            _ => {},
+        }
+    }
+    let date_part = cut.map_or(fmt, |c| &fmt[..c]);
+    let trimmed = date_part.trim_end_matches(|c: char| c.is_whitespace() || c == 'T' || c == ',');
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+/// `Some(true)` if `sample` parses with the chrono strftime `fmt` AND its
+/// time-of-day is exactly midnight; `Some(false)` if it parses with a
+/// non-midnight time; `None` if it does not parse at all (so the caller can
+/// ignore it rather than treat it as evidence either way).
+fn sample_time_at_midnight(sample: &str, fmt: &str) -> Option<bool> {
+    use chrono::{DateTime, NaiveDateTime, Timelike};
+    let time = NaiveDateTime::parse_from_str(sample, fmt)
+        .map(|dt| dt.time())
+        .or_else(|_| DateTime::parse_from_str(sample, fmt).map(|dt| dt.time()))
+        .ok()?;
+    Some(time.num_seconds_from_midnight() == 0 && time.nanosecond() == 0)
+}
+
+/// Reclassify a `datetime` column as `date` when every parseable frequency
+/// sample falls exactly on midnight — i.e. the column holds dates stored with
+/// a zero time-of-day. `qsv stats` types a column `DateTime` whenever ANY
+/// value has a non-midnight time, which over-reports columns whose dominant
+/// pattern (per the frequency distribution) is plainly a date.
+///
+/// Runs after `validate_date_formats`, so a surviving `datetime:<fmt>` suffix
+/// is already format-validated. On downgrade the time specifiers are stripped
+/// from `<fmt>` via `strip_time_from_format`, yielding `date:<date-fmt>` (or a
+/// bare `date` when the format has no clean date-only prefix).
+///
+/// Bare `datetime` (no inferred format) is left unchanged — there is no format
+/// to test the samples against. Samples that don't parse (e.g. a `(NULL)`
+/// frequency row) are ignored rather than blocking the downgrade.
+pub(super) fn downgrade_all_midnight_datetime_columns(
+    entries: &mut [DictionaryEntry],
+    frequency_records: &[FrequencyRecord],
+) {
+    let mut samples_by_field: HashMap<&str, Vec<&str>> = HashMap::new();
+    for rec in frequency_records {
+        if rec.rank == 0.0 || rec.value.contains("<ALL_UNIQUE>") {
+            continue;
+        }
+        samples_by_field
+            .entry(rec.field.as_str())
+            .or_default()
+            .push(rec.value.as_str());
+    }
+
+    for entry in entries {
+        let Some(fmt) = entry.content_type.strip_prefix("datetime:") else {
+            continue; // bare `datetime`, or not a datetime column
+        };
+        let Some(samples) = samples_by_field.get(entry.name.as_str()) else {
+            continue; // no usable sample to judge by
+        };
+        let parsed: Vec<bool> = samples
+            .iter()
+            .filter_map(|s| sample_time_at_midnight(s, fmt))
+            .collect();
+        if !parsed.is_empty() && parsed.iter().all(|&midnight| midnight) {
+            entry.content_type = strip_time_from_format(fmt)
+                .map_or_else(|| "date".to_string(), |date_fmt| format!("date:{date_fmt}"));
         }
     }
 }
@@ -1865,5 +1986,167 @@ mod tests {
         }];
         validate_date_formats(&mut entries, &freqs);
         assert_eq!(entries[0].content_type, "date:%d/%m/%Y");
+    }
+
+    #[test]
+    fn strip_time_from_format_keeps_date_drops_time() {
+        assert_eq!(
+            strip_time_from_format("%m/%d/%Y %I:%M:%S %p").as_deref(),
+            Some("%m/%d/%Y")
+        );
+        assert_eq!(
+            strip_time_from_format("%Y-%m-%dT%H:%M:%S").as_deref(),
+            Some("%Y-%m-%d")
+        );
+        assert_eq!(
+            strip_time_from_format("%d-%b-%Y %H:%M").as_deref(),
+            Some("%d-%b-%Y")
+        );
+        // a timezone-bearing time part still truncates cleanly
+        assert_eq!(
+            strip_time_from_format("%Y-%m-%dT%H:%M:%S%z").as_deref(),
+            Some("%Y-%m-%d")
+        );
+        // a pure-date format is returned unchanged
+        assert_eq!(
+            strip_time_from_format("%Y-%m-%d").as_deref(),
+            Some("%Y-%m-%d")
+        );
+        // a pure-time format has no date prefix
+        assert_eq!(strip_time_from_format("%H:%M:%S"), None);
+        // datetime-compound specifiers have no clean date-only prefix
+        assert_eq!(strip_time_from_format("%+"), None);
+    }
+
+    #[test]
+    fn downgrade_reclassifies_all_midnight_datetime_as_date() {
+        let mut entries = vec![entry_with_content_type(
+            "created",
+            "datetime:%m/%d/%Y %I:%M:%S %p",
+        )];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "created".to_string(),
+                value:      "01/24/2013 12:00:00 AM".to_string(),
+                count:      347,
+                percentage: 0.03,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "created".to_string(),
+                value:      "01/07/2014 12:00:00 AM".to_string(),
+                count:      315,
+                percentage: 0.03,
+                rank:       2.0,
+            },
+        ];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
+        // every sample is at midnight → date, with the time stripped from <fmt>
+        assert_eq!(entries[0].content_type, "date:%m/%d/%Y");
+    }
+
+    #[test]
+    fn downgrade_keeps_datetime_when_a_sample_has_a_real_time() {
+        let mut entries = vec![entry_with_content_type(
+            "due",
+            "datetime:%m/%d/%Y %I:%M:%S %p",
+        )];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "due".to_string(),
+                value:      "04/08/2015 10:00:58 AM".to_string(),
+                count:      214,
+                percentage: 0.06,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "due".to_string(),
+                value:      "05/02/2014 12:00:00 AM".to_string(),
+                count:      183,
+                percentage: 0.05,
+                rank:       2.0,
+            },
+        ];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
+        // one sample carries a non-midnight time → stays datetime
+        assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
+    }
+
+    #[test]
+    fn downgrade_ignores_unparseable_samples() {
+        // an unparseable frequency value (e.g. a NULL sentinel) is ignored,
+        // not treated as evidence that blocks the downgrade
+        let mut entries = vec![entry_with_content_type(
+            "closed",
+            "datetime:%m/%d/%Y %I:%M:%S %p",
+        )];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "11/15/2010 12:00:00 AM".to_string(),
+                count:      384,
+                percentage: 0.04,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "(NULL)".to_string(),
+                count:      28619,
+                percentage: 2.0,
+                rank:       2.0,
+            },
+        ];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
+        assert_eq!(entries[0].content_type, "date:%m/%d/%Y");
+    }
+
+    #[test]
+    fn downgrade_leaves_non_datetime_entries_alone() {
+        let mut entries = vec![
+            entry_with_content_type("bare_dt", "datetime"),
+            entry_with_content_type("a_date", "date:%Y-%m-%d"),
+            entry_with_content_type("contact", "email"),
+        ];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "bare_dt".to_string(),
+                value:      "01/24/2013 12:00:00 AM".to_string(),
+                count:      1,
+                percentage: 0.1,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "a_date".to_string(),
+                value:      "2013-01-24".to_string(),
+                count:      1,
+                percentage: 0.1,
+                rank:       1.0,
+            },
+        ];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
+        // bare `datetime` has no format to test against → unchanged
+        assert_eq!(entries[0].content_type, "datetime");
+        // an already-`date` entry → unchanged
+        assert_eq!(entries[1].content_type, "date:%Y-%m-%d");
+        // a non-date token → unchanged
+        assert_eq!(entries[2].content_type, "email");
+    }
+
+    #[test]
+    fn downgrade_keeps_datetime_when_no_usable_sample() {
+        // an ALL_UNIQUE datetime column has no usable frequency sample
+        let mut entries = vec![entry_with_content_type(
+            "ts",
+            "datetime:%m/%d/%Y %I:%M:%S %p",
+        )];
+        let freqs = vec![FrequencyRecord {
+            field:      "ts".to_string(),
+            value:      "<ALL_UNIQUE>".to_string(),
+            count:      1000,
+            percentage: 100.0,
+            rank:       1.0,
+        }];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
+        assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
     }
 }

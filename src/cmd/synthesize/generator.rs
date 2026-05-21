@@ -160,9 +160,13 @@ pub(crate) enum ColumnGenerator {
         null_ratio: f64,
     },
     /// Date / DateTime column reproduced via quartile buckets over epoch seconds.
+    /// `date_format` carries the describegpt-inferred chrono strftime format
+    /// (from a `date:<fmt>` / `datetime:<fmt>` content type); when `None`,
+    /// `next()` falls back to RFC 3339 (DateTime) / `%Y-%m-%d` (Date).
     DateQuantile {
         buckets:     Vec<(i64, i64)>,
         is_datetime: bool,
+        date_format: Option<String>,
         null_ratio:  f64,
     },
     /// Boolean column — safety net; 2-value columns are normally caught by
@@ -202,21 +206,21 @@ impl ColumnGenerator {
 
         // Date/DateTime columns ALWAYS take the `build_date()` path so their
         // synthetic values respect the source's real min/max (and quartile)
-        // bounds — never a content-type faker. The dictionary's design intent
-        // (see `CONTENT_TYPE_VOCAB` comments in
-        // `src/cmd/describegpt/dictionary.rs`) is that real date/datetime
-        // fields stay tagged `unknown` precisely so this branch wins. The
-        // LLM occasionally violates that contract by tagging a Date column
-        // with a temporal token like `time` (which is *time-of-day*, e.g.
-        // "14:30:45" — not a date) or `duration`; if such a content type
-        // reached the faker branches below, we'd emit time-of-day strings
-        // for a date column. Suppress any LLM-emitted content_type here so
-        // both faker branches fall through to the type-based match.
-        let content_type = if matches!(stats.r#type.as_str(), "Date" | "DateTime") {
-            ""
+        // bounds — never a content-type faker. When describegpt tagged the
+        // column `date:<fmt>` / `datetime:<fmt>`, the inferred chrono strftime
+        // format is extracted here and threaded into `build_date` so generated
+        // values are emitted in the column's original on-disk format. Any other
+        // LLM-emitted content_type on a date column (e.g. a stray `time` — which
+        // is *time-of-day*, "14:30:45", not a date — or `duration`) is
+        // suppressed so the faker branches below fall through to the type-based
+        // match instead of emitting time-of-day strings for a date column.
+        let is_date_column = matches!(stats.r#type.as_str(), "Date" | "DateTime");
+        let date_format = if is_date_column {
+            faker_map::parse_date_format(content_type)
         } else {
-            content_type
+            None
         };
+        let content_type = if is_date_column { "" } else { content_type };
 
         // 1. When `--consistent-fakes` is set AND the column has a STRUCTURED faker content type
         //    AND frequency fully enumerates the column, build a stable source-value -> fake-value
@@ -265,8 +269,8 @@ impl ColumnGenerator {
         match stats.r#type.as_str() {
             "Integer" => build_numeric(stats, true, null_ratio),
             "Float" => build_numeric(stats, false, null_ratio),
-            "Date" => build_date(stats, false, null_ratio),
-            "DateTime" => build_date(stats, true, null_ratio),
+            "Date" => build_date(stats, false, null_ratio, date_format),
+            "DateTime" => build_date(stats, true, null_ratio, date_format),
             "Boolean" => build_boolean(freqs, null_ratio),
             "NULL" => ColumnGenerator::Empty,
             // "String" and anything unrecognized.
@@ -371,6 +375,7 @@ impl ColumnGenerator {
             ColumnGenerator::DateQuantile {
                 buckets,
                 is_datetime,
+                date_format,
                 null_ratio,
             } => {
                 if draw_null(*null_ratio, rng) {
@@ -382,13 +387,19 @@ impl ColumnGenerator {
                 } else {
                     lo
                 };
-                // For DateTime: `unit` is epoch seconds, format as RFC 3339.
-                // For Date: `unit` is whole days since the UNIX epoch, multiply
-                // back to seconds and format as YYYY-MM-DD.
+                // For DateTime: `unit` is epoch seconds. For Date: `unit` is
+                // whole days since the UNIX epoch, multiplied back to seconds.
+                // `date_format` (when present) is the describegpt-inferred
+                // chrono strftime format; otherwise fall back to RFC 3339
+                // (DateTime) / `%Y-%m-%d` (Date). The format is re-validated by
+                // `parse_date_format`, so `format()` cannot panic here.
                 let seconds = if *is_datetime { unit } else { unit * 86_400 };
                 match chrono::DateTime::from_timestamp(seconds, 0) {
-                    Some(dt) if *is_datetime => dt.to_rfc3339(),
-                    Some(dt) => dt.format("%Y-%m-%d").to_string(),
+                    Some(dt) => match date_format {
+                        Some(fmt) => dt.format(fmt.as_str()).to_string(),
+                        None if *is_datetime => dt.to_rfc3339(),
+                        None => dt.format("%Y-%m-%d").to_string(),
+                    },
                     None => String::new(),
                 }
             },
@@ -684,7 +695,16 @@ fn build_numeric(stats: &StatsRecord, is_int: bool, null_ratio: f64) -> ColumnGe
 /// Build a quartile-bucketed date/datetime generator. Bucket bounds are
 /// expressed in *days since the UNIX epoch* for `Date` columns and *seconds
 /// since the UNIX epoch* for `DateTime` columns — see `parse_epoch`.
-fn build_date(stats: &StatsRecord, is_datetime: bool, null_ratio: f64) -> ColumnGenerator {
+///
+/// `date_format` is the describegpt-inferred chrono strftime output format
+/// (from a `date:<fmt>` / `datetime:<fmt>` content type); `None` falls back to
+/// RFC 3339 (DateTime) / `%Y-%m-%d` (Date) in `next()`.
+fn build_date(
+    stats: &StatsRecord,
+    is_datetime: bool,
+    null_ratio: f64,
+    date_format: Option<String>,
+) -> ColumnGenerator {
     let min = parse_epoch(&stats.min, is_datetime);
     let max = parse_epoch(&stats.max, is_datetime);
     let (Some(lo), Some(hi)) = (min, max) else {
@@ -717,6 +737,7 @@ fn build_date(stats: &StatsRecord, is_datetime: bool, null_ratio: f64) -> Column
     ColumnGenerator::DateQuantile {
         buckets,
         is_datetime,
+        date_format,
         null_ratio,
     }
 }

@@ -1129,8 +1129,13 @@ FIRST-PASS DATA DICTIONARY (JSON):
 {{ first_pass_dictionary }}
 
 {% if infer_content_type %}For Content Type, the same rules from the first pass apply:
-- Choose exactly ONE token from the fixed vocabulary, lowercased.
+- Choose exactly ONE token from the fixed vocabulary (lowercased; the ":<fmt>" suffix on
+  date/datetime tokens is case-sensitive chrono strftime syntax).
 - The `duration:N` suffix form is allowed (seconds upper bound).
+- "date"/"datetime" tokens carry a chrono strftime ":<fmt>" suffix matching the column's raw
+  values (e.g. "datetime:%m/%d/%Y %I:%M:%S %p"). The token itself is re-derived deterministically
+  by qsv from the Type column; you may correct or add the ":<fmt>" suffix using cross-field
+  context, but must NOT reclassify a Date/DateTime column to a non-date token.
 - "unique_id" is RESERVED and set deterministically by qsv based on cardinality; for any field
   whose first-pass Content Type is "unique_id", OMIT the `content_type` key entirely from your
   output for that field — qsv will re-apply the deterministic value. Do not echo "unique_id"
@@ -1139,7 +1144,8 @@ FIRST-PASS DATA DICTIONARY (JSON):
   "street1" originally classified as "free_text" should become "address_street" once you see
   the sibling city / state / zip columns.
 - If you genuinely cannot improve a field's Content Type, keep the first-pass value verbatim.
-Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "duration:N" form).
+Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "duration:N" and
+"date:<fmt>" / "datetime:<fmt>" suffix forms).
 
 {% endif %}Return the results in the SAME JSON shape as the first pass:
 {% raw %}{
@@ -2679,11 +2685,14 @@ fn build_combined_dictionary_entries(
         args.flag_infer_content_type,
     )
     .unwrap_or_default();
-    Ok(combine_dictionary_entries(
-        code_entries,
-        &llm_fields,
-        args.flag_infer_content_type,
-    ))
+    let mut entries =
+        combine_dictionary_entries(code_entries, &llm_fields, args.flag_infer_content_type);
+    if args.flag_infer_content_type {
+        // strip any LLM-inferred date/datetime strftime suffix that does not
+        // actually parse the column's real values
+        dictionary::validate_date_formats(&mut entries, &frequency_records);
+    }
+    Ok(entries)
 }
 
 /// Two-pass variant: parse stats/frequency, parse BOTH the baseline (first-pass) and refine
@@ -2722,12 +2731,18 @@ fn build_combined_dictionary_entries_two_pass(
         args.flag_infer_content_type,
     )
     .unwrap_or_default();
-    Ok(combine_dictionary_entries_with_baseline(
+    let mut entries = combine_dictionary_entries_with_baseline(
         code_entries,
         &baseline_fields,
         &refine_fields,
         args.flag_infer_content_type,
-    ))
+    );
+    if args.flag_infer_content_type {
+        // strip any LLM-inferred date/datetime strftime suffix that does not
+        // actually parse the column's real values
+        dictionary::validate_date_formats(&mut entries, &frequency_records);
+    }
+    Ok(entries)
 }
 
 /// Produce the prettified first-pass dictionary JSON string used as `{{ first_pass_dictionary }}`

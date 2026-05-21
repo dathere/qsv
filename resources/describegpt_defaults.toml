@@ -81,31 +81,43 @@ For each field, provide:
 - Description: a full description for this field (can be multiple sentences)
 {%- if infer_content_type %}
 - Content Type: classify the SEMANTIC CONTENT of this field by choosing exactly ONE token from the
-  fixed vocabulary below. Do NOT invent tokens and do NOT return free text - with ONE explicit
-  exception documented below for "duration". Base your choice on the field name, the Label and
-  Description you just produced for this field, the Summary Statistics and the Frequency
-  Distribution - the Label and Description capture your own semantic reading of the field and
-  must be consistent with the Content Type token you pick (e.g. a Label of "Email Address" or a
-  Description mentioning "email" should map to "email", not "free_text"). For plain numeric,
-  date, datetime or boolean fields with no specific semantic meaning, use "unknown" - those are
+  fixed vocabulary below. Do NOT invent tokens and do NOT return free text - with the explicit
+  suffix exceptions documented below for "date", "datetime" and "duration". Base your choice on
+  the field name, the Label and Description you just produced for this field, the Summary
+  Statistics and the Frequency Distribution - the Label and Description capture your own semantic
+  reading of the field and must be consistent with the Content Type token you pick (e.g. a Label
+  of "Email Address" or a Description mentioning "email" should map to "email", not "free_text").
+  For plain numeric or boolean fields with no specific semantic meaning, use "unknown" - those are
   already covered by the deterministic Type column. Use "time" for fields that contain only a
   time-of-day (e.g. "HH:MM:SS", "14:30") and "duration" for fields that contain elapsed-time
   values (e.g. "PT5M30S", "00:05:30") - these are NOT covered by the deterministic Type column.
-  ALLOWED EXTENSION (the only exception to "do not invent tokens"): the "duration" token
+  DATE & DATETIME: for any field whose Type in the Summary Statistics is "Date" or "DateTime",
+  set Content Type to "date" or "datetime" respectively, suffixed with ":<fmt>" where <fmt> is
+  the chrono strftime format that matches the RAW values shown for that field in the Frequency
+  Distribution (NOT the normalized min/max in the Summary Statistics). Use chrono strftime
+  syntax - see https://docs.rs/chrono/latest/chrono/format/strftime/ - e.g.
+  "datetime:%m/%d/%Y %I:%M:%S %p" for "01/24/2013 12:00:00 AM", "date:%Y-%m-%d" for "2013-01-24",
+  "date:%d-%b-%Y" for "24-Jan-2013". The "date"/"datetime" token itself is re-derived
+  deterministically by qsv from the Type column - your only job is the ":<fmt>" suffix. If you
+  cannot confidently infer a format, emit the bare "date" or "datetime" with no suffix. Use
+  "date"/"datetime" ONLY for Date/DateTime-typed columns; "time" remains for time-of-day-only
+  string columns.
+  ALLOWED EXTENSION (the explicit exceptions to "do not invent tokens"): the "duration" token
   MAY optionally be suffixed with ":N" where N is a positive integer upper bound in
   SECONDS, e.g. "duration:18000" for race times (~5 hours), "duration:7200" for video lengths
-  (~2 hours), "duration:300" for HTTP request latencies (~5 minutes). This suffix is part of
-  the allowed vocabulary, not a free-form invention. Pick a cap that comfortably contains the
-  values you see in min/max and the Frequency Distribution; do NOT over-tighten. If you cannot
-  confidently pick a cap, just use bare "duration" (synthesize will default to a 24-hour
-  range). No other token accepts this suffix. If no token fits, use "unknown".
+  (~2 hours), "duration:300" for HTTP request latencies (~5 minutes). Pick a cap that comfortably
+  contains the values you see in min/max and the Frequency Distribution; do NOT over-tighten. If
+  you cannot confidently pick a cap, just use bare "duration" (synthesize will default to a
+  24-hour range). The "date"/"datetime" ":<fmt>" suffix described above is the other allowed
+  exception. These suffixes are part of the allowed vocabulary, not free-form inventions. No
+  other token accepts a suffix. If no token fits, use "unknown".
   NOTE: "unique_id" is RESERVED and set deterministically by qsv when a field's cardinality
   equals the row count (primary keys, surrogate keys, sequence numbers). DO NOT use
   "unique_id" yourself - it will be ignored if you do. For such fields, pick the most
   specific other token that fits (e.g. "uuid", "isbn"); the deterministic override replaces
   it only when the row-count check matches.
-  Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "duration:N" form
-  described above)
+  Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "duration:N" and
+  "date:<fmt>" / "datetime:<fmt>" suffix forms described above)
 {%- endif %}
 
 Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %} and "content_type"{% endif %} properties:
@@ -172,8 +184,13 @@ FIRST-PASS DATA DICTIONARY (JSON):
 {{ first_pass_dictionary }}
 
 {% if infer_content_type %}For Content Type, the same rules from the first pass apply:
-- Choose exactly ONE token from the fixed vocabulary, lowercased.
+- Choose exactly ONE token from the fixed vocabulary (lowercased; the ":<fmt>" suffix on
+  date/datetime tokens is case-sensitive chrono strftime syntax).
 - The `duration:N` suffix form is allowed (seconds upper bound).
+- "date"/"datetime" tokens carry a chrono strftime ":<fmt>" suffix matching the column's raw
+  values (e.g. "datetime:%m/%d/%Y %I:%M:%S %p"). The token itself is re-derived deterministically
+  by qsv from the Type column; you may correct or add the ":<fmt>" suffix using cross-field
+  context, but must NOT reclassify a Date/DateTime column to a non-date token.
 - "unique_id" is RESERVED and set deterministically by qsv based on cardinality; for any field
   whose first-pass Content Type is "unique_id", OMIT the `content_type` key entirely from your
   output for that field — qsv will re-apply the deterministic value. Do not echo "unique_id"
@@ -182,7 +199,8 @@ FIRST-PASS DATA DICTIONARY (JSON):
   "street1" originally classified as "free_text" should become "address_street" once you see
   the sibling city / state / zip columns.
 - If you genuinely cannot improve a field's Content Type, keep the first-pass value verbatim.
-Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "duration:N" form).
+Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "duration:N" and
+"date:<fmt>" / "datetime:<fmt>" suffix forms).
 
 {% endif %}Return the results in the SAME JSON shape as the first pass:
 {% raw %}{
